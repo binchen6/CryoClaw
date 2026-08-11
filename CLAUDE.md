@@ -34,7 +34,7 @@ The main process spawns a gateway subprocess, waits for its health check, then o
 
 ```
 cryoclaw/
-├── src/                    # 40 TypeScript modules (13416 LOC) + 14 test files (node:test)
+├── src/                    # 63 TypeScript modules + 21 test files (vitest + node:test)
 │   ├── main.ts             # App entry, lifecycle, IPC, Dock toggle, config recovery
 │   ├── constants.ts        # Path resolution (dev vs packaged vs ASAR), health check params
 │   ├── gateway-process.ts  # Child process state machine + diagnostics
@@ -45,7 +45,6 @@ cryoclaw/
 │   ├── tray.ts             # System tray icon + i18n context menu
 │   ├── preload.ts          # contextBridge IPC whitelist (~75 methods + 5 listeners)
 │   ├── provider-config.ts  # Provider presets, verification, config R/W
-│   ├── setup-manager.ts    # Setup wizard window lifecycle
 │   ├── setup-ipc.ts        # Setup validation + config write + CLI install
 │   ├── setup-completion.ts # Setup wizard completion detection
 │   ├── install-detector.ts # Setup Step 0: installation conflict detection
@@ -65,24 +64,13 @@ cryoclaw/
 │   ├── weixin-config.ts    # WeChat (微信) plugin config
 │   ├── dingtalk-config.ts  # DingTalk connector plugin config
 │   ├── qqbot-config.ts     # QQ Bot plugin config
-│   ├── update-banner-state.ts     # Update banner pure state machine
 │   ├── analytics.ts        # Telemetry (PostHog-style, retry + fallback URL)
 │   ├── analytics-events.ts # Event classification + property sanitization
-│   ├── auto-updater.ts     # electron-updater wrapper + progress callback
 │   └── logger.ts           # Dual-write logger (file + console)
 ├── chat-ui/                # Lit-based Chat UI SPA (file:// loaded, ~35K LOC)
 │   └── ui/                 # Vite project: Lit 3 components, sidebar, settings view, model selector
-├── setup/                  # Setup wizard frontend (vanilla HTML/CSS/JS)
-│   ├── index.html          # Multi-step wizard with data-i18n attributes
-│   ├── setup.css           # Dark/light theme via prefers-color-scheme
-│   ├── setup.js            # i18n dict (en/zh) + form logic
-│   └── lucide-sprite.generated.js  # Icon sprites
-├── settings/               # Settings page frontend (vanilla HTML/CSS/JS)
-│   ├── index.html          # Provider, Search, Channels, Appearance, Advanced, Backup tabs
-│   ├── settings.css        # Dark/light theme via prefers-color-scheme
-│   ├── settings.js         # Provider CRUD, multi-channel, Kimi, CLI, backup/restore
-│   ├── lucide-sprite.generated.js  # Icon sprites
-│   └── share-copy-content.json     # Fallback share copy content
+├── setup/                  # Static setup assets
+│   └── webbridge-enable-guide.html  # WebBridge enable guide
 ├── builtin-skills/         # CryoClaw-owned skills, bundled into app and copied to ~/.openclaw/workspace/skills/ on first launch
 │   ├── officecli-docx/     # DOCX read/write skill backed by bundled OfficeCLI binary
 │   ├── officecli-pptx/     # PPTX read/write skill backed by bundled OfficeCLI binary
@@ -93,14 +81,14 @@ cryoclaw/
 │   ├── run-mac-builder.js      # macOS build wrapper (sign + notarize)
 │   ├── run-with-env.js         # .env loader for child processes
 │   ├── merge-release-yml.js    # Merges per-arch latest.yml for auto-updater
-│   ├── generate-settings-icons.js  # Lucide icon sprite generator
+│   ├── generate-icons.js       # App icon generator (ice-blue gradient)
 │   ├── installer.nsh           # NSIS custom installer script
 │   ├── lib/                    # Shared script utilities
 │   ├── dist-all-parallel.sh    # Parallel cross-platform build
 │   └── clean.sh
 ├── assets/                 # Icons: .icns, .ico, .png, tray templates
 ├── docs/                   # Plans, design guidelines, architecture docs
-├── .github/workflows/      # CI: build-release.yml + publish-release.yml + publish-share-copy.yml
+├── .github/workflows/      # CI: build-release.yml + publish-release.yml
 ├── electron-builder.yml    # Build config (DMG + ZIP for mac, NSIS for win)
 ├── tsconfig.json           # target ES2022, module CommonJS
 └── .env                    # Signing keys + build config (gitignored)
@@ -171,11 +159,16 @@ npm run build           # both at once
 
 ### Tests
 
-Tests use the built-in `node:test` runner (TypeScript, `.test.ts` files in `src/`). There is no `npm test` script. Excluded from the production `tsc` build (see `tsconfig.json`). Run a single test file with a TS-aware node, e.g.:
+`npm test` runs the full suite (`test:unit` + `test:scripts`). Tests are excluded from the production `tsc` build (see `tsconfig.json`; the test compile uses `tsconfig.test.json`). Four runners cover ~60 test files (21 in `src/`, 33 in `chat-ui/`, 6 in `scripts/`):
 
-```bash
-npx tsx --test src/analytics-events.test.ts
-```
+| Runner | Script | What it runs |
+|---|---|---|
+| Vitest | `npm run test:unit:vitest` | The 7 `src/*.test.ts` files that need `vi.mock`/`vi.stubEnv` (listed in `vitest.config.ts`) |
+| node:test | `npm run test:unit:node` | The remaining `src/*.test.ts`, compiled to `.test-dist/` then run via `node --test` (`scripts/run-node-tests.js`) |
+| Chat UI | `npm run test:chat` | chat-ui typecheck + `chat-ui/**/*.test.ts` (`scripts/run-chat-ui-tests.js`) |
+| Scripts | `npm run test:scripts` | `scripts/*.test.js` via `node --test` |
+
+Run everything with `npm test`, or a single layer (e.g. `npm run test:scripts`).
 
 There is no linter configured; `tsc --noEmit` is the de facto type check.
 

@@ -39,6 +39,26 @@ env:
   VOLCENGINE_SECRET_KEY: ${{ secrets.VOLCENGINE_SECRET_KEY }}
 
 jobs:
+  # ── 测试：PR 验收门，在编译之外运行既有测试 ──
+  # 独立 job，不改动 build/签名/发布边界；测试失败时在本 workflow 产生红灯
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - run: npm ci
+
+      # test:chat 的 typecheck 依赖独立的 chat-ui/ui 依赖树（根 npm ci 不会安装）
+      - name: 安装 chat-ui 依赖
+        run: npm --prefix chat-ui/ui install --prefer-offline
+
+      - name: 运行测试
+        run: npm test
+
   # ── macOS arm64：签名 + 公证 ──
   build-mac-arm64:
     runs-on: macos-14
