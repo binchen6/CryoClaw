@@ -11,7 +11,7 @@
 面向国内生态（Kimi / Moonshot / 飞书 / 企微 / 微信 / 钉钉 / QQ）。
 
 **当前状态**：
-- 更名 CryoClaw 完成；CryoClaw 重设计工程 **R1 / R1.5 / R2 / R3A–R3E / R4 / R5 / R6 / R7 / R9 全部完成**（见下节），最新版 v2026.811.2。
+- 更名 CryoClaw 完成；CryoClaw 重设计工程 **R1 / R1.5 / R2 / R3A–R3E / R4 / R5 / R6 / R7 / R9 / R10 全部完成**（见下节），最新版 v2026.811.3。
 - 内核 openclaw **2026.7.1-2**（版本 pin 在 package.json `cryoclaw.openclaw`）。
 - 测试基线 **435 pass / 0 fail / 4 skipped**（vitest 94 + node 64/68 + chat-ui 230 + scripts 47 + tsc typecheck；
   chat-ui 230 含 markdown 渲染引擎增强 5 用例（GFM 任务列表/原始 HTML 转义/超长文本退化/表格结构/标题层级）；scripts 47（上游 build-release 工作流删除后同步移除其 Volcano env 映射用例）；0 fail 为硬指标）。
@@ -314,6 +314,13 @@
   CDP 实测全绿（`.cache/cdp-8112-r9.js`）：17 卡片、默认/备用徽标、建组「工作」→ 指派 →
   localStorage 持久化、过滤 17→0→17、compose 选择器 optgroup「工作/未分组」、零 renderer 异常。
   测试基线 430→431。
+
+### R10 · 开源后持续迭代（进行中，随阶段发版）
+- **阅读体验**：chat-text markdown 标题层级样式（h1–h4 字号/间距收敛 + 首元素免顶距）；GFM 表格首次获得边框/内边距/斑马纹 + `display:block` 横向滚动防溢出。
+- **markdown 引擎**：GFM 任务列表（input 白名单 + hook 强制只读复选框）；marked 解析异常兜底退化纯文本；配套 5 用例。
+- **依赖安全**：根依赖 audit fix 19→1（electron 40→43 破坏性升级挂账）；chat-ui 7 项清零（dompurify 3.4.13 等）。
+- **CI/遗留清理**：新增 `tests.yml` 全量回归（含 chat-ui/ui 独立依赖安装步骤）；删除上游签名/CDN 发版链 build-release/publish-release 与其 Volcano env 映射用例；actions v5。
+- **发版 E2E（v2026.811.3，2026-08-11）**：gateway.asar 226.6MB；安装包 119.6MB；**静默安装** `/S` 无弹窗完成（沙箱内执行会拒绝访问，需普通权限通道）→ 启动 → gateway HTTP 200（9s）；Release 已附带安装包。
 
 ## 📋 下一步计划（未做，按优先级）
 
