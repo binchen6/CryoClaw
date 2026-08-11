@@ -19,6 +19,10 @@ jobs:
       - name: Install dependencies
         run: npm install
 
+      # chat-ui 是独立 npm 工程（test:chat 的 typecheck/单测依赖其 node_modules）
+      - name: Install chat-ui dependencies
+        run: npm --prefix chat-ui/ui install
+
       # 全量回归：vitest（主进程）+ node:test（编译产物）+ chat-ui typecheck 与单测
       - name: Unit tests
         run: npm run test:unit
