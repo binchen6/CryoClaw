@@ -1,5 +1,12 @@
 [
   {
+    "version": "2026.811.7",
+    "notes": {
+      "zh": "阅读体验：对话中的 LaTeX 公式（$$块级$$ 与 $行内$）现在用 KaTeX 渲染为专业排版（按需加载不拖累首屏，识别启发式防金额文本误判，渲染失败保留原文）",
+      "en": "Reading experience: LaTeX math ($$block$$ and $inline$) in chat is now rendered with KaTeX (loaded on demand, heuristic guards against false positives like currency amounts, falls back to raw text on failure)"
+    }
+  },
+  {
     "version": "2026.811.6",
     "notes": {
       "zh": "阅读体验：代码块左上角新增语言标签（python/js 等，mono 弱显示），代码区顶部自动留白防遮挡",

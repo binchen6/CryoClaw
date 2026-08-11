@@ -410,6 +410,14 @@
   padding-top: 22px
 }
 
+/* KaTeX 公式（DOM 层注入，见 chat/math-enhance.ts）：块级可横向滚动防溢出 */
+.chat-text .chat-math--block {
+  margin: .5em 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  max-width: 100%
+}
+
 /* hljs 语法高亮 token 配色（全部走 design token，浅/暗主题自动适配） */
 .chat-text :where(pre) code.hljs {
   background: none;

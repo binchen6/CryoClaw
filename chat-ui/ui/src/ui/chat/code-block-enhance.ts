@@ -1,4 +1,5 @@
 import { ref } from "lit/directives/ref.js";
+import { enhanceMath } from "./math-enhance.ts";
 
 /**
  * 代码块增强（阅读/操作体验，R10）：
@@ -117,6 +118,7 @@ export function enhanceChatText(container: Element | undefined) {
   if (!container) {
     return;
   }
+  void enhanceMath(container);
   for (const pre of Array.from(container.querySelectorAll("pre"))) {
     if (pre.dataset.copyEnhanced === "1") {
       continue;
