@@ -11,7 +11,7 @@
 面向国内生态（Kimi / Moonshot / 飞书 / 企微 / 微信 / 钉钉 / QQ）。
 
 **当前状态**：
-- 更名 CryoClaw 完成；CryoClaw 重设计工程 **R1 / R1.5 / R2 / R3A–R3E / R4 / R5 / R6 / R7 / R9 / R10 全部完成**（见下节），最新版 v2026.811.4。
+- 更名 CryoClaw 完成；CryoClaw 重设计工程 **R1 / R1.5 / R2 / R3A–R3E / R4 / R5 / R6 / R7 / R9 / R10 全部完成**（见下节），最新版 v2026.811.5。
 - 内核 openclaw **2026.7.1-2**（版本 pin 在 package.json `cryoclaw.openclaw`）。
 - 测试基线 **435 pass / 0 fail / 4 skipped**（vitest 94 + node 64/68 + chat-ui 230 + scripts 47 + tsc typecheck；
   chat-ui 230 含 markdown 渲染引擎增强 5 用例（GFM 任务列表/原始 HTML 转义/超长文本退化/表格结构/标题层级）；scripts 47（上游 build-release 工作流删除后同步移除其 Volcano env 映射用例）；0 fail 为硬指标）。
@@ -322,7 +322,9 @@
 - **CI/遗留清理**：新增 `tests.yml` 全量回归（含 chat-ui/ui 独立依赖安装步骤）；删除上游签名/CDN 发版链 build-release/publish-release 与其 Volcano env 映射用例；actions v5。
 - **发版 E2E（v2026.811.3，2026-08-11）**：gateway.asar 226.6MB；安装包 119.6MB；**静默安装** `/S` 无弹窗完成（沙箱内执行会拒绝访问，需普通权限通道）→ 启动 → gateway HTTP 200（9s）；Release 已附带安装包。
 - **代码块复制按钮**：`chat/code-block-enhance.ts`（lit ref 回调幂等注入，安全 DOM 构建无 innerHTML）接入 grouped-render 两处 chat-text 挂载点；按钮悬停显现，复制/失败状态即时反馈。
+- **代码块语法高亮**：highlight.js 11 按需动态 import（core + 15 常用语言，失败静默降级）；token 配色全走 design token（keyword→accent、string→ok、number→accent-2、title→info、comment→muted），浅/暗主题自动适配；主 bundle 仅 +2KB。
 - **发版 E2E（v2026.811.4，2026-08-11）**：静默安装后 CDP 实测（`.cache/cdp-8114-codecopy.js`）：新建对话让模型产出代码块 → `.chat-text pre` 与 `.chat-code-copy` 1:1 匹配、裸 i18n 键 0、renderer 异常 0。
+- **发版 E2E（v2026.811.5，2026-08-11）**：CDP 实测（`.cache/cdp-8115-hljs.js`）：python 代码块 `language-python` 命中 → `code.hljs` 启用、hljs token span 生成、按钮 1:1、裸 i18n 键 0、renderer 异常 0；截图确认字符串着色生效。
 
 ## 📋 下一步计划（未做，按优先级）
 
