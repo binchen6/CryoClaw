@@ -390,6 +390,62 @@
   color: var(--danger)
 }
 
+/* hljs 语法高亮 token 配色（全部走 design token，浅/暗主题自动适配） */
+.chat-text :where(pre) code.hljs {
+  background: none;
+  padding: 0
+}
+
+.chat-text .hljs-keyword,
+.chat-text .hljs-selector-tag,
+.chat-text .hljs-meta .hljs-keyword,
+.chat-text .hljs-doctag,
+.chat-text .hljs-section {
+  color: var(--accent);
+  font-weight: 600
+}
+
+.chat-text .hljs-string,
+.chat-text .hljs-regexp,
+.chat-text .hljs-addition,
+.chat-text .hljs-attribute,
+.chat-text .hljs-meta .hljs-string {
+  color: var(--ok)
+}
+
+.chat-text .hljs-number,
+.chat-text .hljs-literal,
+.chat-text .hljs-variable,
+.chat-text .hljs-template-variable,
+.chat-text .hljs-type,
+.chat-text .hljs-selector-class,
+.chat-text .hljs-selector-attr,
+.chat-text .hljs-selector-pseudo {
+  color: var(--accent-2)
+}
+
+.chat-text .hljs-title,
+.chat-text .hljs-title.class_,
+.chat-text .hljs-title.function_,
+.chat-text .hljs-function .hljs-title {
+  color: var(--info)
+}
+
+.chat-text .hljs-comment,
+.chat-text .hljs-quote {
+  color: var(--muted);
+  font-style: italic
+}
+
+.chat-text .hljs-deletion,
+.chat-text .hljs-strong {
+  color: var(--danger)
+}
+
+.chat-text .hljs-emphasis {
+  font-style: italic
+}
+
 .chat-text :where(pre code) {
   background: none;
   padding: 0

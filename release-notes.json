@@ -1,5 +1,12 @@
 [
   {
+    "version": "2026.811.5",
+    "notes": {
+      "zh": "阅读体验：代码块新增语法高亮（highlight.js 按需加载，覆盖 JS/TS/Python/JSON/Bash/SQL/Go/Rust 等 15 种常用语言，配色随浅/暗主题自动适配）",
+      "en": "Reading experience: code blocks now get syntax highlighting (highlight.js loaded on demand, 15 common languages incl. JS/TS/Python/JSON/Bash/SQL/Go/Rust; colors adapt to light/dark theme automatically)"
+    }
+  },
+  {
     "version": "2026.811.4",
     "notes": {
       "zh": "操作体验：对话中的每个代码块新增一键复制按钮（悬停显现，复制成功/失败有即时反馈）",

@@ -1,9 +1,12 @@
 import { ref } from "lit/directives/ref.js";
 
 /**
- * 代码块复制按钮（阅读/操作体验增强，R10）：
- * markdown 经 unsafeHTML 注入后，为 .chat-text 内每个 <pre> 追加一个悬浮复制按钮。
+ * 代码块增强（阅读/操作体验，R10）：
+ * markdown 经 unsafeHTML 注入后，为 .chat-text 内每个 <pre> 追加悬浮复制按钮，
+ * 并对带 language-* 标记的代码块做 highlight.js 语法高亮。
  * 增强在 DOM 层完成（不经 DOMPurify 白名单），幂等（dataset 标记防重复挂载）。
+ * hljs 走动态 import，不拖累首屏；高亮产物为 hljs 生成的转义 token span，
+ * 文本源自已被 DOMPurify 净化的 code.textContent。
  * 用法：<div class="chat-text" ${chatTextEnhanceRef}>…unsafeHTML…</div>
  */
 
@@ -120,6 +123,77 @@ export function enhanceChatText(container: Element | undefined) {
     }
     pre.dataset.copyEnhanced = "1";
     pre.appendChild(buildCodeCopyButton(pre));
+    const code = pre.querySelector("code");
+    if (code) {
+      void highlightCodeBlock(code);
+    }
+  }
+}
+
+// ── 语法高亮（动态加载 hljs，只注册常用语言，控制体积）──
+
+type HljsModule = {
+  default: {
+    registerLanguage: (name: string, def: unknown) => void;
+    highlight: (code: string, opts: { language: string; ignoreIllegals: true }) => { value: string };
+    getLanguage: (name: string) => unknown;
+  };
+};
+
+const LANG_LOADERS: Record<string, () => Promise<{ default: unknown }>> = {
+  javascript: () => import("highlight.js/lib/languages/javascript"),
+  typescript: () => import("highlight.js/lib/languages/typescript"),
+  python: () => import("highlight.js/lib/languages/python"),
+  json: () => import("highlight.js/lib/languages/json"),
+  bash: () => import("highlight.js/lib/languages/bash"),
+  shell: () => import("highlight.js/lib/languages/bash"),
+  css: () => import("highlight.js/lib/languages/css"),
+  xml: () => import("highlight.js/lib/languages/xml"),
+  html: () => import("highlight.js/lib/languages/xml"),
+  sql: () => import("highlight.js/lib/languages/sql"),
+  java: () => import("highlight.js/lib/languages/java"),
+  go: () => import("highlight.js/lib/languages/go"),
+  rust: () => import("highlight.js/lib/languages/rust"),
+  yaml: () => import("highlight.js/lib/languages/yaml"),
+  powershell: () => import("highlight.js/lib/languages/powershell"),
+};
+
+let hljsPromise: Promise<HljsModule["default"]> | null = null;
+
+function loadHljs(): Promise<HljsModule["default"]> {
+  if (!hljsPromise) {
+    hljsPromise = import("highlight.js/lib/core").then((m) => (m as HljsModule).default);
+  }
+  return hljsPromise;
+}
+
+async function highlightCodeBlock(code: HTMLElement) {
+  const langClass = Array.from(code.classList).find((c) => c.startsWith("language-"));
+  if (!langClass || code.dataset.hljsDone === "1") {
+    return;
+  }
+  const lang = langClass.slice("language-".length).toLowerCase();
+  const loader = LANG_LOADERS[lang];
+  if (!loader) {
+    return;
+  }
+  try {
+    const hljs = await loadHljs();
+    if (!hljs.getLanguage(lang)) {
+      const def = await loader();
+      hljs.registerLanguage(lang, def.default);
+    }
+    if (!code.isConnected || code.dataset.hljsDone === "1") {
+      return;
+    }
+    code.dataset.hljsDone = "1";
+    const source = code.textContent ?? "";
+    const result = hljs.highlight(source, { language: lang, ignoreIllegals: true });
+    // hljs 输出为自身生成的转义 token 标签；源文本已经过 DOMPurify 净化
+    code.innerHTML = result.value;
+    code.classList.add("hljs");
+  } catch {
+    // 高亮失败不影响阅读，保留原样
   }
 }
 

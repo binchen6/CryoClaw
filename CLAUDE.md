@@ -173,6 +173,25 @@ Run everything with `npm test`, or a single layer (e.g. `npm run test:scripts`).
 There is no linter configured; `tsc --noEmit` is the de facto type check.
 
 
+## Release Routine (per stage)
+
+Open-sourced at `binchen6/CryoClaw` (AGPL-3.0-only); push is allowed (`origin` = GitHub, no pre-push hook).
+
+1. Bump `package.json` version (calendar `YYYY.MMDD.N`) + add a top entry to `release-notes.json` (zh + en).
+2. `npm run dist:win` → `out/win32-x64/CryoClaw-Setup-<v>-x64.exe`.
+3. Silent install E2E: `taskkill /F /IM CryoClaw.exe /T` first, then run the installer with `/S`
+   (must run outside the IDE sandbox — sandbox denies it), confirm
+   `%LOCALAPPDATA%\Programs\CryoClaw\CryoClaw.exe` timestamp updated.
+4. Launch the app, verify gateway `GET http://127.0.0.1:18789/` returns 200.
+5. CDP smoke for the stage's feature: launch with `--remote-debugging-port=<p>`, drive the UI,
+   assert DOM facts + 0 bare i18n keys + 0 renderer exceptions (scripts live in gitignored `.cache/`).
+6. `git push origin main`; `gh release create v<version>` with the installer attached;
+   sync README / docs/OPTIMIZATION-PROGRESS.md (baseline counts, R-stage record).
+
+CI: `.github/workflows/tests.yml` runs the full regression on every push/PR
+(chat-ui/ui is an independent npm tree — install it before `test:chat`).
+
+
 ## Key Design Decisions
 
 > Detailed per-module design documentation: [docs/architecture.md](docs/architecture.md)
