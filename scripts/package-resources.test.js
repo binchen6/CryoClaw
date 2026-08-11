@@ -37,7 +37,13 @@ function loadPackageResourcesSandbox(options = {}) {
     module: { exports: {} },
   };
   vm.createContext(sandbox);
-  vm.runInContext(source, sandbox, { filename: scriptPath });
+  try {
+    vm.runInContext(source, sandbox, { filename: scriptPath });
+  } catch (err) {
+    // vm realm 的错误对象跨 realm，node:test 予进程 IPC 序列化会报
+    // "Unable to deserialize cloned data" 并吞掉真实原因——转成本 realm 错误再抛
+    throw new Error(`package-resources sandbox failed: ${err && err.stack ? err.stack : err}`);
+  }
   return sandbox;
 }
 
