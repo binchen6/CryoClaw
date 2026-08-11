@@ -1,0 +1,28 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install
+
+      # 全量回归：vitest（主进程）+ node:test（编译产物）+ chat-ui typecheck 与单测
+      - name: Unit tests
+        run: npm run test:unit
+
+      # 打包/升级链路脚本用例（不需要内核下载，纯逻辑验证）
+      - name: Script tests
+        run: npm run test:scripts
