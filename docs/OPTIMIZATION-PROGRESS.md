@@ -13,8 +13,8 @@
 **当前状态**：
 - 更名 CryoClaw 完成；CryoClaw 重设计工程 **R1 / R1.5 / R2 / R3A–R3E / R4 / R5 / R6 / R7 / R9 全部完成**（见下节），最新版 v2026.811.2。
 - 内核 openclaw **2026.7.1-2**（版本 pin 在 package.json `cryoclaw.openclaw`）。
-- 测试基线 **433 pass / 0 fail / 4 skipped**（vitest 94 + node 64/68 + chat-ui 228 + scripts 47 + tsc typecheck；
-  chat-ui 228 含 markdown 渲染引擎增强 3 用例（GFM 任务列表/原始 HTML 转义/超长文本退化）；scripts 47（上游 build-release 工作流删除后同步移除其 Volcano env 映射用例）；0 fail 为硬指标）。
+- 测试基线 **435 pass / 0 fail / 4 skipped**（vitest 94 + node 64/68 + chat-ui 230 + scripts 47 + tsc typecheck；
+  chat-ui 230 含 markdown 渲染引擎增强 5 用例（GFM 任务列表/原始 HTML 转义/超长文本退化/表格结构/标题层级）；scripts 47（上游 build-release 工作流删除后同步移除其 Volcano env 映射用例）；0 fail 为硬指标）。
 - 历史优化阶段 1–22 全部完成并逐版发版至 v2026.811.0（见历史档案）。
 - 已开源发布至 GitHub（binchen6/CryoClaw，AGPL-3.0-only）；发布时以全新干净历史快照推送，旧本地历史（含已作废的 kimi-claw REFRESH 凭证）不出仓；`.env.build` 已转 gitignored，模板见 `.env.build.example`；git 身份统一为 binchen6。CI：`tests.yml` 每次 push/PR 全量回归（chat-ui/ui 独立依赖树需先安装）；上游签名/CDN 发版链 `build-release.yml`/`publish-release.yml` 已删除（依赖上游 oneclaw 签名证书与 oneclaw.cn CDN，本 fork 不适用，发版走本地 dist:win + gh release）。
 

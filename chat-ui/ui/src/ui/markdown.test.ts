@@ -76,3 +76,17 @@ test("markdown 渲染：超过解析上限的长文本退化为纯文本块", ()
     "超长文本应退化为 pre 纯文本块",
   );
 });
+
+test("markdown 渲染：GFM 表格保留完整表格结构", () => {
+  const html = toSanitizedMarkdownHtml(
+    `| 列A | 列B-${Math.random().toString(36).slice(2)} |\n|---|---|\n| 1 | 2 |`,
+  );
+  assert.ok(html.includes("<table"), "应渲染 table 元素");
+  assert.ok(html.includes("<th"), "应保留表头单元格");
+  assert.ok(html.includes("<td"), "应保留数据单元格");
+});
+
+test("markdown 渲染：标题保留层级结构", () => {
+  const html = toSanitizedMarkdownHtml(`## 小节-${Math.random().toString(36).slice(2)}\n\n正文`);
+  assert.ok(html.includes("<h2"), "二级标题应渲染为 h2");
+});

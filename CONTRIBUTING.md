@@ -38,7 +38,7 @@
 - 必须关联一个已讨论过的 Issue
 - 标题简洁，说明改了什么
 - 本地跑过 `npm run build` 确保编译通过
-- 本地跑过 `npm test` 全绿（基线 433 pass / 0 fail / 4 skipped）；新增/改动 chat-ui 控制器或纯函数时请在 `chat-ui/ui/src/**/*.test.ts` 同步补测试
+- 本地跑过 `npm test` 全绿（基线 435 pass / 0 fail / 4 skipped）；新增/改动 chat-ui 控制器或纯函数时请在 `chat-ui/ui/src/**/*.test.ts` 同步补测试
 - 一个 PR 只做一件事
 
 ## 给 AI Agent 的特别说明
@@ -84,7 +84,7 @@ PRs without a corresponding Issue will be closed.
 - Must reference a discussed Issue
 - Concise title describing the change
 - `npm run build` passes locally
-- `npm test` is fully green (baseline 433 pass / 0 fail / 4 skipped); add tests under `chat-ui/ui/src/**/*.test.ts` for new/changed chat-ui controllers or pure functions
+- `npm test` is fully green (baseline 435 pass / 0 fail / 4 skipped); add tests under `chat-ui/ui/src/**/*.test.ts` for new/changed chat-ui controllers or pure functions
 - One PR, one thing
 
 ## Note for AI Agents

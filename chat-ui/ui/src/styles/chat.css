@@ -402,6 +402,49 @@
   margin: 1em 0
 }
 
+/* markdown 标题：收敛浏览器默认字号/间距，层级走设计体系 */
+.chat-text :where(h1, h2, h3, h4) {
+  font-weight: 600;
+  line-height: 1.35;
+  margin: 1em 0 .5em
+}
+
+.chat-text :where(h1) { font-size: 1.35em }
+.chat-text :where(h2) { font-size: 1.2em }
+.chat-text :where(h3) { font-size: 1.1em }
+.chat-text :where(h4) { font-size: 1em }
+
+/* 首元素免顶部间距，防消息气泡首行偏高 */
+.chat-text :where(h1, h2, h3, h4, p, ul, ol, pre, blockquote, table):first-child {
+  margin-top: 0
+}
+
+/* GFM 表格：边框/内边距/斑马纹，横向滚动防溢出气泡 */
+.chat-text :where(table) {
+  display: block;
+  overflow-x: auto;
+  max-width: 100%;
+  margin: .75em 0;
+  border-collapse: collapse;
+  font-size: var(--text-sm)
+}
+
+.chat-text :where(th, td) {
+  border: 1px solid var(--border);
+  padding: 6px 10px;
+  text-align: left;
+  word-break: normal
+}
+
+.chat-text :where(th) {
+  background: var(--glass-md);
+  font-weight: 600
+}
+
+.chat-text :where(tbody tr:nth-child(even)) {
+  background: var(--glass-xs)
+}
+
 .chat-text[dir=rtl] {
   text-align: right
 }
