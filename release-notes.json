@@ -1,5 +1,12 @@
 [
   {
+    "version": "2026.811.6",
+    "notes": {
+      "zh": "阅读体验：代码块左上角新增语言标签（python/js 等，mono 弱显示），代码区顶部自动留白防遮挡",
+      "en": "Reading experience: code blocks now show a language label (python/js etc., muted mono) at top-left, with automatic top padding to keep code clear"
+    }
+  },
+  {
     "version": "2026.811.5",
     "notes": {
       "zh": "阅读体验：代码块新增语法高亮（highlight.js 按需加载，覆盖 JS/TS/Python/JSON/Bash/SQL/Go/Rust 等 15 种常用语言，配色随浅/暗主题自动适配）",

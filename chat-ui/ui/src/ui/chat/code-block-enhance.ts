@@ -125,9 +125,26 @@ export function enhanceChatText(container: Element | undefined) {
     pre.appendChild(buildCodeCopyButton(pre));
     const code = pre.querySelector("code");
     if (code) {
+      const lang = codeLang(code);
+      if (lang) {
+        pre.appendChild(buildLangLabel(lang));
+      }
       void highlightCodeBlock(code);
     }
   }
+}
+
+function codeLang(code: HTMLElement): string | null {
+  const langClass = Array.from(code.classList).find((c) => c.startsWith("language-"));
+  return langClass ? langClass.slice("language-".length).toLowerCase() : null;
+}
+
+function buildLangLabel(lang: string): HTMLSpanElement {
+  const span = document.createElement("span");
+  span.className = "chat-code-lang";
+  span.textContent = lang;
+  span.setAttribute("aria-hidden", "true");
+  return span;
 }
 
 // ── 语法高亮（动态加载 hljs，只注册常用语言，控制体积）──
@@ -168,11 +185,10 @@ function loadHljs(): Promise<HljsModule["default"]> {
 }
 
 async function highlightCodeBlock(code: HTMLElement) {
-  const langClass = Array.from(code.classList).find((c) => c.startsWith("language-"));
-  if (!langClass || code.dataset.hljsDone === "1") {
+  const lang = codeLang(code);
+  if (!lang || code.dataset.hljsDone === "1") {
     return;
   }
-  const lang = langClass.slice("language-".length).toLowerCase();
   const loader = LANG_LOADERS[lang];
   if (!loader) {
     return;
