@@ -1,0 +1,277 @@
+/* ============================================
+   CryoClaw Design Tokens — 全局设计语言单一事实来源
+   所有 CSS 文件通过 @import 引用此文件
+   修改此文件 = 全局生效
+
+   设计规范：TraeWork token 体系（分组 + 数值阶梯 + 兼容别名）
+   配色：CryoClaw 冰蓝系（cryo ice-blue），浅色为默认主题，暗色经
+   [data-theme=dark] 或 prefers-color-scheme 双通道切换
+   ============================================ */
+
+/* ── 静态 token（主题无关） ── */
+:root {
+  /* radius 数值阶梯（TraeWork 规范） */
+  --radius-2: 2px;
+  --radius-4: 4px;
+  --radius-6: 6px;
+  --radius-8: 8px;
+  --radius-10: 10px;
+  --radius-12: 12px;
+  --radius-16: 16px;
+  --radius-20: 20px;
+  --radius-24: 24px;
+  --radius-32: 32px;
+  /* 圆角兼容别名（既有组件使用，勿删） */
+  --radius-xs: var(--radius-4);
+  --radius-sm: var(--radius-8);
+  --radius-md: var(--radius-12);
+  --radius-lg: var(--radius-16);
+  --radius-xl: var(--radius-20);
+  --radius-pill: 999px;
+
+  /* spacer 数值阶梯（TraeWork 规范） */
+  --spacer-2: 2px;
+  --spacer-3: 3px;
+  --spacer-4: 4px;
+  --spacer-6: 6px;
+  --spacer-8: 8px;
+  --spacer-10: 10px;
+  --spacer-12: 12px;
+  --spacer-16: 16px;
+  --spacer-20: 20px;
+  --spacer-24: 24px;
+  --spacer-32: 32px;
+  --spacer-40: 40px;
+  --spacer-48: 48px;
+  --spacer-64: 64px;
+
+  /* icon 尺寸阶梯 */
+  --icon-size-12: 12px;
+  --icon-size-14: 14px;
+  --icon-size-16: 16px;
+  --icon-size-20: 20px;
+  --icon-size-24: 24px;
+
+  /* 字体栈（TraeWork 规范 + 中文回退） */
+  --font-body: "SF Pro Text", "PingFang SC", system-ui, -apple-system,
+    "Segoe UI", Roboto, "Microsoft YaHei", "Hiragino Sans GB", sans-serif;
+  --font-display: "SF Pro", "PingFang SC", system-ui, -apple-system,
+    "Segoe UI", Roboto, "Microsoft YaHei", "Hiragino Sans GB", sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas,
+    "Courier New", monospace;
+  /* 元信息专用（模型标签 / 工具名 / token / 时间戳 / 路径）：等宽、小字号 */
+  --font-meta: var(--mono);
+  --font-size-meta: 11px;
+  --font-size-body: 14px;
+
+  /* 字号阶梯（TraeWork body/heading 规范） */
+  --text-2xs: 10px;
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-base: 14px;
+  --text-lg: 18px;
+  --heading-xs: 13px;
+  --heading-sm: 16px;
+  --heading-md: 20px;
+  --heading-lg: 22px;
+  --heading-xl: 24px;
+  --heading-2xl: 28px;
+  --heading-3xl: 32px;
+
+  /* 动效 */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --duration-fast: 0.12s;
+  --duration-normal: 0.2s;
+  --duration-slow: 0.35s;
+  --transition: 180ms ease;
+
+  /* 品牌色阶 —— CryoClaw 冰蓝（cryo ice-blue） */
+  --brand-50: #f0f9ff;
+  --brand-100: #e0f2fe;
+  --brand-200: #bae6fd;
+  --brand-300: #7dd3fc;
+  --brand-400: #38bdf8;
+  --brand-500: #0ea5e9;
+  --brand-600: #0284c7;
+  --brand-700: #0369a1;
+  --brand-800: #075985;
+  --brand-900: #0c4a6e;
+  --brand-950: #082f49;
+
+  /* 冷灰阶（微蓝相，工程工具感） */
+  --grey-50: #f8fafc;
+  --grey-100: #f1f5f9;
+  --grey-200: #e2e8f0;
+  --grey-300: #cbd5e1;
+  --grey-400: #94a3b8;
+  --grey-500: #64748b;
+  --grey-600: #475569;
+  --grey-700: #334155;
+  --grey-800: #1e293b;
+  --grey-900: #0f172a;
+  --grey-950: #020617;
+}
+
+/* ── 浅色主题（默认） ── */
+:root {
+  /* 背景 */
+  --bg: #ffffff;
+  --bg-secondary: var(--grey-50);
+  --bg-elevated: #ffffff;
+  --bg-hover: var(--grey-100);
+  --bg-input: var(--grey-100);
+  --bg-muted: var(--grey-100);
+
+  /* 文字 */
+  --text: var(--grey-800);
+  --text-strong: var(--grey-900);
+  --text-secondary: var(--grey-600);
+  --text-muted: var(--grey-400);
+  --text-faint: var(--grey-300);
+  --text-on-accent: #ffffff;
+
+  /* 边框 */
+  --border: var(--grey-200);
+  --border-strong: var(--grey-300);
+  --border-hover: var(--grey-400);
+  --border-focus: var(--accent);
+
+  /* 强调色 —— 冰蓝 */
+  --accent: var(--brand-500);
+  --accent-hover: var(--brand-600);
+  --accent-subtle: rgba(14, 165, 233, 0.1);
+  --accent-glow: rgba(14, 165, 233, 0.2);
+
+  /* 语义色（TraeWork status 数值） */
+  --ok: #15a877;
+  --ok-muted: rgba(21, 168, 119, 0.75);
+  --ok-subtle: rgba(21, 168, 119, 0.12);
+  --destructive: #e8463a;
+  --warn: #e27900;
+  --warn-muted: rgba(226, 121, 0, 0.75);
+  --warn-subtle: rgba(226, 121, 0, 0.12);
+  --info: var(--brand-500);
+
+  /* 遮罩 & 玻璃 */
+  --overlay: rgba(15, 23, 42, 0.42);
+  --overlay-heavy: rgba(15, 23, 42, 0.7);
+  --glass-xs: rgba(15, 23, 42, 0.02);
+  --glass-sm: rgba(15, 23, 42, 0.04);
+  --glass-md: rgba(15, 23, 42, 0.06);
+  --glass-lg: rgba(15, 23, 42, 0.12);
+  --glass-border: rgba(15, 23, 42, 0.08);
+
+  /* 阴影 */
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06);
+  --shadow-md: 0 4px 12px rgba(15, 23, 42, 0.08), 0 0 0 1px rgba(15, 23, 42, 0.04);
+  --shadow-lg: 0 12px 28px rgba(15, 23, 42, 0.12), 0 0 0 1px rgba(15, 23, 42, 0.04);
+  --shadow-xl: 0 24px 48px rgba(15, 23, 42, 0.15), 0 0 0 1px rgba(15, 23, 42, 0.04);
+
+  color-scheme: light;
+}
+
+/* ── 暗色主题（深冷灰蓝） ── */
+/* 方式 1：data-theme 属性切换（Chat UI 使用） */
+:root[data-theme=dark] {
+  --bg: #0b1117;
+  --bg-secondary: #101823;
+  --bg-elevated: #182230;
+  --bg-hover: #1f2c3e;
+  --bg-input: #080d13;
+  --bg-muted: #1b2736;
+
+  --text: #d7e0ea;
+  --text-strong: #f1f5f9;
+  --text-secondary: #93a4b8;
+  --text-muted: var(--grey-500);
+  --text-faint: var(--grey-600);
+  --text-on-accent: var(--brand-950);
+
+  --border: #22303f;
+  --border-strong: #314357;
+  --border-hover: #3f5872;
+
+  /* 暗色下品牌色亮一档保对比度 */
+  --accent: var(--brand-400);
+  --accent-hover: var(--brand-300);
+  --accent-subtle: rgba(56, 189, 248, 0.14);
+  --accent-glow: rgba(56, 189, 248, 0.28);
+
+  --ok: #2fbf8f;
+  --ok-muted: rgba(47, 191, 143, 0.75);
+  --ok-subtle: rgba(47, 191, 143, 0.14);
+  --destructive: #f0665b;
+  --warn: #ffb020;
+  --warn-muted: rgba(255, 176, 32, 0.75);
+  --warn-subtle: rgba(255, 176, 32, 0.14);
+  --info: var(--brand-400);
+
+  --overlay: rgba(0, 0, 0, 0.5);
+  --overlay-heavy: rgba(0, 0, 0, 0.8);
+  --glass-xs: rgba(255, 255, 255, 0.02);
+  --glass-sm: rgba(255, 255, 255, 0.04);
+  --glass-md: rgba(255, 255, 255, 0.06);
+  --glass-lg: rgba(255, 255, 255, 0.12);
+  --glass-border: rgba(255, 255, 255, 0.08);
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.2);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(255, 255, 255, 0.03);
+  --shadow-lg: 0 12px 28px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(255, 255, 255, 0.03);
+  --shadow-xl: 0 24px 48px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.03);
+
+  color-scheme: dark;
+}
+
+/* 方式 2：OS 系统偏好切换（Settings/Setup iframe 使用） */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme=light]) {
+    --bg: #0b1117;
+    --bg-secondary: #101823;
+    --bg-elevated: #182230;
+    --bg-hover: #1f2c3e;
+    --bg-input: #080d13;
+    --bg-muted: #1b2736;
+
+    --text: #d7e0ea;
+    --text-strong: #f1f5f9;
+    --text-secondary: #93a4b8;
+    --text-muted: var(--grey-500);
+    --text-faint: var(--grey-600);
+    --text-on-accent: var(--brand-950);
+
+    --border: #22303f;
+    --border-strong: #314357;
+    --border-hover: #3f5872;
+
+    --accent: var(--brand-400);
+    --accent-hover: var(--brand-300);
+    --accent-subtle: rgba(56, 189, 248, 0.14);
+    --accent-glow: rgba(56, 189, 248, 0.28);
+
+    --ok: #2fbf8f;
+    --ok-muted: rgba(47, 191, 143, 0.75);
+    --ok-subtle: rgba(47, 191, 143, 0.14);
+    --destructive: #f0665b;
+    --warn: #ffb020;
+    --warn-muted: rgba(255, 176, 32, 0.75);
+    --warn-subtle: rgba(255, 176, 32, 0.14);
+    --info: var(--brand-400);
+
+    --overlay: rgba(0, 0, 0, 0.5);
+    --overlay-heavy: rgba(0, 0, 0, 0.8);
+    --glass-xs: rgba(255, 255, 255, 0.02);
+    --glass-sm: rgba(255, 255, 255, 0.04);
+    --glass-md: rgba(255, 255, 255, 0.06);
+    --glass-lg: rgba(255, 255, 255, 0.12);
+    --glass-border: rgba(255, 255, 255, 0.08);
+
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.2);
+    --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(255, 255, 255, 0.03);
+    --shadow-lg: 0 12px 28px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(255, 255, 255, 0.03);
+    --shadow-xl: 0 24px 48px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.03);
+
+    color-scheme: dark;
+  }
+}

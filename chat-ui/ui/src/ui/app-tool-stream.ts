@@ -1,0 +1,502 @@
+import { truncateText } from "./format.ts";
+import { debugLog } from "./debug.ts";
+import { handlePlanToolEvent, UPDATE_PLAN_TOOL_NAME, type PlanStreamHost } from "./plan-stream.ts";
+
+const TOOL_STREAM_LIMIT = 50;
+const TOOL_STREAM_THROTTLE_MS = 80;
+const TOOL_OUTPUT_CHAR_LIMIT = 120_000;
+
+export type AgentEventPayload = {
+  runId: string;
+  seq: number;
+  stream: string;
+  ts: number;
+  sessionKey?: string;
+  data: Record<string, unknown>;
+};
+
+// 每次新 tool call 到来时，把当前在打字的 assistant 文本冻结成一段，挂在这条 tool entry 上。
+// 这样渲染时能按"上一段文本 → tool call → tool result → 下一段文本 …"的时间序展开，
+// 与 gateway 写进 transcript 的消息形态保持一致（history 加载后也是这样分开展示）。
+export type StreamSegment = { text: string; ts: number };
+
+export type ToolStreamEntry = {
+  toolCallId: string;
+  runId: string;
+  sessionKey?: string;
+  name: string;
+  args?: unknown;
+  output?: string;
+  // result 阶段从 data.isError 捕获（宽容解析：仅 true 算失败）
+  isError?: boolean;
+  startedAt: number;
+  updatedAt: number;
+  // 该 tool 之前冻结下来的 assistant 文本（若有）。只会设一次，就在 entry 创建那一刻。
+  leadingSegment?: StreamSegment;
+  // 分成两条 message：call 走 assistant 气泡 + 内联 tool 卡，result 走独立的 toolResult 气泡。
+  // 和 history 里的消息形态完全一致，复用同一套 renderGroupedMessage 分支。
+  callMessage: Record<string, unknown>;
+  resultMessage?: Record<string, unknown>;
+};
+
+type ToolStreamHost = {
+  sessionKey: string;
+  chatRunId: string | null;
+  toolStreamById: Map<string, ToolStreamEntry>;
+  toolStreamOrder: string[];
+  // 已摊平的时间线：segment text / call msg / result msg 混合，供渲染直接 iterate。
+  chatToolMessages: Record<string, unknown>[];
+  toolStreamSyncTimer: number | null;
+  // 当前在打字的 assistant 文本（尚未被任何 tool call 触发冻结，只有这一段闪红光）
+  chatStream: string | null;
+  chatStreamStartedAt: number | null;
+  // handleChatEvent delta 走 raf 节流，pending 是下一帧要写进 chatStream 的值
+  chatPendingStreamText: string | null;
+  // 已被 leadingSegment 冻结的累计前缀。每次冻结要把当前 chatStream 增量并入；
+  // controllers/chat.ts 的 delta handler 用它从"累计文本"里切片出新段。
+  chatStreamFrozenPrefix: string;
+  // 被 trimToolStream 淘汰的 entry 上的 leadingSegment 要保留下来，否则一轮工具调用很多时
+  // （超过 TOOL_STREAM_LIMIT），早期段会被一起删掉，渲染层只剩 chatStream 的尾段，让用户看着像"开头丢了"。
+  evictedLeadingSegments: StreamSegment[];
+};
+
+function extractToolOutputText(value: unknown): string | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const record = value as Record<string, unknown>;
+  if (typeof record.text === "string") {
+    return record.text;
+  }
+  const content = record.content;
+  if (!Array.isArray(content)) {
+    return null;
+  }
+  const parts = content
+    .map((item) => {
+      if (!item || typeof item !== "object") {
+        return null;
+      }
+      const entry = item as Record<string, unknown>;
+      if (entry.type === "text" && typeof entry.text === "string") {
+        return entry.text;
+      }
+      return null;
+    })
+    .filter((part): part is string => Boolean(part));
+  if (parts.length === 0) {
+    return null;
+  }
+  return parts.join("\n");
+}
+
+function formatToolOutput(value: unknown): string | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  const contentText = extractToolOutputText(value);
+  let text: string;
+  if (typeof value === "string") {
+    text = value;
+  } else if (contentText) {
+    text = contentText;
+  } else {
+    try {
+      text = JSON.stringify(value, null, 2);
+    } catch {
+      // oxlint-disable typescript/no-base-to-string
+      text = String(value);
+    }
+  }
+  const truncated = truncateText(text, TOOL_OUTPUT_CHAR_LIMIT);
+  if (!truncated.truncated) {
+    return truncated.text;
+  }
+  return `${truncated.text}\n\n… truncated (${truncated.total} chars, showing first ${truncated.text.length}).`;
+}
+
+// 构造 assistant 侧的 tool call 消息：**不挂 toolCallId 到顶层**。
+// 挂了的话 normalizeMessage 会把它归类成 toolResult，渲染走无气泡的 renderCollapsedToolCards 路径；
+// 不挂则 role 保持 assistant → 走正常气泡分支，tool card 以折叠形式嵌在气泡里（和 history 一致）。
+function buildToolCallMessage(entry: ToolStreamEntry): Record<string, unknown> {
+  return {
+    role: "assistant",
+    runId: entry.runId,
+    content: [
+      {
+        type: "toolCall",
+        id: entry.toolCallId,
+        name: entry.name,
+        arguments: entry.args ?? {},
+      },
+    ],
+    timestamp: entry.startedAt,
+    // 尚无 result 的 call 标记为 pending → 渲染层显示「执行中」而非「已完成」。
+    // result 到达后 callMessage 会被重建，此标记随之消失；历史消息无此字段，不受影响。
+    ...(entry.output === undefined ? { pending: true } : {}),
+  };
+}
+
+// 构造 toolResult 消息：走 role=toolResult 路径，自成一个 group，渲染为独立的 "Tool output" 气泡。
+function buildToolResultMessage(entry: ToolStreamEntry): Record<string, unknown> {
+  return {
+    role: "toolResult",
+    toolCallId: entry.toolCallId,
+    runId: entry.runId,
+    content: [{ type: "text", text: entry.output ?? "" }],
+    timestamp: entry.updatedAt,
+    // 失败标记随消息进渲染层（extractToolCards 读消息级 isError → ToolCard.error）
+    ...(entry.isError === true ? { isError: true } : {}),
+  };
+}
+
+function trimToolStream(host: ToolStreamHost) {
+  if (host.toolStreamOrder.length <= TOOL_STREAM_LIMIT) {
+    return;
+  }
+  const overflow = host.toolStreamOrder.length - TOOL_STREAM_LIMIT;
+  const removed = host.toolStreamOrder.splice(0, overflow);
+  for (const id of removed) {
+    const entry = host.toolStreamById.get(id);
+    if (entry?.leadingSegment && entry.leadingSegment.text.trim().length > 0) {
+      // 把这条 entry 上的 leading 文本搬到 sticky 列表，渲染时仍能看到（顺序在最前面）。
+      host.evictedLeadingSegments.push(entry.leadingSegment);
+      debugLog("tool", "evict tool entry, retain leadingSegment", {
+        toolCallId: id,
+        segmentLen: entry.leadingSegment.text.length,
+        evictedTotal: host.evictedLeadingSegments.length,
+      });
+    }
+    host.toolStreamById.delete(id);
+  }
+}
+
+function syncToolStreamMessages(host: ToolStreamHost) {
+  // 摊平成时间线：每条 entry 依次贡献 leadingSegment（若有）→ callMessage → resultMessage（若已出）
+  const out: Record<string, unknown>[] = [];
+  // 先放被 trim 淘汰的 leadingSegments，保证渲染时序与原本一致（它们时间最早）。
+  for (const seg of host.evictedLeadingSegments) {
+    if (seg.text.trim().length === 0) continue;
+    out.push({
+      role: "assistant",
+      content: [{ type: "text", text: seg.text }],
+      timestamp: seg.ts,
+    });
+  }
+  for (const id of host.toolStreamOrder) {
+    const entry = host.toolStreamById.get(id);
+    if (!entry) {
+      continue;
+    }
+    if (entry.leadingSegment && entry.leadingSegment.text.trim().length > 0) {
+      out.push({
+        role: "assistant",
+        content: [{ type: "text", text: entry.leadingSegment.text }],
+        timestamp: entry.leadingSegment.ts,
+      });
+    }
+    out.push(entry.callMessage);
+    if (entry.resultMessage) {
+      out.push(entry.resultMessage);
+    }
+  }
+  host.chatToolMessages = out;
+}
+
+export function flushToolStreamSync(host: ToolStreamHost) {
+  if (host.toolStreamSyncTimer != null) {
+    clearTimeout(host.toolStreamSyncTimer);
+    host.toolStreamSyncTimer = null;
+  }
+  syncToolStreamMessages(host);
+}
+
+export function scheduleToolStreamSync(host: ToolStreamHost, force = false) {
+  if (force) {
+    flushToolStreamSync(host);
+    return;
+  }
+  if (host.toolStreamSyncTimer != null) {
+    return;
+  }
+  host.toolStreamSyncTimer = window.setTimeout(
+    () => flushToolStreamSync(host),
+    TOOL_STREAM_THROTTLE_MS,
+  );
+}
+
+export function resetToolStream(host: ToolStreamHost) {
+  host.toolStreamById.clear();
+  host.toolStreamOrder = [];
+  host.chatToolMessages = [];
+  host.evictedLeadingSegments = [];
+  // 清掉 frozenPrefix —— 这个 host-level 字段会跨 turn 残留，新 turn 的累计文本完全不该再切旧前缀。
+  host.chatStreamFrozenPrefix = "";
+  flushToolStreamSync(host);
+}
+
+export type CompactionStatus = {
+  active: boolean;
+  startedAt: number | null;
+  completedAt: number | null;
+};
+
+type CompactionHost = ToolStreamHost & {
+  compactionStatus?: CompactionStatus | null;
+  compactionClearTimer?: number | null;
+};
+
+const COMPACTION_TOAST_DURATION_MS = 5000;
+
+export function handleCompactionEvent(host: CompactionHost, payload: AgentEventPayload) {
+  const data = payload.data ?? {};
+  const phase = typeof data.phase === "string" ? data.phase : "";
+
+  // Clear any existing timer
+  if (host.compactionClearTimer != null) {
+    window.clearTimeout(host.compactionClearTimer);
+    host.compactionClearTimer = null;
+  }
+
+  if (phase === "start") {
+    host.compactionStatus = {
+      active: true,
+      startedAt: Date.now(),
+      completedAt: null,
+    };
+  } else if (phase === "end") {
+    host.compactionStatus = {
+      active: false,
+      startedAt: host.compactionStatus?.startedAt ?? null,
+      completedAt: Date.now(),
+    };
+    // Auto-clear the toast after duration
+    host.compactionClearTimer = window.setTimeout(() => {
+      host.compactionStatus = null;
+      host.compactionClearTimer = null;
+    }, COMPACTION_TOAST_DURATION_MS);
+  }
+}
+
+export type FallbackNotice = {
+  // cleared=false：已切到备用模型；cleared=true：已恢复主模型
+  cleared: boolean;
+  activeModel: string;
+  selectedModel?: string | null;
+  previousActiveModel?: string | null;
+  reasonSummary?: string | null;
+  at: number;
+};
+
+type FallbackHost = ToolStreamHost & {
+  fallbackNotice?: FallbackNotice | null;
+  fallbackClearTimer?: number | null;
+};
+
+const FALLBACK_TOAST_DURATION_MS = 5000;
+
+function asStringOrNull(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value : null;
+}
+
+export function clearFallbackNotice(host: FallbackHost) {
+  if (host.fallbackClearTimer != null && typeof window !== "undefined") {
+    window.clearTimeout(host.fallbackClearTimer);
+  }
+  host.fallbackClearTimer = null;
+  host.fallbackNotice = null;
+}
+
+// lifecycle 事件目前只消费 fallback / fallback_cleared（内核模型降级提示），
+// 其余 phase 直接忽略。过滤规则与 tool 流一致（sessionKey/runId）。
+export function handleLifecycleEvent(host: FallbackHost, payload: AgentEventPayload) {
+  const sessionKey = typeof payload.sessionKey === "string" ? payload.sessionKey : undefined;
+  if (sessionKey && sessionKey !== host.sessionKey) {
+    return;
+  }
+  if (host.chatRunId && payload.runId !== host.chatRunId) {
+    return;
+  }
+  if (!host.chatRunId) {
+    return;
+  }
+
+  const data = payload.data ?? {};
+  const phase = typeof data.phase === "string" ? data.phase : "";
+
+  let notice: FallbackNotice | null = null;
+  if (phase === "fallback") {
+    const activeModel = asStringOrNull(data.activeModel);
+    if (!activeModel) {
+      return;
+    }
+    notice = {
+      cleared: false,
+      activeModel,
+      selectedModel: asStringOrNull(data.selectedModel),
+      reasonSummary: asStringOrNull(data.reasonSummary),
+      at: Date.now(),
+    };
+  } else if (phase === "fallback_cleared") {
+    const activeModel = asStringOrNull(data.activeModel);
+    if (!activeModel) {
+      return;
+    }
+    notice = {
+      cleared: true,
+      activeModel,
+      previousActiveModel: asStringOrNull(data.previousActiveModel),
+      at: Date.now(),
+    };
+  } else {
+    return;
+  }
+
+  // node:test 环境没有 window：解析/过滤逻辑仍可测，仅跳过自动消失定时器
+  if (host.fallbackClearTimer != null && typeof window !== "undefined") {
+    window.clearTimeout(host.fallbackClearTimer);
+    host.fallbackClearTimer = null;
+  }
+  host.fallbackNotice = notice;
+  if (typeof window !== "undefined") {
+    host.fallbackClearTimer = window.setTimeout(() => {
+      host.fallbackNotice = null;
+      host.fallbackClearTimer = null;
+    }, FALLBACK_TOAST_DURATION_MS);
+  }
+}
+
+export function handleAgentEvent(host: ToolStreamHost, payload?: AgentEventPayload) {
+  if (!payload) {
+    return;
+  }
+
+  // Handle compaction events
+  if (payload.stream === "compaction") {
+    handleCompactionEvent(host as CompactionHost, payload);
+    return;
+  }
+
+  // Handle lifecycle events (model fallback notices)
+  if (payload.stream === "lifecycle") {
+    handleLifecycleEvent(host as FallbackHost, payload);
+    return;
+  }
+
+  if (payload.stream !== "tool") {
+    return;
+  }
+  const sessionKey = typeof payload.sessionKey === "string" ? payload.sessionKey : undefined;
+  if (sessionKey && sessionKey !== host.sessionKey) {
+    return;
+  }
+  // Fallback: only accept session-less events for the active run.
+  if (!sessionKey && host.chatRunId && payload.runId !== host.chatRunId) {
+    return;
+  }
+  if (host.chatRunId && payload.runId !== host.chatRunId) {
+    return;
+  }
+  if (!host.chatRunId) {
+    return;
+  }
+
+  const data = payload.data ?? {};
+  const toolCallId = typeof data.toolCallId === "string" ? data.toolCallId : "";
+  if (!toolCallId) {
+    return;
+  }
+  const name = typeof data.name === "string" ? data.name : "tool";
+  const phase = typeof data.phase === "string" ? data.phase : "";
+
+  // update_plan 除走常规 tool card 外，额外同步到独立的计划面板状态
+  // （toolStream 在 chat 终态会被 reset，计划要跨 turn 保留，故单独存）。
+  if (name === UPDATE_PLAN_TOOL_NAME) {
+    handlePlanToolEvent(host as ToolStreamHost & PlanStreamHost, {
+      sessionKey,
+      runId: payload.runId,
+      phase,
+      data,
+    });
+  }
+  const args = phase === "start" ? data.args : undefined;
+  const output =
+    phase === "update"
+      ? formatToolOutput(data.partialResult)
+      : phase === "result"
+        ? formatToolOutput(data.result)
+        : undefined;
+  // 内核 result 阶段带 isError: boolean（execute.runtime 契约），宽容解析：仅严格 true 计失败
+  const isError = phase === "result" && data.isError === true ? true : undefined;
+
+  const now = Date.now();
+  let entry = host.toolStreamById.get(toolCallId);
+  if (!entry) {
+    // 新 tool call：把当前 live 的 assistant 文本冻结下来作为这条 entry 的 leadingSegment。
+    // 优先 pending（raf 队列里尚未 flush 的最新值），否则用已可见的 chatStream。
+    const pending = host.chatPendingStreamText;
+    const live = host.chatStream;
+    const liveText = (pending ?? live ?? "").trim().length > 0 ? (pending ?? live) : null;
+    const leading: StreamSegment | undefined = liveText
+      ? { text: liveText, ts: host.chatStreamStartedAt ?? now }
+      : undefined;
+    if (leading) {
+      // 同步把这一段并入 frozenPrefix；下一帧 delta 进来 controllers/chat.ts 才知道
+      // gateway 给的"累计文本"里有多少属于已冻结部分，要切掉。
+      host.chatStreamFrozenPrefix = (host.chatStreamFrozenPrefix ?? "") + (liveText ?? "");
+      host.chatStream = null;
+      host.chatStreamStartedAt = null;
+      host.chatPendingStreamText = null;
+      debugLog("tool", "freeze leadingSegment", {
+        toolCallId,
+        segmentLen: liveText?.length ?? 0,
+        prefixLenAfter: host.chatStreamFrozenPrefix.length,
+      });
+    }
+    entry = {
+      toolCallId,
+      runId: payload.runId,
+      sessionKey,
+      name,
+      args,
+      output: output || undefined,
+      isError,
+      startedAt: typeof payload.ts === "number" ? payload.ts : now,
+      updatedAt: now,
+      leadingSegment: leading,
+      callMessage: {},
+    };
+    entry.callMessage = buildToolCallMessage(entry);
+    if (entry.output !== undefined) {
+      entry.resultMessage = buildToolResultMessage(entry);
+    }
+    host.toolStreamById.set(toolCallId, entry);
+    host.toolStreamOrder.push(toolCallId);
+  } else {
+    entry.name = name;
+    if (args !== undefined) {
+      entry.args = args;
+    }
+    if (output !== undefined) {
+      entry.output = output || undefined;
+    }
+    if (isError !== undefined) {
+      entry.isError = isError;
+    }
+    entry.updatedAt = now;
+    // 名称/参数变更要反映到 call 消息，但保留其 timestamp（start 时钉住）。
+    entry.callMessage = {
+      ...buildToolCallMessage(entry),
+      timestamp: entry.callMessage.timestamp ?? entry.startedAt,
+    };
+    if (entry.output !== undefined) {
+      entry.resultMessage = buildToolResultMessage(entry);
+    }
+  }
+
+  trimToolStream(host);
+  scheduleToolStreamSync(host, phase === "result");
+}

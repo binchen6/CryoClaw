@@ -1,0 +1,399 @@
+/* ==========================================================================
+   styles/workspace.css — Workspace 文件浏览器
+   覆盖原 styles.css 行 7809-8195：workspace 文件浏览器（头/列表/预览）、全局 fixed tooltip、WebBridge 修复 modal（wb-modal）
+   纯搬运拆分，层叠顺序由 hub styles.css 的 @import 顺序决定，勿单独调整
+   ========================================================================== */
+
+/* ── Workspace 文件浏览器 ── */
+
+.workspace-scroll {
+  overflow-y: auto;
+  height: 100%;
+}
+
+.workspace {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0;
+  /* 顶部留出 titlebar 高度 */
+  padding-top: 44px;
+}
+
+.workspace__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 24px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.workspace__title {
+  font-size: var(--text-lg);
+  font-weight: 600;
+  margin: 0;
+  color: var(--text-strong);
+}
+
+.workspace__header-actions {
+  display: flex;
+  gap: 4px;
+  -webkit-app-region: no-drag;
+}
+
+.workspace__header-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition);
+}
+
+.workspace__header-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.workspace__header-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+/* 全局 fixed tooltip — 不受 overflow 裁切（与 Settings 页面同一方案）
+   双主题统一深底浅字（grey 阶为静态 token，两主题通用） */
+.fixed-tooltip {
+  position: fixed;
+  transform: translate(-50%, -100%);
+  padding: var(--spacer-6) var(--spacer-10);
+  font-size: var(--text-sm);
+  line-height: 1.4;
+  color: var(--grey-50);
+  background: var(--grey-900);
+  border-radius: var(--radius-xs);
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 150ms ease;
+  z-index: 10000;
+}
+
+/* WebBridge pill 修复反馈 modal — 对齐 cc-dialog 契约（overlay / radius-16 / shadow-xl） */
+.wb-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--overlay);
+  /* 顶部对齐 + 固定 padding-top：卡片高度变化（错误消息出现/消失）不会让卡片重新居中而抖动 */
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 18vh;
+  z-index: 1000;
+}
+.wb-modal-overlay.hidden { display: none; }
+.wb-modal-card {
+  background: var(--popover);
+  color: var(--popover-foreground);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--spacer-24);
+  /* 固定宽度：内容（错误消息长短、按钮文字 vs spinner）无论怎么变都不会让卡片左右抖动 */
+  width: 420px;
+  box-sizing: border-box;
+  box-shadow: var(--shadow-xl);
+}
+.wb-modal-title { margin: 0 0 var(--spacer-8); font-size: var(--heading-sm); font-weight: 600; color: var(--text-strong); }
+.wb-modal-desc { margin: 0 0 var(--spacer-16); color: var(--text-secondary); font-size: var(--heading-xs); line-height: 1.5; }
+.wb-modal-actions { display: flex; justify-content: flex-end; gap: var(--spacer-8); }
+
+/* WebBridge settings 修复 modal 内的组件清单（advanced tab 用） */
+.wb-repair-list { list-style: none; padding: 0; margin: 0 0 var(--spacer-16); }
+.wb-repair-item { padding: var(--spacer-6) 0; font-size: var(--text-base); color: var(--text); }
+.wb-repair-item.missing { color: var(--accent); }
+.wb-repair-item.ok { color: var(--ok); }
+/* 消息条：cc-alert 语义（info=accent、error=destructive） */
+.wb-modal-msg { margin: 0 0 var(--spacer-12); padding: var(--spacer-8) var(--spacer-12); border-radius: var(--radius-sm); font-size: var(--heading-xs); }
+.wb-modal-msg.info { background: var(--accent-subtle); color: var(--accent); }
+.wb-modal-msg.error { background: var(--danger-subtle); color: var(--destructive); }
+
+/* radio 下方「⚠ 需要修复」红色小链接 */
+.wb-health-link {
+  display: inline-block;
+  margin-top: var(--spacer-8);
+  font-size: var(--heading-xs);
+  color: var(--accent);
+  text-decoration: none;
+  cursor: pointer;
+}
+.wb-health-link:hover { text-decoration: underline; }
+
+/* 修复并启用 / 再次检查 按钮：固定宽度，saving 时 spinner 替换文字，按钮尺寸完全不变 */
+/* 用 width 而不是 min-width，"修复并启用"（zh ~123px）/ "Repair & Enable"（en ~150px）自然宽度都比 min-width 大 */
+.wb-modal-actions .oc-settings__btn,
+.wb-modal-actions .oc-settings__btn--primary {
+  width: 160px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.wb-modal-spinner {
+  width: 16px;
+  height: 16px;
+  animation: wb-modal-spin 0.85s linear infinite;
+}
+@keyframes wb-modal-spin { to { transform: rotate(360deg); } }
+
+.fixed-tooltip--wide {
+  padding: 8px 10px;
+  line-height: 1.45;
+  max-width: min(700px, calc(100vw - 24px));
+  width: max-content;
+  white-space: pre-line;
+  text-align: left;
+}
+
+.workspace__header-btn svg {
+  width: 18px;
+  height: 18px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.workspace__body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* 左侧文件列表 */
+
+.workspace__file-list {
+  width: 220px;
+  min-width: 180px;
+  max-width: 280px;
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+  padding: var(--spacer-8);
+  flex-shrink: 0;
+}
+
+.workspace__file-item {
+  display: flex;
+  align-items: center;
+  gap: var(--spacer-8);
+  padding: var(--spacer-6) var(--spacer-8);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  color: var(--text);
+  font-size: var(--heading-xs);
+  line-height: 1.4;
+  transition: background var(--duration-fast) ease, box-shadow var(--duration-fast) ease;
+  position: relative;
+}
+
+.workspace__file-item:hover {
+  background: var(--bg-hover);
+}
+
+/* 选中态：accent-subtle 底 + 左侧 3px accent 指示条（与侧边栏一致） */
+.workspace__file-item.active {
+  background: var(--accent-subtle);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.workspace__file-item--back {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.workspace__file-icon {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  color: var(--muted);
+}
+
+.workspace__file-item.active .workspace__file-icon {
+  color: var(--accent);
+}
+
+.workspace__file-item--dir .workspace__file-icon {
+  color: var(--muted);
+}
+
+.workspace__file-icon svg {
+  width: 16px;
+  height: 16px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.workspace__file-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace__file-action {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+}
+
+.workspace__file-item:hover .workspace__file-action,
+.workspace__file-item:focus-within .workspace__file-action {
+  display: flex;
+}
+
+.workspace__file-action:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.workspace__file-action svg {
+  width: 14px;
+  height: 14px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.workspace__loading,
+.workspace__error,
+.workspace__empty-list {
+  padding: 24px 14px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+/* 右侧预览 */
+
+.workspace__preview {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.workspace__preview-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--border);
+  gap: 12px;
+}
+
+.workspace__preview-path {
+  font-size: 13px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  font-family: var(--mono);
+}
+
+.workspace__preview-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.workspace__preview-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: var(--radius-6);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition);
+}
+
+.workspace__preview-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.workspace__preview-btn svg {
+  width: 16px;
+  height: 16px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.workspace__preview-content {
+  flex: 1;
+  overflow: auto;
+  padding: 16px 20px;
+}
+
+.workspace__preview-text {
+  margin: 0;
+  padding: 0;
+  font-family: var(--mono);
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-all;
+  tab-size: 2;
+}
+
+.workspace__preview-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.workspace__preview-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--muted);
+  font-size: 14px;
+}
+

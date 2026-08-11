@@ -1,0 +1,295 @@
+/**
+ * 工作空间文件浏览器视图
+ * 动态获取 workspace 路径，浏览文件，纯文本预览
+ */
+import { html, nothing } from "lit";
+import type { AppViewState } from "../app-view-state.ts";
+import { resolveAgentWorkspacePath } from "../controllers/workspace.ts";
+import { t, tWithDetail } from "../i18n.ts";
+import { icons } from "../icons.ts";
+
+// 可预览的文本文件扩展名
+const TEXT_EXTENSIONS = new Set([
+  ".md", ".txt", ".json", ".yaml", ".yml", ".toml", ".xml", ".csv", ".log",
+  ".ts", ".js", ".jsx", ".tsx", ".py", ".sh", ".bash", ".zsh",
+  ".html", ".css", ".scss", ".less",
+  ".go", ".rs", ".java", ".c", ".cpp", ".h", ".hpp",
+  ".rb", ".php", ".sql",
+  ".env", ".conf", ".cfg", ".ini", ".properties",
+  ".gitignore", ".dockerignore", ".editorconfig",
+]);
+
+// 判断文件是否可预览（无扩展名的文件也视为文本，如 Makefile, Dockerfile）
+function isTextFile(name: string): boolean {
+  const ext = name.includes(".") ? "." + name.split(".").pop()!.toLowerCase() : "";
+  return !ext || TEXT_EXTENSIONS.has(ext);
+}
+
+// 模块级状态
+const workspaceState = {
+  root: null as string | null,
+  currentPath: null as string | null,
+  items: [] as Array<{ name: string; isDir: boolean; path: string }>,
+  loading: false,
+  error: null as string | null,
+  selectedFile: null as string | null,
+  selectedFileName: null as string | null,
+  fileContent: null as string | null,
+  fileLoading: false,
+};
+
+// 加载序号：防止快速连点时旧响应覆盖新响应
+let dirLoadSeq = 0;
+let fileLoadSeq = 0;
+
+// 列目录
+async function loadDirectory(state: AppViewState, dirPath: string) {
+  const w = window as any;
+  if (!w.cryoclaw?.workspaceListDir) return;
+
+  const seq = ++dirLoadSeq;
+  workspaceState.loading = true;
+  state.requestUpdate();
+
+  try {
+    const result = await w.cryoclaw.workspaceListDir(dirPath);
+    if (seq !== dirLoadSeq) return;
+    if (result?.success && result.data) {
+      workspaceState.items = result.data.items;
+      workspaceState.currentPath = dirPath;
+      workspaceState.error = null;
+    } else {
+      workspaceState.error = result?.message ?? t("workspace.error");
+    }
+  } catch {
+    if (seq !== dirLoadSeq) return;
+    workspaceState.error = t("workspace.error");
+  } finally {
+    if (seq === dirLoadSeq) {
+      workspaceState.loading = false;
+      state.requestUpdate();
+    }
+  }
+}
+
+// 初始化：从 gateway 获取 workspace 路径，设定 IPC root 守卫，然后列目录
+export async function initWorkspace(state: AppViewState) {
+  const w = window as any;
+  workspaceState.loading = true;
+  workspaceState.error = null;
+  state.requestUpdate();
+
+  try {
+    // 从 gateway 动态获取 workspace 路径
+    const newRoot = await resolveAgentWorkspacePath(state, "main");
+    if (newRoot) {
+      // workspace 变化时重置状态
+      if (workspaceState.root !== newRoot) {
+        workspaceState.selectedFile = null;
+        workspaceState.selectedFileName = null;
+        workspaceState.fileContent = null;
+        workspaceState.items = [];
+      }
+      workspaceState.root = newRoot;
+      workspaceState.currentPath = newRoot;
+      // 通知 main 进程设定路径穿越守卫
+      await w.cryoclaw?.workspaceSetRoot?.(newRoot);
+    }
+
+    if (!workspaceState.root) {
+      workspaceState.error = t("workspace.error");
+      return;
+    }
+
+    await loadDirectory(state, workspaceState.root);
+  } catch {
+    workspaceState.error = t("workspace.error");
+  } finally {
+    workspaceState.loading = false;
+    state.requestUpdate();
+  }
+}
+
+// 读取文件内容
+async function loadFileContent(state: AppViewState, filePath: string, fileName: string) {
+  const w = window as any;
+  if (!w.cryoclaw?.workspaceReadFile) return;
+
+  const seq = ++fileLoadSeq;
+  workspaceState.fileLoading = true;
+  workspaceState.selectedFile = filePath;
+  workspaceState.selectedFileName = fileName;
+  workspaceState.fileContent = null;
+  workspaceState.error = null;
+  state.requestUpdate();
+
+  try {
+    const result = await w.cryoclaw.workspaceReadFile(filePath);
+    if (seq !== fileLoadSeq) return;
+    if (result?.success && result.data) {
+      workspaceState.fileContent = result.data.content;
+    } else {
+      workspaceState.fileContent = null;
+      workspaceState.error = result?.message ?? t("workspace.fileTooLarge");
+    }
+  } catch {
+    if (seq !== fileLoadSeq) return;
+    workspaceState.fileContent = null;
+    workspaceState.error = t("workspace.error");
+  } finally {
+    if (seq === fileLoadSeq) {
+      workspaceState.fileLoading = false;
+      state.requestUpdate();
+    }
+  }
+}
+
+// 文件/文件夹点击处理
+function handleItemClick(state: AppViewState, item: { name: string; isDir: boolean; path: string }) {
+  if (item.isDir) {
+    // 进入子目录时清除选中的文件，并使进行中的文件加载失效
+    fileLoadSeq++;
+    workspaceState.selectedFile = null;
+    workspaceState.selectedFileName = null;
+    workspaceState.fileContent = null;
+    workspaceState.fileLoading = false;
+    state.requestUpdate();
+    void loadDirectory(state, item.path);
+  } else if (isTextFile(item.name)) {
+    void loadFileContent(state, item.path, item.name);
+  } else {
+    // 非文本文件：标记选中但不预览，并使进行中的文件加载失效
+    fileLoadSeq++;
+    workspaceState.selectedFile = item.path;
+    workspaceState.selectedFileName = item.name;
+    workspaceState.fileContent = null;
+    workspaceState.fileLoading = false;
+    state.requestUpdate();
+  }
+}
+
+// 返回上级目录
+function navigateUp(state: AppViewState) {
+  if (!workspaceState.currentPath || !workspaceState.root) return;
+  if (workspaceState.currentPath === workspaceState.root) return;
+  // 兼容 Windows 反斜杠和 Unix 正斜杠
+  let parent = workspaceState.currentPath.replace(/[/\\][^/\\]+[/\\]?$/, "");
+  // 防止越过 workspace 根目录
+  if (!parent || parent.length < workspaceState.root.length) {
+    parent = workspaceState.root;
+  }
+  void loadDirectory(state, parent);
+}
+
+// 系统打开文件夹
+function openFolder(folderPath: string) {
+  const w = window as any;
+  w.cryoclaw?.workspaceOpenFolder?.(folderPath);
+}
+
+// 计算相对路径（用于面包屑展示）
+function relativePath(root: string, current: string): string {
+  if (!current.startsWith(root)) return current;
+  // 兼容 Windows 反斜杠和 Unix 正斜杠
+  const rel = current.slice(root.length).replace(/^[/\\]/, "");
+  return rel || "";
+}
+
+// 刷新当前目录
+export function refreshWorkspace(state: AppViewState) {
+  if (!workspaceState.currentPath) return;
+  void loadDirectory(state, workspaceState.currentPath);
+}
+
+// 关闭回调类型
+type CloseCallback = () => void;
+
+// 渲染工作空间视图
+export function renderWorkspaceView(state: AppViewState, _onClose: CloseCallback) {
+  const {
+    root, currentPath, items, loading, error,
+    selectedFile, selectedFileName, fileContent, fileLoading,
+  } = workspaceState;
+
+  const isAtRoot = !currentPath || !root || currentPath === root;
+  const relPath = root && selectedFile ? relativePath(root, selectedFile) : "";
+  const rootName = root?.split("/").pop() ?? "workspace";
+  const breadcrumb = relPath ? `${rootName}/${relPath}` : rootName;
+  const canPreview = selectedFileName ? isTextFile(selectedFileName) : false;
+
+  return html`
+    <div class="workspace-scroll panel">
+      <section class="workspace">
+        <!-- 顶栏 -->
+        <div class="workspace__header panel__header">
+          <h2 class="workspace__title panel__title">${t("workspace.title")}</h2>
+        </div>
+
+        <!-- 主体：左侧文件列表 + 右侧预览 -->
+        <div class="workspace__body">
+          <!-- 左侧文件列表 -->
+          <div class="workspace__file-list">
+            ${!isAtRoot ? html`
+              <div
+                class="workspace__file-item workspace__file-item--back"
+                @click=${() => navigateUp(state)}
+              >
+                <span class="workspace__file-icon">..</span>
+                <span class="workspace__file-name">..</span>
+              </div>
+            ` : nothing}
+            ${loading && items.length === 0
+              ? html`<div class="workspace__loading">${t("workspace.loading")}</div>`
+              : error && items.length === 0
+                ? html`<div class="workspace__error">${error}</div>`
+                : items.length === 0
+                  ? html`<div class="workspace__empty-list panel__empty">${t("workspace.empty")}</div>`
+                  : items.map((item) => html`
+                      <div
+                        class="workspace__file-item ${item.isDir ? "workspace__file-item--dir" : ""} ${selectedFile === item.path ? "active" : ""}"
+                        @click=${() => handleItemClick(state, item)}
+                      >
+                        <span class="workspace__file-icon">
+                          ${item.isDir ? icons.folder : icons.fileText}
+                        </span>
+                        <span class="workspace__file-name" title=${item.name}>${item.name}</span>
+                        <button
+                          class="workspace__file-action"
+                          type="button"
+                          @click=${(e: Event) => { e.stopPropagation(); openFolder(item.path); }}
+                          title=${t("workspace.openFolder")}
+                        >${icons.folderOpen}</button>
+                      </div>
+                    `)
+            }
+          </div>
+
+          <!-- 右侧预览面板 -->
+          <div class="workspace__preview">
+            ${selectedFile ? html`
+              <div class="workspace__preview-header">
+                <span class="workspace__preview-path" title=${selectedFile}>${breadcrumb}</span>
+              </div>
+              <div class="workspace__preview-content">
+                ${fileLoading
+                  ? html`<div class="workspace__preview-placeholder">${t("workspace.loading")}</div>`
+                  : fileContent != null
+                    ? html`<pre class="workspace__preview-text">${fileContent}</pre>`
+                    : canPreview && error
+                      ? html`<div class="workspace__preview-placeholder workspace__error">${tWithDetail("workspace.loadFailed", error)}</div>`
+                      : canPreview
+                        ? html`<div class="workspace__preview-placeholder">${t("workspace.loading")}</div>`
+                        : html`<div class="workspace__preview-placeholder">${t("workspace.noPreview")}</div>`
+                }
+              </div>
+            ` : html`
+              <div class="workspace__preview-empty panel__empty">
+                <span>${t("workspace.selectFile")}</span>
+              </div>
+            `}
+          </div>
+        </div>
+      </section>
+    </div>
+  `;
+}

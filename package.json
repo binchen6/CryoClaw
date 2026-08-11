@@ -1,0 +1,67 @@
+{
+  "name": "cryoclaw",
+  "version": "2026.811.2",
+  "private": true,
+  "description": "CryoClaw desktop app — cross-platform Electron shell for openclaw",
+  "main": "dist/main.js",
+  "scripts": {
+    "build:chat": "cd chat-ui/ui && npm install --prefer-offline && npx vite build",
+    "build": "npm run build:chat && tsc -p tsconfig.json",
+    "predev": "npm install && npm run package:resources && npm run build",
+    "dev": "electron .",
+    "dev:isolated": "node scripts/dev-isolated.js",
+    "package:resources": "node scripts/run-with-env.js node scripts/package-resources.js",
+    "dist:mac": "npm run dist:mac:arm64",
+    "dist:mac:arm64": "npm run build && CRYOCLAW_TARGET=darwin-arm64 npm run package:resources -- --platform darwin --arch arm64 && CRYOCLAW_TARGET=darwin-arm64 node scripts/run-with-env.js node scripts/run-mac-builder.js --arch arm64 --output out/darwin-arm64",
+    "dist:mac:x64": "npm run build && CRYOCLAW_TARGET=darwin-x64 npm run package:resources -- --platform darwin --arch x64 && CRYOCLAW_TARGET=darwin-x64 node scripts/run-with-env.js node scripts/run-mac-builder.js --arch x64 --output out/darwin-x64",
+    "dist:win": "node scripts/dist-win.js",
+    "dist:win:x64": "npm run build && CRYOCLAW_TARGET=win32-x64 npm run package:resources -- --platform win32 --arch x64 && CRYOCLAW_TARGET=win32-x64 electron-builder --win --x64 --config.directories.output=out/win32-x64 --publish never",
+    "dist:win:arm64": "npm run build && CRYOCLAW_TARGET=win32-arm64 npm run package:resources -- --platform win32 --arch arm64 && CRYOCLAW_TARGET=win32-arm64 electron-builder --win --arm64 --config.directories.output=out/win32-arm64 --publish never",
+    "dist:all:parallel": "bash scripts/dist-all-parallel.sh",
+    "merge:release": "node scripts/merge-release-yml.js",
+    "test": "npm run test:unit && npm run test:scripts",
+    "test:unit": "npm run test:unit:vitest && npm run test:unit:node && npm run test:chat",
+    "test:chat": "npm run test:typecheck && node scripts/run-chat-ui-tests.js",
+    "test:typecheck": "npm --prefix chat-ui/ui run typecheck",
+    "test:unit:vitest": "vitest run",
+    "test:unit:node": "node scripts/run-node-tests.js",
+    "test:compile": "tsc -p tsconfig.test.json",
+    "test:scripts": "node --test \"scripts/*.test.js\"",
+    "clean": "rm -rf dist resources/runtime resources/gateway resources/targets out"
+  },
+  "dependencies": {
+    "fflate": "^0.8.3"
+  },
+  "devDependencies": {
+    "@electron/asar": "^4.1.0",
+    "@types/node": "^22.15.0",
+    "electron": "^40.10.6",
+    "electron-builder": "^26.7.0",
+    "esbuild": "^0.25.12",
+    "isbinaryfile": "^5.0.0",
+    "js-yaml": "^4.1.1",
+    "lucide": "^0.577.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.10"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "overrides": {
+    "isbinaryfile": "$isbinaryfile"
+  },
+  "cryoclaw": {
+    "openclaw": "2026.7.1-2",
+    "dingtalkConnector": "0.8.24",
+    "weixin": "2.4.6",
+    "wecom": "20206.7.201",
+    "officecli": "1.0.143",
+    "feishuPlugin": "2026.7.1",
+    "qqbotPlugin": "2026.7.1",
+    "moonshotProviderPlugin": "2026.7.1",
+    "kimiProviderPlugin": "2026.7.1",
+    "zaiProviderPlugin": "2026.7.1",
+    "qwenProviderPlugin": "2026.7.1",
+    "deepseekProviderPlugin": "2026.7.1"
+  }
+}
