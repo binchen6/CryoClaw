@@ -1,0 +1,212 @@
+[
+  {
+    "version": "2026.811.2",
+    "notes": {
+      "zh": "新功能：模型管理支持自定义分组——新建/重命名/删除/拖拽排序分组，把模型指派进组后，聊天与定时任务的模型选择器按分组显示\n优化：模型管理页新增搜索框（按名称/ID 过滤）、模型卡片直接显示「默认 / 备用 N」徽标，备用链与卡片一目了然\n优化：模型选择器中默认模型带「默认」标记，多模型时更容易辨认",
+      "en": "New: custom groups in model management — create/rename/delete/drag-reorder groups, assign models to them, and the model selector in chat and scheduled tasks displays them as sections\nImproved: model management page gains a search box (filter by name/ID) and inline Default / Fallback N badges on model cards\nImproved: the default model is labeled in the model selector for easier recognition"
+    }
+  },
+  {
+    "version": "2026.811.1",
+    "notes": {
+      "zh": "全新版本：更名 CryoClaw，启用全新冰蓝视觉设计（浅色/暗色双主题）\n新功能：模型管理重构——provider 分组、密钥真实有效性探测、备用模型（fallback）配置\n新功能：终端会话列表与用量展示接入实时事件推送，状态更新更及时\n优化：对话流式渲染改为逐帧纯文本渲染，长回复不再越滚越卡；完整排版在回复结束时一次性呈现\n优化：折叠的工具调用区域首次展开才渲染，长会话滚动与切换明显更轻快\n优化：存储裁剪——移除非本机平台原生依赖、插件冗余类型声明与前端 sourcemap，应用体积显著缩小\n优化：官方插件更新（飞书/QQ 机器人等）；移除 kimi-claw 插件，能力由内置功能替代\n修复：诊断日志改为异步写盘，主进程不再因高频日志卡顿",
+      "en": "New era: renamed to CryoClaw with an all-new ice-blue visual design (light/dark themes)\nNew: rebuilt model management — provider grouping, real API-key validation, fallback model configuration\nNew: terminal session list and usage now update via realtime events\nImproved: streaming replies render per-frame as plain text — long answers no longer degrade; full formatting applied once when the reply finishes\nImproved: collapsed tool-call sections render lazily on first expand — long sessions scroll and switch noticeably faster\nImproved: storage trimming — removed off-platform native deps, redundant plugin type declarations and frontend sourcemaps, significantly smaller app size\nImproved: official plugin updates (Feishu/QQ Bot etc.); kimi-claw plugin removed, replaced by built-in features\nFixed: diagnostic logging is now asynchronous — no more main-process hiccups under heavy logging"
+    }
+  },
+  {
+    "version": "2026.811.0",
+    "notes": {
+      "zh": "修复：技能提案（Apply workspace skill proposal）审批现在会直接显示在对话框上方，可批准/拒绝（此前只进设置页历史，70 秒超时后必然失败）\n修复：计划悬浮面板下移，不再与窗口最小化/最大化/关闭按钮重叠\n修复：工具输出侧栏头部、顶部错误条不再被窗口标题栏压住；任务视图顶部留白对齐其它页面\n安全修复：安装包不再误打包 .env.build 构建配置、.cache 调试缓存与重复资源（安装包体积减半，回归 ~134MB）\n优化：侧栏会话菜单靠近底部时自动向上展开；多条审批并存时审批面板限高可滚动；顶部提示条让开标题栏并限宽\n优化：「有新消息」按钮改为悬浮，不再推动输入区跳动",
+      "en": "Fix: skill proposal approvals (Apply workspace skill proposal) now appear above the composer with approve/deny (previously only logged in Settings, always expiring after 70s)\nFix: plan floating panel moved down, no longer overlapping window min/max/close buttons\nFix: tool-output sidebar header and top error banner no longer hidden under the title bar; tasks view top padding aligned\nSecurity: installer no longer bundles .env.build, .cache debug data or duplicated resources (installer size halved, back to ~134MB)\nImprove: sidebar session menu flips upward near the bottom; approval panel is height-capped and scrollable; top toasts clear the title bar and are width-capped\nImprove: new-message button floats instead of pushing the composer around"
+    }
+  },
+  {
+    "version": "2026.810.0",
+    "notes": {
+      "zh": "新功能：任务进行时发送的消息进入队列，队列消息现在可编辑、可删除、可点「立即发送」插队\n新功能：模型自动切换到备用模型（fallback）时界面会给出提示，恢复主模型时也有提示\n优化：任务进行中「停止」和「发送」按钮并列显示，发送即入队；排队提示文案更明确\n安全：设置页 API Key 一律掩码显示，未修改的 Key 保存时不再回传；诊断接口不再下发明文 Key\n优化：运行失败只显示消息流内的警告卡片（不再顶部、卡片双份提示）\n优化：所有系统确认框替换为应用内统一风格（删除会话/重置/回滚等危险操作为红色确认）",
+      "en": "New: messages sent during a run are queued — queue items can now be edited, deleted, or sent immediately\nNew: a notice appears when the model falls back to a backup model, and when it recovers\nImproved: Stop and Send buttons now coexist during a run (send = enqueue); clearer queue hint\nSecurity: API keys are masked in settings; unchanged keys are never re-sent; config API no longer returns plaintext keys\nImproved: run failures show only the inline warning card (no more duplicate banner + card)\nImproved: all native confirm dialogs replaced with the app's own style (danger actions get a red confirm)"
+    }
+  },
+  {
+    "version": "2026.809.0",
+    "notes": {
+      "zh": "新功能：模型使用 update_plan 制定计划时，右侧出现悬浮计划面板，实时更新进度，悬停查看完整步骤\n新功能：工具调用现在有三种状态指示——执行中（旋转动画）、完成（✓）、失败（红色 ✗）\n优化：运行失败的消息显示为醒目的警告卡片；消息气泡增加淡入动画\n视觉：全新应用图标（橙虾吉祥物），修复 Windows 深色任务栏托盘图标几乎不可见的问题\n视觉：安装/卸载向导使用应用图标；窗口任务栏图标修正；界面增加 favicon\n其它：启用内核 update_plan 工具（新装与存量均自动开启）；清理废弃样式与资源",
+      "en": "New: when the model uses update_plan, a floating plan panel appears on the right — live progress, hover to expand all steps\nNew: tool calls now show three states — running (spinner), done (✓), failed (red ✗)\nImproved: failed runs appear as prominent warning cards; message bubbles fade in\nVisual: all-new app icon (lobster mascot); fixed tray icon nearly invisible on dark Windows taskbar\nVisual: installer/uninstaller wizard icon; fixed window taskbar icon; added favicon\nMore: kernel update_plan tool enabled (fresh installs and existing users); dead styles and assets cleaned up"
+    }
+  },
+  {
+    "version": "2026.808.0",
+    "notes": {
+      "zh": "安全加固：渲染层控制台日志转发统一脱敏，诊断日志（app.log）中不再出现网关令牌",
+      "en": "Security hardening: renderer console forwarding is now sanitized — gateway tokens no longer appear in diagnostic logs (app.log)"
+    }
+  },
+  {
+    "version": "2026.807.0",
+    "notes": {
+      "zh": "修复：多条命令待审批时，点哪条就批哪条（之前总是批准第一条）\n修复：技能安装超过 30 秒被误报失败；卸载已安装技能可能失败\n修复：工作区文件加载失败一直转圈、快速切换文件内容错位\n修复：微信扫码登录离开设置页后后台空转；点「⋯」菜单按钮中途消失\n修复：点击对话中的文件路径无反应时现在会提示；安全日志不再写入网关令牌\n视觉：输入区恢复渐隐过渡；移除界面中的全大写英文样式；清理约 2500 行废弃样式\n其它：中英文混排文案补齐翻译；退出应用更干净；数十处稳定性与细节改进",
+      "en": "Fix: with multiple pending approvals, each button now resolves its own command (previously always the first)\nFix: skill installs over 30s falsely reported as failed; uninstalling installed skills could fail\nFix: workspace preview stuck on loading after errors; wrong content when switching files quickly\nFix: WeChat QR login polling kept running after leaving settings; session '⋯' button vanished mid-menu\nFix: clicking file paths in chat now shows feedback on failure; gateway token no longer written to logs\nVisual: composer fade restored; removed uppercase styling; ~2500 lines of dead CSS cleaned up\nMore: completed zh/en translations; cleaner app shutdown; dozens of stability & polish fixes"
+    }
+  },
+  {
+    "version": "2026.806.0",
+    "notes": {
+      "zh": "修复：待审批命令过长时，「允许一次/允许始终/拒绝」按钮被挤出面板不可见\n长命令现在以省略号截断，审批按钮始终可见可点",
+      "en": "Fix: approval buttons pushed out of view when the pending command was too long\nLong commands now truncate with an ellipsis; approval buttons stay visible"
+    }
+  },
+  {
+    "version": "2026.805.0",
+    "notes": {
+      "zh": "图文混排：模型回复中的图片现在能直接显示在对话里，点击可放大查看\n每轮回复末尾新增「本轮改动文件」清单（默认折叠）：新增/修改/删除一目了然，点击路径直接打开文件\n界面更聚焦：移除侧边栏「教程文档」入口与「反馈」模块\n底层清理：删除反馈相关的失效代码与内部通道，更轻快",
+      "en": "Rich media: images in model replies now render inline; click to expand\nNew collapsed 'Files changed this turn' list after each reply: added/modified/deleted at a glance, click a path to open the file\nLeaner UI: removed the Docs entry and the Feedback module\nUnder the hood: removed dead feedback code and internal channels"
+    }
+  },
+  {
+    "version": "2026.804.0",
+    "notes": {
+      "zh": "全新 harness 设计语言：中性石墨配色、等宽字体元信息（模型/用量/时间/工具名），信息密度更舒适\n思考强度调节上线：输入框工具栏直接选档（关闭/低/中/高等，按当前模型实际支持显示），按会话记忆\n对话状态更清楚：等待时区分「思考中…/调用工具 xxx…」，单个工具调用直接显示目标文件/命令\n审批改为对话内嵌处理，不再弹窗打断； starter 建议更贴合代码与工作任务\n清理历史残留：移除重复审批弹窗与失效代码，界面更轻快",
+      "en": "New harness design language: neutral graphite palette, monospace metadata (model/usage/time/tool names)\nThinking-effort picker in the composer toolbar (Off/Low/Medium/High… as supported by the current model), remembered per session\nClearer run status: distinguishes Thinking… / Running <tool>…; single tool calls show their target file/command inline\nApprovals are now handled inline in chat (no blocking modal); starter prompts tuned for code & work tasks\nCleanup: removed the duplicate approval modal and dead code"
+    }
+  },
+  {
+    "version": "2026.803.0",
+    "notes": {
+      "zh": "侧边栏全新设计：任务/定时/技能/工作区上移主导航，会话列表置顶 + 时间分组（今天/昨天/最近 7 天/更早）\n空会话新体验：居中欢迎区 + 建议问题一键发起\n助手消息显示实际使用的模型与 token 用量\n工具调用折叠行更紧凑；任务/定时/技能/工作区页面统一排版\n底层重构：界面模块化拆分、全部内部通道加来源校验，更稳定更易维护",
+      "en": "Redesigned sidebar: Tasks/Cron/Skills/Workspace moved to the main nav, session list with pinned + time groups (Today/Yesterday/Last 7 days/Older)\nNew empty-session experience: centered welcome with one-tap starter prompts\nAssistant messages now show the actual model used and token usage\nCompact tool-call rows; unified layout across Tasks/Cron/Skills/Workspace pages\nUnder the hood: UI modularization and sender verification on all internal channels"
+    }
+  },
+  {
+    "version": "2026.801.0",
+    "notes": {
+      "zh": "会话管理合并到侧边栏：会话项悬停菜单（置顶/未读/重命名/归档/删除）、顶部搜索、归档视图切换\n执行权限整合进加号菜单（三选一，选中打勾）\n加号菜单新增「引用技能」：选择技能后插入 @技能名 \n对话页全新设计：助手消息去卡片化、用户消息红胶囊、流式光标与生成状态、输入区浮动卡片",
+      "en": "Session management merged into sidebar: per-item menu (pin/unread/rename/archive/delete), search, archived view\nExec permission moved into plus menu\nNew 'Reference skill' in plus menu (inserts @skill)\nRedesigned chat: frameless assistant messages, red pill user bubbles, streaming cursor & status, floating composer"
+    }
+  },
+  {
+    "version": "2026.731.9",
+    "notes": {
+      "zh": "修复：智能审批/完全同意重启后跳回「请求批准」（IPC 返回值未解包 + 非法值映射）\n修复：沙盒启用后 Docker 未安装导致对话报错（新增 Docker 前置检测与中文引导）\n存量配置自动修正：approve-all → full、沙盒模式回退",
+      "en": "Fix: exec mode resetting to Ask after restart (IPC unwrap + invalid value mapping)\nFix: sandbox errors without Docker (pre-flight Docker detection with Chinese guidance)\nAuto-migration: approve-all -> full, sandbox mode fallback"
+    }
+  },
+  {
+    "version": "2026.731.8",
+    "notes": {
+      "zh": "体积优化：内核升级流程新增冗余裁剪（ffmpeg/koffi/文档等），升级后体积与出厂版对齐\n修复加号菜单外部点击无法关闭\n命令描述按界面语言显示（中文界面显示中文说明）\n清理冗余代码，界面包体进一步精简",
+      "en": "Kernel updater now prunes redundant files (ffmpeg/koffi/docs) to match factory size\nPlus menu closes on outside click\nCommand descriptions follow UI locale\nDead-code cleanup, smaller UI bundle"
+    }
+  },
+  {
+    "version": "2026.731.7",
+    "notes": {
+      "zh": "修复汉化：新功能文案（加号菜单/目标/命令补全/执行权限/沙箱）恢复中文显示（i18n 重复 key 覆盖问题）",
+      "en": "Fix localization: new-feature strings (plus menu/goal/commands/exec/sandbox) back to Chinese (duplicate i18n keys were overriding zh)"
+    }
+  },
+  {
+    "version": "2026.731.6",
+    "notes": {
+      "zh": "全面汉化：界面默认中文（强制 zh-CN 语言环境）\n命令补全显示官方命令的中文描述",
+      "en": "Full Chinese localization: default zh-CN locale\nChinese descriptions for slash-command suggestions"
+    }
+  },
+  {
+    "version": "2026.731.5",
+    "notes": {
+      "zh": "聊天框「添加文件」按钮升级为加号菜单（添加文件 + 目标模式）\n新增目标横幅：状态/计时/Token 用量实时展示，支持暂停/恢复/清除/编辑\n输入 / 自动补全官方命令并支持快捷插入\n设置新增执行权限模式（请求批准/智能审批/完全同意）与沙箱配置\n聊天页新增执行权限三态切换与待审批队列面板",
+      "en": "Compose attach button upgraded to a + menu (attach file + goal mode)\nGoal banner: live status, timer, token usage; pause/resume/clear/edit\nSlash-command autocomplete with quick insert\nExec permission mode (ask/auto/approve-all) and sandbox settings\nChat-side permission toggle and pending-approval panel"
+    }
+  },
+  {
+    "version": "2026.731.4",
+    "notes": {
+      "zh": "修复：点击侧边栏「设置」无反应（设置页分组渲染缺少 nothing 导入导致运行时异常）",
+      "en": "Fix: Settings button in sidebar not responding (missing 'nothing' import in settings nav group rendering)"
+    }
+  },
+  {
+    "version": "2026.731.3",
+    "notes": {
+      "zh": "新增「环境信息」页：内核版本、配置文件、Gateway 端口/热应用模式、渠道与模型 Provider 一览\n设置「高级」新增 Gateway 配置热应用模式（智能/热应用/重启/关闭）\n渠道配置表单高级字段折叠，界面更清爽\n侧边栏入口分组（常用/系统），会话列表显示未读圆点\n模型适配：DeepSeek v4 系列预设更新，思考档位支持 max；GLM 思考开关适配；模型元数据自动填充\nUI 全面 QA：对比度、间距、字号、焦点态、折叠交互统一（3 轮重构）\n去除冗余代码，修复一批类型错误",
+      "en": "New Environment Info page: kernel, config path, gateway port/hot-reload, channels & providers\nGateway hot-reload mode selector in Advanced settings\nCollapsible advanced fields in channel config form\nSidebar groups (Common/System) + unread dots on sessions\nModel updates: DeepSeek v4 presets, max reasoning level; GLM thinking toggle; auto model metadata\n3-round UI QA: contrast, spacing, typography, focus & collapse interactions\nDead code removal + type error fixes"
+    }
+  },
+  {
+    "version": "2026.731.2",
+    "notes": {
+      "zh": "修复：设置页「关于」内内核升级/回退入口不显示的问题（IPC 来源校验与页面路由 URL 不匹配导致敏感通道被拒）\n修复影响所有敏感操作：网关启停、工作区、内核升级/回退等 IPC 调用恢复正常",
+      "en": "Fix: kernel update/rollback entry missing in Settings > About (IPC sender guard rejected sensitive channels after history-route URL rewrite)\nRestores all guarded IPC: gateway start/stop, workspace, kernel update/rollback"
+    }
+  },
+  {
+    "version": "2026.731.1",
+    "notes": {
+      "zh": "对话页优化：工具调用与思考过程默认折叠，点击可展开\n启动加速：窗口先行显示，内核并行启动，白屏时间缩短\n新增一键打包脚本（npm run dist:win），跨 shell 构建 Windows 安装包",
+      "en": "Chat UI: tool calls & reasoning now collapsed by default (click to expand)\nFaster startup: window shows immediately while gateway boots in parallel\nNew one-shot Windows packaging script (npm run dist:win)"
+    }
+  },
+  {
+    "version": "2026.731.0",
+    "notes": {
+      "zh": "内核升级至 OpenClaw 2026.7.1\n新增会话管理：置顶 / 归档 / 恢复 / 标记已读 / 分组\n新增任务实时视图：查看与取消后台任务，侧边栏显示进行中数量\n定时任务支持指定模型\n会话侧边栏：置顶会话排最前，增加会话管理与任务入口\n修复折叠侧边栏新建对话按钮的潜在崩溃问题",
+      "en": "Upgrade openclaw kernel to 2026.7.1\nSession Manager: pin / archive / restore / mark read / group\nLive Tasks view: inspect & cancel background tasks, with active badge in sidebar\nCron jobs can now pin a specific model\nSidebar: pinned sessions first, new Sessions & Tasks entries\nFix potential crash on the collapsed-sidebar New Chat button"
+    }
+  },
+  {
+    "version": "2026.511.0",
+    "notes": {
+      "zh": "设置页面新增 Token 用量统计，按会话查看输入 / 输出 / 缓存消耗\n对话输入框新增上下文容量进度条\n内置 Office (Word / PowerPoint / Excel) 文档技能\n内置 OneClaw 与 OpenClaw 使用手册技能\n反馈对话改为实时刷新（SSE）\n工具调用过程流式展示\n模型预设刷新至 2026 年 4 月阵容\n频道私聊配对体验优化与多项稳定性修复",
+      "en": "Add per-session token usage stats in Settings (input / output / cache)\nAdd context meter on the compose area\nBundle Office (Word / PowerPoint / Excel) skills\nBundle OneClaw and OpenClaw user manual skill\nReal-time feedback chat via SSE\nStream intermediate tool calls during runs\nRefresh model presets to April 2026 lineup\nChannel pairing polish and various stability fixes"
+    }
+  },
+  {
+    "version": "2026.424.0",
+    "notes": {
+      "zh": "升级了 openclaw 4.5 内核",
+      "en": "Upgrade openclaw kernel to 4.5"
+    }
+  },
+  {
+    "version": "2026.408.0",
+    "notes": {
+      "zh": "定时任务支持创建、编辑和删除\n修复若干稳定性和界面问题\n整体视觉体验优化",
+      "en": "Scheduled tasks now support full create, edit, and delete\nStability and UI fixes\nOverall visual polish"
+    }
+  },
+  {
+    "version": "2026.328.4",
+    "notes": {
+      "zh": "新增反馈功能\n新增思考模式：发送消息时可开启深度思考，支持多级别切换\n修复钉钉、微信渠道兼容性问题\n修复 Kimi 登录偶发失效问题\n优化微信连接体验\nAPI 错误提示更清晰\n会话列表自动刷新",
+      "en": "Add feedback feature\nAdd thinking mode: enable deep reasoning when sending messages with multiple thinking levels\nFix DingTalk and WeChat channel compatibility issues\nFix occasional Kimi login issues\nImprove WeChat connection experience\nClearer API error messages\nAuto-refresh session list"
+    }
+  },
+  {
+    "version": "2026.322.4",
+    "notes": {
+      "zh": "新增微信聊天支持\n新增高级记忆功能和定时任务查看\nUI 交互体验优化\n命令行功能修复\nWindows 升级体验优化",
+      "en": "Add WeChat chat support\nAdd advanced memory and scheduled tasks viewer\nUI interaction improvements\nCLI fixes\nWindows upgrade experience improvements"
+    }
+  },
+  {
+    "version": "2026.321.0",
+    "notes": {
+      "zh": "新增「更新日志」弹窗，每次升级后自动展示新版本变更内容",
+      "en": "Add \"What's New\" modal to show changelog after each update"
+    }
+  },
+  {
+    "version": "2026.320.0",
+    "notes": {
+      "zh": "支持文件拖拽和剪贴板粘贴，可直接拖入文件或 Cmd+V 粘贴图片到对话",
+      "en": "Support file drag-drop and clipboard paste in compose area"
+    }
+  },
+  {
+    "version": "2026.318.0",
+    "notes": {
+      "zh": "深色模式适配技能商店与工作空间页面",
+      "en": "Fix dark mode for skills and workspace pages"
+    }
+  }
+]

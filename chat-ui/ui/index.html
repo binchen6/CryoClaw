@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CryoClaw</title>
+    <meta name="color-scheme" content="dark light" />
+    <link rel="icon" type="image/svg+xml" href="./src/assets/cryoclaw-favicon.svg" />
+    <!--
+      安全面：渲染层 CSP。
+      - script-src 'self'：仅允许同源脚本（Vite 打包后的 ES module 外链），禁止内联脚本与 eval。
+      - style-src 'self' 'unsafe-inline'：Lit 组件经 Shadow DOM 注入 <style>，需 unsafe-inline。
+      - img-src：base64 头像/截图、blob: URL、同源、https 链接（部分 chat avatar 远程图）。
+      - connect-src：仅允许本机 gateway（ws/wss/http/https on 127.0.0.1）。外部 API 全走 IPC（已校验协议）。
+      - object/frame/frame-ancestors：禁止被嵌入与嵌入他人，防 clickjacking。
+      - form-action 'self'：表单只回发到同源（gateway 端点）。
+    -->
+    <meta http-equiv="Content-Security-Policy" content="
+      default-src 'self';
+      script-src 'self';
+      style-src 'self' 'unsafe-inline';
+      img-src 'self' data: blob: https:;
+      font-src 'self' data:;
+      connect-src 'self' ws://127.0.0.1:* wss://127.0.0.1:* http://127.0.0.1:* https://127.0.0.1:*;
+      object-src 'none';
+      frame-src 'none';
+      base-uri 'none';
+      form-action 'self';
+      frame-ancestors 'none';
+    ">
+    <script type="module" src="./src/main.ts"></script>
+  </head>
+  <body>
+    <openclaw-app></openclaw-app>
+  </body>
+</html>

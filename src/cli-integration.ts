@@ -1,0 +1,825 @@
+import * as fs from "fs";
+import * as os from "os";
+import * as path from "path";
+import { execFile } from "child_process";
+import { resolveCliNodeBin, resolveCliExe, resolveGatewayEntry, resolveUserStateDir, resolveResourcesPath, isAsarMode, IS_WIN } from "./constants";
+import { readCryoclawConfig, writeCryoclawConfig } from "./cryoclaw-config";
+import * as log from "./logger";
+
+// CLI 安装结果，供 Setup 流程统一显示与埋点。
+interface CliResult {
+  success: boolean;
+  message: string;
+}
+
+// CLI 状态：区分“用户想要开启”与“当前是否真正可用”。
+export interface CliStatus {
+  enabled: boolean;
+  installed: boolean;
+  command: string;
+}
+
+type WinCliBinDirs = {
+  currentBinDir: string;
+  legacyBinDirs: string[];
+};
+
+// Wrapper 脚本中的标记字符串，用于识别由 CryoClaw 生成的文件。
+const CLI_MARKER = "CryoClaw CLI";
+
+// 旧版（OneClaw 时代）wrapper 的标记：识别托管 wrapper 时新旧都要认，
+// 否则卸载/迁移清理对旧 wrapper 失效。
+const LEGACY_CLI_MARKERS = ["OneClaw CLI"];
+
+// rc 注入块标记，安装可幂等覆盖，卸载可精确移除。
+const RC_BLOCK_START = "# >>> cryoclaw-cli >>>";
+const RC_BLOCK_END = "# <<< cryoclaw-cli <<<";
+
+// 旧版（OneClaw 时代）rc 块标记：strip 时同样识别，以便精确移除上一代残留块。
+const LEGACY_RC_BLOCK_START = "# >>> oneclaw-cli >>>";
+const LEGACY_RC_BLOCK_END = "# <<< oneclaw-cli <<<";
+
+// 将错误统一格式化成可展示文本，避免在 catch 中到处写类型判断。
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+// 解析 POSIX 平台的 CLI 安装目录，与应用状态目录保持一致。
+function getPosixBinDir(): string {
+  return path.join(resolveUserStateDir(), "bin");
+}
+
+// 解析 POSIX 平台 wrapper 路径。
+function getPosixWrapperPath(): string {
+  return path.join(getPosixBinDir(), "openclaw");
+}
+
+// 解析 Windows 用户 LocalAppData 根目录，不依赖单一环境变量。
+function getWinLocalAppDataDir(): string {
+  if (process.env.LOCALAPPDATA && process.env.LOCALAPPDATA.trim()) {
+    return process.env.LOCALAPPDATA;
+  }
+  return path.join(os.homedir(), "AppData", "Local");
+}
+
+// 解析 Windows 当前路径与旧版迁移路径，避免老用户 PATH 残留。
+export function resolveWinCliBinDirsForPaths(localAppDataDir: string, userStateDir: string): WinCliBinDirs {
+  return {
+    currentBinDir: path.win32.join(localAppDataDir, "CryoClaw", "bin"),
+    legacyBinDirs: [
+      path.win32.join(userStateDir, "bin"),
+      // 上一代（OneClaw 时代）安装目录，一次性清掉 PATH 残留
+      path.win32.join(localAppDataDir, "OneClaw", "bin"),
+    ],
+  };
+}
+
+// 读取当前平台上的 Windows CLI 目录配置。
+function resolveWinCliBinDirs(): WinCliBinDirs {
+  return resolveWinCliBinDirsForPaths(getWinLocalAppDataDir(), resolveUserStateDir());
+}
+
+// 解析 Windows 平台的 CLI 安装目录。
+function getWinBinDir(): string {
+  return resolveWinCliBinDirs().currentBinDir;
+}
+
+// 解析 Windows 旧版 CLI 目录列表。
+function getLegacyWinBinDirs(): string[] {
+  return resolveWinCliBinDirs().legacyBinDirs;
+}
+
+// 解析 Windows 平台 wrapper 路径。
+function getWinWrapperPathForBinDir(binDir: string): string {
+  return path.join(binDir, "openclaw.cmd");
+}
+
+// 解析当前 Windows wrapper 路径。
+function getWinWrapperPath(): string {
+  return getWinWrapperPathForBinDir(getWinBinDir());
+}
+
+// 解析旧版 Windows wrapper 路径。
+function getLegacyWinWrapperPaths(): string[] {
+  return getLegacyWinBinDirs().map(getWinWrapperPathForBinDir);
+}
+
+// POSIX shell 双引号转义，保证路径中包含空格、$、`、" 时仍安全。
+function escapeForPosixDoubleQuoted(value: string): string {
+  return value.replace(/(["\\$`])/g, "\\$1");
+}
+
+// cmd 的 set "KEY=VALUE" 语法只需处理双引号转义。
+function escapeForCmdSetValue(value: string): string {
+  return value.replace(/"/g, '""');
+}
+
+// PowerShell 单引号字符串转义。
+function escapeForPowerShellSingleQuoted(value: string): string {
+  return value.replace(/'/g, "''");
+}
+
+// 旧版 cli-preferences.json 路径，仅用于一次性迁移
+const LEGACY_CLI_PREFERENCE_FILE = "cli-preferences.json";
+
+// 从旧版 sidecar 文件迁移 CLI 偏好到 cryoclaw.config.json
+function migrateLegacyCliPreference(): boolean | undefined {
+  const legacyPath = path.join(resolveUserStateDir(), LEGACY_CLI_PREFERENCE_FILE);
+  if (!fs.existsSync(legacyPath)) return undefined;
+
+  try {
+    const raw = JSON.parse(fs.readFileSync(legacyPath, "utf-8"));
+    if (raw && typeof raw === "object" && raw.version === 1 && typeof raw.enabled === "boolean") {
+      const enabled: boolean = raw.enabled;
+      // 写入 cryoclaw.config.json 并删除旧文件
+      setCliEnabledPreference(enabled);
+      fs.unlinkSync(legacyPath);
+      log.info(`[cli] migrated CLI preference from legacy sidecar: enabled=${enabled}`);
+      return enabled;
+    }
+  } catch {
+    // 非法文件不阻塞启动
+  }
+  return undefined;
+}
+
+// 持久化 CLI 偏好到 cryoclaw.config.json
+export function setCliEnabledPreference(enabled: boolean): void {
+  const config = readCryoclawConfig() ?? {};
+  config.cliPreference = enabled ? "installed" : "uninstalled";
+  writeCryoclawConfig(config);
+}
+
+// 读取用户显式选择的 CLI 偏好；无记录时返回 undefined
+export function getCliEnabledPreference(): boolean | undefined {
+  const config = readCryoclawConfig();
+  if (config?.cliPreference === "installed") return true;
+  if (config?.cliPreference === "uninstalled") return false;
+  // 兼容旧版：尝试从 cli-preferences.json 迁移
+  return migrateLegacyCliPreference();
+}
+
+// 兼容老用户：没有偏好文件时，根据现有 wrapper 足迹推断是否曾开启 CLI。
+export function inferCliEnabledPreference(
+  savedEnabled: boolean | undefined,
+  hasCurrentWrapper: boolean,
+  hasLegacyWrapper: boolean,
+): boolean | undefined {
+  if (typeof savedEnabled === "boolean") return savedEnabled;
+  if (hasCurrentWrapper || hasLegacyWrapper) return true;
+  return undefined;
+}
+
+// 构建 Windows PATH 修改脚本，避免分号拼接打断 try/catch 语法。
+export function buildWinPathEnvScript(action: "add" | "remove", binDir: string): string {
+  const safeDir = escapeForPowerShellSingleQuoted(binDir);
+  return [
+    `$target='${safeDir}'`,
+    "function Normalize([string]$p) {",
+    "  if ([string]::IsNullOrWhiteSpace($p)) { return '' }",
+    "  try { return ([System.IO.Path]::GetFullPath($p)).TrimEnd('\\\\').ToLowerInvariant() } catch { return $p.Trim().TrimEnd('\\\\').ToLowerInvariant() }",
+    "}",
+    "$current=[Environment]::GetEnvironmentVariable('Path','User')",
+    "$parts=@()",
+    "if ($current) {",
+    "  $parts=$current -split ';' | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne '' }",
+    "}",
+    "$targetNorm=Normalize $target",
+    "$unique=@()",
+    "$seen=@{}",
+    "foreach ($p in $parts) {",
+    "  $n=Normalize $p",
+    "  if (-not $seen.ContainsKey($n)) {",
+    "    $seen[$n]=$true",
+    "    $unique += $p",
+    "  }",
+    "}",
+    `if ('${action}' -eq 'add') {`,
+    "  if (-not $seen.ContainsKey($targetNorm)) {",
+    "    $unique += $target",
+    "  }",
+    "} else {",
+    "  $unique = $unique | Where-Object { (Normalize $_) -ne $targetNorm }",
+    "}",
+    "[Environment]::SetEnvironmentVariable('Path', ($unique -join ';'), 'User')",
+  ].join("\n");
+}
+
+// 内核升级器入口（安装产物的 updater/kernel-update.mjs），不存在时返回 null。
+function resolveKernelUpdaterEntry(): string | null {
+  const entry = path.join(resolveResourcesPath(), "updater", "kernel-update.mjs");
+  return fs.existsSync(entry) ? entry : null;
+}
+
+// gateway 控制脚本入口（安装产物的 updater/gateway-ctl.mjs），不存在时返回 null。
+// 内核原生 `openclaw gateway *` 的 daemon 模型在 asar 内嵌 + Electron 托管部署下
+// 不可用，wrapper 存在该脚本时把 gateway 子命令路由到 CryoClaw 托管控制服务。
+function resolveGatewayCtlEntry(): string | null {
+  const entry = path.join(resolveResourcesPath(), "updater", "gateway-ctl.mjs");
+  return fs.existsSync(entry) ? entry : null;
+}
+
+// 生成 POSIX wrapper 脚本（可测试纯函数），直接转发到内置 Node + gateway entry。
+// ASAR 模式下跳过入口文件检查（shell 无法读取 .asar 虚拟路径）。
+// updaterEntry 存在时拦截 `openclaw update`，路由到 CryoClaw 内核升级器
+// （官方 update 只支持 npm 全局/git 安装形态，对 asar 内嵌部署无效）。
+// gatewayCtlEntry 存在时拦截 `openclaw gateway`，路由到 CryoClaw 托管控制脚本
+// （官方 daemon 模型对托管部署无效）；ctl 缺失时退回原生命令，保持现状行为。
+export function buildPosixWrapperForPaths(nodeBin: string, entry: string, opts?: { updaterEntry?: string | null; gatewayCtlEntry?: string | null }): string {
+  const safeNodeBin = escapeForPosixDoubleQuoted(nodeBin);
+  const safeEntry = escapeForPosixDoubleQuoted(entry);
+  const asar = entry.includes(".asar");
+  const safeUpdater = opts?.updaterEntry ? escapeForPosixDoubleQuoted(opts.updaterEntry) : null;
+  const safeGatewayCtl = opts?.gatewayCtlEntry ? escapeForPosixDoubleQuoted(opts.gatewayCtlEntry) : null;
+
+  const lines = [
+    "#!/usr/bin/env bash",
+    `# ${CLI_MARKER} - auto-generated, do not edit`,
+    `APP_NODE="${safeNodeBin}"`,
+    `APP_ENTRY="${safeEntry}"`,
+    'if [ ! -f "$APP_NODE" ]; then',
+    '  echo "Error: CryoClaw not found at $APP_NODE" >&2',
+    "  exit 127",
+    "fi",
+  ];
+
+  if (safeUpdater) {
+    lines.push(
+      `APP_UPDATER="${safeUpdater}"`,
+      'if [ "$1" = "update" ]; then',
+      '  exec "$APP_NODE" "$APP_UPDATER" "$@"',
+      "fi",
+    );
+  }
+
+  if (safeGatewayCtl) {
+    lines.push(
+      `APP_GATEWAY_CTL="${safeGatewayCtl}"`,
+      'if [ "$1" = "gateway" ]; then',
+      '  exec "$APP_NODE" "$APP_GATEWAY_CTL" "$@"',
+      "fi",
+    );
+  }
+
+  // ASAR 虚拟路径对 shell 的 -f 检测不可见，跳过入口检查
+  if (!asar) {
+    lines.push(
+      'if [ ! -f "$APP_ENTRY" ]; then',
+      '  echo "Error: CryoClaw entry not found at $APP_ENTRY" >&2',
+      "  exit 127",
+      "fi",
+    );
+  }
+
+  lines.push(
+    "export OPENCLAW_NO_RESPAWN=1",
+    'exec "$APP_NODE" "$APP_ENTRY" "$@"',
+    "",
+  );
+
+  return lines.join("\n");
+}
+
+// 读取当前运行时路径并生成 POSIX wrapper，避免调用方重复拼路径。
+function buildPosixWrapper(): string {
+  return buildPosixWrapperForPaths(resolveCliNodeBin(), resolveGatewayEntry(), {
+    updaterEntry: resolveKernelUpdaterEntry(),
+    gatewayCtlEntry: resolveGatewayCtlEntry(),
+  });
+}
+
+// 生成 Windows wrapper 脚本（可测试纯函数）。
+// ASAR 模式：使用 CLI.exe（SUBSYSTEM:CONSOLE）+ ELECTRON_RUN_AS_NODE，跳过入口检查。
+// 散文件模式：使用真实 Node.js，不需要 ELECTRON_RUN_AS_NODE。
+export function buildWinWrapperForPaths(nodeBin: string, entry: string, opts?: { electronMode?: boolean; updaterEntry?: string | null; gatewayCtlEntry?: string | null }): string {
+  const safeNodeBin = escapeForCmdSetValue(nodeBin);
+  const safeEntry = escapeForCmdSetValue(entry);
+  const asar = entry.includes(".asar");
+  const electronMode = opts?.electronMode ?? false;
+  const safeUpdater = opts?.updaterEntry ? escapeForCmdSetValue(opts.updaterEntry) : null;
+  const safeGatewayCtl = opts?.gatewayCtlEntry ? escapeForCmdSetValue(opts.gatewayCtlEntry) : null;
+
+  const lines = [
+    "@echo off",
+    `REM ${CLI_MARKER} - auto-generated, do not edit`,
+    "setlocal",
+  ];
+
+  // Electron binary 需要 ELECTRON_RUN_AS_NODE 才能当 Node.js 用
+  if (electronMode) {
+    lines.push('set "ELECTRON_RUN_AS_NODE=1"');
+  }
+
+  lines.push(
+    `set "APP_NODE=${safeNodeBin}"`,
+    `set "APP_ENTRY=${safeEntry}"`,
+    'if not exist "%APP_NODE%" (',
+    "  echo Error: CryoClaw Node runtime not found. 1>&2",
+    "  exit /b 127",
+    ")",
+  );
+
+  // 子命令拦截：`openclaw update` → 内核升级器；`openclaw gateway` → 托管控制脚本。
+  // 两者的官方实现都不支持 asar 内嵌 + Electron 托管部署（update 只认 npm/git 安装形态，
+  // gateway 走自带 daemon 模型），脚本缺失（旧安装产物）时退回原生命令，保持现状行为。
+  // 注意：Gateway 运行中会锁住 gateway.asar，请在设置页升级（自动停启）或先停止 Gateway。
+  const intercepts: Array<{ arg: string; varName: string }> = [];
+  if (safeGatewayCtl) {
+    lines.push(`set "APP_GATEWAY_CTL=${safeGatewayCtl}"`);
+    intercepts.push({ arg: "gateway", varName: "APP_GATEWAY_CTL" });
+  }
+  if (safeUpdater) {
+    lines.push(`set "APP_UPDATER=${safeUpdater}"`);
+    intercepts.push({ arg: "update", varName: "APP_UPDATER" });
+  }
+
+  // ASAR 虚拟路径对 cmd.exe 的 exist 检测不可见，跳过入口检查
+  if (!asar) {
+    lines.push(
+      'if not exist "%APP_ENTRY%" (',
+      "  echo Error: CryoClaw entry not found. 1>&2",
+      "  exit /b 127",
+      ")",
+    );
+  }
+
+  // 出口统一在块外 exit /b %errorlevel%：括号块内的 %errorlevel% 会在解析阶段被
+  // 提前展开（块内拿不到刚执行命令的退出码），所有分支共用块外这一行
+  if (intercepts.length > 0) {
+    intercepts.forEach((it, idx) => {
+      lines.push(
+        idx === 0 ? `if /i "%~1"=="${it.arg}" (` : `) else if /i "%~1"=="${it.arg}" (`,
+        `  "%APP_NODE%" "%${it.varName}%" %*`,
+      );
+    });
+    lines.push(
+      ") else (",
+      '  set "OPENCLAW_NO_RESPAWN=1"',
+      '  "%APP_NODE%" "%APP_ENTRY%" %*',
+      ")",
+      "exit /b %errorlevel%",
+      "",
+    );
+  } else {
+    lines.push(
+      'set "OPENCLAW_NO_RESPAWN=1"',
+      '"%APP_NODE%" "%APP_ENTRY%" %*',
+      "exit /b %errorlevel%",
+      "",
+    );
+  }
+
+  return lines.join("\r\n");
+}
+
+// 读取当前运行时路径并生成 Windows wrapper，避免调用方重复拼路径。
+function buildWinWrapper(): string {
+  // ASAR 模式优先用 CLI.exe（SUBSYSTEM:CONSOLE，支持交互式 stdin）
+  const cliExe = resolveCliExe();
+  const updaterEntry = resolveKernelUpdaterEntry();
+  const gatewayCtlEntry = resolveGatewayCtlEntry();
+  if (cliExe) {
+    return buildWinWrapperForPaths(cliExe, resolveGatewayEntry(), { electronMode: true, updaterEntry, gatewayCtlEntry });
+  }
+  return buildWinWrapperForPaths(resolveCliNodeBin(), resolveGatewayEntry(), { updaterEntry, gatewayCtlEntry });
+}
+
+// 判断指定 wrapper 是否由 CryoClaw（含上一代 OneClaw）管理，避免误删用户自定义脚本。
+// （导出供测试直接覆盖新旧 marker 双识别）
+export function hasManagedWrapper(wrapperPath: string): boolean {
+  if (!fs.existsSync(wrapperPath)) return false;
+  try {
+    const content = fs.readFileSync(wrapperPath, "utf-8");
+    return content.includes(CLI_MARKER) || LEGACY_CLI_MARKERS.some((m) => content.includes(m));
+  } catch {
+    return false;
+  }
+}
+
+// 最小化删除策略：只移除带标记的 wrapper。
+function removeManagedWrapper(wrapperPath: string): void {
+  if (!hasManagedWrapper(wrapperPath)) return;
+  fs.unlinkSync(wrapperPath);
+}
+
+// 采集 CLI 足迹，用于状态展示和老用户迁移推断。
+function readCliInstallFootprint(): { currentInstalled: boolean; legacyInstalled: boolean } {
+  if (IS_WIN) {
+    return {
+      currentInstalled: hasManagedWrapper(getWinWrapperPath()),
+      legacyInstalled: getLegacyWinWrapperPaths().some(hasManagedWrapper),
+    };
+  }
+  return {
+    currentInstalled: hasManagedWrapper(getPosixWrapperPath()),
+    legacyInstalled: false,
+  };
+}
+
+// 返回用户 home 目录，优先 HOME，回退 os.homedir()，失败时返回 null。
+function resolveHomeDir(): string | null {
+  if (process.env.HOME && process.env.HOME.trim()) {
+    return process.env.HOME;
+  }
+  const home = os.homedir();
+  return home && home.trim() ? home : null;
+}
+
+// 返回需要注入 PATH 的 shell profile 文件列表。
+// macOS Terminal 默认读 login profiles，但 VS Code / 部分 iTerm 配置只读 interactive rc。
+export function resolvePosixRcPathsForHome(home: string): string[] {
+  return [
+    path.join(home, ".zprofile"),
+    path.join(home, ".zshrc"),
+    path.join(home, ".bash_profile"),
+    path.join(home, ".bashrc"),
+  ];
+}
+
+function resolvePosixRcPaths(): string[] {
+  const home = resolveHomeDir();
+  if (!home) return [];
+  return resolvePosixRcPathsForHome(home);
+}
+
+// 构建 CryoClaw 管理的 rc 注入块，使用绝对路径避免与状态目录配置脱节。
+function buildRcBlock(binDir: string): string {
+  const safeBinDir = escapeForPosixDoubleQuoted(binDir);
+  return [
+    RC_BLOCK_START,
+    'case ":$PATH:" in',
+    `  *:"${safeBinDir}":*) ;;`,
+    `  *) export PATH="${safeBinDir}:$PATH" ;;`,
+    "esac",
+    RC_BLOCK_END,
+  ].join("\n");
+}
+
+// 检查所有目标 shell 配置文件是否都包含当前期望的 PATH 注入块。
+function arePosixRcBlocksUpToDate(): boolean {
+  const rcPaths = resolvePosixRcPaths();
+  if (rcPaths.length === 0) return false;
+
+  const expectedBlock = buildRcBlock(getPosixBinDir());
+  return rcPaths.every((rcPath) => {
+    if (!fs.existsSync(rcPath)) return false;
+    try {
+      return fs.readFileSync(rcPath, "utf-8").includes(expectedBlock);
+    } catch {
+      return false;
+    }
+  });
+}
+
+// 从 rc 文本移除 CryoClaw 管理块，仅删除带完整标记的块，避免误伤用户自定义行。
+// 同时识别上一代 oneclaw-cli 标记块（导出供测试覆盖双标记识别）。
+export function stripManagedRcBlock(content: string): { text: string; removed: boolean } {
+  const lines = content.split(/\r?\n/);
+  const output: string[] = [];
+  const pendingBlock: string[] = [];
+  let removed = false;
+  let inBlock = false;
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!inBlock && (line === RC_BLOCK_START || line === LEGACY_RC_BLOCK_START)) {
+      inBlock = true;
+      pendingBlock.push(rawLine);
+      continue;
+    }
+    if (inBlock) {
+      pendingBlock.push(rawLine);
+      if (line === RC_BLOCK_END || line === LEGACY_RC_BLOCK_END) {
+        inBlock = false;
+        removed = true;
+        pendingBlock.length = 0;
+      }
+      continue;
+    }
+    output.push(rawLine);
+  }
+
+  // 仅删除完整块；如果块损坏（缺少结束标记），保留原文避免截断用户配置。
+  if (inBlock && pendingBlock.length > 0) {
+    output.push(...pendingBlock);
+  }
+
+  return { text: output.join("\n"), removed };
+}
+
+// 统一 rc 文件换行风格，避免无意义 diff。
+function detectEol(text: string): "\n" | "\r\n" {
+  return text.includes("\r\n") ? "\r\n" : "\n";
+}
+
+// 向 rc 文件幂等写入 CryoClaw 管理块，重复安装不会产生重复内容。
+function upsertRcBlock(rcPath: string, binDir: string): void {
+  const current = fs.existsSync(rcPath) ? fs.readFileSync(rcPath, "utf-8") : "";
+  const eol = detectEol(current);
+
+  const { text: stripped } = stripManagedRcBlock(current);
+  const block = buildRcBlock(binDir);
+  const base = stripped.trimEnd();
+  const nextUnix = base ? `${base}\n\n${block}\n` : `${block}\n`;
+  const next = eol === "\r\n" ? nextUnix.replace(/\n/g, "\r\n") : nextUnix;
+
+  if (next !== current) {
+    fs.writeFileSync(rcPath, next, "utf-8");
+    log.info(`[cli] PATH block written to ${rcPath}`);
+  }
+}
+
+// 从 rc 文件移除 CryoClaw 管理块，仅处理本程序写入的标记块。
+function removeRcBlock(rcPath: string): void {
+  if (!fs.existsSync(rcPath)) return;
+
+  const current = fs.readFileSync(rcPath, "utf-8");
+  const eol = detectEol(current);
+  const { text: stripped, removed } = stripManagedRcBlock(current);
+  if (!removed) return;
+
+  const base = stripped.trimEnd();
+  const nextUnix = base ? `${base}\n` : "";
+  const next = eol === "\r\n" ? nextUnix.replace(/\n/g, "\r\n") : nextUnix;
+  fs.writeFileSync(rcPath, next, "utf-8");
+  log.info(`[cli] PATH block removed from ${rcPath}`);
+}
+
+// 用 PowerShell 精确修改用户级 PATH，按路径项去重，避免子串误判。
+function winModifyPath(action: "add" | "remove", binDir: string): Promise<void> {
+  const script = buildWinPathEnvScript(action, binDir);
+
+  return new Promise((resolve, reject) => {
+    execFile(
+      "powershell.exe",
+      ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script],
+      { timeout: 15_000, windowsHide: true },
+      (err) => {
+        if (err) {
+          reject(err);
+          return;
+        }
+        resolve();
+      }
+    );
+  });
+}
+
+// 校验 CLI 运行时依赖，避免生成必然损坏的 wrapper。
+function validateCliRuntime(): CliResult | null {
+  // Windows ASAR 模式优先检查 CLI.exe
+  const cliExe = resolveCliExe();
+  const nodeBin = cliExe ?? resolveCliNodeBin();
+  const entry = resolveGatewayEntry();
+  const asar = isAsarMode();
+
+  if (!cliExe && (nodeBin === "node" || !fs.existsSync(nodeBin))) {
+    return { success: false, message: `Node runtime not found: ${nodeBin}` };
+  }
+  if (cliExe && !fs.existsSync(cliExe)) {
+    return { success: false, message: `CLI binary not found: ${cliExe}` };
+  }
+  // ASAR 入口在 main process（Electron ASAR patch 生效）里能通过 existsSync，
+  // 但这里显式跳过以避免未来在非 Electron 上下文中调用时失败。
+  if (!asar && !fs.existsSync(entry)) {
+    return { success: false, message: `CLI entry not found: ${entry}` };
+  }
+  return null;
+}
+
+// Windows CLI 安装：写入新 wrapper，并迁移掉旧版 PATH 与旧目录中的 wrapper。
+async function installCliWindows(): Promise<CliResult> {
+  const invalidRuntime = validateCliRuntime();
+  if (invalidRuntime) return invalidRuntime;
+
+  const binDir = getWinBinDir();
+  const errors: string[] = [];
+  fs.mkdirSync(binDir, { recursive: true });
+  fs.writeFileSync(getWinWrapperPath(), buildWinWrapper(), "utf-8");
+
+  await winModifyPath("add", binDir);
+
+  for (const legacyWrapperPath of getLegacyWinWrapperPaths()) {
+    try {
+      removeManagedWrapper(legacyWrapperPath);
+    } catch (err) {
+      errors.push(`${path.basename(path.dirname(legacyWrapperPath))}: ${errorMessage(err)}`);
+    }
+  }
+
+  for (const legacyBinDir of getLegacyWinBinDirs()) {
+    try {
+      await winModifyPath("remove", legacyBinDir);
+    } catch (err) {
+      errors.push(`${path.basename(legacyBinDir)} PATH: ${errorMessage(err)}`);
+    }
+  }
+
+  log.info("[cli] Windows CLI installed");
+  if (errors.length > 0) {
+    return {
+      success: true,
+      message: `CLI installed. Legacy PATH migration partially failed (${errors.join("; ")}).`,
+    };
+  }
+  return { success: true, message: "CLI installed. Please reopen your terminal." };
+}
+
+// POSIX CLI 安装：生成 wrapper 并注入 shell profile。
+async function installCliPosix(): Promise<CliResult> {
+  const invalidRuntime = validateCliRuntime();
+  if (invalidRuntime) return invalidRuntime;
+
+  const binDir = getPosixBinDir();
+  fs.mkdirSync(binDir, { recursive: true });
+  const wrapperPath = getPosixWrapperPath();
+  fs.writeFileSync(wrapperPath, buildPosixWrapper(), "utf-8");
+  fs.chmodSync(wrapperPath, 0o755);
+
+  const rcPaths = resolvePosixRcPaths();
+  if (rcPaths.length === 0) {
+    return { success: false, message: "Failed to resolve home directory for PATH injection." };
+  }
+
+  const errors: string[] = [];
+  let injected = 0;
+  for (const rcPath of rcPaths) {
+    try {
+      upsertRcBlock(rcPath, binDir);
+      injected += 1;
+    } catch (err) {
+      const msg = errorMessage(err);
+      errors.push(`${path.basename(rcPath)}: ${msg}`);
+      log.error(`[cli] Failed to update ${rcPath}: ${msg}`);
+    }
+  }
+
+  if (injected === 0) {
+    return {
+      success: false,
+      message: `CLI wrapper created, but PATH injection failed (${errors.join("; ")})`,
+    };
+  }
+
+  log.info("[cli] POSIX CLI installed");
+  if (errors.length > 0) {
+    return {
+      success: true,
+      message: `CLI installed with partial PATH update (${errors.join("; ")}).`,
+    };
+  }
+  return { success: true, message: "CLI installed." };
+}
+
+// Windows CLI 卸载：清理当前与旧版目录，避免 PATH 残留。
+async function uninstallCliWindows(): Promise<CliResult> {
+  const errors: string[] = [];
+  const wrapperPaths = [getWinWrapperPath(), ...getLegacyWinWrapperPaths()];
+  const binDirs = [getWinBinDir(), ...getLegacyWinBinDirs()];
+
+  for (const wrapperPath of wrapperPaths) {
+    try {
+      removeManagedWrapper(wrapperPath);
+    } catch (err) {
+      errors.push(`${path.basename(wrapperPath)}: ${errorMessage(err)}`);
+    }
+  }
+
+  for (const binDir of binDirs) {
+    try {
+      await winModifyPath("remove", binDir);
+    } catch (err) {
+      errors.push(`${path.basename(binDir)} PATH: ${errorMessage(err)}`);
+    }
+  }
+
+  log.info("[cli] Windows CLI uninstalled");
+  if (errors.length > 0) {
+    return {
+      success: false,
+      message: `CLI uninstall cleanup failed (${errors.join("; ")})`,
+    };
+  }
+  return { success: true, message: "CLI uninstalled." };
+}
+
+// POSIX CLI 卸载：删除 wrapper 和 profile 注入块，过程尽量容错。
+async function uninstallCliPosix(): Promise<CliResult> {
+  const wrapperPath = getPosixWrapperPath();
+  if (fs.existsSync(wrapperPath)) fs.unlinkSync(wrapperPath);
+
+  const rcPaths = resolvePosixRcPaths();
+  for (const rcPath of rcPaths) {
+    try {
+      removeRcBlock(rcPath);
+    } catch (err) {
+      log.error(`[cli] Failed to clean ${rcPath}: ${errorMessage(err)}`);
+    }
+  }
+
+  log.info("[cli] POSIX CLI uninstalled");
+  return { success: true, message: "CLI uninstalled." };
+}
+
+// 安装 CLI：持久化用户意图，并把旧版 Windows PATH 迁移到新目录。
+export async function installCli(): Promise<CliResult> {
+  try {
+    setCliEnabledPreference(true);
+    return IS_WIN ? await installCliWindows() : await installCliPosix();
+  } catch (err) {
+    const msg = errorMessage(err);
+    log.error(`[cli] install failed: ${msg}`);
+    return { success: false, message: msg };
+  }
+}
+
+// 卸载 CLI：记录显式关闭偏好，并清理当前与旧版安装痕迹。
+export async function uninstallCli(): Promise<CliResult> {
+  try {
+    setCliEnabledPreference(false);
+    return IS_WIN ? await uninstallCliWindows() : await uninstallCliPosix();
+  } catch (err) {
+    const msg = errorMessage(err);
+    log.error(`[cli] uninstall failed: ${msg}`);
+    return { success: false, message: msg };
+  }
+}
+
+// 对外暴露 CLI 状态：enabled 代表用户偏好，installed 代表当前或旧版 wrapper 足迹。
+export function getCliStatus(): CliStatus {
+  const footprint = readCliInstallFootprint();
+  const enabled =
+    inferCliEnabledPreference(
+      getCliEnabledPreference(),
+      footprint.currentInstalled,
+      footprint.legacyInstalled,
+    ) === true;
+
+  return {
+    enabled,
+    installed: footprint.currentInstalled || footprint.legacyInstalled,
+    command: "openclaw",
+  };
+}
+
+// 判断 CLI 是否安装：兼容旧版 Windows wrapper 路径。
+export function isCliInstalled(): boolean {
+  return getCliStatus().installed;
+}
+
+// 检查磁盘上的 wrapper 内容是否与当前期望一致，一致则跳过重写。
+function isWrapperUpToDate(): boolean {
+  if (IS_WIN) {
+    const wrapperPath = getWinWrapperPath();
+    if (!fs.existsSync(wrapperPath)) return false;
+    try {
+      return fs.readFileSync(wrapperPath, "utf-8") === buildWinWrapper();
+    } catch {
+      return false;
+    }
+  }
+  const wrapperPath = getPosixWrapperPath();
+  if (!fs.existsSync(wrapperPath)) return false;
+  try {
+    return fs.readFileSync(wrapperPath, "utf-8") === buildPosixWrapper();
+  } catch {
+    return false;
+  }
+}
+
+// 启动自愈：更新后 wrapper 内路径可能已变，重新生成以保持一致。
+// 仅在 wrapper 内容过期或偏好需要迁移时才执行写操作。
+export async function reconcileCliOnAppLaunch(): Promise<void> {
+  const footprint = readCliInstallFootprint();
+  const savedEnabled = getCliEnabledPreference();
+  const inferredEnabled = inferCliEnabledPreference(
+    savedEnabled,
+    footprint.currentInstalled,
+    footprint.legacyInstalled,
+  );
+  if (inferredEnabled === undefined) return;
+
+  if (savedEnabled !== inferredEnabled) {
+    setCliEnabledPreference(inferredEnabled);
+    log.info(`[cli] Migrated CLI enabled preference on launch: ${inferredEnabled}`);
+  }
+
+  if (inferredEnabled) {
+    // wrapper 与 PATH 注入都没变才跳过；旧版本可能只写了 login profile。
+    if (isWrapperUpToDate() && (IS_WIN || arePosixRcBlocksUpToDate())) {
+      log.info("[cli] wrapper is up-to-date, skipping reconcile");
+      return;
+    }
+    const result = IS_WIN ? await installCliWindows() : await installCliPosix();
+    if (!result.success) {
+      throw new Error(result.message);
+    }
+    log.info("[cli] wrapper reconciled on launch");
+  } else if (footprint.currentInstalled || footprint.legacyInstalled) {
+    // 有残留 wrapper 才清理，避免每次启动都白跑 uninstall
+    const result = IS_WIN ? await uninstallCliWindows() : await uninstallCliPosix();
+    if (!result.success) {
+      throw new Error(result.message);
+    }
+  }
+}

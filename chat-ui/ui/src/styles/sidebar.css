@@ -1,0 +1,809 @@
+/* ==========================================================================
+   styles/sidebar.css — CryoClaw 定制布局与侧边栏
+   覆盖原 styles.css 行 6075-6745：btn 胶囊覆盖、cryoclaw-sidebar 全部（会话列表/底部导航/断连错误）、floating actions、shell/topbar 隐藏、侧边栏响应式
+   纯搬运拆分，层叠顺序由 hub styles.css 的 @import 顺序决定，勿单独调整
+   ========================================================================== */
+
+/* ============================================
+   CryoClaw custom layout CSS
+   Sidebar + Chat two-column layout
+   ============================================ */
+
+.btn {
+  border-radius: 9999px !important;
+}
+
+.btn.primary {
+  background: var(--accent) !important;
+  border-color: var(--accent) !important;
+}
+
+.btn.primary:hover:not(:disabled) {
+  background: var(--accent-hover) !important;
+  border-color: var(--accent-hover) !important;
+}
+
+.cryoclaw-shell {
+  display: flex;
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden;
+}
+
+.cryoclaw-shell--sidebar-collapsed .cryoclaw-main,
+.cryoclaw-shell--focus .cryoclaw-main {
+  width: 100vw;
+}
+
+.cryoclaw-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  height: 100vh;
+  overflow: hidden;
+  position: relative;
+  background: var(--bg);
+}
+
+.cryoclaw-content {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.cryoclaw-content>.card.chat {
+  flex: 1;
+  border-radius: 0;
+  border: none;
+  margin: 0;
+}
+
+.cryoclaw-sidebar {
+  width: var(--sidebar-width);
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--border);
+  background: var(--panel);
+  height: 100vh;
+  overflow: hidden;
+  -webkit-app-region: drag;
+}
+
+.cryoclaw-sidebar__brand {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacer-6);
+  padding: 12px 12px 8px;
+  color: var(--text);
+  -webkit-app-region: drag;
+}
+
+.cryoclaw-sidebar__brand-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+}
+
+.cryoclaw-sidebar__title {
+  font-family: var(--font-display);
+  font-size: var(--heading-sm);
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--text-strong);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* TraeWork 品牌区副标：极小字 + 弱化 */
+.cryoclaw-sidebar__brand-sub {
+  font-size: var(--text-2xs);
+  line-height: 1.2;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cryoclaw-sidebar__collapse {
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background var(--duration-fast) ease, color var(--duration-fast) ease;
+  -webkit-app-region: no-drag;
+}
+
+.cryoclaw-sidebar__collapse:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.cryoclaw-sidebar__new-chat-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacer-8);
+  width: 100%;
+  padding: var(--spacer-10) var(--spacer-16);
+  border-radius: 9999px;
+  background: transparent;
+  border: 1px solid var(--border-strong);
+  color: var(--muted);
+  font-size: var(--heading-xs);
+  font-weight: 500;
+  cursor: pointer;
+  transition: border-color var(--duration-fast) ease, color var(--duration-fast) ease, background var(--duration-fast) ease;
+  -webkit-app-region: no-drag;
+}
+
+.cryoclaw-sidebar__new-chat-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.cryoclaw-sidebar__new-chat-btn svg {
+  width: 16px;
+  height: 16px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.5px;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  flex-shrink: 0;
+}
+
+.cryoclaw-sidebar__collapse svg {
+  width: 18px;
+  height: 18px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.cryoclaw-sidebar__nav {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 4px 0 0;
+  flex: 1;
+  min-height: 0;
+  -webkit-app-region: no-drag;
+}
+
+.cryoclaw-sidebar__section-title {
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  color: var(--text-muted);
+  letter-spacing: 0.04em;
+}
+
+/* 会话列表标题行：标题 + 新建按钮 */
+.cryoclaw-sidebar__session-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--spacer-6) var(--spacer-10) var(--spacer-2);
+}
+
+.cryoclaw-sidebar__session-add {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 0;
+  transition: background 0.1s, color 0.1s;
+}
+
+.cryoclaw-sidebar__session-add svg {
+  width: 14px;
+  height: 14px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.cryoclaw-sidebar__session-add:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+/* 会话列表容器 */
+.cryoclaw-sidebar__session-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 2px 6px;
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+/* 单个会话项 */
+/* 会话项：TraeWork menu 风格 —— radius-8 + 宽松内边距 */
+.cryoclaw-sidebar__session-item {
+  display: flex;
+  align-items: center;
+  gap: var(--spacer-4);
+  padding: var(--spacer-8) var(--spacer-12);
+  border-radius: var(--radius-8);
+  cursor: pointer;
+  font-size: var(--heading-xs);
+  color: var(--muted);
+  transition: background 0.1s, color 0.1s;
+  position: relative;
+  -webkit-app-region: no-drag;
+}
+
+.cryoclaw-sidebar__session-item:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+/* 选中态：accent-subtle 底 + 左侧 3px accent 指示条（TraeWork menu） */
+.cryoclaw-sidebar__session-item.active {
+  color: var(--text-strong);
+  background: var(--accent-subtle);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+/* 会话名称：溢出省略 */
+.cryoclaw-sidebar__session-name {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  user-select: none;
+}
+
+/* 行内编辑输入框 */
+.cryoclaw-sidebar__session-edit {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-xs);
+  background: var(--bg-elevated);
+  color: var(--text);
+  padding: 2px 6px;
+  font-size: 13px;
+  font-family: inherit;
+  outline: none;
+}
+
+/* 操作按钮（编辑、删除）：默认隐藏，hover 时显示 */
+.cryoclaw-sidebar__session-action {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: none;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.cryoclaw-sidebar__session-action svg {
+  width: 12px;
+  height: 12px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.cryoclaw-sidebar__session-item:hover .cryoclaw-sidebar__session-action,
+.cryoclaw-sidebar__session-item:focus-within .cryoclaw-sidebar__session-action,
+.cryoclaw-sidebar__session-item.menu-open .cryoclaw-sidebar__session-action,
+.cryoclaw-sidebar__session-action.is-open {
+  display: flex;
+}
+
+.cryoclaw-sidebar__session-action:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+/* 正在删除：强制展示按钮并让 loader 图标旋转，禁用 hover 高亮（保留指针事件以便展示「正在归档」tooltip） */
+.cryoclaw-sidebar__session-action.is-loading {
+  display: flex;
+  cursor: default;
+}
+
+.cryoclaw-sidebar__session-action.is-loading:hover {
+  background: transparent;
+}
+
+.cryoclaw-sidebar__session-action.is-loading svg {
+  animation: spin 1s linear infinite;
+}
+
+/* 侧栏底部导航项：TraeWork menu 风格 —— radius-8 + 宽松内边距 */
+.cryoclaw-sidebar__item {
+  display: flex;
+  align-items: center;
+  gap: var(--spacer-8);
+  padding: var(--spacer-8) var(--spacer-12);
+  border-radius: var(--radius-8);
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: var(--heading-xs);
+  font-family: inherit;
+  text-align: left;
+  transition: background 0.1s, color 0.1s;
+  -webkit-app-region: no-drag;
+}
+
+.cryoclaw-sidebar__item:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.cryoclaw-sidebar__item:active {
+  background: var(--bg-active, var(--bg-hover));
+}
+
+.cryoclaw-sidebar__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+}
+
+.cryoclaw-sidebar__icon svg {
+  width: 16px;
+  height: 16px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.cryoclaw-sidebar__label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cryoclaw-sidebar__item--settings {
+  width: 100%;
+}
+
+.cryoclaw-sidebar__item--update {
+  width: 100%;
+  position: relative;
+  color: var(--accent);
+  background: var(--accent-subtle);
+}
+
+.cryoclaw-sidebar__item--update:hover:not(:disabled) {
+  color: var(--accent);
+  background: var(--accent-glow);
+}
+
+.cryoclaw-sidebar__item--update .cryoclaw-sidebar__label {
+  font-weight: 600;
+}
+
+.cryoclaw-sidebar__item--update:disabled {
+  cursor: default;
+  opacity: 0.78;
+}
+
+.cryoclaw-sidebar__item--update.is-loading .cryoclaw-sidebar__icon svg {
+  animation: spin 1s linear infinite;
+}
+
+.cryoclaw-sidebar__update-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-left: auto;
+  background: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-subtle);
+}
+
+/* WebBridge 待修复提示：可点击，红色与"重启更新"pill 一致 */
+.cryoclaw-sidebar__item--webbridge-repair {
+  width: 100%;
+  position: relative;
+  cursor: pointer;
+  color: var(--accent);
+  background: var(--accent-subtle);
+}
+
+.cryoclaw-sidebar__item--webbridge-repair:hover {
+  background: var(--accent-glow);
+}
+
+.cryoclaw-sidebar__item--webbridge-repair .cryoclaw-sidebar__label {
+  font-weight: 600;
+}
+
+.cryoclaw-sidebar__item--webbridge-repair .cryoclaw-sidebar__icon {
+  color: var(--accent);
+}
+
+/* checking：图标转圈，hover 维持原色避免“可点”错觉（已经在查了） */
+.cryoclaw-sidebar__item--webbridge-repair.is-checking .cryoclaw-sidebar__icon svg {
+  animation: spin 1s linear infinite;
+}
+.cryoclaw-sidebar__item--webbridge-repair.is-checking {
+  cursor: progress;
+}
+.cryoclaw-sidebar__item--webbridge-repair.is-checking:hover {
+  background: var(--accent-subtle);
+}
+
+/* 选中态：accent-subtle 底 + 左侧 3px accent 指示条（与会话项一致） */
+.cryoclaw-sidebar__item.active {
+  color: var(--text-strong);
+  background: var(--accent-subtle);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.cryoclaw-sidebar__item.active .cryoclaw-sidebar__icon {
+  color: var(--text-strong);
+}
+
+.cryoclaw-sidebar__footer {
+  padding: 8px 12px 10px;
+  border-top: 1px solid var(--border);
+  overflow: visible;
+  -webkit-app-region: no-drag;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* 断开连接按钮容器，撑满宽度 + 支持 hover 弹出错误列表 */
+.cryoclaw-sidebar__reconnect-wrap {
+  position: relative;
+  width: 100%;
+}
+
+/* 断连按钮：红色文字 + flex 撑满 */
+.cryoclaw-sidebar__item--disconnected {
+  color: var(--accent) !important;
+  width: 100%;
+}
+
+.cryoclaw-sidebar__item--disconnected:hover {
+  color: var(--accent-hover) !important;
+}
+
+.cryoclaw-sidebar__item--disconnected svg {
+  stroke: currentColor;
+}
+
+/* 错误数量红点，推到按钮行最右侧 */
+.cryoclaw-sidebar__error-badge {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--accent);
+  color: var(--text-on-accent);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 18px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+/* 侧栏通用计数徽章（cron 任务数等） */
+.cryoclaw-sidebar__badge {
+  margin-left: auto;
+  font-size: var(--text-xs);
+  min-width: 18px;
+  height: 18px;
+  line-height: 18px;
+  text-align: center;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--text-muted) 20%, transparent);
+  color: var(--text-secondary);
+  font-weight: 500;
+  flex-shrink: 0;
+  padding: 0 5px;
+}
+
+.cryoclaw-sidebar__badge--new {
+  background: var(--accent);
+  color: var(--text-on-accent);
+  font-weight: 600;
+}
+
+/* hover 弹出的错误信息列表，用 fixed 定位逃出 sidebar overflow */
+.cryoclaw-sidebar__error-popup {
+  display: none;
+  position: fixed;
+  left: var(--sidebar-width);
+  bottom: 18px;
+  margin-left: 8px;
+  min-width: 240px;
+  max-width: 360px;
+  padding: 4px 0;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md);
+  z-index: 1000;
+}
+
+.cryoclaw-sidebar__reconnect-wrap:hover .cryoclaw-sidebar__error-popup {
+  display: block;
+}
+
+.cryoclaw-sidebar__error-item {
+  padding: 7px 12px;
+  font-size: 12px;
+  line-height: 20px;
+  color: var(--accent);
+  word-break: break-word;
+}
+
+.cryoclaw-sidebar__error-item + .cryoclaw-sidebar__error-item {
+  border-top: 1px solid var(--border);
+}
+
+.cryoclaw-titlebar {
+  height: 44px;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  -webkit-app-region: drag;
+  display: flex;
+  align-items: center;
+}
+
+.cryoclaw-floating-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  /* Windows/Linux 默认：靠左 */
+  margin-left: 12px;
+  padding-top: 3px;
+  -webkit-app-region: no-drag;
+}
+
+/* macOS 红绿灯右侧对齐 */
+.is-mac .cryoclaw-floating-actions {
+  margin-left: 90px;
+}
+
+.cryoclaw-floating-btn {
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background var(--duration-fast) ease, color var(--duration-fast) ease;
+}
+
+.cryoclaw-floating-btn:hover {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+
+.cryoclaw-floating-btn svg {
+  width: 18px;
+  height: 18px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.shell {
+  display: contents !important;
+}
+
+.shell>nav.nav {
+  display: none !important;
+}
+
+.shell>.page-content {
+  display: contents !important;
+}
+
+.topbar {
+  display: none !important;
+}
+
+.cryoclaw-content .chat {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+@media (max-width: 900px) {
+  :root {
+    --sidebar-width: 196px;
+  }
+}
+
+@media (max-width: 720px) {
+  :root {
+    --sidebar-width: 178px;
+  }
+
+  .cryoclaw-sidebar__title {
+    font-size: var(--text-base);
+  }
+
+  .cryoclaw-sidebar__item {
+    padding: var(--spacer-6) var(--spacer-10);
+    font-size: var(--text-sm);
+  }
+}
+
+
+/* ── 主导航组（阶段 16：任务/定时/技能/工作区移至侧栏顶部） ── */
+.cryoclaw-sidebar__main-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0 10px 10px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+}
+
+
+/* ==========================================================================
+   ex-redesign：侧边栏会话管理（会话搜索框 / 「⋯」菜单 / 归档弱化）
+   自 redesign.css 合并，选择器无后加载竞争者，计算样式不变。
+   ========================================================================== */
+
+/* ── 会话搜索框（cc-input 契约：min-height 32 / radius-8 / focus ring） ── */
+.cryoclaw-sidebar__session-search {
+  padding: 0 var(--spacer-12) var(--spacer-8);
+}
+
+.cryoclaw-sidebar__session-search-input {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 32px;
+  padding: 0 var(--spacer-12);
+  font-size: var(--text-sm);
+  font-family: inherit;
+  color: var(--text);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-8);
+  outline: none;
+  transition: border-color var(--duration-fast) ease, box-shadow var(--duration-fast) ease;
+}
+
+.cryoclaw-sidebar__session-search-input:focus {
+  border-color: var(--border-focus);
+  box-shadow: var(--focus-ring);
+}
+
+.cryoclaw-sidebar__session-search-input::placeholder {
+  color: var(--text-muted);
+}
+
+.cryoclaw-sidebar__session-empty {
+  padding: var(--spacer-12) var(--spacer-16);
+  font-size: var(--text-sm);
+  color: var(--muted);
+}
+
+/* ── 会话项「⋯」菜单 ── */
+.cryoclaw-sidebar__session-menu-wrap {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+.cryoclaw-sidebar__session-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  /* 列表底部会话：JS 测量后加 --up 向上翻转，避免菜单被视口底部裁掉 */
+  z-index: 60;
+  min-width: 150px;
+  background: var(--popover);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  padding: 4px;
+  display: grid;
+  gap: 1px;
+}
+
+.cryoclaw-sidebar__session-menu--up {
+  top: auto;
+  bottom: calc(100% + 4px);
+}
+
+.cryoclaw-sidebar__session-menu-item {
+  display: flex;
+  align-items: center;
+  gap: var(--spacer-8);
+  min-height: 32px;
+  width: 100%;
+  padding: var(--spacer-6) var(--spacer-8);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  font-size: var(--text-sm);
+  font-family: inherit;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.12s ease;
+}
+
+.cryoclaw-sidebar__session-menu-item:hover {
+  background: var(--bg-hover);
+}
+
+.cryoclaw-sidebar__session-menu-item--danger {
+  color: var(--danger, #ef4444);
+}
+
+.cryoclaw-sidebar__session-menu-item--danger .cryoclaw-sidebar__session-menu-icon {
+  color: var(--danger, #ef4444);
+}
+
+.cryoclaw-sidebar__session-menu-icon {
+  display: inline-flex;
+  align-items: center;
+  color: var(--muted);
+}
+
+.cryoclaw-sidebar__session-menu-icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* ── 归档会话项弱化显示 ── */
+.cryoclaw-sidebar__session-item.is-archived .cryoclaw-sidebar__session-name {
+  opacity: 0.65;
+}

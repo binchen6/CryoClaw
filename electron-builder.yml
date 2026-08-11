@@ -1,0 +1,93 @@
+appId: com.cryoclaw.app
+productName: CryoClaw
+copyright: Copyright © 2025 CryoClaw
+
+directories:
+  output: out
+
+files:
+  - dist/**/*
+  - chat-ui/dist/**/*
+  - shared/**/*
+  - assets/**/*
+  - setup/**/*
+  - package.json
+  - release-notes.json
+  # ── 安全/瘦身排除（asar 曾误打包整个项目根：resources/targets 384M 与 afterPack
+  #    注入重复、.cache 188M 调试暂存、.env.build 构建密钥泄漏进安装包）──
+  - "!resources/**"          # 目标资源由 afterPack 注入 resources/resources/，勿入 asar
+  - "!.env*"                 # 构建密钥，绝不能进安装包
+  - "!**/.cache/**"          # 本地下载/取证缓存
+  - "!**/.test-dist/**"      # 测试编译产物
+  - "!src/**"                # TypeScript 源码，运行时只用 dist/
+  - "!scripts/**"            # 构建期脚本（installer.nsh 等由 electron-builder 直接读仓库）
+  - "!docs/**"
+  - "!builtin-skills/**"     # 已由 package-resources 注入 gateway 包内
+  - "!*.log"
+  - "!tsconfig*.json"
+  - "!tsconfig.tsbuildinfo"
+  - "!vitest.config.ts"
+  - "!electron-builder.yml"
+  # 安装包内不需要平台图标文件（icon 由 electron-builder 构建期从仓库读取，
+  # 运行时只用 icon.png / tray 图标）。注意：win/mac 平台级 files 会【覆盖】而非
+  # 合并全局 files（本项目曾因此把整个项目根打进 asar），切勿再加平台级 files。
+  - "!assets/**/*.icns"
+  - "!assets/**/*.ico"
+
+# afterPack 钩子：绕过 node_modules 剥离，直接注入 resources/ 到 app bundle
+afterPack: ./scripts/afterPack.js
+
+# --- macOS ---
+mac:
+  target:
+    - dmg   # 手动分发
+    - zip   # 自动更新（electron-updater 在 macOS 上要求 zip）
+  icon: assets/icon.icns
+  category: public.app-category.productivity
+  # zip artifactName 含 arch + -mac 后缀，供 electron-updater findFile 按架构匹配
+  # dmg.artifactName 会覆盖 DMG 的命名
+  artifactName: "CryoClaw-${version}-${arch}-mac.${ext}"
+  # 签名身份由 CSC_NAME 环境变量指定（见 .env），避免把证书名写入仓库
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  notarize: true
+  extraResources:
+    - from: "resources/targets/darwin-${arch}/officecli"
+      to: "resources/officecli"
+
+# 自动更新：指向阿里云 CDN
+publish:
+  provider: generic
+  url: https://oneclaw.cn/releases/
+
+dmg:
+  sign: false
+  # 关闭 DMG 差分更新元数据，避免生成 .dmg.blockmap
+  writeUpdateInfo: false
+  artifactName: "CryoClaw-${version}-${arch}.${ext}"
+
+# --- Windows ---
+win:
+  target: nsis
+  icon: assets/icon.ico
+  extraResources:
+    - from: "resources/targets/win32-${arch}/officecli"
+      to: "resources/officecli"
+
+nsis:
+  oneClick: false
+  perMachine: false
+  # 安装/卸载向导图标（复用应用 ico，含 256x256 档）
+  installerIcon: "assets/icon.ico"
+  uninstallerIcon: "assets/icon.ico"
+  # 允许用户自选安装目录
+  allowToChangeInstallationDirectory: true
+  # 安装前强制终止旧进程，避免托盘模式下 WM_CLOSE 被拦截
+  include: "scripts/installer.nsh"
+  # "always" 确保更新安装时也重新创建快捷方式（默认 true 只在首次安装创建）
+  createDesktopShortcut: always
+  createStartMenuShortcut: true
+  runAfterFinish: true
+  # 关闭 NSIS 差分包，避免生成 .exe.blockmap
+  differentialPackage: false
+  artifactName: "CryoClaw-Setup-${version}-${arch}.${ext}"

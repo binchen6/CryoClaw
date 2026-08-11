@@ -1,0 +1,101 @@
+/* ==========================================================================
+   styles/panel.css — 全页面板统一骨架（任务/定时任务/技能/工作区）
+   只定义骨架排版类：各视图把骨架类叠加在既有专有类上（class="ts-layout panel"），
+   专有类继续负责布局宽度/滚动细节，本文件不重写任何视图内部结构。
+   仅使用 design-tokens 既有变量，不引入新硬编码色。
+   ========================================================================== */
+
+/* ── 全页容器 ──
+   叠加在视图既有根元素上：统一为纵向 flex + 自身滚动。
+   对已有滚动容器（skills-scroll / workspace-scroll）行为一致；
+   对无滚动的根（ts-layout）补齐滚动，内容超高时不再被 .cryoclaw-content 裁切。
+   master-detail 视图（cm-layout）不要在根上加此类——它有自己的列内滚动。 */
+.panel {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+/* ── 标题行 ──
+   大标题 + 右侧操作区（按钮右对齐）。
+   不自带 margin：各视图既有间距（gap / margin-bottom）保持现状，避免双重间距。 */
+.panel__header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.panel__title {
+  margin: 0;
+  font-size: var(--heading-md);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--text-strong);
+}
+
+.panel__subtitle {
+  margin: var(--spacer-4) 0 0;
+  font-size: var(--heading-xs);
+  color: var(--text-secondary);
+}
+
+/* 右侧操作区：按钮右对齐 */
+.panel__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+
+/* ── 工具行 ──
+   筛选/搜索/排序控件行，底部 hairline 与内容分隔。 */
+.panel__toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding-bottom: 14px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+/* ── 空态 ──
+   居中、muted 文案、可选图标位（.panel__empty-icon）。 */
+.panel__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  text-align: center;
+  padding: 48px 24px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.panel__empty-icon {
+  color: var(--text-muted);
+  opacity: 0.3;
+  margin-bottom: 8px;
+}
+
+.panel__empty-title {
+  margin: 0;
+  font-size: var(--heading-sm);
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.panel__empty-desc {
+  margin: 0;
+  max-width: 320px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
