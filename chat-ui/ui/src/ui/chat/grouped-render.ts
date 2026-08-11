@@ -15,6 +15,7 @@ import { isToolResultMessage, normalizeRoleForGrouping } from "./message-normali
 import { extractMessageModel, formatUsageFooter, sumGroupUsage } from "./message-meta.ts";
 import type { FileChange } from "./file-changes.ts";
 import { linkifyPaths } from "./path-linker.ts";
+import { chatTextEnhanceRef } from "./code-block-enhance.ts";
 import { extractToolCards, renderToolCardSidebar } from "./tool-cards.ts";
 import { summarizeToolCards } from "./tool-summary.ts";
 import { t } from "../i18n.ts";
@@ -506,7 +507,7 @@ function renderGroupedMessage(
               <pre class="chat-json-content"><code>${jsonResult.pretty}</code></pre>
             </details>`
           : markdown
-            ? html`<div class="chat-text" dir="${detectTextDirection(markdown)}">${unsafeHTML(linkifyPaths(toSanitizedMarkdownHtml(markdown)))}</div>`
+            ? html`<div class="chat-text" ${chatTextEnhanceRef} dir="${detectTextDirection(markdown)}">${unsafeHTML(linkifyPaths(toSanitizedMarkdownHtml(markdown)))}</div>`
             : nothing
       }
       ${hasToolCards ? renderCollapsedToolCards(toolCards, onOpenSidebar) : nothing}
@@ -555,7 +556,7 @@ function renderGroupedMessage(
               <pre class="chat-json-content"><code>${jsonResult.pretty}</code></pre>
             </details>`
           : markdown
-            ? html`<div class="chat-text" dir="${detectTextDirection(markdown)}">${unsafeHTML(linkifyPaths(toSanitizedMarkdownHtml(markdown)))}</div>`
+            ? html`<div class="chat-text" ${chatTextEnhanceRef} dir="${detectTextDirection(markdown)}">${unsafeHTML(linkifyPaths(toSanitizedMarkdownHtml(markdown)))}</div>`
             : nothing
       }
       ${hasToolCards ? renderCollapsedToolCards(toolCards, onOpenSidebar) : nothing}
