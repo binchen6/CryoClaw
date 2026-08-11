@@ -1,5 +1,12 @@
 [
   {
+    "version": "2026.811.4",
+    "notes": {
+      "zh": "操作体验：对话中的每个代码块新增一键复制按钮（悬停显现，复制成功/失败有即时反馈）",
+      "en": "Interaction: every code block in chat now has a one-click copy button (reveals on hover, with instant copied/failed feedback)"
+    }
+  },
+  {
     "version": "2026.811.3",
     "notes": {
       "zh": "阅读体验：对话中的 markdown 标题有了层级样式（字号/间距收敛），GFM 表格首次获得边框、内边距与斑马纹，宽表格横向滚动不再撑破气泡\n新功能：markdown 渲染引擎支持 GFM 任务列表（- [x] 渲染为只读复选框），解析异常自动退化为纯文本不再拖垮单条消息\n安全：修复 25 个依赖漏洞（含打包链路的严重级 node-tar 路径穿越；chat-ui 侧 dompurify/vite 等 7 项清零）\n工程：新增 tests CI 工作流（每次提交全量回归）；移除不适用于本仓库的上游签名/CDN 发版工作流",
