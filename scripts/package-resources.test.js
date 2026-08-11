@@ -175,14 +175,6 @@ test("buildVolcanoConfig 应写入独立的超时与重试配置", () => {
   });
 });
 
-test("build-release workflow 应把 Volcano 必填环境变量映射到构建进程", () => {
-  const workflow = fs.readFileSync(path.join(__dirname, "..", ".github", "workflows", "build-release.yml"), "utf-8");
-
-  assert.match(workflow, /^\s*VOLCANO_APP_ID:\s+\$\{\{\s*secrets\.VOLCANO_APP_ID\s*\}\}/m);
-  assert.match(workflow, /^\s*VOLCANO_APP_KEY:\s+\$\{\{\s*secrets\.VOLCANO_APP_KEY\s*\}\}/m);
-  assert.match(workflow, /^\s*VOLCANO_ENDPOINT:\s+\$\{\{\s*secrets\.VOLCANO_ENDPOINT\s*\}\}/m);
-});
-
 test("downloadOfficeCli 不应因 stamp 匹配而跳过缺失的输出文件", async () => {
   const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "cryoclaw-officecli-missing-"));
   const version = "1.2.3";

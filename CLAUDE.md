@@ -88,7 +88,7 @@ cryoclaw/
 │   └── clean.sh
 ├── assets/                 # Icons: .icns, .ico, .png, tray templates
 ├── docs/                   # Plans, design guidelines, architecture docs
-├── .github/workflows/      # CI: build-release.yml + publish-release.yml
+├── .github/workflows/      # CI: tests.yml (full regression on push/PR)
 ├── electron-builder.yml    # Build config (DMG + ZIP for mac, NSIS for win)
 ├── tsconfig.json           # target ES2022, module CommonJS
 └── .env                    # Signing keys + build config (gitignored)
