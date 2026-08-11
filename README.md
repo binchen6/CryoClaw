@@ -45,7 +45,7 @@ CryoClaw 是在 **[OneClaw](https://github.com/oneclaw/oneclaw)**（AGPL-3.0）�
 | 模型管理 | 基础列表 | provider 分组 + 拖拽排序 + 自定义分组 + fallback 链 + 搜索 + 密钥有效性探测 + 四处选择器联动 |
 | CLI | `openclaw` PATH 注入 | 额外提供 gateway CLI 托管（127.0.0.1 控制面，`openclaw gateway restart/status` 不再报错） |
 | 启动速度 | — | 窗口先行 + 内核并行启动，约 0.6s 看到界面 |
-| 测试 | — | 435 个用例全量回归（vitest + node:test + typecheck），0 fail 为硬指标 |
+| 测试 | — | 439 个用例全量回归（vitest + node:test + typecheck），0 fail 为硬指标 |
 
 ### 🚀 快速上手
 
@@ -93,7 +93,7 @@ CryoClaw (Electron 40 + TypeScript 5.9)
 ```
 
 - **通信**：chat-ui 经 WebSocket RPC 与 gateway 内核通信（内核注册 237 个 RPC 方法）；渲染层 CSP 只允许连接 127.0.0.1。
-- **渲染**：markdown 引擎（marked + DOMPurify）支持 GFM 表格/任务列表，样式化的标题与斑马纹表格；代码块带语法高亮（highlight.js 按需加载 15 种常用语言）、语言标签与悬停复制按钮；LRU 缓存 + 流式旁路防污染，解析异常自动退化为纯文本。
+- **渲染**：markdown 引擎（marked + DOMPurify）支持 GFM 表格/任务列表，样式化的标题与斑马纹表格；代码块带语法高亮（highlight.js 按需加载 15 种常用语言）、语言标签与悬停复制按钮；LaTeX 公式（$$块级$$/$行内$）KaTeX 专业排版；LRU 缓存 + 流式旁路防污染，解析异常自动退化为纯文本。
 - **安全**：全部 IPC 通道过 sender guard；API Key 只存本机（`~/.openclaw/openclaw.json`）；日志统一脱敏；open-external 仅放行 http(s)。
 - **内核升级**：设置页「内核升级」卡片或 `openclaw update` CLI，差分换装、双备份、健康检查失败自动回滚。
 - **执行权限**：请求批准 / 智能审批 / 完全同意三态 + Docker 沙箱前置守卫；支持 `update_plan` 计划悬浮面板、目标模式、消息队列、`/` 命令补全。
@@ -122,7 +122,7 @@ A: CryoClaw 定位是纯净 harness：应用本体保持简单，能力演进交
 
 **CryoClaw** is a fork-and-rebuild of [OneClaw](https://github.com/oneclaw/oneclaw) (AGPL-3.0): an efficient, easy-to-use, pure harness around the [OpenClaw](https://github.com/openclaw/openclaw) kernel. The whole project was iterated via **vibe coding** — multi-round collaborative sessions with Kimi K3 (Kimi Code, lead), DeepSeek v4 Flash (Codex) and Qwen3.8 Max (Qoder), with humans steering requirements and acceptance.
 
-Highlights over OneClaw: ice-blue TraeWork design system (light/dark), auto-updater removed in favor of a kernel-only upgrader (diff ASAR swap with rollback), settings fully migrated to kernel `config.get`/`config.patch`, streaming rendered as per-frame plain text (no more O(n²) jank), hardened markdown engine (GFM tables & task lists, parse-failure fallback), gateway.asar trimmed from 279.6 to 237.6MB, model management with custom groups / drag-reorder / fallback chains, managed gateway CLI, ~0.6s startup, and a 435-test regression baseline (0 fail).
+Highlights over OneClaw: ice-blue TraeWork design system (light/dark), auto-updater removed in favor of a kernel-only upgrader (diff ASAR swap with rollback), settings fully migrated to kernel `config.get`/`config.patch`, streaming rendered as per-frame plain text (no more O(n²) jank), hardened markdown engine (GFM tables & task lists, code highlighting with language labels, KaTeX math, parse-failure fallback), gateway.asar trimmed from 279.6 to 237.6MB, model management with custom groups / drag-reorder / fallback chains, managed gateway CLI, ~0.6s startup, and a 439-test regression baseline (0 fail).
 
 Download from [Releases](https://github.com/binchen6/CryoClaw/releases/latest) (Windows x64 installer), or build from source with Node.js ≥ 22.12 (`npm install && npm run dev`).
 

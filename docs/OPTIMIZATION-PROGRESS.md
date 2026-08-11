@@ -11,10 +11,10 @@
 面向国内生态（Kimi / Moonshot / 飞书 / 企微 / 微信 / 钉钉 / QQ）。
 
 **当前状态**：
-- 更名 CryoClaw 完成；CryoClaw 重设计工程 **R1 / R1.5 / R2 / R3A–R3E / R4 / R5 / R6 / R7 / R9 / R10 全部完成**（见下节），最新版 v2026.811.6。
+- 更名 CryoClaw 完成；CryoClaw 重设计工程 **R1 / R1.5 / R2 / R3A–R3E / R4 / R5 / R6 / R7 / R9 / R10 全部完成**（见下节），最新版 v2026.811.7。
 - 内核 openclaw **2026.7.1-2**（版本 pin 在 package.json `cryoclaw.openclaw`）。
-- 测试基线 **435 pass / 0 fail / 4 skipped**（vitest 94 + node 64/68 + chat-ui 230 + scripts 47 + tsc typecheck；
-  chat-ui 230 含 markdown 渲染引擎增强 5 用例（GFM 任务列表/原始 HTML 转义/超长文本退化/表格结构/标题层级）；scripts 47（上游 build-release 工作流删除后同步移除其 Volcano env 映射用例）；0 fail 为硬指标）。
+- 测试基线 **439 pass / 0 fail / 4 skipped**（vitest 94 + node 64/68 + chat-ui 234 + scripts 47 + tsc typecheck；
+  chat-ui 234 含 markdown 渲染引擎增强 5 用例 + KaTeX 公式识别启发式 4 用例；scripts 47（上游 build-release 工作流删除后同步移除其 Volcano env 映射用例）；0 fail 为硬指标）。
 - 历史优化阶段 1–22 全部完成并逐版发版至 v2026.811.0（见历史档案）。
 - 已开源发布至 GitHub（binchen6/CryoClaw，AGPL-3.0-only）；发布时以全新干净历史快照推送，旧本地历史（含已作废的 kimi-claw REFRESH 凭证）不出仓；`.env.build` 已转 gitignored，模板见 `.env.build.example`；git 身份统一为 binchen6。CI：`tests.yml` 每次 push/PR 全量回归（chat-ui/ui 独立依赖树需先安装）；上游签名/CDN 发版链 `build-release.yml`/`publish-release.yml` 已删除（依赖上游 oneclaw 签名证书与 oneclaw.cn CDN，本 fork 不适用，发版走本地 dist:win + gh release）。
 
@@ -326,6 +326,8 @@
 - **发版 E2E（v2026.811.4，2026-08-11）**：静默安装后 CDP 实测（`.cache/cdp-8114-codecopy.js`）：新建对话让模型产出代码块 → `.chat-text pre` 与 `.chat-code-copy` 1:1 匹配、裸 i18n 键 0、renderer 异常 0。
 - **发版 E2E（v2026.811.5，2026-08-11）**：CDP 实测（`.cache/cdp-8115-hljs.js`）：python 代码块 `language-python` 命中 → `code.hljs` 启用、hljs token span 生成、按钮 1:1、裸 i18n 键 0、renderer 异常 0；截图确认字符串着色生效。
 - **发版 E2E（v2026.811.6，2026-08-11）**：CDP 实测（`.cache/cdp-8116-langlabel.js`）：标签 `python` 与按钮/代码块 1:1、高亮 token 正常；**浅/暗双主题截图走查通过**（高亮配色随主题适配、无不可读元素）。
+- **KaTeX 公式渲染**：`chat/math-enhance.ts` DOM 层扫描 `$$块级$$`/`$行内$`（katex 动态 import + 字体按需，主 bundle 反而 -10KB）；启发式防金额误判（首尾空白/跨行/超长拒绝），渲染失败保留原文；配套 4 用例。
+- **发版 E2E（v2026.811.7，2026-08-11）**：静默安装后 CDP 实测（`.cache/cdp-8117-katex.js`）：让模型产出双公式 → `.katex` 元素 4 个、块级 2 个、裸 i18n 键 0、renderer 异常 0；截图确认数学排版生效。
 
 ## 📋 下一步计划（未做，按优先级）
 
