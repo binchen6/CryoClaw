@@ -13,8 +13,8 @@
 **当前状态**：
 - 更名 CryoClaw 完成；CryoClaw 重设计工程 **R1 / R1.5 / R2 / R3A–R3E / R4 / R5 / R6 / R7 / R9 / R10 全部完成**（见下节），最新版 v2026.811.8。
 - 内核 openclaw **2026.7.1-2**（版本 pin 在 package.json `cryoclaw.openclaw`）。
-- 测试基线 **445 pass / 0 fail / 4 skipped**（vitest 94 + node 64/68 + chat-ui 240 + scripts 47 + tsc typecheck；
-  chat-ui 240 含 markdown 渲染引擎增强 5 用例 + KaTeX 公式识别启发式 4 用例 + MEDIA 本地图片识别/file URL 转换 6 用例；scripts 47；0 fail 为硬指标）。
+- 测试基线 **447 pass / 0 fail / 4 skipped**（vitest 94 + node 64/68 + chat-ui 242 + scripts 47 + tsc typecheck；
+  chat-ui 242 含 markdown 渲染引擎增强 5 用例 + KaTeX 公式识别启发式 4 用例 + MEDIA 本地图片识别/file URL 转换/字符串层替换 8 用例；scripts 47；0 fail 为硬指标）。
 - 历史优化阶段 1–22 全部完成并逐版发版至 v2026.811.0（见历史档案）。
 - 已开源发布至 GitHub（binchen6/CryoClaw，AGPL-3.0-only）；发布时以全新干净历史快照推送，旧本地历史（含已作废的 kimi-claw REFRESH 凭证）不出仓；`.env.build` 已转 gitignored，模板见 `.env.build.example`；git 身份统一为 binchen6。CI：`tests.yml` 每次 push/PR 全量回归（chat-ui/ui 独立依赖树需先安装）；上游签名/CDN 发版链 `build-release.yml`/`publish-release.yml` 已删除（依赖上游 oneclaw 签名证书与 oneclaw.cn CDN，本 fork 不适用，发版走本地 dist:win + gh release）。
 
@@ -459,7 +459,7 @@
 - Ctrl+S steer 真·插入当前回合需内核支持（内核 WS 是 followup 语义，「立即发送」已是最接近实现）；队列重排低优先未做。
 - PATH 上 npm 全局 openclaw 可能遮蔽 CryoClaw wrapper（install-detector 已在 Setup 检测提示，代码层无法根治）。
 - 会话菜单 `--up` 翻转在极端时序下取不到元素则保持默认向下（优雅降级）；计划面板与顶部错误条同现叠放已修（chat.css `.chat:has(.plan-panel)` 避让规则）。
-- 历史消息里旧 `MEDIA:<路径>` 纯文本残留已修（v2026.811.8，应用户要求推翻原「有意决策」）：`chat/media-enhance.ts` DOM 层识别渲染为本地图片（file:// 直读，失败回退原文，点击全屏预览）；配套 6 用例。
+- 历史消息里旧 `MEDIA:<路径>` 纯文本残留已修（v2026.811.8，应用户要求推翻原「有意决策」）：`chat/media-enhance.ts` 两段式——字符串层 `renderMediaMarkers` 在 sanitize 后/linkify 前替换为 `<img file://>`（先于 path-linker 否则路径被拆进 <a>；pre 内不渲染），DOM 层 `enhanceMedia` 挂失败回退原文 + 点击全屏预览；配套 8 用例。
 - 会话 rewind/fork 的 restore/branch 两条路径未做过真机联调（阶段 2 挂账，待核）。
 - 阶段 17 附带发现 `.chat-session` 疑似死样式已核：全 repo 无此样式定义与引用（早已随重构清除），结案。
 - 会话管理页 `includeDerivedTitles` 每行多一次 8KB 文件读——会话量极大时注意内核默认 limit（待核）。

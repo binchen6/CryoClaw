@@ -1,12 +1,14 @@
 /**
  * 历史消息 `MEDIA:<路径>` 本地图片渲染（R10 遗留清理，应用户要求落地）：
  * 旧版消息以 `MEDIA:C:\...\file.png` 纯文本形式引用本地图片，此前仅显示为路径链接。
- * 本模块在 DOM 层识别该标记并渲染为 <img>（file:// 直读，页面本身即 file:// 协议），
- * 加载失败回退为原始文本；点击图片可全屏预览。与代码块/公式增强同模式：
- * DOM 后处理、不动 marked/DOMPurify 管线、幂等。
+ * 两段式实现（页面本身即 file:// 协议，可直读本地图片）：
+ *   1) renderMediaMarkers —— 字符串层：sanitize 之后、linkify 之前把 MEDIA 标记替换为
+ *      <img class="chat-local-media" src="file:///...">（必须先于 path-linker，否则路径被拆进 <a>）；
+ *   2) enhanceMedia —— DOM 层：为已注入的 img 挂加载失败回退与点击全屏预览。
+ * 与代码块/公式增强同模式：不动 marked/DOMPurify 管线、幂等。
  */
 
-// MEDIA 标记：支持带引号路径与裸路径（裸路径需含目录分隔符或图片扩展名，防误判）
+// MEDIA 标记：支持带引号路径与裸路径
 export const MEDIA_RE = /MEDIA:\s*(?:"([^"\n]+)"|([^\s"'<>|]+))/g;
 
 const IMG_EXT_RE = /\.(png|jpe?g|gif|webp|bmp|svg|ico)$/i;
@@ -41,14 +43,13 @@ interface MediaMatch {
   path: string;
 }
 
-// 提取文本中第一个可渲染的 MEDIA 标记（不合法的候选跳过继续找）
+// 从文本中提取第一个可渲染的 MEDIA 标记（裸路径按图片扩展名截断尾随非空白文本；不合法跳过继续）
 export function extractMediaMatch(text: string): MediaMatch | null {
   MEDIA_RE.lastIndex = 0;
   let m: RegExpExecArray | null;
   while ((m = MEDIA_RE.exec(text)) !== null) {
     let path = (m[1] ?? m[2] ?? "").trim();
     let full = m[0];
-    // 裸路径候选可能吞掉尾随非空白文本（如中文）：按图片扩展名截断
     const extMatch = path.match(/^(.*?\.(png|jpe?g|gif|webp|bmp|svg|ico))/i);
     if (extMatch && extMatch[1].length < path.length) {
       path = extMatch[1];
@@ -60,6 +61,53 @@ export function extractMediaMatch(text: string): MediaMatch | null {
   }
   return null;
 }
+
+// 匹配位置是否位于 <pre>...</pre> 内（代码块里的 MEDIA 字样不渲染）
+function isInsidePre(html: string, at: number): boolean {
+  const before = html.slice(0, at);
+  const lastOpen = before.lastIndexOf("<pre");
+  if (lastOpen === -1) {
+    return false;
+  }
+  const lastClose = before.lastIndexOf("</pre>");
+  return lastOpen > lastClose;
+}
+
+function escapeAttr(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+/**
+ * 字符串层：把 sanitized HTML 中的 MEDIA 标记替换为 <img>。
+ * 必须在 linkifyPaths 之前调用（否则路径已被拆进 <a>）。
+ */
+export function renderMediaMarkers(html: string): string {
+  if (!html.includes("MEDIA:")) {
+    return html;
+  }
+  return html.replace(MEDIA_RE, (match, _q, _b, offset) => {
+    if (isInsidePre(html, offset)) {
+      return match;
+    }
+    const parsed = extractMediaMatch(match);
+    if (!parsed) {
+      return match;
+    }
+    const url = localPathToFileUrl(parsed.path);
+    if (!url) {
+      return match;
+    }
+    const src = escapeAttr(url);
+    const alt = escapeAttr(parsed.path);
+    return `<img class="chat-local-media" src="${src}" alt="${alt}" title="${alt}" data-media-text="${escapeAttr(parsed.full)}" loading="lazy">`;
+  });
+}
+
+// ── DOM 层行为：失败回退 + 点击全屏预览（ref 回调链调用，幂等）──
 
 function buildLightbox(src: string) {
   const overlay = document.createElement("div");
@@ -79,88 +127,29 @@ function buildLightbox(src: string) {
   document.body.appendChild(overlay);
 }
 
-function buildMediaImage(path: string, originalText: string): HTMLImageElement {
-  const img = document.createElement("img");
-  img.className = "chat-local-media";
-  img.src = localPathToFileUrl(path) ?? "";
-  img.alt = path;
-  img.title = path;
-  img.loading = "lazy";
-  img.addEventListener("error", () => {
-    // 文件不存在/不可读：回退为原始文本（保持历史行为，不丢信息）
-    if (!img.isConnected) {
-      return;
-    }
-    const fallback = document.createElement("span");
-    fallback.className = "chat-local-media-fallback";
-    fallback.textContent = originalText;
-    img.replaceWith(fallback);
-  });
-  img.addEventListener("click", () => {
-    if (img.src) {
-      buildLightbox(img.src);
-    }
-  });
-  return img;
-}
-
-function collectTextNodes(root: Element): Text[] {
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-  const nodes: Text[] = [];
-  let node = walker.nextNode();
-  while (node) {
-    const text = node as Text;
-    if (text.nodeValue && text.nodeValue.includes("MEDIA:")) {
-      const parent = text.parentElement;
-      if (parent && !parent.closest("pre, code, button, .chat-code-copy, .chat-code-lang, .chat-math, .chat-local-media-fallback")) {
-        nodes.push(text);
-      }
-    }
-    node = walker.nextNode();
-  }
-  return nodes;
-}
-
-function processTextNode(text: Text) {
-  let current: Text | null = text;
-  let guard = 0;
-  while (current && guard++ < 30) {
-    const value = current.nodeValue ?? "";
-    const match = extractMediaMatch(value);
-    if (!match) {
-      return;
-    }
-    const url = localPathToFileUrl(match.path);
-    const parent = current.parentNode;
-    if (!parent) {
-      return;
-    }
-    const start = match.index;
-    const end = start + match.full.length;
-    const after = current.splitText(end);
-    const before = current.splitText(start);
-    if (url) {
-      parent.replaceChild(buildMediaImage(match.path, match.full), before);
-    } else {
-      // 无法转 file URL（~ / 相对路径）：保留原文，跳过继续
-      current = after;
-      continue;
-    }
-    current = after;
-  }
-}
-
 export function enhanceMedia(container: Element | undefined) {
   if (!container) {
     return;
   }
-  if (!container.textContent || !container.textContent.includes("MEDIA:")) {
-    return;
-  }
-  const candidates = collectTextNodes(container).filter((n) => extractMediaMatch(n.nodeValue ?? "") !== null);
-  for (const text of candidates) {
-    if (text.isConnected) {
-      processTextNode(text);
+  for (const img of Array.from(container.querySelectorAll<HTMLImageElement>("img.chat-local-media"))) {
+    if (img.dataset.mediaBound === "1") {
+      continue;
     }
+    img.dataset.mediaBound = "1";
+    img.addEventListener("error", () => {
+      // 文件不存在/不可读：回退为原始标记文本（保持历史行为，不丢信息）
+      if (!img.isConnected) {
+        return;
+      }
+      const fallback = document.createElement("span");
+      fallback.className = "chat-local-media-fallback";
+      fallback.textContent = img.dataset.mediaText || img.alt || "";
+      img.replaceWith(fallback);
+    });
+    img.addEventListener("click", () => {
+      if (img.src) {
+        buildLightbox(img.src);
+      }
+    });
   }
 }
