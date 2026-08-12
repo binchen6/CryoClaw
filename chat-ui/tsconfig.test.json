@@ -1,0 +1,16 @@
+{
+  "extends": "./ui/tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "outDir": "./ui/.test-dist",
+    "rootDir": ".",
+    "rewriteRelativeImportExtensions": true,
+    "incremental": false,
+    "skipLibCheck": true,
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "sourceMap": false,
+    "declaration": false
+  },
+  "include": ["ui/src/**/*.test.ts"],
+  "exclude": ["node_modules", "dist", "ui/node_modules"]
+}

@@ -1,0 +1,69 @@
+# 上游依赖（各自独立 git 仓库）
+upstream/
+
+# 内部文档（独立仓库）
+oneclaw-docs/
+
+# 依赖
+node_modules/
+
+# 构建产物
+dist/
+out/
+*.tsbuildinfo
+
+# 单元测试编译产物（tsconfig.test.json）
+.test-dist/
+chat-ui/ui/.test-dist/
+
+# Chat UI 构建产物和依赖
+chat-ui/dist/
+chat-ui/ui/node_modules/
+
+# 打包时生成的运行时资源
+resources/runtime/
+resources/gateway/
+resources/app-icon.png
+resources/targets/
+
+# 系统缓存
+.DS_Store
+
+# 下载缓存
+.cache/
+
+# 本地工具（含埋点接收服务）
+tools/
+
+# 签名密钥与本地环境变量（绝对不能提交）
+.env
+.env.build
+private_keys/
+
+.gemini-clipboard/
+.claude/
+.qoder/
+.qoder-cn/
+
+# Git worktrees
+.worktree/
+.worktrees/
+
+# dev 多实例隔离状态目录
+.dev-state/
+
+docs/plans/
+docs/research/
+docs/progress/
+
+# 打包/调试残留日志（不可提交）
+/*stage3*.log
+/*.stage3*.log
+/debug-*.log
+/test-stage3.log
+# 测试产物兜底（chat-ui 测试编译输出，见 chat-ui/tsconfig.test.json）
+chat-ui/ui/.test-dist/
+.test-dist-chat/
+
+# electron-builder 差分包（如被意外开启）
+*.blockmap

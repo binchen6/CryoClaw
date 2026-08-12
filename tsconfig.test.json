@@ -1,0 +1,15 @@
+{
+  "//": "测试专用编译配置：把含测试文件的 src 全量编译到 .test-dist/，供 node --test 运行。",
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": ".test-dist",
+    "rootDir": "src",
+    // 与主构建的 tsbuildinfo 隔离，避免两套 outDir 互相污染增量状态
+    "incremental": false,
+    // 个别测试文件沿用 "./xxx.ts" 后缀的 import（tsx 时代遗留），
+    // 编译时重写为 .js，使 node --test 能直接 require
+    "rewriteRelativeImportExtensions": true
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["node_modules", "dist", "resources", "out"]
+}

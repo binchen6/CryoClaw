@@ -1,0 +1,571 @@
+/* ==========================================================================
+   styles/compose.css — 输入区 Visual Polish Overrides
+   覆盖原 styles.css 行 7252-7808：immersive titlebar、fullpage settings、输入区优化、ChatGPT 风格 compose 统一容器/底部工具栏/模型选择器/思考开关与级别 popover/回放分支 popover、context meter、发送按钮
+   纯搬运拆分，层叠顺序由 hub styles.css 的 @import 顺序决定，勿单独调整
+   ========================================================================== */
+
+/* --- CryoClaw Visual Polish Overrides --- */
+
+/* 1. Immersive Titlebar padding */
+.cryoclaw-sidebar__brand {
+  height: 44px !important;
+  /* Windows/Linux 默认：按钮靠左 */
+  padding: 3px 12px 0 12px !important;
+  display: flex !important;
+  align-items: center !important;
+  /* 字标居左、折叠按钮居右（TraeWork 品牌区） */
+  justify-content: space-between !important;
+  -webkit-app-region: drag;
+}
+
+/* macOS 红绿灯约 70px，按钮紧跟其后 */
+.is-mac .cryoclaw-sidebar__brand {
+  padding-left: 90px !important;
+}
+
+.cryoclaw-sidebar__collapse {
+  -webkit-app-region: no-drag;
+}
+
+.cryoclaw-sidebar__item,
+.cryoclaw-sidebar__session-item,
+.cryoclaw-sidebar__session-add {
+  -webkit-app-region: no-drag;
+}
+
+/* 2. Fullpage Settings */
+.cryoclaw-shell--fullpage .cryoclaw-sidebar {
+  display: none !important;
+}
+
+.cryoclaw-shell--fullpage .cryoclaw-main {
+  width: 100vw !important;
+}
+
+
+/* 4. Input Area Optimization */
+.chat-compose__field textarea {
+  border-radius: 20px !important;
+  padding-right: 48px !important;
+  padding-bottom: 12px !important;
+  min-height: 72px !important;
+  scrollbar-width: none !important;
+}
+
+.chat-compose__field textarea::-webkit-scrollbar {
+  display: none !important;
+}
+
+/* 5. Timestamps / Avatars weakened */
+/* ex-redesign: 组 footer 更克制但不全隐（opacity 0.55），hover 完整呈现 */
+.chat-group-footer {
+  opacity: 0.55;
+  transition: opacity 150ms ease;
+}
+
+.chat-group:hover .chat-group-footer {
+  opacity: 1;
+}
+
+.chat-avatar {
+  display: none !important;
+}
+
+.chat-group {
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+}
+
+/* 6. General Spacing */
+.chat-thread {
+  padding-left: 8px !important;
+  padding-right: 8px !important;
+}
+
+/* 7. Chat Compose — ChatGPT 风格统一容器 */
+/* ex-redesign: 浮动卡片留白 20/24/16 + 顶部渐变融入背景 */
+.chat-compose {
+  padding: var(--spacer-20) var(--spacer-24) var(--spacer-16);
+  background: linear-gradient(to bottom, transparent, var(--bg) 35%);
+}
+
+/* 统一容器：textarea + 底部工具栏一体化 */
+.chat-compose__field {
+  display: flex !important;
+  flex-direction: column !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--radius-16) !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25) !important;
+  transition: border-color 150ms ease, box-shadow 150ms ease !important;
+  overflow: visible;
+  /* ex-redesign: 卡片底 + 内边距（redesign 同名规则的 border/radius/shadow
+     被上面的 !important 覆盖，只有 background/padding 生效） */
+  background: var(--card);
+  padding: 10px 14px 8px;
+}
+
+:root[data-theme=light] .chat-compose__field {
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.06) !important;
+}
+
+.chat-compose__field:focus-within {
+  border-color: var(--border-focus) !important;
+  box-shadow: var(--focus-ring) !important;
+}
+
+/* 浅色静态阴影规则特异性更高，focus 态需单独覆盖才能胜出 */
+:root[data-theme=light] .chat-compose__field:focus-within {
+  box-shadow: var(--focus-ring) !important;
+}
+
+.chat-compose .chat-compose__field textarea {
+  border: none !important;
+  box-shadow: none !important;
+  border-radius: 0 !important;
+  padding: 10px 14px 2px !important;
+  height: auto !important;
+  min-height: 40px !important;
+  max-height: 40vh !important;
+  resize: none !important;
+  background: transparent !important;
+  overflow-y: auto !important;
+}
+
+.chat-compose__field textarea:focus {
+  border: none !important;
+  box-shadow: none !important;
+  outline: none !important;
+}
+
+/* 底部工具栏 — 附件、模型选择器、发送按钮 */
+.chat-compose__toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--spacer-4) var(--spacer-6) var(--spacer-6);
+  gap: var(--spacer-4);
+}
+
+.chat-compose__toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: var(--spacer-2);
+}
+
+.chat-compose__toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: var(--spacer-8);
+}
+
+/* 工具按钮 — 无外圆角边框 */
+.chat-compose__tool-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 150ms ease, background 150ms ease;
+  flex-shrink: 0;
+}
+
+.chat-compose__tool-btn svg {
+  width: 18px;
+  height: 18px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 2px;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.chat-compose__tool-btn:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+
+.chat-compose__tool-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* 模型选择器 — 内嵌在工具栏中，完全无边框 */
+.chat-compose__model-select,
+.field .chat-compose__model-select {
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  outline: none !important;
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--muted);
+  padding: var(--spacer-6) var(--spacer-8);
+  cursor: pointer;
+  font-family: var(--font-body);
+  border-radius: var(--radius-sm);
+  transition: color 150ms ease;
+  max-width: 180px;
+}
+
+.chat-compose__model-select:hover:not(:disabled) {
+  color: var(--text);
+}
+
+.chat-compose__model-select:focus,
+.field .chat-compose__model-select:focus {
+  outline: none !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+.chat-compose__model-select:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.chat-compose__model-select option {
+  color: var(--text);
+  background: var(--bg);
+}
+
+/* 思考强度选择器 — 图标 + 当前档位标签（mono），单击展开档位 popover */
+.chat-compose__thinking {
+  position: relative;
+  display: inline-flex;
+}
+
+.chat-compose__thinking-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacer-6);
+  height: 32px;
+  padding: 0 var(--spacer-8);
+  cursor: pointer;
+  border: none;
+  background: transparent;
+  border-radius: var(--radius-sm);
+  user-select: none;
+  transition: color 150ms ease, background 150ms ease;
+  color: var(--muted);
+}
+
+.chat-compose__thinking-label {
+  font-family: var(--font-meta);
+  font-size: var(--font-size-meta);
+  font-weight: 500;
+  line-height: 1;
+}
+
+.chat-compose__thinking-toggle:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+
+.chat-compose__thinking-toggle:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ON 状态：图标与档位标签点亮 accent 色 */
+.chat-compose__thinking-toggle--active {
+  color: var(--accent);
+}
+
+.chat-compose__thinking-toggle--active svg {
+  fill: var(--accent);
+  stroke: var(--accent);
+}
+
+.chat-compose__thinking-toggle--active:hover:not(:disabled) {
+  color: var(--accent);
+  background: var(--bg-hover);
+}
+
+/* OFF 状态：描边，无填充 */
+.chat-compose__thinking-toggle svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5px;
+  transition: fill 150ms ease, stroke 150ms ease;
+}
+
+/* 思考级别 popover — 默认隐藏，单击 toggle 打开 */
+.chat-compose__thinking-popover {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 0;
+  background: var(--bg-elevated, var(--bg));
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--spacer-4);
+  min-width: 140px;
+  box-shadow: var(--shadow-md);
+  z-index: 100;
+  display: none;
+}
+
+.chat-compose__thinking-popover--open {
+  display: grid;
+  gap: var(--spacer-2);
+}
+
+.chat-compose__thinking-option {
+  display: flex;
+  align-items: center;
+  gap: var(--spacer-6);
+  min-height: 32px;
+  width: 100%;
+  padding: var(--spacer-6) var(--spacer-10);
+  font-size: var(--text-sm);
+  font-family: var(--font-body);
+  color: var(--text);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  text-align: left;
+  transition: background 100ms ease;
+}
+
+.chat-compose__thinking-option:hover {
+  background: var(--bg-hover);
+}
+
+.chat-compose__thinking-option-check {
+  display: inline-flex;
+  align-items: center;
+  width: 14px;
+  flex-shrink: 0;
+  color: var(--accent);
+}
+
+.chat-compose__thinking-option-check svg {
+  width: 13px;
+  height: 13px;
+}
+
+.chat-compose__thinking-option--selected {
+  color: var(--accent);
+  font-weight: 500;
+}
+
+/* 回放/分支 popover — 复用 thinking-popover 的悬浮模式 */
+.chat-compose__rewind {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+.chat-compose__rewind-popover {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 0;
+  background: var(--bg-elevated, var(--bg));
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--spacer-6) 0;
+  width: 320px;
+  max-height: 320px;
+  overflow-y: auto;
+  box-shadow: var(--shadow-md);
+  z-index: 100;
+  display: none;
+}
+
+.chat-compose__rewind-popover--open {
+  display: block;
+}
+
+.chat-compose__rewind-title {
+  padding: var(--spacer-4) var(--spacer-12) var(--spacer-6);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.chat-compose__rewind-status {
+  padding: var(--spacer-6) var(--spacer-12);
+  font-size: var(--text-sm);
+  color: var(--muted);
+}
+
+.chat-compose__rewind-status--error {
+  color: var(--danger, #d64545);
+  word-break: break-all;
+}
+
+.chat-compose__rewind-item {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--spacer-8);
+  padding: var(--spacer-6) var(--spacer-12);
+  border-top: 1px solid var(--border);
+}
+
+.chat-compose__rewind-item-meta {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--text-sm);
+  color: var(--text);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacer-4) var(--spacer-8);
+}
+
+.chat-compose__rewind-item-time {
+  font-variant-numeric: tabular-nums;
+}
+
+.chat-compose__rewind-item-reason,
+.chat-compose__rewind-item-tokens {
+  color: var(--muted);
+}
+
+.chat-compose__rewind-item-summary {
+  flex-basis: 100%;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-compose__rewind-item-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.chat-compose__rewind-action {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacer-4);
+  padding: var(--spacer-3) var(--spacer-8);
+  font-size: var(--text-sm);
+  font-family: var(--font-body);
+  color: var(--text);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background 100ms ease;
+}
+
+.chat-compose__rewind-action:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+
+.chat-compose__rewind-action:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.chat-compose__rewind-action svg {
+  width: 12px;
+  height: 12px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 2px;
+}
+
+/* ── Context Meter ──
+ * 发送按钮左侧的对话记忆占用指示：仅一根短进度条（无标签 / 无百分比）。
+ * 单色黑/白/灰，无色阶变化；仅反映 activeSession 的占用比，会话切换会即时更新。
+ * 完整数值在 hover tooltip 中可见（aria-label / title）。
+ */
+.chat-compose__ctx-meter {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  width: auto;
+  height: 32px;
+  margin: 0 6px 0 0;
+  flex-shrink: 0;
+  align-self: center;
+  cursor: default;
+  user-select: none;
+}
+
+.chat-compose__ctx-meter-bar {
+  display: inline-block;
+  width: 42px;
+  height: 5px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--muted) 24%, transparent);
+  overflow: hidden;
+}
+
+.chat-compose__ctx-meter-fill {
+  height: 100%;
+  background: color-mix(in srgb, var(--text) 72%, var(--muted));
+  border-radius: inherit;
+  transition: width 300ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-compose__ctx-meter-fill {
+    transition: none;
+  }
+}
+
+@media (max-width: 560px) {
+  .chat-compose__ctx-meter {
+    margin-right: 4px;
+  }
+
+  .chat-compose__ctx-meter-bar {
+    width: 34px;
+  }
+}
+
+/* 发送按钮 — 圆形 */
+.chat-compose__send-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--text-on-accent);
+  cursor: pointer;
+  /* ex-redesign: hover 轻微放大需要 transform/background 过渡 */
+  transition: transform 0.12s ease, opacity 150ms ease, background 0.15s ease;
+  flex-shrink: 0;
+}
+
+.chat-compose__send-btn svg {
+  width: 16px;
+  height: 16px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 2.5px;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.chat-compose__send-btn:hover:not(:disabled) {
+  /* ex-redesign: hover 轻微放大 + accent-hover 底，禁用保持弱化 */
+  opacity: 1;
+  transform: scale(1.08);
+  background: var(--accent-hover);
+}
+
+.chat-compose__send-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+

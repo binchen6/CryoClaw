@@ -1,0 +1,36 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install
+
+      # chat-ui 是独立 npm 工程（test:chat 的 typecheck/单测依赖其 node_modules）
+      - name: Install chat-ui dependencies
+        run: npm --prefix chat-ui/ui install
+
+      # 全量回归：vitest（主进程）+ node:test（编译产物）+ chat-ui typecheck 与单测
+      - name: Unit tests
+        run: npm run test:unit
+
+      # 打包/升级链路脚本用例（不需要内核下载，纯逻辑验证）；
+      # package-resources.test.js 会在 vm 里真实执行打包逻辑，与其它用例并行会争抢
+      # 临时文件（Unable to deserialize cloned data），故拆分单独串行运行
+      - name: Script tests
+        run: |
+          node --test scripts/afterPack.test.js scripts/analytics-build-config.test.js scripts/gateway-ctl.test.js scripts/kernel-prune.test.js scripts/openclaw-version-utils.test.js
+          node --test scripts/package-resources.test.js
