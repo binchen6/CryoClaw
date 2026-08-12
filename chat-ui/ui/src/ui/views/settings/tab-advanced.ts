@@ -437,7 +437,7 @@ export function renderTabAdvanced(state: AppViewState) {
       <div class="oc-settings__form-group">
         <label class="oc-settings__label">${t("settings.advanced.clawHubRegistry")}</label>
         <input class="oc-settings__input" .value=${s.clawHubRegistry}
-          @input=${(e: Event) => { s.clawHubRegistry = (e.target as HTMLInputElement).value; }} />
+          @input=${(e: Event) => { s.clawHubRegistry = (e.target as HTMLInputElement).value; state.requestUpdate(); }} />
       </div>
 
       <div class="oc-settings__form-group">
@@ -447,7 +447,7 @@ export function renderTabAdvanced(state: AppViewState) {
             <label class="oc-settings__radio">
               <input type="radio" name="adv-reload" value=${mode}
                 .checked=${s.gatewayReloadMode === mode}
-                @change=${() => { s.gatewayReloadMode = mode; }} />
+                @change=${() => { s.gatewayReloadMode = mode; state.requestUpdate(); }} />
               ${t(`settings.advanced.reload.${mode}`)}
             </label>
           `)}
@@ -461,7 +461,7 @@ export function renderTabAdvanced(state: AppViewState) {
             <label class="oc-settings__radio">
               <input type="radio" name="adv-exec" value=${value}
                 .checked=${s.execMode === value}
-                @change=${() => { s.execMode = value; }} />
+                @change=${() => { s.execMode = value; state.requestUpdate(); }} />
               ${t(key)}
             </label>
           `)}
@@ -469,7 +469,7 @@ export function renderTabAdvanced(state: AppViewState) {
         ${s.execMode === "auto" ? html`
           <input class="oc-settings__input" style="margin-top:8px" .value=${s.execReviewerModel}
             placeholder=${t("settings.advanced.execReviewerModel")}
-            @input=${(e: Event) => { s.execReviewerModel = (e.target as HTMLInputElement).value; }} />
+            @input=${(e: Event) => { s.execReviewerModel = (e.target as HTMLInputElement).value; state.requestUpdate(); }} />
         ` : nothing}
       </div>
 
@@ -486,7 +486,7 @@ export function renderTabAdvanced(state: AppViewState) {
               <input type="radio" name="adv-sandbox" value=${value}
                 .checked=${s.sandboxMode === value}
                 ?disabled=${!s.dockerAvailable && value !== "off"}
-                @change=${() => { s.sandboxMode = value; }} />
+                @change=${() => { s.sandboxMode = value; state.requestUpdate(); }} />
               ${t(key)}
             </label>
           `)}
@@ -497,7 +497,7 @@ export function renderTabAdvanced(state: AppViewState) {
               <label class="oc-settings__radio">
                 <input type="radio" name="adv-sandbox-ws" value=${value}
                   .checked=${s.sandboxWorkspaceAccess === value}
-                  @change=${() => { s.sandboxWorkspaceAccess = value; }} />
+                  @change=${() => { s.sandboxWorkspaceAccess = value; state.requestUpdate(); }} />
                 ${t(key)}
               </label>
             `)}
@@ -507,20 +507,20 @@ export function renderTabAdvanced(state: AppViewState) {
           <label class="oc-settings__radio">
             <input type="radio" name="adv-exec-host" value="auto"
               .checked=${s.execHost === "auto"}
-              @change=${() => { s.execHost = "auto"; }} />
+              @change=${() => { s.execHost = "auto"; state.requestUpdate(); }} />
             ${t("settings.advanced.execHostAuto")}
           </label>
           <label class="oc-settings__radio">
             <input type="radio" name="adv-exec-host" value="gateway"
               .checked=${s.execHost === "gateway"}
-              @change=${() => { s.execHost = "gateway"; }} />
+              @change=${() => { s.execHost = "gateway"; state.requestUpdate(); }} />
             ${t("settings.advanced.execHostGateway")}
           </label>
           <label class="oc-settings__radio">
             <input type="radio" name="adv-exec-host" value="sandbox"
               .checked=${s.execHost === "sandbox"}
               ?disabled=${!s.dockerAvailable}
-              @change=${() => { s.execHost = "sandbox"; }} />
+              @change=${() => { s.execHost = "sandbox"; state.requestUpdate(); }} />
             ${t("settings.advanced.execHostSandbox")}
           </label>
         </div>
