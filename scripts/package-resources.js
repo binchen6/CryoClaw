@@ -796,12 +796,14 @@ function pruneDarwinUniversalNativePackages(nmDir, platform) {
 // collectTopLevelPackages 只看第一层，assertNativeDepsMatchTarget 也只拦第一层。
 // 这里递归收集树内所有 node_modules 目录，逐层删除非目标平台包整包
 // （主包运行时按当前平台 require 对应平台包，非目标平台包是纯死重）。
+// 同时清理树内所有 .pdb 调试符号（R15：conpty.pdb 等约 10MB，运行时无用）。
 // 注意：顶层包由 assertNativeDepsMatchTarget 把关（不匹配直接 die），本函数应在其之后调用。
 function pruneNonTargetNativePlatformPackages(nmDir, platform, arch) {
   if (!fs.existsSync(nmDir)) return;
 
   // 广度优先收集所有 node_modules 目录（含嵌套；node_modules 内部仍可能有更深的 node_modules）
   const nodeModulesDirs = [];
+  let removedPdbCount = 0;
   const stack = [nmDir];
   while (stack.length > 0) {
     const dir = stack.pop();
@@ -812,11 +814,20 @@ function pruneNonTargetNativePlatformPackages(nmDir, platform, arch) {
       continue;
     }
     for (const entry of entries) {
-      if (!entry.isDirectory()) continue;
       const full = path.join(dir, entry.name);
-      stack.push(full);
-      if (entry.name === "node_modules") {
-        nodeModulesDirs.push(full);
+      if (entry.isDirectory()) {
+        stack.push(full);
+        if (entry.name === "node_modules") {
+          nodeModulesDirs.push(full);
+        }
+        continue;
+      }
+      // R15：.pdb 调试符号（Windows 原生模块发布包附带，运行时无用）
+      if (entry.isFile() && entry.name.toLowerCase().endsWith(".pdb")) {
+        try {
+          fs.unlinkSync(full);
+          removedPdbCount += 1;
+        } catch { /* 占用等场景静默跳过 */ }
       }
     }
   }
@@ -835,6 +846,9 @@ function pruneNonTargetNativePlatformPackages(nmDir, platform, arch) {
 
   if (removed.length > 0) {
     log(`已移除 ${removed.length} 个非目标平台原生包（保留 ${platform}-${arch}）: ${[...new Set(removed)].join(", ")}`);
+  }
+  if (removedPdbCount > 0) {
+    log(`已移除 ${removedPdbCount} 个 .pdb 调试符号文件（运行时无用）`);
   }
 }
 

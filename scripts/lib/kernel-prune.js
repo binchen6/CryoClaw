@@ -200,8 +200,9 @@ module.exports = function createKernelPrune(fs) {
       // pruneNonTargetNativePlatformPackages 对齐）。collectTopLevelPackages 只看
       // 第一层，openclaw/node_modules/@lydell/node-pty-<os>-<arch> 这类嵌套平台包
       // 会被 npm install 全平台装进来（win32-arm64 单个约 11MB），需递归逐层清理。
+      // 同时清理树内 .pdb 调试符号（R15，与打包期口径一致）。
       function pruneNonTargetNativePackages(stats) {
-        // 广度优先收集所有 node_modules 目录（含嵌套）
+        // 广度优先收集所有 node_modules 目录（含嵌套）+ .pdb 文件
         const nodeModulesDirs = [nmDir];
         const stack = [nmDir];
         while (stack.length > 0) {
@@ -213,10 +214,20 @@ module.exports = function createKernelPrune(fs) {
             continue;
           }
           for (const entry of entries) {
-            if (!entry.isDirectory()) continue;
             const full = path.join(dir, entry.name);
-            stack.push(full);
-            if (entry.name === "node_modules") nodeModulesDirs.push(full);
+            if (entry.isDirectory()) {
+              stack.push(full);
+              if (entry.name === "node_modules") nodeModulesDirs.push(full);
+              continue;
+            }
+            if (entry.isFile() && entry.name.toLowerCase().endsWith(".pdb")) {
+              try {
+                const bytes = fs.statSync(full).size;
+                fs.unlinkSync(full);
+                stats.removedDirs += 1;
+                stats.bytes += bytes;
+              } catch { /* 占用等场景静默跳过 */ }
+            }
           }
         }
 

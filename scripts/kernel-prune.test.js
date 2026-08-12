@@ -100,6 +100,29 @@ test("嵌套 node_modules 里的非本机平台原生包被移除（@lydell/node
   assert.ok(stats.bytes >= 64 * 3, "删除字节数应计入统计");
 });
 
+test(".pdb 调试符号（含嵌套 node_modules）被移除且计入统计（R15）", (t) => {
+  const { gatewayDir, nmDir } = makeGateway(t);
+  const nestedNm = path.join(nmDir, "openclaw", "node_modules");
+  touch(path.join(nmDir, "foo", "bar.pdb"), "y".repeat(128));
+  touch(path.join(nestedNm, "@lydell", "node-pty-win32-x64", "prebuilds", "win32-x64", "conpty.pdb"), "z".repeat(256));
+  touch(path.join(nestedNm, "@lydell", "node-pty-win32-x64", "prebuilds", "win32-x64", "conpty.node"), "k".repeat(64));
+
+  const stats = createKernelPrune(fs).pruneGatewayTree(gatewayDir, { platform: "win32", arch: "x64" });
+
+  assert.equal(fs.existsSync(path.join(nmDir, "foo", "bar.pdb")), false, "顶层 .pdb 应删除");
+  assert.equal(
+    fs.existsSync(path.join(nestedNm, "@lydell", "node-pty-win32-x64", "prebuilds", "win32-x64", "conpty.pdb")),
+    false,
+    "嵌套 .pdb 应删除",
+  );
+  assert.equal(
+    fs.existsSync(path.join(nestedNm, "@lydell", "node-pty-win32-x64", "prebuilds", "win32-x64", "conpty.node")),
+    true,
+    ".node 二进制必须保留",
+  );
+  assert.ok(stats.bytes >= 128 + 256, "pdb 字节数应计入统计");
+});
+
 test("darwin-universal 原生包：darwin 目标移除 universal，保留精确架构匹配包", (t) => {
   const { gatewayDir, nmDir } = makeGateway(t);
   touch(path.join(nmDir, "clipboard-darwin-universal", "index.js"));
