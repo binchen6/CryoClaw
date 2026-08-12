@@ -329,6 +329,7 @@
 - **KaTeX 公式渲染**：`chat/math-enhance.ts` DOM 层扫描 `$$块级$$`/`$行内$`（katex 动态 import + 字体按需，主 bundle 反而 -10KB）；启发式防金额误判（首尾空白/跨行/超长拒绝），渲染失败保留原文；配套 4 用例。
 - **发版 E2E（v2026.811.7，2026-08-11）**：静默安装后 CDP 实测（`.cache/cdp-8117-katex.js`）：让模型产出双公式 → `.katex` 元素 4 个、块级 2 个、裸 i18n 键 0、renderer 异常 0；截图确认数学排版生效。
 - **UI 布局走查（2026-08-11，无缺陷结案）**：CDP 逐 tab 截图走查设置页 11 tab（远程控制/外观/渠道/搜索/记忆/审批/高级/模型/备份恢复/环境信息/会话用量）+ 700px 窄窗设置/对话双视图（`walk-ui-audit*.js`）：无溢出/截断/错位，验证 R2/R3 设计体系与既有窄窗 media query 有效；截图存 `.cache/shots/walk-*`。
+- **发版 E2E（v2026.811.8，2026-08-12）**：静默安装后 CDP 实测（`.cache/cdp-8118-media.js`）：发送含 MEDIA 标记消息 → `img.chat-local-media` 真实加载（naturalWidth=1024）、灯箱点击打开（document 委托在流式重渲染下仍生效）、裸 i18n 键 0、renderer 异常 0；打包注意：功能代码变更后必须重跑 dist:win（首次打包曾捕获重构前代码）。
 
 ## 📋 下一步计划（未做，按优先级）
 
@@ -459,7 +460,7 @@
 - Ctrl+S steer 真·插入当前回合需内核支持（内核 WS 是 followup 语义，「立即发送」已是最接近实现）；队列重排低优先未做。
 - PATH 上 npm 全局 openclaw 可能遮蔽 CryoClaw wrapper（install-detector 已在 Setup 检测提示，代码层无法根治）。
 - 会话菜单 `--up` 翻转在极端时序下取不到元素则保持默认向下（优雅降级）；计划面板与顶部错误条同现叠放已修（chat.css `.chat:has(.plan-panel)` 避让规则）。
-- 历史消息里旧 `MEDIA:<路径>` 纯文本残留已修（v2026.811.8，应用户要求推翻原「有意决策」）：`chat/media-enhance.ts` 两段式——字符串层 `renderMediaMarkers` 在 sanitize 后/linkify 前替换为 `<img file://>`（先于 path-linker 否则路径被拆进 <a>；pre 内不渲染），DOM 层 `enhanceMedia` 挂失败回退原文 + 点击全屏预览；配套 8 用例。
+- 历史消息里旧 `MEDIA:<路径>` 纯文本残留已修（v2026.811.8，应用户要求推翻原「有意决策」）：`chat/media-enhance.ts` 两段式——字符串层 `renderMediaMarkers` 在 sanitize 后/linkify 前替换为 `<img file://>`（先于 path-linker 否则路径被拆进 <a>；pre 内不渲染），DOM 层 `enhanceMedia` 挂失败回退原文，灯箱点击用 document 级事件委托（逐元素绑定会被 lit 流式重渲染丢监听，CDP 实测发现）；配套 8 用例。
 - 会话 rewind/fork 的 restore/branch 两条路径未做过真机联调（阶段 2 挂账，待核）。
 - 阶段 17 附带发现 `.chat-session` 疑似死样式已核：全 repo 无此样式定义与引用（早已随重构清除），结案。
 - 会话管理页 `includeDerivedTitles` 每行多一次 8KB 文件读——会话量极大时注意内核默认 limit（待核）。
