@@ -133,6 +133,16 @@ contextBridge.exposeInMainWorld("cryoclaw", {
   skillStoreListInstalled: () =>
     ipcRenderer.invoke("skill-store:list-installed"),
 
+  // 插件管理页（R8）
+  pluginStoreList: () =>
+    ipcRenderer.invoke("plugin-store:list"),
+  pluginStoreSearch: (params?: Record<string, unknown>) =>
+    ipcRenderer.invoke("plugin-store:search", params),
+  pluginStoreInstall: (params?: Record<string, unknown>) =>
+    ipcRenderer.invoke("plugin-store:install", params),
+  pluginStoreUninstall: (params?: Record<string, unknown>) =>
+    ipcRenderer.invoke("plugin-store:uninstall", params),
+
   // 工作空间文件操作
   workspaceSetRoot: (root: string) =>
     ipcRenderer.invoke("workspace:set-root", root),

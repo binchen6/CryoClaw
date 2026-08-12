@@ -13,6 +13,7 @@ import { TrayManager } from "./tray";
 import { registerSetupIpc } from "./setup-ipc";
 import { registerSettingsIpc } from "./settings-ipc";
 import { registerSkillStoreIpc } from "./skill-store";
+import { registerPluginStoreIpc } from "./plugin-store";
 import { registerWorkspaceIpc } from "./workspace-ipc";
 import { isSetupComplete, resolveGatewayPort, resolveGatewayLogPath, resolveUserStateDir, resolveUserConfigPath } from "./constants";
 import { resolveGatewayAuthToken } from "./gateway-auth";
@@ -870,6 +871,7 @@ registerSettingsIpc({
   importOpenclawState: (filePath) => openclawStateImportLifecycle.importOpenclawState(filePath),
 });
 registerSkillStoreIpc();
+registerPluginStoreIpc();
 registerWorkspaceIpc();
 
 // ── 退出 ──

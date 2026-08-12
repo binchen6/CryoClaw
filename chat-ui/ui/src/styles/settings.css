@@ -1548,3 +1548,153 @@
   box-shadow: var(--shadow-xl);
 }
 
+
+/* ── 插件管理页（R8） ── */
+
+.oc-plugins__tabs {
+  display: flex;
+  gap: var(--spacer-8);
+  margin-bottom: var(--spacer-12);
+  border-bottom: 1px solid var(--border);
+}
+
+.oc-plugins__tab {
+  border: none;
+  background: none;
+  color: var(--muted);
+  font-size: var(--text-sm);
+  padding: var(--spacer-8) var(--spacer-4);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+}
+
+.oc-plugins__tab--active {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+  font-weight: 500;
+}
+
+.oc-plugins__toolbar {
+  display: flex;
+  gap: var(--spacer-8);
+  align-items: center;
+  margin-bottom: var(--spacer-12);
+}
+
+.oc-plugins__search {
+  flex: 1;
+  min-width: 0;
+}
+
+.oc-plugins__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacer-8);
+}
+
+.oc-plugins__row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacer-12);
+  padding: var(--spacer-10) var(--spacer-12);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+}
+
+.oc-plugins__row-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.oc-plugins__row-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--spacer-6);
+}
+
+.oc-plugins__name {
+  font-weight: 500;
+  font-size: var(--text-sm);
+}
+
+.oc-plugins__id {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--muted);
+}
+
+.oc-plugins__version {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--muted);
+}
+
+.oc-plugins__desc {
+  margin-top: var(--spacer-4);
+  font-size: var(--text-sm);
+  color: var(--muted);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.oc-plugins__meta {
+  display: flex;
+  gap: var(--spacer-8);
+  margin-top: var(--spacer-4);
+  font-size: var(--text-xs);
+  color: var(--muted);
+}
+
+.oc-plugins__row-side {
+  display: flex;
+  align-items: center;
+  gap: var(--spacer-8);
+  flex-shrink: 0;
+}
+
+.oc-plugins__installed-badge {
+  font-size: var(--text-xs);
+  color: var(--ok);
+  border: 1px solid color-mix(in srgb, var(--ok) 30%, transparent);
+  background: var(--ok-subtle);
+  border-radius: var(--radius-sm);
+  padding: 3px 8px;
+  white-space: nowrap;
+}
+
+/* 通用小标签（插件 kind / 渠道 / 官方 / 异常） */
+.oc-tag {
+  display: inline-flex;
+  align-items: center;
+  font-size: var(--text-xs);
+  border-radius: var(--radius-sm);
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  background: var(--bg-subtle, transparent);
+  white-space: nowrap;
+}
+
+.oc-tag--muted {
+  color: var(--muted);
+  background: var(--accent-subtle);
+  border-color: color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
+.oc-tag--accent {
+  color: var(--accent);
+  background: var(--accent-subtle);
+  border-color: color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+.oc-tag--danger {
+  color: var(--danger);
+  background: var(--danger-subtle);
+  border-color: color-mix(in srgb, var(--danger) 30%, transparent);
+}

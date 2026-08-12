@@ -59,6 +59,10 @@ declare global {
       skillStoreInstall?: (params?: Record<string, unknown>) => Promise<any>;
       skillStoreUninstall?: (params?: Record<string, unknown>) => Promise<any>;
       skillStoreListInstalled?: () => Promise<any>;
+      pluginStoreList?: () => Promise<any>;
+      pluginStoreSearch?: (params?: Record<string, unknown>) => Promise<any>;
+      pluginStoreInstall?: (params?: Record<string, unknown>) => Promise<any>;
+      pluginStoreUninstall?: (params?: Record<string, unknown>) => Promise<any>;
       workspaceSetRoot?: (root: string) => Promise<any>;
       workspaceOpenFile?: (filePath: string) => Promise<any>;
       workspaceOpenFolder?: (filePath: string) => Promise<any>;

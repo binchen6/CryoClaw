@@ -19,6 +19,7 @@ import { renderTabEnvInfo, resetEnvInfoTab } from "./tab-info.ts";
 import { renderTabProvider, resetProviderTab } from "./tab-provider.ts";
 import { renderTabSessionUsage, resetSessionUsageTab } from "./tab-session-usage.ts";
 import { renderTabApprovals, resetApprovalsTab } from "./tab-approvals.ts";
+import { renderTabPlugins, resetPluginsTab } from "./tab-plugins.ts";
 
 /* ── module-level state ── */
 
@@ -79,6 +80,7 @@ function cleanupTab(tabId: string) {
     case "env-info": resetEnvInfoTab(); break;
     case "session-usage": resetSessionUsageTab(); break;
     case "approvals": resetApprovalsTab(); break;
+    case "plugins": resetPluginsTab(); break;
   }
 }
 
@@ -96,6 +98,7 @@ function renderActiveTab(state: AppViewState) {
     case "advanced": return renderTabAdvanced(state);
     case "session-usage": return renderTabSessionUsage(state);
     case "approvals": return renderTabApprovals(state);
+    case "plugins": return renderTabPlugins(state);
     case "backup": return renderTabBackup(state, s.notice);
     case "about": return renderTabAbout(state);
     case "env-info": return renderTabEnvInfo(state);
@@ -114,6 +117,7 @@ export function invalidateAllSettings() {
   resetAdvancedTab();
   resetSessionUsageTab();
   resetApprovalsTab();
+  resetPluginsTab();
   cleanupChannelsTab();
   cleanupBackupTab();
   cleanupAboutTab();
@@ -134,6 +138,7 @@ export function cleanupSettingsView() {
   resetAdvancedTab();
   resetSessionUsageTab();
   resetApprovalsTab();
+  resetPluginsTab();
   cleanupChannelsTab();
   cleanupBackupTab();
   cleanupAboutTab();
