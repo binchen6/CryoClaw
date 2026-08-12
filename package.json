@@ -35,7 +35,7 @@
   "devDependencies": {
     "@electron/asar": "^4.1.0",
     "@types/node": "^22.15.0",
-    "electron": "^40.10.6",
+    "electron": "^43.4.0",
     "electron-builder": "^26.7.0",
     "esbuild": "^0.25.12",
     "isbinaryfile": "^5.0.0",
