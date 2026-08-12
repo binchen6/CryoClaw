@@ -11,10 +11,10 @@
 面向国内生态（Kimi / Moonshot / 飞书 / 企微 / 微信 / 钉钉 / QQ）。
 
 **当前状态**：
-- 更名 CryoClaw 完成；CryoClaw 重设计工程 **R1 / R1.5 / R2 / R3A–R3E / R4 / R5 / R6 / R7 / R9 / R10 全部完成**（见下节），最新版 v2026.811.8。
+- 更名 CryoClaw 完成；CryoClaw 重设计工程 **R1 / R1.5 / R2 / R3A–R3E / R4 / R5 / R6 / R7 / R9 / R10 / R11 全部完成**（见下节），最新发版 v2026.811.8（R11 待发版）。
 - 内核 openclaw **2026.7.1-2**（版本 pin 在 package.json `cryoclaw.openclaw`）。
-- 测试基线 **447 pass / 0 fail / 4 skipped**（vitest 94 + node 64/68 + chat-ui 242 + scripts 47 + tsc typecheck；
-  chat-ui 242 含 markdown 渲染引擎增强 5 用例 + KaTeX 公式识别启发式 4 用例 + MEDIA 本地图片识别/file URL 转换/字符串层替换 8 用例；scripts 47；0 fail 为硬指标）。
+- 测试基线 **458 pass / 0 fail / 4 skipped**（vitest 94 + node 64/68 + chat-ui 253 + scripts 47 + tsc typecheck；
+  chat-ui 253 含 R11 引用构造 11 用例；0 fail 为硬指标）。
 - 历史优化阶段 1–22 全部完成并逐版发版至 v2026.811.0（见历史档案）。
 - 已开源发布至 GitHub（binchen6/CryoClaw，AGPL-3.0-only）；发布时以全新干净历史快照推送，旧本地历史（含已作废的 kimi-claw REFRESH 凭证）不出仓；`.env.build` 已转 gitignored，模板见 `.env.build.example`；git 身份统一为 binchen6。CI：`tests.yml` 每次 push/PR 全量回归（chat-ui/ui 独立依赖树需先安装）；上游签名/CDN 发版链 `build-release.yml`/`publish-release.yml` 已删除（依赖上游 oneclaw 签名证书与 oneclaw.cn CDN，本 fork 不适用，发版走本地 dist:win + gh release）。
 
@@ -331,9 +331,97 @@
 - **UI 布局走查（2026-08-11，无缺陷结案）**：CDP 逐 tab 截图走查设置页 11 tab（远程控制/外观/渠道/搜索/记忆/审批/高级/模型/备份恢复/环境信息/会话用量）+ 700px 窄窗设置/对话双视图（`walk-ui-audit*.js`）：无溢出/截断/错位，验证 R2/R3 设计体系与既有窄窗 media query 有效；截图存 `.cache/shots/walk-*`。
 - **发版 E2E（v2026.811.8，2026-08-12）**：静默安装后 CDP 实测（`.cache/cdp-8118-media.js`）：发送含 MEDIA 标记消息 → `img.chat-local-media` 真实加载（naturalWidth=1024）、灯箱点击打开（document 委托在流式重渲染下仍生效）、裸 i18n 键 0、renderer 异常 0；打包注意：功能代码变更后必须重跑 dist:win（首次打包曾捕获重构前代码）。
 
+### R11 · 消息引用/重发 + rewind/fork 真机联调 + 设置走查 + Electron 升级评估（完成，待发版）
+
+**R11-A 消息引用/重发交互补齐**（此前引用/重发均不存在，属功能缺失）：
+- **失败重发**：`cryoclawError` 卡片增加「重发」按钮（`chat-error-card__resend`，rotate-ccw 图标）。
+  发送同步失败路径（controllers/chat.ts catch）在合成错误消息上附带 `resendText`（原始用户消息文本）；
+  grouped-render 据此渲染按钮，点击经 `handleSendChat(text)` override 直接重发（**不碰当前草稿**），
+  `chatSending`/`connected` 守卫防并发，可反复点击多次重发；run 级 error 事件路径无原始文本，不提供按钮。
+- **消息引用**：用户/助手文本气泡 hover 出现「引用」按钮（`chat-quote-btn`，与复制按钮同款交互；
+  助手气泡同时有复制时左移 44px 避让）。新增纯函数 `chat/quote-text.ts`（`buildQuoteText` 逐行 `> ` 前缀 +
+  4000 字符截断省略号；`appendQuoteToDraft` 追加草稿），点击后引用块追加到输入框草稿并把焦点送回
+  输入框（「引用定位」：插入后可接着打字；与「引用技能」同模式）。样式全走 design token；配套 11 用例。
+
+**R11-B rewind/fork 真机联调（首次，脚本 `.cache/cdp-8119-rewind.js`，三轮迭代后 ALL PASS）**：
+- 真实链路（安装版 v2026.811.8 + 真实网关/真实模型）：新建会话 → M1/M2 真实模型回复 → 发送
+  `/compact` 触发手动压缩 → `sessions.compaction.list` 轮询到 checkpoint（reason=manual，
+  tokensBefore≈37.7k）→ UI 回放 popover 展示条目（时间/原因/tokens/摘要）→ 点「回放」二次确认弹窗 →
+  toast「已回放到选中的回放点」→ UI 气泡减少（6→4，历史截断生效）→ **回放后继续对话 M3 正常** →
+  点「分支」→ toast → 新会话 `agent:main:dashboard:*` 出现在 sessions.list → UI 自动切换（URL session
+  参数同步）→ 分支 transcript 含 checkpoint 前历史（M1/M2 完整保留，`parentSession` 链正确）→
+  **持久化验证**：`~/.openclaw/agents/main/sessions/sessions.json` 新条目 + 新 jsonl transcript 落盘；
+  全程零 renderer 异常。内核取证同步修正：sessions store 路径是 `agents/<id>/sessions/sessions.json`
+  （非 `~/.openclaw/sessions.json`）；`sessions.compact` RPC 可手动触发压缩生成 checkpoint。
+- **新发现（入 watch list）**：主会话（agent:main:main）场景下 `chat.history` 读取存在滞后（轮询 150s
+  仍返回旧计数；UI 终态刷新导致气泡数短时回退 8→7、9→2）；新会话场景无此现象——疑与主会话
+  legacy-key/store 迁移读取路径有关，待内核侧只读取证定位。
+- 脚本断言教训：新建对话按钮无 aria-label（文本匹配）；popover 打开后需等 `.chat-compose__rewind-item`
+  渲染再点按钮；turn 完成检测用 `.chat-reading-indicator` 出现→消失（不要用气泡数/chat.history 计数）。
+
+**R11-C 设置页深度走查（脚本 `.cache/cdp-8119-settings.js`，CDP 真机）**：
+- 走查范围：高级设置（5 组 radio 16 项 + 保存链路 + webbridge precheck）、模型管理（135 卡片 + 搜索）、
+  审批历史（列表/空态 + 刷新）；裸 i18n 键 0、renderer 异常 0。
+- **发现并修复 1 类缺陷（tab-advanced）**：radio/输入类 handler 缺 `state.requestUpdate()`，
+  导致条件区块不即时刷新——execMode 切「智能审批」后审阅模型输入框不出现、sandbox 切 non-main/all
+  后工作区访问选项不出现（CDP 实测复现）。修复：clawHubRegistry @input、gatewayReload/execMode/
+  sandbox/sandbox-ws/exec-host 全部 @change 补 `state.requestUpdate()`（R9 既有教训的同类残留）。
+  **修复后 dev 实例 CDP 复验通过**（`.cache/cdp-8119-ui.js`，ALL PASS）：execMode=auto 后审阅模型
+  输入框即时出现；消息引用按钮 6 气泡 1:1 挂载、点击后草稿出现 `> ` 引用块、重复点击正确追加；
+  保存链路「已保存」提示正常。sandbox 探针本机因无 Docker 跳过（radio 禁用，环境门控非缺陷）。
+- webbridge：本机 precheck 通过（三组件 + 默认浏览器全绿，无修复弹窗），模式切换链路正常；
+  保存侧服务端兑底校验正确（dev 实例下预检不过会拒绝保存并给出明确错误提示）。
+
+**R11-D Electron 40→43 升级评估**（结论：**建议升级，低风险、中工作量**）：
+- **驱动力**：`npm audit` 高危 GHSA-9f4c-93c8-jc8g（沙盒 iframe 绕过 allow-popups，影响 40.0.0-alpha.2–
+  41.10.2，需 ≥42）；Electron 40.x 已 EOL（官方 2026-08 起停止支持）；43 版主进程启动性能专项优化
+  （Node 启动快照 + preload V8 字节码缓存 + 沙盒 renderer 启动数据预推）。
+- **风险排查（对本仓代码零破坏性结论）**：40→43 三版 breaking changes 逐条比对——renderer 剪贴板
+  弃用（本仓仅主进程用 clipboard，OK）、clearStorageData quotas 移除（本仓只传 storages，OK）、
+  OSR deviceScaleFactor/PDF OOPIF/Linux 圆角/WCO（均不涉及）、macOS 通知 UNNotification（无 macOS 签名
+  场景影响，本仓目标 Win）、42 起 npm 包不再 postinstall 下载二进制（影响 dev 首次运行下载时机，
+  构建/打包不受影响——electron-builder 26.15.3 自取 dist，npmmirror 镜像已配）、nativeImage SRGB 归一
+  （托盘图标颜色微调风险极低）、下载默认目录变化（本仓不用 session 下载）。内核 gateway.asar 的
+  原生模块（node-pty/koffi 等）走 N-API，Node 24.17 同 major 兼容，冒烟即可。
+- **收益**：安全漏洞清零（audit 19→1 挂账项销账）、Electron 40 EOL 退出、主进程启动快照/预加载缓存
+  提速、Chromium 144→150 渲染安全修复。**工作量**：改 `devDependencies.electron` → `^43.x` +
+  `npm install` + `npm run dist:win` + 静默安装 CDP 冒烟（参照 R6/R9 发版流程），预计 0.5–1 人日。
+  **时间安排建议**：随下一发版窗口（v2026.811.9 之后的首个维护窗口）执行，升级后全量 `npm test` +
+  gateway 200 + 关键入口 CDP 冒烟；关注项：Windows 10 用户群在 Chromium 150 的支持窗口（Chrome 已
+  预告 Win10 EOL 后逐步收紧，需在 release notes 提示）、webbridge 浏览器扩展行为不受影响。
+
 ## 📋 下一步计划（未做，按优先级）
 
-（R8 已取消、R9 已完成——当前无排期任务，按需立项。）
+（R8 已取消、R9 已完成；R11 已完成待发版。R12+ 候选如下，多面调研产物，按优先级立项。）
+
+### R12 · 主会话 chat.history 滞后根因定位（R11-B 挂账，最高优先）
+- 复现实验：双连接对照（独立 WS 轮询 vs UI 事件流）区分「读缓存/迁移路径/索引懒更新」；
+  内核侧只读取证 `loadSessionEntry` 主会话（agent:main:main）的 legacy-key/store 读取路径。
+- 方案 A（UI 兜底，无需内核改动）：终态刷新改「本地消息流与 chat.history 合并」而非整体替换。
+- 验收：主会话连续两轮 turn 后 UI 气泡不回退、消息不“消失”。
+
+### R13 · Electron 40→43 升级落地（R11-D 评估已备）
+- 改 `devDependencies.electron` → `^43.x` → `npm install` → 全量 `npm test` → `npm run dist:win` →
+  静默安装 CDP 冒烟（gateway 200 + 设置/聊天关键入口 + 零异常）→ 发版。关注 Win10 支持窗口提示。
+
+### R14 · 易用性打磨（小步快跑）
+- rewind/fork UI 细节：回放/分支成功后 popover 收起 + checkpoints 刷新 + 侧边栏刷新（R11-B 挂账）。
+- rewind popover 增加「压缩上下文」入口（`sessions.compact` RPC 已取证，替代仅 `/compact` 命令的现状），
+  压缩完成后自动刷新回放点列表。
+- 重发覆盖 run 级失败：error 事件路径从本地消息流恢复最后一条 user 消息提供重试。
+- 全局快捷键：Ctrl+N 新建对话 / Ctrl+L 聚焦输入框（当前仅 Enter/Escape 表单级快捷键）。
+- 历史遗留小项：device token 移主进程保管（威胁模型低）、`handleOpenWebUI` token 入 URL 收口。
+
+### R15 · 存储裁剪二期（R6 挂账续作，先取证）
+- 实测确认（asar-residual-probe，v2026.811.8）：conpty.pdb 6.17MB + conpty_console_list.pdb 4.12MB =
+  **10.29MB 调试符号**仍在打包产物（运行时无用）→ 打包期 prune + 运行时升级 makeSteps 双路径裁掉。
+- tree-sitter-bash 19.34MB（含 parser.c 等）、typescript/lib 14.7MB——内核运行时依赖嫌疑，勿动需先取证；
+  playwright-core 10.37MB / highlight.js 5.15MB 同属运行时依赖，维持不裁。
+
+### R16 · 候选功能（取证过、低价值或高成本，按需立项）
+- 消息引用增强：引用跳转定位原消息（当前为插入草稿式引用）。
+- 附件卡片化（阶段 20 挂账，需 gateway 发送契约一致）；i18n 死键清理（当前无审计）；
+  会话管理 includeDerivedTitles 大列表性能核（8KB/行）。
 
 ### R8 · 插件管理页面（已取消）
 - ~~设置页新增插件管理 tab~~：已取消立项，不做任何接线。
@@ -360,6 +448,16 @@
   落 `.cache/officecli/<version>/<asset>` 后脚本自动命中缓存（SHA256 校验兜底）；
   ② NSIS 同版本覆盖安装 `/S` 可能在文件拷贝完成后卡收尾（app.asar 时间戳已更新即视为装好，
   taskkill 安装器即可）；③ 安装器结束可能自启应用 → 占住单实例锁，CDP 冒烟前先 taskkill 清零。
+- **811.9 dev 模式联调要点（R11）**：dev 用 `npx electron . --remote-debugging-port=<port>`，
+  进程名是 **electron.exe**（taskkill 需按 Path 过滤，`Get-Process CryoClaw` 杀不到）；dev 网关
+  需要**解包目录** `resources/targets/<target>/gateway/`（gateway-entry.mjs + node_modules），
+  package:resources 只产 gateway.asar —— 可复制 `.cache/asar-x`（完整解包内核树）补齐；dev 网关
+  就绪 ~40-50s（http 200 后还需等 hello-ok/sessions.list 通，冒烟等待要留足）；dev 下 webbridge
+  组件路径解析不过，浏览器模式保存会拒绝并报「WebBridge 条件未满足」（环境差异非缺陷）；
+  设置页保存测试会写 openclaw.json（browser 插件/skill enabled），测后需从 `~/.openclaw/config-backups/`
+  恢复。CDP 断言教训：新建对话按钮无 aria-label（按文本匹配）；turn 完成检测用
+  `.chat-reading-indicator` 出现→消失（chat.history 计数有主会话滞后，不可用）；popover 打开后
+  等 `.chat-compose__rewind-item` 渲染再点操作按钮。
 
 ## 📜 历史档案（阶段 1–22，压缩版；只保留仍有效事实）
 
@@ -461,7 +559,9 @@
 - PATH 上 npm 全局 openclaw 可能遮蔽 CryoClaw wrapper（install-detector 已在 Setup 检测提示，代码层无法根治）。
 - 会话菜单 `--up` 翻转在极端时序下取不到元素则保持默认向下（优雅降级）；计划面板与顶部错误条同现叠放已修（chat.css `.chat:has(.plan-panel)` 避让规则）。
 - 历史消息里旧 `MEDIA:<路径>` 纯文本残留已修（v2026.811.8，应用户要求推翻原「有意决策」）：`chat/media-enhance.ts` 两段式——字符串层 `renderMediaMarkers` 在 sanitize 后/linkify 前替换为 `<img file://>`（先于 path-linker 否则路径被拆进 <a>；pre 内不渲染），DOM 层 `enhanceMedia` 挂失败回退原文，灯箱点击用 document 级事件委托（逐元素绑定会被 lit 流式重渲染丢监听，CDP 实测发现）；配套 8 用例。
-- 会话 rewind/fork 的 restore/branch 两条路径未做过真机联调（阶段 2 挂账，待核）。
+- 会话 rewind/fork 的 restore/branch 两条路径**已完成真机联调**（R11-B，2026-08-13：压缩→回放→续聊→分支→持久化全链路 PASS，脚本 `.cache/cdp-8119-rewind.js`）。
+- ⚠️ **R11-B 新发现**：主会话（`agent:main:main`）场景下 `chat.history` 读取存在滞后（RPC 轮询 150s 仍返回旧计数；UI 终态刷新读滞后历史导致气泡数短时回退 8→7、9→2）；新会话场景不复现。疑与主会话 legacy-key/store 迁移读取路径有关。影响：主会话 turn 刚结束时消息可能短暂“消失”，下一次刷新恢复。建议后续：内核侧只读取证 `loadSessionEntry` 主会话路径 + 双连接对照实验；UI 侧可评估终态刷新改“本地消息与 history 合并”而非整体替换。
+- 会话 rewind/fork UI 细节待打磨（R11-B 顺带发现，未修）：回放/分支成功后 popover 不自动收起、checkpoints 列表不刷新；回放成功后侧边栏 sessions 列表未刷新（updatedAt/label 滞后）。低优先级。
 - 阶段 17 附带发现 `.chat-session` 疑似死样式已核：全 repo 无此样式定义与引用（早已随重构清除），结案。
 - 会话管理页 `includeDerivedTitles` 每行多一次 8KB 文件读——会话量极大时注意内核默认 limit（待核）。
 
