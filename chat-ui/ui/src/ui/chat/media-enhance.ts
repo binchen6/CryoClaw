@@ -127,15 +127,36 @@ function buildLightbox(src: string) {
   document.body.appendChild(overlay);
 }
 
+// 点击用 document 级事件委托：lit 流式重渲染会替换 img 元素，
+// 逐元素绑定会丢监听；委托与时序解耦，始终生效。
+let clickDelegateInstalled = false;
+function ensureClickDelegate() {
+  if (clickDelegateInstalled) {
+    return;
+  }
+  clickDelegateInstalled = true;
+  document.addEventListener("click", (e) => {
+    const target = e.target as HTMLElement | null;
+    const img = target && typeof target.closest === "function"
+      ? target.closest("img.chat-local-media")
+      : null;
+    if (img && (img as HTMLImageElement).src) {
+      buildLightbox((img as HTMLImageElement).src);
+    }
+  });
+}
+
 export function enhanceMedia(container: Element | undefined) {
   if (!container) {
     return;
   }
+  ensureClickDelegate();
+  // error 事件不冒泡，只能逐元素绑定（幂等）
   for (const img of Array.from(container.querySelectorAll<HTMLImageElement>("img.chat-local-media"))) {
-    if (img.dataset.mediaBound === "1") {
+    if (img.dataset.mediaErrBound === "1") {
       continue;
     }
-    img.dataset.mediaBound = "1";
+    img.dataset.mediaErrBound = "1";
     img.addEventListener("error", () => {
       // 文件不存在/不可读：回退为原始标记文本（保持历史行为，不丢信息）
       if (!img.isConnected) {
@@ -145,11 +166,6 @@ export function enhanceMedia(container: Element | undefined) {
       fallback.className = "chat-local-media-fallback";
       fallback.textContent = img.dataset.mediaText || img.alt || "";
       img.replaceWith(fallback);
-    });
-    img.addEventListener("click", () => {
-      if (img.src) {
-        buildLightbox(img.src);
-      }
     });
   }
 }
