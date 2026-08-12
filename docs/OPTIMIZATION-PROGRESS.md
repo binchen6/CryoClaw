@@ -11,10 +11,10 @@
 面向国内生态（Kimi / Moonshot / 飞书 / 企微 / 微信 / 钉钉 / QQ）。
 
 **当前状态**：
-- 更名 CryoClaw 完成；CryoClaw 重设计工程 **R1 / R1.5 / R2 / R3A–R3E / R4 / R5 / R6 / R7 / R9 / R10 / R11 全部完成**（见下节），最新发版 v2026.811.8（R11 待发版）。
-- 内核 openclaw **2026.7.1-2**（版本 pin 在 package.json `cryoclaw.openclaw`）。
-- 测试基线 **458 pass / 0 fail / 4 skipped**（vitest 94 + node 64/68 + chat-ui 253 + scripts 47 + tsc typecheck；
-  chat-ui 253 含 R11 引用构造 11 用例；0 fail 为硬指标）。
+- 更名 CryoClaw 完成；CryoClaw 重设计工程 **R1–R15（除 R8 外全部完成，R8 本轮重启完成）**（见下节），最新发版 v2026.811.8（R11–R15 待发版）。
+- 内核 openclaw **2026.7.1-2**（版本 pin 在 package.json `cryoclaw.openclaw`）；**Electron 43.4.0**（R13 升级落地，audit 0 漏洞）。
+- 测试基线 **468 pass / 0 fail / 4 skipped**（vitest 94 + node 64/68 + chat-ui 262 + scripts 48 + tsc typecheck；
+  chat-ui 262 含 R11 引用构造 11 用例 + R8 插件页 9 用例；scripts 48 含 R15 pdb 裁剪 1 用例；0 fail 为硬指标）。
 - 历史优化阶段 1–22 全部完成并逐版发版至 v2026.811.0（见历史档案）。
 - 已开源发布至 GitHub（binchen6/CryoClaw，AGPL-3.0-only）；发布时以全新干净历史快照推送，旧本地历史（含已作废的 kimi-claw REFRESH 凭证）不出仓；`.env.build` 已转 gitignored，模板见 `.env.build.example`；git 身份统一为 binchen6。CI：`tests.yml` 每次 push/PR 全量回归（chat-ui/ui 独立依赖树需先安装）；上游签名/CDN 发版链 `build-release.yml`/`publish-release.yml` 已删除（依赖上游 oneclaw 签名证书与 oneclaw.cn CDN，本 fork 不适用，发版走本地 dist:win + gh release）。
 
@@ -390,41 +390,69 @@
   gateway 200 + 关键入口 CDP 冒烟；关注项：Windows 10 用户群在 Chromium 150 的支持窗口（Chrome 已
   预告 Win10 EOL 后逐步收紧，需在 release notes 提示）、webbridge 浏览器扩展行为不受影响。
 
+### R8 · 插件管理页 + ClawHub 插件市场（重启立项，完成）
+- **取证**：内核 CLI `openclaw plugins list --json`（81 个已安装插件库存：id/name/version/description/
+  format/kind/source/rootDir/origin/enabled/status）；`plugins search <q> --json --limit N`（ClawHub 包搜索：
+  name/displayName/family/channel/isOfficial/latestVersion/summary/ownerHandle/stats/verificationTier）；
+  `plugins install clawhub:<name> --acknowledge-clawhub-risk --force`（免交互安装）；
+  `plugins uninstall <id> --force`（免交互卸载）。
+- **主进程 `src/plugin-store.ts`**：IPC plugin-store:list/search/install/uninstall（全 sender guard），
+  执行内核 CLI（resolveNodeBin + resolveGatewayEntry + ELECTRON_RUN_AS_NODE，maxBuffer 8MB/90s 超时）；
+  包名安全面 `isValidPluginName`（防 --flag 注入/路径穿越）。
+- **渲染层 `views/settings/tab-plugins.ts`**（设置页新 tab「插件」，group extensions）：双视图——
+  「已安装」（81 插件列表 + kind/版本/状态标签 + 启用开关走 config.patch `plugins.entries.<id>.enabled`
+  与渠道 tab 同机制 + 卸载二次确认）与「ClawHub 市场」（搜索 → 官方优先/下载量排序卡片 → 一键安装 →
+  已安装徽标）。纯函数 `tab-plugins.lib.ts`（映射/校验/排序）+ 9 用例；样式走 design token（oc-tag 通用标签）。
+- **CDP 真机验证（Electron 43 dev 实例，脚本 `.cache/cdp-8119-plugins.js`，ALL PASS）**：插件 tab 渲染
+  81 行（含 kind/版本/描述）、市场搜索 weixin → WeChat 卡片（community/v3.1.4/51 下载/@newfuture/安装钮）、
+  零裸 i18n、零 renderer 异常。**待发版冒烟项**：实际安装/卸载/启停（会写用户配置，dev 环境不执行）。
+- 教训：插件清单 IPC 底层是内核 CLI 全量加载（约 15s），UI 等待需留足余量；冒烟脚本按钮选择器
+  必须限定容器（「搜索」会误点导航 tab）。
+
+### R12 · 主会话 chat.history 滞后 UI 兜底（完成）
+- `loadChatHistory` 新增 `{mergeIfStale}` 选项：turn 终态刷新（app-gateway final 路径）启用——拉取结果
+  落后本地视图（条数更少）时保留本地消息列表，等待下次刷新收敛，防消息短暂“消失”；
+  会话切换/回放等替换语义路径不受影响。内核侧根因（主会话 legacy-key 读取路径）仍挂账待只读取证。
+
+### R13 · Electron 40→43 升级落地（完成）
+- `devDependencies.electron` 40.10.6 → **43.4.0**；`npm audit` 高危 GHSA-9f4c-93c8-jc8g 销账（0 漏洞）。
+- **42+ 新行为踩坑**：npm 包不再 postinstall 下载二进制，首次导入 electron 会尝试 fetch 下载（此环境
+  fetch 失败致 vitest 15 例挂）——须显式 `ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ node
+  node_modules/electron/install.js` 预置二进制（dev/CI 环境需固化到流程，dist:win 走 electron-builder 自取不受影响）。
+- 全量测试 468 pass / 0 fail；dev 实例（Electron 43 + 内核 Node 24.17）全链路冒烟通过（gateway ready
+  11.7s、渠道/会话/chat.history 正常、插件页/快捷键/引用全绿）。
+- **待发版**：`npm run dist:win` + 静默安装 CDP 冒烟（随下一发版窗口）。
+
+### R14 · 易用性小项（完成）
+- rewind/fork 成功后：popover 自动收起 + 回放点列表重拉 + 侧边栏 sessions 刷新（restore 路径补 loadSessions）。
+- 全局快捷键：**Ctrl+N** 新建对话（弹确认）、**Ctrl+L** 聚焦输入框（document 级监听，模块级持有最新
+  props 引用防闭包旧值；CDP 实测通过）。
+
+### R15 · 存储裁剪二期：.pdb 调试符号（完成）
+- 实测确认（v2026.811.8 gateway.asar）：conpty.pdb 6.17MB + conpty_console_list.pdb 4.12MB = 10.29MB
+  调试符号仍在产物。打包期 `pruneNonTargetNativePlatformPackages`（package-resources.js）与运行时升级
+  `pruneNonTargetNativePackages`（kernel-prune.js）的 BFS 遍历同步增加 `.pdb` 删除（幂等、占用静默跳过、
+  计入裁剪统计）；scripts 新增 1 用例（嵌套 .pdb 删除 + .node 二进制保留 + 字节统计）。
+  发版后预期 gateway.asar -10.3MB（≈227MB）。
+
 ## 📋 下一步计划（未做，按优先级）
 
-（R8 已取消、R9 已完成；R11 已完成待发版。R12+ 候选如下，多面调研产物，按优先级立项。）
+（R8 重启完成；R9/R11 完成；R12 兜底已落地（内核根因仍挂账）；R13/R14/R15 完成待发版。剩余候选：）
 
-### R12 · 主会话 chat.history 滞后根因定位（R11-B 挂账，最高优先）
-- 复现实验：双连接对照（独立 WS 轮询 vs UI 事件流）区分「读缓存/迁移路径/索引懒更新」；
-  内核侧只读取证 `loadSessionEntry` 主会话（agent:main:main）的 legacy-key/store 读取路径。
-- 方案 A（UI 兜底，无需内核改动）：终态刷新改「本地消息流与 chat.history 合并」而非整体替换。
-- 验收：主会话连续两轮 turn 后 UI 气泡不回退、消息不“消失”。
+### R16 · 发版验证与残余项（R11–R15 随发版窗口）
+- 发版链：bump 版本 → `npm run dist:win` → 静默安装 → CDP 冒烟（gateway 200 + 设置 17 tab + 插件页
+  安装/卸载/启停真机流程 + 引用/重发/快捷键）→ gh release。预期 gateway.asar -10.3MB（≈227MB）。
+- CI 流程补丁：Electron 42+ 不再 postinstall 下载二进制，CI 需在 npm install 后显式
+  `node node_modules/electron/install.js`（ELECTRON_MIRROR 已备）。
 
-### R13 · Electron 40→43 升级落地（R11-D 评估已备）
-- 改 `devDependencies.electron` → `^43.x` → `npm install` → 全量 `npm test` → `npm run dist:win` →
-  静默安装 CDP 冒烟（gateway 200 + 设置/聊天关键入口 + 零异常）→ 发版。关注 Win10 支持窗口提示。
+### R17 · 内核侧根因与候选功能（按需立项）
+- chat.history 主会话滞后内核侧只读取证（R12 挂账：主会话 legacy-key/store 读取路径）。
+- 插件页增强：详情视图（description 全文/来源/依赖）、安装后自动启用开关、市场安装风险确认。
+- 重发覆盖 run 级失败（error 事件路径从本地消息流恢复最后一条 user 消息）。
+- 候选继续：引用跳转定位原消息、附件卡片化、i18n 死键审计、会话 includeDerivedTitles 大列表性能核、
+  device token 主进程保管、tree-sitter-bash/typescript 内核运行时依赖取证（维持不裁）。
 
-### R14 · 易用性打磨（小步快跑）
-- rewind/fork UI 细节：回放/分支成功后 popover 收起 + checkpoints 刷新 + 侧边栏刷新（R11-B 挂账）。
-- rewind popover 增加「压缩上下文」入口（`sessions.compact` RPC 已取证，替代仅 `/compact` 命令的现状），
-  压缩完成后自动刷新回放点列表。
-- 重发覆盖 run 级失败：error 事件路径从本地消息流恢复最后一条 user 消息提供重试。
-- 全局快捷键：Ctrl+N 新建对话 / Ctrl+L 聚焦输入框（当前仅 Enter/Escape 表单级快捷键）。
-- 历史遗留小项：device token 移主进程保管（威胁模型低）、`handleOpenWebUI` token 入 URL 收口。
-
-### R15 · 存储裁剪二期（R6 挂账续作，先取证）
-- 实测确认（asar-residual-probe，v2026.811.8）：conpty.pdb 6.17MB + conpty_console_list.pdb 4.12MB =
-  **10.29MB 调试符号**仍在打包产物（运行时无用）→ 打包期 prune + 运行时升级 makeSteps 双路径裁掉。
-- tree-sitter-bash 19.34MB（含 parser.c 等）、typescript/lib 14.7MB——内核运行时依赖嫌疑，勿动需先取证；
-  playwright-core 10.37MB / highlight.js 5.15MB 同属运行时依赖，维持不裁。
-
-### R16 · 候选功能（取证过、低价值或高成本，按需立项）
-- 消息引用增强：引用跳转定位原消息（当前为插入草稿式引用）。
-- 附件卡片化（阶段 20 挂账，需 gateway 发送契约一致）；i18n 死键清理（当前无审计）；
-  会话管理 includeDerivedTitles 大列表性能核（8KB/行）。
-
-### R8 · 插件管理页面（已取消）
-- ~~设置页新增插件管理 tab~~：已取消立项，不做任何接线。
+### R8 · 插件管理页面（已重启完成，见上节 R8 记录）
 
 ## 📦 发版与实测经验（套路已验证多次）
 
