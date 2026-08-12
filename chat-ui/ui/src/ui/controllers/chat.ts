@@ -278,6 +278,7 @@ export async function sendChatMessage(
       state.chatStreamStartedAt = null;
     }
     // 不再写 lastError：错误已由下方 cryoclawError 卡片展示，避免与顶部 callout 双显示
+    // 附带 resendText：消息未送达（请求失败），渲染层据此提供「重发」入口
     state.chatMessages = [
       ...state.chatMessages,
       {
@@ -286,6 +287,7 @@ export async function sendChatMessage(
         timestamp: Date.now(),
         // 渲染层据此走着色错误卡片（grouped-render.ts），而非普通文本气泡
         cryoclawError: true,
+        resendText: msg,
       },
     ];
     state.chatVisibleMessageCount = state.chatMessages.length;

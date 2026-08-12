@@ -100,6 +100,13 @@ export function buildChatProps(state: AppViewState): ChatProps {
     onBranchCheckpoint: (checkpointId: string) => {
       void handleBranchCheckpoint(state, checkpointId);
     },
+    // 错误卡片「重发」：正在发送时不重复触发；直接以 override 发送失败文本（不碰当前草稿）
+    onResendError: (text: string) => {
+      if (state.chatSending || !state.connected) {
+        return;
+      }
+      void state.handleSendChat(text);
+    },
     onSend: () => state.handleSendChat(),
     canAbort: Boolean(state.chatRunId),
     onAbort: () => void state.handleAbortChat(),

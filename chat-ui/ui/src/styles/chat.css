@@ -759,6 +759,61 @@ img.chat-avatar {
   padding-right: var(--spacer-40)
 }
 
+/* 引用按钮（消息引用）：与复制按钮同款悬浮交互；助手气泡同时有复制时左移避让 */
+.chat-quote-btn {
+  position: absolute;
+  top: var(--spacer-6);
+  right: var(--spacer-8);
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--muted);
+  border-radius: var(--radius-md);
+  padding: var(--spacer-4) var(--spacer-6);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .12s ease-out, background .12s ease-out
+}
+
+.chat-quote-btn svg {
+  width: 14px;
+  height: 14px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.5px;
+  stroke-linecap: round;
+  stroke-linejoin: round
+}
+
+.chat-bubble.has-copy .chat-quote-btn {
+  right: 44px
+}
+
+.chat-bubble:hover .chat-quote-btn {
+  opacity: 1;
+  pointer-events: auto
+}
+
+.chat-quote-btn:hover {
+  background: var(--bg-hover)
+}
+
+.chat-quote-btn:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+  outline: 2px solid var(--accent);
+  outline-offset: 2px
+}
+
+@media(hover:none) {
+  .chat-quote-btn {
+    opacity: 1;
+    pointer-events: auto
+  }
+}
+
 .chat-copy-btn {
   position: absolute;
   top: var(--spacer-6);
@@ -1725,6 +1780,38 @@ img.chat-avatar {
   line-height: 1.5;
   word-break: break-word;
   white-space: pre-wrap;
+}
+
+/* 错误卡片「重发」按钮：右对齐，反复点击可多次重试 */
+.chat-error-card__resend {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacer-4);
+  margin-left: auto;
+  flex-shrink: 0;
+  align-self: center;
+  border: 1px solid color-mix(in srgb, var(--danger) 30%, transparent);
+  background: var(--bg);
+  color: var(--danger);
+  border-radius: var(--radius-sm);
+  padding: 3px 8px;
+  font-size: 12px;
+  line-height: 1.4;
+  cursor: pointer
+}
+
+.chat-error-card__resend:hover {
+  background: var(--danger-subtle)
+}
+
+.chat-error-card__resend svg {
+  width: 12px;
+  height: 12px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 2px;
+  stroke-linecap: round;
+  stroke-linejoin: round
 }
 
 .chat-error-callout {

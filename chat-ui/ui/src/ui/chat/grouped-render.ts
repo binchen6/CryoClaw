@@ -169,6 +169,8 @@ export function renderMessageGroup(
     assistantAvatar?: string | null;
     isHydrating?: boolean;
     fileChanges?: FileChange[];
+    onQuoteMessage?: (text: string) => void;
+    onResendError?: (text: string) => void;
   },
 ) {
   const normalizedRole = normalizeRoleForGrouping(group.role);
@@ -214,6 +216,8 @@ export function renderMessageGroup(
               isStreaming: group.isStreaming && index === group.messages.length - 1,
               showReasoning: opts.showReasoning,
               isHydrating: opts.isHydrating,
+              onQuoteMessage: opts.onQuoteMessage,
+              onResendError: opts.onResendError,
             },
             opts.onOpenSidebar,
           ),
@@ -406,7 +410,13 @@ function renderThinkingCollapsed(reasoningMarkdown: string) {
 }
 function renderGroupedMessage(
   message: unknown,
-  opts: { isStreaming: boolean; showReasoning: boolean; isHydrating?: boolean },
+  opts: {
+    isStreaming: boolean;
+    showReasoning: boolean;
+    isHydrating?: boolean;
+    onQuoteMessage?: (text: string) => void;
+    onResendError?: (text: string) => void;
+  },
   onOpenSidebar?: (content: string) => void,
 ) {
   const m = message as Record<string, unknown>;
@@ -417,10 +427,20 @@ function renderGroupedMessage(
   // 借鉴 control-ui：⚠️ 图标 + danger 色调背景，整宽显示在消息列里
   if (m.cryoclawError === true) {
     const errorText = extractTextCached(message) ?? "";
+    const resendText = typeof m.resendText === "string" && m.resendText.trim() ? m.resendText : null;
     return html`
       <div class="chat-bubble chat-error-card ${opts.isHydrating ? "" : "fade-in"}" role="alert">
         <span class="chat-error-card__icon" aria-hidden="true">${icons.warning}</span>
         <span class="chat-error-card__text">${errorText}</span>
+        ${resendText && opts.onResendError
+          ? html`<button
+              class="chat-error-card__resend"
+              type="button"
+              title=${t("chat.resendError")}
+              aria-label=${t("chat.resendError")}
+              @click=${() => opts.onResendError?.(resendText)}
+            >${icons.rotateCcw}${t("chat.resendError")}</button>`
+          : nothing}
       </div>
     `;
   }
@@ -444,6 +464,21 @@ function renderGroupedMessage(
   const reasoningMarkdown = extractedThinking ? formatReasoningMarkdown(extractedThinking) : null;
   const markdown = markdownBase;
   const canCopyMarkdown = role === "assistant" && Boolean(markdown?.trim());
+  // 引用：用户/助手气泡有文本即可引用（原文交给状态层构造引用块，避免二次转义）
+  const canQuote =
+    (normalizedRole === "user" || normalizedRole === "assistant") &&
+    Boolean(markdown?.trim()) &&
+    Boolean(opts.onQuoteMessage);
+
+  const quoteButton = canQuote
+    ? html`<button
+        class="chat-quote-btn"
+        type="button"
+        title=${t("chat.quoteMessage")}
+        aria-label=${t("chat.quoteMessage")}
+        @click=${() => opts.onQuoteMessage?.(markdown!)}
+      >${icons.quote}</button>`
+    : nothing;
 
   // 检测纯 JSON 消息，用折叠块展示
   const jsonResult = markdown && !opts.isStreaming ? detectJson(markdown) : null;
@@ -451,6 +486,7 @@ function renderGroupedMessage(
   const bubbleClasses = [
     "chat-bubble",
     canCopyMarkdown ? "has-copy" : "",
+    canQuote ? "has-quote" : "",
     opts.isStreaming ? "streaming" : "",
     opts.isHydrating ? "" : "fade-in",
   ]
@@ -474,7 +510,6 @@ function renderGroupedMessage(
       </div>
     `;
   }
-
   // 纯 tool result（无文本）→ 直接折叠展示
   if (!markdown && hasToolCards && isToolResult) {
     return renderCollapsedToolCards(toolCards, onOpenSidebar);
@@ -516,6 +551,7 @@ function renderGroupedMessage(
     return html`
       <div class="${bubbleClasses}">
         ${canCopyMarkdown ? renderCopyAsMarkdownButton(markdown!) : nothing}
+        ${quoteButton}
         <details
           class="chat-tool-msg-collapse"
           @toggle=${(event: Event) =>
@@ -541,6 +577,7 @@ function renderGroupedMessage(
   return html`
     <div class="${bubbleClasses}">
       ${canCopyMarkdown ? renderCopyAsMarkdownButton(markdown!) : nothing}
+      ${quoteButton}
       ${renderMessageImages(images)}
       ${
         reasoningMarkdown

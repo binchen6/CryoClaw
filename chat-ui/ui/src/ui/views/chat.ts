@@ -34,6 +34,7 @@ import { loadModelOrg } from "./settings/model-org.lib.ts";
 import { computeStopButtonVisible } from "./chat-stop-button-gate.ts";
 import { KNOWN_THINKING_LEVELS } from "../chat/thinking-levels.ts";
 import { resolveActiveToolName } from "../chat/tool-summary.ts";
+import { appendQuoteToDraft } from "../chat/quote-text.ts";
 import { renderPlanPanel } from "./plan-panel.ts";
 import type { PlanStreamState } from "../plan-stream.ts";
 import type { FallbackNotice } from "../app-tool-stream.ts";
@@ -107,6 +108,10 @@ export type ChatProps = {
   onOpenCompactionCheckpoints?: () => void;
   onRestoreCheckpoint?: (checkpointId: string) => void;
   onBranchCheckpoint?: (checkpointId: string) => void;
+  // 消息引用：把原文构造成引用块追加到草稿末尾，并把焦点送回输入框（可接着打字）
+  onQuoteMessage?: (text: string) => void;
+  // 错误卡片「重发」：重新发送失败的用户消息文本（同步发送失败路径提供）
+  onResendError?: (text: string) => void;
   // 目标模式（官方 session.goal）
   goal?: SessionGoal | null;
   onGoalCommand?: (text: string) => void;
@@ -640,6 +645,19 @@ function insertSkillReference(props: ChatProps, name: string) {
   });
 }
 
+// 消息引用：构造引用块追加到草稿，并把焦点送回输入框（与「引用技能」同模式）
+function handleQuoteMessage(props: ChatProps, text: string) {
+  const next = appendQuoteToDraft(props.draft ?? "", text);
+  if (next === (props.draft ?? "")) {
+    return;
+  }
+  props.onDraftChange(next);
+  requestAnimationFrame(() => {
+    const textarea = document.querySelector<HTMLTextAreaElement>(".chat-compose__field textarea");
+    textarea?.focus();
+  });
+}
+
 function renderSkillPicker(props: ChatProps) {
   if (!skillPickerOpen) {
     return nothing;
@@ -963,6 +981,8 @@ export function renderChat(props: ChatProps) {
               assistantAvatar: assistantIdentity.avatar,
               isHydrating,
               fileChanges: fileChangesByGroup.get(item.key),
+              onQuoteMessage: (text) => handleQuoteMessage(props, text),
+              onResendError: props.onResendError,
             });
           }
 

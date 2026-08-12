@@ -718,6 +718,8 @@ export const zhDict: Record<string, string> = {
   "chat.rewind.reason.auto-threshold": "自动压缩",
   "chat.rewind.reason.timeout-retry": "超时重试压缩",
   "chat.rewind.reason.overflow-retry": "溢出重试压缩",
+  "chat.quoteMessage": "引用",
+  "chat.resendError": "重发",
   "chat.contextMeterLabel": "对话记忆",
   "chat.contextMeterAria": "对话记忆已用 {percent}%，约 {used} / {max} 个记忆单位",
   "chat.contextMeterHint":

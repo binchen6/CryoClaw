@@ -680,6 +680,8 @@ export const enDict: Record<string, string> = {
   "chat.rewind.reason.auto-threshold": "Auto compaction",
   "chat.rewind.reason.timeout-retry": "Timeout-retry compaction",
   "chat.rewind.reason.overflow-retry": "Overflow-retry compaction",
+  "chat.quoteMessage": "Quote",
+  "chat.resendError": "Resend",
   "chat.contextMeterLabel": "Memory",
   "chat.contextMeterAria": "Conversation memory is {percent}% used, about {used} / {max} memory units",
   "chat.contextMeterHint":
