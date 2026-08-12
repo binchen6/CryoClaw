@@ -127,7 +127,10 @@ function resetChatStreamState(state: ChatState) {
   state.chatStreamFrozenPrefix = "";
 }
 
-export async function loadChatHistory(state: ChatState) {
+export async function loadChatHistory(
+  state: ChatState,
+  opts?: { mergeIfStale?: boolean },
+) {
   if (!state.client || !state.connected) {
     return;
   }
@@ -147,6 +150,17 @@ export async function loadChatHistory(state: ChatState) {
       return;
     }
     const raw = Array.isArray(res.messages) ? res.messages : [];
+    // R12：终态刷新可能命中内核 chat.history 的滞后读（主会话实测，拉取结果落后一个回合），
+    // 此时若拉取条数少于本地视图（刚结束回合的消息尚未进入快照），保留本地消息列表，
+    // 等待下一次刷新收敛——避免用户可见的消息短暂“消失”。仅 mergeIfStale 调用方启用
+    // （turn 终态刷新）；会话切换/回放等替换语义的调用方不受影响。
+    if (
+      opts?.mergeIfStale &&
+      raw.length > 0 &&
+      raw.length < (state.chatMessages?.length ?? 0)
+    ) {
+      return;
+    }
     const deduplicated = deduplicateDeliveryMirrors(raw);
     state.chatMessages = deduplicated;
     state.chatVisibleMessageCount = Math.min(

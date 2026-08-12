@@ -9,6 +9,7 @@ import { loadChatHistory } from "./controllers/chat.ts";
 import { patchSession, loadSessions } from "./controllers/sessions.ts";
 import {
   branchCompactionCheckpoint,
+  loadCompactionCheckpoints,
   restoreCompactionCheckpoint,
 } from "./controllers/session-compaction.ts";
 import { t } from "./i18n.ts";
@@ -210,6 +211,7 @@ export async function deleteSessionFromSidebar(state: AppViewState, key: string)
 }
 
 // 回放（rewind）：二次确认后把当前会话回退到选中回放点，成功后刷新会话历史
+// 成功后：收起回放 popover、刷新回放点列表与侧边栏（R14）
 export async function handleRestoreCheckpoint(state: AppViewState, checkpointId: string) {
   const confirmed = await showConfirm(state, t("chat.rewind.confirmRestore"), { danger: true });
   if (!confirmed) return;
@@ -220,10 +222,23 @@ export async function handleRestoreCheckpoint(state: AppViewState, checkpointId:
     showToast(state, t("chat.rewind.restoreSuccess"));
     // 回放会改写 transcript，复用 loadChatHistory 路径刷新当前会话历史
     await loadChatHistory(state as unknown as Parameters<typeof loadChatHistory>[0]);
+    closeCompactionPopoverAndRefresh(state, key);
+    await loadSessions(state);
   } else {
     const err = state.compactionCheckpointsError;
     showToast(state, err ? `${t("chat.rewind.restoreFailed")}: ${err}` : t("chat.rewind.restoreFailed"));
   }
+}
+
+// 回放/分支成功后的收尾：收起 popover（DOM 类）+ 重拉回放点列表
+function closeCompactionPopoverAndRefresh(state: AppViewState, key: string) {
+  document
+    .querySelector<HTMLElement>(".chat-compose__rewind-popover--open")
+    ?.classList.remove("chat-compose__rewind-popover--open");
+  void loadCompactionCheckpoints(
+    state as unknown as Parameters<typeof loadCompactionCheckpoints>[0],
+    key,
+  );
 }
 
 // 分支（fork）：从选中回放点分叉出新会话，成功后切换到新会话
@@ -233,6 +248,7 @@ export async function handleBranchCheckpoint(state: AppViewState, checkpointId: 
   const nextKey = await branchCompactionCheckpoint(state, key, checkpointId);
   if (nextKey) {
     showToast(state, t("chat.rewind.branchSuccess"));
+    closeCompactionPopoverAndRefresh(state, key);
     // 先刷新会话列表让新会话出现在侧边栏，再切换过去
     await loadSessions(state);
     handleSessionChange(state, nextKey);

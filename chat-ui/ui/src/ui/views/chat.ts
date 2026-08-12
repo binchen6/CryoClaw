@@ -842,7 +842,30 @@ function renderCommandSuggestions(props: ChatProps) {
   `;
 }
 
+// 对话页全局快捷键（R14）：Ctrl+N 新建对话 / Ctrl+L 聚焦输入框。
+// document 级监听，模块级持有最新 props 引用，避免闭包旧值（同 plusMenuOutsideCloser 思路）。
+let chatShortcutProps: ChatProps | null = null;
+let chatShortcutHandler: ((ev: KeyboardEvent) => void) | null = null;
+
+function ensureChatShortcuts(props: ChatProps) {
+  chatShortcutProps = props;
+  if (chatShortcutHandler) return;
+  chatShortcutHandler = (ev: KeyboardEvent) => {
+    if (!ev.ctrlKey || ev.metaKey || ev.altKey || ev.shiftKey) return;
+    const key = ev.key.toLowerCase();
+    if (key === "n") {
+      ev.preventDefault();
+      chatShortcutProps?.onNewSession?.();
+    } else if (key === "l") {
+      ev.preventDefault();
+      document.querySelector<HTMLTextAreaElement>(".chat-compose__field textarea")?.focus();
+    }
+  };
+  document.addEventListener("keydown", chatShortcutHandler);
+}
+
 export function renderChat(props: ChatProps) {
+  ensureChatShortcuts(props);
   if (props.sessionKey !== lastSessionKey) {
     lastSessionKey = props.sessionKey;
     closePlusMenu(props);

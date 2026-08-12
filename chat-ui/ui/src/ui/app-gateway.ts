@@ -397,7 +397,8 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
       scheduleTerminalSessionsRefresh(host as unknown as OpenClawApp, refreshKey);
     }
     if (state === "final") {
-      void loadChatHistory(host as unknown as OpenClawApp);
+      // R12：终态刷新启用滞后兜底（拉取结果落后本地视图时保留本地，防消息短暂消失）
+      void loadChatHistory(host as unknown as OpenClawApp, { mergeIfStale: true });
       // agent runtime 已写完 sessions.json，此时 patch pending label 不会被覆盖
       const sessionKey = payload?.sessionKey ?? host.sessionKey;
       void flushPendingSessionLabel(host as unknown as OpenClawApp, sessionKey);
