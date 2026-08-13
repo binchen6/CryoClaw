@@ -394,6 +394,11 @@ export function handleChatEvent(state: ChatState, payload?: ChatEventPayload) {
     });
     resetChatStreamState(state);
     const error = payload.errorMessage ?? "chat error";
+    // R17：run 级失败也提供重发入口——从本地消息流恢复最后一条 user 消息文本
+    const lastUser = [...state.chatMessages].reverse().find(
+      (m) => (m as Record<string, unknown>).role === "user",
+    );
+    const resendText = lastUser ? (extractText(lastUser) ?? "").trim() : "";
     // 不写 lastError：仅在消息流内注入 cryoclawError 卡片，避免与顶部 callout 双显示。
     // 同步在消息流内注入合成错误消息（cryoclawError → grouped-render 着色卡片），
     // 与 sendChatMessage 失败路径同一形态，对齐 control-ui 的行内错误卡片。
@@ -404,6 +409,7 @@ export function handleChatEvent(state: ChatState, payload?: ChatEventPayload) {
         content: [{ type: "text", text: "Error: " + error }],
         timestamp: Date.now(),
         cryoclawError: true,
+        ...(resendText ? { resendText } : {}),
       },
     ];
     state.chatVisibleMessageCount = state.chatMessages.length;
