@@ -25,6 +25,8 @@ export type MarketPluginView = {
   ownerHandle?: string;
   downloads?: number;
   verificationTier?: string;
+  /** 安装后的运行时插件 id（可能与包名不同，冲突检测用） */
+  runtimeId?: string;
 };
 
 /** 与主进程一致的包名安全面（防参数注入/路径穿越） */
@@ -70,6 +72,7 @@ export function mapMarketPlugin(raw: unknown): MarketPluginView | null {
     ...(typeof p.ownerHandle === "string" && p.ownerHandle.trim() ? { ownerHandle: p.ownerHandle } : {}),
     ...(typeof p.downloads === "number" && Number.isFinite(p.downloads) ? { downloads: p.downloads } : {}),
     ...(typeof p.verificationTier === "string" && p.verificationTier.trim() ? { verificationTier: p.verificationTier } : {}),
+    ...(typeof p.runtimeId === "string" && p.runtimeId.trim() ? { runtimeId: p.runtimeId } : {}),
   };
 }
 

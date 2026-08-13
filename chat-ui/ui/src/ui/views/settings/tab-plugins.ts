@@ -166,13 +166,33 @@ async function searchMarket(state: AppViewState) {
 
 async function installFromMarket(state: AppViewState, plugin: MarketPluginView) {
   if (!window.cryoclaw?.pluginStoreInstall || s.busyName) return;
+  // 冲突检测（R17）：市场包的运行时 id 可能与已安装插件相同，安装会覆盖既有插件
+  const collision = plugin.runtimeId
+    ? s.installed.find((p) => p.id === plugin.runtimeId)
+    : undefined;
+  // 安装风险确认：非官方插件明确告知来源与验证级别；冲突时红色强提醒
+  const confirmed = await showConfirm(
+    state,
+    collision
+      ? t("settings.plugins.installCollisionConfirm")
+          .replace("{name}", plugin.displayName ?? plugin.name)
+          .replace("{collision}", collision.name)
+      : t("settings.plugins.installConfirm")
+          .replace("{name}", plugin.displayName ?? plugin.name)
+          .replace("{channel}", plugin.channel ?? "community")
+          .replace("{tier}", plugin.verificationTier ?? "unknown"),
+    collision ? { danger: true } : undefined,
+  );
+  if (!confirmed) return;
   s.busyName = plugin.name;
   s.error = null;
+  s.successMsg = null;
   state.requestUpdate();
   try {
     const result = await window.cryoclaw.pluginStoreInstall({ name: plugin.name });
     if (result?.success) {
       showToast(state, t("settings.plugins.installSuccess"));
+      s.successMsg = result.warning ?? t("settings.plugins.installEnableHint");
       await loadInstalled(state);
     } else {
       s.error = result?.message ?? t("settings.plugins.installFailed");

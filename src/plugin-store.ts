@@ -19,6 +19,14 @@ import { resolveGatewayEntry, resolveNodeBin, resolveNodeExtraEnv, resolveUserBi
 
 const EXEC_TIMEOUT_MS = 90_000;
 const MAX_BUFFER = 8 * 1024 * 1024;
+// 清单缓存（R17 性能）：内核 CLI 全量加载约 15s，缓存 60s 避免重复进入设置页重付；
+// install/uninstall 后主动失效。
+const LIST_CACHE_TTL_MS = 60_000;
+let listCache: { at: number; plugins: InstalledPlugin[] } | null = null;
+
+function invalidatePluginListCache() {
+  listCache = null;
+}
 
 export type InstalledPlugin = {
   id: string;
@@ -82,10 +90,13 @@ export function isValidPluginName(name: string): boolean {
 }
 
 async function listInstalledPlugins(): Promise<InstalledPlugin[]> {
+  if (listCache && Date.now() - listCache.at < LIST_CACHE_TTL_MS) {
+    return listCache.plugins;
+  }
   const out = await execKernelCli(["plugins", "list", "--json"]);
   const parsed = JSON.parse(out) as { plugins?: unknown };
   if (!Array.isArray(parsed.plugins)) return [];
-  return parsed.plugins.map((raw) => {
+  const plugins = parsed.plugins.map((raw) => {
     const p = raw as Record<string, unknown>;
     return {
       id: typeof p.id === "string" ? p.id : "",
@@ -100,6 +111,8 @@ async function listInstalledPlugins(): Promise<InstalledPlugin[]> {
       ...(typeof p.status === "string" ? { status: p.status } : {}),
     };
   }).filter((p) => p.id);
+  listCache = { at: Date.now(), plugins };
+  return plugins;
 }
 
 async function searchMarketPlugins(query: string, limit: number): Promise<MarketPlugin[]> {
@@ -159,8 +172,15 @@ export function registerPluginStoreIpc(): void {
     const name = typeof params?.name === "string" ? params.name.trim() : "";
     if (!isValidPluginName(name)) return { success: false, message: "invalid plugin name" };
     try {
-      await execKernelCli(["plugins", "install", `clawhub:${name}`, "--acknowledge-clawhub-risk", "--force"]);
-      return { success: true };
+      const stdout = await execKernelCli(["plugins", "install", `clawhub:${name}`, "--acknowledge-clawhub-risk", "--force"]);
+      invalidatePluginListCache();
+      // R17：安装可能覆盖运行时 id 相同的既有插件（manifest id 与包名不同时静默覆盖）——
+      // 从 stdout 探测并透出警告，避免“安装成功但官方插件被顶替”静默发生。
+      let warning: string | undefined;
+      if (stdout.includes("differs from npm package name") || stdout.includes("Removed previous plugin install")) {
+        warning = "Plugin runtime id collided with an already-installed plugin; the previous install was replaced.";
+      }
+      return { success: true, ...(warning ? { warning } : {}) };
     } catch (err: any) {
       log.info(`[plugin-store] install ${name} failed: ${err?.message ?? err}`);
       return { success: false, message: err?.message ?? String(err) };
@@ -173,6 +193,7 @@ export function registerPluginStoreIpc(): void {
     if (!isValidPluginName(id)) return { success: false, message: "invalid plugin id" };
     try {
       await execKernelCli(["plugins", "uninstall", id, "--force"]);
+      invalidatePluginListCache();
       return { success: true };
     } catch (err: any) {
       log.info(`[plugin-store] uninstall ${id} failed: ${err?.message ?? err}`);
