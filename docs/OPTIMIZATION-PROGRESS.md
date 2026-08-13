@@ -11,7 +11,7 @@
 面向国内生态（Kimi / Moonshot / 飞书 / 企微 / 微信 / 钉钉 / QQ）。
 
 **当前状态**：
-- 更名 CryoClaw 完成；CryoClaw 重设计工程 **R1–R15（除 R8 外全部完成，R8 本轮重启完成）**（见下节），最新发版 v2026.811.8（R11–R15 待发版）。
+- 更名 CryoClaw 完成；CryoClaw 重设计工程 **R1–R17 全部完成**（见下节），最新发版 **v2026.811.9**（R8/R11–R17）。
 - 内核 openclaw **2026.7.1-2**（版本 pin 在 package.json `cryoclaw.openclaw`）；**Electron 43.4.0**（R13 升级落地，audit 0 漏洞）。
 - 测试基线 **468 pass / 0 fail / 4 skipped**（vitest 94 + node 64/68 + chat-ui 262 + scripts 48 + tsc typecheck；
   chat-ui 262 含 R11 引用构造 11 用例 + R8 插件页 9 用例；scripts 48 含 R15 pdb 裁剪 1 用例；0 fail 为硬指标）。
@@ -437,22 +437,43 @@
 
 ## 📋 下一步计划（未做，按优先级）
 
-（R8 重启完成；R9/R11 完成；R12 兜底已落地（内核根因仍挂账）；R13/R14/R15 完成待发版。剩余候选：）
+（R8 重启完成；R9/R11–R17 全部完成并发版 v2026.811.9。剩余候选按需立项：）
 
-### R16 · 发版验证与残余项（R11–R15 随发版窗口）
-- 发版链：bump 版本 → `npm run dist:win` → 静默安装 → CDP 冒烟（gateway 200 + 设置 17 tab + 插件页
-  安装/卸载/启停真机流程 + 引用/重发/快捷键）→ gh release。预期 gateway.asar -10.3MB（≈227MB）。
-- CI 流程补丁：Electron 42+ 不再 postinstall 下载二进制，CI 需在 npm install 后显式
-  `node node_modules/electron/install.js`（ELECTRON_MIRROR 已备）。
+### R16 · 发版验证（v2026.811.9 完成）
+- 版本 bump → dist:win（Electron 43 + pdb 裁剪）→ 安装验证。产物：安装包 129.0MB；
+  gateway.asar **226.8MB（-10.8MB，pdb 裁剪生效）**。
+- **发版冒烟 ALL PASS**（`.cache/cdp-8119-release.js`，打包版真机）：gateway 200、设置页 13 tab
+  （含插件）、插件清单 81 行、ClawHub 市场搜索、**真机安装/卸载全流程**（风险确认弹窗 →
+  安装成功 → 出现在已安装列表 → 卸载成功）、引用按钮、Ctrl+L、**R12 兜底复验（气泡 8→10
+  不回退）**、零裸 i18n、零 renderer 异常。
+- **⚠ 新教训（NSIS 沙箱安装）**：沙箱内 `/S` 静默安装会卸载旧版后安装失败（目录清空）——
+  已用 robocopy win-unpacked 恢复安装目录；正式发版仍须在普通权限通道执行安装器。
+- CI 补丁：tests.yml 在 npm install 后显式 `node node_modules/electron/install.js`（Electron 42+ 不再
+  postinstall 下载二进制）。
 
-### R17 · 内核侧根因与候选功能（按需立项）
-- chat.history 主会话滞后内核侧只读取证（R12 挂账：主会话 legacy-key/store 读取路径）。
-- 插件页增强：详情视图（description 全文/来源/依赖）、安装后自动启用开关、市场安装风险确认。
-- 重发覆盖 run 级失败（error 事件路径从本地消息流恢复最后一条 user 消息）。
-- 候选继续：引用跳转定位原消息、附件卡片化、i18n 死键审计、会话 includeDerivedTitles 大列表性能核、
-  device token 主进程保管、tree-sitter-bash/typescript 内核运行时依赖取证（维持不裁）。
+### R17 · 内核根因取证与插件页安全增强（完成）
+- **chat.history 主会话滞后根因锁定**（只读取证）：内核 `SESSION_STORE_SNAPSHOT_CACHE`
+  （store-BJJhlPrk.js）是**无 TTL 的进程内 Map，仅以 (mtimeMs, sizeBytes) 校验**；主会话 entry
+  每轮 turn 原地更新 `updatedAt`/`totalTokens`（等长数字，文件字节数不变），同毫秒写入即长期
+  命中陈旧快照——与「滞后一回合、下轮写入后才刷新」症状吻合。UI 侧 R12 兜底已缓解；
+  内核修复需上游（缓存键加内容哈希或读时强制失效），已整理为上游 issue 素材。
+- **⚠ 发现并拦截真实事故**：ClawHub 社区包 `openclaw-wechat` 的 manifest id 与官方
+  `openclaw-weixin` 相同——`plugins install` 会**静默覆盖官方插件及其渠道配置**（真机实测抓出，
+  已修复用户环境：卸载社区版 + 从 config-backups 恢复渠道配置 + ext-mirror 自愈官方 2.4.6）。
+  修复：市场条目映射 `runtimeId` → 安装前冲突检测（红色确认「安装将覆盖已装插件」）+
+  主进程探测安装 stdout 覆盖警告透出（`differs from npm package name` / `Removed previous
+  plugin install`）。
+- 重发覆盖 run 级失败：error 事件路径从本地消息流恢复最后一条 user 消息提供重试。
+- 性能：插件清单主进程 60s TTL 缓存（内核 CLI 全量加载约 15s，避免重复进入设置页重付），
+  install/uninstall 后主动失效。
 
 ### R8 · 插件管理页面（已重启完成，见上节 R8 记录）
+
+### 剩余候选（按需立项）
+- 插件页：详情视图（description 全文/来源/依赖）；安装后自动启用（需 runtimeId→id 映射）。
+- 引用跳转定位原消息；附件卡片化（阶段 20 挂账）；i18n 死键审计；会话 includeDerivedTitles 大列表性能核。
+- device token 主进程保管（威胁模型低）；tree-sitter-bash/typescript 内核运行时依赖取证（维持不裁）。
+- chat.history 滞后内核侧修复上报上游（R17 根因已定位：SESSION_STORE_SNAPSHOT_CACHE 无 TTL）。
 
 ## 📦 发版与实测经验（套路已验证多次）
 
