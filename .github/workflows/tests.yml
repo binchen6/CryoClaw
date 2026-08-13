@@ -19,6 +19,11 @@ jobs:
       - name: Install dependencies
         run: npm install
 
+      # Electron 42+ 不再在 postinstall 下载二进制（首次 import 时才懒下载）；
+      # 主进程 vitest 会 import electron，需显式预置二进制（GitHub runner 可直连官方源）
+      - name: Install Electron binary
+        run: node node_modules/electron/install.js
+
       # chat-ui 是独立 npm 工程（test:chat 的 typecheck/单测依赖其 node_modules）
       - name: Install chat-ui dependencies
         run: npm --prefix chat-ui/ui install

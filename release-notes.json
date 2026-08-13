@@ -1,5 +1,12 @@
 [
   {
+    "version": "2026.811.9",
+    "notes": {
+      "zh": "新功能：设置页新增「插件」tab——已安装插件清单（启停/卸载），内置 ClawHub 插件市场（搜索、一键安装）\n新功能：消息悬停「引用」插入 markdown 引用块；发送失败错误卡片带「重发」按钮\n新功能：快捷键 Ctrl+N 新建对话、Ctrl+L 聚焦输入框\n优化：回放/分支成功后自动收起回放面板并刷新列表；终态刷新防消息短暂消失\n升级：Electron 40 → 43（修复高危沙盒漏洞，启动性能优化，audit 零漏洞）\n存储：gateway.asar 再裁剪约 10MB（.pdb 调试符号），测试基线 468 用例",
+      "en": "New: Plugins tab in Settings — installed plugin inventory (enable/disable/uninstall) with the built-in ClawHub plugin marketplace (search & one-click install)\nNew: hover-to-quote inserts markdown blockquotes; failed sends get a Resend button\nNew: Ctrl+N new chat, Ctrl+L focus composer\nImproved: rewind/fork panel auto-closes and refreshes; terminal refresh no longer briefly hides messages\nUpgrade: Electron 40 → 43 (high-severity sandbox CVE fixed, startup perf, 0 audit vulns)\nStorage: gateway.asar trimmed by another ~10MB (.pdb debug symbols); 468-test baseline"
+    }
+  },
+  {
     "version": "2026.811.8",
     "notes": {
       "zh": "修复：历史消息中的 MEDIA:<路径> 标记现在渲染为真实图片（此前仅显示为纯文本/路径链接）；加载失败自动回退原文，点击可全屏预览",
