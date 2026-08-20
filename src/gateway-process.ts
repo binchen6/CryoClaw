@@ -22,8 +22,15 @@ import {
 } from "./constants";
 import { uninstallGatewayDaemon, getPortPid } from "./install-detector";
 
-// 诊断日志（固定写入 ~/.openclaw/gateway.log，便于用户定位）
+// 诊断日志（R20 起统一写入 ~/.openclaw/logs/gateway.log；旧路径一次性迁移）
 const LOG_PATH = resolveGatewayLogPath();
+try {
+  const legacyLogPath = path.join(resolveUserStateDir(), "gateway.log");
+  if (fs.existsSync(legacyLogPath) && !fs.existsSync(LOG_PATH)) {
+    fs.mkdirSync(path.dirname(LOG_PATH), { recursive: true });
+    fs.renameSync(legacyLogPath, LOG_PATH);
+  }
+} catch {}
 const MAX_DIAG_LOG_SIZE = 5 * 1024 * 1024;
 const DIAG_ROTATION_CHECK_INTERVAL = 1000;
 let diagWriteCount = 0;
@@ -238,6 +245,8 @@ export class GatewayProcess {
         // CryoClaw 用 USERPROFILE 写配置，openclaw 用 HOME 优先读配置，
         // 显式传入 OPENCLAW_STATE_DIR 消除歧义。
         OPENCLAW_STATE_DIR: resolveUserStateDir(),
+        // V8 编译缓存（R20）：加速 gateway 热启动；内核换装后由 updater 清空
+        NODE_COMPILE_CACHE: path.join(resolveUserStateDir(), "cache", "v8-compile"),
         // 告诉 openclaw 安装根目录，使 extensions 路径解析不依赖 __dirname（asar 内会失败）
         OPENCLAW_INSTALL_ROOT: resolveResourcesPath(),
         OPENCLAW_GATEWAY_TOKEN: this.token,

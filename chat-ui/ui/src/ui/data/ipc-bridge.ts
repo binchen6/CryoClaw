@@ -162,6 +162,33 @@ export interface KernelUpdateProgress {
   msg: string;
 }
 
+// App 自动更新（electron-updater）状态；supported=false 表示 dev/未打包环境不支持
+export type AppUpdateStatus =
+  | "idle"
+  | "checking"
+  | "available"
+  | "downloading"
+  | "downloaded"
+  | "not-available"
+  | "error";
+
+export interface AppUpdateProgress {
+  percent: number;
+  bytesPerSecond: number;
+  transferred: number;
+  total: number;
+}
+
+export interface AppUpdateState {
+  supported: boolean;
+  status: AppUpdateStatus;
+  currentVersion: string;
+  version: string | null;
+  releaseNotes: { zh?: string; en?: string } | null;
+  progress: AppUpdateProgress | null;
+  error: string | null;
+}
+
 export interface NavigatePayload {
   view: "settings" | "setup" | "chat";
   settingsTab?: string | null;
@@ -257,6 +284,7 @@ interface CryoClawBridgeExtended {
       // Settings: Backup
       settingsListConfigBackups?: () => Promise<any>;
       settingsExportOpenclawState?: () => Promise<any>;
+      settingsExportDiagnostics?: () => Promise<any>;
       settingsSelectOpenclawStateArchive?: () => Promise<any>;
       settingsImportOpenclawState?: (params: Record<string, unknown>) => Promise<any>;
       settingsRestoreConfigBackup?: (params: Record<string, unknown>) => Promise<any>;
@@ -276,6 +304,11 @@ interface CryoClawBridgeExtended {
       kernelUpdate?: (params?: { tag?: string }) => Promise<any>;
       kernelRollback?: () => Promise<any>;
       onKernelUpdateProgress?: (cb: (payload: any) => void) => () => void;
+      // App 自动更新
+      appUpdateGetState?: () => Promise<any>;
+      appUpdateCheck?: () => Promise<any>;
+      appUpdateQuitAndInstall?: () => Promise<any>;
+      onAppUpdateState?: (cb: (payload: any) => void) => () => void;
       // Navigation
       onNavigate?: (cb: (payload: any) => void) => () => void;
       onSettingsNavigate?: (cb: (payload: any) => void) => () => void;
@@ -547,6 +580,11 @@ export async function settingsExportOpenclawState(): Promise<OpenclawStateExport
   return unwrapData<OpenclawStateExportResult>(await oc().settingsExportOpenclawState());
 }
 
+// 诊断包导出（日志 + 环境信息 + 脱敏配置摘要），结果形状与 openclawState 导出一致
+export async function settingsExportDiagnostics(): Promise<OpenclawStateExportResult> {
+  return unwrapData<OpenclawStateExportResult>(await oc().settingsExportDiagnostics());
+}
+
 export async function settingsSelectOpenclawStateArchive(): Promise<OpenclawStateArchiveSelection> {
   return unwrapData<OpenclawStateArchiveSelection>(await oc().settingsSelectOpenclawStateArchive());
 }
@@ -621,6 +659,26 @@ export function kernelRollback(): Promise<KernelUpdateResult> {
 
 export function onKernelUpdateProgress(cb: (p: KernelUpdateProgress) => void): () => void {
   return oc().onKernelUpdateProgress(cb);
+}
+
+// ---------------------------------------------------------------------------
+// App updater (4) — electron-updater 应用级更新；返回 { success, data } 包装
+// ---------------------------------------------------------------------------
+
+export async function appUpdateGetState(): Promise<AppUpdateState> {
+  return unwrapData<AppUpdateState>(await oc().appUpdateGetState());
+}
+
+export async function appUpdateCheck(): Promise<AppUpdateState> {
+  return unwrapData<AppUpdateState>(await oc().appUpdateCheck());
+}
+
+export async function appUpdateQuitAndInstall(): Promise<void> {
+  unwrapVoid(await oc().appUpdateQuitAndInstall());
+}
+
+export function onAppUpdateState(cb: (s: AppUpdateState) => void): () => void {
+  return oc().onAppUpdateState?.(cb) ?? (() => {});
 }
 
 // ---------------------------------------------------------------------------

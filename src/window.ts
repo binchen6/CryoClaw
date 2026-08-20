@@ -3,6 +3,7 @@ import * as path from "path";
 import * as log from "./logger";
 import { buildChatUiEntryUrl } from "./chat-ui-entry-url";
 import { shouldHideWindowOnClose } from "./window-close-policy";
+import type { AppUpdateState } from "./app-updater-state";
 import * as analytics from "./analytics";
 import {
   WINDOW_WIDTH,
@@ -48,6 +49,8 @@ function maskToken(token: string): string {
 export class WindowManager {
   private win: BrowserWindow | null = null;
   private allowAppQuit = false;
+  private crashRecoveryTimestamps: number[] = [];
+  private memoryMonitorTimer: NodeJS.Timeout | null = null;
   inSetupView = false;
   /** True from initial setup launch until setup:complete succeeds. Unlike
    *  inSetupView (tracks which view is currently displayed), this flag
@@ -119,9 +122,23 @@ export class WindowManager {
       });
     }
 
-    // 渲染进程崩溃 / 无响应监控
+    // 渲染进程崩溃 / 无响应监控（R20：崩溃自动恢复 + 防崩循环熔断）
     this.win.webContents.on("render-process-gone", (_e, details) => {
       log.error(`render-process-gone: reason=${details.reason} exitCode=${details.exitCode}`);
+      // clean-exit 属正常生命周期，不恢复；其余（crashed/oom/killed/launch-failed…）
+      // 自动 reload 自愈。60s 滑窗内最多恢复 3 次，防崩溃-重载死循环。
+      if (details.reason === "clean-exit") return;
+      const now = Date.now();
+      this.crashRecoveryTimestamps = this.crashRecoveryTimestamps.filter((t) => now - t < 60_000);
+      if (this.crashRecoveryTimestamps.length >= 3) {
+        log.error("渲染进程 60s 内崩溃超 3 次，停止自动恢复（等待用户介入）");
+        return;
+      }
+      this.crashRecoveryTimestamps.push(now);
+      const win = this.win;
+      if (!win || win.isDestroyed()) return;
+      log.warn(`渲染进程异常退出（${details.reason}），自动重新加载`);
+      win.webContents.reload();
     });
     this.win.webContents.on("did-start-loading", () => {
       log.info("WebContents 开始加载");
@@ -144,6 +161,7 @@ export class WindowManager {
     this.win.on("unresponsive", () => {
       log.warn("窗口无响应");
     });
+    this.startMemoryMonitor();
 
     // 关闭 → Setup 未完成/退出流程放行关闭；普通场景隐藏到托盘
     this.win.on("close", (e) => {
@@ -162,6 +180,10 @@ export class WindowManager {
     this.win.on("closed", () => {
       this.win = null;
       this.allowAppQuit = false;
+      if (this.memoryMonitorTimer) {
+        clearInterval(this.memoryMonitorTimer);
+        this.memoryMonitorTimer = null;
+      }
     });
 
     // 首屏 Setup 必须在首个 URL 里直接生效，避免 renderer 先画 chat 再被纠正。
@@ -210,6 +232,32 @@ export class WindowManager {
     log.info("主窗口显示");
   }
 
+  // 渲染进程软内存监控（R20）：每 60s 采样 app.getAppMetrics()，渲染进程工作集
+  // 超阈值记 warn。不做硬上限——--max-old-space-size 会在长会话/大渲染时直接
+  // OOM 崩页，自愈交给 render-process-gone 的自动 reload。
+  private startMemoryMonitor(): void {
+    if (this.memoryMonitorTimer) {
+      clearInterval(this.memoryMonitorTimer);
+    }
+    const RENDERER_MEMORY_WARN_MB = 1536;
+    this.memoryMonitorTimer = setInterval(() => {
+      const win = this.win;
+      if (!win || win.isDestroyed()) return;
+      try {
+        const pid = win.webContents.getOSProcessId();
+        const metric = app.getAppMetrics().find((m) => m.pid === pid);
+        const mb = metric ? metric.memory.workingSetSize / 1024 : 0;
+        if (mb > RENDERER_MEMORY_WARN_MB) {
+          log.warn(`渲染进程内存偏高: ${mb.toFixed(0)}MB（阈值 ${RENDERER_MEMORY_WARN_MB}MB）`);
+        }
+      } catch {
+        // 采样失败忽略
+      }
+    }, 60_000);
+    // 不阻止进程退出
+    this.memoryMonitorTimer.unref();
+  }
+
   // 显示主窗口并切换到内嵌设置页
   async openSettings(opts: ShowOptions): Promise<void> {
     // Setup 未完成时禁止打开 Settings，强制回到 Setup 视图
@@ -244,6 +292,14 @@ export class WindowManager {
       return;
     }
     this.win.webContents.send("kernel:update-progress", payload);
+  }
+
+  // 向渲染层广播 App 自动更新状态快照（若窗口存在）。
+  pushAppUpdateState(state: AppUpdateState): void {
+    if (!this.win || this.win.isDestroyed()) {
+      return;
+    }
+    this.win.webContents.send("app:update-state", state);
   }
 
   // 销毁窗口（应用退出前调用）

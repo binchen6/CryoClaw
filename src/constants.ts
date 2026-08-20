@@ -367,7 +367,12 @@ export function resolveLastKnownGoodConfigPath(): string {
 
 /** Gateway 诊断日志（固定写入 ~/.openclaw/gateway.log） */
 export function resolveGatewayLogPath(): string {
-  return path.join(resolveUserStateDir(), "gateway.log");
+  return path.join(resolveLogsDir(), "gateway.log");
+}
+
+/** 日志统一归集目录（R20）：app.log / gateway.log / 内核自带日志都在这 */
+export function resolveLogsDir(): string {
+  return path.join(resolveUserStateDir(), "logs");
 }
 
 /**

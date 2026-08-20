@@ -328,6 +328,11 @@ export const enDict: Record<string, string> = {
   "settings.advanced.cli": "Terminal command openclaw",
   "settings.advanced.cliLabel": "Terminal command",
   "settings.advanced.cliInstalling": "Installing…",
+  "settings.advanced.diagnosticsTitle": "Diagnostics",
+  "settings.advanced.diagnosticsDesc": "Bundle app logs, environment info, and a redacted config summary into a ZIP for troubleshooting. API keys and tokens are redacted automatically.",
+  "settings.advanced.diagnosticsExport": "Export Diagnostics",
+  "settings.advanced.diagnosticsExportSuccess": "Exported to {path}",
+  "settings.advanced.diagnosticsExportFailed": "Export failed",
   // WebBridge repair modal
   "settings.advanced.wbRepairTitle": "WebBridge needs setup",
   "settings.advanced.wbRepairDesc": "Before switching to WebBridge mode, the following must be installed:",
@@ -431,6 +436,18 @@ export const enDict: Record<string, string> = {
   "settings.about.kernelCheckFailed": "Failed to check the latest version",
   "settings.about.kernelUpdateSuccess": "Upgraded: {from} → {to}",
   "settings.about.kernelRollbackSuccess": "Rolled back: {from} → {to}",
+  // App auto update (electron-updater)
+  "settings.about.appUpdate": "App Update",
+  "settings.about.appUpdateNotSupported": "App update is not supported in this environment",
+  "settings.about.appUpdateCurrent": "Current Version",
+  "settings.about.appUpdateCheck": "Check for Updates",
+  "settings.about.appUpdateChecking": "Checking…",
+  "settings.about.appUpdateUpToDate": "Up to date",
+  "settings.about.appUpdateAvailable": "New version available",
+  "settings.about.appUpdateDownloading": "Downloading",
+  "settings.about.appUpdateDownloaded": "Update downloaded; takes effect after restart",
+  "settings.about.appUpdateRestart": "Restart to Update",
+  "settings.about.appUpdateError": "Failed to check for updates; please try again later",
 
   // Settings: Channels
   "settings.channels.desc": "Connect WeChat, Feishu, WeCom, DingTalk, Kimi, or QQ to remote-control CryoClaw from chat apps",

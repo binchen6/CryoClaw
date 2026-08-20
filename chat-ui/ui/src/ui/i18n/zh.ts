@@ -365,6 +365,11 @@ export const zhDict: Record<string, string> = {
   "settings.advanced.cli": "终端命令 openclaw",
   "settings.advanced.cliLabel": "终端命令",
   "settings.advanced.cliInstalling": "安装中…",
+  "settings.advanced.diagnosticsTitle": "诊断日志",
+  "settings.advanced.diagnosticsDesc": "将应用日志、环境信息与脱敏后的配置摘要打包为 ZIP，便于反馈问题。API Key 与令牌已自动脱敏。",
+  "settings.advanced.diagnosticsExport": "导出诊断包",
+  "settings.advanced.diagnosticsExportSuccess": "已导出到 {path}",
+  "settings.advanced.diagnosticsExportFailed": "导出失败",
   // WebBridge 修复 modal
   "settings.advanced.wbRepairTitle": "WebBridge 需要修复",
   "settings.advanced.wbRepairDesc": "切换到 WebBridge 模式前需要先安装以下组件：",
@@ -468,6 +473,18 @@ export const zhDict: Record<string, string> = {
   "settings.about.kernelCheckFailed": "查询最新版本失败",
   "settings.about.kernelUpdateSuccess": "升级成功：{from} → {to}",
   "settings.about.kernelRollbackSuccess": "回退成功：{from} → {to}",
+  // App 自动更新（electron-updater）
+  "settings.about.appUpdate": "应用更新",
+  "settings.about.appUpdateNotSupported": "当前环境不支持应用更新",
+  "settings.about.appUpdateCurrent": "当前版本",
+  "settings.about.appUpdateCheck": "检查更新",
+  "settings.about.appUpdateChecking": "检查中…",
+  "settings.about.appUpdateUpToDate": "当前已是最新版本",
+  "settings.about.appUpdateAvailable": "发现新版本",
+  "settings.about.appUpdateDownloading": "下载中",
+  "settings.about.appUpdateDownloaded": "更新已下载，重启后生效",
+  "settings.about.appUpdateRestart": "重启以更新",
+  "settings.about.appUpdateError": "检查更新失败，请稍后重试",
 
   // Settings: Channels
   "settings.channels.desc": "连接微信、飞书、企业微信、钉钉、Kimi 或 QQ，从聊天软件远程控制 CryoClaw",

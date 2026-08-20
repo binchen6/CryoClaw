@@ -1,15 +1,26 @@
 import * as fs from "fs";
 import * as path from "path";
-import { resolveUserStateDir } from "./constants";
+import { resolveLogsDir, resolveUserStateDir } from "./constants";
 
-// 应用日志（固定写入 ~/.openclaw/app.log）
-const LOG_PATH = path.join(resolveUserStateDir(), "app.log");
+// 应用日志（R20 起统一写入 ~/.openclaw/logs/app.log；旧路径 ~/.openclaw/app.log 一次性迁移）
+const LOG_PATH = path.join(resolveLogsDir(), "app.log");
 
 // 日志上限 5MB，启动时截断
 const MAX_LOG_SIZE = 5 * 1024 * 1024;
 
+// 日志级别：CRYOCLAW_LOG_LEVEL=error|warn|info|debug（默认 info）。低于级别的日志
+// 文件与 console 镜像都不写。
+const LOG_LEVELS: Record<string, number> = { ERROR: 0, WARN: 1, INFO: 2, DEBUG: 3 };
+const configuredLevel = (process.env.CRYOCLAW_LOG_LEVEL || "info").toUpperCase();
+const MAX_LEVEL = LOG_LEVELS[configuredLevel] ?? LOG_LEVELS.INFO;
+
 try {
   fs.mkdirSync(path.dirname(LOG_PATH), { recursive: true });
+  // 一次性迁移旧路径日志（新文件已存在则保留旧文件不动，避免覆盖）
+  const legacyPath = path.join(resolveUserStateDir(), "app.log");
+  if (fs.existsSync(legacyPath) && !fs.existsSync(LOG_PATH)) {
+    fs.renameSync(legacyPath, LOG_PATH);
+  }
   if (fs.existsSync(LOG_PATH) && fs.statSync(LOG_PATH).size > MAX_LOG_SIZE) {
     fs.writeFileSync(LOG_PATH, "[truncated]\n");
   }
@@ -76,6 +87,8 @@ function checkRotation(): void {
 
 // 写一行日志到文件 + console 镜像
 function write(level: string, msg: string): void {
+  const levelValue = LOG_LEVELS[level] ?? LOG_LEVELS.INFO;
+  if (levelValue > MAX_LEVEL) return; // 低于配置级别：文件与 console 都不写
   const line = `[${new Date().toISOString()}] [${level}] ${msg}\n`;
   if (!fileWritesPaused) {
     try {
@@ -96,3 +109,4 @@ function write(level: string, msg: string): void {
 export function info(msg: string): void { write("INFO", msg); }
 export function warn(msg: string): void { write("WARN", msg); }
 export function error(msg: string): void { write("ERROR", msg); }
+export function debug(msg: string): void { write("DEBUG", msg); }

@@ -1,5 +1,12 @@
 [
   {
+    "version": "2026.821.2",
+    "notes": {
+      "zh": "新功能：应用自动更新迁移至 GitHub Releases（设置-关于内检查/下载/一键重启安装，差量更新只下载变更块）\n新功能：设置-高级新增「导出诊断包」（一键打包日志与运行环境信息）\n优化：日志统一收口到 ~/.openclaw/logs/（app.log/gateway.log，支持 CRYOCLAW_LOG_LEVEL 级别过滤）\n优化：Gateway 启用 V8 编译缓存，二次启动更快；主窗口创建提前，首屏更跟手\n优化：退出时自动清理临时缓存（保留用户配置与会话历史）；收敛无用 Chromium 特性降低内存占用\n优化：渲染进程崩溃自愈与内存软监控；设置/聊天界面图标统一为 lucide 风格\n修复：自动更新换装流程（重启安装不再静默失败）\n测试基线 487 用例全绿",
+      "en": "New: app auto-update moved to GitHub Releases (check/download/one-click restart-to-install in Settings → About, differential downloads)\nNew: Export Diagnostics bundle in Settings → Advanced (logs + runtime info in one click)\nImproved: unified logging to ~/.openclaw/logs/ (app.log/gateway.log, CRYOCLAW_LOG_LEVEL filtering)\nImproved: V8 compile cache for Gateway (faster warm starts); earlier main-window creation\nImproved: temp caches cleaned on quit (user config & chat history kept); unused Chromium features disabled to cut memory\nImproved: renderer crash self-healing & memory soft-watchdog; settings/chat icons unified to lucide\nFix: update swap flow (restart-to-install no longer fails silently)\n487-test baseline all green"
+    }
+  },
+  {
     "version": "2026.820.0",
     "notes": {
       "zh": "修复：Kimi K3 系模型思考强度档位（low/medium/high/xhigh/max）现在按模型能力正确开放，不再被误限为开/关二值\n修复：/new、/reset 开启新会话时立即清空旧对话并及时刷新\n修复：上下文自动压缩后新回复不再消失；子代理结束时不再误清空进行中的工具卡片\n修复：渠道/模型设置页输入框与下拉选择即时响应\n新功能：模型卡片新增思考/上下文窗口能力徽标；新增小米 MiMo、Ollama 快捷预设\n优化：新消息入场动效；支持系统减弱动效偏好",

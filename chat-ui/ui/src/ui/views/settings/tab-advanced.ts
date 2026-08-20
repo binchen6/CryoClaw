@@ -77,6 +77,8 @@ function createAdvancedState() {
     hint: null as string | null,
     cliInstalled: false,
     cliLoading: false,
+    // 诊断包导出进行中标志
+    diagnosticsBusy: false,
     saving: false,
     error: null as string | null,
     successMsg: null as string | null,
@@ -138,6 +140,26 @@ async function toggleCli(state: AppViewState, install: boolean) {
     s.cliInstalled = cli.installed;
   } catch {}
   s.cliLoading = false; state.requestUpdate();
+}
+
+// 导出诊断包（日志 + 环境信息 + 脱敏配置摘要）
+async function handleExportDiagnostics(state: AppViewState) {
+  if (s.diagnosticsBusy) return;
+  s.diagnosticsBusy = true;
+  s.error = null;
+  s.successMsg = null;
+  state.requestUpdate();
+  try {
+    const result = await ipc.settingsExportDiagnostics();
+    if (!result.canceled && result.filePath) {
+      s.successMsg = t("settings.advanced.diagnosticsExportSuccess").replace("{path}", result.filePath);
+    }
+  } catch (e: any) {
+    s.error = tWithDetail("settings.advanced.diagnosticsExportFailed", e?.message);
+  } finally {
+    s.diagnosticsBusy = false;
+    state.requestUpdate();
+  }
 }
 
 // 当前 mode=webbridge 时主动跑 precheck，更新 health link 可见性。
@@ -576,6 +598,17 @@ export function renderTabAdvanced(state: AppViewState) {
           <span class="oc-toggle-track ${s.cliInstalled ? 'oc-toggle-track--on' : ''}">
             <span class="oc-toggle-thumb"></span>
           </span>
+        </div>
+      </div>
+
+      <div class="oc-settings__form-group">
+        <label class="oc-settings__label">${t("settings.advanced.diagnosticsTitle")}</label>
+        <p class="oc-settings__hint" style="margin:0 0 8px">${t("settings.advanced.diagnosticsDesc")}</p>
+        <div>
+          <button class="oc-settings__btn oc-settings__btn--compact" ?disabled=${s.diagnosticsBusy} @click=${() => handleExportDiagnostics(state)}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v6h16v-6"/><path d="m8 7 4-4 4 4"/><path d="M12 3v9"/></svg>
+            ${t("settings.advanced.diagnosticsExport")}
+          </button>
         </div>
       </div>
 

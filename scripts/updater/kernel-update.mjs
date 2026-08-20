@@ -71,6 +71,16 @@ const LOCK_FILE = path.join(BACKUP_ROOT, "update.lock");
 const ASAR_PATH = path.join(RESOURCES_DIR, "gateway.asar");
 const ASAR_UNPACKED_DIR = path.join(RESOURCES_DIR, "gateway.asar.unpacked");
 
+// V8 编译缓存目录（与 src/gateway-process.ts 的 NODE_COMPILE_CACHE 一致）。
+// 内核换装/回退后旧缓存全部失效，清空避免残留旧版本的编译产物。
+function clearCompileCache() {
+  try {
+    const home = (process.platform === "win32" ? process.env.USERPROFILE : process.env.HOME) || os.homedir();
+    const stateDir = process.env.OPENCLAW_STATE_DIR || path.join(home, ".openclaw");
+    rmRecursive(path.join(stateDir, "cache", "v8-compile"));
+  } catch {}
+}
+
 // ── 进度协议 ──
 
 function emit(obj) {
@@ -472,6 +482,7 @@ async function cmdUpdate(tag) {
     }
     swapped = true;
 
+    clearCompileCache();
     writeState({ lastAction: "update", previous: current, current: target, backupDir, carried });
     progress("cleanup", 96, "清理临时文件");
     emit({ type: "done", action: "update", from: current, to: target });
@@ -557,6 +568,7 @@ async function cmdRollback() {
     throw e;
   }
 
+  clearCompileCache();
   writeState({ lastAction: "rollback", previous: current, current: backupVersion });
   progress("cleanup", 90, "清理");
   emit({ type: "done", action: "rollback", from: current, to: backupVersion });

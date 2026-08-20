@@ -7,6 +7,7 @@ import { t, tWithDetail } from "../../i18n.ts";
 import * as ipc from "../../data/ipc-bridge.ts";
 import { showConfirm } from "../confirm-dialog.ts";
 import type {
+  AppUpdateState,
   KernelUpdateProgress,
   KernelUpdateResult,
   KernelUpdateState,
@@ -20,12 +21,16 @@ const s = {
   progress: null as KernelUpdateProgress | null,
   busy: false,
   resultMsg: null as { ok: boolean; text: string } | null,
+  // App 自动更新卡片状态
+  appUpdate: null as AppUpdateState | null,
+  appUpdateMsg: null as { ok: boolean; text: string } | null,
   initialized: false,
 };
 
 // 进度推送回调需要触发重渲染，缓存当前 state 引用
 let currentState: AppViewState | null = null;
 let unsubscribeProgress: (() => void) | null = null;
+let unsubscribeAppUpdate: (() => void) | null = null;
 
 async function init(state: AppViewState) {
   if (s.initialized) return;
@@ -45,16 +50,29 @@ async function init(state: AppViewState) {
     s.progress = p;
     currentState?.requestUpdate();
   });
+  // App 自动更新：首屏拉一次快照 + 订阅主进程状态推送
+  try {
+    s.appUpdate = await ipc.appUpdateGetState();
+    state.requestUpdate();
+  } catch {}
+  unsubscribeAppUpdate = ipc.onAppUpdateState((st) => {
+    s.appUpdate = st;
+    currentState?.requestUpdate();
+  });
 }
 
 export function cleanupAboutTab() {
   unsubscribeProgress?.();
   unsubscribeProgress = null;
+  unsubscribeAppUpdate?.();
+  unsubscribeAppUpdate = null;
   s.initialized = false;
   s.kernelState = null;
   s.progress = null;
   s.busy = false;
   s.resultMsg = null;
+  s.appUpdate = null;
+  s.appUpdateMsg = null;
 }
 
 async function handleKernelCheck(state: AppViewState) {
@@ -110,6 +128,80 @@ async function handleKernelUpdate(state: AppViewState) {
 async function handleKernelRollback(state: AppViewState) {
   if (!(await showConfirm(state, t("settings.about.kernelRollbackConfirm"), { danger: true }))) return;
   void runKernelAction(state, () => ipc.kernelRollback());
+}
+
+// ── App 自动更新 ──
+
+async function handleAppUpdateCheck(state: AppViewState) {
+  if (s.appUpdate?.status === "checking" || s.appUpdate?.status === "downloading") return;
+  s.appUpdateMsg = null;
+  try {
+    s.appUpdate = await ipc.appUpdateCheck();
+  } catch (e) {
+    s.appUpdateMsg = { ok: false, text: String(e) };
+  }
+  state.requestUpdate();
+}
+
+async function handleAppUpdateRestart(state: AppViewState) {
+  s.appUpdateMsg = null;
+  try {
+    await ipc.appUpdateQuitAndInstall();
+    // quitAndInstall 后应用随即退出，通常不会走到这里
+  } catch (e) {
+    s.appUpdateMsg = { ok: false, text: String(e) };
+    state.requestUpdate();
+  }
+}
+
+function renderAppUpdateCard(state: AppViewState) {
+  const us = s.appUpdate;
+  if (!us) return html``;
+  if (!us.supported) {
+    return html`
+      <div class="oc-settings__card">
+        <div class="oc-settings__card-title">${t("settings.about.appUpdate")}</div>
+        <div style="font-size:13px;color:var(--text-secondary)">${t("settings.about.appUpdateNotSupported")}</div>
+      </div>
+    `;
+  }
+  const checking = us.status === "checking";
+  const downloading = us.status === "downloading";
+  return html`
+    <div class="oc-settings__card">
+      <div class="oc-settings__card-title">${t("settings.about.appUpdate")}</div>
+      <div style="font-size:13px;display:flex;flex-direction:column;gap:6px">
+        <div><strong>${t("settings.about.appUpdateCurrent")}</strong>: ${us.currentVersion || s.cryoClawVersion || "-"}</div>
+        ${us.status === "available"
+          ? html`<div><strong>${tWithDetail("settings.about.appUpdateAvailable", us.version ?? "")}</strong></div>`
+          : ""}
+        ${us.status === "not-available" ? html`<div>${t("settings.about.appUpdateUpToDate")}</div>` : ""}
+        ${us.status === "downloaded" ? html`<div>${t("settings.about.appUpdateDownloaded")}</div>` : ""}
+        ${us.status === "error"
+          ? html`<div style="color:var(--text-secondary)">${t("settings.about.appUpdateError")}</div>`
+          : ""}
+        <div style="display:flex;gap:8px;margin-top:4px">
+          <button class="oc-settings__btn oc-settings__btn--compact" ?disabled=${checking || downloading} @click=${() => handleAppUpdateCheck(state)}>${checking ? t("settings.about.appUpdateChecking") : t("settings.about.appUpdateCheck")}</button>
+          ${us.status === "downloaded"
+            ? html`<button class="oc-settings__btn oc-settings__btn--primary oc-settings__btn--compact" @click=${() => handleAppUpdateRestart(state)}>${t("settings.about.appUpdateRestart")}</button>`
+            : ""}
+        </div>
+        ${downloading && us.progress
+          ? html`
+              <div>
+                <div style="height:6px;border-radius:3px;background:var(--border);overflow:hidden">
+                  <div style="height:100%;width:${us.progress.percent}%;background:var(--accent);transition:width .2s"></div>
+                </div>
+                <div style="margin-top:4px;color:var(--text-secondary)">${tWithDetail("settings.about.appUpdateDownloading", us.progress.percent.toFixed(1))}%</div>
+              </div>
+            `
+          : ""}
+        ${s.appUpdateMsg
+          ? html`<div style="${s.appUpdateMsg.ok ? "" : "color:var(--danger)"}">${s.appUpdateMsg.text}</div>`
+          : ""}
+      </div>
+    </div>
+  `;
 }
 
 function renderKernelCard(state: AppViewState) {
@@ -177,6 +269,9 @@ export function renderTabAbout(state: AppViewState) {
           <div><strong>${t("settings.about.openclaw")}</strong>: ${s.openClawVersion}</div>
         </div>
       </div>
+
+      <!-- App Update -->
+      ${renderAppUpdateCard(state)}
 
       <!-- Kernel -->
       ${renderKernelCard(state)}

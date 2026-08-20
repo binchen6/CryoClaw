@@ -14,6 +14,11 @@ contextBridge.exposeInMainWorld("cryoclaw", {
   kernelUpdate: (params?: { tag?: string }) => ipcRenderer.invoke("kernel:update", params),
   kernelRollback: () => ipcRenderer.invoke("kernel:rollback"),
 
+  // App 自动更新（electron-updater）
+  appUpdateGetState: () => ipcRenderer.invoke("app-update:get-state"),
+  appUpdateCheck: () => ipcRenderer.invoke("app-update:check"),
+  appUpdateQuitAndInstall: () => ipcRenderer.invoke("app-update:quit-and-install"),
+
   // Setup 相关
   verifyKey: (params: Record<string, unknown>) =>
     ipcRenderer.invoke("setup:verify-key", params),
@@ -110,6 +115,7 @@ contextBridge.exposeInMainWorld("cryoclaw", {
   settingsUninstallCli: () => ipcRenderer.invoke("settings:uninstall-cli"),
   settingsListConfigBackups: () => ipcRenderer.invoke("settings:list-config-backups"),
   settingsExportOpenclawState: () => ipcRenderer.invoke("settings:export-openclaw-state"),
+  settingsExportDiagnostics: () => ipcRenderer.invoke("settings:export-diagnostics"),
   settingsSelectOpenclawStateArchive: () => ipcRenderer.invoke("settings:select-openclaw-state-archive"),
   settingsImportOpenclawState: (params: Record<string, unknown>) =>
     ipcRenderer.invoke("settings:import-openclaw-state", params),
@@ -213,6 +219,14 @@ contextBridge.exposeInMainWorld("cryoclaw", {
     };
     ipcRenderer.on("kernel:update-progress", listener);
     return () => ipcRenderer.removeListener("kernel:update-progress", listener);
+  },
+  // 主进程推送 App 自动更新状态快照
+  onAppUpdateState: (cb: (payload: unknown) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => {
+      cb(payload);
+    };
+    ipcRenderer.on("app:update-state", listener);
+    return () => ipcRenderer.removeListener("app:update-state", listener);
   },
 });
 

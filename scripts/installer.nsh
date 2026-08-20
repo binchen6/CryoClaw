@@ -76,10 +76,13 @@
 ; ============================================================
 
 !macro customInit
-  ; 安装前强制终止正在运行的 CryoClaw 进程树（/T 杀子进程，/F 强制）
-  nsExec::ExecToLog 'taskkill /IM "CryoClaw.exe" /T /F'
+  ; 安装前强制终止正在运行的 CryoClaw 进程（/IM 按镜像名匹配所有同名进程：
+  ; 主进程/渲染/GPU/utility 全部同名 CryoClaw.exe，无需 /T）。
+  ; ⚠ 绝不能加 /T（树杀）：electron-updater quitAndInstall 会把本安装器 spawn 为
+  ; CryoClaw.exe 的子进程，/T 会把安装器自己级联杀掉（R20 实测复现：更新换装静默失败）。
+  nsExec::ExecToLog 'taskkill /IM "CryoClaw.exe" /F'
   ; 补杀残留的 gateway 子进程（CryoClaw Helper.exe 是 Electron 复用二进制跑 Node.js 的）
-  ; /T 有时无法级联到 windowsHide 模式创建的子进程，需显式按进程名清理
+  ; 这些进程与主进程镜像名不同，需显式按进程名清理
   nsExec::ExecToLog 'taskkill /IM "CryoClaw Helper.exe" /F'
   ; 补杀 CLI 进程（更新时可能正在运行）
   nsExec::ExecToLog 'taskkill /IM "CryoClaw-CLI.exe" /F'

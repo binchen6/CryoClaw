@@ -87,4 +87,63 @@ run("npx", [
   "never",
 ], commonEnv);
 
+// ── 产物校验（只告警不 fail）──
+
+// 解析 PE 头 Certificate Table（Optional Header DataDirectory[4]，IMAGE_DIRECTORY_ENTRY_SECURITY）：
+// offset 与 size 均非 0 即存在 Authenticode 数字签名。不引入新依赖。
+function isExeSigned(filePath) {
+  const buf = fs.readFileSync(filePath);
+  // DOS header: "MZ" + e_lfanew（0x3c 处指向 PE 头的偏移）
+  if (buf.length < 0x40 || buf.readUInt16LE(0) !== 0x5a4d) return false;
+  const peOffset = buf.readUInt32LE(0x3c);
+  if (peOffset + 24 > buf.length) return false;
+  // PE signature "PE\0\0"，之后 20 字节 COFF File Header，再是 Optional Header
+  if (buf.readUInt32LE(peOffset) !== 0x00004550) return false;
+  const optOffset = peOffset + 24;
+  if (optOffset + 2 > buf.length) return false;
+  const magic = buf.readUInt16LE(optOffset);
+  // PE32 (0x10b): DataDirectory 起始于 Optional Header +96；PE32+ (0x20b): +112
+  const ddOffset = magic === 0x10b ? optOffset + 96 : magic === 0x20b ? optOffset + 112 : 0;
+  if (!ddOffset || ddOffset + 5 * 8 > buf.length) return false;
+  const certOffset = buf.readUInt32LE(ddOffset + 4 * 8);
+  const certSize = buf.readUInt32LE(ddOffset + 4 * 8 + 4);
+  return certOffset !== 0 && certSize !== 0;
+}
+
+const outDir = path.join(root, "out", target);
+const setups = fs.existsSync(outDir)
+  ? fs.readdirSync(outDir).filter((f) => /^CryoClaw-Setup-.*\.exe$/i.test(f))
+  : [];
+if (setups.length === 0) {
+  console.warn(`\n[dist-win] ⚠ 未找到安装包产物 out/${target}/CryoClaw-Setup-*.exe`);
+}
+for (const name of setups) {
+  const exePath = path.join(outDir, name);
+  let signed = false;
+  try {
+    signed = isExeSigned(exePath);
+  } catch (err) {
+    console.warn(`\n[dist-win] ⚠ 签名检测失败(${name}): ${err?.message ?? err}`);
+  }
+  if (!signed) {
+    // 不 fail：未配置 CSC_LINK 证书时产物未签名是合法场景，仅醒目提示
+    console.warn(`
+┌──────────────────────────────────────────────────────────────────┐
+│ ⚠  ${name} 未包含数字签名
+│   未配置 CSC_LINK 代码签名证书。用户首次安装会看到
+│   Windows SmartScreen「未知发布者」警告。正式发布前请配置
+│   CSC_LINK / CSC_KEY_PASSWORD（见 .env.build.example）。
+└──────────────────────────────────────────────────────────────────┘`);
+  } else {
+    console.log(`[dist-win] 签名校验通过: ${name}`);
+  }
+  // 差分更新（electron-updater）依赖同批的 blockmap 与 latest.yml
+  if (!fs.existsSync(`${exePath}.blockmap`)) {
+    console.warn(`[dist-win] ⚠ 缺少 ${name}.blockmap，差分增量更新将退化为全量下载`);
+  }
+}
+if (!fs.existsSync(path.join(outDir, "latest.yml"))) {
+  console.warn(`[dist-win] ⚠ 缺少 out/${target}/latest.yml，electron-updater 将无法检查更新`);
+}
+
 console.log(`[dist-win] 完成: out/${target}/CryoClaw-Setup-*`);

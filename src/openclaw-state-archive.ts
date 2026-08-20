@@ -28,7 +28,8 @@ const ARCHIVE_MARKER_NAME = ".oneclaw-openclaw-state-archive";
 const ARCHIVE_MARKER_CONTENT = "oneclaw-openclaw-state-archive/v1\n";
 // Runtime-only locks/logs are host-specific; they are skipped on export and
 // stripped again after import in case a third-party archive includes them.
-const VOLATILE_RUNTIME_FILES = new Set(["app.log", "gateway.lock", "gateway.log"]);
+// "logs" 是整个日志目录（R20 起 app.log/gateway.log 与内核日志都归集于此）。
+const VOLATILE_RUNTIME_FILES = new Set(["app.log", "gateway.lock", "gateway.log", "logs", "cache"]);
 
 export async function exportOpenclawStateToArchive(
   stateDir: string,

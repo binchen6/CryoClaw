@@ -5,6 +5,7 @@ import { app, ipcMain } from "electron";
 import { resolveGatewayPackageDir, resolveGatewayPort, resolveUserConfigPath } from "../constants";
 import { readUserConfig } from "../provider-config";
 import { assertTrustedIpcSender } from "../ipc-sender-guard";
+import { checkAppUpdate, getAppUpdateState, quitAndInstallAppUpdate } from "../app-updater";
 import * as fs from "fs";
 import * as path from "path";
 
@@ -50,5 +51,29 @@ export function registerAboutIpc(): void {
       providerKeys: providers,
       enabledChannels,
     };
+  });
+
+  // ── App 自动更新（electron-updater）──
+  // dev/未打包环境下 supported=false，前端渲染「不支持」分区
+
+  ipcMain.handle("app-update:get-state", (event) => {
+    if (!assertTrustedIpcSender(event, "app-update:get-state")) throw new Error("IPC sender not trusted");
+    return { success: true, data: getAppUpdateState() };
+  });
+
+  ipcMain.handle("app-update:check", (event) => {
+    if (!assertTrustedIpcSender(event, "app-update:check")) throw new Error("IPC sender not trusted");
+    checkAppUpdate();
+    return { success: true, data: getAppUpdateState() };
+  });
+
+  ipcMain.handle("app-update:quit-and-install", (event) => {
+    if (!assertTrustedIpcSender(event, "app-update:quit-and-install")) throw new Error("IPC sender not trusted");
+    try {
+      quitAndInstallAppUpdate();
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, message: String(err?.message ?? err) };
+    }
   });
 }

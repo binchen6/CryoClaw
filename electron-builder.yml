@@ -55,15 +55,17 @@ mac:
     - from: "resources/targets/darwin-${arch}/officecli"
       to: "resources/officecli"
 
-# 自动更新：指向阿里云 CDN
+# 自动更新：GitHub Releases（public 仓库，客户端检查更新免 token；
+# 发布时 electron-builder --publish 走 GH_TOKEN，仅放本地 .env.build，不入库）
 publish:
-  provider: generic
-  url: https://oneclaw.cn/releases/
+  provider: github
+  owner: binchen6
+  repo: CryoClaw
 
 dmg:
   sign: false
-  # 关闭 DMG 差分更新元数据，避免生成 .dmg.blockmap
-  writeUpdateInfo: false
+  # 生成 .dmg.blockmap（差分更新元数据）；macOS 自动更新实际走 zip target
+  writeUpdateInfo: true
   artifactName: "CryoClaw-${version}-${arch}.${ext}"
 
 # --- Windows ---
@@ -88,6 +90,5 @@ nsis:
   createDesktopShortcut: always
   createStartMenuShortcut: true
   runAfterFinish: true
-  # 关闭 NSIS 差分包，避免生成 .exe.blockmap
-  differentialPackage: false
+  # differentialPackage 保持默认 true：生成 .exe.blockmap 供 electron-updater 差分下载
   artifactName: "CryoClaw-Setup-${version}-${arch}.${ext}"

@@ -6,6 +6,21 @@ import { app, clipboard, dialog, ipcMain, shell, Menu, BrowserWindow } from "ele
 // 必须在 app ready 之前调用。
 app.commandLine.appendSwitch("lang", "zh-CN");
 
+// ── Chromium 无用特性收敛（R20）──
+// 逐项取舍，均可注释还原：
+// - Translate/OptimizationHints/MediaRouter/InterestCohort/PrivacySandboxAdTopics：
+//   本地 file:// 聊天 UI 用不到翻译提示、页面预取提示、投屏与广告兴趣组。
+// - disable-component-update：组件更新（Widevine 等）对本应用无意义，省后台请求。
+// - disable-breakpad：崩溃转储上报未接入，关掉省进程。
+// 明确不加：disable-background-networking（analytics 与 app 更新检查需要网络）、
+// 不动 GPU 相关开关（CSS 动效与代码高亮渲染依赖硬件加速）。
+app.commandLine.appendSwitch(
+  "disable-features",
+  "Translate,OptimizationHints,MediaRouter,InterestCohort,PrivacySandboxAdTopics",
+);
+app.commandLine.appendSwitch("disable-component-update");
+app.commandLine.appendSwitch("disable-breakpad");
+
 import { GatewayProcess, closeDiagLogStream } from "./gateway-process";
 import { WindowManager } from "./window";
 import { TrayManager } from "./tray";
@@ -29,10 +44,12 @@ import { reconcileCliOnAppLaunch } from "./cli-integration";
 import { reconcileExtensionsOnAppLaunch } from "./extension-mirror";
 import { migrateLegacyFeishuPluginEntry } from "./feishu-config";
 import { migrateBrowserProfileForCurrentGateway } from "./browser-profile-config";
-import { uninstallGatewayDaemon } from "./install-detector";
+import { uninstallGatewayDaemon, cleanGatewayLockFiles } from "./install-detector";
+import { runQuitCleanup } from "./quit-cleanup";
 import { detectOwnership, migrateFromLegacy, readCryoclawConfig, writeCryoclawConfig, appendChannelUtm } from "./cryoclaw-config";
 import { startTokenRefresh, stopTokenRefresh, loadOAuthToken } from "./kimi-oauth";
 import { initKernelUpdater, getKernelUpdateState, checkKernelUpdate, runKernelUpdate, runKernelRollback } from "./kernel-updater";
+import { initAppUpdater } from "./app-updater";
 import { startGatewayControlServer, stopGatewayControlServer } from "./gateway-control-server";
 import { migrateOpenclawConfigForKernelUpgrade } from "./openclaw-config-migration";
 import { assertTrustedIpcSender } from "./ipc-sender-guard";
@@ -397,17 +414,18 @@ async function startGatewayAndShowMain(source: string, opts: StartMainOptions = 
 
   log.info(`启动链路开始: ${source}`);
 
+  // 窗口先行：先显示 UI（渲染层进入"连接中"状态，自带重连），gateway 在后台启动。
+  // 用户感知的启动时间 = max(窗口渲染, gateway 就绪)，而不是两者之和。
+  // token/port 在 GatewayProcess 构造时已就绪，showMainWindow 不依赖 gateway 运行。
+  // （R20）窗口创建提到扩展 reconcile 之前——reconcile 只被 gateway 启动依赖，不阻塞首屏。
+  const windowPromise = showMainWindow().catch((err) => {
+    log.error(`提前显示主窗口失败: ${err}`);
+  });
+
   // 把内置 channel plugin 从 mirror reconcile 到 ~/.openclaw/extensions/。
   // 必须在 gateway 启动前 await——openclaw 首次扫描 plugin root 时要看到完整目录。
   // 函数自身吞掉所有错误，不会阻断启动。
   await reconcileExtensionsOnAppLaunch();
-
-  // 窗口先行：先显示 UI（渲染层进入"连接中"状态，自带重连），gateway 在后台启动。
-  // 用户感知的启动时间 = max(窗口渲染, gateway 就绪)，而不是两者之和。
-  // token/port 在 GatewayProcess 构造时已就绪，showMainWindow 不依赖 gateway 运行。
-  const windowPromise = showMainWindow().catch((err) => {
-    log.error(`提前显示主窗口失败: ${err}`);
-  });
 
   const running = await ensureGatewayRunning(source);
   if (!running) {
@@ -976,6 +994,13 @@ app.whenReady().then(async () => {
   }
   analytics.init();
   analytics.track("app_launched");
+
+  // App 自动更新（electron-updater + GitHub Releases）：仅打包环境启用，
+  // 内部 15s 延迟静默检查，不阻塞首屏窗口
+  initAppUpdater({
+    push: (s) => windowManager.pushAppUpdateState(s),
+    beforeQuitAndInstall: () => windowManager.prepareForAppQuit(),
+  });
   tray.create({
     windowManager,
     gateway,
@@ -1043,8 +1068,13 @@ app.whenReady().then(async () => {
   log.info(`[startup] config ownership: ${ownership}`);
 
   switch (ownership) {
-    case "cryoclaw":
+    case "cryoclaw": {
       // 状态 1：正常启动
+      // 窗口创建与同步配置迁移并行（R20）：迁移是纯本地 JSON 改写，不读窗口；
+      // 窗口渲染不读 openclaw.json。startGatewayAndShowMain 内的 showMainWindow 会复用此窗口。
+      const earlyWindow = showMainWindow().catch((err) => {
+        log.error(`启动提前开窗失败: ${err}`);
+      });
       migrateSessionMemoryHook();
       migrateDisableGatewayUpdateCheck();
       migrateDeprecatedDingtalkFields();
@@ -1053,11 +1083,16 @@ app.whenReady().then(async () => {
         log.error(`[migrate] CLI launch reconciliation failed: ${err instanceof Error ? err.message : String(err)}`);
       });
       await startGatewayAndShowMain("app:startup");
+      await earlyWindow;
       break;
+    }
 
-    case "legacy-cryoclaw":
-      // 状态 2：老用户升级 → 自动迁移
+    case "legacy-cryoclaw": {
+      // 状态 2：老用户升级 → 自动迁移（窗口与迁移并行，同上）
       log.info("[startup] legacy CryoClaw detected, migrating...");
+      const earlyWindow = showMainWindow().catch((err) => {
+        log.error(`启动提前开窗失败: ${err}`);
+      });
       migrateFromLegacy();
       migrateSessionMemoryHook();
       migrateDisableGatewayUpdateCheck();
@@ -1067,7 +1102,9 @@ app.whenReady().then(async () => {
         log.error(`[migrate] CLI launch reconciliation failed: ${err instanceof Error ? err.message : String(err)}`);
       });
       await startGatewayAndShowMain("app:startup:legacy-migrate");
+      await earlyWindow;
       break;
+    }
 
     case "external-openclaw":
       // 状态 3：外部 OpenClaw → 接管流程
@@ -1120,6 +1157,12 @@ app.on("before-quit", () => {
   stopAuthProxy();
   stopGatewayControlServer().catch(() => {});
   gateway.stop().catch(() => {});
+  // 清理临时缓存（gateway 已停，内核临时目录安全可删；用户配置/会话历史在
+  // ~/.openclaw 下不在清理范围）。同步执行保证退出前完成；内部全 try/catch。
+  try {
+    cleanGatewayLockFiles();
+    runQuitCleanup();
+  } catch {}
   // diagLog 已改 WriteStream 异步缓冲，退出前 flush 落盘（带超时，不阻塞退出）
   closeDiagLogStream().catch(() => {});
 });

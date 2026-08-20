@@ -11,10 +11,9 @@
 面向国内生态（Kimi / Moonshot / 飞书 / 企微 / 微信 / 钉钉 / QQ）。
 
 **当前状态**：
-- 更名 CryoClaw 完成；CryoClaw 重设计工程 **R1–R17 全部完成**（见下节），最新发版 **v2026.811.9**（R8/R11–R17）。
+- 更名 CryoClaw 完成；CryoClaw 重设计工程 **R1–R20 全部完成**（见下节），最新发版 **v2026.821.2**（R18–R20：思考档位路由修复、对话健壮性、性能/稳定性/更新体系批次）。
 - 内核 openclaw **2026.7.1-2**（版本 pin 在 package.json `cryoclaw.openclaw`）；**Electron 43.4.0**（R13 升级落地，audit 0 漏洞）。
-- 测试基线 **477 pass / 0 fail / 4 skipped**（vitest 94 + node 64/68 + chat-ui 267 + scripts 52 + tsc typecheck；
-  R18：scripts +4 kimi 思考档位补丁、chat-ui +5 对话健壮性；0 fail 为硬指标）。
+- 测试基线 **487 pass / 0 fail / 4 skipped**（vitest 94 + node 74 + chat-ui 267 + scripts 52 + tsc typecheck；0 fail 为硬指标）。
 - 历史优化阶段 1–22 全部完成并逐版发版至 v2026.811.0（见历史档案）。
 - 已开源发布至 GitHub（binchen6/CryoClaw，AGPL-3.0-only）；发布时以全新干净历史快照推送，旧本地历史（含已作废的 kimi-claw REFRESH 凭证）不出仓；`.env.build` 已转 gitignored，模板见 `.env.build.example`；git 身份统一为 binchen6。CI：`tests.yml` 每次 push/PR 全量回归（chat-ui/ui 独立依赖树需先安装）；上游签名/CDN 发版链 `build-release.yml`/`publish-release.yml` 已删除（依赖上游 oneclaw 签名证书与 oneclaw.cn CDN，本 fork 不适用，发版走本地 dist:win + gh release）。
 
@@ -530,6 +529,42 @@
 - **⚠ 冒烟断言教训**：/new 的判定基准必须是「内容」而非气泡计数——内核重置后的新 transcript
   本身就含 [/new, ✅ New session started.] 两条消息，气泡数恒为 2；首轮冒烟用 `bubbles<=1`
   误判 FAIL，内容级复测（marker 文本消失时刻 + 终态文本）证明功能本就正确。
+
+### R20 · 性能/稳定性/更新体系批次（完成，v2026.821.2）
+
+用户指令：架构优化、日志统一、渲染韧性、图标统一、打包分发优化（ASAR/差分/签名）、更新链路验证。
+
+- **P0-1 Chromium 特性收敛**（`src/main.ts`）：模块顶层 appendSwitch 组——禁用
+  BackForwardCache/重图编译等无用特性，降低内存与后台唤醒。
+- **P0-2 退出清理临时缓存**（`src/quit-cleanup.ts`+测试）：app quit 时清理 `%TEMP%` 下
+  cryoclaw/openclaw 临时目录（保留用户配置与会话历史）。真机实测 quit 日志「删除 308」。
+- **P0-3 渲染进程韧性**（`src/window.ts`）：render-process-gone/unresponsive 自愈重载 +
+  内存软监控（超限告警不杀）。
+- **P0-4 日志统一 + 诊断包**：全部日志收口 `~/.openclaw/logs/`（app.log/gateway.log，
+  `CRYOCLAW_LOG_LEVEL` 级别过滤，旧位置文件一次性迁移）；`src/diagnostics-export.ts` +
+  设置-高级「导出诊断包」按钮（IPC `settings:export-diagnostics`，已接
+  assertTrustedIpcSender/preload/ipc-bridge/tab-advanced/i18n）。
+- **P1-5 Gateway V8 编译缓存**：gateway spawn env 注入 `NODE_COMPILE_CACHE=
+  ~/.openclaw/cache/v8-compile`（Node 22+ 内建）；kernel-update.mjs 换装/回退后
+  clearCompileCache()；openclaw-state-archive 的 VOLATILE_RUNTIME_FILES 增补
+  "logs"/"cache"。
+- **P1-6 首屏提前**：`src/main.ts` 窗口创建提到 reconcileExtensionsOnAppLaunch 与四个
+  同步迁移之前（switch case 加块级作用域修 lexical declaration 报错）。
+- **P2-7 图标统一 lucide**：icons.ts 重写统一风格、补 tool-display 5 个缺失键、svgo
+  压缩（`scripts/optimize-svg.js`）。
+- **P3-8~11 更新体系**：`src/app-updater-state.ts`（纯状态机 +6 单测）+ `src/app-updater.ts`
+  （electron-updater 接线）+ settings/about.ts 三个 `app-update:*` handler + 设置-关于
+  「应用更新」卡片（i18n 各 11 键）+ electron-builder.yml publish→github binchen6/CryoClaw
+  （删 differentialPackage:false 启用差分、dmg.writeUpdateInfo:true）+ dist-win.js PE 签名
+  接线（无证书 ⚠ 不 fail）+ blockmap/latest.yml 断言 + `docs/releasing.md`。
+- **P3-12 更新链路实测（双包差分 + 悬案定案）**：本地 generic 服务器实测
+  821.0→821.1→821.2：检查/下载/校验/回退全通，但 electron-updater `quitAndInstall()`
+  spawn 的 NSIS 安装器 ~37s 后静默死亡（uninstall/copy 之前），手动同参 spawn 全部成功
+  （已排除 taskkill /T 自杀、quit-cleanup、父退出方式、cwd/MOTW/签名——gotchas #67/68）。
+  **定案：app-updater.ts 自实现换装 spawn**（detached+stdio:ignore+unref → app.quit()），
+  真实链路 821.0→821.2 换装+自启实测通过（asar md5 变更 + 新进程 + 新启动日志三件套）。
+  821.1/821.0 为测试中间版不发布，正式发 821.2。
+- 测试基线 **487 pass / 0 fail / 4 skip**（vitest 94 + node 74 + chat-ui 267 + scripts 52）。
 
 ### R8 · 插件管理页面（已重启完成，见上节 R8 记录）
 

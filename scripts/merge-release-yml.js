@@ -6,6 +6,10 @@
  *
  * 读取各平台子目录（out/darwin-arm64/, out/darwin-x64/, out/win32-x64/, out/win32-arm64/）
  * 的 yml 文件，合并 files[] 数组为统一版本，收集所有安装包到 out/release/。
+ *
+ * 定位（GitHub Releases 流程）：多架构 latest.yml 合并**仍保留使用**
+ * （x64 + arm64 需合成一份 latest.yml 上传）；安装包收集到 out/release/
+ * 供 gh release create 手动上传。原 oneclaw.cn CDN 上传链路已归档不再使用。
  */
 
 const fs = require("fs");

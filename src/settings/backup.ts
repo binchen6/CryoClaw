@@ -16,6 +16,10 @@ import {
   exportOpenclawStateToArchive,
 } from "../openclaw-state-archive";
 import {
+  buildDiagnosticsDefaultFileName,
+  exportDiagnosticsBundle,
+} from "../diagnostics-export";
+import {
   buildOpenclawStateExportOverwriteWarning,
   resolveOpenclawStateExportTarget,
 } from "../openclaw-state-export-target";
@@ -71,6 +75,29 @@ export function registerBackupIpc(opts: SettingsIpcOptions): void {
 
       await exportOpenclawStateToArchive(resolveUserStateDir(), target.filePath);
       return { success: true, data: { canceled: false, filePath: target.filePath } };
+    } catch (err: any) {
+      return { success: false, message: err.message || String(err) };
+    }
+  });
+
+  // ── 导出诊断包（日志 + 环境信息 + 脱敏配置摘要）──
+  ipcMain.handle("settings:export-diagnostics", async (event) => {
+    if (!assertTrustedIpcSender(event, "settings:export-diagnostics")) throw new Error("IPC sender not trusted");
+    try {
+      const win = BrowserWindow.fromWebContents(event.sender);
+      const options: Electron.SaveDialogOptions = {
+        defaultPath: buildDiagnosticsDefaultFileName(),
+        filters: [{ name: "ZIP Archive", extensions: ["zip"] }],
+      };
+      const result = win
+        ? await dialog.showSaveDialog(win, options)
+        : await dialog.showSaveDialog(options);
+      if (result.canceled || !result.filePath) {
+        return { success: true, data: { canceled: true } };
+      }
+      // 系统保存对话框自带覆盖确认，无需二次 warning
+      exportDiagnosticsBundle(result.filePath);
+      return { success: true, data: { canceled: false, filePath: result.filePath } };
     } catch (err: any) {
       return { success: false, message: err.message || String(err) };
     }

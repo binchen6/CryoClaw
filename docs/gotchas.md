@@ -200,3 +200,22 @@ Things that are easy to get wrong or forget when working on CryoClaw.
     `%LOCALAPPDATA%\Programs\CryoClaw\resources\app.asar`（及 `resources/resources/gateway.asar`）
     时间戳已是本次构建 → 安装实际完成，直接 `taskkill /F /PID <安装器>` 即可，不必等它自己退。
     另注意：安装器收尾可能自启应用，占住单实例锁——后续 CDP 冒烟前先 taskkill 清零（见 #64）。
+67. **electron-updater 的 `quitAndInstall()` spawn 的 NSIS 安装器在真实 app 上下文中会静默死亡。**
+    现象：检查/下载/校验全通，日志到 `Executing: pending\CryoClaw-Setup-...exe --updated,/S,--force-run`
+    为止，安装器进程建立 %TEMP%\ns*.tmp（stub 自解压成功）后 ~37s 无任何文件操作即退出，
+    app.asar 全程不变。而同一 exe 同参数在 bash 直跑、node `spawn(...,{detached:true,
+    stdio:"ignore"}).unref()`（父立即退/优雅退/被 taskkill 强杀）下全部换装成功。
+    已排除：installer.nsh 的 `taskkill /T` 树杀、quit-cleanup 删临时目录、父退出方式、cwd、
+    MOTW、签名。定案：不再用 `autoUpdater.quitAndInstall()`，在 `src/app-updater.ts` 自实现
+    换装 spawn（`update-downloaded` 事件存 `info.path` 文件名，拼
+    `%LOCALAPPDATA%\cryoclaw-updater\pending\<name>`，detached+stdio:ignore+unref 后
+    `app.quit()`；文件缺失时回退 quitAndInstall）。真实链路实测 821.0→821.2 换装+自启成功。
+68. **NSIS 安装器内的 `taskkill /IM "<App>.exe" /T /F` 会杀掉安装器自己的进程树。**
+    NSIS 安装器运行时进程名与主程序不同，但 `/T` 树杀沿父子链向上匹配——若安装器是被
+    主程序 spawn 的（更新流程），主程序在被杀前其子进程（安装器）一并被终止，表现为
+    「换装静默失败」。教训：安装器脚本里杀主程序永远**不要带 /T**（customInit 已改）。
+    虽非 #67 的根因（去掉 /T 后 updater spawn 仍失败），但该改动本身必须保留。
+69. **每次重装旧版后 `resources/app-update.yml` 被安装器重置回 github provider。**
+    本地更新链路测试（generic 127.0.0.1 源）在每次 `Setup.exe /S` 重装后必须重新覆盖
+    app-update.yml，否则检查更新会打到真实 GitHub（无 latest.yml 时 404）。这是测试
+    流程最容易忘的一步，表现为「下载/检查毫无反应或报 404」。

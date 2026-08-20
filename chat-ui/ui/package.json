@@ -18,6 +18,7 @@
     "marked": "^17.0.0"
   },
   "devDependencies": {
+    "svgo": "^4.0.2",
     "typescript": "^5.9.3",
     "vite": "^7.0.0"
   }
