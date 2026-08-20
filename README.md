@@ -31,7 +31,7 @@ CryoClaw 是在 **[OneClaw](https://github.com/oneclaw/oneclaw)**（AGPL-3.0）�
 | 协同 | **DeepSeek v4 Flash**（Codex） | 代码审查、打包与效率优化 |
 | 协同 | **Qwen3.8 Max**（Qoder） | 调试取证、测试与文档 |
 
-> 内核 [OpenClaw](https://github.com/openclaw/openclaw) 保持零改动，CryoClaw 只改桌面壳与打包链路。
+> 内核 [OpenClaw](https://github.com/openclaw/openclaw) 源码零改动，CryoClaw 只改桌面壳与打包链路（打包/升级时附带少量幂等兼容补丁：asar 边界、Windows 窗口隐藏、K3 思考档位开放等）。
 
 ### 🆚 与 OneClaw 相比
 
@@ -41,12 +41,13 @@ CryoClaw 是在 **[OneClaw](https://github.com/oneclaw/oneclaw)**（AGPL-3.0）�
 | 更新策略 | 应用自动更新（CDN） | 移除自动更新，纯净 harness；仅保留内核升级/回退（差分 ASAR 换装） |
 | 设置架构 | 主进程自研读写 IPC | 全面切换内核 `config.get`/`config.patch`（乐观锁 + RFC7396 diff），退役 15+ 自研 IPC |
 | 流式渲染 | 逐帧全量 markdown | 逐帧纯文本流式 + 终态一次性排版（消除 O(n²) 卡顿），折叠区懒渲染 |
-| 存储体积 | — | gateway.asar 裁剪 279.6 → 237.6MB（非目标平台原生包/冗余类型声明/sourcemap） |
-| 模型管理 | 基础列表 | provider 分组 + 拖拽排序 + 自定义分组 + fallback 链 + 搜索 + 密钥有效性探测 + 四处选择器联动 |
+| 存储体积 | — | gateway.asar 裁剪 279.6 → 226.8MB（非目标平台原生包/冗余类型声明/sourcemap/.pdb 调试符号） |
+| 模型管理 | 基础列表 | provider 分组 + 拖拽排序 + 自定义分组 + fallback 链 + 搜索 + 能力徽标（思考/上下文窗口/图像）+ 密钥有效性探测 + 四处选择器联动 |
+| 思考强度 | 部分模型被误限为开/关二值 | 按模型能力开放全档位（Kimi K3：low/medium/high/xhigh/max），thinkingLevelMap 正确路由 |
 | CLI | `openclaw` PATH 注入 | 额外提供 gateway CLI 托管（127.0.0.1 控制面，`openclaw gateway restart/status` 不再报错） |
 | 启动速度 | — | 窗口先行 + 内核并行启动，约 0.6s 看到界面 |
 | 插件管理 | 命令行 | 设置页「插件」tab：已安装插件清单 + 启停/卸载 + **ClawHub 插件市场**（搜索/一键安装） |
-| 测试 | — | 468 个用例全量回归（vitest + node:test + typecheck），0 fail 为硬指标 |
+| 测试 | — | 477 个用例全量回归（vitest + node:test + typecheck），0 fail 为硬指标 |
 
 ### 🚀 快速上手
 
@@ -76,7 +77,7 @@ npm run dist:win     # 打包 Windows x64 安装包 → out/win32-x64/
 
 ### 🤖 支持的 AI 提供商
 
-Anthropic (Claude) / OpenAI (GPT / Codex) / Google (Gemini) / Moonshot（Kimi）/ DeepSeek / GLM / Qwen / 自定义 OpenAI / Anthropic 兼容接口。支持主模型 + fallback 备用链，自动降级时界面有提示。
+Anthropic (Claude) / OpenAI (GPT / Codex) / Google (Gemini) / Moonshot（Kimi）/ DeepSeek / GLM / Qwen / 小米 MiMo / Ollama 本地模型 / 自定义 OpenAI / Anthropic 兼容接口。支持主模型 + fallback 备用链，自动降级时界面有提示；思考强度按各模型能力开放档位（Kimi K3 支持 low/medium/high/xhigh/max）。
 
 ### 💬 多渠道集成
 
@@ -103,7 +104,7 @@ CryoClaw (Electron 43 + TypeScript 5.9)
 - **内核升级**：设置页「内核升级」卡片或 `openclaw update` CLI，差分换装、双备份、健康检查失败自动回滚。
 - **执行权限**：请求批准 / 智能审批 / 完全同意三态 + Docker 沙箱前置守卫；支持 `update_plan` 计划悬浮面板、目标模式、消息队列、`/` 命令补全。
 - **样式体系**：`shared/design-tokens.css`（TraeWork token + 冰蓝 brand-500 `#0EA5E9`）+ `styles/primitives.css` 契约组件，禁止硬编码颜色。
-- **测试**：vitest（主进程单测）+ node:test（编译产物/脚本）+ chat-ui typecheck 与单测 + scripts 用例，`npm test` 一键全量（基线 468 pass / 0 fail）。
+- **测试**：vitest（主进程单测）+ node:test（编译产物/脚本）+ chat-ui typecheck 与单测 + scripts 用例，`npm test` 一键全量（基线 477 pass / 0 fail）。
 
 详细架构与历史优化记录见 `docs/architecture.md` 与 `docs/OPTIMIZATION-PROGRESS.md`。
 
@@ -127,7 +128,7 @@ A: CryoClaw 定位是纯净 harness：应用本体保持简单，能力演进交
 
 **CryoClaw** is a fork-and-rebuild of [OneClaw](https://github.com/oneclaw/oneclaw) (AGPL-3.0): an efficient, easy-to-use, pure harness around the [OpenClaw](https://github.com/openclaw/openclaw) kernel. The whole project was iterated via **vibe coding** — multi-round collaborative sessions with Kimi K3 (Kimi Code, lead), DeepSeek v4 Flash (Codex) and Qwen3.8 Max (Qoder), with humans steering requirements and acceptance.
 
-Highlights over OneClaw: ice-blue TraeWork design system (light/dark), auto-updater removed in favor of a kernel-only upgrader (diff ASAR swap with rollback), settings fully migrated to kernel `config.get`/`config.patch`, streaming rendered as per-frame plain text (no more O(n²) jank), hardened markdown engine (GFM tables & task lists, code highlighting with language labels, KaTeX math, parse-failure fallback), message quote & error-resend actions, compaction checkpoint rewind/fork, a plugin management page with the ClawHub marketplace, gateway.asar trimmed from 279.6 to 237.6MB, model management with custom groups / drag-reorder / fallback chains, managed gateway CLI, ~0.6s startup, and a 468-test regression baseline (0 fail).
+Highlights over OneClaw: ice-blue TraeWork design system (light/dark), auto-updater removed in favor of a kernel-only upgrader (diff ASAR swap with rollback), settings fully migrated to kernel `config.get`/`config.patch`, streaming rendered as per-frame plain text (no more O(n²) jank), hardened markdown engine (GFM tables & task lists, code highlighting with language labels, KaTeX math, parse-failure fallback), message quote & error-resend actions, compaction checkpoint rewind/fork, a plugin management page with the ClawHub marketplace, gateway.asar trimmed from 279.6 to 226.8MB, model management with custom groups / drag-reorder / fallback chains / capability badges, per-model thinking levels done right (Kimi K3 low→max instead of a binary toggle), instant /new session reset, managed gateway CLI, ~0.6s startup, and a 477-test regression baseline (0 fail).
 
 Download from [Releases](https://github.com/binchen6/CryoClaw/releases/latest) (Windows x64 installer), or build from source with Node.js ≥ 22.12 (`npm install && npm run dev`).
 

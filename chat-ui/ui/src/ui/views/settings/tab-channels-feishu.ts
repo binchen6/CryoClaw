@@ -205,13 +205,13 @@ export function renderChannelFeishu(state: AppViewState) {
       ${s.enabled ? html`
         <div class="oc-settings__form-group">
           <label class="oc-settings__label">${t("settings.channels.feishu.appId")}</label>
-          <input class="oc-settings__input" .value=${s.appId} @input=${(e: Event) => { s.appId = (e.target as HTMLInputElement).value; }} />
+          <input class="oc-settings__input" .value=${s.appId} @input=${(e: Event) => { s.appId = (e.target as HTMLInputElement).value; state.requestUpdate(); }} />
         </div>
 
         <div class="oc-settings__form-group">
           <label class="oc-settings__label">${t("settings.channels.feishu.appSecret")}</label>
           <oc-password-input .value=${s.appSecret}
-            @input=${(e: CustomEvent) => { s.appSecret = e.detail.value; }}
+            @input=${(e: CustomEvent) => { s.appSecret = e.detail.value; state.requestUpdate(); }}
           ></oc-password-input>
         </div>
 
@@ -247,7 +247,7 @@ export function renderChannelFeishu(state: AppViewState) {
             <div class="oc-modal-dialog">
               <label class="oc-settings__label">${t("settings.channels.feishu.addGroupPrompt")}</label>
               <input class="oc-settings__input" .value=${s.addGroupInput} placeholder="oc_..."
-                @input=${(e: Event) => { s.addGroupInput = (e.target as HTMLInputElement).value; }}
+                @input=${(e: Event) => { s.addGroupInput = (e.target as HTMLInputElement).value; state.requestUpdate(); }}
                 @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter") confirmAddGroup(state); if (e.key === "Escape") cancelAddGroup(state); }} />
               ${s.addGroupError ? html`<div style="color:var(--accent);font-size:12px;margin-top:4px">${s.addGroupError}</div>` : nothing}
               <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">

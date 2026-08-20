@@ -13,8 +13,8 @@
 **当前状态**：
 - 更名 CryoClaw 完成；CryoClaw 重设计工程 **R1–R17 全部完成**（见下节），最新发版 **v2026.811.9**（R8/R11–R17）。
 - 内核 openclaw **2026.7.1-2**（版本 pin 在 package.json `cryoclaw.openclaw`）；**Electron 43.4.0**（R13 升级落地，audit 0 漏洞）。
-- 测试基线 **468 pass / 0 fail / 4 skipped**（vitest 94 + node 64/68 + chat-ui 262 + scripts 48 + tsc typecheck；
-  chat-ui 262 含 R11 引用构造 11 用例 + R8 插件页 9 用例；scripts 48 含 R15 pdb 裁剪 1 用例；0 fail 为硬指标）。
+- 测试基线 **477 pass / 0 fail / 4 skipped**（vitest 94 + node 64/68 + chat-ui 267 + scripts 52 + tsc typecheck；
+  R18：scripts +4 kimi 思考档位补丁、chat-ui +5 对话健壮性；0 fail 为硬指标）。
 - 历史优化阶段 1–22 全部完成并逐版发版至 v2026.811.0（见历史档案）。
 - 已开源发布至 GitHub（binchen6/CryoClaw，AGPL-3.0-only）；发布时以全新干净历史快照推送，旧本地历史（含已作废的 kimi-claw REFRESH 凭证）不出仓；`.env.build` 已转 gitignored，模板见 `.env.build.example`；git 身份统一为 binchen6。CI：`tests.yml` 每次 push/PR 全量回归（chat-ui/ui 独立依赖树需先安装）；上游签名/CDN 发版链 `build-release.yml`/`publish-release.yml` 已删除（依赖上游 oneclaw 签名证书与 oneclaw.cn CDN，本 fork 不适用，发版走本地 dist:win + gh release）。
 
@@ -437,7 +437,7 @@
 
 ## 📋 下一步计划（未做，按优先级）
 
-（R8 重启完成；R9/R11–R17 全部完成并发版 v2026.811.9。剩余候选按需立项：）
+（R8 重启完成；R9/R11–R19 全部完成并发版 v2026.820.0。剩余候选按需立项：）
 
 ### R16 · 发版验证（v2026.811.9 完成）
 - 版本 bump → dist:win（Electron 43 + pdb 裁剪）→ 安装验证。产物：安装包 129.0MB；
@@ -466,6 +466,70 @@
 - 重发覆盖 run 级失败：error 事件路径从本地消息流恢复最后一条 user 消息提供重试。
 - 性能：插件清单主进程 60s TTL 缓存（内核 CLI 全量加载约 15s，避免重复进入设置页重付），
   install/uninstall 后主动失效。
+
+### R18 · 思考档位路由修复 + 对话健壮性批次 + 模型页增强（完成）
+- **思考档位根因（内核侧取证）**：bundled kimi 插件（`dist/extensions/kimi/dist/index.js`）的
+  `resolveThinkingProfile` 钩子无视上下文，对 kimi/kimi-code/kimi-coding 一律返回二值
+  [off,on]，导致 k3-256k 选 high 报 `Thinking level "high" is not supported ... Use one of: off, on.`。
+  模型条目的 `thinkingLevelMap` 只在请求层透传，不参与档位门禁；`compat.supportedReasoningEfforts`
+  仅在无插件钩子时才被读取。**修复**：`scripts/lib/kernel-dist-patch.js` 新增
+  `patchKimiThinkingProfile`（marker 匹配、幂等、未命中静默跳过），钩子改为读
+  `context.compat.supportedReasoningEfforts`——有则全档位（off 首位、默认 high），无则保持二值。
+  接线：package-resources.js installDependencies 两条路径 + kernel-update.mjs patch 步骤
+  （未命中仅告警不中止）。scripts +4 用例（含打补丁后钩子行为直测）。
+- **chat-ui 侧配套**：`thinking-levels.ts` normalizeProvider 归一 kimi/kimi-code→kimi-coding；
+  新增 `catalogCompat` 参数（models.list 目录条目 compat）作为内核会话行缺失时的精确回退，
+  app.ts 两处调用点经 `getCachedGatewayModelEntries` 注入。thinking-levels +4 用例。
+- **/new 及时刷新**：内核 /new、/reset 同 key 轮换 sessionId 并清空 transcript，但 R12 的
+  mergeIfStale 会把重置后的短历史误判为「滞后读」继续显示旧对话。修复：
+  `session-pending.ts` 新增 `pendingSessionResets`——发送 /new 立即清空本地视图并置位，
+  final 强制替换历史（绕过 mergeIfStale），error/aborted 撤销标记并重拉恢复（app-chat.ts /
+  app-gateway.ts）。
+- **对话健壮性批次**（审查发现，全部有代码证据）：
+  ① mergeIfStale 遇 compaction 标记（`__openclaw.kind==="compaction"`）必须替换——否则压缩后
+  本地恒长于服务端，新回复永不上屏；② cross-run final（sub-agent announce）不再
+  resetToolStream/clearFallbackNotice（此前会瞬间清空进行中主 run 的工具卡片并破坏
+  frozenPrefix 切段）；③ 无活跃 run 时带 runId 的 delta/error 一律丢弃（防僵尸流式气泡与
+  误注入带「重发」的错误卡），final/aborted 仍透传刷新；④ context meter 解冻条件从
+  「totalTokens 单调推进」改为「变化即解冻」（内核 totalTokens 是当次值非累计，压缩后/
+  短 prompt 会下降导致永不解冻）；⑤ compaction 事件补 sessionKey 过滤 + 会话切换清理
+  compactionStatus/fallbackNotice 及定时器（session-transition.ts）；⑥ delivery-mirror
+  去重指纹从 200 字符前缀改为全文（防模板化长回复撞车误丢消息）；⑦ path-linker 链接文本
+  补转义（`&` 类实体子串显示错乱）。chat controller +5 用例；context-meter 1 用例按新契约改写。
+- **模型管理页**：模型卡片新增「思考」（tooltip 列出支持档位）与上下文窗口（256K/1M 格式）
+  徽标，数据直接来自 config 条目（reasoning/contextWindow/compat）；CUSTOM_PRESETS 新增
+  xiaomi（xiaomi-coding/mimo）与 ollama 本地预设。**requestUpdate 批量修复**：tab-provider 6 处
+  + 渠道/搜索/setup 14 处输入 handler 补 `state.requestUpdate()`（R9/R11 同类残留；fallback
+  添加下拉不刷禁用态是真 bug）。
+- **动效**：`.chat-group` 新消息入场 rise .22s（repeat 按 key 复用节点只在创建时播放）；
+  base.css 补全局 `prefers-reduced-motion` 收敛（动画/过渡瞬时化）。
+- **遗留（未做）**：发送在途时手动刷新可能短暂隐藏未落库的本地 user 消息（自愈于 final）；
+  忙碌中「立即发送」/new 的边界路径不置 pendingReset（兜底为旧行为）。
+
+### R19 · 发版验证（v2026.820.0）+ 思考补丁打包顺序回归修复（完成）
+- **⚠ 发版实测抓出回归：思考补丁根本没进安装包。** R18 的 patchKimiThinkingProfile 只在
+  installDependencies 阶段打（Step 2），但 Step 2.5 的 vendorOfficialPlugin（OFFICIAL_VENDOR_PLUGINS
+  含 kimi，openclaw ≥2026.6.x 起 provider 插件不再随内核 npm 包发布、构建期 vendor）会
+  `rmDir+copy` 整个覆盖 `dist/extensions/kimi/`，把已打的补丁冲掉；且补丁未命中时静默返回 0
+  无日志——单测全绿、打包也"成功"，asar 探针（解包 grep marker）才暴露。教训：**内核补丁的
+  验证终点必须是打包产物内的内容断言，不是函数级单测。**
+- 修复（三层防线）：① main() 在 bundleAllPlugins 之后重打补丁（幂等）；② wrapper 区分
+  幂等跳过与 marker 未命中——后者大声告警（⚠⚠），不再静默；③ verifyAsarContents 新增
+  asar 内 kimi 插件 marker 内容校验（extractFile 读包内文件，未命中告警不 die——上游若原生
+  修复则不阻断）。kernel-update.mjs 顺序本就正确（patch 在 carryOverInjected 之后），不受影响。
+- 验证：重打包后 asar 探针确认 marker 在包内、旧二值硬编码不再匹配；scripts 52 用例全绿。
+- 打包增量路径约 4 分钟（stamp 匹配跳过 npm install；vendor 插件走 .cache tgz 复用）。
+- **⚠ 冒烟环境教训**：安装器装完会自启应用（无调试端口），后续带 --remote-debugging-port 的
+  启动撞单实例锁直接退出——必须先 taskkill 再起；Git Bash 下 taskkill 要用 `cmd //c` 包一层
+  （`/F` 会被 MSYS 转成路径 F:/）。
+- **发版冒烟 ALL PASS**（`.cache/cdp-8200-release.js`，打包版真机，19 项）：gateway 200、
+  设置 13 tab、k3-256k 卡片「图像/思考/256K」徽标、**思考档位 popover 全 7 档
+  （关闭/极简/低/中/高/超高/最大，含「高」——k3 high 档路由修复坐实）**、消息组 rise 动效、
+  引用按钮、Ctrl+L、scratch 会话真消息往返、**/new 旧内容 +2ms 立即消失、终态后不回退、
+  新会话确认消息落位**、零裸 i18n、零 renderer 异常。
+- **⚠ 冒烟断言教训**：/new 的判定基准必须是「内容」而非气泡计数——内核重置后的新 transcript
+  本身就含 [/new, ✅ New session started.] 两条消息，气泡数恒为 2；首轮冒烟用 `bubbles<=1`
+  误判 FAIL，内容级复测（marker 文本消失时刻 + 终态文本）证明功能本就正确。
 
 ### R8 · 插件管理页面（已重启完成，见上节 R8 记录）
 

@@ -6,6 +6,11 @@ export type SessionTransitionHost = ChatState & {
   chatAvatarUrl: string | null;
   // 计划面板状态（可选：测试替身不实现也无妨，切换会话时直接清空）
   planState?: { sessionKey?: string } | null;
+  // 压缩/降级提示胶囊按会话隔离：切走即清（含自动消失定时器）
+  compactionStatus?: unknown | null;
+  compactionClearTimer?: number | null;
+  fallbackNotice?: unknown | null;
+  fallbackClearTimer?: number | null;
   settings: UiSettings;
   applySettings(next: UiSettings): void;
   resetToolStream(): void;
@@ -48,6 +53,17 @@ export function applySessionKeyTransition(
   host.chatAvatarUrl = null;
   // 计划面板按会话隔离：切走即清（渲染层也按 sessionKey 匹配兜底）
   host.planState = null;
+  // 压缩/降级提示同属会话级瞬态：清掉并取消自动消失定时器，防跨会话残留
+  if (host.compactionClearTimer != null && typeof window !== "undefined") {
+    window.clearTimeout(host.compactionClearTimer);
+  }
+  host.compactionClearTimer = null;
+  host.compactionStatus = null;
+  if (host.fallbackClearTimer != null && typeof window !== "undefined") {
+    window.clearTimeout(host.fallbackClearTimer);
+  }
+  host.fallbackClearTimer = null;
+  host.fallbackNotice = null;
   host.resetToolStream();
   host.resetChatScroll();
   host.applySettings({

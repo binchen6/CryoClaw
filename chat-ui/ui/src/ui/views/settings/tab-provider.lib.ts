@@ -18,6 +18,12 @@ export interface ProviderModelEntry {
   name: string;
   isDefault: boolean;
   supportsImage: boolean;
+  /** 推理模型（config entry.reasoning） */
+  reasoning: boolean;
+  /** 上下文窗口 token 数（config entry.contextWindow） */
+  contextWindow?: number;
+  /** 支持的思考档位（entry.compat.supportedReasoningEfforts / thinkingLevelMap 键，off 除外） */
+  thinkingLevels: string[];
 }
 
 export interface GroupedProvider {
@@ -52,6 +58,37 @@ export function resolveGroupId(providerKey: string): ProviderGroupId {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** 从模型条目提取思考档位：compat.supportedReasoningEfforts 优先，其次 thinkingLevelMap 键 */
+function extractEntryThinkingLevels(entry: unknown): string[] {
+  if (!isRecord(entry)) return [];
+  const compat = isRecord(entry.compat) ? entry.compat : undefined;
+  const efforts = compat?.supportedReasoningEfforts;
+  if (Array.isArray(efforts)) {
+    return [
+      ...new Set(
+        efforts.filter((e): e is string => typeof e === "string" && Boolean(e.trim()) && e !== "off"),
+      ),
+    ];
+  }
+  const map = isRecord(entry.thinkingLevelMap) ? entry.thinkingLevelMap : undefined;
+  if (map) {
+    return Object.keys(map).filter((k) => k !== "off" && map[k] !== null);
+  }
+  return [];
+}
+
+/** 上下文窗口紧凑格式化（262144 → "256K"，1048576 → "1M"） */
+export function formatContextWindow(tokens: number): string {
+  if (tokens >= 1024 * 1024 && tokens % (1024 * 1024) === 0) {
+    return `${tokens / (1024 * 1024)}M`;
+  }
+  if (tokens >= 1024) {
+    const k = tokens / 1024;
+    return `${Number.isInteger(k) ? k : k.toFixed(0)}K`;
+  }
+  return String(tokens);
 }
 
 function providerDisplayName(providerKey: string, prov: Record<string, unknown>): string {
@@ -91,7 +128,19 @@ export function groupProvidersFromConfig(config: Record<string, unknown> | null 
       const name = isRecord(entry) && typeof entry.name === "string" && entry.name ? entry.name : id;
       const input = isRecord(entry) && Array.isArray(entry.input) ? entry.input : [];
       const key = `${providerKey}/${id}`;
-      models.push({ key, id, name, isDefault: key === primary, supportsImage: input.includes("image") });
+      models.push({
+        key,
+        id,
+        name,
+        isDefault: key === primary,
+        supportsImage: input.includes("image"),
+        reasoning: isRecord(entry) && entry.reasoning === true,
+        contextWindow:
+          isRecord(entry) && typeof entry.contextWindow === "number" && entry.contextWindow > 0
+            ? entry.contextWindow
+            : undefined,
+        thinkingLevels: extractEntryThinkingLevels(entry),
+      });
     }
     if (models.length === 0) continue;
     const apiKey = typeof provRaw.apiKey === "string" ? provRaw.apiKey : "";

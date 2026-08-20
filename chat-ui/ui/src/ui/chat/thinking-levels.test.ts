@@ -104,3 +104,47 @@ test("thinking caps：无模型信息时返回空档位", () => {
   assert.deepEqual(caps.levels, []);
   assert.equal(caps.defaultLevel, "off");
 });
+
+test("thinking caps：kimi / kimi-code 别名归一到 kimi-coding 回退", () => {
+  for (const provider of ["kimi", "kimi-code", "KIMI-CODING"]) {
+    const caps = resolveThinkingCapabilities({
+      provider,
+      modelKey: `${provider}/k3-256k`,
+    });
+    assert.deepEqual(caps.levels, ["off", "low", "high", "max"], provider);
+    assert.equal(caps.defaultLevel, "high", provider);
+  }
+});
+
+test("thinking caps：catalog compat.supportedReasoningEfforts 优先于 provider 回退", () => {
+  const caps = resolveThinkingCapabilities({
+    provider: "kimi",
+    modelKey: "kimi/k3-256k",
+    catalogCompat: {
+      supportedReasoningEfforts: ["minimal", "low", "medium", "high", "xhigh", "max"],
+    },
+  });
+  assert.deepEqual(caps.levels, ["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
+  assert.equal(caps.isBinary, false);
+  assert.equal(caps.defaultLevel, "high");
+});
+
+test("thinking caps：catalog compat 不压过内核会话行", () => {
+  const caps = resolveThinkingCapabilities({
+    provider: "kimi",
+    modelKey: "kimi/k3-256k",
+    sessionThinkingLevels: ["off", "on"],
+    catalogCompat: { supportedReasoningEfforts: ["low", "high", "max"] },
+  });
+  assert.deepEqual(caps.levels, ["off", "on"]);
+  assert.equal(caps.isBinary, true);
+});
+
+test("thinking caps：catalog compat 非法形状忽略", () => {
+  const caps = resolveThinkingCapabilities({
+    provider: "zai-cn",
+    modelKey: "zai-cn/glm-4.7-flash",
+    catalogCompat: { supportedReasoningEfforts: "high" },
+  });
+  assert.deepEqual(caps.levels, ["off", "on"]);
+});

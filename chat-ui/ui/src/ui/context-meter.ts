@@ -63,7 +63,9 @@ export function markSessionMeterDirty(set: Set<string>, sessionKey: string): voi
   set.add(sessionKey);
 }
 
-// usage 刷新时调用：仅当 totalTokens 单调推进（说明 gateway 已写入新一轮 usage）才清除标记。
+// usage 刷新时调用：totalTokens 变化（说明 gateway 已写入新一轮 usage）即清除标记。
+// 注意内核的 totalTokens 是最后一条 assistant 消息的当次 token 数（逐行覆盖，非累计），
+// 压缩后首轮或短 prompt 会让数值不升反降——不能用「单调推进」做解冻条件，否则冻结永不解除。
 // 返回值表示是否真的清除了。
 export function clearSessionMeterDirtyIfUsageAdvanced(
   set: Set<string>,
@@ -72,7 +74,7 @@ export function clearSessionMeterDirtyIfUsageAdvanced(
   nextTotal: number,
 ): boolean {
   if (!set.has(sessionKey)) return false;
-  if (nextTotal > prevTotal) {
+  if (nextTotal > 0 && nextTotal !== prevTotal) {
     set.delete(sessionKey);
     return true;
   }

@@ -200,12 +200,12 @@ export function renderChannelWecom(state: AppViewState) {
       ${s.enabled ? html`
         <div class="oc-settings__form-group">
           <label class="oc-settings__label">${t("settings.channels.wecom.botId")}</label>
-          <input class="oc-settings__input" .value=${s.botId} @input=${(e: Event) => { s.botId = (e.target as HTMLInputElement).value; }} />
+          <input class="oc-settings__input" .value=${s.botId} @input=${(e: Event) => { s.botId = (e.target as HTMLInputElement).value; state.requestUpdate(); }} />
         </div>
 
         <div class="oc-settings__form-group">
           <label class="oc-settings__label">${t("settings.channels.wecom.secret")}</label>
-          <oc-password-input .value=${s.secret} @input=${(e: CustomEvent) => { s.secret = e.detail.value; }}></oc-password-input>
+          <oc-password-input .value=${s.secret} @input=${(e: CustomEvent) => { s.secret = e.detail.value; state.requestUpdate(); }}></oc-password-input>
         </div>
 
         <div class="oc-settings__form-group">
@@ -230,7 +230,7 @@ export function renderChannelWecom(state: AppViewState) {
             <div class="oc-modal-dialog">
               <label class="oc-settings__label">${t("settings.channels.wecom.addGroupPrompt")}</label>
               <input class="oc-settings__input" .value=${s.addGroupInput} placeholder=${t("settings.channels.wecom.addGroupPlaceholder")}
-                @input=${(e: Event) => { s.addGroupInput = (e.target as HTMLInputElement).value; }}
+                @input=${(e: Event) => { s.addGroupInput = (e.target as HTMLInputElement).value; state.requestUpdate(); }}
                 @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter") confirmAddGroup(state); if (e.key === "Escape") cancelAddGroup(state); }} />
               ${s.addGroupError ? html`<div style="color:var(--accent);font-size:12px;margin-top:4px">${s.addGroupError}</div>` : nothing}
               <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">

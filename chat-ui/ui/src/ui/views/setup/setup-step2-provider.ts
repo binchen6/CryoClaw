@@ -367,7 +367,7 @@ export function renderStep2(state: AppViewState, goToStep: (step: number) => voi
         <div class="oc-setup-form-group">
           <label class="oc-setup-label">${t("setup.provider.baseUrl")}</label>
           <input class="oc-setup-input" .value=${s.baseUrl}
-            @input=${(e: Event) => { s.baseUrl = (e.target as HTMLInputElement).value; }} />
+            @input=${(e: Event) => { s.baseUrl = (e.target as HTMLInputElement).value; state.requestUpdate(); }} />
         </div>
         <div class="oc-setup-form-group">
           <label class="oc-setup-label">${t("setup.provider.apiType")}</label>
@@ -412,7 +412,7 @@ export function renderStep2(state: AppViewState, goToStep: (step: number) => voi
         <div class="oc-setup-form-group">
           <label class="oc-setup-label">${t("setup.provider.customModelId")}</label>
           <input class="oc-setup-input" .value=${s.customModelId}
-            @input=${(e: Event) => { s.customModelId = (e.target as HTMLInputElement).value; }} />
+            @input=${(e: Event) => { s.customModelId = (e.target as HTMLInputElement).value; state.requestUpdate(); }} />
         </div>
       ` : nothing}
 

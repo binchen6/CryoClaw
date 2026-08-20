@@ -8,7 +8,7 @@ import { resetToolStream } from "./app-tool-stream.ts";
 import { abortChatRun, loadChatHistory, sendChatMessage } from "./controllers/chat.ts";
 import { loadSessions, patchSession } from "./controllers/sessions.ts";
 import { normalizeBasePath } from "./navigation.ts";
-import { pendingSessionLabels } from "./session-pending.ts";
+import { pendingSessionLabels, pendingSessionResets } from "./session-pending.ts";
 import { generateUUID } from "./uuid.ts";
 
 export type ChatHost = {
@@ -180,6 +180,15 @@ async function sendChatMessageNow(
   if (!opts?.preserveRunState) {
     resetToolStream(host as unknown as Parameters<typeof resetToolStream>[0]);
   }
+  // /new、/reset：内核同 key 轮换 sessionId 并清空 transcript。发送时立即清空
+  // 本地视图（不等 final），并置位 pendingSessionResets 让终态刷新强制替换历史
+  // （app-gateway.ts 消费）。发送失败则撤销标记并重拉历史恢复旧视图。
+  const isResetCommand = !opts?.preserveRunState && isChatResetCommand(message);
+  if (isResetCommand) {
+    pendingSessionResets.add(host.sessionKey);
+    (host as unknown as OpenClawApp).chatMessages = [];
+    (host as unknown as OpenClawApp).chatVisibleMessageCount = 0;
+  }
   const ok = Boolean(
     await sendChatMessage(
       host as unknown as OpenClawApp,
@@ -189,6 +198,10 @@ async function sendChatMessageNow(
       opts?.preserveRunState ? { preserveRunState: true } : undefined,
     ),
   );
+  if (isResetCommand && !ok) {
+    pendingSessionResets.delete(host.sessionKey);
+    void loadChatHistory(host as unknown as OpenClawApp);
+  }
   if (!ok && opts?.previousDraft != null) {
     host.chatMessage = opts.previousDraft;
   }

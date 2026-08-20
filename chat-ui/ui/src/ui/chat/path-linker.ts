@@ -67,6 +67,6 @@ export function linkifyPaths(html: string): string {
       .replace(/</g, "&lt;")
       .replace(/>/g, "&gt;");
 
-    return `<a class="chat-path-link" data-path="${escaped}" title="${escaped}">${match}</a>`;
+    return `<a class="chat-path-link" data-path="${escaped}" title="${escaped}">${escaped}</a>`;
   });
 }

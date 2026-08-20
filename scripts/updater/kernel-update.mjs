@@ -386,6 +386,10 @@ async function cmdUpdate(tag) {
     if (patched === 0) {
       throw new Error("asar 边界补丁未命中任何模块（上游结构变化？），中止升级");
     }
+    // kimi 思考档位补丁为行为增强（非 asar 必需），未命中仅告警不中止
+    if (kdp.patchKimiThinkingProfile(stagingGateway) === 0) {
+      progress("patch", 46, "kimi 思考档位补丁未命中（上游已修复或结构变化），跳过");
+    }
 
     progress("smoke", 58, `冒烟测试 openclaw --version`);
     const openclawMjs = path.join(newPkgDir, "openclaw.mjs");

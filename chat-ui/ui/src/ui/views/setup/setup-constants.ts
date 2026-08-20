@@ -122,6 +122,18 @@ export const CUSTOM_PRESETS: Record<string, CustomPresetDef> = {
     baseUrl: "https://api.deepseek.com",
     api: "openai-completions",
   },
+  xiaomi: {
+    providerKey: "xiaomi-coding",
+    placeholder: "sk-...",
+    baseUrl: "https://api.xiaomimimo.com/v1",
+    api: "openai-completions",
+  },
+  ollama: {
+    providerKey: "ollama",
+    placeholder: "ollama",
+    baseUrl: "http://127.0.0.1:11434/v1",
+    api: "openai-completions",
+  },
 };
 
 export const SUB_PLATFORM_URLS: Record<string, string> = {

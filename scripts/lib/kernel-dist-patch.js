@@ -318,10 +318,69 @@ function patchAsarBoundaryCheck(gatewayDir) {
   return patched;
 }
 
+// ─── kimi 插件思考档位补丁 ───
+//
+// bundled kimi 插件（dist/extensions/kimi/dist/index.js）的 resolveThinkingProfile
+// 钩子无视上下文，对 kimi/kimi-code/kimi-coding 一律返回二值档位 [off, on]，
+// 导致 k3 系模型（配置里带 compat.supportedReasoningEfforts 与 thinkingLevelMap）
+// 无法选择 low/medium/high/xhigh/max，sessions.patch/chat.send 校验直接报
+// "Thinking level "high" is not supported ... Use one of: off, on."。
+//
+// 补丁策略：钩子改为读取内核传入的 context.compat.supportedReasoningEfforts
+// （resolveThinkingPolicyContext 已从模型目录条目透传该字段）——有则按声明档位
+// 返回完整列表（off 恒在首位，默认 high），无则保持原二值行为不变。
+// 请求层的档位→线上 effort 映射仍由模型条目的 thinkingLevelMap 透传，不受影响。
+//
+// 幂等：已注入 /* cryoclaw-thinking-profile */ 标记则跳过；marker 不匹配返回 0
+// （上游结构变化时静默跳过，不阻断打包/升级）。
+function patchKimiThinkingProfile(gatewayDir) {
+  const target = path.join(
+    gatewayDir,
+    "node_modules",
+    "openclaw",
+    "dist",
+    "extensions",
+    "kimi",
+    "dist",
+    "index.js"
+  );
+  if (!fs.existsSync(target)) return 0;
+
+  const source = fs.readFileSync(target, "utf-8");
+  if (source.includes("/* cryoclaw-thinking-profile */")) return 0;
+
+  const marker =
+    /resolveThinkingProfile:\s*\(\)\s*=>\s*\(\{\s*levels:\s*\[\{\s*id:\s*"off",\s*label:\s*"off"\s*\},\s*\{\s*id:\s*"low",\s*label:\s*"on"\s*\}\],\s*defaultLevel:\s*"off"\s*\}\)/;
+  if (!marker.test(source)) return 0;
+
+  const replacement = [
+    'resolveThinkingProfile: (context) => {',
+    '\t\t\t/* cryoclaw-thinking-profile */',
+    '\t\t\tconst efforts = Array.isArray(context?.compat?.supportedReasoningEfforts)',
+    '\t\t\t\t? context.compat.supportedReasoningEfforts.filter((e) => typeof e === "string" && e.trim() && e !== "off")',
+    '\t\t\t\t: [];',
+    '\t\t\tif (efforts.length > 0) {',
+    '\t\t\t\treturn {',
+    '\t\t\t\t\tlevels: [{ id: "off", label: "off" }, ...efforts.map((id) => ({ id, label: id }))],',
+    '\t\t\t\t\tdefaultLevel: efforts.includes("high") ? "high" : efforts[efforts.length - 1]',
+    '\t\t\t\t};',
+    '\t\t\t}',
+    '\t\t\treturn {',
+    '\t\t\t\tlevels: [{ id: "off", label: "off" }, { id: "low", label: "on" }],',
+    '\t\t\t\tdefaultLevel: "off"',
+    '\t\t\t};',
+    '\t\t\t}',
+  ].join("\n");
+
+  fs.writeFileSync(target, source.replace(marker, replacement), "utf-8");
+  return 1;
+}
+
 module.exports = {
   patchWindowsOpenclawArtifacts,
   patchWindowsHideGlobal,
   injectWindowsHideAll,
   collectJsFilesRecursive,
   patchAsarBoundaryCheck,
+  patchKimiThinkingProfile,
 };

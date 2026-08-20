@@ -56,6 +56,15 @@ html.theme-transition::view-transition-new(theme) {
   html.theme-transition::view-transition-new(theme) {
     animation: none !important
   }
+
+  /* 全局减弱动效：入场/脉冲/旋转动画与过渡统一收敛到瞬时 */
+  *,
+  *::before,
+  *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important
+  }
 }
 
 openclaw-app {

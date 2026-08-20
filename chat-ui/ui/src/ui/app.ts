@@ -55,6 +55,7 @@ import type { PlanStreamState } from "./plan-stream.ts";
 import { resolveInjectedAssistantIdentity } from "./assistant-identity.ts";
 import { loadAssistantIdentity as loadAssistantIdentityInternal } from "./controllers/assistant-identity.ts";
 import { getConfigSnapshot, deriveConfiguredModels, patchConfig } from "./controllers/config.ts";
+import { getCachedGatewayModelEntries } from "./controllers/models.ts";
 import { extractAdvancedView, applyAdvancedSave } from "./views/settings/tab-channels.lib.ts";
 import { markSessionMeterDirty } from "./context-meter.ts";
 import { resolveThinkingCapabilities } from "./chat/thinking-levels.ts";
@@ -804,6 +805,17 @@ export class OpenClawApp extends LitElement {
     this.updateThinkingCapabilities();
   }
 
+  // 从 models.list 目录缓存查当前模型的 compat（supportedReasoningEfforts 精确回退数据源）
+  private currentModelCatalogCompat(): Record<string, unknown> | undefined {
+    const key = this.currentModel;
+    if (!key) return undefined;
+    const slash = key.indexOf("/");
+    if (slash <= 0) return undefined;
+    const providerKey = key.slice(0, slash);
+    const modelId = key.slice(slash + 1);
+    return getCachedGatewayModelEntries()?.[providerKey]?.find((e) => e.id === modelId)?.compat;
+  }
+
   // 根据当前模型计算支持的思考级别（内核会话行 thinkingLevels 优先，本地 provider 回退兜底）
   updateThinkingCapabilities() {
     const model = this.configuredModels.find(m => m.key === this.currentModel);
@@ -813,6 +825,7 @@ export class OpenClawApp extends LitElement {
       modelKey: this.currentModel,
       sessionThinkingLevels: sessionRow?.thinkingLevels,
       sessionThinkingDefault: sessionRow?.thinkingDefault,
+      catalogCompat: this.currentModelCatalogCompat(),
     });
     this.thinkingLevels = caps.levels;
     this.isBinaryThinking = caps.isBinary;
@@ -831,6 +844,7 @@ export class OpenClawApp extends LitElement {
       modelKey: this.currentModel,
       sessionThinkingLevels: sessionRow?.thinkingLevels,
       sessionThinkingDefault: sessionRow?.thinkingDefault,
+      catalogCompat: this.currentModelCatalogCompat(),
     }).defaultLevel;
   }
 

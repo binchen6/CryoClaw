@@ -252,6 +252,12 @@ type CompactionHost = ToolStreamHost & {
 const COMPACTION_TOAST_DURATION_MS = 5000;
 
 export function handleCompactionEvent(host: CompactionHost, payload: AgentEventPayload) {
+  // 与 tool/lifecycle 流一致的会话过滤：其他会话（cron 后台任务、渠道会话、sub-agent）
+  // 的压缩事件不得在当前对话页显示提示胶囊
+  const sessionKey = typeof payload.sessionKey === "string" ? payload.sessionKey : undefined;
+  if (sessionKey && sessionKey !== host.sessionKey) {
+    return;
+  }
   const data = payload.data ?? {};
   const phase = typeof data.phase === "string" ? data.phase : "";
 

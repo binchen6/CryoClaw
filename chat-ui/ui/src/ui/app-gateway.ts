@@ -19,6 +19,7 @@ import { loadAgents } from "./controllers/agents.ts";
 import { loadAssistantIdentity } from "./controllers/assistant-identity.ts";
 import { loadChannels } from "./controllers/channels.ts";
 import { loadChatHistory } from "./controllers/chat.ts";
+import { consumePendingSessionReset } from "./session-pending.ts";
 import { handleChatEvent, type ChatEventPayload } from "./controllers/chat.ts";
 import {
   addExecApproval,
@@ -383,11 +384,18 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
         payload.sessionKey,
       );
     }
+    // 须在 handleChatEvent 之前判定（final 会清空 chatRunId）：本事件是否属于当前活跃 run。
+    // sub-agent 等 cross-run final 只刷新历史/会话列表，绝不能 resetToolStream——
+    // 否则进行中主 run 的工具卡片会被瞬间清空，frozenPrefix 清零还会破坏后续 delta 切段。
+    const isOwnRunEvent =
+      !payload?.runId || !host.chatRunId || payload.runId === host.chatRunId;
     const state = handleChatEvent(host as unknown as OpenClawApp, payload);
     if (shouldRefreshSessionsForChatState(state)) {
-      resetToolStream(host as unknown as Parameters<typeof resetToolStream>[0]);
-      // chat 终态顺手清掉 fallback 提示（其自身也有 5s 自动消失兜底）
-      clearFallbackNotice(host as unknown as Parameters<typeof clearFallbackNotice>[0]);
+      if (isOwnRunEvent) {
+        resetToolStream(host as unknown as Parameters<typeof resetToolStream>[0]);
+        // chat 终态顺手清掉 fallback 提示（其自身也有 5s 自动消失兜底）
+        clearFallbackNotice(host as unknown as Parameters<typeof clearFallbackNotice>[0]);
+      }
       void flushChatQueueForEvent(host as unknown as Parameters<typeof flushChatQueueForEvent>[0]);
       // R5 收敛：终态 sessions 拉取从「700ms + 1500ms 双次轮询」改为单次延迟拉取，
       // 同一 sessionKey 只保留一个挂起 timer（final 与紧随的 sessions.changed /
@@ -397,11 +405,23 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
       scheduleTerminalSessionsRefresh(host as unknown as OpenClawApp, refreshKey);
     }
     if (state === "final") {
-      // R12：终态刷新启用滞后兜底（拉取结果落后本地视图时保留本地，防消息短暂消失）
-      void loadChatHistory(host as unknown as OpenClawApp, { mergeIfStale: true });
-      // agent runtime 已写完 sessions.json，此时 patch pending label 不会被覆盖
       const sessionKey = payload?.sessionKey ?? host.sessionKey;
+      // /new、/reset 终态：历史已被内核清空轮换，必须强制替换（绕过 mergeIfStale），
+      // 否则重置后的空/短历史会被 R12 滞后兜底误判而继续显示旧对话
+      const wasReset = consumePendingSessionReset(sessionKey);
+      // R12：终态刷新启用滞后兜底（拉取结果落后本地视图时保留本地，防消息短暂消失）
+      void loadChatHistory(
+        host as unknown as OpenClawApp,
+        wasReset ? undefined : { mergeIfStale: true },
+      );
+      // agent runtime 已写完 sessions.json，此时 patch pending label 不会被覆盖
       void flushPendingSessionLabel(host as unknown as OpenClawApp, sessionKey);
+    } else if (state === "error" || state === "aborted") {
+      // 重置未生效（失败/中止）：撤销标记并重拉真实历史恢复视图
+      const sessionKey = payload?.sessionKey ?? host.sessionKey;
+      if (consumePendingSessionReset(sessionKey)) {
+        void loadChatHistory(host as unknown as OpenClawApp);
+      }
     }
     return;
   }

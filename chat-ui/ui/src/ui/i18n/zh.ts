@@ -604,6 +604,7 @@ export const zhDict: Record<string, string> = {
   "settings.provider.modelExists": "该模型已存在",
   "settings.provider.invalidBaseUrl": "自定义 baseURL 必须是合法的 http/https URL",
   "settings.provider.imageTag": "图像",
+  "settings.provider.reasoningTag": "思考",
   "settings.provider.customAdvanced": "自定义端点",
   "settings.provider.oauthReusing": "已登录，将沿用当前授权",
   "settings.patch.appliedHot": "已热应用，无需重启",

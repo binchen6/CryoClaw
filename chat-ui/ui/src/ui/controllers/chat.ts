@@ -18,8 +18,8 @@ function deduplicateDeliveryMirrors(messages: unknown[]): unknown[] {
     if (!text) {
       return true;
     }
-    // 用内容前 200 字符作为指纹，足够区分不同消息又避免长文本开销
-    const fingerprint = text.slice(0, 200);
+    // 全文作指纹：200 字符前缀在模板化长回复/重复通告下会撞车误丢正常消息
+    const fingerprint = text;
     if (rec.model === "delivery-mirror") {
       // mirror 条目：仅当同文本 agent 条目已存在时才丢弃
       return !seen.has(fingerprint);
@@ -154,10 +154,18 @@ export async function loadChatHistory(
     // 此时若拉取条数少于本地视图（刚结束回合的消息尚未进入快照），保留本地消息列表，
     // 等待下一次刷新收敛——避免用户可见的消息短暂“消失”。仅 mergeIfStale 调用方启用
     // （turn 终态刷新）；会话切换/回放等替换语义的调用方不受影响。
+    // 例外：raw 含 compaction 标记（__openclaw.kind==="compaction"）说明服务端发生了
+    // 上下文压缩，历史合法变短——滞后快照不会“长出”新压缩标记，必须替换而非保留，
+    // 否则本地列表恒长于服务端，压缩后的新回复将永远无法上屏。
     if (
       opts?.mergeIfStale &&
       raw.length > 0 &&
-      raw.length < (state.chatMessages?.length ?? 0)
+      raw.length < (state.chatMessages?.length ?? 0) &&
+      !raw.some(
+        (m) =>
+          ((m as Record<string, unknown>).__openclaw as Record<string, unknown> | undefined)
+            ?.kind === "compaction",
+      )
     ) {
       return;
     }
@@ -334,6 +342,16 @@ export function handleChatEvent(state: ChatState, payload?: ChatEventPayload) {
   }
   if (payload.sessionKey !== state.sessionKey) {
     return null;
+  }
+
+  // 无本地活跃 run 时，带 runId 的 delta/error 是别家 run（sub-agent、其他客户端、
+  // 迟到帧）的广播：delta 丢弃避免僵尸流式气泡；error 丢弃避免误注入带「重发」的
+  // 错误卡（点了会把无关文本发出去）。final/aborted 仍透传以触发历史刷新。
+  if (payload.runId && !state.chatRunId) {
+    if (payload.state === "delta" || payload.state === "error") {
+      return null;
+    }
+    return payload.state;
   }
 
   // Final from another run (e.g. sub-agent announce): refresh history to show new message.

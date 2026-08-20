@@ -235,11 +235,113 @@ async function testRunErrorInjectsInlineErrorMessage() {
   assert.equal(state.chatVisibleMessageCount, 1, "注入的消息应立即可见");
 }
 
+// 无本地活跃 run 时，别家 run（sub-agent/迟到帧）的 delta 必须丢弃，否则出现僵尸流式气泡。
+async function testForeignDeltaDroppedWhenNoActiveRun() {
+  const raf = new FakeRaf();
+  installBrowserGlobals(raf);
+  const state = makeState({ chatRunId: null, chatStream: null });
+
+  const result = handleChatEvent(state, {
+    runId: "run-foreign",
+    sessionKey: "session-1",
+    state: "delta",
+    message: { role: "assistant", content: [{ type: "text", text: "foreign" }] },
+  });
+  raf.runAll();
+
+  assert.equal(result, null);
+  assert.equal(state.chatStream, null, "外来 delta 不应写入 chatStream");
+  assert.equal(state.chatPendingStreamText, null);
+}
+
+// 无本地活跃 run 时，别家 run 的 error 不得注入带「重发」的错误卡。
+async function testForeignErrorDoesNotInjectCardWhenNoActiveRun() {
+  const raf = new FakeRaf();
+  installBrowserGlobals(raf);
+  const state = makeState({ chatRunId: null });
+
+  const result = handleChatEvent(state, {
+    runId: "run-foreign",
+    sessionKey: "session-1",
+    state: "error",
+    errorMessage: "sub-agent exploded",
+  });
+
+  assert.equal(result, null);
+  assert.equal(state.chatMessages.length, 0, "外来 error 不应注入错误卡片");
+}
+
+// 无本地活跃 run 时 final 仍透传（触发历史刷新，如 sub-agent announce）。
+async function testForeignFinalPassesThroughWhenNoActiveRun() {
+  const raf = new FakeRaf();
+  installBrowserGlobals(raf);
+  const state = makeState({ chatRunId: null });
+
+  const result = handleChatEvent(state, {
+    runId: "run-foreign",
+    sessionKey: "session-1",
+    state: "final",
+  });
+  assert.equal(result, "final");
+}
+
+function makeHistoryClient(messages: unknown[]) {
+  return {
+    request: async (method: string) => {
+      assert.equal(method, "chat.history");
+      return { messages };
+    },
+  } as any;
+}
+
+// mergeIfStale：普通短读（内核滞后）保留本地列表。
+async function testMergeIfStaleKeepsLocalOnShortRead() {
+  installBrowserGlobals(new FakeRaf());
+  const local = [1, 2, 3, 4, 5].map((i) => ({ role: "user", content: [{ type: "text", text: `m${i}` }] }));
+  const state = makeState({
+    client: makeHistoryClient([{ role: "user", content: [{ type: "text", text: "m1" }] }]),
+    chatMessages: [...local],
+  });
+
+  await loadChatHistory(state, { mergeIfStale: true });
+  assert.equal(state.chatMessages.length, 5, "滞后短读应保留本地消息");
+}
+
+// mergeIfStale：raw 含 compaction 标记说明服务端合法压缩，必须替换（否则新回复永不上屏）。
+async function testMergeIfStaleReplacesOnCompaction() {
+  installBrowserGlobals(new FakeRaf());
+  const local = [1, 2, 3, 4, 5].map((i) => ({ role: "user", content: [{ type: "text", text: `m${i}` }] }));
+  const compacted = [
+    {
+      role: "system",
+      content: [{ type: "text", text: "Compaction" }],
+      __openclaw: { kind: "compaction", id: "c1", seq: 1 },
+    },
+    { role: "assistant", content: [{ type: "text", text: "new reply" }] },
+  ];
+  const state = makeState({
+    client: makeHistoryClient(compacted),
+    chatMessages: [...local],
+  });
+
+  await loadChatHistory(state, { mergeIfStale: true });
+  assert.equal(state.chatMessages.length, 2, "compaction 后应替换为压缩后的历史");
+  assert.equal(
+    (state.chatMessages[1] as any).content[0].text,
+    "new reply",
+  );
+}
+
 async function main() {
   await testChatStreamIsRafThrottled();
   await testLoadChatHistoryBatchesInitialRender();
   await testDeltaAfterToolUseShowsOnlyTrailingText();
   await testRunErrorInjectsInlineErrorMessage();
+  await testForeignDeltaDroppedWhenNoActiveRun();
+  await testForeignErrorDoesNotInjectCardWhenNoActiveRun();
+  await testForeignFinalPassesThroughWhenNoActiveRun();
+  await testMergeIfStaleKeepsLocalOnShortRead();
+  await testMergeIfStaleReplacesOnCompaction();
   console.log("chat controller tests passed");
 }
 

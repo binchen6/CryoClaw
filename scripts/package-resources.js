@@ -1061,6 +1061,7 @@ function installDependencies(opts, gatewayDir) {
     assertNativeDepsMatchTarget(nmDir, opts.platform, opts.arch);
     pruneNonTargetNativePlatformPackages(nmDir, opts.platform, opts.arch);
     patchWindowsOpenclawArtifacts(gatewayDir, opts.platform);
+    patchKimiThinkingProfile(gatewayDir);
     injectBuiltinSkills(gatewayDir);
     return;
   }
@@ -1112,6 +1113,7 @@ function installDependencies(opts, gatewayDir) {
   assertNativeDepsMatchTarget(nmDir, opts.platform, opts.arch);
   pruneNonTargetNativePlatformPackages(nmDir, opts.platform, opts.arch);
   patchWindowsOpenclawArtifacts(gatewayDir, opts.platform);
+  patchKimiThinkingProfile(gatewayDir);
   injectBuiltinSkills(gatewayDir);
   fs.writeFileSync(stampPath, targetStamp);
   log("node_modules 裁剪完成");
@@ -1166,6 +1168,27 @@ function patchAsarBoundaryCheck(gatewayDir) {
     log(`已补丁 ${patched} 个边界校验模块（ASAR 路径快速通道）`);
   } else {
     log("⚠ 边界校验模块结构不匹配，补丁未生效");
+  }
+}
+
+// kimi 插件思考档位补丁：k3 系模型尊重模型条目的 compat.supportedReasoningEfforts，
+// 修复 "Thinking level "high" is not supported ... Use one of: off, on." 误报。
+// 上游结构变化时静默跳过（返回 0），不阻断打包。
+function patchKimiThinkingProfile(gatewayDir) {
+  try {
+    const patched = kernelDistPatch.patchKimiThinkingProfile(gatewayDir);
+    if (patched > 0) {
+      log("已补丁 kimi 插件思考档位（k3 系按 supportedReasoningEfforts 全档位）");
+      return;
+    }
+    // 返回 0 有两种含义：已补丁（幂等跳过）或 marker 未命中（上游结构变化）。
+    // 读目标文件区分——后者必须大声告警，否则会静默发出只有 off/on 两档的包。
+    const target = path.join(gatewayDir, "node_modules", "openclaw", "dist", "extensions", "kimi", "dist", "index.js");
+    if (fs.existsSync(target) && !fs.readFileSync(target, "utf-8").includes("cryoclaw-thinking-profile")) {
+      log("⚠⚠ kimi 思考档位补丁未命中（上游结构变化？），k3 系模型将退化为 off/on 两档！");
+    }
+  } catch (err) {
+    log(`⚠ kimi 思考档位补丁失败（跳过）: ${err.message}`);
   }
 }
 
@@ -2460,6 +2483,25 @@ function verifyAsarContents(asarPath) {
     die(`gateway.asar 缺少关键文件:\n${missing.map((f) => `  - ${f}`).join("\n")}`);
   }
   log(`gateway.asar 关键文件校验通过 (${files.length} 个文件)`);
+
+  // kimi 思考档位补丁必须落在 asar 内——vendorOfficialPlugin 会覆盖
+  // dist/extensions/kimi/，历史上曾把 installDependencies 阶段的补丁冲掉。
+  // 此处做打包后内容校验，未命中大声告警（不 die：上游若已原生修复则不阻断）。
+  const kimiExtKey = "node_modules/openclaw/dist/extensions/kimi/dist/index.js";
+  if (files.has("/" + kimiExtKey)) {
+    try {
+      let content = null;
+      for (const variant of [kimiExtKey, kimiExtKey.replace(/\//g, "\\")]) {
+        try {
+          content = asar.extractFile(asarPath, variant).toString("utf-8");
+          break;
+        } catch { /* 尝试下一种路径形态 */ }
+      }
+      if (content !== null && !content.includes("cryoclaw-thinking-profile")) {
+        log("⚠⚠ gateway.asar 内 kimi 插件缺少思考档位补丁标记，k3 系模型将退化为 off/on 两档！");
+      }
+    } catch { /* 校验失败不阻断打包 */ }
+  }
 }
 
 // 递归统计文件数
@@ -2868,6 +2910,10 @@ async function main() {
   // Step 2.5: 注入 bundled 插件（kimi-search + dingtalk-connector）
   log("Step 2.5: 注入 bundled 插件");
   await bundleAllPlugins(targetPaths, opts);
+  // vendorOfficialPlugin（OFFICIAL_VENDOR_PLUGINS 含 kimi）会 rmDir+copy 整个覆盖
+  // dist/extensions/kimi/，把 installDependencies 阶段打的思考档位补丁冲掉（2026.820.0
+  // 发版冒烟实测回归）——vendor 之后必须重打。补丁幂等，已打则跳过。
+  patchKimiThinkingProfile(targetPaths.gatewayDir);
 
   // 护栏：所有插件入口必须是 native——必须在 ASAR 打包前跑，因为 ASAR 会删散文件
   log("Step 2.6: 校验插件入口形态");

@@ -27,11 +27,32 @@ export type ThinkingCapabilityParams = {
   sessionThinkingLevels?: unknown;
   /** 内核会话行 thinkingDefault */
   sessionThinkingDefault?: unknown;
+  /** models.list 目录条目的 compat（含 supportedReasoningEfforts），无会话行时的精确回退 */
+  catalogCompat?: unknown;
 };
 
 function normalizeProvider(provider?: string): string {
   const p = provider?.toLowerCase() ?? "";
-  return p === "z.ai" || p === "z-ai" ? "zai" : p;
+  if (p === "z.ai" || p === "z-ai") return "zai";
+  // kimi 插件对内 kernel 侧 aliases：kimi / kimi-code / kimi-coding 同一 provider
+  if (p === "kimi" || p === "kimi-code") return "kimi-coding";
+  return p;
+}
+
+/** 从模型目录条目 compat.supportedReasoningEfforts 提取档位（内核补丁后同一数据源） */
+export function extractSupportedReasoningEfforts(compat: unknown): string[] {
+  if (!compat || typeof compat !== "object") {
+    return [];
+  }
+  const efforts = (compat as Record<string, unknown>).supportedReasoningEfforts;
+  if (!Array.isArray(efforts)) {
+    return [];
+  }
+  return [
+    ...new Set(
+      efforts.filter((e): e is string => typeof e === "string" && Boolean(e.trim()) && e !== "off"),
+    ),
+  ];
 }
 
 /** 从内核 thinkingLevels 字段提取档位 id 列表（兼容 [{id}] 与 string[] 两种形状） */
@@ -96,10 +117,14 @@ export function resolveThinkingCapabilities(
   const modelId = params.modelKey?.split("/").pop() ?? "";
 
   const kernelIds = extractKernelThinkingLevelIds(params.sessionThinkingLevels);
+  const catalogEfforts = extractSupportedReasoningEfforts(params.catalogCompat);
   let levels: string[];
   if (kernelIds.length > 0) {
     // 内核下发为准；确保 off 可选（部分 provider 列表不含 off）
     levels = kernelIds.includes("off") ? kernelIds : ["off", ...kernelIds];
+  } else if (catalogEfforts.length > 0) {
+    // 模型目录声明了 supportedReasoningEfforts（与内核补丁同源），off 恒在首位
+    levels = ["off", ...catalogEfforts];
   } else if (!params.provider && !params.modelKey) {
     levels = [];
   } else {

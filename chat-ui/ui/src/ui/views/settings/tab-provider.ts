@@ -33,6 +33,7 @@ import { showConfirm } from "../confirm-dialog.ts";
 import {
   groupProvidersFromConfig, readFallbacks, reorderIds, applyIdOrder,
   resolveAddTarget as resolveAddTargetFor, buildModelEntry, applyKimiCodeLinkage,
+  formatContextWindow,
   type AddSelection,
   type ProviderGroup, type GroupedProvider, type ProviderModelEntry, type ProviderGroupId,
 } from "./tab-provider.lib.ts";
@@ -1038,7 +1039,7 @@ function renderProvider(prov: GroupedProvider, group: ProviderGroup, state: AppV
       ${s.keyEditing === prov.providerKey ? html`
         <div class="oc-provider-key-editor">
           <oc-password-input .value=${s.keyDraft} .placeholder=${t("settings.provider.newKeyPlaceholder")}
-            @input=${(e: CustomEvent) => { s.keyDraft = e.detail.value; }}
+            @input=${(e: CustomEvent) => { s.keyDraft = e.detail.value; state.requestUpdate(); }}
           ></oc-password-input>
           <div class="oc-settings__btn-row">
             <button class="oc-settings__btn oc-settings__btn--secondary" @click=${() => { s.keyEditing = null; state.requestUpdate(); }}>${t("settings.cancel")}</button>
@@ -1073,7 +1074,7 @@ function renderModelCard(prov: GroupedProvider, entry: ProviderModelEntry, state
         ${s.aliasEditing === entry.key ? html`
           <div class="oc-provider-card__alias-edit">
             <input class="oc-settings__input" .value=${s.aliasDraft} placeholder=${t("settings.provider.modelAliasPlaceholder")}
-              @input=${(e: Event) => { s.aliasDraft = (e.target as HTMLInputElement).value; }}
+              @input=${(e: Event) => { s.aliasDraft = (e.target as HTMLInputElement).value; state.requestUpdate(); }}
               @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter") handleAliasSave(prov, entry, state); if (e.key === "Escape") { s.aliasEditing = null; state.requestUpdate(); } }} />
             <button class="oc-settings__btn oc-settings__btn--primary" @click=${() => handleAliasSave(prov, entry, state)}>${t("settings.save")}</button>
           </div>
@@ -1085,6 +1086,8 @@ function renderModelCard(prov: GroupedProvider, entry: ProviderModelEntry, state
           ${entry.isDefault ? html`<span class="cc-tag cc-tag--brand">${t("settings.provider.badge.default")}</span>` : nothing}
           ${rank ? html`<span class="cc-tag">${t("settings.provider.badge.fallback")} ${rank}</span>` : nothing}
           ${entry.supportsImage ? html`<span class="cc-tag">${t("settings.provider.imageTag")}</span>` : nothing}
+          ${entry.reasoning ? html`<span class="cc-tag" data-tooltip=${entry.thinkingLevels.length > 0 ? entry.thinkingLevels.join(" / ") : nothing}>${t("settings.provider.reasoningTag")}</span>` : nothing}
+          ${entry.contextWindow ? html`<span class="cc-tag">${formatContextWindow(entry.contextWindow)}</span>` : nothing}
         </div>
       </div>
       <div class="oc-provider-card__actions">
@@ -1275,7 +1278,7 @@ function renderAddPanel(state: AppViewState) {
           <div class="oc-settings__form-group">
             <label class="oc-settings__label">${t("setup.provider.baseUrl")}</label>
             <input class="oc-settings__input" .value=${s.addBaseUrl}
-              @input=${(e: Event) => { s.addBaseUrl = (e.target as HTMLInputElement).value; }} />
+              @input=${(e: Event) => { s.addBaseUrl = (e.target as HTMLInputElement).value; state.requestUpdate(); }} />
           </div>
           <div class="oc-settings__form-group">
             <label class="oc-settings__label">${t("setup.provider.apiType")}</label>
@@ -1356,14 +1359,14 @@ function renderAddPanel(state: AppViewState) {
         <div class="oc-settings__form-group">
           <label class="oc-settings__label">${t("setup.provider.customModelId")}</label>
           <input class="oc-settings__input" .value=${s.addCustomModelId}
-            @input=${(e: Event) => { s.addCustomModelId = (e.target as HTMLInputElement).value; }} />
+            @input=${(e: Event) => { s.addCustomModelId = (e.target as HTMLInputElement).value; state.requestUpdate(); }} />
         </div>
       ` : nothing}
 
       <div class="oc-settings__form-group">
         <label class="oc-settings__label">${t("settings.provider.modelAlias")}</label>
         <input class="oc-settings__input" .value=${s.addAlias} placeholder=${t("settings.provider.modelAliasPlaceholder")}
-          @input=${(e: Event) => { s.addAlias = (e.target as HTMLInputElement).value; }} />
+          @input=${(e: Event) => { s.addAlias = (e.target as HTMLInputElement).value; state.requestUpdate(); }} />
       </div>
 
       ${s.oauthNoMembership ? html`
@@ -1438,7 +1441,7 @@ function renderFallbacks(state: AppViewState, fallbacks: string[]) {
       ${addable.length > 0 ? html`
         <div class="oc-provider-fallbacks__add">
           <select class="oc-settings__select" .value=${s.fallbackAddKey}
-            @change=${(e: Event) => { s.fallbackAddKey = (e.target as HTMLSelectElement).value; }}>
+            @change=${(e: Event) => { s.fallbackAddKey = (e.target as HTMLSelectElement).value; state.requestUpdate(); }}>
             <option value="" ?selected=${!s.fallbackAddKey}>${t("settings.provider.fallbacks.addPlaceholder")}</option>
             ${renderModelOptionsGrouped(addable.map(k => ({ key: k, name: nameOf.get(k) ?? k })), s.org, s.fallbackAddKey || undefined)}
           </select>

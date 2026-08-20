@@ -141,12 +141,12 @@ export function renderChannelQqbot(state: AppViewState) {
       ${s.enabled ? html`
         <div class="oc-settings__form-group">
           <label class="oc-settings__label">${t("settings.channels.qqbot.appId")}</label>
-          <input class="oc-settings__input" .value=${s.appId} @input=${(e: Event) => { s.appId = (e.target as HTMLInputElement).value; }} />
+          <input class="oc-settings__input" .value=${s.appId} @input=${(e: Event) => { s.appId = (e.target as HTMLInputElement).value; state.requestUpdate(); }} />
         </div>
 
         <div class="oc-settings__form-group">
           <label class="oc-settings__label">${t("settings.channels.qqbot.clientSecret")}</label>
-          <oc-password-input .value=${s.clientSecret} @input=${(e: CustomEvent) => { s.clientSecret = e.detail.value; }}></oc-password-input>
+          <oc-password-input .value=${s.clientSecret} @input=${(e: CustomEvent) => { s.clientSecret = e.detail.value; state.requestUpdate(); }}></oc-password-input>
         </div>
 
         <div class="oc-settings__form-group">

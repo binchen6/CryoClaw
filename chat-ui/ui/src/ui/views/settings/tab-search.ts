@@ -147,7 +147,7 @@ export function renderTabSearch(state: AppViewState) {
         <div class="oc-settings__form-group" style="margin-top:12px">
           <label class="oc-settings__label">${t("settings.search.serviceBaseUrl")}</label>
           <input class="oc-settings__input" .value=${s.serviceBaseUrl}
-            @input=${(e: Event) => { s.serviceBaseUrl = (e.target as HTMLInputElement).value; }} />
+            @input=${(e: Event) => { s.serviceBaseUrl = (e.target as HTMLInputElement).value; state.requestUpdate(); }} />
         </div>
       </details>
 

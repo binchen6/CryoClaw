@@ -567,6 +567,7 @@ export const enDict: Record<string, string> = {
   "settings.provider.modelExists": "Model already exists",
   "settings.provider.invalidBaseUrl": "Custom baseURL must be a valid http/https URL",
   "settings.provider.imageTag": "Vision",
+  "settings.provider.reasoningTag": "Thinking",
   "settings.provider.customAdvanced": "Custom endpoint",
   "settings.provider.oauthReusing": "Logged in — current authorization will be reused",
   "settings.patch.appliedHot": "Applied hot — no restart needed",

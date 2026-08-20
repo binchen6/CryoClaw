@@ -179,9 +179,16 @@ test("clearSessionMeterDirtyIfUsageAdvanced：nextTotal === prevTotal 时不变"
   assert.equal(dirty.has("s1"), true);
 });
 
-test("clearSessionMeterDirtyIfUsageAdvanced：nextTotal < prevTotal 时也不变（防止异常回退误清）", () => {
+test("clearSessionMeterDirtyIfUsageAdvanced：nextTotal < prevTotal 也清除（totalTokens 是当次值非累计，压缩后/短 prompt 会下降）", () => {
   const dirty = new Set<string>(["s1"]);
   const cleared = clearSessionMeterDirtyIfUsageAdvanced(dirty, "s1", 1000, 500);
+  assert.equal(cleared, true);
+  assert.equal(dirty.has("s1"), false);
+});
+
+test("clearSessionMeterDirtyIfUsageAdvanced：nextTotal 为 0 时不清除（无有效 usage）", () => {
+  const dirty = new Set<string>(["s1"]);
+  const cleared = clearSessionMeterDirtyIfUsageAdvanced(dirty, "s1", 1000, 0);
   assert.equal(cleared, false);
   assert.equal(dirty.has("s1"), true);
 });

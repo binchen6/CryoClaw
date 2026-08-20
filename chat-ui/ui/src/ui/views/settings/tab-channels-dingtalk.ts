@@ -137,18 +137,18 @@ export function renderChannelDingtalk(state: AppViewState) {
       ${s.enabled ? html`
         <div class="oc-settings__form-group">
           <label class="oc-settings__label">${t("settings.channels.dingtalk.clientId")}</label>
-          <input class="oc-settings__input" .value=${s.clientId} @input=${(e: Event) => { s.clientId = (e.target as HTMLInputElement).value; }} />
+          <input class="oc-settings__input" .value=${s.clientId} @input=${(e: Event) => { s.clientId = (e.target as HTMLInputElement).value; state.requestUpdate(); }} />
         </div>
 
         <div class="oc-settings__form-group">
           <label class="oc-settings__label">${t("settings.channels.dingtalk.clientSecret")}</label>
-          <oc-password-input .value=${s.clientSecret} @input=${(e: CustomEvent) => { s.clientSecret = e.detail.value; }}></oc-password-input>
+          <oc-password-input .value=${s.clientSecret} @input=${(e: CustomEvent) => { s.clientSecret = e.detail.value; state.requestUpdate(); }}></oc-password-input>
         </div>
 
         <div class="oc-settings__form-group">
           <label class="oc-settings__label">${t("settings.channels.dingtalk.sessionTimeout")}</label>
           <input class="oc-settings__input" type="number" .value=${String(s.sessionTimeout)}
-            @input=${(e: Event) => { s.sessionTimeout = Number((e.target as HTMLInputElement).value) || 1800000; }} />
+            @input=${(e: Event) => { s.sessionTimeout = Number((e.target as HTMLInputElement).value) || 1800000; state.requestUpdate(); }} />
           <div class="oc-settings__hint">${t("settings.channels.dingtalk.sessionTimeoutHint")}</div>
         </div>
 

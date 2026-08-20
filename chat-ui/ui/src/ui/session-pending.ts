@@ -4,6 +4,15 @@ import type { GatewaySessionRow, SessionsListResult } from "./types.ts";
 // runtime cannot overwrite them; they also identify local-only sessions.
 export const pendingSessionLabels = new Map<string, string>();
 
+// /new、/reset 发送后置位：内核会同 key 轮换 sessionId 并清空 transcript，
+// 下一个 final 事件必须强制替换本地历史（绕过 R12 的 mergeIfStale 滞后兜底，
+// 否则重置后的短历史会被误判为“滞后读”而继续显示旧对话）。
+export const pendingSessionResets = new Set<string>();
+
+export function consumePendingSessionReset(key: string): boolean {
+  return pendingSessionResets.delete(key);
+}
+
 export function removePendingSessionLabel(key: string) {
   const trimmed = key.trim();
   if (trimmed) {
