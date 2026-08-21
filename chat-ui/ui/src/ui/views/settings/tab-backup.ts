@@ -102,7 +102,7 @@ async function handleRestoreLKG(state: AppViewState) {
 async function handleResetConfig(state: AppViewState) {
   if (!(await showConfirm(state, t("settings.backup.resetConfirm"), { danger: true }))) return;
   s.resetting = true; state.requestUpdate();
-  try { await ipc.settingsResetConfigAndRelaunch(); } catch {}
+  try { await ipc.settingsResetConfigAndRelaunch(); } catch (e: any) { s.error = tWithDetail("settings.error.resetFailed", e?.message); }
   s.resetting = false; state.requestUpdate();
 }
 

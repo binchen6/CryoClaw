@@ -248,8 +248,8 @@ export function renderChannelFeishu(state: AppViewState) {
               <label class="oc-settings__label">${t("settings.channels.feishu.addGroupPrompt")}</label>
               <input class="oc-settings__input" .value=${s.addGroupInput} placeholder="oc_..."
                 @input=${(e: Event) => { s.addGroupInput = (e.target as HTMLInputElement).value; state.requestUpdate(); }}
-                @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter") confirmAddGroup(state); if (e.key === "Escape") cancelAddGroup(state); }} />
-              ${s.addGroupError ? html`<div style="color:var(--accent);font-size:12px;margin-top:4px">${s.addGroupError}</div>` : nothing}
+                @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter" && !e.isComposing) confirmAddGroup(state); if (e.key === "Escape") cancelAddGroup(state); }} />
+              ${s.addGroupError ? html`<div style="color:var(--danger);font-size:12px;margin-top:4px">${s.addGroupError}</div>` : nothing}
               <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
                 <button class="oc-settings__btn" @click=${() => cancelAddGroup(state)}>${t("settings.cancel")}</button>
                 <button class="oc-settings__btn oc-settings__btn--primary" @click=${() => confirmAddGroup(state)}>${t("settings.confirm")}</button>

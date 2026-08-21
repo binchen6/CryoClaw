@@ -108,7 +108,7 @@ function renderRow(state: AppViewState, entry: ApprovalHistoryEntry) {
 }
 
 function renderBody(state: AppViewState) {
-  if (s.loading) return html`<div class="oc-approvals__empty">…</div>`;
+  if (s.loading) return html`<div class="oc-approvals__empty">${t("chat.loading")}</div>`;
   const rows = listApprovalHistory();
   if (!rows.length) {
     return html`<div class="oc-approvals__empty">${t("settings.approvals.empty")}</div>`;

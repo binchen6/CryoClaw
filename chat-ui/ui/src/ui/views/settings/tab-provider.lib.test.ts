@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import {
+  applyCapabilityOverrides,
   applyIdOrder,
+  deriveOverridesFromEntry,
   groupProvidersFromConfig,
   readFallbacks,
   reorderIds,
@@ -92,6 +94,90 @@ function testApplyIdOrder() {
   assert.deepEqual(applyIdOrder(items, ["c", "a"], (i) => i.id).map((i) => i.id), ["c", "a", "b"], "未列入的追加在尾");
 }
 
+function testGroupProvidersCapabilities() {
+  const groups = groupProvidersFromConfig({
+    models: {
+      providers: {
+        p: {
+          apiKey: "k",
+          models: [
+            { id: "m1", name: "M1", input: ["text", "image", "video"], contextWindow: 262144, contextTokens: 200000, maxTokens: 8192 },
+            { id: "m2", name: "M2", input: ["text", "audio"] },
+          ],
+        },
+      },
+    },
+  } as any);
+  const [m1, m2] = groups[0].providers[0].models;
+  assert.equal(m1.supportsImage, true);
+  assert.equal(m1.supportsVideo, true);
+  assert.equal(m1.supportsAudio, false);
+  assert.equal(m1.contextWindow, 262144);
+  assert.equal(m1.contextTokens, 200000);
+  assert.equal(m1.maxTokens, 8192);
+  assert.equal(m2.supportsAudio, true);
+  assert.equal(m2.maxTokens, undefined);
+}
+
+function testApplyCapabilityOverrides() {
+  const base = { id: "m", name: "M", input: ["text", "image"], contextWindow: 128000, compat: { supportsTools: true, supportedReasoningEfforts: ["low", "high"] } };
+
+  // 数值覆盖与删除
+  let out = applyCapabilityOverrides(base, { contextWindow: 262144, maxTokens: 4096 });
+  assert.equal(out.contextWindow, 262144);
+  assert.equal(out.maxTokens, 4096);
+  assert.equal((base as any).maxTokens, undefined, "不改原对象");
+  out = applyCapabilityOverrides(base, { contextWindow: null });
+  assert.equal("contextWindow" in out, false, "null = 删除字段");
+
+  // 模态：恒含 text
+  out = applyCapabilityOverrides(base, { modalities: { image: false, video: true, audio: true } });
+  assert.deepEqual(out.input, ["text", "video", "audio"]);
+  out = applyCapabilityOverrides(base, { modalities: null });
+  assert.equal("input" in out, false);
+
+  // reasoning
+  out = applyCapabilityOverrides(base, { reasoning: true });
+  assert.equal(out.reasoning, true);
+  out = applyCapabilityOverrides({ ...base, reasoning: true }, { reasoning: null });
+  assert.equal("reasoning" in out, false);
+
+  // thinkingLevels：写 compat.supportedReasoningEfforts，保留 compat 其他键
+  out = applyCapabilityOverrides(base, { thinkingLevels: ["low", "medium", "high", "off"] });
+  assert.deepEqual((out.compat as any).supportedReasoningEfforts, ["low", "medium", "high"], "off 被过滤");
+  assert.equal((out.compat as any).supportsTools, true, "compat 其他键保留");
+  // 空数组删除 supportedReasoningEfforts；compat 只剩其他键
+  out = applyCapabilityOverrides(base, { thinkingLevels: [] });
+  assert.equal("supportedReasoningEfforts" in (out.compat as any), false);
+  assert.equal((out.compat as any).supportsTools, true);
+  // compat 原本只有 supportedReasoningEfforts 时清空则整体删除
+  out = applyCapabilityOverrides({ id: "m", name: "M", compat: { supportedReasoningEfforts: ["low"] } }, { thinkingLevels: [] });
+  assert.equal("compat" in out, false);
+
+  // 白名单外字段被剔除
+  out = applyCapabilityOverrides({ id: "m", name: "M", bogusField: 1 } as any, {});
+  assert.equal("bogusField" in out, false);
+
+  // undefined 一律不触碰
+  out = applyCapabilityOverrides(base, {});
+  assert.deepEqual(out.input, ["text", "image"]);
+  assert.equal(out.contextWindow, 128000);
+}
+
+function testDeriveOverridesFromEntry() {
+  const v = deriveOverridesFromEntry({ id: "m", name: "M", input: ["text", "image", "audio"], contextWindow: 262144, reasoning: true, compat: { supportedReasoningEfforts: ["low", "high", "off"] } });
+  assert.equal(v.contextWindow, "262144");
+  assert.equal(v.image, true);
+  assert.equal(v.video, false);
+  assert.equal(v.audio, true);
+  assert.equal(v.reasoning, true);
+  assert.deepEqual(v.thinkingLevels, ["low", "high"], "off 不入选");
+  const bare = deriveOverridesFromEntry("just-a-string");
+  assert.equal(bare.contextWindow, "");
+  assert.equal(bare.image, false);
+  assert.deepEqual(bare.thinkingLevels, []);
+}
+
 function main() {
   testResolveGroupId();
   testGroupProvidersFromConfig();
@@ -99,6 +185,9 @@ function main() {
   testReadFallbacks();
   testReorderIds();
   testApplyIdOrder();
+  testGroupProvidersCapabilities();
+  testApplyCapabilityOverrides();
+  testDeriveOverridesFromEntry();
   console.log("tab-provider lib tests passed");
 }
 

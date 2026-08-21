@@ -135,13 +135,13 @@ export function renderPairingPanel(
             <button class="oc-settings-pairing__icon-btn"
               ?disabled=${inflightRefresh.has(platform)}
               @click=${() => handleRefresh(state, platform, refresh)}
-              data-tooltip=${t("settings.provider.usage.refresh")}
+              data-tooltip=${t("settings.channels.pairing.refresh")}
               data-tooltip-pos="bottom"
-              aria-label=${t("settings.provider.usage.refresh")}>${inflightRefresh.has(platform) ? spinnerIcon : refreshIcon}</button>
+              aria-label=${t("settings.channels.pairing.refresh")}>${inflightRefresh.has(platform) ? spinnerIcon : refreshIcon}</button>
             <button class="oc-settings-pairing__icon-btn" @click=${options!.onAddGroup}
-              data-tooltip=${t("settings.channels.feishu.addGroup")}
+              data-tooltip=${t("settings.channels.pairing.addGroup")}
               data-tooltip-pos="bottom"
-              aria-label=${t("settings.channels.feishu.addGroup")}>${plusIcon}</button>
+              aria-label=${t("settings.channels.pairing.addGroup")}>${plusIcon}</button>
           </div>
         </div>
       ` : nothing}
@@ -191,7 +191,7 @@ export function renderPairingPanel(
         `) : html`<div style="font-size:12px;color:var(--text-secondary)">${t("settings.channels.pairing.approvedEmpty")}</div>`}
       </div>
 
-      ${panelErrors.get(platform) ? html`<div style="color:var(--accent);font-size:12px">${panelErrors.get(platform)}</div>` : nothing}
+      ${panelErrors.get(platform) ? html`<div style="color:var(--danger);font-size:12px">${panelErrors.get(platform)}</div>` : nothing}
     </div>
   `;
 }

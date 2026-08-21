@@ -145,13 +145,6 @@ export function renderChannelDingtalk(state: AppViewState) {
           <oc-password-input .value=${s.clientSecret} @input=${(e: CustomEvent) => { s.clientSecret = e.detail.value; state.requestUpdate(); }}></oc-password-input>
         </div>
 
-        <div class="oc-settings__form-group">
-          <label class="oc-settings__label">${t("settings.channels.dingtalk.sessionTimeout")}</label>
-          <input class="oc-settings__input" type="number" .value=${String(s.sessionTimeout)}
-            @input=${(e: Event) => { s.sessionTimeout = Number((e.target as HTMLInputElement).value) || 1800000; state.requestUpdate(); }} />
-          <div class="oc-settings__hint">${t("settings.channels.dingtalk.sessionTimeoutHint")}</div>
-        </div>
-
         <div class="oc-settings__field-hint" style="margin-bottom:8px">${t("settings.channels.dingtalk.gatewayTokenHint")}</div>
 
         <oc-message-box .message=${s.error ?? ""} .type=${"error"} .visible=${!!s.error}></oc-message-box>

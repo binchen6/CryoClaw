@@ -18,10 +18,18 @@ export interface ProviderModelEntry {
   name: string;
   isDefault: boolean;
   supportsImage: boolean;
+  /** 支持视频输入（config entry.input 含 "video"） */
+  supportsVideo: boolean;
+  /** 支持音频输入（config entry.input 含 "audio"） */
+  supportsAudio: boolean;
   /** 推理模型（config entry.reasoning） */
   reasoning: boolean;
   /** 上下文窗口 token 数（config entry.contextWindow） */
   contextWindow?: number;
+  /** 运行时上下文上限（config entry.contextTokens） */
+  contextTokens?: number;
+  /** 最大输出 token（config entry.maxTokens） */
+  maxTokens?: number;
   /** 支持的思考档位（entry.compat.supportedReasoningEfforts / thinkingLevelMap 键，off 除外） */
   thinkingLevels: string[];
 }
@@ -134,10 +142,20 @@ export function groupProvidersFromConfig(config: Record<string, unknown> | null 
         name,
         isDefault: key === primary,
         supportsImage: input.includes("image"),
+        supportsVideo: input.includes("video"),
+        supportsAudio: input.includes("audio"),
         reasoning: isRecord(entry) && entry.reasoning === true,
         contextWindow:
           isRecord(entry) && typeof entry.contextWindow === "number" && entry.contextWindow > 0
             ? entry.contextWindow
+            : undefined,
+        contextTokens:
+          isRecord(entry) && typeof entry.contextTokens === "number" && entry.contextTokens > 0
+            ? entry.contextTokens
+            : undefined,
+        maxTokens:
+          isRecord(entry) && typeof entry.maxTokens === "number" && entry.maxTokens > 0
+            ? entry.maxTokens
             : undefined,
         thinkingLevels: extractEntryThinkingLevels(entry),
       });
@@ -275,12 +293,120 @@ export function resolveAddTarget(sel: AddSelection): AddTarget | null {
   };
 }
 
-/** 从动态目录条目构造模型 entry（携带内核归一化元数据） */
+/**
+ * 单模型能力覆盖项。undefined = 不触碰该字段；null = 删除该字段（回落目录/内核默认）。
+ * 只对应内核 ModelDefinitionSchema 白名单字段（.strict()，未知字段会被拒）。
+ */
+export interface CapabilityOverrides {
+  contextWindow?: number | null;
+  contextTokens?: number | null;
+  maxTokens?: number | null;
+  /** 输入模态子集（不含 text，text 恒含）；null = 删除 input 字段 */
+  modalities?: { image: boolean; video: boolean; audio: boolean } | null;
+  reasoning?: boolean | null;
+  /** 思考档位子集（不含 off）；空数组/null = 删除 compat.supportedReasoningEfforts */
+  thinkingLevels?: string[] | null;
+}
+
+/** 内核 ModelDefinitionSchema 白名单之外的键不得出现（strict 校验） */
+const MODEL_ENTRY_WHITELIST = new Set([
+  "id", "name", "api", "baseUrl", "reasoning", "input", "cost",
+  "contextWindow", "contextTokens", "maxTokens", "thinkingLevelMap",
+  "params", "agentRuntime", "headers", "compat", "mediaInput", "metadataSource",
+]);
+
+/**
+ * 把能力覆盖套用到模型 entry（返回新对象，不改原对象）。
+ * - input 恒含 "text"（内核语义：text 是基础模态）
+ * - thinkingLevels 写入 compat.supportedReasoningEfforts（保留 compat 其他键；
+ *   空数组时仅删除 supportedReasoningEfforts，compat 变空对象则整体删除）
+ * - null 语义 = 删除字段，让目录/内核默认值重新生效
+ */
+export function applyCapabilityOverrides(
+  base: Record<string, unknown>,
+  overrides: CapabilityOverrides,
+): Record<string, unknown> {
+  const entry: Record<string, unknown> = { ...base };
+
+  const applyNum = (field: "contextWindow" | "contextTokens" | "maxTokens") => {
+    const v = overrides[field];
+    if (v === undefined) return;
+    if (v === null || !(typeof v === "number") || !(v > 0)) delete entry[field];
+    else entry[field] = Math.floor(v);
+  };
+  applyNum("contextWindow");
+  applyNum("contextTokens");
+  applyNum("maxTokens");
+
+  if (overrides.modalities !== undefined) {
+    if (overrides.modalities === null) {
+      delete entry.input;
+    } else {
+      const input: string[] = ["text"];
+      if (overrides.modalities.image) input.push("image");
+      if (overrides.modalities.video) input.push("video");
+      if (overrides.modalities.audio) input.push("audio");
+      entry.input = input;
+    }
+  }
+
+  if (overrides.reasoning !== undefined) {
+    if (overrides.reasoning === null) delete entry.reasoning;
+    else entry.reasoning = overrides.reasoning;
+  }
+
+  if (overrides.thinkingLevels !== undefined) {
+    const levels = overrides.thinkingLevels ?? [];
+    const compat = isRecord(entry.compat) ? { ...entry.compat } : {};
+    if (levels.length > 0) {
+      compat.supportedReasoningEfforts = [...new Set(levels.filter((l) => l && l !== "off"))];
+    } else {
+      delete compat.supportedReasoningEfforts;
+    }
+    if (Object.keys(compat).length > 0) entry.compat = compat;
+    else delete entry.compat;
+  }
+
+  // 防御：剔除白名单外字段（上游 entry 若带脏字段，随编辑一并净化）
+  for (const k of Object.keys(entry)) {
+    if (!MODEL_ENTRY_WHITELIST.has(k)) delete entry[k];
+  }
+  return entry;
+}
+
+/** 从已有 config entry 反推编辑表单初始值（裸字符串 entry 视为全默认） */
+export function deriveOverridesFromEntry(entry: unknown): {
+  contextWindow: string;
+  contextTokens: string;
+  maxTokens: string;
+  image: boolean;
+  video: boolean;
+  audio: boolean;
+  reasoning: boolean;
+  thinkingLevels: string[];
+} {
+  const rec = isRecord(entry) ? entry : {};
+  const input = Array.isArray(rec.input) ? rec.input : [];
+  const num = (v: unknown) => (typeof v === "number" && v > 0 ? String(v) : "");
+  return {
+    contextWindow: num(rec.contextWindow),
+    contextTokens: num(rec.contextTokens),
+    maxTokens: num(rec.maxTokens),
+    image: input.includes("image"),
+    video: input.includes("video"),
+    audio: input.includes("audio"),
+    reasoning: rec.reasoning === true,
+    thinkingLevels: extractEntryThinkingLevels(entry),
+  };
+}
+
+/** 从动态目录条目构造模型 entry（携带内核归一化元数据 + 可选能力覆盖） */
 export function buildModelEntry(
   catalogProvider: string | null,
   modelId: string,
   alias: string,
   supportsImage: boolean,
+  overrides?: CapabilityOverrides,
 ): Record<string, unknown> {
   const catalogEntry = catalogProvider
     ? getCachedGatewayModelEntries()?.[catalogProvider]?.find((item) => item.id === modelId)
@@ -293,7 +419,7 @@ export function buildModelEntry(
   if (catalogEntry?.reasoning !== undefined) entry.reasoning = catalogEntry.reasoning;
   if (catalogEntry?.contextWindow !== undefined) entry.contextWindow = catalogEntry.contextWindow;
   if (catalogEntry?.compat) entry.compat = catalogEntry.compat;
-  return entry;
+  return overrides ? applyCapabilityOverrides(entry, overrides) : entry;
 }
 
 /**

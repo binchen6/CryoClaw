@@ -14,6 +14,7 @@ import { getConfigSnapshot, getCachedConfigSnapshot } from "../../controllers/co
 import { runConfigPatch } from "./tab-patch.ts";
 import { extractWeixinEnabled, applyWeixinSave } from "./tab-channels.lib.ts";
 import { updateChannelEnabled, syncChannelEnabledFromSnapshot } from "./tab-channels.ts";
+import { showConfirm } from "../confirm-dialog.ts";
 
 // Weixin 面板状态必须可整体回滚，避免二维码和账号缓存残留到下次打开。
 function createWeixinState() {
@@ -27,6 +28,7 @@ function createWeixinState() {
     // 轮询代际：cleanup 自增，setTimeout 回调内 await 返回后先校验代际，失效即退出
     pollGeneration: 0,
     saving: false,
+    disconnecting: false,
     error: null as string | null,
     hint: null as string | null,
     initialized: false,
@@ -147,12 +149,19 @@ async function handleToggle(state: AppViewState, checked: boolean) {
 }
 
 async function handleDisconnect(state: AppViewState) {
+  if (s.disconnecting) return;
+  if (!(await showConfirm(state, t("settings.channels.weixin.disconnectConfirm"), { danger: true }))) return;
+  s.disconnecting = true;
+  state.requestUpdate();
   try {
     await ipc.settingsWeixinClearAccounts();
     s.accounts = [];
     state.requestUpdate();
     startLogin(state);
-  } catch {}
+  } catch {} finally {
+    s.disconnecting = false;
+    state.requestUpdate();
+  }
 }
 
 export function cleanupWeixinTab() {
@@ -184,7 +193,10 @@ export function renderChannelWeixin(state: AppViewState) {
           <div class="oc-weixin-connected">
             <span class="oc-weixin-badge">✓</span>
             <span class="oc-weixin-account-id">${s.accounts[0] ?? ""}</span>
-            <button class="oc-weixin-remove-btn" @click=${() => handleDisconnect(state)}>
+            <button class="oc-weixin-remove-btn" ?disabled=${s.disconnecting} @click=${() => handleDisconnect(state)}
+              data-tooltip=${t("settings.channels.weixin.disconnect")}
+              data-tooltip-pos="left"
+              aria-label=${t("settings.channels.weixin.disconnect")}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
             </button>
           </div>

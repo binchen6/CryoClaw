@@ -219,3 +219,20 @@ Things that are easy to get wrong or forget when working on CryoClaw.
     本地更新链路测试（generic 127.0.0.1 源）在每次 `Setup.exe /S` 重装后必须重新覆盖
     app-update.yml，否则检查更新会打到真实 GitHub（无 latest.yml 时 404）。这是测试
     流程最容易忘的一步，表现为「下载/检查毫无反应或报 404」。
+
+70. **dev 冒烟环境三坑（R21 实录）。**
+    ① `scripts/package-resources.js` 的 `packGatewayAsar()` 打完 gateway.asar 后**会删除
+    `gateway/` 散文件目录**——任何一次 `dist:win`/`package:resources` 后 dev 模式
+    （`resolveGatewayRoot` 非 packaged 强制走散文件）起不来，报「FATAL: gateway 入口不存在」。
+    恢复：`node node_modules/@electron/asar/bin/asar.mjs extract gateway.asar gateway/`
+    再 `cp -r gateway.asar.unpacked/* gateway/`。
+    ② 后台任务 TaskStop 只杀 `npx` 壳进程，electron 子进程残留 → 下一次启动撞单实例锁
+    秒退（无任何日志输出）。重启 dev 前必须 `taskkill /F /IM electron.exe /T` 清场。
+    ③ dev 冷启动后**首个 config.patch 落盘可超过 60 秒**（gateway 启动本身 ~46s，渠道
+    初始化期间 patch 排队），CDP 冒烟对 `~/.openclaw/openclaw.json` 的文件断言轮询窗口
+    要给 ≥120s，否则误 FAIL（功能实际正常）。
+    另 CDP 驱动教训：设置页可能已处于打开态（无侧边栏按钮可点，直接切 nav）；
+    设置导航有「模型与能力」与「模型」两项，正则要精确匹配全等文本；
+    `<oc-toggle-switch>` 的 click 处理器在**内层 `.oc-toggle` div** 上
+    （createRenderRoot=this 无 shadow DOM），对宿主元素 click() 不触发，须
+    `el.querySelector(".oc-toggle").click()`。

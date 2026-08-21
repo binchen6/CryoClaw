@@ -11,9 +11,9 @@
 面向国内生态（Kimi / Moonshot / 飞书 / 企微 / 微信 / 钉钉 / QQ）。
 
 **当前状态**：
-- 更名 CryoClaw 完成；CryoClaw 重设计工程 **R1–R20 全部完成**（见下节），最新发版 **v2026.821.2**（R18–R20：思考档位路由修复、对话健壮性、性能/稳定性/更新体系批次）。
+- 更名 CryoClaw 完成；CryoClaw 重设计工程 **R1–R21 全部完成**（见下节），最新发版 **v2026.821.3**（R18–R20：思考档位路由修复、对话健壮性、性能/稳定性/更新体系批次；R21：模型管理增强——单模型能力编辑 + 分组内新增模型 + 设置页 12 项审查修复）。
 - 内核 openclaw **2026.7.1-2**（版本 pin 在 package.json `cryoclaw.openclaw`）；**Electron 43.4.0**（R13 升级落地，audit 0 漏洞）。
-- 测试基线 **487 pass / 0 fail / 4 skipped**（vitest 94 + node 74 + chat-ui 267 + scripts 52 + tsc typecheck；0 fail 为硬指标）。
+- 测试基线 **487 pass / 0 fail / 4 skipped**（vitest 94 + node 74 + chat-ui 267 + scripts 52 + tsc typecheck；0 fail 为硬指标）。R21 后维持不变（chat-ui lib 新增用例与死 key 清理相抵）。
 - 历史优化阶段 1–22 全部完成并逐版发版至 v2026.811.0（见历史档案）。
 - 已开源发布至 GitHub（binchen6/CryoClaw，AGPL-3.0-only）；发布时以全新干净历史快照推送，旧本地历史（含已作废的 kimi-claw REFRESH 凭证）不出仓；`.env.build` 已转 gitignored，模板见 `.env.build.example`；git 身份统一为 binchen6。CI：`tests.yml` 每次 push/PR 全量回归（chat-ui/ui 独立依赖树需先安装）；上游签名/CDN 发版链 `build-release.yml`/`publish-release.yml` 已删除（依赖上游 oneclaw 签名证书与 oneclaw.cn CDN，本 fork 不适用，发版走本地 dist:win + gh release）。
 
@@ -565,6 +565,43 @@
   真实链路 821.0→821.2 换装+自启实测通过（asar md5 变更 + 新进程 + 新启动日志三件套）。
   821.1/821.0 为测试中间版不发布，正式发 821.2。
 - 测试基线 **487 pass / 0 fail / 4 skip**（vitest 94 + node 74 + chat-ui 267 + scripts 52）。
+
+### R21 · 模型管理增强：单模型能力编辑 + 分组内新增模型（完成，v2026.821.3）
+
+用户指令：联网研究 openclaw 官方配置文档；模型管理支持每个模型单独自定义上下文长度、
+思考模式、图像/视频等能力；分组旁「新增模型」自动复用分组配置；检查其他设置可优化项。
+
+- **内核 schema 取证**（gateway.asar 内 `zod-schema.core-*.js`）：`ModelDefinitionSchema`
+  为 `.strict()` 对象（**裸字符串 entry 非法**，id/name 必填）；白名单字段含
+  reasoning / input（**text/image/video/audio 四模态**）/ contextWindow / contextTokens /
+  maxTokens / thinkingLevelMap / compat.supportedReasoningEfforts（档位数组，不含 off）等；
+  官方文档确认 provider 级字段可被 models[] 单模型覆盖，自定义模型接受图像必须显式
+  `input:["text","image"]`。
+- **lib 纯函数**（`tab-provider.lib.ts`）：`CapabilityOverrides` / `applyCapabilityOverrides`
+  （null=删字段回落 provider 默认、input 恒含 text、thinkingLevels 写
+  compat.supportedReasoningEfforts 且保留 compat 其他键、白名单外字段剔除）/
+  `deriveOverridesFromEntry`（编辑表单初始值）；+3 测试组。
+- **模型卡片能力编辑器**（`tab-provider.ts` renderCapsEditor/renderModelEditPanel）：
+  卡片加编辑按钮 → 就地展开：contextWindow（128K/256K/512K/1M 预设 chip）、maxTokens、
+  图像/视频/音频开关、思考开关 + 档位 chips；保存走 `runPatch`（config.patch + baseHash
+  乐观锁），裸字符串 entry 自动升格 `{id,name}`；卡片徽标新增视频/音频。
+- **分组内新增模型**：单 provider 组头「+ 新增模型」按钮（kimi-coding/custom 组除外）、
+  多 provider 组子头「+」→ renderGroupAddPanel：复用提示（显示 providerKey）、目录下拉/
+  自定义 id、别名、可折叠能力编辑器（选目录模型时 initAddCapsFromCatalog 预选能力）；
+  `handleAddToGroupSave` 跳过 verify-key、查重、push 进同组 models、无 primary 则设默认。
+- **设置页审查 12 项修复**：settings-view 两处漏调 `resetEnvInfoTab()`（过期数据）；
+  approvals 裸 `…`→`chat.loading`；feishu/wecom 加群 Enter 补 `!e.isComposing`（输入法
+  误提交）；weixin 断开按钮补 tooltip/aria + showConfirm + busy 守卫；三处错误色
+  `--accent`→`--danger`；tab-backup 重置 catch 吞错→`s.error`；plugins 已安装角标与
+  冲突检测的 runtimeId 一致化；pairing 面板 tooltip 独立 key（不再跨模块借用）；
+  about「重启以更新」加确认；**dingtalk sessionTimeout 僵尸字段删除**（schema 已废弃，
+  保存时被 strip 永不落盘）；死 i18n key 清理 17 个（zh/en 对称，i18n.test.ts 审计）。
+- **验证**：全量回归 **487 pass / 0 fail** 维持；CDP 真机冒烟（`.cache/cdp-r21-caps.js`）：
+  编辑 deepseek-v4-pro → contextWindow=131072 + input 含 video 落盘 + 卡片徽标「视频/128K」
+  更新；分组「+」新增自定义模型落盘同组且 baseUrl/apiKey 未动；零 renderer 异常。
+  （dev 冒烟三坑——asar 打包删散文件 / TaskStop 残留 electron / 首个 patch 落盘 >60s——
+  已记 gotchas #70。）
+- 发版 v2026.821.3：版本号 + release-notes + dist:win + GitHub Release。
 
 ### R8 · 插件管理页面（已重启完成，见上节 R8 记录）
 

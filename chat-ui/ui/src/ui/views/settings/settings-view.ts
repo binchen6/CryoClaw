@@ -115,6 +115,7 @@ export function invalidateAllSettings() {
   resetVoiceTab();
   resetAppearanceTab();
   resetAdvancedTab();
+  resetEnvInfoTab();
   resetSessionUsageTab();
   resetApprovalsTab();
   resetPluginsTab();
@@ -136,6 +137,7 @@ export function cleanupSettingsView() {
   resetVoiceTab();
   resetAppearanceTab();
   resetAdvancedTab();
+  resetEnvInfoTab();
   resetSessionUsageTab();
   resetApprovalsTab();
   resetPluginsTab();

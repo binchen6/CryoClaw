@@ -1,5 +1,12 @@
 [
   {
+    "version": "2026.821.3",
+    "notes": {
+      "zh": "新功能：模型卡片支持逐模型编辑能力——上下文长度（128K/256K/512K/1M 预设）、maxTokens、图像/视频/音频输入、思考模式与档位\n新功能：分组旁「新增模型」按钮——同组添加自动复用该分组的端点与密钥，无需重复填写\n新功能：模型卡片新增视频/音频能力徽标\n修复：渠道加群对话框在中文输入法选词时按 Enter 不再误提交；断开微信、重启更新前增加确认\n修复：设置-环境信息页不再显示过期数据；重置配置失败有明确错误提示；钉钉渠道删除永不生效的僵尸字段\n优化：错误提示配色统一；设置页文案与图标细节打磨\n测试基线 487 用例全绿",
+      "en": "New: per-model capability editing on model cards — context window (128K/256K/512K/1M presets), maxTokens, image/video/audio input, reasoning mode & thinking levels\nNew: Add-model button next to each group — reuses the group's endpoint & API key automatically\nNew: video/audio capability badges on model cards\nFix: Enter during IME composition no longer mis-submits channel group dialogs; confirmations added before WeChat disconnect and restart-to-update\nFix: stale data on Environment Info tab; explicit error on config-reset failure; removed a dead DingTalk field that never persisted\nImproved: unified error colors; settings copy & icon polish\n487-test baseline all green"
+    }
+  },
+  {
     "version": "2026.821.2",
     "notes": {
       "zh": "新功能：应用自动更新迁移至 GitHub Releases（设置-关于内检查/下载/一键重启安装，差量更新只下载变更块）\n新功能：设置-高级新增「导出诊断包」（一键打包日志与运行环境信息）\n优化：日志统一收口到 ~/.openclaw/logs/（app.log/gateway.log，支持 CRYOCLAW_LOG_LEVEL 级别过滤）\n优化：Gateway 启用 V8 编译缓存，二次启动更快；主窗口创建提前，首屏更跟手\n优化：退出时自动清理临时缓存（保留用户配置与会话历史）；收敛无用 Chromium 特性降低内存占用\n优化：渲染进程崩溃自愈与内存软监控；设置/聊天界面图标统一为 lucide 风格\n修复：自动更新换装流程（重启安装不再静默失败）\n测试基线 487 用例全绿",

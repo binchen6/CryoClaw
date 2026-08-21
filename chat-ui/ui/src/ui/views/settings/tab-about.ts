@@ -144,6 +144,7 @@ async function handleAppUpdateCheck(state: AppViewState) {
 }
 
 async function handleAppUpdateRestart(state: AppViewState) {
+  if (!(await showConfirm(state, t("settings.about.appUpdateRestartConfirm")))) return;
   s.appUpdateMsg = null;
   try {
     await ipc.appUpdateQuitAndInstall();

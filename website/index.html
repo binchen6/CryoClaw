@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>CryoClaw — 高效、易用、纯净的 OpenClaw 桌面客户端</title>
+<meta name="description" content="CryoClaw 是基于 openclaw 内核的高效、易用、纯净 harness。一分钟装好，即刻开聊。零配置、零依赖的 OpenClaw 桌面客户端。" />
+<link rel="icon" type="image/png" href="assets/icon.png" />
+<link rel="stylesheet" href="design-tokens.css" />
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+<!-- ══════════ 导航 ══════════ -->
+<header class="nav" id="nav">
+  <a class="nav__brand" href="#top">
+    <img src="assets/icon.png" alt="CryoClaw" class="nav__logo" />
+    <span class="nav__name">CryoClaw</span>
+    <span class="nav__tag">pure harness</span>
+  </a>
+  <nav class="nav__links">
+    <a href="#features">特性</a>
+    <a href="#showcase">界面</a>
+    <a href="#providers">模型</a>
+    <a href="#download">下载</a>
+  </nav>
+  <a class="btn btn--ghost btn--sm" href="https://github.com/binchen6/CryoClaw" target="_blank" rel="noopener">
+    <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.58.11.79-.25.79-.56 0-.27-.01-1.17-.02-2.12-3.2.7-3.87-1.36-3.87-1.36-.52-1.33-1.28-1.68-1.28-1.68-1.04-.71.08-.7.08-.7 1.15.08 1.76 1.18 1.76 1.18 1.03 1.76 2.69 1.25 3.35.96.1-.75.4-1.25.72-1.54-2.55-.29-5.23-1.28-5.23-5.68 0-1.26.45-2.28 1.18-3.09-.12-.29-.51-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.78 0c2.2-1.49 3.17-1.18 3.17-1.18.62 1.59.23 2.76.11 3.05.74.81 1.18 1.83 1.18 3.09 0 4.41-2.69 5.38-5.25 5.67.41.35.77 1.05.77 2.12 0 1.53-.01 2.76-.01 3.14 0 .31.2.68.8.56A10.52 10.52 0 0 0 23.5 12C23.5 5.65 18.35.5 12 .5z"/></svg>
+    GitHub
+  </a>
+</header>
+
+<!-- ══════════ Hero ══════════ -->
+<section class="hero" id="top">
+  <div class="hero__aurora" aria-hidden="true">
+    <div class="aurora aurora--1"></div>
+    <div class="aurora aurora--2"></div>
+    <div class="aurora aurora--3"></div>
+    <div class="hero__grid"></div>
+  </div>
+
+  <div class="hero__inner">
+    <div class="hero__copy">
+      <div class="hero__badge reveal">
+        <span class="pulse-dot" aria-hidden="true"></span>
+        <span id="hero-version">v2026.821.2</span> 已发布 · GitHub Releases
+      </div>
+      <h1 class="hero__title reveal" style="--d:.08s">
+        一分钟装好，<br />即刻<em>开聊</em>。
+      </h1>
+      <p class="hero__sub reveal" style="--d:.16s">
+        CryoClaw 是基于 openclaw 内核的高效、易用、纯净 harness。<br />
+        零配置、零依赖的 OpenClaw 桌面客户端 —— 不需要 Node.js，不需要 npm。
+      </p>
+      <div class="hero__cta reveal" style="--d:.24s">
+        <a class="btn btn--primary btn--lg" id="download-hero" href="https://github.com/binchen6/CryoClaw/releases/latest" target="_blank" rel="noopener">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          下载 Windows 版
+        </a>
+        <a class="btn btn--ghost btn--lg" href="https://github.com/binchen6/CryoClaw" target="_blank" rel="noopener">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true"><path d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.58.11.79-.25.79-.56 0-.27-.01-1.17-.02-2.12-3.2.7-3.87-1.36-3.87-1.36-.52-1.33-1.28-1.68-1.28-1.68-1.04-.71.08-.7.08-.7 1.15.08 1.76 1.18 1.76 1.18 1.03 1.76 2.69 1.25 3.35.96.1-.75.4-1.25.72-1.54-2.55-.29-5.23-1.28-5.23-5.68 0-1.26.45-2.28 1.18-3.09-.12-.29-.51-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.78 0c2.2-1.49 3.17-1.18 3.17-1.18.62 1.59.23 2.76.11 3.05.74.81 1.18 1.83 1.18 3.09 0 4.41-2.69 5.38-5.25 5.67.41.35.77 1.05.77 2.12 0 1.53-.01 2.76-.01 3.14 0 .31.2.68.8.56A10.52 10.52 0 0 0 23.5 12C23.5 5.65 18.35.5 12 .5z"/></svg>
+          GitHub 仓库
+        </a>
+      </div>
+      <div class="hero__meta reveal" style="--d:.32s">
+        <span>AGPL-3.0 开源</span><i>·</i><span>Windows x64</span><i>·</i><span>内核 openclaw 2026.7.1-2 零改动</span>
+      </div>
+    </div>
+
+    <!-- 应用界面 mock：流式对话动效 -->
+    <div class="hero__mock reveal" style="--d:.2s" id="showcase">
+      <div class="mock-window">
+        <div class="mock-window__bar">
+          <span class="mock-dot"></span><span class="mock-dot"></span><span class="mock-dot"></span>
+          <span class="mock-window__title">CryoClaw</span>
+        </div>
+        <div class="mock-body">
+          <div class="mock-sidebar">
+            <div class="mock-sidebar__item is-active"><span class="mock-ico">💬</span>新对话</div>
+            <div class="mock-sidebar__item"><span class="mock-ico">⚡</span>任务</div>
+            <div class="mock-sidebar__item"><span class="mock-ico">🧩</span>技能</div>
+            <div class="mock-sidebar__item"><span class="mock-ico">📁</span>工作空间</div>
+          </div>
+          <div class="mock-chat">
+            <div class="mock-msg mock-msg--user">帮我总结这份周报的重点</div>
+            <div class="mock-msg mock-msg--ai">
+              <span id="stream-text"></span><span class="caret" aria-hidden="true"></span>
+            </div>
+            <div class="mock-composer">
+              <span class="mock-composer__placeholder">输入消息或上传文件…</span>
+              <span class="mock-composer__send">↑</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="hero__glow" aria-hidden="true"></div>
+    </div>
+  </div>
+
+  <!-- 统计条 -->
+  <div class="stats reveal" style="--d:.4s">
+    <div class="stat"><span class="stat__num" data-count="0.6" data-suffix="s">0s</span><span class="stat__label">冷启动见界面</span></div>
+    <div class="stat"><span class="stat__num" data-count="487">0</span><span class="stat__label">测试用例全绿</span></div>
+    <div class="stat"><span class="stat__num" data-count="237">0</span><span class="stat__label">内核 RPC 方法</span></div>
+    <div class="stat"><span class="stat__num" data-count="53" data-suffix="MB">0MB</span><span class="stat__label">内核存储裁剪</span></div>
+  </div>
+</section>
+
+<!-- ══════════ 特性 ══════════ -->
+<section class="section" id="features">
+  <div class="section__head reveal">
+    <span class="section__eyebrow">FEATURES</span>
+    <h2 class="section__title">为「好用」做的系统性重设计</h2>
+    <p class="section__sub">在 OneClaw 之上重构：视觉、设置架构、流式渲染、模型管理、更新链路，全部重来一遍。</p>
+  </div>
+
+  <div class="feature-grid">
+    <div class="feature-card reveal">
+      <div class="feature-card__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></svg></div>
+      <h3>丝滑流式渲染</h3>
+      <p>逐帧纯文本流式 + 终态一次性排版，消除逐帧全量 markdown 的 O(n²) 卡顿；折叠区懒渲染，长对话也稳。</p>
+    </div>
+    <div class="feature-card reveal" style="--d:.06s">
+      <div class="feature-card__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M2 9h20"/><circle cx="6" cy="6.5" r=".5"/><circle cx="9" cy="6.5" r=".5"/></svg></div>
+      <h3>冰蓝设计体系</h3>
+      <p>TraeWork design token + cc-* 原语组件，浅色/暗色双主题，lucide 统一图标。干净、克制、工程感。</p>
+    </div>
+    <div class="feature-card reveal" style="--d:.12s">
+      <div class="feature-card__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9"/><polyline points="21 3 21 9 15 9"/></svg></div>
+      <h3>双通道自动更新</h3>
+      <p>应用本体走 GitHub Releases 差分下载、静默换装；内核能力走独立升级器，可升级、可回滚、有更新日志。</p>
+    </div>
+    <div class="feature-card reveal">
+      <div class="feature-card__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M1 9h3M1 15h3M20 9h3M20 15h3"/></svg></div>
+      <h3>模型管理重设计</h3>
+      <p>provider 分组、拖拽排序、fallback 链、能力徽标（思考/上下文/图像）、密钥有效性探测，四处选择器联动。</p>
+    </div>
+    <div class="feature-card reveal" style="--d:.06s">
+      <div class="feature-card__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1 7 17M17 7l2.1-2.1"/></svg></div>
+      <h3>思考强度全档位</h3>
+      <p>按模型能力正确开放思考档位 —— Kimi K3 支持 low / medium / high / xhigh / max，不再被误限为开/关。</p>
+    </div>
+    <div class="feature-card reveal" style="--d:.12s">
+      <div class="feature-card__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>
+      <h3>多渠道远程控制</h3>
+      <p>飞书 / 企业微信 / 钉钉 / QQ / 微信 —— 设置里扫码绑定，让 AI 在你团队的 IM 里干活。</p>
+    </div>
+    <div class="feature-card reveal">
+      <div class="feature-card__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></svg></div>
+      <h3>安全与隐私</h3>
+      <p>API Key 只存本机；全部 IPC 过 sender guard；日志统一归集并脱敏；一键导出诊断包（自动脱敏）。</p>
+    </div>
+    <div class="feature-card reveal" style="--d:.06s">
+      <div class="feature-card__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg></div>
+      <h3>插件生态</h3>
+      <p>设置页管理已安装插件（启停/卸载），内置 ClawHub 插件市场，搜索、一键安装，告别命令行。</p>
+    </div>
+    <div class="feature-card reveal" style="--d:.12s">
+      <div class="feature-card__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a9 9 0 1 0 9 9"/><path d="M12 7v5l3 3"/><path d="M17 3h4v4"/></svg></div>
+      <h3>会话回放与分支</h3>
+      <p>压缩回放点任意 rewind / fork 出新会话；消息引用、失败重发、Ctrl+N / Ctrl+L 快捷键，全流程顺手。</p>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════ 对比 ══════════ -->
+<section class="section section--alt">
+  <div class="section__head reveal">
+    <span class="section__eyebrow">WHY CRYOCLAW</span>
+    <h2 class="section__title">不只是换个皮肤</h2>
+  </div>
+  <div class="compare reveal">
+    <div class="compare__row compare__row--head"><span>维度</span><span>OneClaw</span><span class="compare__hl">CryoClaw</span></div>
+    <div class="compare__row"><span>视觉设计</span><span>原版主题</span><span class="compare__hl">冰蓝 TraeWork 体系 · 双主题 · lucide 图标</span></div>
+    <div class="compare__row"><span>流式渲染</span><span>逐帧全量 markdown</span><span class="compare__hl">逐帧纯文本 + 终态排版，无 O(n²) 卡顿</span></div>
+    <div class="compare__row"><span>更新策略</span><span>CDN 全量包</span><span class="compare__hl">GitHub Releases + blockmap 差分 + 内核双通道</span></div>
+    <div class="compare__row"><span>启动速度</span><span>—</span><span class="compare__hl">窗口先行 + 内核并行 + V8 编译缓存 ≈ 0.6s</span></div>
+    <div class="compare__row"><span>存储体积</span><span>279.6 MB</span><span class="compare__hl">内核 asar 裁剪至 226.8 MB</span></div>
+    <div class="compare__row"><span>测试</span><span>—</span><span class="compare__hl">487 用例全量回归，0 fail 硬指标</span></div>
+  </div>
+</section>
+
+<!-- ══════════ 模型提供方 ══════════ -->
+<section class="section" id="providers">
+  <div class="section__head reveal">
+    <span class="section__eyebrow">PROVIDERS</span>
+    <h2 class="section__title">主流模型，全都能用</h2>
+    <p class="section__sub">主模型 + fallback 备用链，自动降级有提示；也支持 Ollama 本地模型与 OpenAI / Anthropic 兼容接口。</p>
+  </div>
+  <div class="provider-marquee reveal" aria-hidden="false">
+    <div class="provider-track" id="provider-track">
+      <span class="provider-chip">Claude</span>
+      <span class="provider-chip">GPT / Codex</span>
+      <span class="provider-chip">Gemini</span>
+      <span class="provider-chip">Kimi</span>
+      <span class="provider-chip">DeepSeek</span>
+      <span class="provider-chip">GLM</span>
+      <span class="provider-chip">Qwen</span>
+      <span class="provider-chip">小米 MiMo</span>
+      <span class="provider-chip">Ollama</span>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════ 下载 ══════════ -->
+<section class="section section--cta" id="download">
+  <div class="cta-card reveal">
+    <div class="cta-card__glow" aria-hidden="true"></div>
+    <img src="assets/icon.png" alt="" class="cta-card__logo" />
+    <h2>现在就开始</h2>
+    <p>下载安装包 → 选择服务商，输入 API Key → 开始对话。<br />不需要 Node.js，不需要 npm，不需要配置环境变量。</p>
+    <div class="cta-card__actions">
+      <a class="btn btn--primary btn--lg" id="download-cta" href="https://github.com/binchen6/CryoClaw/releases/latest" target="_blank" rel="noopener">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        <span id="download-label">下载 CryoClaw for Windows</span>
+      </a>
+      <a class="btn btn--ghost btn--lg" href="https://github.com/binchen6/CryoClaw/releases" target="_blank" rel="noopener">全部版本</a>
+    </div>
+    <div class="cta-card__meta">
+      <span id="download-version">最新版本 v2026.821.2</span><i>·</i><span>Windows 10/11 x64</span><i>·</i><span>AGPL-3.0</span>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════ 页脚 ══════════ -->
+<footer class="footer">
+  <div class="footer__inner">
+    <div class="footer__brand">
+      <img src="assets/icon.png" alt="" class="footer__logo" />
+      <div>
+        <div class="footer__name">CryoClaw</div>
+        <div class="footer__slogan">高效、易用、纯净的 OpenClaw harness</div>
+      </div>
+    </div>
+    <div class="footer__links">
+      <a href="https://github.com/binchen6/CryoClaw" target="_blank" rel="noopener">GitHub</a>
+      <a href="https://github.com/binchen6/CryoClaw/releases" target="_blank" rel="noopener">Releases</a>
+      <a href="https://github.com/binchen6/CryoClaw/blob/main/LICENSE" target="_blank" rel="noopener">License</a>
+      <a href="https://github.com/openclaw/openclaw" target="_blank" rel="noopener">OpenClaw 内核</a>
+    </div>
+  </div>
+  <div class="footer__copy">© 2026 CryoClaw · AGPL-3.0-only · 基于 OneClaw 二改重构，内核 openclaw 零改动</div>
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>

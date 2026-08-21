@@ -23,7 +23,7 @@ import {
   isValidHttpBaseUrl,
 } from "../setup/setup-constants.ts";
 import {
-  getCachedGatewayModels, loadGatewayModels, catalogModelSupportsImage,
+  getCachedGatewayModels, getCachedGatewayModelEntries, loadGatewayModels, catalogModelSupportsImage,
 } from "../../controllers/models.ts";
 import {
   getConfigSnapshot, getCachedConfigSnapshot, patchConfig,
@@ -33,7 +33,7 @@ import { showConfirm } from "../confirm-dialog.ts";
 import {
   groupProvidersFromConfig, readFallbacks, reorderIds, applyIdOrder,
   resolveAddTarget as resolveAddTargetFor, buildModelEntry, applyKimiCodeLinkage,
-  formatContextWindow,
+  formatContextWindow, applyCapabilityOverrides, deriveOverridesFromEntry,
   type AddSelection,
   type ProviderGroup, type GroupedProvider, type ProviderModelEntry, type ProviderGroupId,
 } from "./tab-provider.lib.ts";
@@ -44,6 +44,9 @@ import {
 } from "./model-org.lib.ts";
 import { renderModelOptionsGrouped } from "../../components/model-options.ts";
 import { deriveUsageView, type UsageLabels } from "./tab-provider-usage.lib.ts";
+
+/** 编辑器可选思考档位（off/on 为基础开关、adaptive 为 provider 专有，不暴露） */
+const EDITABLE_THINKING_LEVELS = ["minimal", "low", "medium", "high", "xhigh", "max"] as const;
 
 /* ── types ── */
 
@@ -62,6 +65,18 @@ interface DropTarget {
   kind: "model" | "fallback" | "org-group";
   id: string;
   position: "before" | "after";
+}
+
+/** 能力编辑草稿（编辑既有模型与分组追加共用） */
+interface CapsDraft {
+  contextWindow: string;
+  contextTokens: string;
+  maxTokens: string;
+  image: boolean;
+  video: boolean;
+  audio: boolean;
+  reasoning: boolean;
+  thinkingLevels: string[];
 }
 
 /* ── module-level state ── */
@@ -98,6 +113,15 @@ function createProviderState() {
     addApiType: "openai-completions",
     addShowCustomModelInput: false,
     saving: false,
+    /** 分组追加模式：目标 providerKey（复用其端点与密钥）；null = 完整添加流程 */
+    addToProviderKey: null as string | null,
+    /** 追加模式的能力覆盖草稿（选型时从目录初始化） */
+    addCaps: null as CapsDraft | null,
+    // 模型能力编辑
+    editingModelKey: null as string | null,
+    editingProviderKey: "" as string,
+    editDraft: null as CapsDraft | null,
+    editSaving: false,
     // Kimi OAuth / 用量
     oauthLoggedIn: false,
     oauthLoading: false,
@@ -610,11 +634,196 @@ function toggleAddPanel(state: AppViewState) {
   s.addOpen = !s.addOpen;
   s.error = null;
   s.successMsg = null;
+  if (!s.addOpen) {
+    s.addToProviderKey = null;
+    s.addCaps = null;
+  }
   if (s.addOpen) {
     const options = getAddModelOptions();
     if (!s.addModelId && options.length) s.addModelId = options[0];
   }
   state.requestUpdate();
+}
+
+/* ── 分组追加模式（复用 provider 端点与密钥） ── */
+
+/** provider key → 动态目录 key（目录里存在才用；kimi-coding 有固定兜底模型） */
+function catalogProviderForKey(providerKey: string): string | null {
+  const catalog = getCachedGatewayModels();
+  if (catalog?.[providerKey]?.length) return providerKey;
+  if (providerKey === "kimi-coding") return "kimi-coding";
+  return null;
+}
+
+function getGroupAddModelOptions(providerKey: string): string[] {
+  const cp = catalogProviderForKey(providerKey);
+  if (!cp) return [];
+  const catalog = getCachedGatewayModels()?.[cp];
+  if (catalog?.length) return catalog;
+  if (cp === "kimi-coding") return [KIMI_CODE_FIXED_MODEL];
+  return [];
+}
+
+function emptyCapsDraft(): CapsDraft {
+  return { contextWindow: "", contextTokens: "", maxTokens: "", image: false, video: false, audio: false, reasoning: false, thinkingLevels: [] };
+}
+
+/** 追加模式下选中模型后，从目录初始化能力草稿（用户未改动则与目录一致） */
+function initAddCapsFromCatalog(providerKey: string, modelId: string) {
+  const cp = catalogProviderForKey(providerKey);
+  const cat = cp ? getCachedGatewayModelEntries()?.[cp]?.find((m) => m.id === modelId) : undefined;
+  const draft = emptyCapsDraft();
+  if (cat) {
+    draft.image = Array.isArray(cat.input) ? cat.input.includes("image") : false;
+    draft.video = Array.isArray(cat.input) ? cat.input.includes("video") : false;
+    draft.audio = Array.isArray(cat.input) ? cat.input.includes("audio") : false;
+    draft.reasoning = cat.reasoning === true;
+    draft.contextWindow = typeof cat.contextWindow === "number" ? String(cat.contextWindow) : "";
+    const efforts = (cat as any)?.compat?.supportedReasoningEfforts;
+    if (Array.isArray(efforts)) {
+      draft.thinkingLevels = efforts.filter((e: unknown): e is string => typeof e === "string" && e !== "off");
+    }
+  }
+  s.addCaps = draft;
+}
+
+function startAddToGroup(prov: GroupedProvider, state: AppViewState) {
+  s.addToProviderKey = prov.providerKey;
+  s.addOpen = true;
+  s.error = null;
+  s.successMsg = null;
+  s.addModelId = "";
+  s.addCustomModelId = "";
+  s.addShowCustomModelInput = false;
+  s.addAlias = "";
+  const options = getGroupAddModelOptions(prov.providerKey);
+  if (options.length) {
+    s.addModelId = options[0];
+    initAddCapsFromCatalog(prov.providerKey, options[0]);
+  } else {
+    s.addShowCustomModelInput = true;
+    s.addCaps = emptyCapsDraft();
+  }
+  state.requestUpdate();
+}
+
+/** 由能力草稿构造 overrides；forAdd=true 时空白字段=不触碰（跟随目录），否则=删除（继承/回默认） */
+function buildOverridesFromCaps(caps: CapsDraft, forAdd: boolean) {
+  const num = (raw: string) => {
+    const v = raw.trim();
+    if (!v) return forAdd ? undefined : null;
+    const n = Number(v);
+    return Number.isFinite(n) && n > 0 ? Math.floor(n) : forAdd ? undefined : null;
+  };
+  return {
+    contextWindow: num(caps.contextWindow),
+    contextTokens: num(caps.contextTokens),
+    maxTokens: num(caps.maxTokens),
+    modalities: { image: caps.image, video: caps.video, audio: caps.audio },
+    reasoning: caps.reasoning,
+    thinkingLevels: caps.reasoning ? caps.thinkingLevels : [],
+  };
+}
+
+async function handleAddToGroupSave(state: AppViewState) {
+  if (s.saving || s.busy) return;
+  const providerKey = s.addToProviderKey;
+  if (!providerKey) return;
+  const modelId = getAddModelId();
+  if (!modelId) {
+    s.error = t("setup.error.noModelId");
+    state.requestUpdate();
+    return;
+  }
+  const snap = getCachedConfigSnapshot();
+  const existingProv = (snap?.config?.models as any)?.providers?.[providerKey];
+  const hasModel = Array.isArray(existingProv?.models) && existingProv.models.some((m: any) => (typeof m === "string" ? m : m?.id) === modelId);
+  if (hasModel) {
+    s.error = t("settings.provider.modelExists");
+    state.requestUpdate();
+    return;
+  }
+
+  s.saving = true;
+  s.error = null;
+  state.requestUpdate();
+  try {
+    const catalogProvider = catalogProviderForKey(providerKey);
+    const supportsImage = catalogModelSupportsImage(catalogProvider ?? providerKey, modelId) ?? s.addCaps?.image ?? false;
+    const entry = buildModelEntry(
+      catalogProvider, modelId, s.addAlias.trim(), supportsImage,
+      s.addCaps ? buildOverridesFromCaps(s.addCaps, true) : undefined,
+    );
+    const hasPrimary = !!(snap?.config?.agents as any)?.defaults?.model?.primary;
+    const ok = await runPatch(state, draft => {
+      const providers = ((draft.models ??= {}) as any).providers ??= {};
+      const prov = (providers[providerKey] ??= { models: [] });
+      if (!Array.isArray(prov.models)) prov.models = [];
+      prov.models.push(entry);
+      if (!hasPrimary) {
+        (((draft.agents ??= {}) as any).defaults ??= {}).model ??= {};
+        (draft.agents as any).defaults.model.primary = `${providerKey}/${modelId}`;
+      }
+    });
+    if (ok) {
+      s.addToProviderKey = null;
+      s.addCaps = null;
+      closeAddPanelAfterSave(state);
+    }
+  } finally {
+    s.saving = false;
+    state.requestUpdate();
+  }
+}
+
+/* ── 模型能力编辑 ── */
+
+function startModelEdit(prov: GroupedProvider, entry: ProviderModelEntry, state: AppViewState) {
+  const snap = getCachedConfigSnapshot();
+  const rawModels = (snap?.config?.models as any)?.providers?.[prov.providerKey]?.models;
+  const raw = Array.isArray(rawModels)
+    ? rawModels.find((m: any) => (typeof m === "string" ? m : m?.id) === entry.id)
+    : undefined;
+  s.editingModelKey = entry.key;
+  s.editingProviderKey = prov.providerKey;
+  s.editDraft = deriveOverridesFromEntry(raw);
+  s.error = null;
+  state.requestUpdate();
+}
+
+function cancelModelEdit(state: AppViewState) {
+  s.editingModelKey = null;
+  s.editDraft = null;
+  state.requestUpdate();
+}
+
+async function handleModelEditSave(entry: ProviderModelEntry, state: AppViewState) {
+  if (s.editSaving || s.busy || !s.editDraft) return;
+  const providerKey = s.editingProviderKey;
+  const overrides = buildOverridesFromCaps(s.editDraft, false);
+  s.editSaving = true;
+  s.error = null;
+  state.requestUpdate();
+  try {
+    const ok = await runPatch(state, draft => {
+      const models = (draft.models as any)?.providers?.[providerKey]?.models;
+      if (!Array.isArray(models)) return;
+      const idx = models.findIndex((m: any) => (typeof m === "string" ? m : m?.id) === entry.id);
+      if (idx < 0) return;
+      const raw = models[idx];
+      // 裸字符串 entry 升格为对象（内核 schema 要求 {id,name}，顺带修复）
+      const base = typeof raw === "string" ? { id: raw, name: entry.name || raw } : { ...raw };
+      if (!base.name) base.name = entry.name || entry.id;
+      models[idx] = applyCapabilityOverrides(base, overrides);
+    });
+    if (ok) {
+      s.editingModelKey = null;
+      s.editDraft = null;
+    }
+  } finally {
+    s.editSaving = false;
+    state.requestUpdate();
+  }
 }
 
 function onAddProviderChange(provider: string, state: AppViewState) {
@@ -978,6 +1187,88 @@ function renderOrgManager(state: AppViewState) {
   `;
 }
 
+/* ── 能力编辑器（模型卡片编辑与分组追加共用） ── */
+
+function renderCapsEditor(draft: CapsDraft, state: AppViewState) {
+  const numInput = (
+    label: string,
+    field: "contextWindow" | "contextTokens" | "maxTokens",
+    placeholder: string,
+  ) => html`
+    <div class="oc-settings__form-group">
+      <label class="oc-settings__label">${label}</label>
+      <input class="oc-settings__input" type="number" min="1" step="1" .value=${draft[field]}
+        placeholder=${placeholder}
+        @input=${(e: Event) => { draft[field] = (e.target as HTMLInputElement).value.replace(/[^\d]/g, ""); state.requestUpdate(); }} />
+    </div>
+  `;
+  const CONTEXT_PRESETS: Array<[string, number]> = [["128K", 131072], ["256K", 262144], ["512K", 524288], ["1M", 1048576]];
+  const capToggle = (label: string, field: "image" | "video" | "audio") => html`
+    <oc-toggle-switch .label=${label} .checked=${draft[field]}
+      @change=${(e: CustomEvent) => { draft[field] = e.detail.checked; state.requestUpdate(); }}
+    ></oc-toggle-switch>
+  `;
+  return html`
+    <div class="oc-caps-editor">
+      ${numInput(t("settings.provider.caps.contextWindow"), "contextWindow", t("settings.provider.caps.inheritHint"))}
+      <div class="oc-caps-editor__chips">
+        ${CONTEXT_PRESETS.map(([label, v]) => html`
+          <button class="oc-caps-chip ${draft.contextWindow === String(v) ? "is-active" : ""}"
+            @click=${() => { draft.contextWindow = String(v); state.requestUpdate(); }}>${label}</button>
+        `)}
+      </div>
+      ${numInput(t("settings.provider.caps.maxTokens"), "maxTokens", t("settings.provider.caps.inheritHint"))}
+      <div class="oc-settings__form-group">
+        <label class="oc-settings__label">${t("settings.provider.caps.modalities")}</label>
+        <div class="oc-caps-editor__toggles">
+          ${capToggle(t("settings.provider.caps.image"), "image")}
+          ${capToggle(t("settings.provider.caps.video"), "video")}
+          ${capToggle(t("settings.provider.caps.audio"), "audio")}
+        </div>
+      </div>
+      <div class="oc-settings__form-group">
+        <oc-toggle-switch .label=${t("settings.provider.caps.reasoning")} .checked=${draft.reasoning}
+          @change=${(e: CustomEvent) => { draft.reasoning = e.detail.checked; state.requestUpdate(); }}
+        ></oc-toggle-switch>
+      </div>
+      ${draft.reasoning ? html`
+        <div class="oc-settings__form-group">
+          <label class="oc-settings__label">${t("settings.provider.caps.thinkingLevels")}</label>
+          <div class="oc-caps-editor__chips">
+            ${EDITABLE_THINKING_LEVELS.map(lv => html`
+              <button class="oc-caps-chip ${draft.thinkingLevels.includes(lv) ? "is-active" : ""}"
+                @click=${() => {
+                  const i = draft.thinkingLevels.indexOf(lv);
+                  if (i >= 0) draft.thinkingLevels.splice(i, 1);
+                  else draft.thinkingLevels.push(lv);
+                  state.requestUpdate();
+                }}>${t(`chat.thinkLevel.${lv}`)}</button>
+            `)}
+          </div>
+          <span class="oc-provider-dynamic-hint">${t("settings.provider.caps.thinkingLevelsHint")}</span>
+        </div>
+      ` : nothing}
+    </div>
+  `;
+}
+
+function renderModelEditPanel(prov: GroupedProvider, entry: ProviderModelEntry, state: AppViewState) {
+  if (!s.editDraft) return nothing;
+  return html`
+    <div class="oc-provider-edit-panel">
+      <div class="oc-provider-edit-panel__title">${t("settings.provider.editModel")} · ${entry.name}</div>
+      ${renderCapsEditor(s.editDraft, state)}
+      <div class="oc-settings__btn-row">
+        <button class="oc-settings__btn oc-settings__btn--secondary" @click=${() => cancelModelEdit(state)}>${t("settings.cancel")}</button>
+        <button class="oc-settings__btn oc-settings__btn--primary" ?disabled=${s.editSaving || s.busy}
+          @click=${() => handleModelEditSave(entry, state)}>
+          ${s.editSaving ? "..." : t("settings.save")}
+        </button>
+      </div>
+    </div>
+  `;
+}
+
 /* ── 分组渲染 ── */
 
 function renderGroup(group: ProviderGroup, state: AppViewState, fallbackRank: Map<string, number>) {
@@ -989,6 +1280,10 @@ function renderGroup(group: ProviderGroup, state: AppViewState, fallbackRank: Ma
     ? group.providers.filter(prov => prov.models.some(m => modelMatchesFilter(m, prov)))
     : group.providers;
   if (filtering && visibleProviders.length === 0) return nothing;
+  // 单 provider 组（无子头）：组头直接挂「新增模型」按钮
+  const singleProv = group.providers.length === 1 && group.groupId !== "custom" && group.providers[0].providerKey !== "kimi-coding"
+    ? group.providers[0]
+    : null;
   return html`
     <div class="oc-provider-group">
       <div class="oc-provider-group__header"
@@ -1000,6 +1295,13 @@ function renderGroup(group: ProviderGroup, state: AppViewState, fallbackRank: Ma
         <svg class="oc-provider-group__chevron ${collapsed ? "" : "is-open"}" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
         <span class="oc-provider-group__label">${groupLabel(group.groupId)}</span>
         <span class="cc-tag">${count}</span>
+        ${singleProv ? html`
+          <button class="oc-provider-group__add-btn" data-tooltip=${t("settings.provider.addModelToGroup")}
+            @click=${(e: Event) => { e.stopPropagation(); startAddToGroup(singleProv, state); }}>
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            ${t("settings.provider.addModel")}
+          </button>
+        ` : nothing}
       </div>
       ${collapsed ? nothing : visibleProviders.map(prov => renderProvider(prov, group, state, fallbackRank))}
     </div>
@@ -1020,6 +1322,10 @@ function renderProvider(prov: GroupedProvider, group: ProviderGroup, state: AppV
             ${prov.hasApiKey ? t("settings.provider.keySet") : t("settings.provider.keyMissing")}
           </span>
           <span class="oc-provider-block__actions">
+            <button class="oc-provider-list-item__action-btn" data-tooltip=${t("settings.provider.addModelToGroup")}
+              @click=${() => startAddToGroup(prov, state)}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            </button>
             ${!isKimiCoding ? html`
               <button class="oc-provider-list-item__action-btn" data-tooltip=${t("settings.provider.editKey")}
                 @click=${() => startKeyEdit(prov, state)}>
@@ -1086,11 +1392,17 @@ function renderModelCard(prov: GroupedProvider, entry: ProviderModelEntry, state
           ${entry.isDefault ? html`<span class="cc-tag cc-tag--brand">${t("settings.provider.badge.default")}</span>` : nothing}
           ${rank ? html`<span class="cc-tag">${t("settings.provider.badge.fallback")} ${rank}</span>` : nothing}
           ${entry.supportsImage ? html`<span class="cc-tag">${t("settings.provider.imageTag")}</span>` : nothing}
+          ${entry.supportsVideo ? html`<span class="cc-tag">${t("settings.provider.videoTag")}</span>` : nothing}
+          ${entry.supportsAudio ? html`<span class="cc-tag">${t("settings.provider.audioTag")}</span>` : nothing}
           ${entry.reasoning ? html`<span class="cc-tag" data-tooltip=${entry.thinkingLevels.length > 0 ? entry.thinkingLevels.join(" / ") : nothing}>${t("settings.provider.reasoningTag")}</span>` : nothing}
           ${entry.contextWindow ? html`<span class="cc-tag">${formatContextWindow(entry.contextWindow)}</span>` : nothing}
         </div>
       </div>
       <div class="oc-provider-card__actions">
+        <button class="oc-provider-list-item__action-btn" data-tooltip=${t("settings.provider.editModel")}
+          @click=${() => s.editingModelKey === entry.key ? cancelModelEdit(state) : startModelEdit(prov, entry, state)}>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
+        </button>
         <button class="oc-provider-list-item__action-btn ${assignedGroup ? "is-assigned" : ""}"
           data-tooltip=${t("settings.provider.customGroups.assign")}
           @click=${() => toggleAssignMenu(entry.key, state)}>
@@ -1128,6 +1440,7 @@ function renderModelCard(prov: GroupedProvider, entry: ProviderModelEntry, state
           ` : nothing}
         </div>
       ` : nothing}
+      ${s.editingModelKey === entry.key ? renderModelEditPanel(prov, entry, state) : nothing}
     </div>
   `;
 }
@@ -1214,7 +1527,77 @@ function renderUsagePanel(state: AppViewState) {
 
 /* ── 添加面板 ── */
 
+/** 分组追加面板：复用目标 provider 的 baseUrl/api/apiKey，仅选模型 + 别名 + 能力覆盖 */
+function renderGroupAddPanel(state: AppViewState) {
+  const providerKey = s.addToProviderKey!;
+  const options = getGroupAddModelOptions(providerKey);
+  if (!s.addCaps) s.addCaps = emptyCapsDraft();
+
+  return html`
+    <div class="oc-provider-add-panel">
+      <div class="oc-provider-add-panel__title">${t("settings.provider.addModelToGroup")}</div>
+      <div class="oc-provider-reuse-notice">
+        ${t("settings.provider.reuseGroupConfig")}<span class="oc-provider-reuse-notice__key">${providerKey}</span>
+      </div>
+
+      ${options.length > 0 ? html`
+        <div class="oc-settings__form-group">
+          <label class="oc-settings__label">${t("setup.provider.model")}</label>
+          <select class="oc-settings__select" .value=${s.addModelId}
+            @change=${(e: Event) => {
+              const v = (e.target as HTMLSelectElement).value;
+              if (v === CUSTOM_MODEL_SENTINEL) {
+                s.addShowCustomModelInput = true;
+                s.addModelId = v;
+                s.addCaps = emptyCapsDraft();
+              } else {
+                s.addShowCustomModelInput = false;
+                s.addModelId = v;
+                s.addCustomModelId = "";
+                initAddCapsFromCatalog(providerKey, v);
+              }
+              state.requestUpdate();
+            }}>
+            ${options.map(m => html`<option value=${m} ?selected=${s.addModelId === m}>${m}</option>`)}
+            <option value=${CUSTOM_MODEL_SENTINEL}>${t("setup.provider.customModelOption")}</option>
+          </select>
+          <span class="oc-provider-dynamic-hint">${t("settings.provider.modelsDynamicHint")}</span>
+        </div>
+      ` : nothing}
+
+      ${s.addShowCustomModelInput || options.length === 0 ? html`
+        <div class="oc-settings__form-group">
+          <label class="oc-settings__label">${t("setup.provider.customModelId")}</label>
+          <input class="oc-settings__input" .value=${s.addCustomModelId}
+            @input=${(e: Event) => { s.addCustomModelId = (e.target as HTMLInputElement).value; state.requestUpdate(); }} />
+        </div>
+      ` : nothing}
+
+      <div class="oc-settings__form-group">
+        <label class="oc-settings__label">${t("settings.provider.modelAlias")}</label>
+        <input class="oc-settings__input" .value=${s.addAlias} placeholder=${t("settings.provider.modelAliasPlaceholder")}
+          @input=${(e: Event) => { s.addAlias = (e.target as HTMLInputElement).value; state.requestUpdate(); }} />
+      </div>
+
+      <details class="oc-settings__details-advanced">
+        <summary>${t("settings.provider.caps.title")}</summary>
+        ${renderCapsEditor(s.addCaps, state)}
+      </details>
+
+      <div class="oc-settings__btn-row">
+        <button class="oc-settings__btn oc-settings__btn--secondary" @click=${() => toggleAddPanel(state)}>${t("settings.cancel")}</button>
+        <button class="oc-settings__btn oc-settings__btn--primary" ?disabled=${s.saving || s.busy}
+          @click=${() => handleAddToGroupSave(state)}>
+          ${s.saving ? "..." : t("settings.provider.addModelSave")}
+        </button>
+      </div>
+    </div>
+  `;
+}
+
 function renderAddPanel(state: AppViewState) {
+  // 分组追加模式：复用 provider 端点与密钥，只选模型 + 别名 + 能力
+  if (s.addToProviderKey) return renderGroupAddPanel(state);
   const target = resolveAddTarget();
   const options = getAddModelOptions();
   const isOAuth = isKimiCodeAdd();

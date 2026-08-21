@@ -246,7 +246,7 @@ function renderInstalledRow(state: AppViewState, plugin: InstalledPluginView) {
 }
 
 function renderMarketRow(state: AppViewState, plugin: MarketPluginView) {
-  const installed = s.installed.some((p) => p.id === plugin.name);
+  const installed = s.installed.some((p) => p.id === plugin.name || p.id === plugin.runtimeId);
   const busy = s.busyName === plugin.name;
   return html`
     <div class="oc-plugins__row">
