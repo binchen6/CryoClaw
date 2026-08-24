@@ -63,6 +63,19 @@ function loadAnalyticsModule(options = {}) {
           };
         case "./constants":
           return { resolveResourcesPath: () => resourcesPath };
+        case "./build-config":
+          // 与 src/build-config.ts buildConfigPathCandidates 保持一致的候选路径列表。
+          return {
+            buildConfigPathCandidates: () => {
+              const appDir = path.dirname(appPath);
+              return Array.from(new Set([
+                path.join(resourcesPath, "build-config.json"),
+                path.join(resourcesPath, "resources", "build-config.json"),
+                path.join(appDir, "resources", "build-config.json"),
+                path.join(appDir, "build-config.json"),
+              ]));
+            },
+          };
         case "./cryoclaw-config":
           return {
             ensureDeviceId: () => "12345678-1234-5678-9abc-def012345678",

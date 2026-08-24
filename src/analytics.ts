@@ -1,8 +1,7 @@
 import { app } from "electron";
 import * as fs from "fs";
 import * as os from "os";
-import * as path from "path";
-import { resolveResourcesPath } from "./constants";
+import { buildConfigPathCandidates } from "./build-config";
 import { ensureDeviceId, getChannelId } from "./cryoclaw-config";
 import * as log from "./logger";
 import {
@@ -16,7 +15,6 @@ const HEARTBEAT_MS = 60 * 60 * 1000;
 const DEFAULT_REQUEST_TIMEOUT_MS = 8_000;
 const DEFAULT_RETRY_DELAYS_MS = [0, 500, 1_500];
 const SHUTDOWN_FLUSH_TIMEOUT_MS = 1_500;
-const BUILD_CONFIG_NAME = "build-config.json";
 
 // darwin 返回 "Apple M1 Pro" 这类；其他平台 DataFinder 允许留空。模块加载时算一次。
 const DEVICE_MODEL = process.platform === "darwin"
@@ -106,20 +104,6 @@ function volcanoCustomProps(): Record<string, string> {
   const channelId = getChannelId();
   if (channelId) props.channel_id = channelId;
   return props;
-}
-
-// 构建 build-config.json 候选路径，兼容打包安装与本地 unpacked 运行。
-function buildConfigPathCandidates(): string[] {
-  const appPath = app.getAppPath();
-  const appDir = path.dirname(appPath);
-  const candidates = [
-    path.join(resolveResourcesPath(), BUILD_CONFIG_NAME),
-    path.join(process.resourcesPath, "resources", BUILD_CONFIG_NAME),
-    path.join(process.resourcesPath, BUILD_CONFIG_NAME),
-    path.join(appDir, "resources", BUILD_CONFIG_NAME),
-    path.join(appDir, BUILD_CONFIG_NAME),
-  ];
-  return Array.from(new Set(candidates));
 }
 
 function emptyBuildConfig(): PartialBuildConfig {

@@ -1,41 +1,19 @@
 import assert from "node:assert/strict";
 import { GatewayBrowserClient } from "./gateway.ts";
+import { FakeScheduler } from "../test-utils/fake-scheduler.ts";
 
-type TimerTask = {
-  id: number;
-  fn: () => void;
-};
+// 最小可控定时器，手动推进回调。
+class FakeTimers extends FakeScheduler<() => void> {
+  constructor() {
+    super((fn) => fn());
+  }
 
-class FakeTimers {
-  private nextId = 1;
-  private tasks = new Map<number, TimerTask>();
-
-  // 提供最小可控定时器，实现手动推进回调。
   setTimeout(fn: () => void): number {
-    const id = this.nextId++;
-    this.tasks.set(id, { id, fn });
-    return id;
+    return this.schedule(fn);
   }
 
   clearTimeout(id: number) {
-    this.tasks.delete(id);
-  }
-
-  // 单步推进一个定时器，便于把握 connect 和 request timeout 的先后顺序。
-  runNext() {
-    const task = [...this.tasks.values()].sort((a, b) => a.id - b.id)[0];
-    if (!task) {
-      return;
-    }
-    this.tasks.delete(task.id);
-    task.fn();
-  }
-
-  // 顺序执行当前所有待触发回调，模拟时间推进。
-  runAll() {
-    while (this.tasks.size > 0) {
-      this.runNext();
-    }
+    this.cancel(id);
   }
 }
 

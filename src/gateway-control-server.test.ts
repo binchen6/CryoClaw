@@ -171,14 +171,19 @@ test("未知路径返回 404，GET restart 返回 404", async () => {
   }
 });
 
-test("端口被占用时递增重试到下一个端口", async () => {
-  // 先占住一个随机端口作为 basePort
+// 占住一个随机端口作为测试用 basePort（两个端口重试用例共用）。
+async function occupyRandomPort(): Promise<{ blocker: http.Server; port: number }> {
   const blocker = http.createServer();
   await new Promise<void>((resolve, reject) => {
     blocker.once("error", reject);
     blocker.listen(0, "127.0.0.1", () => resolve());
   });
-  const basePort = (blocker.address() as { port: number }).port;
+  return { blocker, port: (blocker.address() as { port: number }).port };
+}
+
+test("端口被占用时递增重试到下一个端口", async () => {
+  // 先占住一个随机端口作为 basePort
+  const { blocker, port: basePort } = await occupyRandomPort();
 
   const server = http.createServer(createGatewayControlRequestHandler(makeDeps(), TEST_TOKEN));
   try {
@@ -193,12 +198,7 @@ test("端口被占用时递增重试到下一个端口", async () => {
 });
 
 test("全部候选端口被占用时 listen 失败", async () => {
-  const blocker = http.createServer();
-  await new Promise<void>((resolve, reject) => {
-    blocker.once("error", reject);
-    blocker.listen(0, "127.0.0.1", () => resolve());
-  });
-  const basePort = (blocker.address() as { port: number }).port;
+  const { blocker, port: basePort } = await occupyRandomPort();
 
   const server = http.createServer();
   try {

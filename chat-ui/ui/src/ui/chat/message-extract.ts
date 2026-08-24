@@ -42,34 +42,13 @@ export function stripEnvelope(text: string): string {
 }
 
 export function extractText(message: unknown): string | null {
+  const raw = extractRawText(message);
+  if (raw === null) {
+    return null;
+  }
   const m = message as Record<string, unknown>;
   const role = typeof m.role === "string" ? m.role : "";
-  const content = m.content;
-  if (typeof content === "string") {
-    const processed = role === "assistant" ? stripThinkingTags(content) : stripEnvelope(content);
-    return processed;
-  }
-  if (Array.isArray(content)) {
-    const parts = content
-      .map((p) => {
-        const item = p as Record<string, unknown>;
-        if (item.type === "text" && typeof item.text === "string") {
-          return item.text;
-        }
-        return null;
-      })
-      .filter((v): v is string => typeof v === "string");
-    if (parts.length > 0) {
-      const joined = parts.join("\n");
-      const processed = role === "assistant" ? stripThinkingTags(joined) : stripEnvelope(joined);
-      return processed;
-    }
-  }
-  if (typeof m.text === "string") {
-    const processed = role === "assistant" ? stripThinkingTags(m.text) : stripEnvelope(m.text);
-    return processed;
-  }
-  return null;
+  return role === "assistant" ? stripThinkingTags(raw) : stripEnvelope(raw);
 }
 
 export function extractTextCached(message: unknown): string | null {
@@ -129,25 +108,32 @@ export function extractThinkingCached(message: unknown): string | null {
   return value;
 }
 
+// 提取 content 数组中的 text 块并拼接（extractRawText / extractText 共用）。
+function collectContentText(content: unknown): string | null {
+  if (!Array.isArray(content)) {
+    return null;
+  }
+  const parts = content
+    .map((p) => {
+      const item = p as Record<string, unknown>;
+      if (item.type === "text" && typeof item.text === "string") {
+        return item.text;
+      }
+      return null;
+    })
+    .filter((v): v is string => typeof v === "string");
+  return parts.length > 0 ? parts.join("\n") : null;
+}
+
 export function extractRawText(message: unknown): string | null {
   const m = message as Record<string, unknown>;
   const content = m.content;
   if (typeof content === "string") {
     return content;
   }
-  if (Array.isArray(content)) {
-    const parts = content
-      .map((p) => {
-        const item = p as Record<string, unknown>;
-        if (item.type === "text" && typeof item.text === "string") {
-          return item.text;
-        }
-        return null;
-      })
-      .filter((v): v is string => typeof v === "string");
-    if (parts.length > 0) {
-      return parts.join("\n");
-    }
+  const joined = collectContentText(content);
+  if (joined !== null) {
+    return joined;
   }
   if (typeof m.text === "string") {
     return m.text;

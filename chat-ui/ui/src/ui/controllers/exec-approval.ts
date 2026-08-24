@@ -36,7 +36,13 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
-export function parseExecApprovalRequested(payload: unknown): ExecApprovalRequest | null {
+// 审批 payload 公共外壳校验（exec / plugin 两个解析器共用）：id + request + 时间戳。
+function parseApprovalEnvelope(payload: unknown): {
+  id: string;
+  request: Record<string, unknown>;
+  createdAtMs: number;
+  expiresAtMs: number;
+} | null {
   if (!isRecord(payload)) {
     return null;
   }
@@ -45,17 +51,26 @@ export function parseExecApprovalRequested(payload: unknown): ExecApprovalReques
   if (!id || !isRecord(request)) {
     return null;
   }
-  const command = typeof request.command === "string" ? request.command.trim() : "";
-  if (!command) {
-    return null;
-  }
   const createdAtMs = typeof payload.createdAtMs === "number" ? payload.createdAtMs : 0;
   const expiresAtMs = typeof payload.expiresAtMs === "number" ? payload.expiresAtMs : 0;
   if (!createdAtMs || !expiresAtMs) {
     return null;
   }
+  return { id, request, createdAtMs, expiresAtMs };
+}
+
+export function parseExecApprovalRequested(payload: unknown): ExecApprovalRequest | null {
+  const env = parseApprovalEnvelope(payload);
+  if (!env) {
+    return null;
+  }
+  const { request } = env;
+  const command = typeof request.command === "string" ? request.command.trim() : "";
+  if (!command) {
+    return null;
+  }
   return {
-    id,
+    id: env.id,
     kind: "exec",
     request: {
       command,
@@ -67,8 +82,8 @@ export function parseExecApprovalRequested(payload: unknown): ExecApprovalReques
       resolvedPath: typeof request.resolvedPath === "string" ? request.resolvedPath : null,
       sessionKey: typeof request.sessionKey === "string" ? request.sessionKey : null,
     },
-    createdAtMs,
-    expiresAtMs,
+    createdAtMs: env.createdAtMs,
+    expiresAtMs: env.expiresAtMs,
   };
 }
 
@@ -77,28 +92,20 @@ export function parseExecApprovalRequested(payload: unknown): ExecApprovalReques
  * payload 无 command 字段，标题/说明在 request.title / request.description。
  */
 export function parsePluginApprovalRequested(payload: unknown): ExecApprovalRequest | null {
-  if (!isRecord(payload)) {
+  const env = parseApprovalEnvelope(payload);
+  if (!env) {
     return null;
   }
-  const id = typeof payload.id === "string" ? payload.id.trim() : "";
-  const request = payload.request;
-  if (!id || !isRecord(request)) {
-    return null;
-  }
+  const { request } = env;
   const title = typeof request.title === "string" ? request.title.trim() : "";
   if (!title) {
-    return null;
-  }
-  const createdAtMs = typeof payload.createdAtMs === "number" ? payload.createdAtMs : 0;
-  const expiresAtMs = typeof payload.expiresAtMs === "number" ? payload.expiresAtMs : 0;
-  if (!createdAtMs || !expiresAtMs) {
     return null;
   }
   const allowedDecisions = Array.isArray(request.allowedDecisions)
     ? request.allowedDecisions.filter((d): d is string => typeof d === "string")
     : null;
   return {
-    id,
+    id: env.id,
     kind: "plugin",
     request: {
       command: "",
@@ -108,8 +115,8 @@ export function parsePluginApprovalRequested(payload: unknown): ExecApprovalRequ
     title,
     description: typeof request.description === "string" ? request.description : null,
     allowedDecisions: allowedDecisions && allowedDecisions.length > 0 ? allowedDecisions : null,
-    createdAtMs,
-    expiresAtMs,
+    createdAtMs: env.createdAtMs,
+    expiresAtMs: env.expiresAtMs,
   };
 }
 

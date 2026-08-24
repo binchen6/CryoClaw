@@ -13,6 +13,7 @@ import { html, nothing } from "lit";
 import type { AppViewState } from "../../app-view-state.ts";
 import { t, getLocale } from "../../i18n.ts";
 import * as ipc from "../../data/ipc-bridge.ts";
+import { runKimiOAuthLogin } from "../../data/kimi-oauth-flow.ts";
 import "../../components/toggle-switch.ts";
 import "../../components/password-input.ts";
 import "../../components/message-box.ts";
@@ -997,30 +998,13 @@ function closeAddPanelAfterSave(state: AppViewState) {
 /* ── Kimi OAuth ── */
 
 async function handleOAuthLogin(state: AppViewState) {
-  if (s.oauthLoading) return;
-  s.oauthLoading = true;
-  s.oauthSuccess = false;
-  s.oauthNoMembership = false;
-  s.error = null;
-  state.requestUpdate();
-  try {
-    const result = await ipc.kimiOAuthLogin();
-    if (!result.success) {
-      s.error = result.message ?? t("setup.error.verifyFailed");
-      s.oauthLoading = false;
-      state.requestUpdate();
-      return;
-    }
-    s.pendingOAuthToken = result.accessToken ?? null;
+  await runKimiOAuthLogin(state, s, (token) => {
+    s.pendingOAuthToken = token;
     s.oauthLoading = false;
     s.oauthSuccess = true;
     s.oauthLoggedIn = true;
     state.requestUpdate();
-  } catch (e: any) {
-    s.error = t("setup.error.connection") + (e?.message ?? "");
-    s.oauthLoading = false;
-    state.requestUpdate();
-  }
+  });
 }
 
 async function handleOAuthLogout(state: AppViewState) {
@@ -1525,7 +1509,62 @@ function renderUsagePanel(state: AppViewState) {
   `;
 }
 
-/* ── 添加面板 ── */
+// ── add panel 共享表单块（renderGroupAddPanel / renderAddPanel 复用） ──
+// 模型下拉（动态目录 + 自定义哨兵项）；可选钩子给分组追加场景补 caps 初始化。
+function renderAddModelSelect(
+  options: string[],
+  state: AppViewState,
+  hooks?: { onSentinel?: () => void; onCatalogPick?: (modelId: string) => void },
+) {
+  if (options.length === 0) return nothing;
+  return html`
+    <div class="oc-settings__form-group">
+      <label class="oc-settings__label">${t("setup.provider.model")}</label>
+      <select class="oc-settings__select" .value=${s.addModelId}
+        @change=${(e: Event) => {
+          const v = (e.target as HTMLSelectElement).value;
+          if (v === CUSTOM_MODEL_SENTINEL) {
+            s.addShowCustomModelInput = true;
+            s.addModelId = v;
+            hooks?.onSentinel?.();
+          } else {
+            s.addShowCustomModelInput = false;
+            s.addModelId = v;
+            s.addCustomModelId = "";
+            hooks?.onCatalogPick?.(v);
+          }
+          state.requestUpdate();
+        }}>
+        ${options.map(m => html`<option value=${m} ?selected=${s.addModelId === m}>${m}</option>`)}
+        <option value=${CUSTOM_MODEL_SENTINEL}>${t("setup.provider.customModelOption")}</option>
+      </select>
+      <span class="oc-provider-dynamic-hint">${t("settings.provider.modelsDynamicHint")}</span>
+    </div>
+  `;
+}
+
+// 自定义模型 ID 输入（选哨兵项或目录为空时显示）
+function renderAddCustomModelInput(state: AppViewState, optionsEmpty: boolean) {
+  if (!s.addShowCustomModelInput && !optionsEmpty) return nothing;
+  return html`
+    <div class="oc-settings__form-group">
+      <label class="oc-settings__label">${t("setup.provider.customModelId")}</label>
+      <input class="oc-settings__input" .value=${s.addCustomModelId}
+        @input=${(e: Event) => { s.addCustomModelId = (e.target as HTMLInputElement).value; state.requestUpdate(); }} />
+    </div>
+  `;
+}
+
+// 模型别名输入（两个 add panel 完全一致）
+function renderAddAliasInput(state: AppViewState) {
+  return html`
+    <div class="oc-settings__form-group">
+      <label class="oc-settings__label">${t("settings.provider.modelAlias")}</label>
+      <input class="oc-settings__input" .value=${s.addAlias} placeholder=${t("settings.provider.modelAliasPlaceholder")}
+        @input=${(e: Event) => { s.addAlias = (e.target as HTMLInputElement).value; state.requestUpdate(); }} />
+    </div>
+  `;
+}
 
 /** 分组追加面板：复用目标 provider 的 baseUrl/api/apiKey，仅选模型 + 别名 + 能力覆盖 */
 function renderGroupAddPanel(state: AppViewState) {
@@ -1540,44 +1579,14 @@ function renderGroupAddPanel(state: AppViewState) {
         ${t("settings.provider.reuseGroupConfig")}<span class="oc-provider-reuse-notice__key">${providerKey}</span>
       </div>
 
-      ${options.length > 0 ? html`
-        <div class="oc-settings__form-group">
-          <label class="oc-settings__label">${t("setup.provider.model")}</label>
-          <select class="oc-settings__select" .value=${s.addModelId}
-            @change=${(e: Event) => {
-              const v = (e.target as HTMLSelectElement).value;
-              if (v === CUSTOM_MODEL_SENTINEL) {
-                s.addShowCustomModelInput = true;
-                s.addModelId = v;
-                s.addCaps = emptyCapsDraft();
-              } else {
-                s.addShowCustomModelInput = false;
-                s.addModelId = v;
-                s.addCustomModelId = "";
-                initAddCapsFromCatalog(providerKey, v);
-              }
-              state.requestUpdate();
-            }}>
-            ${options.map(m => html`<option value=${m} ?selected=${s.addModelId === m}>${m}</option>`)}
-            <option value=${CUSTOM_MODEL_SENTINEL}>${t("setup.provider.customModelOption")}</option>
-          </select>
-          <span class="oc-provider-dynamic-hint">${t("settings.provider.modelsDynamicHint")}</span>
-        </div>
-      ` : nothing}
+      ${renderAddModelSelect(options, state, {
+        onSentinel: () => { s.addCaps = emptyCapsDraft(); },
+        onCatalogPick: (v) => initAddCapsFromCatalog(providerKey, v),
+      })}
 
-      ${s.addShowCustomModelInput || options.length === 0 ? html`
-        <div class="oc-settings__form-group">
-          <label class="oc-settings__label">${t("setup.provider.customModelId")}</label>
-          <input class="oc-settings__input" .value=${s.addCustomModelId}
-            @input=${(e: Event) => { s.addCustomModelId = (e.target as HTMLInputElement).value; state.requestUpdate(); }} />
-        </div>
-      ` : nothing}
+      ${renderAddCustomModelInput(state, options.length === 0)}
 
-      <div class="oc-settings__form-group">
-        <label class="oc-settings__label">${t("settings.provider.modelAlias")}</label>
-        <input class="oc-settings__input" .value=${s.addAlias} placeholder=${t("settings.provider.modelAliasPlaceholder")}
-          @input=${(e: Event) => { s.addAlias = (e.target as HTMLInputElement).value; state.requestUpdate(); }} />
-      </div>
+      ${renderAddAliasInput(state)}
 
       <details class="oc-settings__details-advanced">
         <summary>${t("settings.provider.caps.title")}</summary>
@@ -1715,42 +1724,11 @@ function renderAddPanel(state: AppViewState) {
       `}
 
       <!-- 3. 选择模型（动态目录） -->
-      ${options.length > 0 ? html`
-        <div class="oc-settings__form-group">
-          <label class="oc-settings__label">${t("setup.provider.model")}</label>
-          <select class="oc-settings__select" .value=${s.addModelId}
-            @change=${(e: Event) => {
-              const v = (e.target as HTMLSelectElement).value;
-              if (v === CUSTOM_MODEL_SENTINEL) {
-                s.addShowCustomModelInput = true;
-                s.addModelId = v;
-              } else {
-                s.addShowCustomModelInput = false;
-                s.addModelId = v;
-                s.addCustomModelId = "";
-              }
-              state.requestUpdate();
-            }}>
-            ${options.map(m => html`<option value=${m} ?selected=${s.addModelId === m}>${m}</option>`)}
-            <option value=${CUSTOM_MODEL_SENTINEL}>${t("setup.provider.customModelOption")}</option>
-          </select>
-          <span class="oc-provider-dynamic-hint">${t("settings.provider.modelsDynamicHint")}</span>
-        </div>
-      ` : nothing}
+      ${renderAddModelSelect(options, state)}
 
-      ${s.addShowCustomModelInput || options.length === 0 ? html`
-        <div class="oc-settings__form-group">
-          <label class="oc-settings__label">${t("setup.provider.customModelId")}</label>
-          <input class="oc-settings__input" .value=${s.addCustomModelId}
-            @input=${(e: Event) => { s.addCustomModelId = (e.target as HTMLInputElement).value; state.requestUpdate(); }} />
-        </div>
-      ` : nothing}
+      ${renderAddCustomModelInput(state, options.length === 0)}
 
-      <div class="oc-settings__form-group">
-        <label class="oc-settings__label">${t("settings.provider.modelAlias")}</label>
-        <input class="oc-settings__input" .value=${s.addAlias} placeholder=${t("settings.provider.modelAliasPlaceholder")}
-          @input=${(e: Event) => { s.addAlias = (e.target as HTMLInputElement).value; state.requestUpdate(); }} />
-      </div>
+      ${renderAddAliasInput(state)}
 
       ${s.oauthNoMembership ? html`
         <div class="cc-alert cc-alert--error">

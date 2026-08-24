@@ -114,6 +114,19 @@ export function buildCronPayload(form: CronFormState) {
   return payload;
 }
 
+// 投递配置（addCronJob / updateCronJob 共用）：仅 isolated + agentTurn + 已选模式时生成。
+function buildCronDelivery(form: CronFormState) {
+  return form.sessionTarget === "isolated" &&
+    form.payloadKind === "agentTurn" &&
+    form.deliveryMode
+    ? {
+        mode: form.deliveryMode === "announce" ? "announce" : "none",
+        channel: form.deliveryChannel.trim() || "last",
+        to: form.deliveryTo.trim() || undefined,
+      }
+    : undefined;
+}
+
 export async function addCronJob(state: CronState) {
   if (!state.client || !state.connected || state.cronBusy) {
     return;
@@ -123,16 +136,7 @@ export async function addCronJob(state: CronState) {
   try {
     const schedule = buildCronSchedule(state.cronForm);
     const payload = buildCronPayload(state.cronForm);
-    const delivery =
-      state.cronForm.sessionTarget === "isolated" &&
-      state.cronForm.payloadKind === "agentTurn" &&
-      state.cronForm.deliveryMode
-        ? {
-            mode: state.cronForm.deliveryMode === "announce" ? "announce" : "none",
-            channel: state.cronForm.deliveryChannel.trim() || "last",
-            to: state.cronForm.deliveryTo.trim() || undefined,
-          }
-        : undefined;
+    const delivery = buildCronDelivery(state.cronForm);
     const agentId = state.cronForm.agentId.trim();
     const job = {
       name: state.cronForm.name.trim(),
@@ -177,16 +181,7 @@ export async function updateCronJob(state: CronState, jobId: string) {
     if (!name) {
       throw new Error(t("cron.error.nameRequired"));
     }
-    const delivery =
-      state.cronForm.sessionTarget === "isolated" &&
-      state.cronForm.payloadKind === "agentTurn" &&
-      state.cronForm.deliveryMode
-        ? {
-            mode: state.cronForm.deliveryMode === "announce" ? "announce" : "none",
-            channel: state.cronForm.deliveryChannel.trim() || "last",
-            to: state.cronForm.deliveryTo.trim() || undefined,
-          }
-        : undefined;
+    const delivery = buildCronDelivery(state.cronForm);
     const agentId = state.cronForm.agentId.trim();
     const patch: Record<string, unknown> = {
       name,

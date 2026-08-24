@@ -5,6 +5,7 @@ import { html, nothing } from "lit";
 import type { AppViewState } from "../../app-view-state.ts";
 import { t } from "../../i18n.ts";
 import * as ipc from "../../data/ipc-bridge.ts";
+import { runKimiOAuthLogin } from "../../data/kimi-oauth-flow.ts";
 import "../../components/password-input.ts";
 import "../../components/message-box.ts";
 import "../../components/provider-segment.ts";
@@ -191,29 +192,14 @@ async function handleVerify(state: AppViewState, goToStep: (step: number) => voi
 }
 
 async function handleOAuthLogin(state: AppViewState, goToStep: (step: number) => void) {
-  if (s.oauthLoading) return;
-  s.oauthLoading = true;
-  s.oauthSuccess = false;
-  s.oauthNoMembership = false;
-  s.error = null;
-  state.requestUpdate();
-
-  try {
-    const result = await ipc.kimiOAuthLogin();
-    if (!result.success) {
-      s.error = result.message ?? t("setup.error.verifyFailed");
-      s.oauthLoading = false;
-      state.requestUpdate();
-      return;
-    }
-
+  await runKimiOAuthLogin(state, s, async (token) => {
     const modelID = s.showCustomModelInput
       ? (s.customModelId.trim() || KIMI_CODE_FIXED_MODEL)
       : (s.modelId || KIMI_CODE_FIXED_MODEL);
 
     const verifyResult = await ipc.verifyKey({
       provider: "moonshot",
-      apiKey: result.accessToken,
+      apiKey: token as string,
       modelID,
       subPlatform: "kimi-code",
     });
@@ -226,17 +212,13 @@ async function handleOAuthLogin(state: AppViewState, goToStep: (step: number) =>
       return;
     }
 
-    await saveProviderFragment(result.accessToken!, modelID, verifyResult.supportsImage);
+    await saveProviderFragment(token!, modelID, verifyResult.supportsImage);
 
     s.oauthLoading = false;
     s.oauthSuccess = true;
     state.requestUpdate();
     setTimeout(() => goToStep(3), 600);
-  } catch (e: any) {
-    s.error = t("setup.error.connection") + (e?.message ?? "");
-    s.oauthLoading = false;
-    state.requestUpdate();
-  }
+  });
 }
 
 async function handleOAuthCancel(state: AppViewState) {

@@ -1,5 +1,12 @@
 [
   {
+    "version": "2026.824.0",
+    "notes": {
+      "zh": "优化：全源码重复代码治理——jscpd 度量重复率 2.29% → 1.22%（目标 5% 以下），消除 37 组跨文件/跨模块重复\n优化：新增 6 个共享模块（渠道面板公共流程、Kimi OAuth 登录、安全打开白名单、时间格式化等），四个渠道设置面板与两个添加模型面板行为不变\n优化：新增 `npm run dupcheck` 重复率度量脚本（阈值 5%），防后续回退\n测试基线 487 用例全绿",
+      "en": "Improved: repository-wide duplication cleanup — jscpd-measured duplication rate 2.29% → 1.22% (target < 5%), 37 cross-file clone groups removed\nImproved: 6 new shared modules (channel-panel common flows, Kimi OAuth login, safe-open allowlist, timestamp formatting); channel settings & add-model panels behavior unchanged\nImproved: new `npm run dupcheck` script (5% threshold) guards against regressions\n487-test baseline all green"
+    }
+  },
+  {
     "version": "2026.821.3",
     "notes": {
       "zh": "新功能：模型卡片支持逐模型编辑能力——上下文长度（128K/256K/512K/1M 预设）、maxTokens、图像/视频/音频输入、思考模式与档位\n新功能：分组旁「新增模型」按钮——同组添加自动复用该分组的端点与密钥，无需重复填写\n新功能：模型卡片新增视频/音频能力徽标\n修复：渠道加群对话框在中文输入法选词时按 Enter 不再误提交；断开微信、重启更新前增加确认\n修复：设置-环境信息页不再显示过期数据；重置配置失败有明确错误提示；钉钉渠道删除永不生效的僵尸字段\n优化：错误提示配色统一；设置页文案与图标细节打磨\n测试基线 487 用例全绿",

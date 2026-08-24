@@ -14,7 +14,7 @@ import "../../components/message-box.ts";
 import { getConfigSnapshot, getCachedConfigSnapshot } from "../../controllers/config.ts";
 import { runConfigPatch } from "./tab-patch.ts";
 import { extractQqbotView, applyQqbotSave } from "./tab-channels.lib.ts";
-import { updateChannelEnabled, syncChannelEnabledFromSnapshot } from "./tab-channels.ts";
+import { markChannelSaved, renderChannelSaveFooter, runChannelToggle, runChannelSave } from "./tab-channels-shared.ts";
 
 // QQ Bot 面板状态必须可整体回滚，避免未保存凭据残留到下次打开。
 function createQqbotState() {
@@ -88,35 +88,17 @@ async function saveQqbot(state: AppViewState): Promise<boolean> {
     s.error = tWithDetail("settings.error.saveFailed", outcome.error);
     return false;
   }
-  updateChannelEnabled("qqbot", s.enabled);
-  syncChannelEnabledFromSnapshot();
-  s.successMsg = t("settings.saved");
-  s.hint = outcome.hint ?? null;
+  markChannelSaved("qqbot", s.enabled, s, outcome.hint);
   return true;
 }
 
 async function handleToggle(state: AppViewState, checked: boolean) {
-  const prevEnabled = s.enabled;
-  s.enabled = checked;
-  s.error = null;
-  s.successMsg = null;
-  s.hint = null;
-  if (!checked) {
-    s.saving = true; state.requestUpdate();
-    const ok = await saveQqbot(state);
-    s.saving = false;
-    if (!ok) s.enabled = prevEnabled;
-    state.requestUpdate();
-  } else {
-    state.requestUpdate();
-  }
+  // 启用时不立即保存，仅展开表单；关闭时立即保存
+  await runChannelToggle(state, s, checked, { save: () => saveQqbot(state) });
 }
 
 async function handleSave(state: AppViewState) {
-  s.saving = true; s.error = null; s.successMsg = null; s.hint = null; state.requestUpdate();
-  await saveQqbot(state);
-  s.saving = false;
-  state.requestUpdate();
+  await runChannelSave(state, s, () => saveQqbot(state));
 }
 
 export function renderChannelQqbot(state: AppViewState) {
@@ -155,13 +137,7 @@ export function renderChannelQqbot(state: AppViewState) {
           ></oc-toggle-switch>
         </div>
 
-        <oc-message-box .message=${s.error ?? ""} .type=${"error"} .visible=${!!s.error}></oc-message-box>
-        <oc-message-box .message=${s.successMsg ?? ""} .type=${"success"} .visible=${!!s.successMsg}></oc-message-box>
-        ${s.hint ? html`<div class="oc-settings__field-hint">${s.hint}</div>` : nothing}
-
-        <div class="oc-settings__btn-row">
-          <button class="oc-settings__btn oc-settings__btn--primary" ?disabled=${s.saving} @click=${() => handleSave(state)}>${t("settings.save")}</button>
-        </div>
+        ${renderChannelSaveFooter(s, () => handleSave(state))}
       ` : nothing}
     </div>
   `;

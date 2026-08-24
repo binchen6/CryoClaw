@@ -192,14 +192,21 @@ export function verifyMoonshot(apiKey: string, subPlatform?: string): Promise<vo
   });
 }
 
-// 飞书应用凭据验证（通过 tenant_access_token 接口校验 appId + appSecret）
-export function verifyFeishu(appId: string, appSecret: string): Promise<void> {
+// 通用 HTTPS JSON 验证请求：向 hostname+path POST body，用 judge 判定 JSON 响应。
+// 飞书 / QQ Bot / 钉钉三渠道凭据验证共用，仅端点与判定逻辑不同。
+// judge 返回 null = 通过；返回字符串 = 作为失败原因。
+function httpsJsonVerify(
+  hostname: string,
+  reqPath: string,
+  body: string,
+  label: string,
+  judge: (json: any, data: string) => string | null,
+): Promise<void> {
   return new Promise((resolve, reject) => {
-    const body = JSON.stringify({ app_id: appId, app_secret: appSecret });
     const req = https.request(
       {
-        hostname: "open.feishu.cn",
-        path: "/open-apis/auth/v3/tenant_access_token/internal",
+        hostname,
+        path: reqPath,
         method: "POST",
         headers: { "content-type": "application/json" },
         timeout: 15000,
@@ -209,14 +216,11 @@ export function verifyFeishu(appId: string, appSecret: string): Promise<void> {
         res.on("data", (d) => (data += d));
         res.on("end", () => {
           try {
-            const json = JSON.parse(data);
-            if (json.code === 0) {
-              resolve();
-            } else {
-              reject(new Error(json.msg || `飞书验证失败 (code: ${json.code})`));
-            }
+            const err = judge(JSON.parse(data), data);
+            if (err) reject(new Error(err));
+            else resolve();
           } catch {
-            reject(new Error(`飞书响应解析失败: ${data.slice(0, 200)}`));
+            reject(new Error(`${label}响应解析失败: ${data.slice(0, 200)}`));
           }
         });
       }
@@ -226,85 +230,49 @@ export function verifyFeishu(appId: string, appSecret: string): Promise<void> {
     req.write(body);
     req.end();
   });
+}
+
+// 飞书应用凭据验证（通过 tenant_access_token 接口校验 appId + appSecret）
+export function verifyFeishu(appId: string, appSecret: string): Promise<void> {
+  return httpsJsonVerify(
+    "open.feishu.cn",
+    "/open-apis/auth/v3/tenant_access_token/internal",
+    JSON.stringify({ app_id: appId, app_secret: appSecret }),
+    "飞书",
+    (json) =>
+      json.code === 0 ? null : json.msg || `飞书验证失败 (code: ${json.code})`,
+  );
 }
 
 // QQ Bot 凭据验证（通过 getAppAccessToken 接口校验 appId + clientSecret）。
 export function verifyQqbot(appId: string, clientSecret: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const body = JSON.stringify({ appId, clientSecret });
-    const req = https.request(
-      {
-        hostname: "bots.qq.com",
-        path: "/app/getAppAccessToken",
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        timeout: 15000,
-      },
-      (res) => {
-        let data = "";
-        res.on("data", (d) => (data += d));
-        res.on("end", () => {
-          try {
-            const json = JSON.parse(data);
-            if (typeof json.access_token === "string" && json.access_token.trim()) {
-              resolve();
-            } else {
-              reject(new Error(json.message || json.msg || `QQ Bot 验证失败: ${data.slice(0, 200)}`));
-            }
-          } catch {
-            reject(new Error(`QQ Bot 响应解析失败: ${data.slice(0, 200)}`));
-          }
-        });
-      }
-    );
-    req.on("error", (e) => reject(new Error(`网络错误: ${e.message}`)));
-    req.on("timeout", () => { req.destroy(); reject(new Error("请求超时")); });
-    req.write(body);
-    req.end();
-  });
+  return httpsJsonVerify(
+    "bots.qq.com",
+    "/app/getAppAccessToken",
+    JSON.stringify({ appId, clientSecret }),
+    "QQ Bot ",
+    (json, data) =>
+      typeof json.access_token === "string" && json.access_token.trim()
+        ? null
+        : json.message || json.msg || `QQ Bot 验证失败: ${data.slice(0, 200)}`,
+  );
 }
 
 // 钉钉应用凭据验证（通过 accessToken 接口校验 clientId/AppKey + clientSecret/AppSecret）。
 export function verifyDingtalk(clientId: string, clientSecret: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const body = JSON.stringify({ appKey: clientId, appSecret: clientSecret });
-    const req = https.request(
-      {
-        hostname: "api.dingtalk.com",
-        path: "/v1.0/oauth2/accessToken",
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        timeout: 15000,
-      },
-      (res) => {
-        let data = "";
-        res.on("data", (d) => (data += d));
-        res.on("end", () => {
-          try {
-            const json = JSON.parse(data);
-            if (typeof json.accessToken === "string" && json.accessToken.trim()) {
-              resolve();
-              return;
-            }
-            reject(
-              new Error(
-                json.message ||
-                json.msg ||
-                json.errmsg ||
-                `钉钉验证失败: ${data.slice(0, 200)}`
-              )
-            );
-          } catch {
-            reject(new Error(`钉钉响应解析失败: ${data.slice(0, 200)}`));
-          }
-        });
-      }
-    );
-    req.on("error", (e) => reject(new Error(`网络错误: ${e.message}`)));
-    req.on("timeout", () => { req.destroy(); reject(new Error("请求超时")); });
-    req.write(body);
-    req.end();
-  });
+  return httpsJsonVerify(
+    "api.dingtalk.com",
+    "/v1.0/oauth2/accessToken",
+    JSON.stringify({ appKey: clientId, appSecret: clientSecret }),
+    "钉钉",
+    (json, data) =>
+      typeof json.accessToken === "string" && json.accessToken.trim()
+        ? null
+        : json.message ||
+          json.msg ||
+          json.errmsg ||
+          `钉钉验证失败: ${data.slice(0, 200)}`,
+  );
 }
 
 // Custom provider 验证（根据 API 类型发真实 chat 请求，而非 /models）

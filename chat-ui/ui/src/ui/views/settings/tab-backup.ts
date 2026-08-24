@@ -65,11 +65,11 @@ function formatBytes(size: number): string {
   return `${(size / 1048576).toFixed(1)} MB`;
 }
 
-async function handleRestoreBackup(state: AppViewState, fileName: string) {
-  if (!(await showConfirm(state, t("settings.backup.confirmRestore").replace("{fileName}", fileName), { danger: true }))) return;
+// 恢复操作统一流程（备份文件 / LKG 共用）：执行恢复 → 重启 gateway → 失效全部设置页重拉。
+async function runRestore(state: AppViewState, restore: () => Promise<unknown>) {
   s.restoring = true; state.requestUpdate();
   try {
-    await ipc.settingsRestoreConfigBackup({ fileName });
+    await restore();
     ipc.restartGateway();
     scheduleGatewayRefresh(state);
     // Invalidate all settings tabs so they re-fetch from disk on next render
@@ -83,20 +83,14 @@ async function handleRestoreBackup(state: AppViewState, fileName: string) {
   } catch (e: any) { s.restoring = false; s.error = tWithDetail("settings.error.restoreFailed", e?.message); state.requestUpdate(); }
 }
 
+async function handleRestoreBackup(state: AppViewState, fileName: string) {
+  if (!(await showConfirm(state, t("settings.backup.confirmRestore").replace("{fileName}", fileName), { danger: true }))) return;
+  await runRestore(state, () => ipc.settingsRestoreConfigBackup({ fileName }));
+}
+
 async function handleRestoreLKG(state: AppViewState) {
   if (!(await showConfirm(state, t("settings.backup.confirmRestoreLKG"), { danger: true }))) return;
-  s.restoring = true; state.requestUpdate();
-  try {
-    await ipc.settingsRestoreLastKnownGood();
-    ipc.restartGateway();
-    scheduleGatewayRefresh(state);
-    // Invalidate all settings tabs so they re-fetch from disk on next render
-    invalidateAllSettings();
-    s.restoring = false; s.successMsg = t("settings.saved");
-    s.initialized = false;
-    init(state);
-    state.requestUpdate();
-  } catch (e: any) { s.restoring = false; s.error = tWithDetail("settings.error.restoreFailed", e?.message); state.requestUpdate(); }
+  await runRestore(state, () => ipc.settingsRestoreLastKnownGood());
 }
 
 async function handleResetConfig(state: AppViewState) {

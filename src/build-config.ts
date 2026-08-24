@@ -8,10 +8,9 @@ const BUILD_CONFIG_NAME = "build-config.json";
 // 缓存解析结果，避免重复读磁盘
 let cached: Record<string, unknown> | null = null;
 
-// 从打包注入的 build-config.json 读取全量配置
-function readBuildConfig(): Record<string, unknown> {
-  if (cached) return cached;
-
+// 构建 build-config.json 候选路径，兼容打包安装与本地 unpacked 运行。
+// analytics.ts 也需要同样的候选列表，故导出复用。
+export function buildConfigPathCandidates(): string[] {
   const appPath = app.getAppPath();
   const appDir = path.dirname(appPath);
   const candidates = [
@@ -21,8 +20,14 @@ function readBuildConfig(): Record<string, unknown> {
     path.join(appDir, "resources", BUILD_CONFIG_NAME),
     path.join(appDir, BUILD_CONFIG_NAME),
   ];
+  return Array.from(new Set(candidates));
+}
 
-  for (const p of candidates) {
+// 从打包注入的 build-config.json 读取全量配置
+function readBuildConfig(): Record<string, unknown> {
+  if (cached) return cached;
+
+  for (const p of buildConfigPathCandidates()) {
     try {
       const raw = JSON.parse(fs.readFileSync(p, "utf-8"));
       if (raw && typeof raw === "object") {

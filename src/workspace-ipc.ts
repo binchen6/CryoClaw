@@ -6,26 +6,14 @@ import * as path from "path";
 import * as log from "./logger";
 import { resolveUserStateDir } from "./constants";
 import { assertTrustedIpcSender } from "./ipc-sender-guard";
+import { isSafeOpenExt } from "./safe-open";
 
 // workspace 根路径由渲染进程首次调用 workspace:set-root 设定
 let workspaceRoot: string | null = null;
 
-// 安全面：shell.openPath 会用系统默认程序打开任意文件，可执行文件会被直接运行。
-// agent 可写目录（workspace）里的可执行文件风险更高，仅允许"安全打开"扩展名
-// （与 main.ts app:open-path 的 SAFE_OPEN_EXTS 保持一致；渲染层 chat 路径链接走
-// app:open-path，不受此白名单影响）。
-const SAFE_OPEN_EXTS = new Set([
-  // 图片
-  "png", "jpg", "jpeg", "gif", "webp", "bmp", "svg", "ico", "tiff",
-  // 文档
-  "pdf", "txt", "md", "markdown", "json", "csv", "tsv", "log",
-  "doc", "docx", "xls", "xlsx", "ppt", "pptx", "odt", "ods", "odp", "rtf",
-  // 音视频
-  "mp3", "wav", "flac", "aac", "ogg", "m4a",
-  "mp4", "mkv", "webm", "avi", "mov", "m4v", "mpg", "mpeg",
-  // 压缩包（仅打开不执行）
-  "zip", "tar", "gz", "bz2", "7z", "rar",
-]);
+// 安全面：agent 可写目录（workspace）里的可执行文件风险更高，仅允许"安全打开"扩展名。
+// 白名单与 main.ts app:open-path 共用（见 safe-open.ts）；渲染层 chat 路径链接走
+// app:open-path，不受此白名单影响。
 
 // 路径穿越校验：确保 target 在 root 内
 function isInsideRoot(target: string, root: string): boolean {
@@ -68,7 +56,7 @@ export function registerWorkspaceIpc(): void {
     const check = guardPath(filePath);
     if (!check.ok) return check.error;
     const ext = path.extname(filePath).slice(1).toLowerCase();
-    if (!ext || !SAFE_OPEN_EXTS.has(ext)) {
+    if (!isSafeOpenExt(ext)) {
       log.warn(`[security] workspace:open-file 拒绝非白名单扩展名: .${ext || "(无)"} ${filePath.slice(0, 100)}`);
       return { success: false, message: "不支持的文件类型" };
     }

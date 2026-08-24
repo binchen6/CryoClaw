@@ -1,4 +1,5 @@
 import { ChildProcess, spawn } from "child_process";
+import { endStreamWithTimeout } from "./logger";
 import * as http from "http";
 import * as path from "path";
 import * as fs from "fs";
@@ -53,19 +54,7 @@ export async function closeDiagLogStream(): Promise<void> {
   const stream = diagStream;
   if (!stream) return;
   diagStream = null;
-  await new Promise<void>((resolve) => {
-    let settled = false;
-    const finish = () => {
-      if (!settled) {
-        settled = true;
-        resolve();
-      }
-    };
-    stream.once("close", finish);
-    stream.once("error", finish);
-    stream.end();
-    setTimeout(finish, 1000).unref?.();
-  });
+  await endStreamWithTimeout(stream);
 }
 
 function diagLog(msg: string): void {

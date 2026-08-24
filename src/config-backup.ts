@@ -7,6 +7,7 @@ import {
   resolveUserStateDir,
 } from "./constants";
 import { syncOpenClawStateAfterWrite } from "./openclaw-health-state";
+import { formatTimestamp } from "./time-format";
 
 const BACKUP_FILE_PREFIX = "openclaw-";
 const BACKUP_FILE_EXT = ".json";
@@ -233,17 +234,6 @@ function buildBackupFileName(backupDir: string): string {
 // 统一校验备份文件名，阻断路径穿越与非备份文件访问。
 function isBackupFileName(fileName: string): boolean {
   return /^openclaw-\d{8}-\d{6}(?:-\d{2}|\-\d{13})?\.json$/.test(fileName);
-}
-
-// 将 Date 格式化为 YYYYMMDD-HHMMSS，满足“日期+秒”命名规则。
-function formatTimestamp(date: Date): string {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  const d = String(date.getDate()).padStart(2, "0");
-  const hh = String(date.getHours()).padStart(2, "0");
-  const mm = String(date.getMinutes()).padStart(2, "0");
-  const ss = String(date.getSeconds()).padStart(2, "0");
-  return `${y}${m}${d}-${hh}${mm}${ss}`;
 }
 
 // 限制备份数量，避免长期运行下无上限增长占满用户磁盘。

@@ -328,16 +328,3 @@ export function syncUrlWithTab(host: SettingsHost, tab: Tab, replace: boolean) {
     window.history.pushState({}, "", url.toString());
   }
 }
-
-export function syncUrlWithSessionKey(host: SettingsHost, sessionKey: string, replace: boolean) {
-  if (typeof window === "undefined") {
-    return;
-  }
-  const url = new URL(window.location.href);
-  url.searchParams.set("session", sessionKey);
-  if (replace) {
-    window.history.replaceState({}, "", url.toString());
-  } else {
-    window.history.pushState({}, "", url.toString());
-  }
-}

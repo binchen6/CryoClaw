@@ -26,6 +26,21 @@ import {
 import { assertTrustedIpcSender } from "../ipc-sender-guard";
 import type { SettingsIpcOptions } from "./types";
 
+// 弹出保存对话框（导出状态包 / 导出诊断包共用）：取消时返回 canceled。
+async function pickExportSavePath(
+  sender: Electron.WebContents,
+  options: Electron.SaveDialogOptions,
+): Promise<{ canceled: true } | { canceled: false; filePath: string }> {
+  const win = BrowserWindow.fromWebContents(sender);
+  const result = win
+    ? await dialog.showSaveDialog(win, options)
+    : await dialog.showSaveDialog(options);
+  if (result.canceled || !result.filePath) {
+    return { canceled: true };
+  }
+  return { canceled: false, filePath: result.filePath };
+}
+
 export function registerBackupIpc(opts: SettingsIpcOptions): void {
   // ── 列出配置备份与恢复元数据 ──
   ipcMain.handle("settings:list-config-backups", async (event) => {
@@ -41,19 +56,15 @@ export function registerBackupIpc(opts: SettingsIpcOptions): void {
   ipcMain.handle("settings:export-openclaw-state", async (event) => {
     if (!assertTrustedIpcSender(event, "settings:export-openclaw-state")) throw new Error("IPC sender not trusted");
     try {
-      const win = BrowserWindow.fromWebContents(event.sender);
-      const options: Electron.SaveDialogOptions = {
+      const picked = await pickExportSavePath(event.sender, {
         defaultPath: buildOpenclawStateArchiveDefaultFileName(),
         filters: [{ name: "ZIP Archive", extensions: ["zip"] }],
-      };
-      const result = win
-        ? await dialog.showSaveDialog(win, options)
-        : await dialog.showSaveDialog(options);
-      if (result.canceled || !result.filePath) {
+      });
+      if (picked.canceled) {
         return { success: true, data: { canceled: true } };
       }
 
-      const target = resolveOpenclawStateExportTarget(result.filePath);
+      const target = resolveOpenclawStateExportTarget(picked.filePath);
       if (target.overwriteExisting) {
         const warning = buildOpenclawStateExportOverwriteWarning(target.filePath);
         const warningOptions: Electron.MessageBoxOptions = {
@@ -65,6 +76,7 @@ export function registerBackupIpc(opts: SettingsIpcOptions): void {
           message: warning.message,
           detail: warning.detail,
         };
+        const win = BrowserWindow.fromWebContents(event.sender);
         const confirmation = win
           ? await dialog.showMessageBox(win, warningOptions)
           : await dialog.showMessageBox(warningOptions);
@@ -84,20 +96,16 @@ export function registerBackupIpc(opts: SettingsIpcOptions): void {
   ipcMain.handle("settings:export-diagnostics", async (event) => {
     if (!assertTrustedIpcSender(event, "settings:export-diagnostics")) throw new Error("IPC sender not trusted");
     try {
-      const win = BrowserWindow.fromWebContents(event.sender);
-      const options: Electron.SaveDialogOptions = {
+      const picked = await pickExportSavePath(event.sender, {
         defaultPath: buildDiagnosticsDefaultFileName(),
         filters: [{ name: "ZIP Archive", extensions: ["zip"] }],
-      };
-      const result = win
-        ? await dialog.showSaveDialog(win, options)
-        : await dialog.showSaveDialog(options);
-      if (result.canceled || !result.filePath) {
+      });
+      if (picked.canceled) {
         return { success: true, data: { canceled: true } };
       }
       // 系统保存对话框自带覆盖确认，无需二次 warning
-      exportDiagnosticsBundle(result.filePath);
-      return { success: true, data: { canceled: false, filePath: result.filePath } };
+      exportDiagnosticsBundle(picked.filePath);
+      return { success: true, data: { canceled: false, filePath: picked.filePath } };
     } catch (err: any) {
       return { success: false, message: err.message || String(err) };
     }

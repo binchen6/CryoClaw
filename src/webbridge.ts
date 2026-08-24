@@ -87,6 +87,36 @@ function chooseTransport(url: string): typeof https | typeof http {
   return new URL(url).protocol === "http:" ? http : https;
 }
 
+// 重定向与非 200 状态码前置检查（httpHead / downloadToFile 共用）。
+// 返回 true = 已处理（跟随了重定向或已 fail），调用方直接 return；
+// 返回 false = 200 响应，调用方继续后续逻辑。
+function guardRedirectAndStatus(
+  res: http.IncomingMessage,
+  url: string,
+  ctx: {
+    bumpRedirect: () => boolean; // false → 超过上限
+    follow: (nextUrl: string) => void;
+    fail: (err: Error) => void;
+  },
+): boolean {
+  const status = res.statusCode ?? 0;
+  if (status >= 300 && status < 400 && res.headers.location) {
+    if (ctx.bumpRedirect()) {
+      ctx.follow(new URL(res.headers.location, url).toString());
+    } else {
+      ctx.fail(new Error(`Too many redirects (>${MAX_REDIRECTS})`));
+    }
+    res.resume();
+    return true;
+  }
+  if (status !== 200) {
+    ctx.fail(new Error(`HTTP ${status} — ${url}`));
+    res.resume();
+    return true;
+  }
+  return false;
+}
+
 export function httpHead(initialUrl: string): Promise<HeadResult> {
   return new Promise((resolve, reject) => {
     let redirects = 0;
@@ -106,22 +136,13 @@ export function httpHead(initialUrl: string): Promise<HeadResult> {
         url,
         { method: "HEAD" },
         (res) => {
-          const status = res.statusCode ?? 0;
-          if (status >= 300 && status < 400 && res.headers.location) {
-            if (++redirects > MAX_REDIRECTS) {
-              fail(new Error(`Too many redirects (>${MAX_REDIRECTS})`));
-              res.resume();
-              return;
-            }
-            request(new URL(res.headers.location, url).toString());
-            res.resume();
-            return;
-          }
-          if (status !== 200) {
-            fail(new Error(`HTTP ${status} — ${url}`));
-            res.resume();
-            return;
-          }
+          if (
+            guardRedirectAndStatus(res, url, {
+              bumpRedirect: () => ++redirects <= MAX_REDIRECTS,
+              follow: request,
+              fail,
+            })
+          ) return;
           const lenRaw = res.headers["content-length"];
           // Number.isFinite 而非 `|| null`：后者会把合法的 0 误当未知长度
           const len =
@@ -189,22 +210,13 @@ export function downloadToFile(
 
     const request = (url: string) => {
       const req = chooseTransport(url).get(url, (res) => {
-        const status = res.statusCode ?? 0;
-        if (status >= 300 && status < 400 && res.headers.location) {
-          if (++redirects > MAX_REDIRECTS) {
-            fail(new Error(`Too many redirects (>${MAX_REDIRECTS})`));
-            res.resume();
-            return;
-          }
-          request(new URL(res.headers.location, url).toString());
-          res.resume();
-          return;
-        }
-        if (status !== 200) {
-          fail(new Error(`HTTP ${status} — ${url}`));
-          res.resume();
-          return;
-        }
+        if (
+          guardRedirectAndStatus(res, url, {
+            bumpRedirect: () => ++redirects <= MAX_REDIRECTS,
+            follow: request,
+            fail,
+          })
+        ) return;
 
         const lenRaw = res.headers["content-length"];
         const lenParsed =

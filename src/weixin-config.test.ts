@@ -1,4 +1,4 @@
-import test from "node:test";
+import test, { type TestContext } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
@@ -12,11 +12,11 @@ import {
   WEIXIN_PLUGIN_ID,
 } from "./weixin-config";
 
-test("persistWeixinLoginSuccess 应同时写入账号凭据并启用微信 channel", (t) => {
+// 创建临时 OPENCLAW_STATE_DIR 并登记环境还原与目录清理（各用例共用）。
+function setupTempStateDir(t: TestContext): string {
   const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), "cryoclaw-weixin-"));
   const prevStateDir = process.env.OPENCLAW_STATE_DIR;
   process.env.OPENCLAW_STATE_DIR = stateDir;
-
   t.after(() => {
     if (prevStateDir === undefined) {
       delete process.env.OPENCLAW_STATE_DIR;
@@ -25,6 +25,11 @@ test("persistWeixinLoginSuccess 应同时写入账号凭据并启用微信 chann
     }
     fs.rmSync(stateDir, { recursive: true, force: true });
   });
+  return stateDir;
+}
+
+test("persistWeixinLoginSuccess 应同时写入账号凭据并启用微信 channel", (t) => {
+  const stateDir = setupTempStateDir(t);
 
   const config: Record<string, any> = {
     plugins: {
@@ -70,18 +75,7 @@ test("persistWeixinLoginSuccess 应同时写入账号凭据并启用微信 chann
 });
 
 test("ensureWeixinPluginReady 应先执行 reconcile 再检查微信插件目录", async (t) => {
-  const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), "cryoclaw-weixin-"));
-  const prevStateDir = process.env.OPENCLAW_STATE_DIR;
-  process.env.OPENCLAW_STATE_DIR = stateDir;
-
-  t.after(() => {
-    if (prevStateDir === undefined) {
-      delete process.env.OPENCLAW_STATE_DIR;
-    } else {
-      process.env.OPENCLAW_STATE_DIR = prevStateDir;
-    }
-    fs.rmSync(stateDir, { recursive: true, force: true });
-  });
+  const stateDir = setupTempStateDir(t);
 
   let reconciled = false;
   assert.equal(isWeixinPluginBundled(), false);
@@ -99,18 +93,7 @@ test("ensureWeixinPluginReady 应先执行 reconcile 再检查微信插件目录
 });
 
 test("ensureWeixinPluginReady 应在 reconcile 后仍缺插件时拒绝启用微信", async (t) => {
-  const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), "cryoclaw-weixin-"));
-  const prevStateDir = process.env.OPENCLAW_STATE_DIR;
-  process.env.OPENCLAW_STATE_DIR = stateDir;
-
-  t.after(() => {
-    if (prevStateDir === undefined) {
-      delete process.env.OPENCLAW_STATE_DIR;
-    } else {
-      process.env.OPENCLAW_STATE_DIR = prevStateDir;
-    }
-    fs.rmSync(stateDir, { recursive: true, force: true });
-  });
+  const stateDir = setupTempStateDir(t);
 
   let reconciled = false;
 

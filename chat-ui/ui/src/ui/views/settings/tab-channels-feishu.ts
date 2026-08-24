@@ -15,8 +15,8 @@ import "../../components/message-box.ts";
 import { getConfigSnapshot, getCachedConfigSnapshot } from "../../controllers/config.ts";
 import { runConfigPatch } from "./tab-patch.ts";
 import { extractFeishuView, applyFeishuSave, looksLikeFeishuGroupId } from "./tab-channels.lib.ts";
-import { updateChannelEnabled, syncChannelEnabledFromSnapshot } from "./tab-channels.ts";
-import { renderPairingPanel, loadPairingData, type PairingPanelState } from "./tab-channels-pairing-panel.ts";
+import { loadPairingData, type PairingPanelState } from "./tab-channels-pairing-panel.ts";
+import { markChannelSaved, renderChannelSaveFooter, renderAddGroupDialog, renderChannelPairingSection, createChannelPanelBaseState, runChannelToggle, runChannelSave } from "./tab-channels-shared.ts";
 
 // Feishu 面板状态必须可整体回滚，避免未保存表单和配对缓存跨会话残留。
 function createFeishuState() {
@@ -28,15 +28,7 @@ function createFeishuState() {
     dmScope: "main",
     groupPolicy: "disabled",
     groupAllowFrom: [] as string[],
-    saving: false,
-    error: null as string | null,
-    successMsg: null as string | null,
-    hint: null as string | null,
-    pairingPanel: { pairingRequests: [], approvedEntries: [], loading: false } as PairingPanelState,
-    initialized: false,
-    addGroupDialogOpen: false,
-    addGroupInput: "",
-    addGroupError: null as string | null,
+    ...createChannelPanelBaseState(),
   };
 }
 
@@ -109,48 +101,22 @@ async function saveFeishu(state: AppViewState, enabled: boolean): Promise<boolea
     s.error = tWithDetail("settings.error.saveFailed", outcome.error);
     return false;
   }
-  updateChannelEnabled("feishu", enabled);
-  syncChannelEnabledFromSnapshot();
-  s.successMsg = t("settings.saved");
-  s.hint = outcome.hint ?? null;
+  markChannelSaved("feishu", enabled, s, outcome.hint);
   return true;
 }
 
 async function handleToggle(state: AppViewState, checked: boolean) {
-  const prevEnabled = s.enabled;
-  s.enabled = checked;
-  s.error = null;
-  s.successMsg = null;
-  s.hint = null;
-  if (!checked) {
-    // Disable -> save immediately
-    s.saving = true; state.requestUpdate();
-    const ok = await saveFeishu(state, false);
-    s.saving = false;
-    if (!ok) s.enabled = prevEnabled;
-    state.requestUpdate();
-  } else {
-    // Enable -> validate credentials first, then save
-    if (!s.appId || !s.appSecret) {
-      // No credentials yet, just show form
-      state.requestUpdate();
-      return;
-    }
-    s.saving = true; state.requestUpdate();
-    const ok = await saveFeishu(state, true);
-    s.saving = false;
-    if (!ok) s.enabled = prevEnabled;
-    state.requestUpdate();
-    if (ok) refreshFeishuPairing(state);
-  }
+  await runChannelToggle(state, s, checked, {
+    save: (enabled) => saveFeishu(state, enabled),
+    saveOnEnable: true,
+    // Enable -> validate credentials first, then save；无凭据时仅展开表单
+    enableGate: () => !!(s.appId && s.appSecret),
+    onEnabledSaved: () => refreshFeishuPairing(state),
+  });
 }
 
 async function handleSave(state: AppViewState) {
-  s.saving = true; s.error = null; s.successMsg = null; s.hint = null; state.requestUpdate();
-  const ok = await saveFeishu(state, s.enabled);
-  s.saving = false;
-  state.requestUpdate();
-  if (ok) refreshFeishuPairing(state);
+  await runChannelSave(state, s, () => saveFeishu(state, s.enabled), () => refreshFeishuPairing(state));
 }
 
 function openAddGroupDialog(state: AppViewState) {
@@ -242,37 +208,16 @@ export function renderChannelFeishu(state: AppViewState) {
           </select>
         </div>
 
-        ${s.groupPolicy === "allowlist" && s.addGroupDialogOpen ? html`
-          <div class="oc-modal-overlay" @click=${(e: Event) => { if (e.target === e.currentTarget) cancelAddGroup(state); }}>
-            <div class="oc-modal-dialog">
-              <label class="oc-settings__label">${t("settings.channels.feishu.addGroupPrompt")}</label>
-              <input class="oc-settings__input" .value=${s.addGroupInput} placeholder="oc_..."
-                @input=${(e: Event) => { s.addGroupInput = (e.target as HTMLInputElement).value; state.requestUpdate(); }}
-                @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter" && !e.isComposing) confirmAddGroup(state); if (e.key === "Escape") cancelAddGroup(state); }} />
-              ${s.addGroupError ? html`<div style="color:var(--danger);font-size:12px;margin-top:4px">${s.addGroupError}</div>` : nothing}
-              <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
-                <button class="oc-settings__btn" @click=${() => cancelAddGroup(state)}>${t("settings.cancel")}</button>
-                <button class="oc-settings__btn oc-settings__btn--primary" @click=${() => confirmAddGroup(state)}>${t("settings.confirm")}</button>
-              </div>
-            </div>
-          </div>
-        ` : nothing}
-
-        ${s.dmPolicy === "pairing" || s.groupPolicy === "allowlist" ? renderPairingPanel(state, "feishu", s.pairingPanel, () => refreshFeishuPairing(state), {
-          onAddGroup: s.groupPolicy === "allowlist" ? () => openAddGroupDialog(state) : undefined,
-          extraApproved: s.groupPolicy === "allowlist" ? s.groupAllowFrom.map(id => ({
-            kind: "group", id,
-            onRemove: () => { s.groupAllowFrom = s.groupAllowFrom.filter(g => g !== id); state.requestUpdate(); },
-          })) : undefined,
+        ${s.groupPolicy === "allowlist" && s.addGroupDialogOpen ? renderAddGroupDialog(state, s, {
+          promptLabel: t("settings.channels.feishu.addGroupPrompt"),
+          placeholder: "oc_...",
+          onConfirm: () => confirmAddGroup(state),
+          onCancel: () => cancelAddGroup(state),
         }) : nothing}
 
-        <oc-message-box .message=${s.error ?? ""} .type=${"error"} .visible=${!!s.error}></oc-message-box>
-        <oc-message-box .message=${s.successMsg ?? ""} .type=${"success"} .visible=${!!s.successMsg}></oc-message-box>
-        ${s.hint ? html`<div class="oc-settings__field-hint">${s.hint}</div>` : nothing}
+        ${renderChannelPairingSection(state, "feishu", s, () => refreshFeishuPairing(state), () => openAddGroupDialog(state))}
 
-        <div class="oc-settings__btn-row">
-          <button class="oc-settings__btn oc-settings__btn--primary" ?disabled=${s.saving} @click=${() => handleSave(state)}>${t("settings.save")}</button>
-        </div>
+        ${renderChannelSaveFooter(s, () => handleSave(state))}
       ` : nothing}
     </div>
   `;

@@ -53,6 +53,7 @@ import { initAppUpdater } from "./app-updater";
 import { startGatewayControlServer, stopGatewayControlServer } from "./gateway-control-server";
 import { migrateOpenclawConfigForKernelUpgrade } from "./openclaw-config-migration";
 import { assertTrustedIpcSender } from "./ipc-sender-guard";
+import { isSafeOpenExt } from "./safe-open";
 import { startAuthProxy, stopAuthProxy, setProxyAccessToken, setProxySearchDedicatedKey, getProxyPort } from "./kimi-auth-proxy";
 import { importOpenclawStateFromArchive, validateOpenclawStateArchive } from "./openclaw-state-archive";
 import { syncOpenClawStateAfterWrite } from "./openclaw-health-state";
@@ -716,23 +717,9 @@ ipcMain.handle("app:open-external", (event, url: string) => {
 });
 ipcMain.handle("app:open-path", (event, filePath: string) => {
   if (!assertTrustedIpcSender(event, "app:open-path")) return Promise.reject(new Error("IPC sender not trusted"));
-  // 安全面：shell.openPath 会用系统默认程序打开任意文件，可执行文件会被直接运行。
-  // 仅允许明确的"安全打开"扩展名（文档/图片/媒体），拒绝可执行文件与其他未明确允许的类型。
-  // workspace 内文件由 workspace:open-file 单独处理（有 path traversal 守卫）。
-  const SAFE_OPEN_EXTS = new Set([
-    // 图片
-    "png", "jpg", "jpeg", "gif", "webp", "bmp", "svg", "ico", "tiff",
-    // 文档
-    "pdf", "txt", "md", "markdown", "json", "csv", "tsv", "log",
-    "doc", "docx", "xls", "xlsx", "ppt", "pptx", "odt", "ods", "odp", "rtf",
-    // 音视频
-    "mp3", "wav", "flac", "aac", "ogg", "m4a",
-    "mp4", "mkv", "webm", "avi", "mov", "m4v", "mpg", "mpeg",
-    // 压缩包（仅打开不执行）
-    "zip", "tar", "gz", "bz2", "7z", "rar",
-  ]);
+  // 安全面：白名单见 safe-open.ts；workspace 内文件由 workspace:open-file 单独处理（有 path traversal 守卫）。
   const ext = path.extname(filePath).slice(1).toLowerCase();
-  if (!ext || !SAFE_OPEN_EXTS.has(ext)) {
+  if (!isSafeOpenExt(ext)) {
     log.warn(`[security] app:open-path 拒绝非白名单扩展名: .${ext || "(无)"} ${filePath.slice(0, 100)}`);
     return Promise.reject(new Error("不支持的文件类型"));
   }

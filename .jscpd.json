@@ -1,0 +1,17 @@
+{
+  "threshold": 5,
+  "minTokens": 50,
+  "path": ["src", "chat-ui/ui/src", "chat-ui/src"],
+  "ignore": [
+    "**/node_modules/**",
+    "**/dist/**",
+    "**/.test-dist/**",
+    "**/out/**",
+    "**/resources/**"
+  ],
+  "reporters": ["consoleFull", "json"],
+  "output": ".jscpd-report",
+  "format": ["typescript", "javascript"],
+  "gitignore": true,
+  "silent": false
+}

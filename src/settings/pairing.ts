@@ -451,6 +451,12 @@ async function listChannelPairingRequests(
   }
 }
 
+// 从 params 提取并校验配对码（approve / reject 共用）：空则返回 null。
+function extractPairingCode(params: Record<string, unknown>): string | null {
+  const code = typeof params?.code === "string" ? params.code.trim() : "";
+  return code || null;
+}
+
 // 统一执行渠道 pairing approve，避免每个渠道重复拼 CLI 参数。
 async function approveChannelPairingRequest(
   channel: string,
@@ -459,7 +465,7 @@ async function approveChannelPairingRequest(
   success: boolean;
   message?: string;
 }> {
-  const code = typeof params?.code === "string" ? params.code.trim() : "";
+  const code = extractPairingCode(params);
   if (!code) {
     return { success: false, message: "配对码不能为空。" };
   }
@@ -487,7 +493,7 @@ async function rejectChannelPairingRequest(
   success: boolean;
   message?: string;
 }> {
-  const code = typeof params?.code === "string" ? params.code.trim() : "";
+  const code = extractPairingCode(params);
   if (!code) {
     return { success: false, message: "配对码不能为空。" };
   }

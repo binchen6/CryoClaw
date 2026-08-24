@@ -34,9 +34,8 @@ export function readKimiSearchDedicatedApiKey(): string {
   }
 }
 
-// 写入专属 key 到 sidecar 文件（空字符串则删除文件）
-export function writeKimiSearchDedicatedApiKey(apiKey: string): void {
-  const filePath = resolveKimiSearchApiKeyPath();
+// key sidecar 文件通用写入：空字符串则删除文件；否则写入并限当前用户读写。
+function writeKeySidecarFile(filePath: string, apiKey: string): void {
   const trimmed = apiKey.trim();
   if (!trimmed) {
     try { fs.unlinkSync(filePath); } catch {}
@@ -45,8 +44,13 @@ export function writeKimiSearchDedicatedApiKey(apiKey: string): void {
   const dir = path.dirname(filePath);
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(filePath, trimmed, "utf-8");
-  // key 文件仅当前用户可读写（与 writeKimiApiKey 一致）
+  // key 文件仅当前用户可读写（0o600）
   try { fs.chmodSync(filePath, 0o600); } catch {}
+}
+
+// 写入专属 key 到 sidecar 文件（空字符串则删除文件）
+export function writeKimiSearchDedicatedApiKey(apiKey: string): void {
+  writeKeySidecarFile(resolveKimiSearchApiKeyPath(), apiKey);
 }
 
 // 按优先级解析 kimi-search API key：专属 key > OAuth token > 手动 key sidecar
@@ -169,14 +173,5 @@ export function readKimiApiKey(): string {
 
 // 写入手动 key（空字符串则删除）
 export function writeKimiApiKey(apiKey: string): void {
-  const filePath = resolveKimiApiKeyPath();
-  const trimmed = apiKey.trim();
-  if (!trimmed) {
-    try { fs.unlinkSync(filePath); } catch {}
-    return;
-  }
-  const dir = path.dirname(filePath);
-  fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(filePath, trimmed, "utf-8");
-  try { fs.chmodSync(filePath, 0o600); } catch {}
+  writeKeySidecarFile(resolveKimiApiKeyPath(), apiKey);
 }

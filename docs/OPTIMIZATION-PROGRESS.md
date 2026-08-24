@@ -2,7 +2,7 @@
 
 > 新接手的模型/工程师：**先读「快速上手」+「关键路径地图」+「下一步计划」**，
 > 再按需查「CryoClaw 重设计工程记录」（最新锚点）与「历史档案」（已验证事实，避免重复调查）。
-> 创建：2026-07-29；最近重写：2026-08-11（压缩版，替代原 1641 行长文）。
+> 创建：2026-07-29；最近重写：2026-08-11（压缩版，替代原 1641 行长文）；最近更新：2026-08-24（R22 重复代码治理）。
 
 ## 🚀 快速上手（必读）
 
@@ -11,7 +11,7 @@
 面向国内生态（Kimi / Moonshot / 飞书 / 企微 / 微信 / 钉钉 / QQ）。
 
 **当前状态**：
-- 更名 CryoClaw 完成；CryoClaw 重设计工程 **R1–R21 全部完成**（见下节），最新发版 **v2026.821.3**（R18–R20：思考档位路由修复、对话健壮性、性能/稳定性/更新体系批次；R21：模型管理增强——单模型能力编辑 + 分组内新增模型 + 设置页 12 项审查修复）。
+- 更名 CryoClaw 完成；CryoClaw 重设计工程 **R1–R22 全部完成**（见下节），最新发版 **v2026.824.0**（R22：重复代码治理——全源码重复率 2.29% → 1.22%；上一版 v2026.821.3：R18–R20 思考档位路由修复、对话健壮性、性能/稳定性/更新体系批次；R21 模型管理增强——单模型能力编辑 + 分组内新增模型 + 设置页 12 项审查修复）。
 - 内核 openclaw **2026.7.1-2**（版本 pin 在 package.json `cryoclaw.openclaw`）；**Electron 43.4.0**（R13 升级落地，audit 0 漏洞）。
 - 测试基线 **487 pass / 0 fail / 4 skipped**（vitest 94 + node 74 + chat-ui 267 + scripts 52 + tsc typecheck；0 fail 为硬指标）。R21 后维持不变（chat-ui lib 新增用例与死 key 清理相抵）。
 - 历史优化阶段 1–22 全部完成并逐版发版至 v2026.811.0（见历史档案）。
@@ -20,6 +20,7 @@
 **常用命令**：
 - 构建：`npm run build`（vite chat-ui + tsc 主进程）
 - 测试：`npm test`（vitest + node:test 编译前清空 .test-dist + chat-ui typecheck&测试 + scripts）
+- 重复率度量：`npm run dupcheck`（jscpd，阈值 5%，配置 `.jscpd.json`，报告输出 `.jscpd-report/`，R22 新增）
 - 一键打包（Win x64）：`npm run dist:win`（scripts/dist-win.js，串联 build → package:resources → electron-builder，注入 .env + npmmirror + `--use-system-ca`）
 - 手动打包：`NODE_OPTIONS="--use-system-ca" CRYOCLAW_TARGET=win32-x64 npm run package:resources -- --platform win32 --arch x64` → `CRYOCLAW_TARGET=win32-x64 npx electron-builder --win --x64 --config.directories.output=out/win32-x64 --publish never`
 - 安装：`out/win32-x64/CryoClaw-Setup-<v>-x64.exe /S`（**先清 CryoClaw-Setup* / CryoClaw.exe 残留进程**，见 gotchas #53；安装目录 `%LOCALAPPDATA%\Programs\CryoClaw`）
@@ -85,18 +86,16 @@
   `kernel:update-progress`）、CLI `openclaw update [--tag v] [--rollback]`（wrapper 拦截路由到 updater 脚本）。
 - **打包 env**：`CRYOCLAW_TARGET=win32-x64`；镜像 `ELECTRON_MIRROR` / `ELECTRON_BUILDER_BINARIES_MIRROR`
   指向 npmmirror；`NODE_OPTIONS="--use-system-ca"`（`npm run dist:win` 已自动注入）。
-- **本机用户配置**：`~/.openclaw/openclaw.json`；`cryoclaw.config.json` 有 `"updateChannel": "off"`（待核）。
+- **本机用户配置**：`~/.openclaw/openclaw.json`；`cryoclaw.config.json` 有 `"updateChannel": "off"`。
 
 ## ✅ 测试体系（勿重复搭建）
 
-- 基线 **431 pass / 0 fail / 4 skipped**；4 skipped 均为 Windows 平台门控跳项，正常。
-  历史演进：142 → 185 → 194 → 288 → 320 → 334 → 391 → 400 → 418 → 425 → 449 → 429
+- 基线 **487 pass / 0 fail / 4 skipped**（vitest 94 + node 74 + chat-ui 267 + scripts 52；0 fail 为硬指标；R22 重构后维持不变）；历史演进：142 → 185 → 194 → 288 → 320 → 334 → 391 → 400 → 418 → 425 → 449 → 429
   （R7 移除 kimi-claw 插件同步删除其 20 个测试所致，非回归）→ 439（R4 W2a）
   → 427（R4 W2b 删 3 个旧 config 测试文件 node -13；chat-ui 224 含 tab-channels.lib
   31 用例与 R5 性能用例 chat-memo / markdown 防污染 / usage-refresh / sessions in-flight）
   → 430（R6 scripts +3：pruneNonTargetNativePlatformPackages / prunePluginNodeModules /
-  kernel-prune 嵌套平台包）→ **431**（R9 chat-ui +1 文件 model-org.lib：分组 CRUD/排序/
-  指派/prune/分桶 7 组断言；0 fail 为硬指标）。
+  kernel-prune 嵌套平台包）→ 431（R9 model-org.lib +7 组）→ 487（R13/R20 逐步累积）。
 - 基础设施：`tsconfig.test.json`（outDir `.test-dist/`、rewriteRelativeImportExtensions）、
   `vitest.config.ts`（vitest 文件 include 列表）、`scripts/run-node-tests.js`（跑 `.test-dist/*.test.js`，
   编译前清空 .test-dist，排除 vitest 文件）、npm scripts `test` / `test:unit(:vitest|:node)` /
@@ -436,7 +435,7 @@
 
 ## 📋 下一步计划（未做，按优先级）
 
-（R8 重启完成；R9/R11–R19 全部完成并发版 v2026.820.0。剩余候选按需立项：）
+（R8 重启完成；R9/R11–R22 全部完成并发版至 v2026.824.0。剩余候选按需立项：）
 
 ### R16 · 发版验证（v2026.811.9 完成）
 - 版本 bump → dist:win（Electron 43 + pdb 裁剪）→ 安装验证。产物：安装包 129.0MB；
@@ -603,6 +602,27 @@
   已记 gotchas #70。）
 - 发版 v2026.821.3：版本号 + release-notes + dist:win + GitHub Release。
 
+### R22 · 重复代码治理（完成，随 v2026.824.0 发版）
+- 用户指令：全源码重复代码率降至 5% 以下，自动识别 + 重构 + 验证。
+- **度量基建**：新增 `.jscpd.json`（threshold 5%、minTokens 50，覆盖 src + chat-ui/ui/src +
+  chat-ui/src，排除产物目录）+ jscpd devDependency + `npm run dupcheck`（报告 `.jscpd-report/`，防回退）。基线 2.29%（102 clones）。
+- **新增共享模块 6 个**：`src/safe-open.ts`（openPath 扩展名白名单）、`src/time-format.ts`
+  （YYYYMMDD-HHMMSS）、`src/vitest-state-dir.ts`（vitest 临时状态目录）、
+  `tab-channels-shared.ts`（四渠道面板保存/开关/弹窗/配对/状态工厂）、
+  `data/kimi-oauth-flow.ts`（Kimi OAuth 登录公共流程）、`test-utils/fake-scheduler.ts`（测试假调度器基类）。
+- **主进程**：settings/webbridge.ts 两个 repair handler 的浏览器准备/选择性修复/precheck 三段流水线；
+  provider-config.ts 飞书/QQ Bot/钉钉凭据验证 → `httpsJsonVerify`；webbridge.ts HEAD/GET 重定向与非 200 检查 →
+  `guardRedirectAndStatus`；logger/gateway-process 日志流关闭 → `endStreamWithTimeout`；build-config 候选路径导出复用；
+  kimi-config sidecar 写入、settings/backup 保存对话框、settings/pairing 配对码校验等。
+- **渲染层**：tab-provider 两个 add panel 的模型选择/别名表单块；四渠道面板全量接入共享模块；
+  message-extract 文本提取、cron 投递配置、tab-backup 恢复流程、exec-approval payload 外壳校验；
+  app-settings 无调用方的死代码删除。
+- **测试层**：weixin-config.test 临时目录装配、gateway-control-server.test 端口占用、
+  chat/gateway.test 假调度器、cryoclaw-config/startup-ownership vitest 状态目录。
+- **结果**：重复率 **2.29% → 1.22%**（102 → 65 clones）；`npm test` 487 pass / 0 fail 维持；`npm run build` 通过。
+- **豁免保留**（已定案不再动）：setup-constants ↔ provider-config 的 MOONSHOT_SUB_PLATFORMS（跨进程边界有意对齐）；
+  迁移测试的同输入异语义断言；tab-provider draft 写入小块（强上下文依赖）；其余均 < 70 token 小片段。
+
 ### R8 · 插件管理页面（已重启完成，见上节 R8 记录）
 
 ### 剩余候选（按需立项）
@@ -613,7 +633,7 @@
 
 ## 📦 发版与实测经验（套路已验证多次）
 
-- 发版链路：`npm run build` → `npm run dist:win` → 静默安装 → 启动验证（gateway `GET http://127.0.0.1:18789/` HTTP 200）。
+- 发版链路：`npm run build` → `npm run dist:win` → 静默安装 → 启动验证（gateway `GET http://127.0.0.1:18789/` HTTP 200）。发版后 `npm run dupcheck` 顺手复测重复率（防回退，R22 起）。
 - **发版后必做 CDP 冒烟**：点击关键入口（设置/加号菜单/审批/计划面板）+ 扫描裸 i18n 键 + 零 renderer 异常。
   历史脚本在 `.cache/cdp-*.js`；vite 构建不查未定义标识符，运行时才暴露（阶段 11 教训）。
 - gateway 首次启动需 **20+ 秒**（内核渠道插件同步初始化），CDP 脚本连接等待要留足余量（120s 保险）。
@@ -757,6 +777,5 @@
   未区分 setup 窗口等来源；架构性改动，需逐 handler 评估）。
 - 已发送文件附件卡片化（需先解决 gateway 发送契约一致性，阶段 20 挂账）。
 - installer 体积主体仍是 gateway.asar（R6 后 237.6MB）+ runtime；CryoClaw 侧三项裁剪目标已全部落地。
-- gateway.asar 内残余可裁候选（R6 取证顺带发现，未做）：@lydell/node-pty-win32-x64 的
-  conpty.pdb + conpty_console_list.pdb 共 10.3MB（调试符号，运行时无用）；tree-sitter-bash
-  parser.c 9.4MB、typescript/lib 14.7MB（内核运行时依赖，勿动需先取证）。
+- tree-sitter-bash parser.c 9.4MB、typescript/lib 14.7MB（内核运行时依赖，勿动需先取证）；
+  @lydell 的 .pdb 调试符号已于 R15 裁剪落地（非候选）。

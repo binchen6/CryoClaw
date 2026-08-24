@@ -1,39 +1,19 @@
 import assert from "node:assert/strict";
 import { handleChatEvent, loadChatHistory } from "./chat.ts";
+import { FakeScheduler } from "../../test-utils/fake-scheduler.ts";
 
-type RafTask = {
-  id: number;
-  fn: FrameRequestCallback;
-};
+// 最小帧调度器，手动推进 requestAnimationFrame 回调。
+class FakeRaf extends FakeScheduler<FrameRequestCallback> {
+  constructor() {
+    super((fn) => fn(performance.now()));
+  }
 
-class FakeRaf {
-  private nextId = 1;
-  private tasks = new Map<number, RafTask>();
-
-  // 提供最小帧调度器，手动推进 requestAnimationFrame 回调。
   requestAnimationFrame(fn: FrameRequestCallback) {
-    const id = this.nextId++;
-    this.tasks.set(id, { id, fn });
-    return id;
+    return this.schedule(fn);
   }
 
   cancelAnimationFrame(id: number) {
-    this.tasks.delete(id);
-  }
-
-  runNext() {
-    const task = [...this.tasks.values()].sort((a, b) => a.id - b.id)[0];
-    if (!task) {
-      return;
-    }
-    this.tasks.delete(task.id);
-    task.fn(performance.now());
-  }
-
-  runAll() {
-    while (this.tasks.size > 0) {
-      this.runNext();
-    }
+    this.cancel(id);
   }
 }
 

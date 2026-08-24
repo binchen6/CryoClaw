@@ -28,6 +28,7 @@ import {
   isBrowserInstalled,
   isExtensionBlocklisted,
   killBackgroundProcesses,
+  type DefaultBrowserResult,
   type ExtensionSpec,
 } from "../browser";
 import {
@@ -38,6 +39,7 @@ import {
   readCacheManifest,
   resolveWebbridgeExtensionSpec,
   runWebbridgeSetupTask,
+  type SetupTaskSummary,
 } from "../webbridge";
 import { readUserConfig, writeUserConfig } from "../provider-config";
 import { assertTrustedIpcSender } from "../ipc-sender-guard";
@@ -113,6 +115,98 @@ const openWebbridgeEnableGuideInBrowser = async (): Promise<boolean> => {
     return false;
   }
 };
+
+// 扩展修复前的浏览器准备：缺扩展时检查默认浏览器运行态（前台 → 阻断，
+// 后台残留 → 主动清理），随后清 extension blocklist。
+// repair-and-enable 与 pill-repair 共用；仅当 missingExtension 时才碰浏览器。
+const prepareBrowserForExtensionRepair = async (
+  def: DefaultBrowserResult,
+  missingExtension: boolean,
+  extId: string,
+  logTag: string,
+): Promise<{ status: "ok" } | { status: "browser-running" }> => {
+  if (!missingExtension || !isBrowserInstalled(def.target)) {
+    return { status: "ok" };
+  }
+  const state = await getBrowserRunningState(def.target);
+  if (state === "foreground") {
+    return { status: "browser-running" };
+  }
+  if (state === "background-only") {
+    const k = await killBackgroundProcesses(def.target);
+    log.info(
+      `[${logTag}] ${def.target.name} background-only 清理: killed=${k.killed}${
+        k.error ? ` error=${k.error}` : ""
+      }`,
+    );
+  }
+  // 用户从 UI 卸过扩展会进 external_uninstalls 黑名单，写 JSON 静默失效。
+  // 只有 extension 项要修时才需要清；只清默认浏览器。
+  if (extId) {
+    if (await isExtensionBlocklisted(def.target, extId)) {
+      const cleanResult = await cleanExtensionBlocklist(def.target, extId);
+      log.info(
+        `[${logTag}] ${def.target.name} blocklist cleanup: ${cleanResult}`,
+      );
+    }
+  }
+  return { status: "ok" };
+};
+
+// 选择性修复：只对真正缺的项跑安装；扩展只装到默认浏览器。
+// repair-and-enable 与 pill-repair 共用；扩展只装到默认浏览器。
+const runSelectiveWebbridgeRepair = async (
+  extId: string,
+  binaryPath: string,
+  missing: { binary: boolean; skill: boolean; extension: boolean },
+): Promise<SetupTaskSummary> =>
+  runWebbridgeSetupTask({
+    installer: () => installWebbridge({ force: false }),
+    installExtensions: async () => {
+      const spec = resolveWebbridgeExtensionSpec();
+      if (!spec) {
+        log.error(
+          "[webbridge-repair] 无法解析 ExtensionSpec（CRX 资源缺失），跳过扩展安装",
+        );
+        return [];
+      }
+      return installForDefaultBrowser(spec);
+    },
+    readConfig: readUserConfig,
+    writeConfig: writeUserConfig, // fallbackOnFailure:false 下不会被调
+    applyMode: applyBrowserModeConfig,
+    extensionId: extId,
+    installSkill: (bp) => installWebbridgeSkill(bp),
+    fallbackOnFailure: false,
+    skipBinaryInstall: !missing.binary,
+    skipSkillInstall: !missing.skill,
+    skipExtensionInstall: !missing.extension,
+    existingBinaryPath: binaryPath,
+    logger: {
+      info: (m) => log.info(m),
+      error: (m) => log.error(m),
+    },
+  });
+
+// 针对默认浏览器的修复前 precheck（repair-and-enable / pill-repair 共用）。
+const runDefaultBrowserPrecheck = (
+  def: DefaultBrowserResult,
+  extId: string,
+  binaryPath: string,
+) =>
+  getWebbridgePrecheck({
+    binaryPath,
+    extensionId: extId,
+    fileExists: fs.existsSync,
+    readExtensionStates: (id) =>
+      getExtensionStates(specFromExtId(id), {
+        processExec: DEFAULT_PROCESS_EXEC,
+        processCheckBrowserId: def.target.id,
+      }),
+    getDefaultBrowser,
+    readSkillEnabled: readKimiWebbridgeSkillEnabled,
+    currentBrowserMode: getCurrentBrowserMode(),
+  });
 
 export function registerWebbridgeIpc(opts: SettingsIpcOptions): void {
   // ── WebBridge 安装状态（只读，不调 CLI） ──
@@ -256,88 +350,33 @@ export function registerWebbridgeIpc(opts: SettingsIpcOptions): void {
       const binaryPath = resolveWebbridgeBinaryPath();
 
       // 1. 先跑 precheck 知道缺啥（只查默认浏览器的进程，省 1 次 tasklist）
-      const pre = await getWebbridgePrecheck({
-        binaryPath,
-        extensionId: extId,
-        fileExists: fs.existsSync,
-        readExtensionStates: (id) =>
-          getExtensionStates(specFromExtId(id), {
-            processExec: DEFAULT_PROCESS_EXEC,
-            processCheckBrowserId: def.target.id,
-          }),
-        getDefaultBrowser,
-        readSkillEnabled: readKimiWebbridgeSkillEnabled,
-        currentBrowserMode: getCurrentBrowserMode(),
-      });
+      const pre = await runDefaultBrowserPrecheck(def, extId, binaryPath);
 
-      // 2. 只有 extension 项要修时才检查默认浏览器是否在跑
-      //    （清 blocklist / 写 External Extensions / 验证 presentInChrome 都需要浏览器关闭，
-      //     binary-only / skill-only 修复完全不碰浏览器，没理由勒令关。）
+      // 2. 只有 extension 项要修时才检查默认浏览器是否在跑（含清 blocklist）
+      //    binary-only / skill-only 修复完全不碰浏览器，没理由勒令关。
       //    Win Edge 经典坑：用户已关窗口但 "Continue running background apps" 让 msedge.exe
       //    后台进程残留，触发 "请退出 Edge" 提示但用户实际已关——区分前台/后台两种状态。
-      if (pre.missing.extension && isBrowserInstalled(def.target)) {
-        const state = await getBrowserRunningState(def.target);
-        if (state === "foreground") {
-          return {
-            success: false,
-            code: "BROWSER_RUNNING",
-            browserName: def.target.name,
-            message: `${def.target.name} 正在运行；请先完全退出 ${def.target.name} 后再点修复。`,
-          };
-        }
-        if (state === "background-only") {
-          const k = await killBackgroundProcesses(def.target);
-          log.info(
-            `[webbridge-repair] ${def.target.name} background-only 清理: killed=${k.killed}${
-              k.error ? ` error=${k.error}` : ""
-            }`,
-          );
-        }
-      }
-      if (pre.missing.extension) {
-        // 3. 用户从 UI 卸过扩展会进 external_uninstalls 黑名单，写 JSON 静默失效。
-        //    只有 extension 项要修时才需要清；只清默认浏览器。
-        if (extId && isBrowserInstalled(def.target)) {
-          if (await isExtensionBlocklisted(def.target, extId)) {
-            const cleanResult = await cleanExtensionBlocklist(
-              def.target,
-              extId,
-            );
-            log.info(
-              `[webbridge-repair] ${def.target.name} blocklist cleanup: ${cleanResult}`,
-            );
-          }
-        }
+      const prep = await prepareBrowserForExtensionRepair(
+        def,
+        pre.missing.extension,
+        extId,
+        "webbridge-repair",
+      );
+      if (prep.status === "browser-running") {
+        return {
+          success: false,
+          code: "BROWSER_RUNNING",
+          browserName: def.target.name,
+          message: `${def.target.name} 正在运行；请先完全退出 ${def.target.name} 后再点修复。`,
+        };
       }
 
-      // 4. 选择性修复：只对真正缺的项跑安装；扩展只装到默认浏览器
-      const summary = await runWebbridgeSetupTask({
-        installer: () => installWebbridge({ force: false }),
-        installExtensions: async () => {
-          const spec = resolveWebbridgeExtensionSpec();
-          if (!spec) {
-            log.error(
-              "[webbridge-repair] 无法解析 ExtensionSpec（CRX 资源缺失），跳过扩展安装",
-            );
-            return [];
-          }
-          return installForDefaultBrowser(spec);
-        },
-        readConfig: readUserConfig,
-        writeConfig: writeUserConfig, // fallbackOnFailure:false 下不会被调
-        applyMode: applyBrowserModeConfig,
-        extensionId: extId,
-        installSkill: (bp) => installWebbridgeSkill(bp),
-        fallbackOnFailure: false,
-        skipBinaryInstall: !pre.missing.binary,
-        skipSkillInstall: !pre.missing.skill,
-        skipExtensionInstall: !pre.missing.extension,
-        existingBinaryPath: binaryPath,
-        logger: {
-          info: (m) => log.info(m),
-          error: (m) => log.error(m),
-        },
-      });
+      // 3. 选择性修复：只对真正缺的项跑安装；扩展只装到默认浏览器
+      const summary = await runSelectiveWebbridgeRepair(
+        extId,
+        binaryPath,
+        pre.missing,
+      );
       if (summary.outcome !== "webbridge-ready") {
         return {
           success: false,
@@ -383,19 +422,7 @@ export function registerWebbridgeIpc(opts: SettingsIpcOptions): void {
       const binaryPath = resolveWebbridgeBinaryPath();
 
       // 1. 跑 precheck 知道缺哪几项
-      const pre = await getWebbridgePrecheck({
-        binaryPath,
-        extensionId: extId,
-        fileExists: fs.existsSync,
-        readExtensionStates: (id) =>
-          getExtensionStates(specFromExtId(id), {
-            processExec: DEFAULT_PROCESS_EXEC,
-            processCheckBrowserId: def.target.id,
-          }),
-        getDefaultBrowser,
-        readSkillEnabled: readKimiWebbridgeSkillEnabled,
-        currentBrowserMode: getCurrentBrowserMode(),
-      });
+      const pre = await runDefaultBrowserPrecheck(def, extId, binaryPath);
 
       if (pre.ok) {
         // 三组件都健康——再看用户是否真的启用了扩展
@@ -428,63 +455,27 @@ export function registerWebbridgeIpc(opts: SettingsIpcOptions): void {
       }
 
       // 2. 缺扩展 + 浏览器 foreground → 必须让用户关浏览器（无法 race-safe 清 blocklist）
-      if (pre.missing.extension && isBrowserInstalled(def.target)) {
-        const state = await getBrowserRunningState(def.target);
-        if (state === "foreground") {
-          return {
-            success: false,
-            code: "BROWSER_RUNNING",
-            browserName: def.target.name,
-          };
-        }
-        if (state === "background-only") {
-          const k = await killBackgroundProcesses(def.target);
-          log.info(
-            `[webbridge-pill-repair] ${def.target.name} background-only 清理: killed=${k.killed}${
-              k.error ? ` error=${k.error}` : ""
-            }`,
-          );
-        }
-      }
-
-      // 3. 清 blocklist（仅当要装扩展时）
-      if (pre.missing.extension && extId && isBrowserInstalled(def.target)) {
-        if (await isExtensionBlocklisted(def.target, extId)) {
-          const cleanResult = await cleanExtensionBlocklist(def.target, extId);
-          log.info(
-            `[webbridge-pill-repair] ${def.target.name} blocklist cleanup: ${cleanResult}`,
-          );
-        }
+      // 3. 后台残留清理 + 清 blocklist（仅当要装扩展时）
+      const prep = await prepareBrowserForExtensionRepair(
+        def,
+        pre.missing.extension,
+        extId,
+        "webbridge-pill-repair",
+      );
+      if (prep.status === "browser-running") {
+        return {
+          success: false,
+          code: "BROWSER_RUNNING",
+          browserName: def.target.name,
+        };
       }
 
       // 4. 选择性修复：按 precheck 缺啥跑啥
-      const summary = await runWebbridgeSetupTask({
-        installer: () => installWebbridge({ force: false }),
-        installExtensions: async () => {
-          const spec = resolveWebbridgeExtensionSpec();
-          if (!spec) {
-            log.error(
-              "[webbridge-repair] 无法解析 ExtensionSpec（CRX 资源缺失），跳过扩展安装",
-            );
-            return [];
-          }
-          return installForDefaultBrowser(spec);
-        },
-        readConfig: readUserConfig,
-        writeConfig: writeUserConfig, // fallbackOnFailure:false 下不会被调
-        applyMode: applyBrowserModeConfig,
-        extensionId: extId,
-        installSkill: (bp) => installWebbridgeSkill(bp),
-        fallbackOnFailure: false,
-        skipBinaryInstall: !pre.missing.binary,
-        skipSkillInstall: !pre.missing.skill,
-        skipExtensionInstall: !pre.missing.extension,
-        existingBinaryPath: binaryPath,
-        logger: {
-          info: (m) => log.info(m),
-          error: (m) => log.error(m),
-        },
-      });
+      const summary = await runSelectiveWebbridgeRepair(
+        extId,
+        binaryPath,
+        pre.missing,
+      );
 
       if (summary.outcome !== "webbridge-ready") {
         return {

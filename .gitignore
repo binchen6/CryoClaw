@@ -67,3 +67,6 @@ chat-ui/ui/.test-dist/
 
 # electron-builder 差分包（如被意外开启）
 *.blockmap
+
+# jscpd 重复代码报告产物
+.jscpd-report/

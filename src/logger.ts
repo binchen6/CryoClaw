@@ -40,11 +40,13 @@ function getLogStream(): fs.WriteStream {
   return logStream;
 }
 
-async function closeLogStream(): Promise<void> {
-  const stream = logStream;
-  if (!stream) return;
-  logStream = null;
-  await new Promise<void>((resolve) => {
+// 流关闭通用工具：end 后等 close，1s 超时兜底（退出路径不阻塞）。
+// logger 与 gateway-process 的诊断日志流关闭共用。
+export function endStreamWithTimeout(stream: {
+  once(event: string, listener: () => void): unknown;
+  end(): unknown;
+}): Promise<void> {
+  return new Promise<void>((resolve) => {
     let settled = false;
     const finish = () => {
       if (!settled) {
@@ -57,6 +59,13 @@ async function closeLogStream(): Promise<void> {
     stream.end();
     setTimeout(finish, 1000).unref?.();
   });
+}
+
+async function closeLogStream(): Promise<void> {
+  const stream = logStream;
+  if (!stream) return;
+  logStream = null;
+  await endStreamWithTimeout(stream);
 }
 
 export async function withFileLoggingPaused<T>(fn: () => Promise<T>): Promise<T> {
