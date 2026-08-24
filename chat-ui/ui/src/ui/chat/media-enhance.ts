@@ -190,13 +190,14 @@ function fileNameOf(path: string): string {
   return parts[parts.length - 1] || path;
 }
 
-// 文件卡片（字符串层产物）：点击卡片主体打开文件，右侧按钮在文件夹中显示
+// 文件卡片（字符串层产物）：点击卡片主体打开文件，右侧按钮在文件夹中显示。
+// 根元素用 <span>：替换点位于 marked 生成的 <p> 内，<div> 会触发隐式闭合段落（phrasing content 合法性）。
 export function buildFileCardHtml(path: string, fullMatch: string): string {
   const ext = fileExtOf(path);
   const icon = LUCIDE_OPEN + (ICON_BY_CATEGORY[fileCategoryOf(ext)] ?? ICON_BY_CATEGORY.generic) + "</svg>";
   const revealIcon = LUCIDE_OPEN + FOLDER_OPEN_ICON + "</svg>";
   return (
-    `<div class="chat-file-card" role="button" tabindex="0" ` +
+    `<span class="chat-file-card" role="button" tabindex="0" ` +
     `data-file-path="${escapeAttr(path)}" data-file-ext="${escapeAttr(ext)}" ` +
     `data-media-text="${escapeAttr(fullMatch)}" title="${escapeAttr(path)}">` +
     `<span class="chat-file-card__icon" aria-hidden="true">${icon}</span>` +
@@ -206,7 +207,7 @@ export function buildFileCardHtml(path: string, fullMatch: string): string {
     `</span>` +
     `<button class="chat-file-card__reveal" data-file-reveal="1" type="button" ` +
     `title="${escapeAttr(t("chat.fileCard.reveal"))}" aria-label="${escapeAttr(t("chat.fileCard.reveal"))}">${revealIcon}</button>` +
-    `</div>`
+    `</span>`
   );
 }
 

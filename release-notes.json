@@ -1,5 +1,12 @@
 [
   {
+    "version": "2026.824.2",
+    "notes": {
+      "zh": "修复：文件卡片改用段落内合法的内联根元素，避免消息段落被隐式截断\n修复：无状态字段的子代理任务不再被误判为运行中（防僵尸等待卡）\n测试基线 499 用例全绿",
+      "en": "Fix: file cards now use a phrasing-safe inline root element so message paragraphs are no longer implicitly broken\nFix: subagent tasks without a status field are no longer treated as running (prevents stuck wait cards)\n499-test baseline all green"
+    }
+  },
+  {
     "version": "2026.824.1",
     "notes": {
       "zh": "新功能：历史消息中的非图片文件（文档/表格/压缩/音视频/代码等）现在以文件卡片展示——点击打开，卡片内按钮可在文件夹中显示\n新功能：主回合等待子代理时，聊天区显示子代理状态卡（标题/运行状态/进度摘要），阅读指示器同步显示等待状态\n优化：断线重连后自动重建被中断的流式消息视图；终态异常空读不再清空本地对话\n优化：回合结束后用量/会话列表刷新提速（1.5s → 0.8s）\n测试基线 498 用例全绿",

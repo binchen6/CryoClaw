@@ -11,9 +11,9 @@
 面向国内生态（Kimi / Moonshot / 飞书 / 企微 / 微信 / 钉钉 / QQ）。
 
 **当前状态**：
-- 更名 CryoClaw 完成；CryoClaw 重设计工程 **R1–R23 全部完成**（见下节），最新发版 **v2026.824.1**（R23：聊天增强批次一——MEDIA 文件卡片、子代理等待状态卡、流式完整性/及时性加固；上一版 v2026.824.0：R22 重复代码治理 2.29% → 1.22%）。
+- 更名 CryoClaw 完成；CryoClaw 重设计工程 **R1–R23 全部完成**（见下节），最新发版 **v2026.824.2**（R23 审查修复：文件卡片段落合法性 + 子代理无状态僵尸卡防护；v2026.824.1：R23 聊天增强批次一）。
 - 内核 openclaw **2026.7.1-2**（版本 pin 在 package.json `cryoclaw.openclaw`）；**Electron 43.4.0**（R13 升级落地，audit 0 漏洞）。
-- 测试基线 **498 pass / 0 fail / 4 skipped**（vitest 94 + node 74 + chat-ui 278 + scripts 52 + tsc typecheck；0 fail 为硬指标）。R23 新增 11 用例（文件卡片 4 + 子代理状态卡 7）；历史演进见测试体系节。
+- 测试基线 **499 pass / 0 fail / 4 skipped**（vitest 94 + node 74 + chat-ui 279 + scripts 52 + tsc typecheck；0 fail 为硬指标）。R23 新增 12 用例 + 审查修复补 1 用例；历史演进见测试体系节。
 - 历史优化阶段 1–22 全部完成并逐版发版至 v2026.811.0（见历史档案）。
 - 已开源发布至 GitHub（binchen6/CryoClaw，AGPL-3.0-only）；发布时以全新干净历史快照推送，旧本地历史（含已作废的 kimi-claw REFRESH 凭证）不出仓；`.env.build` 已转 gitignored，模板见 `.env.build.example`；git 身份统一为 binchen6。CI：`tests.yml` 每次 push/PR 全量回归（chat-ui/ui 独立依赖树需先安装）；上游签名/CDN 发版链 `build-release.yml`/`publish-release.yml` 已删除（依赖上游 oneclaw 签名证书与 oneclaw.cn CDN，本 fork 不适用，发版走本地 dist:win + gh release）。
 
@@ -90,12 +90,12 @@
 
 ## ✅ 测试体系（勿重复搭建）
 
-- 基线 **498 pass / 0 fail / 4 skipped**（vitest 94 + node 74 + chat-ui 278 + scripts 52；0 fail 为硬指标；R23 新增 11 用例）；历史演进：142 → 185 → 194 → 288 → 320 → 334 → 391 → 400 → 418 → 425 → 449 → 429
+- 基线 **499 pass / 0 fail / 4 skipped**（vitest 94 + node 74 + chat-ui 279 + scripts 52；0 fail 为硬指标）；历史演进：142 → 185 → 194 → 288 → 320 → 334 → 391 → 400 → 418 → 425 → 449 → 429
   （R7 移除 kimi-claw 插件同步删除其 20 个测试所致，非回归）→ 439（R4 W2a）
   → 427（R4 W2b 删 3 个旧 config 测试文件 node -13；chat-ui 224 含 tab-channels.lib
   31 用例与 R5 性能用例 chat-memo / markdown 防污染 / usage-refresh / sessions in-flight）
   → 430（R6 scripts +3：pruneNonTargetNativePlatformPackages / prunePluginNodeModules /
-  kernel-prune 嵌套平台包）→ 431（R9 model-org.lib +7 组）→ 487（R13/R20 逐步累积）→ 498（R23 文件卡片 +4、子代理状态卡 +7）。
+  kernel-prune 嵌套平台包）→ 431（R9 model-org.lib +7 组）→ 487（R13/R20 逐步累积）→ 498（R23 文件卡片 +4、子代理状态卡 +7）→ 499（R23 审查修复 +1）。
 - 基础设施：`tsconfig.test.json`（outDir `.test-dist/`、rewriteRelativeImportExtensions）、
   `vitest.config.ts`（vitest 文件 include 列表）、`scripts/run-node-tests.js`（跑 `.test-dist/*.test.js`，
   编译前清空 .test-dist，排除 vitest 文件）、npm scripts `test` / `test:unit(:vitest|:node)` /
@@ -631,6 +631,7 @@
 - **W3 流式加固**：① `mergeIfStale` 补空读保护（非重置路径拿到空历史保留本地，防 delta 丢失叠加空读清空视图）；② 重连兜底：握手完成后（仅重连路径）重拉持久化历史重建被断连清掉的流式气泡；③ 终态 sessions 拉取 1500ms → 800ms 提速（usage 未落盘由 sessions.changed 事件兜底清 dirty）。流式期 rAF 单帧提交纯文本、终态一次性排版 + 缓存既有链路未动（无测量支撑不重写）。+1 用例。
 - **问答卡片取证结论**（网关不支持，本批不做应用层实现）：内核 `poll` RPC（core-descriptors，operator.write，不广播）面向外部渠道出站投票（Telegram/Discord/iMessage 等，`callMessageGateway method:"poll" {to,question,options,maxSelections}`）；webchat 无问答卡片消息块/事件；现有交互卡片仅 exec.approval / plugin.approval 两条链。若上游后续原生支持再按契约接入。
 - 验证：测试基线 487 → **498**（0 fail）；`npm run build` 通过；重复率 1.21% 未回退（65 clones）。
+- **审查修复（随 v2026.824.2）**：全量代码审查无 Critical/Major，2 条 Minor 已修——① 文件卡片根元素 `<div>` 在 marked `<p>` 内触发隐式闭合段落 → 改 `<span>`（phrasing content 合法）；② `selectSubagentCards` 对缺失 `status` 的任务被 `isActiveTask` 默认 queued 误判为活跃恒显示 → 无 status 一律走终态时间窗兜底；另修正定格窗口注释（收敛依赖下一次重算）。基线 498 → **499**。
 
 ### R8 · 插件管理页面（已重启完成，见上节 R8 记录）
 

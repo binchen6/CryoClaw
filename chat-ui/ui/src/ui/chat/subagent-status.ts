@@ -16,7 +16,9 @@ export type SubagentCard = {
   progress: string | null;
 };
 
-// 终态定格窗口：完成后短暂保留卡片展示结果，避免一闪而过
+// 终态定格窗口：完成后短暂保留卡片展示结果，避免一闪而过。
+// 收敛时机依赖下一次 buildChatItems 重算（新消息/流式/tick 驱动；公共 ticker 周期较长，
+// 实际定格时长 = 窗口 + 至下一次重算的间隔）。
 const TERMINAL_GRACE_MS = 15_000;
 
 function toMillis(value: unknown): number | null {
@@ -47,7 +49,9 @@ export function selectSubagentCards(
     if (task.sessionKey !== sessionKey && task.ownerKey !== sessionKey) {
       continue;
     }
-    const active = isActiveTask(task);
+    // 无 status 字段视为不可判定，按终态路径走时间窗兜底（防僵尸等待卡：
+    // isActiveTask 对缺失 status 默认 queued，会误判为活跃恒显示）
+    const active = typeof task.status === "string" ? isActiveTask(task) : false;
     if (!active) {
       const ended = toMillis(task.endedAt) ?? toMillis(task.updatedAt);
       if (ended === null || now - ended > TERMINAL_GRACE_MS) {

@@ -75,6 +75,18 @@ test("subagent：空列表 / 空会话键安全返回空", () => {
   assert.deepEqual(selectSubagentCards(null, SESSION, NOW), []);
 });
 
+test("subagent：无 status 字段不误判为活跃（防僵尸等待卡）", () => {
+  // 无时间戳 → 不可判定，隐藏
+  const noStatus = makeTask({ status: undefined, endedAt: undefined, updatedAt: undefined });
+  assert.equal(selectSubagentCards([noStatus], SESSION, NOW).length, 0);
+  // 终态时间窗内 → 按非活跃展示（而不是恒显示）
+  const freshNoStatus = makeTask({ id: "t2", status: undefined, endedAt: NOW - 5_000, updatedAt: undefined });
+  const cards = selectSubagentCards([freshNoStatus], SESSION, NOW);
+  assert.equal(cards.length, 1);
+  assert.equal(cards[0].active, false, "无 status 应走终态路径");
+  assert.equal(cards[0].status, "completed");
+});
+
 test("subagent：失败类状态判定", () => {
   assert.equal(isFailedSubagentStatus("failed"), true);
   assert.equal(isFailedSubagentStatus("cancelled"), true);

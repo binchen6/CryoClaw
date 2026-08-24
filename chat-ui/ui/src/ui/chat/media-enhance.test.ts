@@ -100,6 +100,8 @@ test("fileCard：renderMediaMarkers 分流（文件卡片 / 图片保持）", ()
   assert.ok(fileHtml.includes('class="chat-file-card"'), "非图片文件应渲染卡片");
   assert.ok(fileHtml.includes('data-file-ext="xlsx"'), "携带扩展名");
   assert.ok(fileHtml.includes("data-file-reveal"), "携带在文件夹中显示按钮");
+  assert.ok(fileHtml.includes("<span class=\"chat-file-card\""), "卡片根元素必须是 span（<p> 内合法，防隐式闭合段落）");
+  assert.ok(!fileHtml.includes("<div"), "卡片不得使用 div 根元素");
   assert.ok(!fileHtml.includes("<img"), "不渲染为图片");
 
   const imgHtml = renderMediaMarkers("<p>MEDIA:C:\\demo\\pic.png</p>");
