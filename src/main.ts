@@ -725,6 +725,15 @@ ipcMain.handle("app:open-path", (event, filePath: string) => {
   }
   return shell.openPath(filePath);
 });
+// 在文件管理器中定位文件（不执行文件，无白名单限制；聊天文件卡片「在文件夹中显示」用）
+ipcMain.handle("app:reveal-path", (event, filePath: string) => {
+  if (!assertTrustedIpcSender(event, "app:reveal-path")) return Promise.reject(new Error("IPC sender not trusted"));
+  if (typeof filePath !== "string" || !filePath.trim()) {
+    return Promise.reject(new Error("非法路径"));
+  }
+  shell.showItemInFolder(filePath);
+  return Promise.resolve();
+});
 
 // 文件选择对话框 — 返回文件绝对路径数组
 ipcMain.handle("dialog:select-files", async (event, options?: { filters?: Electron.FileFilter[] }) => {

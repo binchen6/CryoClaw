@@ -22,3 +22,12 @@ export function showToast(state: AppViewState, message: string) {
     state.requestUpdate();
   }, 4000);
 }
+
+// DOM 层（事件委托等无 state 上下文处）触发 toast 的桥：查找应用根元素并复用 showToast。
+export function showToastGlobal(message: string): void {
+  const app = document.querySelector("openclaw-app") as (Element & { requestUpdate?: () => void }) | null;
+  if (!app || typeof app.requestUpdate !== "function") {
+    return;
+  }
+  showToast(app as unknown as AppViewState, message);
+}

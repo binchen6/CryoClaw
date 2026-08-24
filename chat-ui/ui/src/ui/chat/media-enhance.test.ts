@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { extractMediaMatch, localPathToFileUrl, looksLikeImagePath, renderMediaMarkers } from "./media-enhance.ts";
+import { extractMediaMatch, fileCategoryOf, fileExtOf, localPathToFileUrl, looksLikeFileOrImagePath, looksLikeImagePath, renderMediaMarkers } from "./media-enhance.ts";
 
 // ── 历史消息 MEDIA:<路径> 识别与 file URL 转换 ──
 
@@ -64,4 +64,47 @@ test("media：renderMediaMarkers 代码块内与无效标记不替换", () => {
   assert.equal(invalid, "<p>MEDIA:hello</p>", "非路径候选保留原文");
   const none = renderMediaMarkers("<p>普通文本</p>");
   assert.equal(none, "<p>普通文本</p>");
+});
+
+// ── R23：MEDIA:<非图片文件路径> 文件卡片 ──
+
+test("fileCard：常见文件后缀识别与分类", () => {
+  assert.equal(fileExtOf("C:\\a\\b.pdf"), "pdf");
+  assert.equal(fileExtOf("report.XLSX"), "xlsx", "大小写归一");
+  assert.equal(fileCategoryOf("pdf"), "text");
+  assert.equal(fileCategoryOf("xlsx"), "sheet");
+  assert.equal(fileCategoryOf("zip"), "archive");
+  assert.equal(fileCategoryOf("py"), "code");
+  assert.equal(fileCategoryOf("mp3"), "audio");
+  assert.equal(fileCategoryOf("mp4"), "video");
+  assert.equal(fileCategoryOf("unknown-ext"), "generic");
+});
+
+test("fileCard：路径形态判断（图片/文件/拒绝）", () => {
+  assert.equal(looksLikeFileOrImagePath("C:\\a\\b.pdf"), true);
+  assert.equal(looksLikeFileOrImagePath("report.docx"), true, "仅已知文件扩展名也算");
+  assert.equal(looksLikeFileOrImagePath("hello"), false, "无扩展名裸词拒绝");
+  assert.equal(looksLikeFileOrImagePath("weird.xyz123"), false, "未知扩展名拒绝");
+  // 图片路径判定不受影响
+  assert.equal(looksLikeImagePath("photo.jpeg"), true);
+});
+
+test("fileCard：裸路径按文件扩展名截断尾随文本", () => {
+  const m = extractMediaMatch("生成的报告 MEDIA:C:\\out\\report.pdf 请查收");
+  assert.ok(m, "应匹配");
+  assert.equal(m!.path, "C:\\out\\report.pdf");
+});
+
+test("fileCard：renderMediaMarkers 分流（文件卡片 / 图片保持）", () => {
+  const fileHtml = renderMediaMarkers("<p>MEDIA:C:\\demo\\data.xlsx</p>");
+  assert.ok(fileHtml.includes('class="chat-file-card"'), "非图片文件应渲染卡片");
+  assert.ok(fileHtml.includes('data-file-ext="xlsx"'), "携带扩展名");
+  assert.ok(fileHtml.includes("data-file-reveal"), "携带在文件夹中显示按钮");
+  assert.ok(!fileHtml.includes("<img"), "不渲染为图片");
+
+  const imgHtml = renderMediaMarkers("<p>MEDIA:C:\\demo\\pic.png</p>");
+  assert.ok(imgHtml.includes('<img class="chat-local-media"'), "图片仍走 img 链");
+
+  const inPre = renderMediaMarkers("<pre>MEDIA:C:\\demo\\a.pdf</pre>");
+  assert.ok(!inPre.includes("chat-file-card"), "pre 内不渲染卡片");
 });

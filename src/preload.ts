@@ -171,6 +171,8 @@ contextBridge.exposeInMainWorld("cryoclaw", {
   openExternal: (url: string) => ipcRenderer.invoke("app:open-external", url),
   // 打开本地文件/目录
   openPath: (path: string) => ipcRenderer.invoke("app:open-path", path),
+  // 在文件管理器中定位文件（不执行）
+  revealPath: (path: string) => ipcRenderer.invoke("app:reveal-path", path),
 
   // 文件选择
   selectFiles: (options?: { filters?: Array<{ name: string; extensions: string[] }> }) =>

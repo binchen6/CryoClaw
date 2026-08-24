@@ -316,6 +316,7 @@ interface CryoClawBridgeExtended {
       // System
       openExternal?: (url: string) => Promise<any>;
       openPath?: (path: string) => Promise<any>;
+      revealPath?: (path: string) => Promise<any>;
       quit?: () => void;
       reportSetupViewState?: (active: boolean) => void;
 }
@@ -707,6 +708,10 @@ export function openExternal(url: string): Promise<void> {
 
 export function openPath(path: string): Promise<void> {
   return oc().openPath(path) as Promise<void>;
+}
+
+export function revealPath(path: string): Promise<void> {
+  return oc().revealPath(path) as Promise<void>;
 }
 
 export function quit(): void {

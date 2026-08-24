@@ -3,6 +3,8 @@
  * grouped render, tool cards, and chat view.
  */
 
+import type { SubagentCard } from "../chat/subagent-status.ts";
+
 export type MessageContentItem = {
   type: string;
   text?: string;
@@ -29,7 +31,8 @@ export type ChatItem =
   | { kind: "message"; key: string; message: unknown }
   | { kind: "divider"; key: string; label: string; timestamp: number }
   | { kind: "stream"; key: string; text: string; startedAt: number }
-  | { kind: "reading-indicator"; key: string };
+  | { kind: "reading-indicator"; key: string; subagentWaiting?: boolean }
+  | { kind: "subagent-cards"; key: string; cards: SubagentCard[] };
 
 export type MessageGroup = {
   kind: "group";

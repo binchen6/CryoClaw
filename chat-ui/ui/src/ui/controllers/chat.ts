@@ -157,17 +157,20 @@ export async function loadChatHistory(
     // 例外：raw 含 compaction 标记（__openclaw.kind==="compaction"）说明服务端发生了
     // 上下文压缩，历史合法变短——滞后快照不会“长出”新压缩标记，必须替换而非保留，
     // 否则本地列表恒长于服务端，压缩后的新回复将永远无法上屏。
+    // R23：空读同样保护——非重置路径（重置不走 mergeIfStale）拿到空历史是瞬时异常，
+    // 保留本地等待下次刷新，防 delta 丢失叠加空读导致整个对话视图被清空。
     if (
       opts?.mergeIfStale &&
-      raw.length > 0 &&
-      raw.length < (state.chatMessages?.length ?? 0) &&
-      !raw.some(
+      raw.length < (state.chatMessages?.length ?? 0)
+    ) {
+      const hasCompactionMarker = raw.some(
         (m) =>
           ((m as Record<string, unknown>).__openclaw as Record<string, unknown> | undefined)
             ?.kind === "compaction",
-      )
-    ) {
-      return;
+      );
+      if (raw.length === 0 || !hasCompactionMarker) {
+        return;
+      }
     }
     const deduplicated = deduplicateDeliveryMirrors(raw);
     state.chatMessages = deduplicated;

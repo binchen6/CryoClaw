@@ -1,5 +1,12 @@
 [
   {
+    "version": "2026.824.1",
+    "notes": {
+      "zh": "新功能：历史消息中的非图片文件（文档/表格/压缩/音视频/代码等）现在以文件卡片展示——点击打开，卡片内按钮可在文件夹中显示\n新功能：主回合等待子代理时，聊天区显示子代理状态卡（标题/运行状态/进度摘要），阅读指示器同步显示等待状态\n优化：断线重连后自动重建被中断的流式消息视图；终态异常空读不再清空本地对话\n优化：回合结束后用量/会话列表刷新提速（1.5s → 0.8s）\n测试基线 498 用例全绿",
+      "en": "New: non-image files in legacy MEDIA:<path> markers (documents, spreadsheets, archives, media, code) now render as file cards — click to open, in-card button to show in folder\nNew: while the main turn waits for subagents, the chat shows subagent status cards (title / state / progress summary) and the reading indicator reflects the wait\nImproved: reconnect now rebuilds interrupted streaming views from persisted history; transient empty history reads no longer wipe the local conversation\nImproved: post-turn usage/session list refresh is faster (1.5s → 0.8s)\n498-test baseline all green"
+    }
+  },
+  {
     "version": "2026.824.0",
     "notes": {
       "zh": "优化：全源码重复代码治理——jscpd 度量重复率 2.29% → 1.22%（目标 5% 以下），消除 37 组跨文件/跨模块重复\n优化：新增 6 个共享模块（渠道面板公共流程、Kimi OAuth 登录、安全打开白名单、时间格式化等），四个渠道设置面板与两个添加模型面板行为不变\n优化：新增 `npm run dupcheck` 重复率度量脚本（阈值 5%），防后续回退\n测试基线 487 用例全绿",

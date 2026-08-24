@@ -35,6 +35,7 @@ import { computeStopButtonVisible } from "./chat-stop-button-gate.ts";
 import { KNOWN_THINKING_LEVELS } from "../chat/thinking-levels.ts";
 import { resolveActiveToolName } from "../chat/tool-summary.ts";
 import { appendQuoteToDraft } from "../chat/quote-text.ts";
+import { isFailedSubagentStatus, selectSubagentCards, type SubagentCard } from "../chat/subagent-status.ts";
 import { renderPlanPanel } from "./plan-panel.ts";
 import type { PlanStreamState } from "../plan-stream.ts";
 import type { FallbackNotice } from "../app-tool-stream.ts";
@@ -71,6 +72,9 @@ export type ChatProps = {
   messages: unknown[];
   visibleHistoryCount: number;
   toolMessages: unknown[];
+  // R23：任务列表与主 run 活跃标记（子代理等待状态卡投影用，引用稳定供 memo 比较）
+  tasks?: unknown[];
+  runActive?: boolean;
   stream: string | null;
   streamStartedAt: number | null;
   assistantAvatarUrl?: string | null;
@@ -984,7 +988,11 @@ export function renderChat(props: ChatProps) {
           }
 
           if (item.kind === "reading-indicator") {
-            return renderReadingIndicatorGroup(assistantIdentity, activeToolName);
+            return renderReadingIndicatorGroup(assistantIdentity, activeToolName, item.subagentWaiting);
+          }
+
+          if (item.kind === "subagent-cards") {
+            return renderSubagentCards(item.cards);
           }
 
           if (item.kind === "stream") {
@@ -1415,6 +1423,48 @@ export function renderChat(props: ChatProps) {
 
 const CHAT_HISTORY_RENDER_LIMIT = 200;
 
+// R23：子代理等待状态卡（主 run 等待子代理期间的进度反馈；终态短暂定格）
+function subagentStatusLabel(card: SubagentCard): string {
+  if (card.active) {
+    return t("chat.subagent.running");
+  }
+  if (isFailedSubagentStatus(card.status)) {
+    if (card.status === "cancelled") return t("chat.subagent.cancelled");
+    if (card.status === "timed_out") return t("chat.subagent.timeout");
+    return t("chat.subagent.failed");
+  }
+  return t("chat.subagent.done");
+}
+
+function renderSubagentCards(cards: SubagentCard[]) {
+  return html`
+    <div class="chat-subagent-cards" role="status" aria-live="polite">
+      ${repeat(
+        cards,
+        (card) => card.id,
+        (card) => html`
+          <div
+            class="chat-subagent-card ${card.active
+              ? "chat-subagent-card--active"
+              : isFailedSubagentStatus(card.status)
+                ? "chat-subagent-card--failed"
+                : "chat-subagent-card--done"}"
+          >
+            <span class="chat-subagent-card__pulse" aria-hidden="true"></span>
+            <span class="chat-subagent-card__body">
+              <span class="chat-subagent-card__title">${card.title}</span>
+              <span class="chat-subagent-card__status">${subagentStatusLabel(card)}</span>
+              ${card.progress
+                ? html`<span class="chat-subagent-card__progress">${card.progress}</span>`
+                : nothing}
+            </span>
+          </div>
+        `,
+      )}
+    </div>
+  `;
+}
+
 // 分组用 role：tool 和 assistant 归为同一组，共享 avatar 和 footer
 function groupingRole(role: string): string {
   const r = normalizeRoleForGrouping(role);
@@ -1467,6 +1517,10 @@ function buildChatItems(props: ChatProps): Array<ChatItem | MessageGroup> {
   const items: ChatItem[] = [];
   const history = Array.isArray(props.messages) ? props.messages : [];
   const tools = Array.isArray(props.toolMessages) ? props.toolMessages : [];
+  // R23：主 run 活跃时投影当前会话的子代理任务为等待状态卡（跨会话过滤在选择函数内）
+  const subagentCards = props.runActive
+    ? selectSubagentCards(props.tasks as Parameters<typeof selectSubagentCards>[0], props.sessionKey)
+    : [];
   const visibleHistoryCount =
     props.visibleHistoryCount > 0
       ? Math.min(props.visibleHistoryCount, CHAT_HISTORY_RENDER_LIMIT, history.length)
@@ -1532,8 +1586,17 @@ function buildChatItems(props: ChatProps): Array<ChatItem | MessageGroup> {
         startedAt: props.streamStartedAt ?? Date.now(),
       });
     } else {
-      items.push({ kind: "reading-indicator", key });
+      items.push({ kind: "reading-indicator", key, subagentWaiting: subagentCards.some((c) => c.active) });
     }
+  }
+
+  // R23：子代理等待状态卡置于时间线末尾（流式气泡之后），终态定格后由刷新自然移除
+  if (subagentCards.length > 0) {
+    items.push({
+      kind: "subagent-cards",
+      key: `subagent:${props.sessionKey}`,
+      cards: subagentCards,
+    });
   }
 
   return groupMessages(items);
@@ -1547,6 +1610,8 @@ function buildChatItems(props: ChatProps): Array<ChatItem | MessageGroup> {
 type ChatItemsMemo = {
   messages: unknown[];
   toolMessages: unknown[];
+  tasks: unknown[] | undefined;
+  runActive: boolean;
   visibleHistoryCount: number;
   stream: string | null;
   streamStartedAt: number | null;
@@ -1562,6 +1627,8 @@ export function buildChatItemsMemoized(props: ChatProps): Array<ChatItem | Messa
     prev &&
     prev.messages === props.messages &&
     prev.toolMessages === props.toolMessages &&
+    prev.tasks === props.tasks &&
+    prev.runActive === Boolean(props.runActive) &&
     prev.visibleHistoryCount === props.visibleHistoryCount &&
     prev.stream === props.stream &&
     prev.streamStartedAt === props.streamStartedAt &&
@@ -1574,6 +1641,8 @@ export function buildChatItemsMemoized(props: ChatProps): Array<ChatItem | Messa
   chatItemsMemo = {
     messages: props.messages,
     toolMessages: props.toolMessages,
+    tasks: props.tasks,
+    runActive: Boolean(props.runActive),
     visibleHistoryCount: props.visibleHistoryCount,
     stream: props.stream,
     streamStartedAt: props.streamStartedAt,

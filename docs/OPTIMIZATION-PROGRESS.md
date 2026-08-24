@@ -2,7 +2,7 @@
 
 > 新接手的模型/工程师：**先读「快速上手」+「关键路径地图」+「下一步计划」**，
 > 再按需查「CryoClaw 重设计工程记录」（最新锚点）与「历史档案」（已验证事实，避免重复调查）。
-> 创建：2026-07-29；最近重写：2026-08-11（压缩版，替代原 1641 行长文）；最近更新：2026-08-24（R22 重复代码治理）。
+> 创建：2026-07-29；最近重写：2026-08-11（压缩版，替代原 1641 行长文）；最近更新：2026-08-24（R23 聊天增强批次一）。
 
 ## 🚀 快速上手（必读）
 
@@ -11,9 +11,9 @@
 面向国内生态（Kimi / Moonshot / 飞书 / 企微 / 微信 / 钉钉 / QQ）。
 
 **当前状态**：
-- 更名 CryoClaw 完成；CryoClaw 重设计工程 **R1–R22 全部完成**（见下节），最新发版 **v2026.824.0**（R22：重复代码治理——全源码重复率 2.29% → 1.22%；上一版 v2026.821.3：R18–R20 思考档位路由修复、对话健壮性、性能/稳定性/更新体系批次；R21 模型管理增强——单模型能力编辑 + 分组内新增模型 + 设置页 12 项审查修复）。
+- 更名 CryoClaw 完成；CryoClaw 重设计工程 **R1–R23 全部完成**（见下节），最新发版 **v2026.824.1**（R23：聊天增强批次一——MEDIA 文件卡片、子代理等待状态卡、流式完整性/及时性加固；上一版 v2026.824.0：R22 重复代码治理 2.29% → 1.22%）。
 - 内核 openclaw **2026.7.1-2**（版本 pin 在 package.json `cryoclaw.openclaw`）；**Electron 43.4.0**（R13 升级落地，audit 0 漏洞）。
-- 测试基线 **487 pass / 0 fail / 4 skipped**（vitest 94 + node 74 + chat-ui 267 + scripts 52 + tsc typecheck；0 fail 为硬指标）。R21 后维持不变（chat-ui lib 新增用例与死 key 清理相抵）。
+- 测试基线 **498 pass / 0 fail / 4 skipped**（vitest 94 + node 74 + chat-ui 278 + scripts 52 + tsc typecheck；0 fail 为硬指标）。R23 新增 11 用例（文件卡片 4 + 子代理状态卡 7）；历史演进见测试体系节。
 - 历史优化阶段 1–22 全部完成并逐版发版至 v2026.811.0（见历史档案）。
 - 已开源发布至 GitHub（binchen6/CryoClaw，AGPL-3.0-only）；发布时以全新干净历史快照推送，旧本地历史（含已作废的 kimi-claw REFRESH 凭证）不出仓；`.env.build` 已转 gitignored，模板见 `.env.build.example`；git 身份统一为 binchen6。CI：`tests.yml` 每次 push/PR 全量回归（chat-ui/ui 独立依赖树需先安装）；上游签名/CDN 发版链 `build-release.yml`/`publish-release.yml` 已删除（依赖上游 oneclaw 签名证书与 oneclaw.cn CDN，本 fork 不适用，发版走本地 dist:win + gh release）。
 
@@ -90,12 +90,12 @@
 
 ## ✅ 测试体系（勿重复搭建）
 
-- 基线 **487 pass / 0 fail / 4 skipped**（vitest 94 + node 74 + chat-ui 267 + scripts 52；0 fail 为硬指标；R22 重构后维持不变）；历史演进：142 → 185 → 194 → 288 → 320 → 334 → 391 → 400 → 418 → 425 → 449 → 429
+- 基线 **498 pass / 0 fail / 4 skipped**（vitest 94 + node 74 + chat-ui 278 + scripts 52；0 fail 为硬指标；R23 新增 11 用例）；历史演进：142 → 185 → 194 → 288 → 320 → 334 → 391 → 400 → 418 → 425 → 449 → 429
   （R7 移除 kimi-claw 插件同步删除其 20 个测试所致，非回归）→ 439（R4 W2a）
   → 427（R4 W2b 删 3 个旧 config 测试文件 node -13；chat-ui 224 含 tab-channels.lib
   31 用例与 R5 性能用例 chat-memo / markdown 防污染 / usage-refresh / sessions in-flight）
   → 430（R6 scripts +3：pruneNonTargetNativePlatformPackages / prunePluginNodeModules /
-  kernel-prune 嵌套平台包）→ 431（R9 model-org.lib +7 组）→ 487（R13/R20 逐步累积）。
+  kernel-prune 嵌套平台包）→ 431（R9 model-org.lib +7 组）→ 487（R13/R20 逐步累积）→ 498（R23 文件卡片 +4、子代理状态卡 +7）。
 - 基础设施：`tsconfig.test.json`（outDir `.test-dist/`、rewriteRelativeImportExtensions）、
   `vitest.config.ts`（vitest 文件 include 列表）、`scripts/run-node-tests.js`（跑 `.test-dist/*.test.js`，
   编译前清空 .test-dist，排除 vitest 文件）、npm scripts `test` / `test:unit(:vitest|:node)` /
@@ -435,7 +435,7 @@
 
 ## 📋 下一步计划（未做，按优先级）
 
-（R8 重启完成；R9/R11–R22 全部完成并发版至 v2026.824.0。剩余候选按需立项：）
+（R8 重启完成；R9/R11–R23 全部完成并发版至 v2026.824.1。剩余候选按需立项：）
 
 ### R16 · 发版验证（v2026.811.9 完成）
 - 版本 bump → dist:win（Electron 43 + pdb 裁剪）→ 安装验证。产物：安装包 129.0MB；
@@ -622,6 +622,15 @@
 - **结果**：重复率 **2.29% → 1.22%**（102 → 65 clones）；`npm test` 487 pass / 0 fail 维持；`npm run build` 通过。
 - **豁免保留**（已定案不再动）：setup-constants ↔ provider-config 的 MOONSHOT_SUB_PLATFORMS（跨进程边界有意对齐）；
   迁移测试的同输入异语义断言；tab-provider draft 写入小块（强上下文依赖）；其余均 < 70 token 小片段。
+
+### R23 · 聊天增强批次一（完成，随 v2026.824.1 发版）
+
+用户指令：① MEDIA 非图片路径以文件卡片展示（点击打开 + 在文件夹中显示）；② 子代理等待期的继续流式输出与 plan 进度同步；③ 流式输出完整性/流畅性/及时性；⑤ 问答卡片网关支持取证；（④⑥ 交互体验/渲染效率/启动加速归入批次二）。
+- **W1 MEDIA 文件卡片**（`chat/media-enhance.ts` 扩展）：新增 ~45 个常见文件后缀识别（文档/表格/演示/压缩/音视频/代码，与 safe-open 白名单对齐并扩充）；图片仍走 `<img>` 链，非图片输出 `chat-file-card`（图标 + 文件名 + 扩展名徽标 + 「在文件夹中显示」按钮）；图标取 lucide v0.577.0（ISC）内联 SVG 按类别区分，未覆盖后缀回落通用图标；点击打开走 `app:open-path` 白名单（拒绝时 toast），新增 `app:reveal-path` IPC（`shell.showItemInFolder`，sender guard，不执行文件故无白名单限制）；事件用 document 级委托（防 lit 重渲染丢监听）+ 键盘可达。裸路径截断正则交替项按长度降序（防 xls 抢先 xlsx）。+4 用例。
+- **W2 子代理等待状态卡**（新模块 `chat/subagent-status.ts`）：主 run 活跃时把当前会话相关的 subagent 任务（sessionKey/ownerKey 关联，跨会话不显示）投影为聊天区内联卡片——标题/状态脉冲/progressSummary 实时行，终态定格 15s 后由 tick 刷新自然移除；阅读指示器在等待子代理时显示「等待子代理返回…」（优先级低于工具名）。plan 面板维持现状：主 run update_plan 同步已存在，子代理自身 plan 属其他会话不注入主面板，进度经 progressSummary 行呈现。连接审计：gateway 客户端无连接级空闲超时，请求超时仅针对单次 RPC，长等待不误断连。+7 用例。
+- **W3 流式加固**：① `mergeIfStale` 补空读保护（非重置路径拿到空历史保留本地，防 delta 丢失叠加空读清空视图）；② 重连兜底：握手完成后（仅重连路径）重拉持久化历史重建被断连清掉的流式气泡；③ 终态 sessions 拉取 1500ms → 800ms 提速（usage 未落盘由 sessions.changed 事件兜底清 dirty）。流式期 rAF 单帧提交纯文本、终态一次性排版 + 缓存既有链路未动（无测量支撑不重写）。+1 用例。
+- **问答卡片取证结论**（网关不支持，本批不做应用层实现）：内核 `poll` RPC（core-descriptors，operator.write，不广播）面向外部渠道出站投票（Telegram/Discord/iMessage 等，`callMessageGateway method:"poll" {to,question,options,maxSelections}`）；webchat 无问答卡片消息块/事件；现有交互卡片仅 exec.approval / plugin.approval 两条链。若上游后续原生支持再按契约接入。
+- 验证：测试基线 487 → **498**（0 fail）；`npm run build` 通过；重复率 1.21% 未回退（65 clones）。
 
 ### R8 · 插件管理页面（已重启完成，见上节 R8 记录）
 

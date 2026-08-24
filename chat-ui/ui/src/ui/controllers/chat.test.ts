@@ -312,6 +312,19 @@ async function testMergeIfStaleReplacesOnCompaction() {
   );
 }
 
+// mergeIfStale：空读（瞬时异常）同样保留本地，防 delta 丢失叠加空读清空视图（R23）。
+async function testMergeIfStaleKeepsLocalOnEmptyRead() {
+  installBrowserGlobals(new FakeRaf());
+  const local = [1, 2, 3].map((i) => ({ role: "user", content: [{ type: "text", text: `m${i}` }] }));
+  const state = makeState({
+    client: makeHistoryClient([]),
+    chatMessages: [...local],
+  });
+
+  await loadChatHistory(state, { mergeIfStale: true });
+  assert.equal(state.chatMessages.length, 3, "空读应保留本地消息");
+}
+
 async function main() {
   await testChatStreamIsRafThrottled();
   await testLoadChatHistoryBatchesInitialRender();
@@ -321,6 +334,7 @@ async function main() {
   await testForeignErrorDoesNotInjectCardWhenNoActiveRun();
   await testForeignFinalPassesThroughWhenNoActiveRun();
   await testMergeIfStaleKeepsLocalOnShortRead();
+  await testMergeIfStaleKeepsLocalOnEmptyRead();
   await testMergeIfStaleReplacesOnCompaction();
   console.log("chat controller tests passed");
 }

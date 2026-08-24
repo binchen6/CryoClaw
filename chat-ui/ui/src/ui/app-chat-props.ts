@@ -50,6 +50,9 @@ export function buildChatProps(state: AppViewState): ChatProps {
     messages: state.chatMessages,
     visibleHistoryCount: state.chatVisibleMessageCount,
     toolMessages: state.chatToolMessages,
+    // R23：子代理等待状态卡数据源（tasks 数组引用稳定，供 buildChatItems memo 比较）
+    tasks: state.tasks,
+    runActive: Boolean(state.chatRunId),
     stream: state.chatStream,
     streamStartedAt: state.chatStreamStartedAt,
     draft: state.chatMessage,

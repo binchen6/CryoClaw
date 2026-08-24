@@ -140,9 +140,9 @@ function applySessionDefaults(host: GatewayHost, defaults?: SessionDefaultsSnaps
 }
 
 // chat 终态 sessions 拉取（R5 收敛）：同一 sessionKey 只保留一个挂起的延迟拉取。
-// 终态到达时 gateway 可能还没持久化 usage，1500ms 单次延迟兼顾持久化窗口（原 700ms
-// 提前轮询的收益改由 sessions.changed 事件驱动的即时更新覆盖）。
-const TERMINAL_SESSIONS_REFRESH_DELAY_MS = 1500;
+// 终态到达时 gateway 可能还没持久化 usage，延迟窗口兼顾持久化窗口（R23：1500ms →
+// 800ms 提速；usage 未落盘时 dirty 标记由后续 sessions.changed 事件兜底清除）。
+const TERMINAL_SESSIONS_REFRESH_DELAY_MS = 800;
 const terminalSessionsRefreshTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 function scheduleTerminalSessionsRefresh(host: OpenClawApp, refreshKey: string) {
@@ -283,6 +283,11 @@ export function connectGateway(host: GatewayHost) {
       (host as unknown as { chatPendingStreamText: string | null }).chatPendingStreamText = null;
       (host as unknown as { chatStreamStartedAt: number | null }).chatStreamStartedAt = null;
       resetToolStream(host as unknown as Parameters<typeof resetToolStream>[0]);
+      // R23 重连兜底：流式中途断连会清掉本地 chatStream，气泡随之消失；
+      // 握手完成后重拉持久化历史重建视图（替换语义，仅重连路径，首次连接不走）
+      if (previousClient) {
+        void loadChatHistory(host as unknown as OpenClawApp);
+      }
       void loadAssistantIdentity(host as unknown as OpenClawApp);
       // 加载已配置模型列表（用于 per-session 模型选择器）
       void (host as unknown as OpenClawApp).loadConfiguredModels();

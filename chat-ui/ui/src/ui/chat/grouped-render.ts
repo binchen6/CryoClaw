@@ -102,11 +102,14 @@ function extractImages(message: unknown): ImageBlock[] {
 export function renderReadingIndicatorGroup(
   assistant?: AssistantIdentity,
   activeToolName?: string | null,
+  subagentWaiting?: boolean,
 ) {
-  // 阶段感知提示：工具执行中显示工具名（mono），否则显示「思考中」
+  // 阶段感知提示：工具执行中显示工具名（mono）；等待子代理显示等待文案；否则「思考中」
   const label = activeToolName
     ? t("chat.phaseTool").replace("{name}", activeToolName)
-    : t("chat.phaseThinking");
+    : subagentWaiting
+      ? t("chat.subagent.waiting")
+      : t("chat.phaseThinking");
   return html`
     <div class="chat-group assistant">
       ${renderAvatar("assistant", assistant)}
