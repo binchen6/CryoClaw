@@ -608,6 +608,8 @@ export class OpenClawApp extends LitElement {
       }
       // 修复后重查一次 needs-repair——若扩展真启用了 pill 自然消失
       await this.runWebbridgeRepairTick();
+    } catch {
+      // IPC 拒绝/异常：静默（checking 标志由 finally 复位，无状态残留）
     } finally {
       this.webbridgeRepairChecking = false;
     }

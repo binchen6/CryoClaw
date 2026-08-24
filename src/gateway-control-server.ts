@@ -53,10 +53,16 @@ export function ensureGatewayControlToken(): string {
 }
 
 // 实际监听端口写回配置，供 gateway-ctl.mjs 读取（token 字段原样保留）。
+// 内部吞错：persist 抛错时 server 已在监听，若向上抛会走 catch 返回 null
+// 但泄漏一个未纳入 active 管理的孤立 server（端口占用直至进程退出）。
 function persistGatewayControlPort(port: number): void {
-  const config = readCryoclawConfig() ?? {};
-  config.gatewayControl = { ...config.gatewayControl, port };
-  writeCryoclawConfig(config);
+  try {
+    const config = readCryoclawConfig() ?? {};
+    config.gatewayControl = { ...config.gatewayControl, port };
+    writeCryoclawConfig(config);
+  } catch (err: any) {
+    log.error(`[gateway-control] 端口写回配置失败: ${err?.message ?? err}`);
+  }
 }
 
 // ── 请求处理 ──

@@ -117,9 +117,11 @@ function deriveSessionLabel(message: string): string | null {
     : firstLine;
 }
 
-// 首条消息发送后，计算 label 并写入内存 + 加入待持久化队列
-function syncSessionLabelAfterSend(host: ChatHost, message: string) {
-  const key = host.sessionKey;
+// 首条消息发送后，计算 label 并写入内存 + 加入待持久化队列。
+// key 由调用方传入发送发起时的快照（发送在途期间会话可能已切换，
+// 用当前 host.sessionKey 会把旧会话的自动命名写到新会话头上）。
+function syncSessionLabelAfterSend(host: ChatHost, message: string, sessionKey = host.sessionKey) {
+  const key = sessionKey;
 
   // 只信 pending 队列判定自动命名：用户在侧边栏手动改名为「新会话」时
   // 不能因 label 撞名被误覆盖（pending 条目由 createNewSession 写入）
@@ -155,10 +157,10 @@ export async function flushPendingSessionLabel(
     return;
   }
   pendingSessionLabels.delete(sessionKey);
-  try {
-    await patchSession(state, sessionKey, { label });
-  } catch {
-    // patch 失败则放回队列，下次 final 事件时重试
+  // patchSession 内部吞错、永不 reject（只写 sessionsError）——用返回值判定成败：
+  // 失败时把 label 放回队列，下次 final 事件时重试（否则自动命名静默丢失）
+  const ok = await patchSession(state, sessionKey, { label });
+  if (!ok) {
     pendingSessionLabels.set(sessionKey, label);
   }
 }
@@ -180,12 +182,16 @@ async function sendChatMessageNow(
   if (!opts?.preserveRunState) {
     resetToolStream(host as unknown as Parameters<typeof resetToolStream>[0]);
   }
+  // 发送发起时的会话快照：await 期间会话可能已切换，后续的失败回滚/
+  // 自动命名/last-active 记录都必须归属原会话，否则会误删新会话的
+  // pendingReset 标记、把旧会话首行文本命名到新会话上。
+  const requestSessionKey = host.sessionKey;
   // /new、/reset：内核同 key 轮换 sessionId 并清空 transcript。发送时立即清空
   // 本地视图（不等 final），并置位 pendingSessionResets 让终态刷新强制替换历史
   // （app-gateway.ts 消费）。发送失败则撤销标记并重拉历史恢复旧视图。
   const isResetCommand = !opts?.preserveRunState && isChatResetCommand(message);
   if (isResetCommand) {
-    pendingSessionResets.add(host.sessionKey);
+    pendingSessionResets.add(requestSessionKey);
     (host as unknown as OpenClawApp).chatMessages = [];
     (host as unknown as OpenClawApp).chatVisibleMessageCount = 0;
   }
@@ -199,8 +205,10 @@ async function sendChatMessageNow(
     ),
   );
   if (isResetCommand && !ok) {
-    pendingSessionResets.delete(host.sessionKey);
-    void loadChatHistory(host as unknown as OpenClawApp);
+    pendingSessionResets.delete(requestSessionKey);
+    if (host.sessionKey === requestSessionKey) {
+      void loadChatHistory(host as unknown as OpenClawApp);
+    }
   }
   if (!ok && opts?.previousDraft != null) {
     host.chatMessage = opts.previousDraft;
@@ -209,10 +217,10 @@ async function sendChatMessageNow(
     host.chatAttachments = opts.previousAttachments;
   }
   if (ok) {
-    syncSessionLabelAfterSend(host, message);
+    syncSessionLabelAfterSend(host, message, requestSessionKey);
     setLastActiveSessionKey(
       host as unknown as Parameters<typeof setLastActiveSessionKey>[0],
-      host.sessionKey,
+      requestSessionKey,
     );
   }
   if (ok && opts?.restoreDraft && opts.previousDraft?.trim()) {

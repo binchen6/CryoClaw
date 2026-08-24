@@ -511,6 +511,8 @@ function collectApprovedUserIds(channel: string, configAllowFrom: unknown): stri
 }
 
 // 统一运行 openclaw CLI 子命令，复用 CryoClaw 内嵌 runtime 与网关入口。
+// 带 90s 超时兑底（对齐 plugin-store execKernelCli）：CLI 内部死锁时
+// Promise 永不 settle 会让渲染层 invoke 永久 pending 且泄漏 node 子进程。
 async function runGatewayCli(args: string[]): Promise<CliRunResult> {
   const nodeBin = resolveNodeBin();
   const entry = resolveGatewayEntry();
@@ -535,14 +537,22 @@ async function runGatewayCli(args: string[]): Promise<CliRunResult> {
 
     let stdout = "";
     let stderr = "";
+    const timeout = setTimeout(() => {
+      // 兑底 kill：不 await 结果，让 close 事件自然触发 resolve
+      child.kill();
+    }, 90_000);
     child.stdout?.on("data", (chunk: Buffer) => {
       stdout += chunk.toString();
     });
     child.stderr?.on("data", (chunk: Buffer) => {
       stderr += chunk.toString();
     });
-    child.on("error", reject);
+    child.on("error", (err) => {
+      clearTimeout(timeout);
+      reject(err);
+    });
     child.on("close", (code) => {
+      clearTimeout(timeout);
       resolve({
         code: typeof code === "number" ? code : -1,
         stdout,

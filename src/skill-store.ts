@@ -120,7 +120,12 @@ function registryUrl(): string {
 
 // ── HTTP 请求封装 ──
 
-// 通用 JSON GET 请求，带超时控制
+// 通用 JSON GET 请求，带超时控制。
+// 响应体设大小上限（对齐 plugin-store MAX_BUFFER）：registry URL 是用户可自定义的
+// 任意地址，恶意/故障源的超长或无限滴流响应会把主进程内存吃穿（Node http 的
+// timeout 只是 socket 空闲超时，缓慢滴流不会触发）。
+const JSON_GET_MAX_BYTES = 8 * 1024 * 1024;
+
 function jsonGet<T>(url: string): Promise<T> {
   debugLog(`GET ${url}`);
   const startMs = Date.now();
@@ -135,7 +140,16 @@ function jsonGet<T>(url: string): Promise<T> {
         return;
       }
       const chunks: Buffer[] = [];
-      res.on("data", (chunk: Buffer) => chunks.push(chunk));
+      let totalBytes = 0;
+      res.on("data", (chunk: Buffer) => {
+        totalBytes += chunk.length;
+        if (totalBytes > JSON_GET_MAX_BYTES) {
+          req.destroy();
+          reject(new Error("response too large"));
+          return;
+        }
+        chunks.push(chunk);
+      });
       res.on("end", () => {
         const body = Buffer.concat(chunks).toString("utf-8");
         debugLog(`GET ${url} → ${res.statusCode} ${body.length}B (${Date.now() - startMs}ms)\n${body}`);

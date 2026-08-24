@@ -84,21 +84,6 @@ function httpsGet(url: string, headers?: Record<string, string>, timeoutMs = 35_
   });
 }
 
-// 下载远程图片并转为 base64 data URL。
-function httpsGetBinary(url: string): Promise<{ mime: string; base64: string }> {
-  return new Promise((resolve, reject) => {
-    https.get(url, { timeout: 15_000 }, (res) => {
-      const chunks: Buffer[] = [];
-      res.on("data", (chunk: Buffer) => chunks.push(chunk));
-      res.on("end", () => {
-        const buf = Buffer.concat(chunks);
-        const mime = res.headers["content-type"] || "image/png";
-        resolve({ mime, base64: buf.toString("base64") });
-      });
-    }).on("error", reject);
-  });
-}
-
 // ── QR 码生成（复用 gateway 内置的 qrcode-terminal vendor） ──
 
 // 将文本编码为 QR 码 BMP data URL（用于 Settings UI 展示）。

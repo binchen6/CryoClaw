@@ -249,13 +249,18 @@ function buildLightbox(src: string) {
   img.src = src;
   img.alt = "";
   overlay.appendChild(img);
-  overlay.addEventListener("click", () => overlay.remove());
   const onKey = (e: KeyboardEvent) => {
     if (e.key === "Escape") {
-      overlay.remove();
-      document.removeEventListener("keydown", onKey);
+      close();
     }
   };
+  // 关闭时同步移除 keydown 监听（点击关闭路径原先泄漏监听器，
+  // 会残留到用户下次按 Escape 才自清理）
+  const close = () => {
+    overlay.remove();
+    document.removeEventListener("keydown", onKey);
+  };
+  overlay.addEventListener("click", close);
   document.addEventListener("keydown", onKey);
   document.body.appendChild(overlay);
 }

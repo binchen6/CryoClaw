@@ -1,4 +1,5 @@
-import { ChildProcess, spawn } from "child_process";
+import { ChildProcess, spawn, execFile } from "child_process";
+import { promisify } from "util";
 import { endStreamWithTimeout } from "./logger";
 import * as http from "http";
 import * as path from "path";
@@ -367,12 +368,10 @@ export class GatewayProcess {
   // 停止已存在的旧 gateway（端口冲突时自动调用）
   private async stopExistingGateway(nodeBin: string, entry: string, cwd: string): Promise<void> {
     try {
-      const { execFileSync } = require("child_process") as typeof import("child_process");
       diagLog("exec: gateway stop");
-      execFileSync(nodeBin, [entry, "gateway", "stop"], {
+      await execFileAsync(nodeBin, [entry, "gateway", "stop"], {
         cwd,
         timeout: 10_000,
-        stdio: "pipe",
         windowsHide: true,
         env: {
           ...process.env,
@@ -398,7 +397,7 @@ export class GatewayProcess {
     diagLog("WARN: 等待端口释放超时，尝试强杀占用进程");
     const pid = await getPortPid(this.port);
     if (pid > 0) {
-      killProcess(pid);
+      await killProcess(pid);
       for (let i = 0; i < 10; i++) {
         await sleep(500);
         if (!(await this.probeHealth())) {
@@ -481,7 +480,7 @@ export class GatewayProcess {
 
     // 进程活着但不响应 HTTP（半死状态）→ 强杀后删 lockfile
     diagLog(`WARN: lockfile 指向 pid=${stalePid}，进程存活但 HTTP 无响应，强制终止`);
-    killProcess(stalePid);
+    await killProcess(stalePid);
     // 等待进程退出
     for (let i = 0; i < 20; i++) {
       await sleep(250);
@@ -510,6 +509,10 @@ function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+// 异步 execFile：启动/停止路径的子进程调用不得用 execFileSync 同步阻塞主进程
+// （最长 10s 的冻结会让窗口未响应、所有 IPC 停摆）。顺序语义与同步版一致。
+const execFileAsync = promisify(execFile);
+
 // 脱敏显示 token，避免明文泄露到日志
 function maskToken(token: string): string {
   if (token.length <= 8) return "***";
@@ -526,14 +529,13 @@ function isProcessAlive(pid: number): boolean {
   }
 }
 
-// 强制终止外部进程（Windows 用 taskkill，POSIX 用 SIGKILL）
-function killProcess(pid: number): void {
+// 强制终止外部进程（Windows 用 taskkill，POSIX 用 SIGKILL）。
+// 异步：taskkill 最长可等待 5s，同步版会冻结主进程事件循环。调用方均需 await。
+async function killProcess(pid: number): Promise<void> {
   try {
     if (IS_WIN) {
-      const { execFileSync } = require("child_process") as typeof import("child_process");
-      execFileSync("taskkill", ["/PID", String(pid), "/F", "/T"], {
+      await execFileAsync("taskkill", ["/PID", String(pid), "/F", "/T"], {
         timeout: 5000,
-        stdio: "pipe",
         windowsHide: true,
       });
     } else {

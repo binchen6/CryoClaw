@@ -101,10 +101,17 @@ export async function fetchManagedImageObjectUrl(url: string): Promise<string | 
         return null;
       }
       if (objectUrlCache.size >= MAX_CACHE) {
-        for (const old of objectUrlCache.values()) {
-          URL.revokeObjectURL(old);
+        // 逐出最旧一条（Map 迭代序即插入序）：旧策略是满 100 全清，会把仍在
+        // DOM <img> 上引用的 URL 一次性作废，后续组件重建触发最多 100 张的
+        // 批量 refetch（网关瞬时压力与内存峰值）；逐出最旧把冲击摊平为单个。
+        const oldest = objectUrlCache.keys().next();
+        if (!oldest.done) {
+          const oldestUrl = objectUrlCache.get(oldest.value);
+          if (oldestUrl) {
+            URL.revokeObjectURL(oldestUrl);
+          }
+          objectUrlCache.delete(oldest.value);
         }
-        objectUrlCache.clear();
       }
       objectUrlCache.set(absolute, objectUrl);
       return objectUrl;

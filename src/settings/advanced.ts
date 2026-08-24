@@ -77,41 +77,46 @@ export function registerAdvancedIpc(opts: SettingsIpcOptions): void {
       },
       async () => {
         try {
-          const config = readUserConfig();
-
           // 优先 browserMode（新前端）；回退 browserProfile（老前端兼容）
           // coerce 顺手吃下早期分支的 alias —— browserMode === "chrome" 自动归一化成 "user"
           const coercedMode = coerceBrowserMode(browserMode);
-          if (coercedMode) {
-            // webbridge 模式服务端兜底：三项都过才能切（防前端被绕过 / 条件在选中到保存之间变化）
-            if (coercedMode === "webbridge") {
-              const def = await getDefaultBrowser();
-              const pre = await getWebbridgePrecheck({
-                binaryPath: resolveWebbridgeBinaryPath(),
-                extensionId: readWebbridgeExtensionId(),
-                fileExists: fs.existsSync,
-                readExtensionStates: (extId) =>
-                  getExtensionStates(specFromExtId(extId), {
-                    processExec: DEFAULT_PROCESS_EXEC,
-                    processCheckBrowserId: def?.target.id,
-                  }),
-                getDefaultBrowser,
-                readSkillEnabled: readKimiWebbridgeSkillEnabled,
-                currentBrowserMode: getCurrentBrowserMode(),
-              });
-              if (!pre.ok) {
-                return {
-                  success: false,
-                  code: pre.defaultUnsupported
-                    ? "DEFAULT_BROWSER_UNSUPPORTED"
-                    : "WEBBRIDGE_PRECHECK_FAILED",
-                  missing: pre.missing,
-                  defaultBrowser: pre.defaultBrowser,
-                  defaultUnsupported: pre.defaultUnsupported,
-                  message: "WebBridge 条件未满足；请先点[修复并启用]",
-                };
-              }
+
+          // webbridge 模式服务端兑底：三项都过才能切（防前端被绕过 / 条件在选中到保存之间变化）。
+          // precheck 必须在 readUserConfig 之前跑完：它有两次秒级 await（浏览器探测/
+          // 扩展状态查询），若夹在 read 与 write 之间，窗口期内 gateway 落盘的
+          // config.patch（渠道凭据等）会被旧快照整文件覆盖（lost update）。
+          // precheck 输入全部独立读磁盘，不依赖本次将要写入的 config。
+          if (coercedMode === "webbridge") {
+            const def = await getDefaultBrowser();
+            const pre = await getWebbridgePrecheck({
+              binaryPath: resolveWebbridgeBinaryPath(),
+              extensionId: readWebbridgeExtensionId(),
+              fileExists: fs.existsSync,
+              readExtensionStates: (extId) =>
+                getExtensionStates(specFromExtId(extId), {
+                  processExec: DEFAULT_PROCESS_EXEC,
+                  processCheckBrowserId: def?.target.id,
+                }),
+              getDefaultBrowser,
+              readSkillEnabled: readKimiWebbridgeSkillEnabled,
+              currentBrowserMode: getCurrentBrowserMode(),
+            });
+            if (!pre.ok) {
+              return {
+                success: false,
+                code: pre.defaultUnsupported
+                  ? "DEFAULT_BROWSER_UNSUPPORTED"
+                  : "WEBBRIDGE_PRECHECK_FAILED",
+                missing: pre.missing,
+                defaultBrowser: pre.defaultBrowser,
+                defaultUnsupported: pre.defaultUnsupported,
+                message: "WebBridge 条件未满足；请先点[修复并启用]",
+              };
             }
+          }
+
+          const config = readUserConfig();
+          if (coercedMode) {
             Object.assign(config, applyBrowserModeConfig(config, coercedMode));
           } else if (typeof browserProfile === "string" && browserProfile) {
             // 老前端兼容：直接传 profile 名（"openclaw" / "user" / "chrome" / 自定义）。

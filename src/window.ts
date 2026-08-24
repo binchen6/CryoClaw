@@ -1,5 +1,6 @@
 import { BrowserWindow, app, globalShortcut } from "electron";
 import * as path from "path";
+import { pathToFileURL } from "node:url";
 import * as log from "./logger";
 import { buildChatUiEntryUrl } from "./chat-ui-entry-url";
 import { shouldHideWindowOnClose } from "./window-close-policy";
@@ -220,7 +221,7 @@ export class WindowManager {
       await this.win.loadURL(chatUiEntryUrl);
     } catch (err) {
       log.error(`Chat UI 加载失败: url=${chatUiEntryUrlForLog} err=${err}`);
-      await this.loadChatUiErrorPage();
+      await this.loadChatUiErrorPage(chatUiEntryUrl);
       showOnce();
       return;
     }
@@ -326,60 +327,19 @@ export class WindowManager {
     this.win.webContents.send("settings:navigate", payload);
   }
 
-  // Chat UI 加载失败时的错误页
-  private async loadChatUiErrorPage(): Promise<void> {
-    const html = `<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>CryoClaw - Error</title>
-  <style>
-    :root { color-scheme: light dark; }
-    body {
-      margin: 0;
-      min-height: 100vh;
-      display: grid;
-      place-items: center;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      background: #0b1020;
-      color: #e6ebff;
+  // Chat UI 加载失败时的错误页。错误页运行在 file:// origin（assets/error.html）
+  // ——Retry 需要的 file→file 导航才被 Chromium 允许；data: URL 页面内的 file://
+  // 导航会被安全策略拒绝（Not allowed to load local resource），按钮将永远无效。
+  private async loadChatUiErrorPage(retryUrl: string): Promise<void> {
+    const errorPageUrl = pathToFileURL(path.join(app.getAppPath(), "assets", "error.html"));
+    // 原始 entry URL（含 gateway token）经 encodeURIComponent 写入 fragment，
+    // 仅供本页 Retry 回跳使用，不落日志
+    errorPageUrl.hash = `#${encodeURIComponent(retryUrl)}`;
+    try {
+      await this.win!.loadURL(errorPageUrl.toString());
+    } catch (err) {
+      // 错误页自身加载失败（极端情况）：不再向上抛，避免吞掉 show() 的原始错误
+      log.error(`错误页加载失败: ${err}`);
     }
-    .card {
-      width: min(680px, calc(100vw - 40px));
-      border-radius: 14px;
-      background: #111938;
-      border: 1px solid #2a366f;
-      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.35);
-      padding: 22px 20px;
-    }
-    h1 { margin: 0 0 10px; font-size: 20px; }
-    p { margin: 0 0 10px; line-height: 1.5; color: #c8d2ff; }
-    button {
-      border: 0;
-      border-radius: 8px;
-      padding: 10px 14px;
-      font-weight: 600;
-      cursor: pointer;
-      color: #fff;
-      background: #0ea5e9;
-    }
-  </style>
-</head>
-<body>
-  <main class="card">
-    <h1>Chat UI not available</h1>
-    <p>CryoClaw Chat UI 未能加载。请尝试重新启动应用。</p>
-    <button id="retryBtn" type="button">Retry</button>
-  </main>
-  <script>
-    document.getElementById("retryBtn")?.addEventListener("click", () => {
-      window.location.reload();
-    });
-  </script>
-</body>
-</html>`;
-
-    await this.win!.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
   }
 }

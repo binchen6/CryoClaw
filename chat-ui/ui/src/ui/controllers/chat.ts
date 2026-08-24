@@ -232,6 +232,11 @@ export async function sendChatMessage(
   }
 
   const now = Date.now();
+  // 会话归属守卫（对齐 loadChatHistory 的 requestSessionKey 模式）：
+  // chat.send 在途期间用户可能已切换会话，迟到的失败回调若不带守卫，
+  // 会把旧会话的错误卡片（含 resendText，重发会把旧文本发进新会话）注入
+  // 新会话的消息流，并清掉新会话正在进行的 run 状态。
+  const requestSessionKey = state.sessionKey;
 
   // 构建用户消息内容块（用于本地 UI 显示）
   const contentBlocks: Array<{ type: string; text?: string; source?: unknown }> = [];
@@ -297,6 +302,11 @@ export async function sendChatMessage(
     return runId;
   } catch (err) {
     const error = String(err);
+    // 发送期间已切换会话：旧会话的失败结果不写入新会话状态（切回旧会话时
+    // 由 loadChatHistory 从服务端刷新重建视图）
+    if (state.sessionKey !== requestSessionKey) {
+      return null;
+    }
     if (!opts?.preserveRunState) {
       state.chatRunId = null;
       state.chatStream = null;

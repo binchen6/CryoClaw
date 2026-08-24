@@ -138,7 +138,15 @@ function patchAsarBoundaryCheck(gatewayDir) {
     const filePath = path.join(distDir, fileName);
     const source = fs.readFileSync(filePath, "utf-8");
 
-    if (source.includes("/* asar-bypass */")) continue; // 已打过补丁
+    // 已打过补丁（幂等）。不能只认 `/* asar-bypass */`：verified/async 变体出现在
+    // 不含基础 marker 的独立 chunk 时，重跑会对同一函数再注入一个 bypass 块。
+    if (
+      source.includes("/* asar-bypass */") ||
+      source.includes("/* asar-bypass-verified */") ||
+      source.includes("/* asar-bypass-async */")
+    ) {
+      continue;
+    }
 
     let result = source;
 
@@ -318,6 +326,21 @@ function patchAsarBoundaryCheck(gatewayDir) {
   return patched;
 }
 
+// 检查 openclaw dist 根下是否已存在任一 asar-bypass marker。
+// 调用方（package-resources.js）用它区分 patchAsarBoundaryCheck 返回 0 的两种含义：
+// 已补丁（幂等跳过）vs marker 未命中（上游结构变化，必须中止）。
+function hasAsarBoundaryPatchMarker(gatewayDir) {
+  const distDir = path.join(gatewayDir, "node_modules", "openclaw", "dist");
+  if (!fs.existsSync(distDir)) return false;
+  const markers = ["/* asar-bypass */", "/* asar-bypass-verified */", "/* asar-bypass-async */"];
+  for (const fileName of fs.readdirSync(distDir)) {
+    if (!fileName.endsWith(".js")) continue;
+    const source = fs.readFileSync(path.join(distDir, fileName), "utf-8");
+    if (markers.some((m) => source.includes(m))) return true;
+  }
+  return false;
+}
+
 // ─── kimi 插件思考档位补丁 ───
 //
 // bundled kimi 插件（dist/extensions/kimi/dist/index.js）的 resolveThinkingProfile
@@ -382,5 +405,6 @@ module.exports = {
   injectWindowsHideAll,
   collectJsFilesRecursive,
   patchAsarBoundaryCheck,
+  hasAsarBoundaryPatchMarker,
   patchKimiThinkingProfile,
 };

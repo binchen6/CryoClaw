@@ -214,9 +214,17 @@ function openPlusMenu(props: { onRequestUpdate?: () => void }) {
 let commandSuggestions: CommandEntry[] = [];
 let commandIndex = 0;
 
-// 自适应高度（首次挂载时延迟到下一帧，确保 CSS 已应用）
+// 自适应高度（首次挂载时延迟到下一帧，确保 CSS 已应用）。
+// lit ref 回调是内联箭头函数，每次渲染 commit 都会重新执行——流式期间每帧
+// 重渲染都会调度一次 rAF 布局，而 draft 未变时高度必然不变。用 value+宽度
+// 指纹跳过冗余布局（style 类与字体均不变，指纹不变则高度不变）。
 function adjustTextareaHeight(el: HTMLTextAreaElement, deferred = false) {
   const apply = () => {
+    const fingerprint = `${el.value.length}:${el.clientWidth}`;
+    if (el.dataset.hAdjust === fingerprint) {
+      return;
+    }
+    el.dataset.hAdjust = fingerprint;
     el.style.height = "auto";
     el.style.height = `${el.scrollHeight}px`;
   };
@@ -1571,7 +1579,13 @@ function buildChatItems(props: ChatProps): Array<ChatItem | MessageGroup> {
   for (let i = 0; i < tools.length; i++) {
     items.push({
       kind: "message",
-      key: messageKey(tools[i], i + history.length),
+      // tool 消息 key 用固定命名空间基数，不与 history.length 耦合：
+      // buildToolCallMessage/leadingSegment 消息无顶层 toolCallId/messageId，
+      // 走 messageKey 的 index 兑底分支，若用动态偏移，run 期间 chatMessages
+      // 追加（乐观 user 消息/错误卡）会让全部 tool 卡片 key 平移 → lit repeat
+      // 整批重建（hljs 重高亮、details 折叠态丢失）。history 渲染上限远小于
+      // 该基数，两个命名空间不会撞车。
+      key: messageKey(tools[i], i + 1_000_000_000),
       message: tools[i],
     });
   }

@@ -113,6 +113,8 @@ export async function loadSessions(
   return meta.activePromise;
 }
 
+// patch 成功返回 true；失败返回 false（异常吞掉只写 sessionsError，不 reject）。
+// 返回值语义供 flushPendingSessionLabel 判定是否把 label 放回重试队列。
 export async function patchSession(
   state: SessionsState,
   key: string,
@@ -127,9 +129,9 @@ export async function patchSession(
     reasoningLevel?: string | null;
     model?: string | null;
   },
-) {
+): Promise<boolean> {
   if (!state.client || !state.connected) {
-    return;
+    return false;
   }
   const params: Record<string, unknown> = { key };
   if ("label" in patch) {
@@ -162,8 +164,10 @@ export async function patchSession(
   try {
     await state.client.request("sessions.patch", params);
     await loadSessions(state);
+    return true;
   } catch (err) {
     state.sessionsError = String(err);
+    return false;
   }
 }
 

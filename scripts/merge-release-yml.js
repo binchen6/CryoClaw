@@ -121,9 +121,9 @@ function collectArtifacts() {
         if (file.endsWith(".yml")) continue;
 
         const src = path.join(dirPath, file);
+        // 覆盖语义：同版本重建时 exe 内嵌时间戳会变，旧产物与本批合并的 latest.yml
+        // 哈希不一致，electron-updater 下载后 sha512 校验会失败，必须以本批为准覆盖
         const dest = path.join(RELEASE_DIR, file);
-        if (fs.existsSync(dest)) continue;
-
         fs.copyFileSync(src, dest);
         count++;
       }

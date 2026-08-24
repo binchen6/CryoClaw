@@ -2,9 +2,10 @@
 // 排除走 vitest 的文件（它们 import "vitest"，node:test 跑不了）。
 "use strict";
 
-const { readdirSync, rmSync } = require("fs");
+const { readdirSync } = require("fs");
 const { join, resolve } = require("path");
 const { spawnSync } = require("child_process");
+const rmRecursive = require("./lib/rm-rec")();
 
 // 与 vitest.config.ts 的 include 保持一致
 const VITEST_FILES = new Set([
@@ -21,7 +22,8 @@ const root = resolve(__dirname, "..");
 const dir = join(root, ".test-dist");
 
 // 1. 清空输出目录再编译，防止删除测试源码后残留产物仍被运行
-rmSync(dir, { recursive: true, force: true });
+// （Windows 上 fs.rmSync 偶发静默失败，改用 rm-rec 的手动递归 fallback）
+rmRecursive(dir);
 const tsc = spawnSync(process.execPath, [join(root, "node_modules", "typescript", "bin", "tsc"), "-p", join(root, "tsconfig.test.json")], { stdio: "inherit" });
 if (tsc.status !== 0) {
   process.exit(tsc.status ?? 1);

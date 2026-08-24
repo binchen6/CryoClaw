@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { handleChatEvent, loadChatHistory } from "./chat.ts";
+import { handleChatEvent, loadChatHistory, sendChatMessage } from "./chat.ts";
 import { FakeScheduler } from "../../test-utils/fake-scheduler.ts";
 
 // 最小帧调度器，手动推进 requestAnimationFrame 回调。
@@ -325,6 +325,36 @@ async function testMergeIfStaleKeepsLocalOnEmptyRead() {
   assert.equal(state.chatMessages.length, 3, "空读应保留本地消息");
 }
 
+// 发送在途期间会话已切换：旧会话的失败结果（错误卡/run 状态清理）不得写入新会话。
+// 否则错误卡的 resendText 重发会把旧文本发进新会话，且新会话进行中的 run 被清。
+async function testSendFailureAfterSessionSwitchDoesNotTouchNewSession() {
+  installBrowserGlobals(new FakeRaf());
+  const state = makeState({
+    client: {
+      request: async (method: string) => {
+        if (method === "chat.send") {
+          // 模拟 await 期间用户切换到会话 B，随后请求才失败
+          state.sessionKey = "session-2";
+          throw new Error("network down");
+        }
+        throw new Error(`unexpected call: ${method}`);
+      },
+    },
+  });
+
+  const result = await sendChatMessage(state, "hello from session-1");
+  assert.equal(result, null, "失败的发送应返回 null");
+  assert.equal(state.chatMessages.length, 1, "新会话消息流不应被注入旧会话的错误卡");
+  const only = state.chatMessages[0] as any;
+  assert.equal(only.role, "user", "唯一消息应是乐观 append 的 user 消息");
+  assert.equal(
+    typeof state.chatRunId,
+    "string",
+    "新会话的 run 状态不得被旧会话的失败回调清除",
+  );
+  assert.equal(state.chatSending, false, "发送标志应由 finally 复位");
+}
+
 async function main() {
   await testChatStreamIsRafThrottled();
   await testLoadChatHistoryBatchesInitialRender();
@@ -336,6 +366,7 @@ async function main() {
   await testMergeIfStaleKeepsLocalOnShortRead();
   await testMergeIfStaleKeepsLocalOnEmptyRead();
   await testMergeIfStaleReplacesOnCompaction();
+  await testSendFailureAfterSessionSwitchDoesNotTouchNewSession();
   console.log("chat controller tests passed");
 }
 

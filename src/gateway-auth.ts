@@ -3,6 +3,7 @@ import * as fs from "fs";
 import { resolveUserConfigPath } from "./constants";
 import { backupCurrentUserConfig } from "./config-backup";
 import { syncOpenClawStateAfterWrite } from "./openclaw-health-state";
+import * as log from "./logger";
 
 type GatewayConfig = Record<string, any>;
 interface ResolveTokenOptions {
@@ -89,7 +90,11 @@ export function resolveGatewayAuthToken(opts: ResolveTokenOptions = {}): string 
       backupCurrentUserConfig();
       fs.writeFileSync(configPath, JSON.stringify(config, null, 2), "utf-8");
       syncOpenClawStateAfterWrite(configPath);
-    } catch {}
+    } catch (err: any) {
+      // 持久化失败时本会话靠环境变量保持一致，但每次启动都会轮换新 token 且无法诊断，
+      // 必须留痕（不能静默吞掉）
+      log.error(`[gateway-auth] token 持久化失败: ${err?.message ?? err}`);
+    }
   }
 
   return token;

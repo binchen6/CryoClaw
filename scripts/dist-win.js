@@ -54,9 +54,15 @@ function run(cmd, cmdArgs, envOverrides = {}) {
     ...process.env,
     ...envOverrides,
   };
-  // Windows 下 npm/npx 是 .cmd 包装，必须经 shell 执行
-  const shell = process.platform === "win32";
-  const r = spawnSync(cmd, cmdArgs, { cwd: root, env, stdio: "inherit", shell });
+  // Windows 下 npm/npx 是 .cmd 包装，须经 cmd.exe 执行；显式拼 /d /s /c 前缀
+  // 而非 spawnSync(args, { shell: true })——后者在 Node 24 已弃用（DEP0190）。
+  // 参数均为脚本内固定字符串（无空格/特殊字符），无注入面。
+  const useCmd = process.platform === "win32";
+  const r = spawnSync(
+    useCmd ? "cmd.exe" : cmd,
+    useCmd ? ["/d", "/s", "/c", cmd, ...cmdArgs] : cmdArgs,
+    { cwd: root, env, stdio: "inherit" },
+  );
   if (r.status !== 0) {
     console.error(`[dist-win] 命令失败: ${cmd} ${cmdArgs.join(" ")}（exit=${r.status}）`);
     process.exit(r.status ?? 1);
@@ -92,22 +98,29 @@ run("npx", [
 // 解析 PE 头 Certificate Table（Optional Header DataDirectory[4]，IMAGE_DIRECTORY_ENTRY_SECURITY）：
 // offset 与 size 均非 0 即存在 Authenticode 数字签名。不引入新依赖。
 function isExeSigned(filePath) {
-  const buf = fs.readFileSync(filePath);
-  // DOS header: "MZ" + e_lfanew（0x3c 处指向 PE 头的偏移）
-  if (buf.length < 0x40 || buf.readUInt16LE(0) !== 0x5a4d) return false;
-  const peOffset = buf.readUInt32LE(0x3c);
-  if (peOffset + 24 > buf.length) return false;
-  // PE signature "PE\0\0"，之后 20 字节 COFF File Header，再是 Optional Header
-  if (buf.readUInt32LE(peOffset) !== 0x00004550) return false;
-  const optOffset = peOffset + 24;
-  if (optOffset + 2 > buf.length) return false;
-  const magic = buf.readUInt16LE(optOffset);
-  // PE32 (0x10b): DataDirectory 起始于 Optional Header +96；PE32+ (0x20b): +112
-  const ddOffset = magic === 0x10b ? optOffset + 96 : magic === 0x20b ? optOffset + 112 : 0;
-  if (!ddOffset || ddOffset + 5 * 8 > buf.length) return false;
-  const certOffset = buf.readUInt32LE(ddOffset + 4 * 8);
-  const certSize = buf.readUInt32LE(ddOffset + 4 * 8 + 4);
-  return certOffset !== 0 && certSize !== 0;
+  // 只读 PE 头相关区段（0x40 DOS 头 + PE 处 256 字节），避免为取 4 字节
+  // 把数百 MB 的安装包整体读进内存
+  const fd = fs.openSync(filePath, "r");
+  try {
+    const head = Buffer.alloc(0x40);
+    if (fs.readSync(fd, head, 0, 0x40, 0) !== 0x40 || head.readUInt16LE(0) !== 0x5a4d) return false;
+    const peOffset = head.readUInt32LE(0x3c);
+    // PE signature "PE\0\0"，之后 20 字节 COFF File Header，再是 Optional Header；
+    // 256 字节覆盖 magic 与 DataDirectory[4]（PE32+ 最深到 optOffset+112+40=152）
+    const pe = Buffer.alloc(256);
+    if (fs.readSync(fd, pe, 0, 256, peOffset) !== 256) return false;
+    if (pe.readUInt32LE(0) !== 0x00004550) return false;
+    const optOffset = 24; // 相对 PE 头
+    const magic = pe.readUInt16LE(optOffset);
+    // PE32 (0x10b): DataDirectory 起始于 Optional Header +96；PE32+ (0x20b): +112
+    const ddOffset = magic === 0x10b ? optOffset + 96 : magic === 0x20b ? optOffset + 112 : 0;
+    if (!ddOffset || ddOffset + 5 * 8 > 256) return false;
+    const certOffset = pe.readUInt32LE(ddOffset + 4 * 8);
+    const certSize = pe.readUInt32LE(ddOffset + 4 * 8 + 4);
+    return certOffset !== 0 && certSize !== 0;
+  } finally {
+    fs.closeSync(fd);
+  }
 }
 
 const outDir = path.join(root, "out", target);

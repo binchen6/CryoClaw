@@ -42,7 +42,10 @@ export async function exportOpenclawStateToArchive(
   try {
     if (fs.existsSync(stateDir)) {
       const stateRoot = path.resolve(stateDir);
-      fs.cpSync(stateDir, snapshotDir, {
+      // 异步复制：.openclaw 含 workspace/sessions/extensions 可达数百 MB，
+      // cpSync 会把主进程事件循环冻结数十秒（所有 IPC 无响应）；promises.cp
+      // 语义/选项与 cpSync 一致（filter 回调同步、verbatimSymlinks 均支持）
+      await fs.promises.cp(stateDir, snapshotDir, {
         recursive: true,
         force: true,
         verbatimSymlinks: true,

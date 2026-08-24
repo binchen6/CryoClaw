@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { pendingSessionLabels } from "../session-pending.ts";
-import { loadSessions } from "./sessions.ts";
+import { loadSessions, patchSession } from "./sessions.ts";
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -95,9 +95,37 @@ async function testLoadSessionsKeepsPendingLocalRowsVisible() {
   pendingSessionLabels.clear();
 }
 
+// patchSession 内部吞错不 reject，但必须用返回值暴露成败（flushPendingSessionLabel
+// 据此决定是否把自动命名放回重试队列，否则失败时静默丢 label）。
+async function testPatchSessionReturnsFalseOnFailure() {
+  const state = {
+    client: {
+      request(method: string) {
+        if (method === "sessions.patch") {
+          return Promise.reject(new Error("boom"));
+        }
+        return Promise.resolve({ sessions: [] });
+      },
+    },
+    connected: true,
+    sessionsLoading: false,
+    sessionsResult: null,
+    sessionsError: null,
+    sessionsFilterActive: "",
+    sessionsFilterLimit: "120",
+    sessionsIncludeGlobal: true,
+    sessionsIncludeUnknown: false,
+  } as any;
+
+  const ok = await patchSession(state, "agent:main:x", { label: "New Name" });
+  assert.equal(ok, false, "请求失败应返回 false 而非 reject");
+  assert.equal(typeof state.sessionsError, "string", "失败应写入 sessionsError");
+}
+
 async function main() {
   await testLoadSessionsQueuesRefreshBehindInFlightRequest();
   await testLoadSessionsKeepsPendingLocalRowsVisible();
+  await testPatchSessionReturnsFalseOnFailure();
   console.log("sessions controller tests passed");
 }
 

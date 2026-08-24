@@ -494,8 +494,11 @@ function extractWin32(zipPath, runtimeDir, version, arch, targetId) {
 
   // 判断宿主平台选择解压方式
   if (process.platform === "win32") {
+    // PowerShell 单引号字符串内的单引号须双写转义；路径含撇号（如 O'Brien）
+    // 时未转义会导致 Expand-Archive 参数被截断/注入
+    const psQuote = (s) => `'${String(s).replace(/'/g, "''")}'`;
     execSync(
-      `powershell -NoProfile -Command "Expand-Archive -Force -Path '${zipPath}' -DestinationPath '${tmpDir}'"`,
+      `powershell -NoProfile -Command "Expand-Archive -Force -Path ${psQuote(zipPath)} -DestinationPath ${psQuote(tmpDir)}"`,
       { stdio: "inherit" }
     );
   } else {
@@ -626,7 +629,8 @@ function writeBuildConfig(configPath) {
   const volcano = buildVolcanoConfig();
   const clawhubRegistry = readEnvText("CRYOCLAW_CLAWHUB_REGISTRY");
   const config = { posthog, volcano, clawhubRegistry };
-  fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
+  // 原子写：写一半崩溃/中断不会留下半截 build-config.json（后续步骤读取到损坏 JSON 会 die）
+  writeFileAtomicSync(configPath, JSON.stringify(config, null, 2));
   log(`已生成 build-config.json（posthog.enabled=${posthog.enabled ? "true" : "false"}, volcano.enabled=${volcano.enabled ? "true" : "false"}, clawhubRegistry=${clawhubRegistry || "(空)"}）`);
 }
 
@@ -1166,9 +1170,16 @@ function patchAsarBoundaryCheck(gatewayDir) {
   const patched = kernelDistPatch.patchAsarBoundaryCheck(gatewayDir);
   if (patched > 0) {
     log(`已补丁 ${patched} 个边界校验模块（ASAR 路径快速通道）`);
-  } else {
-    log("⚠ 边界校验模块结构不匹配，补丁未生效");
+    return;
   }
+  // 返回 0 有两种含义：已补丁（幂等跳过）或 marker 未命中（上游结构变化）。
+  // 读产物文件区分——后者必须中止构建，否则会静默发出 asar 校验恒失败、
+  // bundled 插件全部失效的安装包（R19：验证终点必须是打包产物内内容断言）。
+  if (kernelDistPatch.hasAsarBoundaryPatchMarker(gatewayDir)) {
+    log("边界校验模块已有 asar 补丁（幂等跳过）");
+    return;
+  }
+  die(`ASAR 边界校验补丁未命中任何模块（openclaw 上游结构变化？），已中止打包`);
 }
 
 // kimi 插件思考档位补丁：k3 系模型尊重模型条目的 compat.supportedReasoningEfforts，
@@ -1656,7 +1667,7 @@ async function installNpmPackagePluginInto(plugin, pluginDir, hostNm, targetId, 
   // 增量检测：版本戳匹配则跳过
   // 增量检测：版本戳匹配则跳过（新名优先，回退旧名——旧构建树里是 oneclaw-* 戳）
   const stampPath = path.join(pluginDir, `.cryoclaw-${plugin.id}-stamp.json`);
-  const legacyStampPath = path.join(pluginDir, `.cryoclaw-${plugin.id}-stamp.json`);
+  const legacyStampPath = path.join(pluginDir, `.oneclaw-${plugin.id}-stamp.json`);
   const readableStampPath = fs.existsSync(stampPath) ? stampPath : legacyStampPath;
   if (fs.existsSync(readableStampPath) && fs.existsSync(pluginDir)) {
     try {
@@ -1907,7 +1918,12 @@ function vendorOfficialPlugin(plugin, gatewayDir, targetId, opts) {
   try {
     execSync(`npm pack "${spec}" --pack-destination "${tmpDir}"`, { cwd: tmpDir, stdio: "inherit" });
     const tgz = fs.readdirSync(tmpDir).find((f) => f.endsWith(".tgz"));
-    if (!tgz) die(`${spec} npm pack 未产生 tgz 包`);
+    // die = process.exit 会跳过下方 finally 的 rmDir(tmpDir)，先手动清理
+    // （对齐 bundlePlugin 的 die 前 rmDir 模式），避免 .cache 泄留 _extract_tmp 目录
+    if (!tgz) {
+      rmDir(tmpDir);
+      die(`${spec} npm pack 未产生 tgz 包`);
+    }
 
     const extractDir = path.join(tmpDir, "x");
     ensureDir(extractDir);
@@ -1917,6 +1933,7 @@ function vendorOfficialPlugin(plugin, gatewayDir, targetId, opts) {
 
     const pkgDir = path.join(extractDir, "package");
     if (!fs.existsSync(path.join(pkgDir, "package.json")) || !fs.existsSync(path.join(pkgDir, "openclaw.plugin.json"))) {
+      rmDir(tmpDir);
       die(`${spec} 缺少 package.json 或 openclaw.plugin.json，不符合官方插件包形态`);
     }
 

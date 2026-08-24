@@ -1,5 +1,12 @@
 [
   {
+    "version": "2026.824.3",
+    "notes": {
+      "zh": "安全：修复工作区符号链接逃逸——工作区内指向外部凭据文件的符号链接不再能绕过目录守卫被读取\n修复：聊天界面加载失败时的错误页「Retry」按钮现在真正可用（此前永远无效）\n修复：发送在途时切换会话不再把错误卡片/自动命名误送到新会话\n修复：代码块复制按钮不再在代码末尾混入语言标签\n修复：中断对话时上游生成请求同步终止（避免继续计费）；首条消息自动命名在失败时不再静默丢失\n优化：网关停止/端口清理不再冻结主进程最长 10 秒；导出状态包不再卡住界面；长任务工具流渲染内存上限；日志轮转异常恢复\n优化：构建链加固——内核补丁未命中时中止打包（防发出坏包）、发版产物哈希一致性\n测试基线 499 用例全绿（新增 2 用例）",
+      "en": "Security: fixed a workspace symlink escape — symlinks pointing at credential files outside the workspace can no longer bypass the directory guard\nFix: the error-page Retry button now actually works (previously always dead)\nFix: switching sessions while a send is in flight no longer misroutes error cards / auto-naming to the new session\nFix: copying code blocks no longer appends the language label to the code\nFix: aborting a conversation now terminates the upstream request immediately (no wasted billing); first-message auto-naming is retried instead of silently lost on failure\nImproved: gateway stop / stale-port cleanup no longer freezes the main process for up to 10s; state export no longer blocks the UI; memory cap for long tool-stream renders; log-rotation self-recovery\nImproved: hardened build chain — abort packaging when the kernel patch misses (prevents shipping broken builds), release artifact hash consistency\n499-test baseline all green (+2 new cases)"
+    }
+  },
+  {
     "version": "2026.824.2",
     "notes": {
       "zh": "修复：文件卡片改用段落内合法的内联根元素，避免消息段落被隐式截断\n修复：无状态字段的子代理任务不再被误判为运行中（防僵尸等待卡）\n测试基线 499 用例全绿",

@@ -156,7 +156,11 @@ export function registerPluginStoreIpc(): void {
   ipcMain.handle("plugin-store:search", async (event, params) => {
     if (!assertTrustedIpcSender(event, "plugin-store:search")) throw new Error("IPC sender not trusted");
     const query = typeof params?.q === "string" ? params.q.trim() : "";
-    if (!query) return { success: false, message: "query required" };
+    // 与 install/uninstall 的 isValidPluginName 同源防护：`-` 开头的 query 会被
+    // CLI 解析为 flag（execFile 无 shell，无命令注入，但行为可被携改）
+    if (!query || query.startsWith("-") || query.includes("..")) {
+      return { success: false, message: "invalid query" };
+    }
     const limit = typeof params?.limit === "number" && params.limit > 0 ? Math.min(params.limit, 20) : 20;
     try {
       const results = await searchMarketPlugins(query, limit);

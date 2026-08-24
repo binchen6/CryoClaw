@@ -111,6 +111,18 @@ function handleRequest(
     clientRes.end("Bad Gateway");
   });
 
+  // 客户端中断（断连/中止）时同步终止上游请求：SSE 流式生成场景下若不销毁
+  // proxyReq，上游 LLM 会继续生成计费到自然结束（客户端 socket 已断，写入静默失败）；
+  // streaming POST 场景下 proxyReq 也会永挂直到对端超时。destroy 不触发已处理的
+  // error 路径，仅截断 pipe。
+  const abortUpstream = () => proxyReq.destroy();
+  clientReq.on("aborted", abortUpstream);
+  clientRes.on("close", () => {
+    if (!clientRes.writableEnded) {
+      abortUpstream();
+    }
+  });
+
   // 透传请求体（支持 streaming POST）
   clientReq.pipe(proxyReq);
 }
@@ -162,6 +174,11 @@ function tryListen(
 
       srv.listen(port, "127.0.0.1", () => {
         srv.removeAllListeners("error");
+        // listen 成功后的运行期错误只记日志（对齐 gateway-control-server 模式：
+        // retry 监听器已摘除，不补挂的话 error 事件无监听器会直接抛崩主进程）
+        srv.on("error", (err) => {
+          log.error(`[auth-proxy] 服务运行错误: ${err?.message ?? err}`);
+        });
         const addr = srv.address() as net.AddressInfo;
         resolve(addr.port);
       });

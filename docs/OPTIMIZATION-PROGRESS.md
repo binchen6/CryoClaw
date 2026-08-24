@@ -2,7 +2,7 @@
 
 > 新接手的模型/工程师：**先读「快速上手」+「关键路径地图」+「下一步计划」**，
 > 再按需查「CryoClaw 重设计工程记录」（最新锚点）与「历史档案」（已验证事实，避免重复调查）。
-> 创建：2026-07-29；最近重写：2026-08-11（压缩版，替代原 1641 行长文）；最近更新：2026-08-24（R23 聊天增强批次一）。
+> 创建：2026-07-29；最近重写：2026-08-11（压缩版，替代原 1641 行长文）；最近更新：2026-08-24（R24 全面审查批次）。
 
 ## 🚀 快速上手（必读）
 
@@ -11,9 +11,9 @@
 面向国内生态（Kimi / Moonshot / 飞书 / 企微 / 微信 / 钉钉 / QQ）。
 
 **当前状态**：
-- 更名 CryoClaw 完成；CryoClaw 重设计工程 **R1–R23 全部完成**（见下节），最新发版 **v2026.824.2**（R23 审查修复：文件卡片段落合法性 + 子代理无状态僵尸卡防护；v2026.824.1：R23 聊天增强批次一）。
+- 更名 CryoClaw 完成；CryoClaw 重设计工程 **R1–R24 全部完成**（见下节），最新发版 **v2026.824.3**（R24 全面代码审查修复批次；v2026.824.2：R23 审查修复）。
 - 内核 openclaw **2026.7.1-2**（版本 pin 在 package.json `cryoclaw.openclaw`）；**Electron 43.4.0**（R13 升级落地，audit 0 漏洞）。
-- 测试基线 **499 pass / 0 fail / 4 skipped**（vitest 94 + node 74 + chat-ui 279 + scripts 52 + tsc typecheck；0 fail 为硬指标）。R23 新增 12 用例 + 审查修复补 1 用例；历史演进见测试体系节。
+- 测试基线 **499 pass / 0 fail / 4 skipped**（vitest 94 + node 74 + chat-ui 279 + scripts 52 + tsc typecheck；0 fail 为硬指标）。R24 新增 2 用例（会话切换竞态守卫 + patchSession 返回值契约，并入 chat-ui 279 内）；历史演进见测试体系节。
 - 历史优化阶段 1–22 全部完成并逐版发版至 v2026.811.0（见历史档案）。
 - 已开源发布至 GitHub（binchen6/CryoClaw，AGPL-3.0-only）；发布时以全新干净历史快照推送，旧本地历史（含已作废的 kimi-claw REFRESH 凭证）不出仓；`.env.build` 已转 gitignored，模板见 `.env.build.example`；git 身份统一为 binchen6。CI：`tests.yml` 每次 push/PR 全量回归（chat-ui/ui 独立依赖树需先安装）；上游签名/CDN 发版链 `build-release.yml`/`publish-release.yml` 已删除（依赖上游 oneclaw 签名证书与 oneclaw.cn CDN，本 fork 不适用，发版走本地 dist:win + gh release）。
 
@@ -368,7 +368,7 @@
   输入框即时出现；消息引用按钮 6 气泡 1:1 挂载、点击后草稿出现 `> ` 引用块、重复点击正确追加；
   保存链路「已保存」提示正常。sandbox 探针本机因无 Docker 跳过（radio 禁用，环境门控非缺陷）。
 - webbridge：本机 precheck 通过（三组件 + 默认浏览器全绿，无修复弹窗），模式切换链路正常；
-  保存侧服务端兑底校验正确（dev 实例下预检不过会拒绝保存并给出明确错误提示）。
+  保存侧服务端兜底校验正确（dev 实例下预检不过会拒绝保存并给出明确错误提示）。
 
 **R11-D Electron 40→43 升级评估**（结论：**建议升级，低风险、中工作量**）：
 - **驱动力**：`npm audit` 高危 GHSA-9f4c-93c8-jc8g（沙盒 iframe 绕过 allow-popups，影响 40.0.0-alpha.2–
@@ -435,7 +435,7 @@
 
 ## 📋 下一步计划（未做，按优先级）
 
-（R8 重启完成；R9/R11–R23 全部完成并发版至 v2026.824.1。剩余候选按需立项：）
+（R8 重启完成；R9/R11–R24 全部完成并发版至 v2026.824.3。剩余候选按需立项：）
 
 ### R16 · 发版验证（v2026.811.9 完成）
 - 版本 bump → dist:win（Electron 43 + pdb 裁剪）→ 安装验证。产物：安装包 129.0MB；
@@ -632,6 +632,18 @@
 - **问答卡片取证结论**（网关不支持，本批不做应用层实现）：内核 `poll` RPC（core-descriptors，operator.write，不广播）面向外部渠道出站投票（Telegram/Discord/iMessage 等，`callMessageGateway method:"poll" {to,question,options,maxSelections}`）；webchat 无问答卡片消息块/事件；现有交互卡片仅 exec.approval / plugin.approval 两条链。若上游后续原生支持再按契约接入。
 - 验证：测试基线 487 → **498**（0 fail）；`npm run build` 通过；重复率 1.21% 未回退（65 clones）。
 - **审查修复（随 v2026.824.2）**：全量代码审查无 Critical/Major，2 条 Minor 已修——① 文件卡片根元素 `<div>` 在 marked `<p>` 内触发隐式闭合段落 → 改 `<span>`（phrasing content 合法）；② `selectSubagentCards` 对缺失 `status` 的任务被 `isActiveTask` 默认 queued 误判为活跃恒显示 → 无 status 一律走终态时间窗兜底；另修正定格窗口注释（收敛依赖下一次重算）。基线 498 → **499**。
+
+### R24 · 全面代码审查批次（完成，随 v2026.824.3 发版）
+用户指令：在不改变现有功能/视觉/IPC 契约/主进程行为的前提下，对主进程、渲染层、测试基建、构建脚本做系统性审查修复，分级输出。
+方法：5 个并行审查代理分区深审（主进程核心/主进程配置 IPC/渲染层数据层/渲染层视图/构建脚本）约 130 文件全量阅读，对照 gotchas 69 条逐条验证，共修复 34 处（32 文件 + 1 新增）。
+- **阻塞性 ×2（构建链）**：① package-resources.js ASAR 边界补丁 0 命中仅告警——会静默发出 asar 校验恒失败的安装包（新增 `hasAsarBoundaryPatchMarker` 区分幂等/未命中，未命中 die，与 kernel-update.mjs 对齐）；② merge-release-yml.js 同版本重建保留旧 exe——与合并后 latest.yml 哈希不匹配致 updater sha512 校验失败 → 改覆盖语义。
+- **功能性 ×16**：主进程——① window.ts 错误页 data: URL 的 Retry 永无效（Chromium 禁 data→file 导航 + sender guard 拒绝）→ 迁 `assets/error.html`（file:// origin，视觉一致，Retry 校验 file: 协议回跳），顺带修复 `this.win!` 销毁竞态空解引用；② kimi-auth-proxy 客户端中断不传播上游（SSE 流式场景上游 LLM 继续计费）→ 断开同步 `proxyReq.destroy()`；③ kimi-auth-proxy listen 后未补挂运行期 error 监听（无监听器即崩主进程）；④ gateway-control-server persist 抛错泄漏已监听 server；⑤ gateway-auth token 持久化失败静默 → 记日志；⑥ settings/pairing runGatewayCli 全项目唯一无超时的子进程调用（死锁时 IPC 永 pending + 泄漏进程）→ 90s 兜底 kill；⑦ **workspace-ipc symlink 逃逸**（agent 可在 workspace 建指向 `credentials/*` 的符号链接绕过字符串前缀守卫）→ `resolveRealInsideRoot` realpath 复核，应用于 read-file/open-file；⑧ settings/advanced webbridge precheck 两次秒级 await 夹在 read/write 之间的 lost-update 竞态 → precheck 前移；⑨ main.ts `formatConsoleLevel` 映射正是 gotcha #47 记载的错误早期版本 → 修正为 VERBOSE/INFO/WARNING/ERROR。渲染层——① controllers/chat `sendChatMessage` 失败回调无会话归属守卫（在途发送时切会话，旧会话错误卡含 resendText 重发会把旧文本发进新会话并清掉新会话 run）→ 快照守卫；② app-chat `sendChatMessageNow` 用当前 sessionKey 而非快照（误删新会话 pendingReset 标记/自动命名串会话）；③ `patchSession` 吞错永不 reject 致 flushPendingSessionLabel 重试契约成死代码（自动命名静默丢失）→ 返回 boolean；④ code-block-enhance 复制取 `pre.innerText` 混入绝对定位语言标签 → 改 `code.textContent`；⑤ media-enhance lightbox 点击关闭泄漏 document keydown 监听；⑥ app.ts `onWebbridgeRepairClick` 缺 catch 产生 unhandled rejection。
+- **性能 ×8**：① logger 轮转计数器重置在 try 内——stat 失败一次后永久每条日志同步 stat（对齐 gateway-process diagLog 正确模式）；② gateway-process `stopExistingGateway`（10s）/`killProcess`（5s）execFileSync 同步阻塞主进程（窗口未响应 + 全 IPC 停摆）→ execFileAsync；③ skill-store registry 响应体无上限（恶意自定义源滴流可 OOM）→ 8MB 上限；④ state-archive 导出 `cpSync` 整树复制数百 MB 冻结主进程 → `fs.promises.cp`；⑤ app-tool-stream `evictedLeadingSegments` 无上限（超长 run 线性累积 + 每节流帧全量重建）→ 150 段上限；⑥ views/chat tool 消息 key 用 `i + history.length` 动态偏移（run 期间 chatMessages 追加致全批 tool 卡 key 平移整批重建）→ 固定命名空间基数 1e9；⑦ `adjustTextareaHeight` 经 lit ref 每帧冗余布局 → value+宽度指纹守卫；⑧ managed-media 缓存满 100 全清（作废仍在用的 URL 触发批量 refetch）→ 逐出最旧。
+- **可维护性 ×8**：legacy stamp 复制粘贴 bug（`.cryoclaw-` 应为 `.oneclaw-`，旧树增量复用永远失效）、build-config.json 非原子写、PowerShell 单引号转义（路径含撇号截断）、vendorOfficialPlugin die 泄漏临时目录、kernel-dist-patch 幂等 marker 只认 1/3 变体、dist-win.js `shell:true` 残留（DEP0190）与 isExeSigned 整读数百 MB、weixin-config 死代码删除、plugin-store search query 的 `-` 前缀注入面、run-*-tests rmSync→rmRecursive、sidebar renderErrors 双调用。
+- **新增测试 2 用例**：`chat.test.ts` 发送在途会话切换守卫、`sessions.test.ts` patchSession 失败返回 false。
+- **未修项（建议后续立项）**：飞书名称补全并发上限（影响小，自愈面内）；loadTasks 在途丢弃（≤30s 陈旧 ticker 自愈）；导出压缩段同步 fflate（worker 化超出最小改动）；kimi-auth-proxy 回环无鉴权（威胁模型低，需评估 CLI 兼容）；cleanStaleLockfile 先 probe 再杀（属行为变更）；gateway-rpc 无生产调用点（疑似预留，不删）。
+- **验证全绿**：`npm test` 499 pass / 0 fail / 4 skipped（基线零破坏）；主进程与 chat-ui typecheck 0 错；`npm run build` 通过；jscpd **1.01% / 65 clones**（过程引入的 1 处新 clone 已提取 `guardRealPath` 消除）。
+- **教训**：gotcha #47 修复后的 `formatConsoleLevel` 正确映射曾被回退为错误早期版本——“文档记载的修复语义”应用纯函数单测钉死防回归（后续候选）。
 
 ### R8 · 插件管理页面（已重启完成，见上节 R8 记录）
 

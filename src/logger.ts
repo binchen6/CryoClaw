@@ -82,6 +82,9 @@ export async function withFileLoggingPaused<T>(fn: () => Promise<T>): Promise<T>
 
 function checkRotation(): void {
   if (++writeCount < ROTATION_CHECK_INTERVAL) return;
+  // 计数器先重置：statSync/truncate 失败（目录被删/磁盘满）也不能卡在高位，
+  // 否则之后每条日志都同步 stat 一次（对齐 gateway-process.ts diagLog 模式）
+  writeCount = 0;
   try {
     if (fs.statSync(LOG_PATH).size > MAX_LOG_SIZE) {
       if (logStream) {
@@ -90,7 +93,6 @@ function checkRotation(): void {
       }
       fs.writeFileSync(LOG_PATH, "[truncated]\n");
     }
-    writeCount = 0;
   } catch {}
 }
 

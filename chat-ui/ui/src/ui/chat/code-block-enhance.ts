@@ -57,7 +57,11 @@ function setIcon(btn: HTMLButtonElement, kind: "copy" | "check") {
 }
 
 async function copyCodeText(pre: HTMLPreElement): Promise<boolean> {
-  const text = pre.innerText;
+  // 取 <code> 子元素的 textContent：语言标签（chat-code-lang）与复制按钮
+  // 都是挂在 <pre> 直下的子元素，innerText 会把它们一并带出（hljs 高亮的
+  // token span 对 textContent 无影响，与源码逐字符一致）；无 code 子元素的
+  // 裸 pre（罕见，无标签注入）回退 innerText
+  const text = pre.querySelector("code")?.textContent ?? pre.innerText;
   if (!text) {
     return false;
   }

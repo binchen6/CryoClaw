@@ -266,6 +266,8 @@ function renderErrors(props: SidebarProps) {
 }
 
 export function renderSidebar(props: SidebarProps) {
+  // 错误徽标 + 悬浮列表：两分支各引用一次，提前算好避免重复构建 TemplateResult
+  const errors = renderErrors(props);
   // 刷新图标，断开连接时复用为重连按钮图标
   const refreshIcon = html`
     <svg
@@ -447,9 +449,9 @@ export function renderSidebar(props: SidebarProps) {
               >
                 <span class="cryoclaw-sidebar__icon">${icons.externalLink}</span>
                 <span class="cryoclaw-sidebar__label">${t("sidebar.fullUI")}</span>
-                ${renderErrors(props).badge}
+                ${errors.badge}
               </button>
-              ${renderErrors(props).popup}
+              ${errors.popup}
             </div>`
           : html`
             <div class="cryoclaw-sidebar__reconnect-wrap">
@@ -460,9 +462,9 @@ export function renderSidebar(props: SidebarProps) {
               >
                 <span class="cryoclaw-sidebar__icon">${refreshIcon}</span>
                 <span class="cryoclaw-sidebar__label">${t("sidebar.reconnect")}</span>
-                ${renderErrors(props).badge}
+                ${errors.badge}
               </button>
-              ${renderErrors(props).popup}
+              ${errors.popup}
             </div>`
         }
       </div>
