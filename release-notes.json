@@ -1,5 +1,12 @@
 [
   {
+    "version": "2026.825.2",
+    "notes": {
+      "zh": "文档：OPTIMIZATION-PROGRESS.md 精简重构（里程碑记录压缩为速查表格，工程记录确立增删规则；无代码改动）\n测试基线 499 用例全绿",
+      "en": "Docs: OPTIMIZATION-PROGRESS.md streamlined (milestone history compressed into a lookup table with append/archive rules; no code changes)\n499-test baseline all green"
+    }
+  },
+  {
     "version": "2026.825.1",
     "notes": {
       "zh": "安全：Setup 向导自定义服务商的 baseURL 现在校验合法 http/https（此前任意字符串可落盘进配置）\n修复：拖动分割条时在窗口外释放鼠标不再导致分割条幽灵跟随\n修复：技能商店快速切换排序/搜索不再被旧响应覆写结果；技能列表加载失败不再每次重渲染重试（请求风暴消除）\n修复：设备身份首启并发生成不再产生验签失败；备份/恢复页网关状态三连刷新不再产生未处理异常\n优化：设置页导航拒绝未知 tab；定时任务表单类型契约收紧\n测试基线 499 用例全绿",
