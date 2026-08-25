@@ -35,7 +35,9 @@ export type CronFormState = {
   description: string;
   agentId: string;
   enabled: boolean;
-  scheduleKind: "at" | "every" | "cron";
+  // daily 是 UI 专用 kind（controllers/cron.ts 转为每日 cron 表达式），
+  // 收录进联合类型消除 as any 的类型谎言（gotcha #56：typecheck 盲区需靠类型防护）。
+  scheduleKind: "daily" | "at" | "every" | "cron";
   scheduleAt: string;
   everyAmount: string;
   everyUnit: string;

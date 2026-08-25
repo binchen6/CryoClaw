@@ -59,7 +59,9 @@ function init(state: AppViewState) {
 
   // Listen for main-process tab navigation
   s.navigateUnlisten = ipc.onSettingsNavigate((payload: any) => {
-    if (payload?.tab && payload.tab !== s.activeTab) {
+    // 未知/已废弃的 tab id 不得激活（对齐 consumeNavigationHints 的防御），
+    // 否则 activeTab 变非法值后导航无高亮、内容与导航状态脱节。
+    if (payload?.tab && isKnownTab(payload.tab) && payload.tab !== s.activeTab) {
       cleanupTab(s.activeTab);
       s.activeTab = payload.tab;
     }

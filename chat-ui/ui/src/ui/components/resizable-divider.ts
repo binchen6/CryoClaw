@@ -78,6 +78,12 @@ export class ResizableDivider extends LitElement {
     if (!this.isDragging) {
       return;
     }
+    // 拖拽中在窗口外释放鼠标时不会派发 mouseup，拖拽会永久挂起且分割条幽灵跟随。
+    // buttons=0 表示无按键，等价于补偿丢失的 mouseup。
+    if (e.buttons === 0) {
+      this.handleMouseUp();
+      return;
+    }
 
     const container = this.parentElement;
     if (!container) {

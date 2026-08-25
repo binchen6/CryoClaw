@@ -252,8 +252,14 @@ async function init(state: AppViewState) {
   }
 }
 
+// agents.list 失败冷却：持续失败（旧内核不支持该 RPC/断连窗口）时若不设冷却，
+// 该 tab 每次重渲染都会发起一次必失败的 RPC（渲染函数内触发副作用）。
+let agentsLoadFailedAt = 0;
+const AGENTS_RETRY_COOLDOWN_MS = 60_000;
+
 async function loadAgents(state: AppViewState) {
   if (s.agentsLoaded || !state.client || !state.connected) return;
+  if (agentsLoadFailedAt && Date.now() - agentsLoadFailedAt < AGENTS_RETRY_COOLDOWN_MS) return;
   try {
     const res = await state.client.request<any>("agents.list", {});
     const rows: AgentRow[] = [];
@@ -274,7 +280,8 @@ async function loadAgents(state: AppViewState) {
     s.agentsLoaded = true;
     state.requestUpdate();
   } catch {
-    /* agents.list 失败时隐藏映射表 */
+    /* agents.list 失败时隐藏映射表；记录时间戳避免重渲染风暴 */
+    agentsLoadFailedAt = Date.now();
   }
 }
 

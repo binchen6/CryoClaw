@@ -62,6 +62,20 @@ async function generateIdentity(): Promise<DeviceIdentity> {
 }
 
 export async function loadOrCreateDeviceIdentity(): Promise<DeviceIdentity> {
+  // 并发记忆化：首启无既有 identity 时并发调用若各自生成密钥对，后写者覆盖存储，
+  // 先返回的调用方持有已被丢弃的私钥导致网关验签失败（偶发“设备认证失败”）。
+  // 共享同一 Promise；失败后清除记忆化，下次调用可重试。
+  if (!pendingIdentity) {
+    pendingIdentity = doLoadOrCreateDeviceIdentity().finally(() => {
+      pendingIdentity = null;
+    });
+  }
+  return pendingIdentity;
+}
+
+let pendingIdentity: Promise<DeviceIdentity> | null = null;
+
+async function doLoadOrCreateDeviceIdentity(): Promise<DeviceIdentity> {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {

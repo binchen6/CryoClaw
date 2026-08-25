@@ -12,7 +12,7 @@ import "../../components/provider-segment.ts";
 import "../../components/toggle-switch.ts";
 import {
   PROVIDERS, CUSTOM_PRESETS, KIMI_CODE_FIXED_MODEL, SUB_PLATFORM_URLS,
-  CUSTOM_MODEL_SENTINEL, PROVIDER_DISPLAY_ORDER, getProviderLabels,
+  CUSTOM_MODEL_SENTINEL, PROVIDER_DISPLAY_ORDER, getProviderLabels, isValidHttpBaseUrl,
 } from "./setup-constants.ts";
 import { getCachedGatewayModels, loadGatewayModels, catalogModelSupportsImage } from "../../controllers/models.ts";
 import {
@@ -91,9 +91,6 @@ function buildParams(apiKey: string): Record<string, unknown> | null {
   const params: Record<string, unknown> = { provider: s.currentProvider, apiKey };
 
   if (s.currentProvider === "custom") {
-    if (s.customPreset === "__placeholder__" || (!s.customPreset && s.customPreset !== "")) {
-      // placeholder selected, ignore
-    }
     if (s.customPreset) {
       const mid = s.showCustomModelInput ? s.customModelId.trim() : s.modelId;
       if (!mid) { s.error = t("setup.error.noModelId"); return null; }
@@ -101,6 +98,12 @@ function buildParams(apiKey: string): Record<string, unknown> | null {
       params.customPreset = s.customPreset;
     } else {
       if (!s.baseUrl.trim()) { s.error = t("setup.error.noBaseUrl"); return null; }
+      // 安全面（对齐 Settings 服务商新增路径）：custom baseURL 必须合法 http(s)，
+      // 否则 file:///、javascript: 等任意字符串会被落盘进 provider 配置。
+      if (!isValidHttpBaseUrl(s.baseUrl.trim())) {
+        s.error = t("settings.provider.invalidBaseUrl");
+        return null;
+      }
       const mid = s.customModelId.trim() || s.modelId;
       if (!mid) { s.error = t("setup.error.noModelId"); return null; }
       params.baseURL = s.baseUrl.trim();

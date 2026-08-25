@@ -177,7 +177,7 @@ function renderDetail(job: CronJob, props: CronManageProps) {
 
 function renderScheduleFields(props: CronManageProps) {
   const form = props.form;
-  if ((form.scheduleKind as string) === "daily") {
+  if (form.scheduleKind === "daily") {
     // dailyTime stored in cronExpr as "HH:MM" for convenience
     const time = /^\d{2}:\d{2}$/.test(form.cronExpr) ? form.cronExpr : "10:00";
     return html`

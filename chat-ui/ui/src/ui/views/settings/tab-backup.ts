@@ -159,8 +159,12 @@ function scheduleGatewayRefresh(state: AppViewState) {
   s.refreshTimers = [];
   for (const delay of [200, 1200, 3000]) {
     s.refreshTimers.push(setTimeout(async () => {
-      s.gatewayState = await ipc.getGatewayState();
-      state.requestUpdate();
+      // gateway 重启窗口期 getGatewayState 可能 reject：吞掉等下一次刷新/60s ticker，
+      // 对齐稳态轮询的防御，避免 unhandled rejection。
+      try {
+        s.gatewayState = await ipc.getGatewayState();
+        state.requestUpdate();
+      } catch {}
     }, delay));
   }
 }

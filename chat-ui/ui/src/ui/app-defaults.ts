@@ -15,7 +15,7 @@ export const DEFAULT_CRON_FORM: CronFormState = {
   description: "",
   agentId: "",
   enabled: true,
-  scheduleKind: "daily" as any,
+  scheduleKind: "daily",
   scheduleAt: "",
   everyAmount: "30",
   everyUnit: "minutes",

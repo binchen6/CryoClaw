@@ -1,5 +1,12 @@
 [
   {
+    "version": "2026.825.1",
+    "notes": {
+      "zh": "安全：Setup 向导自定义服务商的 baseURL 现在校验合法 http/https（此前任意字符串可落盘进配置）\n修复：拖动分割条时在窗口外释放鼠标不再导致分割条幽灵跟随\n修复：技能商店快速切换排序/搜索不再被旧响应覆写结果；技能列表加载失败不再每次重渲染重试（请求风暴消除）\n修复：设备身份首启并发生成不再产生验签失败；备份/恢复页网关状态三连刷新不再产生未处理异常\n优化：设置页导航拒绝未知 tab；定时任务表单类型契约收紧\n测试基线 499 用例全绿",
+      "en": "Security: the Setup wizard now validates custom provider baseURLs as proper http/https (previously arbitrary strings could be saved into config)\nFix: releasing the mouse outside the window while dragging the split divider no longer leaves it ghost-following the cursor\nFix: skill store sort/search switches no longer get overwritten by stale responses; failed skill list loads no longer retry on every re-render (request storm eliminated)\nFix: concurrent first-launch device identity generation no longer causes signature verification failures; backup/restore gateway-state refresh no longer produces unhandled rejections\nImproved: settings navigation rejects unknown tabs; cron form type contract tightened\n499-test baseline all green"
+    }
+  },
+  {
     "version": "2026.825.0",
     "notes": {
       "zh": "修复：安装/用户名路径含 % 字符时 Windows CLI wrapper 生成的路径段不再被吞掉（此前 CLI 硬损坏且无法自愈）\n修复：内核升级器新增整体看门狗——极端环境下升级卡死不再永久挂起，自动回滚并恢复启动\n修复：应用更新「重启以安装」重复点击不再并发两个安装器互踩；升级失败且网关恢复失败时错误提示明确透出\n稳定性：扩展插件升级改为原子换装（复制中途失败不再留下残缺目录）；用户 shell 配置文件与配置恢复路径改为原子写，崩溃/断电不再损坏\n稳定性：设置页浏览器探测新增超时——异常环境下不再无限转圈；启动链路扩展目录创建失败不再中断网关启动\n测试基线 499 用例全绿",

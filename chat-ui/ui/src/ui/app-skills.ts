@@ -40,9 +40,14 @@ const skillStoreState: SkillStoreState = {
 
 let skillStoreDataLoaded = false;
 
+// 商店请求代次守卫：排序/搜索快速切换时旧响应晚到会整体覆写当前列表与
+// nextCursor（展示错误排序/旧结果，分页游标错配）。发起前自增，写回前比对。
+let storeRequestToken = 0;
+
 // 加载技能列表（初次或切换排序时调用）
 async function loadSkillStoreData(state: AppViewState, append = false) {
   if (!window.cryoclaw?.skillStoreList) return;
+  const token = ++storeRequestToken;
   skillStoreState.loading = true;
   skillStoreState.error = null;
   state.requestUpdate();
@@ -52,6 +57,7 @@ async function loadSkillStoreData(state: AppViewState, append = false) {
       limit: 20,
       cursor: append ? skillStoreState.nextCursor : undefined,
     });
+    if (token !== storeRequestToken) return;
     if (result?.success && result.data) {
       const skills = Array.isArray(result.data.skills) ? result.data.skills : [];
       skillStoreState.skills = append
@@ -64,11 +70,14 @@ async function loadSkillStoreData(state: AppViewState, append = false) {
     // 同步已安装列表
     await refreshInstalledSlugs();
   } catch {
+    if (token !== storeRequestToken) return;
     skillStoreState.error = t("skillStore.error");
   } finally {
-    skillStoreState.loading = false;
-    skillStoreDataLoaded = true;
-    state.requestUpdate();
+    if (token === storeRequestToken) {
+      skillStoreState.loading = false;
+      skillStoreDataLoaded = true;
+      state.requestUpdate();
+    }
   }
 }
 
@@ -81,11 +90,13 @@ async function searchSkillStore(state: AppViewState) {
     await loadSkillStoreData(state);
     return;
   }
+  const token = ++storeRequestToken;
   skillStoreState.loading = true;
   skillStoreState.error = null;
   state.requestUpdate();
   try {
     const result = await window.cryoclaw.skillStoreSearch({ q, limit: 20 });
+    if (token !== storeRequestToken) return;
     if (result?.success && result.data) {
       skillStoreState.skills = Array.isArray(result.data.skills) ? result.data.skills : [];
       skillStoreState.nextCursor = null;
@@ -93,10 +104,13 @@ async function searchSkillStore(state: AppViewState) {
       skillStoreState.error = result?.message ?? t("skillStore.error");
     }
   } catch {
+    if (token !== storeRequestToken) return;
     skillStoreState.error = t("skillStore.error");
   } finally {
-    skillStoreState.loading = false;
-    state.requestUpdate();
+    if (token === storeRequestToken) {
+      skillStoreState.loading = false;
+      state.requestUpdate();
+    }
   }
 }
 

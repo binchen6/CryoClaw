@@ -11,7 +11,7 @@
 面向国内生态（Kimi / Moonshot / 飞书 / 企微 / 微信 / 钉钉 / QQ）。
 
 **当前状态**：
-- 更名 CryoClaw 完成；CryoClaw 重设计工程 **R1–R25 全部完成**（见下节），最新发版 **v2026.825.0**（R25 主进程大文件补审；v2026.824.3：R24 全面审查批次）。
+- 更名 CryoClaw 完成；CryoClaw 重设计工程 **R1–R26 全部完成**（见下节），最新发版 **v2026.825.1**（R26 设置页/组件层补审；v2026.825.0：R25 主进程大文件补审）。
 - 内核 openclaw **2026.7.1-2**（版本 pin 在 package.json `cryoclaw.openclaw`）；**Electron 43.4.0**（R13 升级落地，audit 0 漏洞）。
 - 测试基线 **499 pass / 0 fail / 4 skipped**（vitest 94 + node 74 + chat-ui 279 + scripts 52 + tsc typecheck；0 fail 为硬指标）。R24 新增 2 用例（会话切换竞态守卫 + patchSession 返回值契约，并入 chat-ui 279 内）；历史演进见测试体系节。
 - 历史优化阶段 1–22 全部完成并逐版发版至 v2026.811.0（见历史档案）。
@@ -417,7 +417,7 @@
 
 ## 📋 下一步计划
 
-（R8 重启完成；R9/R11–R25 全部完成并发版至 v2026.825.0。剩余候选按需立项：）
+（R8 重启完成；R9/R11–R26 全部完成并发版至 v2026.825.1。剩余候选按需立项：）
 
 ### R16 · 发版验证（v2026.811.9 完成）
 - 版本 bump → dist:win（Electron 43 + pdb 裁剪）→ 安装验证。产物：安装包 129.0MB；
@@ -632,6 +632,17 @@
 - **无发现区**（全读核验）：analytics（心跳/刷发窗口/AbortSignal 兜底均稳）、analytics-events、app-updater-state（纯 reducer）、install-detector（超时齐备无 shell）、constants（兜底完整）、diagnostics-export（脱敏递归+双上限）、provider-image-probe（TINY_PNG 符合 #44）。
 - **未修项（候选）**：webbridge 二进制下载无 SHA256 校验（ETag 只是缓存一致性，非完整性机制）——需发布链配合产出哈希清单，独立安全加固项排期。
 - **验证**：`npm test` 499 pass / 0 fail / 4 skipped（基线维持）；`tsc -p tsconfig.json` 0 错；`npm run build` 通过。
+
+### R26 · 设置页视图/组件层补审（完成，随 v2026.825.1 发版）
+方法：2 个并行审查代理深审 56 文件（含全仓最大的 tab-provider.ts 83KB/1857 行、setup 向导、cron、skills、components 7 件、chat-ui/src 共享层），对照 gotchas 69 条，共修复 9 处、否决 1 项误报。
+- **安全 ×1**：① setup-step2 手动 custom 的 baseUrl 只做非空校验（Settings 同路径有 `isValidHttpBaseUrl`）——`file:///`、`javascript:` 等任意字符串可落盘进 provider 配置 → 补齐同一校验。
+- **功能性 ×5**：② settings-view 主进程导航回调未校验 `isKnownTab`（同文件另一导航路径有校验）——未知/已废弃 tab id 会让导航无高亮、内容与导航脱节 → 补齐；③ tab-backup 恢复/重启后 200/1200/3000ms 三连网关状态刷新 `await` 无 try/catch——网关重启窗口期 reject 产生 unhandled rejection 且界面停留旧状态 → 对齐稳态轮询防御；④ resizable-divider 拖拽中在窗口外释放鼠标不派发 mouseup——拖拽永久挂起、分割条幽灵跟随 → `buttons===0` 补偿；⑤ app-skills 商店排序/搜索无代次守卫——旧响应晚到覆写新列表与分页游标 → 请求代次 token；⑥ device-identity 首启并发各自生成密钥对，后写者覆盖存储致先返回方持已丢弃私钥、网关验签失败 → 模块级并发记忆化。
+- **性能 ×1**：⑦ tab-provider `loadAgents` 失败不置标记——不支持 agents.list 的内核上每次重渲染都发一次必失败 RPC（渲染函数内副作用）→ 60s 失败冷却。
+- **可维护性 ×2**：⑧ `CronFormState.scheduleKind` 类型谎言——`"daily"` 是真实 UI kind 但未入联合类型，三处靠 `as any`/`as string` 绕过（#56 typecheck 盲区）→ 收录入联合并删强转；⑨ setup-step2 恒假死代码删除（`__placeholder__` 分支不可达且空体不 return）。
+- **否决 1 项**：format-relative dateFallback 的 `en-US`——经核对该模块整体输出英文相对时间（`3d ago`），`Aug 25` 与模块风格一致，只改此处反而中英混杂，保持现状。
+- **候选（未修）**：app-skills `as unknown as SkillsState` 双重断言（需 AppViewState 声明字段，类型层重构另立）；device-auth 签名载荷 `|`/`,` 拼接规范化歧义（需与网关侧验签实现同步修改，跨端风险高）；设备密钥明文存 localStorage（file:// 单源威胁模型低，OS keychain 托管待评估）。
+- **无发现区**（全读核验）：tab-provider 拖拽/能力编辑器/分组管理（reorderIds+replacePaths 逻辑正确）、tab-channels.lib、tab-plugins、cron payload（#52 合规）、tasks 过滤（#51 合规）、setup OAuth、components 其余 6 件、chat-ui/src 全层（无 XSS/回溯/泄漏）、markdown-sidebar（unsafeHTML 全走 DOMPurify）。
+- **验证**：`npm test` 499 pass / 0 fail / 4 skipped（基线维持）；主进程与 chat-ui typecheck 0 错。
 
 ### R8 · 插件管理页面（已重启完成，见上节 R8 记录）
 

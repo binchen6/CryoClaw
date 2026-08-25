@@ -52,7 +52,7 @@ export async function loadCronJobs(state: CronState) {
 
 export function buildCronSchedule(form: CronFormState) {
   // "daily" is a UI-only kind → convert HH:MM to cron expr
-  if ((form.scheduleKind as string) === "daily") {
+  if (form.scheduleKind === "daily") {
     const match = form.cronExpr.trim().match(/^(\d{1,2}):(\d{2})$/);
     if (!match) {
       throw new Error(t("cron.error.dailyTime"));
