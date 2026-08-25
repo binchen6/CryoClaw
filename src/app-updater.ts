@@ -99,10 +99,20 @@ function getPendingInstallerPath(): string | null {
 }
 
 /** 用户点「重启以更新」；仅 downloaded 态可用。 */
+// 重入保护：spawn 安装器到 app.quit() 真正退出之间存在时间窗（beforeQuitAndInstall/
+// quit-cleanup），期间 state.status 仍是 downloaded，重复触发会并发两个静默安装器
+// 互相踩踏文件（后起实例可能以退出码 2 静默退出，见 gotcha #53）。
+let installInFlight = false;
+
 export function quitAndInstallAppUpdate(): void {
+  if (installInFlight) {
+    log.warn("[app-updater] 更新安装已在进行中，忽略重复触发");
+    return;
+  }
   if (!state.supported || state.status !== "downloaded") {
     throw new Error("当前没有已下载完成的更新");
   }
+  installInFlight = true;
   log.info("[app-updater] 用户确认重启安装更新");
 
   // 自实现换装 spawn，而非 autoUpdater.quitAndInstall()：

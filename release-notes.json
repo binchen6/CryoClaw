@@ -1,5 +1,12 @@
 [
   {
+    "version": "2026.825.0",
+    "notes": {
+      "zh": "修复：安装/用户名路径含 % 字符时 Windows CLI wrapper 生成的路径段不再被吞掉（此前 CLI 硬损坏且无法自愈）\n修复：内核升级器新增整体看门狗——极端环境下升级卡死不再永久挂起，自动回滚并恢复启动\n修复：应用更新「重启以安装」重复点击不再并发两个安装器互踩；升级失败且网关恢复失败时错误提示明确透出\n稳定性：扩展插件升级改为原子换装（复制中途失败不再留下残缺目录）；用户 shell 配置文件与配置恢复路径改为原子写，崩溃/断电不再损坏\n稳定性：设置页浏览器探测新增超时——异常环境下不再无限转圈；启动链路扩展目录创建失败不再中断网关启动\n测试基线 499 用例全绿",
+      "en": "Fix: Windows CLI wrapper no longer corrupts paths containing % characters (previously hard-broken with no self-heal)\nFix: kernel updater now has an overall watchdog — a stuck upgrade no longer hangs forever; auto-rollback and gateway restore take over\nFix: double-clicking restart-to-install no longer spawns two competing installers; explicit error wording when the gateway fails to recover after an upgrade failure\nStability: extension plugin upgrade is now an atomic swap (a mid-copy failure no longer leaves a partial directory); user shell config files and the config-restore path use atomic writes, so crashes/power loss can no longer corrupt them\nStability: settings browser probing now has timeouts — no more infinite spinners in abnormal environments; extensions-dir creation failure no longer aborts gateway startup\n499-test baseline all green"
+    }
+  },
+  {
     "version": "2026.824.3",
     "notes": {
       "zh": "安全：修复工作区符号链接逃逸——工作区内指向外部凭据文件的符号链接不再能绕过目录守卫被读取\n修复：聊天界面加载失败时的错误页「Retry」按钮现在真正可用（此前永远无效）\n修复：发送在途时切换会话不再把错误卡片/自动命名误送到新会话\n修复：代码块复制按钮不再在代码末尾混入语言标签\n修复：中断对话时上游生成请求同步终止（避免继续计费）；首条消息自动命名在失败时不再静默丢失\n优化：网关停止/端口清理不再冻结主进程最长 10 秒；导出状态包不再卡住界面；长任务工具流渲染内存上限；日志轮转异常恢复\n优化：构建链加固——内核补丁未命中时中止打包（防发出坏包）、发版产物哈希一致性\n测试基线 499 用例全绿（新增 2 用例）",

@@ -11,7 +11,7 @@
 面向国内生态（Kimi / Moonshot / 飞书 / 企微 / 微信 / 钉钉 / QQ）。
 
 **当前状态**：
-- 更名 CryoClaw 完成；CryoClaw 重设计工程 **R1–R24 全部完成**（见下节），最新发版 **v2026.824.3**（R24 全面代码审查修复批次；v2026.824.2：R23 审查修复）。
+- 更名 CryoClaw 完成；CryoClaw 重设计工程 **R1–R25 全部完成**（见下节），最新发版 **v2026.825.0**（R25 主进程大文件补审；v2026.824.3：R24 全面审查批次）。
 - 内核 openclaw **2026.7.1-2**（版本 pin 在 package.json `cryoclaw.openclaw`）；**Electron 43.4.0**（R13 升级落地，audit 0 漏洞）。
 - 测试基线 **499 pass / 0 fail / 4 skipped**（vitest 94 + node 74 + chat-ui 279 + scripts 52 + tsc typecheck；0 fail 为硬指标）。R24 新增 2 用例（会话切换竞态守卫 + patchSession 返回值契约，并入 chat-ui 279 内）；历史演进见测试体系节。
 - 历史优化阶段 1–22 全部完成并逐版发版至 v2026.811.0（见历史档案）。
@@ -48,7 +48,7 @@
 | `docs/provider-module-redesign.md` | provider 模块重设计背景（与 R4 相关） |
 | `docs/PROMPT.md` / `docs/client-ticker.md` | 历史需求/设计稿存档 |
 
-## 🗺 关键路径地图（改动前必读）
+## 关键路径地图（改动前必读）
 
 | 区域 | 路径 | 说明 |
 |---|---|---|
@@ -137,7 +137,7 @@
 - **内核无**：记忆浏览/清空 RPC（只有 doctor.memory.* 诊断）、审批历史查询 RPC（list 只返回 pending）、
   真 steer 插入运行中回合（WS dispatch 是 followup 语义）、feedback RPC（已删模块本就全自研）。
 
-## 🧊 CryoClaw 重设计工程记录（R1–R6，最新锚点）
+## 🧊 CryoClaw 重设计工程记录
 
 ### R1 · 更名 CryoClaw（完成）
 - productName / appId（`com.cryoclaw.app`）/ 二进制 / 安装目录（`%LOCALAPPDATA%\CryoClaw`）全量更名。
@@ -313,7 +313,7 @@
   localStorage 持久化、过滤 17→0→17、compose 选择器 optgroup「工作/未分组」、零 renderer 异常。
   测试基线 430→431。
 
-### R10 · 开源后持续迭代（进行中，随阶段发版）
+### R10 · 开源后持续迭代
 - **阅读体验**：chat-text markdown 标题层级样式（h1–h4 字号/间距收敛 + 首元素免顶距）；GFM 表格首次获得边框/内边距/斑马纹 + `display:block` 横向滚动防溢出。
 - **markdown 引擎**：GFM 任务列表（input 白名单 + hook 强制只读复选框）；marked 解析异常兜底退化纯文本；配套 5 用例。
 - **依赖安全**：根依赖 audit fix 19→1（electron 40→43 破坏性升级挂账）；chat-ui 7 项清零（dompurify 3.4.13 等）。
@@ -329,7 +329,7 @@
 - **UI 布局走查（2026-08-11，无缺陷结案）**：CDP 逐 tab 截图走查设置页 11 tab（远程控制/外观/渠道/搜索/记忆/审批/高级/模型/备份恢复/环境信息/会话用量）+ 700px 窄窗设置/对话双视图（`walk-ui-audit*.js`）：无溢出/截断/错位，验证 R2/R3 设计体系与既有窄窗 media query 有效；截图存 `.cache/shots/walk-*`。
 - **发版 E2E（v2026.811.8，2026-08-12）**：静默安装后 CDP 实测（`.cache/cdp-8118-media.js`）：发送含 MEDIA 标记消息 → `img.chat-local-media` 真实加载（naturalWidth=1024）、灯箱点击打开（document 委托在流式重渲染下仍生效）、裸 i18n 键 0、renderer 异常 0；打包注意：功能代码变更后必须重跑 dist:win（首次打包曾捕获重构前代码）。
 
-### R11 · 消息引用/重发 + rewind/fork 真机联调 + 设置走查 + Electron 升级评估（完成，待发版）
+### R11 · 消息引用/重发 + rewind/fork 真机联调 + 设置走查 + Electron 升级评估
 
 **R11-A 消息引用/重发交互补齐**（此前引用/重发均不存在，属功能缺失）：
 - **失败重发**：`cryoclawError` 卡片增加「重发」按钮（`chat-error-card__resend`，rotate-ccw 图标）。
@@ -369,24 +369,6 @@
   保存链路「已保存」提示正常。sandbox 探针本机因无 Docker 跳过（radio 禁用，环境门控非缺陷）。
 - webbridge：本机 precheck 通过（三组件 + 默认浏览器全绿，无修复弹窗），模式切换链路正常；
   保存侧服务端兜底校验正确（dev 实例下预检不过会拒绝保存并给出明确错误提示）。
-
-**R11-D Electron 40→43 升级评估**（结论：**建议升级，低风险、中工作量**）：
-- **驱动力**：`npm audit` 高危 GHSA-9f4c-93c8-jc8g（沙盒 iframe 绕过 allow-popups，影响 40.0.0-alpha.2–
-  41.10.2，需 ≥42）；Electron 40.x 已 EOL（官方 2026-08 起停止支持）；43 版主进程启动性能专项优化
-  （Node 启动快照 + preload V8 字节码缓存 + 沙盒 renderer 启动数据预推）。
-- **风险排查（对本仓代码零破坏性结论）**：40→43 三版 breaking changes 逐条比对——renderer 剪贴板
-  弃用（本仓仅主进程用 clipboard，OK）、clearStorageData quotas 移除（本仓只传 storages，OK）、
-  OSR deviceScaleFactor/PDF OOPIF/Linux 圆角/WCO（均不涉及）、macOS 通知 UNNotification（无 macOS 签名
-  场景影响，本仓目标 Win）、42 起 npm 包不再 postinstall 下载二进制（影响 dev 首次运行下载时机，
-  构建/打包不受影响——electron-builder 26.15.3 自取 dist，npmmirror 镜像已配）、nativeImage SRGB 归一
-  （托盘图标颜色微调风险极低）、下载默认目录变化（本仓不用 session 下载）。内核 gateway.asar 的
-  原生模块（node-pty/koffi 等）走 N-API，Node 24.17 同 major 兼容，冒烟即可。
-- **收益**：安全漏洞清零（audit 19→1 挂账项销账）、Electron 40 EOL 退出、主进程启动快照/预加载缓存
-  提速、Chromium 144→150 渲染安全修复。**工作量**：改 `devDependencies.electron` → `^43.x` +
-  `npm install` + `npm run dist:win` + 静默安装 CDP 冒烟（参照 R6/R9 发版流程），预计 0.5–1 人日。
-  **时间安排建议**：随下一发版窗口（v2026.811.9 之后的首个维护窗口）执行，升级后全量 `npm test` +
-  gateway 200 + 关键入口 CDP 冒烟；关注项：Windows 10 用户群在 Chromium 150 的支持窗口（Chrome 已
-  预告 Win10 EOL 后逐步收紧，需在 release notes 提示）、webbridge 浏览器扩展行为不受影响。
 
 ### R8 · 插件管理页 + ClawHub 插件市场（重启立项，完成）
 - **取证**：内核 CLI `openclaw plugins list --json`（81 个已安装插件库存：id/name/version/description/
@@ -433,9 +415,9 @@
   计入裁剪统计）；scripts 新增 1 用例（嵌套 .pdb 删除 + .node 二进制保留 + 字节统计）。
   发版后预期 gateway.asar -10.3MB（≈227MB）。
 
-## 📋 下一步计划（未做，按优先级）
+## 📋 下一步计划
 
-（R8 重启完成；R9/R11–R24 全部完成并发版至 v2026.824.3。剩余候选按需立项：）
+（R8 重启完成；R9/R11–R25 全部完成并发版至 v2026.825.0。剩余候选按需立项：）
 
 ### R16 · 发版验证（v2026.811.9 完成）
 - 版本 bump → dist:win（Electron 43 + pdb 裁剪）→ 安装验证。产物：安装包 129.0MB；
@@ -444,10 +426,6 @@
   （含插件）、插件清单 81 行、ClawHub 市场搜索、**真机安装/卸载全流程**（风险确认弹窗 →
   安装成功 → 出现在已安装列表 → 卸载成功）、引用按钮、Ctrl+L、**R12 兜底复验（气泡 8→10
   不回退）**、零裸 i18n、零 renderer 异常。
-- **⚠ 新教训（NSIS 沙箱安装）**：沙箱内 `/S` 静默安装会卸载旧版后安装失败（目录清空）——
-  已用 robocopy win-unpacked 恢复安装目录；正式发版仍须在普通权限通道执行安装器。
-- CI 补丁：tests.yml 在 npm install 后显式 `node node_modules/electron/install.js`（Electron 42+ 不再
-  postinstall 下载二进制）。
 
 ### R17 · 内核根因取证与插件页安全增强（完成）
 - **chat.history 主会话滞后根因锁定**（只读取证）：内核 `SESSION_STORE_SNAPSHOT_CACHE`
@@ -645,13 +623,22 @@
 - **验证全绿**：`npm test` 499 pass / 0 fail / 4 skipped（基线零破坏）；主进程与 chat-ui typecheck 0 错；`npm run build` 通过；jscpd **1.01% / 65 clones**（过程引入的 1 处新 clone 已提取 `guardRealPath` 消除）。
 - **教训**：gotcha #47 修复后的 `formatConsoleLevel` 正确映射曾被回退为错误早期版本——“文档记载的修复语义”应用纯函数单测钉死防回归（后续候选）。
 
+### R25 · 主进程大文件补审（完成，随 v2026.825.0 发版）
+用户指令：继续审查 R24 未覆盖的主进程大文件（analytics/updater/kernel-updater/browser/webbridge 等）；后续阶段：设置页视图与组件层补审 → 文档重写精简 → 历史遗留清理，每阶段独立发版。
+方法：2 个并行审查代理深审 16 文件（含 browser.ts 37KB / webbridge.ts 30KB / cli-integration.ts 30KB），对照 gotchas 69 条，共修复 9 处。
+- **功能性 ×5**：① **cli-integration cmd 转义缺口**：`escapeForCmdSetValue` 未转义 `%`——批处理上下文成对 `%VAR%` 会被环境变量展开，路径含 `%`（用户可选安装目录/用户名）时生成的 wrapper 路径段被静默吞掉、CLI 硬损坏且 reconcile 不自愈（内容比对认为“正确”）→ 双写 `%%` 转义；② extension-mirror `reconcileExtensionsOnAppLaunch` 契约是“永远不抛”但 `mkdirSync` 在 try 外——权限/磁盘满时抛错中断启动链路（网关不启动且失败上报/恢复路径全被跳过）；③ extension-mirror 升级路径“先删旧目录再复制”非原子——复制中途失败留下残缺扩展目录，依赖该目录的 channel 在 config 校验阶段被拒（gotcha #41）→ 同卷临时目录 + rename 原子换装；④ app-updater `quitAndInstallAppUpdate` 无重入保护——双触发并发两个静默安装器互踩文件（后起实例退出码 2 静默退出，#53）→ 模块级 installing 标志；⑤ kernel-updater `runUpdater` 无整体看门狗——脚本外原因（管道阻塞/磁盘 I/O 挂起）导致编排永久挂起，此时 gateway 已停、用户侧“升级中”永久卡死 → 15 分钟整体超时杀进程，由上层编排（回滚 + 恢复启动）接管。
+- **稳定性 ×3**：⑥ cli-integration 用户 rc 文件（~/.zshrc 等）原地写 → .tmp+rename 原子写（高价值用户配置，损坏影响所有新终端）；⑦ config-backup `writeConfigRaw`（恢复路径）直写 → 原子写（恢复是最后救命稻草，自身损坏配置尤不该，对齐 ensurePluginsAllow 模式）；⑧ browser `DEFAULT_PROCESS_EXEC`/`defaultRegExecutor` 无超时——PowerShell/reg.exe 在 Defender 干扰等环境长不返时，Settings/Setup IPC 链路无限挂起 → 10s 超时 + windowsHide（误超时仅单次探测降级，下次轮询自愈）。
+- **可维护性 ×1**：⑨ kernel-updater 异常恢复路径重启 gateway 失败空吞 → 错误文案透出“且 Gateway 恢复启动失败”。
+- **无发现区**（全读核验）：analytics（心跳/刷发窗口/AbortSignal 兜底均稳）、analytics-events、app-updater-state（纯 reducer）、install-detector（超时齐备无 shell）、constants（兜底完整）、diagnostics-export（脱敏递归+双上限）、provider-image-probe（TINY_PNG 符合 #44）。
+- **未修项（候选）**：webbridge 二进制下载无 SHA256 校验（ETag 只是缓存一致性，非完整性机制）——需发布链配合产出哈希清单，独立安全加固项排期。
+- **验证**：`npm test` 499 pass / 0 fail / 4 skipped（基线维持）；`tsc -p tsconfig.json` 0 错；`npm run build` 通过。
+
 ### R8 · 插件管理页面（已重启完成，见上节 R8 记录）
 
 ### 剩余候选（按需立项）
 - 插件页：详情视图（description 全文/来源/依赖）；安装后自动启用（需 runtimeId→id 映射）。
 - 引用跳转定位原消息；附件卡片化（阶段 20 挂账）；i18n 死键审计；会话 includeDerivedTitles 大列表性能核。
 - device token 主进程保管（威胁模型低）；tree-sitter-bash/typescript 内核运行时依赖取证（维持不裁）。
-- chat.history 滞后内核侧修复上报上游（R17 根因已定位：SESSION_STORE_SNAPSHOT_CACHE 无 TTL）。
 
 ## 📦 发版与实测经验（套路已验证多次）
 
@@ -780,8 +767,6 @@
 **记录在案的遗留**：
 - ✅ **OneClaw 已于 2026-08-11 完成迁移并卸载**：内核态 `~/.openclaw` 本就两代共享（会话/渠道/凭据无缝继承）；`oneclaw.config.json` 首启自动迁为 `cryoclaw.config.json`；OneClaw 内核备份搬至 `%LOCALAPPDATA%\CryoClaw\kernel-backup`；UI 偏好 theme=system 经 CDP 合并落盘；OneClaw 应用静默卸载、AppData 三目录与 out/ 下 809/810/811 旧安装包移回收站；清理后 gateway 200 复验通过。教训：localStorage 合并须「静置→setItem→`window.cryoclaw.quit()` 优雅退出」才落盘，`taskkill /F` 会丢写（脚本 `.cache/migrate-theme-v2.js` / `post-cleanup-verify.js`）。
 - ⚠️ **用户行动项（待核）**：v2026.809 前的历史安装包含 `.env.build`（CRYOCLAW_KIMI_CLAW_REFRESH）——若曾上传 CDN/分发，需轮换该凭证（旧包已移回收站，可清空回收站彻底销毁；kimi-claw 插件已于 R7 移除，该 env 随之作废）。
-- device token 明文存 localStorage（file:// 同分区共享）——威胁模型低，如需可改主进程保管（待核，阶段 19 审查遗留）。
-- `handleOpenWebUI` 把 token 拼进外开 URL query（loopback，已有 openWebUI 优先通道；阶段 21 评估收益不成比例，维持现状）。
 - Ctrl+S steer 真·插入当前回合需内核支持（内核 WS 是 followup 语义，「立即发送」已是最接近实现）；队列重排低优先未做。
 - PATH 上 npm 全局 openclaw 可能遮蔽 CryoClaw wrapper（install-detector 已在 Setup 检测提示，代码层无法根治）。
 - 会话菜单 `--up` 翻转在极端时序下取不到元素则保持默认向下（优雅降级）；计划面板与顶部错误条同现叠放已修（chat.css `.chat:has(.plan-panel)` 避让规则）。
@@ -793,10 +778,7 @@
 - 会话管理页 `includeDerivedTitles` 每行多一次 8KB 文件读——会话量极大时注意内核默认 limit（待核）。
 
 **候选功能（取证过、未做，按需立项）**：
-- `terminal.*`（内嵌终端）、worktrees / environments、完整语音会话 UI（tts 运行时/talk.realtime 只有 config.patch 写路径）、
-  wizard 运行时、device/node 管理——阶段 17 取证为「低价值或高成本」，未接入。
-- IPC 通道按 webContents 来源细粒度授权（当前 assertTrustedIpcSender 只校验是否 chat-ui，
-  未区分 setup 窗口等来源；架构性改动，需逐 handler 评估）。
+- `terminal.*`（内嵌终端）、worktrees / environments、完整语音会话 UI（tts 运行时/talk.realtime 只有 config.patch 写路径）。
 - 已发送文件附件卡片化（需先解决 gateway 发送契约一致性，阶段 20 挂账）。
 - installer 体积主体仍是 gateway.asar（R6 后 237.6MB）+ runtime；CryoClaw 侧三项裁剪目标已全部落地。
 - tree-sitter-bash parser.c 9.4MB、typescript/lib 14.7MB（内核运行时依赖，勿动需先取证）；

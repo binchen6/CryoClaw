@@ -187,9 +187,15 @@ export interface ProcessDetectorDeps {
 
 const execFileAsync = promisify(execFile);
 
+// 探测类默认执行器带 10s 超时 + windowsHide：PowerShell/reg.exe 在 Defender 干扰/
+// profile 损坏/WMI 异常等环境下可能长时间不返回，无超时会让 Settings/Setup 的
+// ipcMain.handle 链路无限挂起；误超时仅单次探测降级为 not-running，下次轮询自愈。
+// windowsHide 防止控制台子系统程序从 GUI 进程 spawn 时闪窗口（对齐 gotcha #11）。
+const PROBE_EXEC_TIMEOUT_MS = 10_000;
+
 export const DEFAULT_PROCESS_EXEC: ProcessExecutor = async (cmd, args) => {
   try {
-    const { stdout } = await execFileAsync(cmd, args);
+    const { stdout } = await execFileAsync(cmd, args, { timeout: PROBE_EXEC_TIMEOUT_MS, windowsHide: true });
     return { stdout: String(stdout ?? ""), code: 0 };
   } catch (err: any) {
     return {
@@ -365,7 +371,7 @@ export interface ExtensionSpec {
 
 const defaultRegExecutor: RegExecutor = async (args) => {
   try {
-    const { stdout, stderr } = await execFileAsync("reg.exe", args as string[]);
+    const { stdout, stderr } = await execFileAsync("reg.exe", args as string[], { timeout: PROBE_EXEC_TIMEOUT_MS, windowsHide: true });
     return { stdout, stderr, code: 0 };
   } catch (err: any) {
     return {

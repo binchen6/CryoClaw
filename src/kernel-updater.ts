@@ -85,6 +85,11 @@ type UpdaterEvent =
   | { type: "done"; action: "update" | "rollback"; from: string; to: string }
   | { type: "error"; message: string };
 
+// updater 整体看门狗：内部各步骤（npm/HTTP/冒烟）各自带超时，但脚本外原因（管道阻塞/
+// 磁盘 I/O 挂起）导致整体挂住时，无兜底则编排永久挂起——此时 gateway 已停、
+// running 恒为 true（finally 永不执行），用户侧“升级中”永久卡死。取远大于内部各步超时的宽松值。
+const UPDATOR_OVERALL_TIMEOUT_MS = 15 * 60_000;
+
 /** 运行 updater 脚本，逐行解析 JSONL 协议；onEvent 抛错不影响子进程。 */
 function runUpdater(args: string[], onEvent: (e: UpdaterEvent) => void): Promise<UpdaterEvent[]> {
   return new Promise((resolve, reject) => {
@@ -124,8 +129,17 @@ function runUpdater(args: string[], onEvent: (e: UpdaterEvent) => void): Promise
     child.stderr.on("data", (chunk: Buffer) => {
       stderrTail = (stderrTail + chunk.toString("utf-8")).slice(-2000);
     });
-    child.on("error", reject);
+    // 整体看门狗：超时杀子进程，让 close 事件带非 0 退出码走 reject 路径，
+    // 由上层编排（sawSwap 回滚 + 恢复启动）接管。
+    const watchdog = setTimeout(() => {
+      child.kill();
+    }, UPDATOR_OVERALL_TIMEOUT_MS);
+    child.on("error", (err) => {
+      clearTimeout(watchdog);
+      reject(err);
+    });
     child.on("close", (code) => {
+      clearTimeout(watchdog);
       // 冲刷 decoder 中可能残留的半字符，再尝试解析收尾行（正常协议每行以 \n 结尾）
       stdoutBuf += stdoutDecoder.end();
       const tail = stdoutBuf.trim();
@@ -233,13 +247,18 @@ async function orchestrate(args: string[]): Promise<KernelUpdateResult> {
         log.error(`[kernel-updater] 失败后自动回滚未成功: ${rollbackErr?.message ?? rollbackErr}`);
       }
     }
-    // 仅当 gateway 原本在运行时才恢复启动
+    // 仅当 gateway 原本在运行时才恢复启动；恢复失败必须在错误文案中透出，
+    // 否则用户只看到“升级失败”，不知道 gateway 已停摆。
+    let restored = true;
     if (wasRunning) {
       try {
-        await d.startGateway();
-      } catch {}
+        restored = Boolean(await d.startGateway());
+      } catch {
+        restored = false;
+      }
     }
-    return { ok: false, error: String(err?.message ?? err) };
+    const baseError = String(err?.message ?? err);
+    return { ok: false, error: restored ? baseError : `${baseError}；且 Gateway 恢复启动失败，请手动检查或重启应用` };
   } finally {
     running = false;
   }

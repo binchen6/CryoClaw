@@ -153,12 +153,18 @@ function reconcileOne(pluginId: string, mirrorDir: string, userDir: string): Rec
     return { pluginId, action: "skipped", fromVersion: destVersion, toVersion: mirrorVersion };
   }
 
-  // 版本或入口签名任一不同（或读不到） — 强制覆盖
+  // 版本或入口签名任一不同（或读不到）— 强制覆盖。
+  // 原子换装：先复制到同卷临时目录，成功后删旧 + rename——避免删旧后复制中途失败（磁盘满/杀软锁）
+  // 留下残缺的扩展目录，导致依赖该目录的 channel 在 config 校验阶段被拒（gotcha #41）。
+  const tmp = `${dest}.cryoclaw-tmp-${process.pid}-${Date.now()}`;
   try {
+    copyDirSync(src, tmp);
     fs.rmSync(dest, { recursive: true, force: true });
-    copyDirSync(src, dest);
+    fs.renameSync(tmp, dest);
     return { pluginId, action: "upgraded", fromVersion: destVersion, toVersion: mirrorVersion };
   } catch (err) {
+    // 失败时清理临时目录，保留旧版可用（若已被删说明删旧成功、复制失败，下次启动自愈）
+    try { fs.rmSync(tmp, { recursive: true, force: true }); } catch {}
     return { pluginId, action: "failed", error: (err as Error).message };
   }
 }
@@ -189,7 +195,14 @@ export async function reconcileExtensionsOnAppLaunch(): Promise<void> {
     return;
   }
 
-  fs.mkdirSync(userDir, { recursive: true });
+  // 失败语义是“永远不抛”：目录创建失败（权限/磁盘满）也不能阻断启动链路，
+  // 否则上层 startGatewayAndShowMain 中断，网关不会启动且失败上报/恢复路径全部被跳过。
+  try {
+    fs.mkdirSync(userDir, { recursive: true });
+  } catch (err) {
+    log.warn(`[ext-mirror] failed to create user extensions dir: ${(err as Error).message}`);
+    return;
+  }
 
   const outcomes: ReconcileOutcome[] = [];
   for (const entry of entries) {

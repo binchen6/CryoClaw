@@ -109,9 +109,12 @@ function escapeForPosixDoubleQuoted(value: string): string {
   return value.replace(/(["\\$`])/g, "\\$1");
 }
 
-// cmd 的 set "KEY=VALUE" 语法只需处理双引号转义。
+// cmd 的 set "KEY=VALUE" 语法：`%` 在批处理上下文会被当作变量展开定界符（成对 %VAR% 展开、
+// 未定义变量展开为空串），路径含 `%`（用户可选安装目录/用户名）时路径段会被静默吞掉，
+// 必须双写转义为字面 %（仅对 .cmd 脚本上下文成立，本处正是）；`"` 是 Windows 文件名非法字符，
+// 双写仅作防御。
 function escapeForCmdSetValue(value: string): string {
-  return value.replace(/"/g, '""');
+  return value.replace(/%/g, "%%").replace(/"/g, '""');
 }
 
 // PowerShell 单引号字符串转义。
@@ -512,6 +515,19 @@ function detectEol(text: string): "\n" | "\r\n" {
   return text.includes("\r\n") ? "\r\n" : "\n";
 }
 
+// 用户 rc 文件（~/.zshrc 等）是高价值用户配置，写一半崩溃会损坏所有新终端的 shell 启动。
+// 原子写（.tmp + rename）：模式对齐 browser.ts 的 atomicWriteFile。
+function atomicWriteRcFile(rcPath: string, content: string): void {
+  const tmpPath = `${rcPath}.cryoclaw-tmp`;
+  try {
+    fs.writeFileSync(tmpPath, content, "utf-8");
+    fs.renameSync(tmpPath, rcPath);
+  } catch (err) {
+    try { fs.rmSync(tmpPath, { force: true }); } catch {}
+    throw err;
+  }
+}
+
 // 向 rc 文件幂等写入 CryoClaw 管理块，重复安装不会产生重复内容。
 function upsertRcBlock(rcPath: string, binDir: string): void {
   const current = fs.existsSync(rcPath) ? fs.readFileSync(rcPath, "utf-8") : "";
@@ -524,7 +540,7 @@ function upsertRcBlock(rcPath: string, binDir: string): void {
   const next = eol === "\r\n" ? nextUnix.replace(/\n/g, "\r\n") : nextUnix;
 
   if (next !== current) {
-    fs.writeFileSync(rcPath, next, "utf-8");
+    atomicWriteRcFile(rcPath, next);
     log.info(`[cli] PATH block written to ${rcPath}`);
   }
 }
@@ -541,7 +557,7 @@ function removeRcBlock(rcPath: string): void {
   const base = stripped.trimEnd();
   const nextUnix = base ? `${base}\n` : "";
   const next = eol === "\r\n" ? nextUnix.replace(/\n/g, "\r\n") : nextUnix;
-  fs.writeFileSync(rcPath, next, "utf-8");
+  atomicWriteRcFile(rcPath, next);
   log.info(`[cli] PATH block removed from ${rcPath}`);
 }
 
