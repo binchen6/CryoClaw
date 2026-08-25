@@ -10,7 +10,7 @@
 面向国内生态（Kimi / Moonshot / 飞书 / 企微 / 微信 / 钉钉 / QQ）。
 
 **当前状态**：
-- 重设计工程 **R1–R27 全部完成**，最新发版 **v2026.825.2**（R27 文档精简重构；v2026.825.1：R26；v2026.825.0：R25）。
+- 重设计工程 **R1–R28 全部完成**，最新发版 **v2026.825.3**（R28 遗留清理；v2026.825.2：R27）。
 - 内核 openclaw **2026.7.1-2**（版本 pin 在 package.json `cryoclaw.openclaw`）；**Electron 43.4.0**（audit 0 漏洞）。
 - 测试基线 **499 pass / 0 fail / 4 skipped**（vitest 94 + node 74 + chat-ui 279 + scripts 52；0 fail 为硬指标）。
 - 重复率 **1.01%**（65 clones，阈值 5%，`npm run dupcheck` 防回退）。
@@ -162,6 +162,13 @@
 
 - `OPTIMIZATION-PROGRESS.md` 从 ~800 行精简重构：里程碑记录（R1–R23）压缩为速查表格；工程记录区确立增删规则（新轮次末尾追加、完成后压缩入表）；头部/路径地图/既有事实/测试体系/契约要点全部保留（断点续作锚点不丢）。
 - 无代码改动；随例行验证发版。
+
+### R28 · 历史遗留清理（完成，随 v2026.825.3 发版）
+从 R24–R26 未修项中选 3 个低风险可行项实施：
+- ① **飞书授权条目名称补全并发限制**（settings/pairing）：`Promise.all` 无上限 → 每批 5 个串行；新环境首次打开不再触发 OpenAPI 限流致名称长期为空。
+- ② **loadTasks 在途排队**（controllers/tasks）：在途刷新期间再被请求（如 task 事件）置脏标记、完成后补跑一轮——防旧响应晚到整体覆盖事件增量（列表陈旧最长一个 ticker 周期）。
+- ③ **app-skills SkillsState 双重断言收敛**：`AppViewState`（= OpenClawApp 结构类型）本就满足 `SkillsState` 全部字段——删 7 处 `as unknown as` + 1 处冗余强转，契约由编译器接管（typecheck 证明）。
+- **仍候选**：webbridge 二进制 SHA256（需发布链哈希清单）；device-auth 签名规范化（需网关侧同步）；设备密钥 OS keychain；导出压缩 worker 化；kimi-auth-proxy 回环鉴权；cleanStaleLockfile 先 probe 再杀；IPC 细粒度授权（架构性）。
 
 ## 📦 发版与实测经验（套路已验证多次）
 

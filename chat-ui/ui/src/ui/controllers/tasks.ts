@@ -83,8 +83,16 @@ export function applyTaskEvent(
   return null;
 }
 
+// 在途刷新期间若再被请求刷新（如 task 事件触发），置脏标记并在完成后补跑一轮：
+// 否则旧请求晚到的响应会整体覆盖事件增量（列表陈旧最长一个 ticker 周期）。
+let tasksRefreshPending = false;
+
 export async function loadTasks(state: TasksState) {
-  if (!state.client || !state.connected || state.tasksLoading) {
+  if (!state.client || !state.connected) {
+    return;
+  }
+  if (state.tasksLoading) {
+    tasksRefreshPending = true;
     return;
   }
   state.tasksLoading = true;
@@ -99,6 +107,10 @@ export async function loadTasks(state: TasksState) {
     state.tasksError = String(err);
   } finally {
     state.tasksLoading = false;
+    if (tasksRefreshPending) {
+      tasksRefreshPending = false;
+      void loadTasks(state);
+    }
   }
 }
 

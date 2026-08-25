@@ -14,8 +14,6 @@ import {
   updateSkillEnabled,
   updateSkillEdit,
   saveSkillApiKey,
-  type SkillsState,
-  type SkillMessageMap,
 } from "./controllers/skills.ts";
 import type { AppViewState } from "./app-view-state.ts";
 
@@ -172,7 +170,7 @@ async function uninstallLocalSkill(state: AppViewState, slug: string) {
     const result = await window.cryoclaw.skillStoreUninstall({ slug });
     if (result?.success) {
       // 刷新已安装列表和商店已安装标记
-      void loadSkills(state as unknown as SkillsState);
+      void loadSkills(state);
       await refreshInstalledSlugs();
     } else {
       showToast(state, t("skillStore.uninstallFailed"));
@@ -251,7 +249,7 @@ function renderInstalledSkillsView(state: AppViewState) {
     : visibleSkills;
   const groups = groupLocalSkills(filtered);
   const busy = state.skillsBusyKey;
-  const messages = state.skillMessages as SkillMessageMap;
+  const messages = state.skillMessages;
 
   return html`
     ${state.skillsError
@@ -309,7 +307,7 @@ function renderInstalledSkillsView(state: AppViewState) {
                         type="checkbox"
                         .checked=${!skill.disabled}
                         ?disabled=${isBusy}
-                        @change=${() => void updateSkillEnabled(state as unknown as SkillsState, key, !!skill.disabled)}
+                        @change=${() => void updateSkillEnabled(state, key, !!skill.disabled)}
                       />
                       <span class="skill-toggle-slider"></span>
                     </label>
@@ -330,13 +328,13 @@ function renderInstalledSkillsView(state: AppViewState) {
                         type="password"
                         placeholder="API key (${skill.primaryEnv})"
                         .value=${state.skillEdits[key] ?? ""}
-                        @input=${(e: Event) => updateSkillEdit(state as unknown as SkillsState, key, (e.target as HTMLInputElement).value)}
+                        @input=${(e: Event) => updateSkillEdit(state, key, (e.target as HTMLInputElement).value)}
                       />
                       <button
                         class="skill-store__btn skill-store__btn--install"
                         type="button"
                         ?disabled=${isBusy}
-                        @click=${() => void saveSkillApiKey(state as unknown as SkillsState, key)}
+                        @click=${() => void saveSkillApiKey(state, key)}
                       >${t("skills.saveKey")}</button>
                     </div>
                   `
@@ -355,7 +353,7 @@ export function openSkillsView(state: AppViewState, subTab: "installed" | "store
   skillsSubTab = subTab;
   setCryoClawView(state, "skills");
   if (subTab === "installed") {
-    void loadSkills(state as unknown as SkillsState);
+    void loadSkills(state);
   } else if (!skillStoreDataLoaded) {
     void loadSkillStoreData(state);
   }
@@ -384,7 +382,7 @@ export function renderSkillsView(state: AppViewState) {
             type="button"
             @click=${() => {
               skillsSubTab = "installed";
-              void loadSkills(state as unknown as SkillsState);
+              void loadSkills(state);
               state.requestUpdate();
             }}
           >${t("skills.tabInstalled")}</button>
@@ -407,7 +405,7 @@ export function renderSkillsView(state: AppViewState) {
                     class="skill-store__sort-btn"
                     type="button"
                     ?disabled=${state.skillsLoading}
-                    @click=${() => void loadSkills(state as unknown as SkillsState)}
+                    @click=${() => void loadSkills(state)}
                   >${state.skillsLoading ? t("skills.refreshing") : t("skills.refresh")}</button>
                 `
               : html`

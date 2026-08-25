@@ -1,5 +1,12 @@
 [
   {
+    "version": "2026.825.3",
+    "notes": {
+      "zh": "优化：飞书已授权条目名称补全改为分批请求（防 OpenAPI 限流导致名称长期为空）\n优化：任务视图刷新在途时不再丢弃新请求（防止旧响应覆盖事件增量）\n可维护性：技能页收敛双重类型断言，类型契约由编译器接管\n测试基线 499 用例全绿",
+      "en": "Improved: Feishu authorized-entry name enrichment is now batched (prevents OpenAPI rate-limiting from leaving names empty)\nImproved: tasks view refresh no longer drops requests arriving mid-flight (prevents stale responses overwriting event increments)\nMaintainability: skills page double type assertions removed; the contract is now enforced by the compiler\n499-test baseline all green"
+    }
+  },
+  {
     "version": "2026.825.2",
     "notes": {
       "zh": "文档：OPTIMIZATION-PROGRESS.md 精简重构（里程碑记录压缩为速查表格，工程记录确立增删规则；无代码改动）\n测试基线 499 用例全绿",

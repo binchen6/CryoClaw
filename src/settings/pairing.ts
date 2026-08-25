@@ -728,27 +728,38 @@ async function enrichFeishuEntryNames(
     return entries;
   }
 
-  await Promise.all(
-    userTargets.map(async (entry) => {
-      const name = await fetchFeishuUserNameByOpenId(token, entry.id);
-      if (name) {
-        entry.name = name;
-        saveFeishuAlias("user", entry.id, name);
-      }
-    })
-  );
+  // 飞书 OpenAPI 有 QPS 限制：无并发上限的 Promise.all 在新环境（alias 缓存未建立）
+  // 会一次并发几十个请求触发限流 → 名称留空 → 下次打开又全量重试。分批串行。
+  await runWithConcurrencyLimit(userTargets, async (entry) => {
+    const name = await fetchFeishuUserNameByOpenId(token, entry.id);
+    if (name) {
+      entry.name = name;
+      saveFeishuAlias("user", entry.id, name);
+    }
+  }, FEISHU_NAME_FETCH_CONCURRENCY);
 
-  await Promise.all(
-    groupTargets.map(async (entry) => {
-      const name = await fetchFeishuChatNameById(token, entry.id);
-      if (name) {
-        entry.name = name;
-        saveFeishuAlias("group", entry.id, name);
-      }
-    })
-  );
+  await runWithConcurrencyLimit(groupTargets, async (entry) => {
+    const name = await fetchFeishuChatNameById(token, entry.id);
+    if (name) {
+      entry.name = name;
+      saveFeishuAlias("group", entry.id, name);
+    }
+  }, FEISHU_NAME_FETCH_CONCURRENCY);
 
   return entries;
+}
+
+const FEISHU_NAME_FETCH_CONCURRENCY = 5;
+
+// 分批并发：每批上限 limit 个，批间串行。
+async function runWithConcurrencyLimit<T>(
+  items: T[],
+  fn: (item: T) => Promise<void>,
+  limit: number,
+): Promise<void> {
+  for (let i = 0; i < items.length; i += limit) {
+    await Promise.all(items.slice(i, i + limit).map(fn));
+  }
 }
 
 // 获取 tenant_access_token（内存缓存，过期前一分钟自动刷新）。
