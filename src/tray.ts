@@ -27,6 +27,8 @@ interface TrayOptions {
   onStartGateway: () => void;
   onStopGateway: () => void;
   onOpenSettings: () => void;
+  /** App 更新已下载待装时的「重启以更新」入口 */
+  onRestartAndUpdate: () => void;
   onQuit: () => void;
 }
 
@@ -37,6 +39,7 @@ type TrayStrings = {
   stateStopping: string;
   stateStopped: string;
   openDashboard: string;
+  restartToUpdate: string;
   restartGateway: string;
   startGateway: string;
   stopGateway: string;
@@ -51,6 +54,7 @@ const I18N: Record<string, TrayStrings> = {
     stateStopping: "Gateway: Stopping…",
     stateStopped: "Gateway: Stopped",
     openDashboard: "Open Dashboard",
+    restartToUpdate: "Restart to Update",
     restartGateway: "Restart Gateway",
     startGateway: "Start Gateway",
     stopGateway: "Stop Gateway",
@@ -63,6 +67,7 @@ const I18N: Record<string, TrayStrings> = {
     stateStopping: "Gateway: 停止中…",
     stateStopped: "Gateway: 已停止",
     openDashboard: "打开 CryoClaw",
+    restartToUpdate: "重启以更新",
     restartGateway: "重启 Gateway",
     startGateway: "启动 Gateway",
     stopGateway: "停止 Gateway",
@@ -92,6 +97,15 @@ function getStateLabel(state: GatewayState): string {
 export class TrayManager {
   private tray: Tray | null = null;
   private opts: TrayOptions | null = null;
+  /** App 更新是否已下载待装（downloaded 态时托盘菜单挂「重启以更新」） */
+  private appUpdateReady = false;
+
+  // App 更新状态变化时由 main 推送；变化时重建托盘菜单
+  setAppUpdateReady(ready: boolean): void {
+    if (this.appUpdateReady === ready) return;
+    this.appUpdateReady = ready;
+    this.updateMenu();
+  }
 
   // 创建托盘图标
   create(opts: TrayOptions): void {
@@ -146,7 +160,7 @@ export class TrayManager {
   updateMenu(): void {
     if (!this.tray || !this.opts) return;
 
-    const { windowManager, gateway, onRestartGateway, onStartGateway, onStopGateway, onOpenSettings, onQuit } = this.opts;
+    const { windowManager, gateway, onRestartGateway, onStartGateway, onStopGateway, onOpenSettings, onRestartAndUpdate, onQuit } = this.opts;
     const t = getTrayStrings();
     const state = gateway.getState();
     const inTransition = state === "starting" || state === "stopping";
@@ -172,6 +186,13 @@ export class TrayManager {
             .catch((err) => log.error(`托盘菜单打开主窗口失败: ${err}`)),
       },
       { type: "separator" },
+      // App 更新已下载待装：置顶重启入口（状态复位后该项消失）
+      ...(this.appUpdateReady
+        ? [
+            { label: t.restartToUpdate, click: onRestartAndUpdate },
+            { type: "separator" as const },
+          ]
+        : []),
       { label: getStateLabel(state), enabled: false },
       { label: t.restartGateway, enabled: !inTransition, click: onRestartGateway },
       ...(showStart ? [{ label: t.startGateway, enabled: state === "stopped", click: onStartGateway }] : []),

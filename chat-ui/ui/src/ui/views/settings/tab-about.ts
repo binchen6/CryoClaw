@@ -3,9 +3,10 @@
  */
 import { html } from "lit";
 import type { AppViewState } from "../../app-view-state.ts";
-import { t, tWithDetail } from "../../i18n.ts";
+import { getLocale, t, tWithDetail } from "../../i18n.ts";
 import * as ipc from "../../data/ipc-bridge.ts";
 import { showConfirm } from "../confirm-dialog.ts";
+import { showToast } from "../../app-toast.ts";
 import type {
   AppUpdateState,
   KernelUpdateProgress,
@@ -132,6 +133,27 @@ async function handleKernelRollback(state: AppViewState) {
 
 // ── App 自动更新 ──
 
+// 「查看更新日志」：拉全部条目（all=true，不触碰 lastShown 标记）重开 What's New 弹窗
+async function handleViewReleaseNotes(state: AppViewState) {
+  try {
+    const data = await ipc.getReleaseNotes({ all: true });
+    if (data && Array.isArray(data.entries) && data.entries.length > 0) {
+      state.releaseNotesData = data;
+      state.showReleaseNotesModal = true;
+    } else {
+      showToast(state, t("settings.about.releaseNotesEmpty"));
+    }
+  } catch {
+    showToast(state, t("settings.about.releaseNotesEmpty"));
+  }
+  state.requestUpdate();
+}
+
+// release-notes.json 的 notes 按当前 UI 语言取值，fallback en（与 release-notes-modal 一致）
+function localizedNotes(notes: { zh?: string; en?: string }): string {
+  return notes[getLocale()] ?? notes.en ?? "";
+}
+
 async function handleAppUpdateCheck(state: AppViewState) {
   if (s.appUpdate?.status === "checking" || s.appUpdate?.status === "downloading") return;
   s.appUpdateMsg = null;
@@ -168,6 +190,9 @@ function renderAppUpdateCard(state: AppViewState) {
   }
   const checking = us.status === "checking";
   const downloading = us.status === "downloading";
+  // available/downloaded 态渲染新版本的更新说明（release-notes.json 采进状态，可能缺失）
+  const showReleaseNotes =
+    (us.status === "available" || us.status === "downloaded") && us.releaseNotes;
   return html`
     <div class="oc-settings__card">
       <div class="oc-settings__card-title">${t("settings.about.appUpdate")}</div>
@@ -178,11 +203,17 @@ function renderAppUpdateCard(state: AppViewState) {
           : ""}
         ${us.status === "not-available" ? html`<div>${t("settings.about.appUpdateUpToDate")}</div>` : ""}
         ${us.status === "downloaded" ? html`<div>${t("settings.about.appUpdateDownloaded")}</div>` : ""}
+        ${showReleaseNotes
+          ? html`<div class="oc-settings-release-notes">
+              <div class="oc-settings-release-notes__title">${t("settings.about.appUpdateReleaseNotes")}</div>
+              <div class="oc-settings-release-notes__body">${localizedNotes(us.releaseNotes!)}</div>
+            </div>`
+          : ""}
         ${us.status === "error"
-          ? html`<div style="color:var(--text-secondary)">${t("settings.about.appUpdateError")}</div>`
+          ? html`<div style="color:var(--danger)">${tWithDetail("settings.about.appUpdateError", us.error)}</div>`
           : ""}
         <div style="display:flex;gap:8px;margin-top:4px">
-          <button class="oc-settings__btn oc-settings__btn--compact" ?disabled=${checking || downloading} @click=${() => handleAppUpdateCheck(state)}>${checking ? t("settings.about.appUpdateChecking") : t("settings.about.appUpdateCheck")}</button>
+          <button class="oc-settings__btn oc-settings__btn--compact" ?disabled=${checking || downloading} @click=${() => handleAppUpdateCheck(state)}>${checking ? t("settings.about.appUpdateChecking") : us.status === "error" ? t("settings.about.appUpdateRetry") : t("settings.about.appUpdateCheck")}</button>
           ${us.status === "downloaded"
             ? html`<button class="oc-settings__btn oc-settings__btn--primary oc-settings__btn--compact" @click=${() => handleAppUpdateRestart(state)}>${t("settings.about.appUpdateRestart")}</button>`
             : ""}
@@ -190,8 +221,8 @@ function renderAppUpdateCard(state: AppViewState) {
         ${downloading && us.progress
           ? html`
               <div>
-                <div style="height:6px;border-radius:3px;background:var(--border);overflow:hidden">
-                  <div style="height:100%;width:${us.progress.percent}%;background:var(--accent);transition:width .2s"></div>
+                <div class="oc-settings-progress">
+                  <div class="oc-settings-progress__bar" style="width:${us.progress.percent}%"></div>
                 </div>
                 <div style="margin-top:4px;color:var(--text-secondary)">${tWithDetail("settings.about.appUpdateDownloading", us.progress.percent.toFixed(1))}%</div>
               </div>
@@ -268,6 +299,9 @@ export function renderTabAbout(state: AppViewState) {
         <div style="font-size:13px;display:flex;flex-direction:column;gap:6px">
           <div><strong>${t("settings.about.cryoclaw")}</strong>: ${s.cryoClawVersion}</div>
           <div><strong>${t("settings.about.openclaw")}</strong>: ${s.openClawVersion}</div>
+          <div style="display:flex;gap:8px;margin-top:4px">
+            <button class="oc-settings__btn oc-settings__btn--compact" @click=${() => handleViewReleaseNotes(state)}>${t("settings.about.viewReleaseNotes")}</button>
+          </div>
         </div>
       </div>
 

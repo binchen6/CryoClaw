@@ -50,6 +50,7 @@ export const enDict: Record<string, string> = {
   "sidebar.delete": "Delete",
   "sidebar.archiving": "Archiving",
   "sidebar.weixinBadge": "WeChat",
+  "sidebar.updateBadge": "Update",
   "sidebar.connected": "Connected",
   "sidebar.disconnected": "Disconnected",
   "sidebar.connecting": "Connecting…",
@@ -438,6 +439,15 @@ export const enDict: Record<string, string> = {
   "settings.about.appUpdateRestart": "Restart to Update",
   "settings.about.appUpdateRestartConfirm": "Restart the app to finish updating?",
   "settings.about.appUpdateError": "Failed to check for updates; please try again later",
+  "settings.about.appUpdateRetry": "Retry",
+  "settings.about.appUpdateReleaseNotes": "What's in this update",
+  "settings.about.viewReleaseNotes": "View Release Notes",
+  "settings.about.releaseNotesEmpty": "No release notes available",
+
+  // App update global toast
+  "appUpdate.toastDownloaded": "New version downloaded; restart to finish updating",
+  "appUpdate.toastRestart": "Restart",
+  "appUpdate.restartFailed": "Failed to restart for update",
 
   // Settings: Channels
   "settings.channels.desc": "Connect WeChat, Feishu, WeCom, DingTalk, Kimi, or QQ to remote-control CryoClaw from chat apps",

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   createInitialAppUpdateState,
   reduceAppUpdateState,
+  shouldSkipPeriodicAppUpdateCheck,
   type AppUpdateState,
 } from "./app-updater-state";
 
@@ -82,4 +83,37 @@ test("游离 progress 事件被忽略（idle/checking 态不改变）", () => {
   const next = reduceAppUpdateState(s, { type: "progress", percent: 50, bytesPerSecond: 0, transferred: 0, total: 0 });
   assert.equal(next.status, "idle");
   assert.equal(next.progress, null);
+});
+
+// ── 周期静默复查跳过条件（app-updater.ts 每 4h 定时器使用）──
+
+test("周期复查：已有新版本（available/downloading/downloaded）时跳过", () => {
+  let s = reduceAppUpdateState(idleState(), { type: "available", version: "1.1.0" });
+  assert.equal(shouldSkipPeriodicAppUpdateCheck(s), true);
+
+  s = reduceAppUpdateState(s, { type: "progress", percent: 10, bytesPerSecond: 0, transferred: 0, total: 0 });
+  assert.equal(s.status, "downloading");
+  assert.equal(shouldSkipPeriodicAppUpdateCheck(s), true);
+
+  s = reduceAppUpdateState(s, { type: "downloaded" });
+  assert.equal(shouldSkipPeriodicAppUpdateCheck(s), true);
+});
+
+test("周期复查：idle/checking/not-available/error 态正常执行（error 不影响下一轮定时）", () => {
+  let s = idleState();
+  assert.equal(shouldSkipPeriodicAppUpdateCheck(s), false);
+
+  s = reduceAppUpdateState(s, { type: "checking" });
+  assert.equal(shouldSkipPeriodicAppUpdateCheck(s), false);
+
+  s = reduceAppUpdateState(s, { type: "not-available" });
+  assert.equal(shouldSkipPeriodicAppUpdateCheck(s), false);
+
+  s = reduceAppUpdateState(s, { type: "checking" });
+  s = reduceAppUpdateState(s, { type: "error", message: "network down" });
+  assert.equal(shouldSkipPeriodicAppUpdateCheck(s), false);
+});
+
+test("周期复查：不支持的环境（dev/未打包）跳过", () => {
+  assert.equal(shouldSkipPeriodicAppUpdateCheck(idleState(false)), true);
 });

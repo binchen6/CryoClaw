@@ -49,7 +49,7 @@ import { runQuitCleanup } from "./quit-cleanup";
 import { detectOwnership, migrateFromLegacy, readCryoclawConfig, writeCryoclawConfig, appendChannelUtm } from "./cryoclaw-config";
 import { startTokenRefresh, stopTokenRefresh, loadOAuthToken } from "./kimi-oauth";
 import { initKernelUpdater, getKernelUpdateState, checkKernelUpdate, runKernelUpdate, runKernelRollback } from "./kernel-updater";
-import { initAppUpdater } from "./app-updater";
+import { initAppUpdater, quitAndInstallAppUpdate } from "./app-updater";
 import { startGatewayControlServer, stopGatewayControlServer } from "./gateway-control-server";
 import { migrateOpenclawConfigForKernelUpgrade } from "./openclaw-config-migration";
 import { assertTrustedIpcSender } from "./ipc-sender-guard";
@@ -797,8 +797,10 @@ function compareVersions(a: string, b: string): number {
   return 0;
 }
 
-ipcMain.handle("app:get-release-notes", (event) => {
+ipcMain.handle("app:get-release-notes", (event, opts?: { all?: boolean }) => {
   if (!assertTrustedIpcSender(event, "app:get-release-notes")) throw new Error("IPC sender not trusted");
+  // all=true：设置-关于页「查看更新日志」重看入口，返回全部条目且不触碰 lastShown 标记
+  const showAll = opts?.all === true;
   try {
     const notesPath = path.join(app.getAppPath(), "release-notes.json");
     const raw = fs.readFileSync(notesPath, "utf-8");
@@ -806,6 +808,14 @@ ipcMain.handle("app:get-release-notes", (event) => {
     if (!Array.isArray(allEntries)) return null;
 
     const currentVersion = app.getVersion();
+
+    if (showAll) {
+      const entries = allEntries
+        .filter((entry) => entry?.version && compareVersions(entry.version, currentVersion) <= 0)
+        .sort((a, b) => compareVersions(b.version, a.version));
+      return { currentVersion, entries, locale: app.getLocale() };
+    }
+
     const config = readCryoclawConfig();
     const lastShown = config?.lastShownReleaseNotesVersion;
 
@@ -996,7 +1006,11 @@ app.whenReady().then(async () => {
   // App 自动更新（electron-updater + GitHub Releases）：仅打包环境启用，
   // 内部 15s 延迟静默检查，不阻塞首屏窗口
   initAppUpdater({
-    push: (s) => windowManager.pushAppUpdateState(s),
+    push: (s) => {
+      windowManager.pushAppUpdateState(s);
+      // downloaded 态时托盘菜单挂「重启以更新」入口（状态复位后自动消失）
+      tray.setAppUpdateReady(s.status === "downloaded");
+    },
     beforeQuitAndInstall: () => windowManager.prepareForAppQuit(),
   });
   tray.create({
@@ -1010,8 +1024,25 @@ app.whenReady().then(async () => {
         log.error(`托盘设置打开失败: ${err}`);
       });
     },
+    onRestartAndUpdate: () => {
+      try {
+        quitAndInstallAppUpdate();
+      } catch (err: any) {
+        log.warn(`托盘「重启以更新」触发失败: ${err?.message ?? err}`);
+      }
+    },
     onQuit: quit,
   });
+
+  // 内核更新启动静默检查（30s 延迟，错开 App 更新的 15s 首查）：
+  // 仅填充 lastCheck 版本缓存，设置-关于页打开时经 kernel:get-update-state 反映；
+  // 失败只记 warn，不打扰用户
+  const kernelStartupCheckTimer = setTimeout(() => {
+    checkKernelUpdate().catch((err: any) => {
+      log.warn(`[kernel-updater] 启动静默检查失败: ${err?.message ?? err}`);
+    });
+  }, 30 * 1000);
+  kernelStartupCheckTimer.unref?.();
 
   // 内核升级后的配置适配（如移除已废弃字段），须在配置健康检查与 gateway 启动前完成。
   migrateOpenclawConfigForKernelUpgrade();

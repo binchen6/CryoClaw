@@ -10,9 +10,9 @@
 面向国内生态（Kimi / Moonshot / 飞书 / 企微 / 微信 / 钉钉 / QQ）。
 
 **当前状态**：
-- 重设计工程 **R1–R33 全部完成**，最新发版 **v2026.827.5**（R33 可维护性收尾；v2026.827.4：R32）。
+- 重设计工程 **R1–R34 全部完成**，最新发版 **v2026.827.6**（R34 应用更新策略与进度提示；v2026.827.5：R33）。
 - 内核 openclaw **2026.7.1-2**（版本 pin 在 package.json `cryoclaw.openclaw`）；**Electron 43.4.0**（audit 0 漏洞）。
-- 测试基线 **534 pass / 0 fail / 4 skipped**（vitest 94 + node 74 + chat-ui 314 + scripts 52；0 fail 为硬指标）。
+- 测试基线 **543 pass / 0 fail / 4 skipped**（vitest 94 + node 77 + chat-ui 320 + scripts 52；0 fail 为硬指标）。
 - 重复率 **1.01%**（67 clones，阈值 5%，`npm run dupcheck` 防回退）。
 - 开源：GitHub `binchen6/CryoClaw`（AGPL-3.0-only，干净历史）；发版走本地 `dist:win` + `gh release`；CI `tests.yml` 每次 push/PR 全量回归。
 
@@ -223,6 +223,18 @@
 - **文档债同步**：R24/R26 未修项清单、Watch list 候选列表按实际闭环状态重写（审查 minor）。
 - 基线不变 534 全绿（纯删减+加固，无新测试件）；重复率 1.01%。
 - **仍候选**：kimi-auth-proxy path secret 回环鉴权（中风险，~30 行 backlog）；settings.css CRLF/LF 混排统一（diff 噪音大 defer）；tokens-ext 暗色默认值翻转；views 内联 style 收敛。
+
+### R34 · 应用更新策略与进度提示（完成，随 v2026.827.6 发版；二期 P1）
+
+二期立项首项：优化软件更新策略和进度提示。实施 coder 代理 + 审查代理复审（无 blocker/major），主代复审后修 1 个 minor：
+- **周期性检查**：app-updater.ts 新增 4h setInterval（`unref`、仅 packaged 创建、stopAppUpdater 清理）；app-updater-state.ts 新增 `shouldSkipPeriodicAppUpdateCheck()` 防与手动/启动检查撞车。
+- **更新提示链路**：chat-ui `bindAppUpdateState()`（connectedCallback 挂、防重入、disconnectedCallback 清理）+ `appUpdateBadge` 响应式字段 → 侧边栏设置入口「更新」角标（available/downloading/downloaded 三态常驻）；「重启更新」toast 带 action 常驻（`restartToApplyUpdate()` → `appUpdateQuitAndInstall`）。**复审 minor 修复**：常驻 toast 被后续普通 toast 覆盖后不再回来 → 条件补 `getToastMessage() === null`（同态且无当前 toast 时补弹）。
+- **toast 系统重写**（app-toast.ts）：ToastAction/getToastAction/hideToast/getToastMessage 导出；带 action 的 toast 常驻不自动消失，普通 toast 4s。
+- **关于页更新日志**：tab-about.ts 渲染 releaseNotes（getLocale 取 zh/en）、error 显示 `us.error` + 「重试」、进度条抽 class、「查看更新日志」按钮；`app:get-release-notes` 支持 `opts.all`（不碰 lastShownReleaseNotesVersion）。
+- **启动+托盘**：main.ts 启动 +30s 静默 checkKernelUpdate；push 回调同步 `tray.setAppUpdateReady`；tray.ts downloaded 态加「重启以更新」菜单项。
+- **接线**：preload.ts/ipc-bridge.ts bridge 扩展；i18n 新键 zh/en 齐全（sidebar.updateBadge、settings.about.appUpdateRetry/appUpdateReleaseNotes/viewReleaseNotes/releaseNotesEmpty、appUpdate.toastDownloaded/toastRestart/restartFailed）。
+- **测试 +9**：node +3（77）、chat-ui +6（320，新增 app-update-notify.test.ts 源码审计 6 例）。基线 534→543 全绿；重复率 1.005%。
+- **不修记录在案**：渲染进程重建导致 downloaded 边沿重弹（可接受）；kernel 30s timer 无退出清理（unref 足够）；checkAppUpdate 无并发守卫（概率极低）。
 
 ## 📦 发版与实测经验（套路已验证多次）
 

@@ -57,6 +57,8 @@ export type SidebarProps = {
   isDeletingSession: (key: string) => boolean;
   requestUpdate: () => void;
   settingsBadge: boolean;
+  // App 更新待装/下载中角标（与 settingsBadge 微信徽标并列，互不影响）
+  settingsUpdateBadge: boolean;
   onOpenSettings: () => void;
   onOpenSkillStore: () => void;
   onOpenWorkspace: () => void;
@@ -436,6 +438,9 @@ export function renderSidebar(props: SidebarProps) {
           <span class="cryoclaw-sidebar__label">${t("sidebar.settings")}</span>
           ${props.settingsBadge
             ? html`<span class="cryoclaw-sidebar__badge cryoclaw-sidebar__badge--new">${t("sidebar.weixinBadge")}</span>`
+            : nothing}
+          ${props.settingsUpdateBadge
+            ? html`<span class="cryoclaw-sidebar__badge cryoclaw-sidebar__badge--new">${t("sidebar.updateBadge")}</span>`
             : nothing}
         </button>
 

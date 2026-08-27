@@ -309,6 +309,8 @@ interface CryoClawBridgeExtended {
       appUpdateCheck?: () => Promise<any>;
       appUpdateQuitAndInstall?: () => Promise<any>;
       onAppUpdateState?: (cb: (payload: any) => void) => () => void;
+      // Release Notes（all=true 返回全部条目，供「查看更新日志」重看）
+      getReleaseNotes?: (opts?: { all?: boolean }) => Promise<any>;
       // Navigation
       onNavigate?: (cb: (payload: any) => void) => () => void;
       onSettingsNavigate?: (cb: (payload: any) => void) => () => void;
@@ -680,6 +682,18 @@ export async function appUpdateQuitAndInstall(): Promise<void> {
 
 export function onAppUpdateState(cb: (s: AppUpdateState) => void): () => void {
   return oc().onAppUpdateState?.(cb) ?? (() => {});
+}
+
+// Release Notes（设置-关于页「查看更新日志」重看入口；all=true 返回全部条目，
+// 主进程该通道返回裸对象/null，unwrapData 原样透传）
+export interface ReleaseNotesData {
+  currentVersion: string;
+  entries: Array<{ version: string; notes: { zh?: string; en?: string } }>;
+  locale: string;
+}
+
+export async function getReleaseNotes(opts?: { all?: boolean }): Promise<ReleaseNotesData | null> {
+  return unwrapData<ReleaseNotesData | null>(await oc().getReleaseNotes(opts));
 }
 
 // ---------------------------------------------------------------------------

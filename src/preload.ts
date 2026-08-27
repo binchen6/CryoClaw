@@ -182,7 +182,7 @@ contextBridge.exposeInMainWorld("cryoclaw", {
     ipcRenderer.invoke("clipboard:read-file-paths") as Promise<string[]>,
 
   // Release Notes
-  getReleaseNotes: () => ipcRenderer.invoke("app:get-release-notes"),
+  getReleaseNotes: (opts?: { all?: boolean }) => ipcRenderer.invoke("app:get-release-notes", opts),
   dismissReleaseNotes: (version: string) => ipcRenderer.invoke("app:dismiss-release-notes", version),
 
   // Chat UI 侧边栏操作

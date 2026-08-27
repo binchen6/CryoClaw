@@ -50,6 +50,7 @@ export const zhDict: Record<string, string> = {
   "sidebar.delete": "删除",
   "sidebar.archiving": "正在归档",
   "sidebar.weixinBadge": "微信连接",
+  "sidebar.updateBadge": "更新",
   "sidebar.connected": "已连接",
   "sidebar.disconnected": "未连接",
   "sidebar.connecting": "连接中…",
@@ -475,6 +476,15 @@ export const zhDict: Record<string, string> = {
   "settings.about.appUpdateRestart": "重启以更新",
   "settings.about.appUpdateRestartConfirm": "确定要重启应用以完成更新吗？",
   "settings.about.appUpdateError": "检查更新失败，请稍后重试",
+  "settings.about.appUpdateRetry": "重试",
+  "settings.about.appUpdateReleaseNotes": "更新内容",
+  "settings.about.viewReleaseNotes": "查看更新日志",
+  "settings.about.releaseNotesEmpty": "暂无更新日志",
+
+  // App 更新全局提示（toast）
+  "appUpdate.toastDownloaded": "新版本已下载完成，重启后生效",
+  "appUpdate.toastRestart": "重启更新",
+  "appUpdate.restartFailed": "重启更新失败",
 
   // Settings: Channels
   "settings.channels.desc": "连接微信、飞书、企业微信、钉钉、Kimi 或 QQ，从聊天软件远程控制 CryoClaw",

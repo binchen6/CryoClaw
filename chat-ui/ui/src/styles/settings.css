@@ -1780,3 +1780,31 @@
   background: var(--danger-subtle);
   border-color: color-mix(in srgb, var(--danger) 30%, transparent);
 }
+
+/* ── tab-about：App 更新下载进度条 + 新版本更新说明卡片 ── */
+.oc-settings-progress {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--border);
+  overflow: hidden;
+}
+.oc-settings-progress__bar {
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.2s;
+}
+
+.oc-settings-release-notes {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--glass-xs);
+  padding: 8px 10px;
+}
+.oc-settings-release-notes__title {
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+.oc-settings-release-notes__body {
+  color: var(--text-secondary);
+  white-space: pre-line;
+}

@@ -1,5 +1,12 @@
 [
   {
+    "version": "2026.827.6",
+    "notes": {
+      "zh": "新功能：应用更新策略升级——启动后每 4 小时自动检查更新；下载完成后常驻「重启更新」toast（被普通 toast 覆盖后自动补弹），托盘菜单新增「重启以更新」\n新功能：设置-关于页展示当前版本更新日志（含「重试」「查看更新日志」入口）；侧边栏设置入口在有新版本/待装时显示「更新」角标\n优化：toast 系统支持常驻动作按钮（带操作的 toast 不再自动消失）；about 页错误信息可读化\n测试基线 543 用例全绿",
+      "en": "New: app update policy upgrade — automatic update checks every 4 hours after launch; a persistent \"restart to update\" toast appears when the download completes (re-shown if covered by a normal toast); tray menu gains \"Restart to Update\"\nNew: Settings → About shows the current version's release notes (with \"retry\" and \"view release notes\" entries); the sidebar settings entry shows an \"update\" badge when a new version is available or ready to install\nImproved: the toast system supports persistent action toasts (toasts with actions no longer auto-dismiss); about-page errors are now human-readable\n543-test baseline all green"
+    }
+  },
+  {
     "version": "2026.827.5",
     "notes": {
       "zh": "加固：清理残留 gateway 锁文件前先 HTTP 探测（防 PID 复用误杀无关进程）；强杀兜底后补删锁文件防下次启动阻塞\n优化：诊断包导出压缩改异步（主进程不再因 zipSync 卡顿）；飞书授权条目名称补全增加 10 分钟失败负缓存（失败条目不再每次全量重试）\n可维护性：删除无调用的 gateway-rpc 模块与 renderIcon 死代码；清除旧布局孤儿 CSS 约 420 行；技能头像色板收敛为单一共享常量\n测试基线 534 用例全绿",

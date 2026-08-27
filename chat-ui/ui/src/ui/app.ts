@@ -34,6 +34,7 @@ import {
   handleUpdated,
 } from "./app-lifecycle.ts";
 import { renderApp } from "./app-render.ts";
+import { getToastMessage, showToast } from "./app-toast.ts";
 import {
   handleChatScroll as handleChatScrollInternal,
   resetChatScroll as resetChatScrollInternal,
@@ -58,7 +59,7 @@ import { getCachedGatewayModelEntries } from "./controllers/models.ts";
 import { extractAdvancedView, applyAdvancedSave } from "./views/settings/tab-channels.lib.ts";
 import { markSessionMeterDirty } from "./context-meter.ts";
 import { resolveThinkingCapabilities } from "./chat/thinking-levels.ts";
-import { getLocale, t } from "./i18n.ts";
+import { getLocale, t, tWithDetail } from "./i18n.ts";
 import { loadSettings, type UiSettings } from "./storage.ts";
 import { type ChatAttachment, type ChatQueueItem, type ConfiguredModel, type CronFormState } from "./ui-types.ts";
 
@@ -128,6 +129,10 @@ type CryoClawBridge = {
   onWebbridgeStateChanged?: (cb: () => void) => (() => void) | void;
   getReleaseNotes?: () => Promise<ReleaseNotesData | null>;
   dismissReleaseNotes?: (version: string) => Promise<void>;
+  // App 自动更新全局感知（角标 + toast）；响应为 { success, data } 包装
+  appUpdateGetState?: () => Promise<{ success: boolean; data?: { status?: string } } | null>;
+  appUpdateQuitAndInstall?: () => Promise<{ success: boolean; message?: string } | null>;
+  onAppUpdateState?: (cb: (state: { status?: string }) => void) => (() => void) | void;
 };
 
 const SHARE_PROMPT_STORE_KEY = "openclaw.share.prompt.v1";
@@ -251,6 +256,7 @@ export class OpenClawApp extends LitElement {
     settingsNotice: { state: true },
     showReleaseNotesModal: { state: true },
     releaseNotesData: { state: true },
+    appUpdateBadge: { state: true },
     webbridgeRepairVisible: { state: true },
     webbridgeRepairBrowserName: { state: true },
     webbridgeRepairChecking: { state: true },
@@ -422,6 +428,8 @@ export class OpenClawApp extends LitElement {
   settingsNotice: string | null = null;
   showReleaseNotesModal = false;
   releaseNotesData: ReleaseNotesData | null = null;
+  // App 更新角标：有待装/下载中更新时设置入口常驻徽标（由主进程 app:update-state 推送驱动）
+  appUpdateBadge = false;
   // 当前是 webbridge 模式 + 浏览器扩展未启用 → 主窗左侧栏显示「连接你的常用浏览器」pill
   // 用户点 pill → 重跑 needs-repair；扩展已启用则 pill 消失，否则保持
   // checking 期间图标换成转圈 loader
@@ -452,6 +460,9 @@ export class OpenClawApp extends LitElement {
   private appNavigateCleanup: (() => void) | null = null;
   private gatewayReadyCleanup: (() => void) | null = null;
   private webbridgeStateCleanup: (() => void) | null = null;
+  private appUpdateStateCleanup: (() => void) | null = null;
+  // 上一次 App 更新状态：仅在「进入」downloaded 态时弹 toast，避免同态重复推送重复打扰
+  private appUpdatePrevStatus = "";
 
   createRenderRoot() {
     return this;
@@ -464,7 +475,50 @@ export class OpenClawApp extends LitElement {
     this.bindGatewayReady();
     this.bindWebbridgeStateChanged();
     this.bindWebbridgeRepairPoll();
+    this.bindAppUpdateState();
     this.fetchReleaseNotes();
+  }
+
+  // App 更新状态推送 → 设置入口角标 + downloaded 态 toast（带「重启更新」action）。
+  // 首屏先拉一次快照：窗口可能在下载完成后才（重新）打开，单靠推送会漏。
+  private bindAppUpdateState() {
+    if (this.appUpdateStateCleanup) return;
+    const bridge = this.getCryoClawBridge();
+    if (!bridge?.onAppUpdateState) return;
+    void bridge.appUpdateGetState?.()
+      .then((r) => {
+        if (r?.success) this.handleAppUpdateState(r.data ?? null);
+      })
+      .catch(() => {});
+    const unsubscribe = bridge.onAppUpdateState((us) => this.handleAppUpdateState(us));
+    this.appUpdateStateCleanup = typeof unsubscribe === "function" ? unsubscribe : null;
+  }
+
+  private handleAppUpdateState(us: { status?: string } | null) {
+    const status = typeof us?.status === "string" ? us.status : "";
+    // 有新版本（可用/下载中/待装）时角标常驻；回到 idle/not-available/error 等态时消失
+    this.appUpdateBadge =
+      status === "available" || status === "downloading" || status === "downloaded";
+    const prev = this.appUpdatePrevStatus;
+    this.appUpdatePrevStatus = status;
+    if (status === "downloaded" && (prev !== "downloaded" || getToastMessage() === null)) {
+      showToast(this, t("appUpdate.toastDownloaded"), {
+        label: t("appUpdate.toastRestart"),
+        onClick: () => void this.restartToApplyUpdate(),
+      });
+    }
+  }
+
+  // toast「重启更新」action：走与设置-关于页重启按钮相同的 IPC
+  private async restartToApplyUpdate() {
+    const bridge = this.getCryoClawBridge();
+    try {
+      const r = await bridge?.appUpdateQuitAndInstall?.();
+      // 成功时应用随即退出；只有失败才会走到这里
+      if (r && r.success === false) throw new Error(r.message ?? "");
+    } catch (err) {
+      showToast(this, tWithDetail("appUpdate.restartFailed", err instanceof Error ? err.message : String(err)));
+    }
   }
 
   // 首屏拉取更新日志，有未展示的条目时弹出 modal。
@@ -485,6 +539,8 @@ export class OpenClawApp extends LitElement {
     this.gatewayReadyCleanup = null;
     this.webbridgeStateCleanup?.();
     this.webbridgeStateCleanup = null;
+    this.appUpdateStateCleanup?.();
+    this.appUpdateStateCleanup = null;
     handleDisconnected(this as unknown as Parameters<typeof handleDisconnected>[0]);
     super.disconnectedCallback();
   }

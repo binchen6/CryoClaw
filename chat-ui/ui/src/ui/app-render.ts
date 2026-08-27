@@ -25,7 +25,7 @@ import {
 } from "./app-session-actions.ts";
 import { openSkillsView, renderSkillsView } from "./app-skills.ts";
 import { openTasksView, renderTasksView } from "./app-tasks.ts";
-import { getToastMessage } from "./app-toast.ts";
+import { getToastAction, getToastMessage, hideToast } from "./app-toast.ts";
 import { setCryoClawView } from "./app-view-switch.ts";
 import { loadSessions, patchSession } from "./controllers/sessions.ts";
 import { isActiveTask } from "./controllers/tasks.ts";
@@ -183,6 +183,8 @@ export function renderApp(state: AppViewState) {
               });
             },
             settingsBadge: !localStorage.getItem("cryoclaw:weixin-badge-seen"),
+            // App 更新角标：有待装/下载中更新时常驻，状态复位后消失
+            settingsUpdateBadge: state.appUpdateBadge,
             onOpenSettings: () => {
               localStorage.setItem("cryoclaw:weixin-badge-seen", "1");
               openSettingsView(state, null);
@@ -260,7 +262,22 @@ export function renderApp(state: AppViewState) {
       ${renderReleaseNotesModal(state)}
       ${renderWebbridgePillModal(state)}
       ${getToastMessage()
-        ? html`<div class="global-toast">${getToastMessage()}</div>`
+        ? html`<div class="global-toast ${getToastAction() ? "global-toast--action" : ""}">
+            <span>${getToastMessage()}</span>
+            ${getToastAction()
+              ? html`<button
+                  class="global-toast__action"
+                  type="button"
+                  @click=${() => {
+                    const action = getToastAction();
+                    hideToast(state);
+                    action?.onClick();
+                  }}
+                >
+                  ${getToastAction()?.label}
+                </button>`
+              : nothing}
+          </div>`
         : nothing}
     </div>
   `;
