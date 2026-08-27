@@ -639,22 +639,6 @@
   stroke-linejoin: round;
 }
 
-.shell {
-  display: contents !important;
-}
-
-.shell>nav.nav {
-  display: none !important;
-}
-
-.shell>.page-content {
-  display: contents !important;
-}
-
-.topbar {
-  display: none !important;
-}
-
 .cryoclaw-content .chat {
   flex: 1;
   display: flex;

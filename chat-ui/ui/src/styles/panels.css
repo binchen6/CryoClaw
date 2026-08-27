@@ -55,10 +55,6 @@
   min-height: 0
 }
 
-.shell--chat .chat {
-  flex: 1
-}
-
 .chat-thread {
   margin-top: 16px;
   display: flex;

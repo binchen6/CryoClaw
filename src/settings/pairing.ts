@@ -64,6 +64,8 @@ const FEISHU_REJECTED_PAIRING_STORE_FILE = "feishu-rejected-pairing-codes.json";
 const WECOM_REJECTED_PAIRING_STORE_FILE = "wecom-rejected-pairing-codes.json";
 const FEISHU_OPEN_API_BASE = "https://open.feishu.cn/open-apis";
 const FEISHU_TOKEN_SAFETY_MS = 60_000;
+// 名称补全失败负缓存 TTL：失败 id 10 分钟内不再重试，避免每次打开配对页全量重打 OpenAPI
+const FEISHU_NAME_FAILURE_TTL_MS = 10 * 60_000;
 
 type FeishuTenantTokenCache = {
   appId: string;
@@ -73,6 +75,15 @@ type FeishuTenantTokenCache = {
 };
 
 let feishuTenantTokenCache: FeishuTenantTokenCache | null = null;
+
+// 名称补全失败负缓存（纯内存不落盘）：openId/chatId → 最近失败时间戳。
+// 查询成功或 approve 写入别名后删除条目；TTL 过期后允许重试。
+const feishuNameFetchFailures = new Map<string, number>();
+
+function isFeishuNameFetchRecentlyFailed(id: string): boolean {
+  const failedAt = feishuNameFetchFailures.get(id);
+  return failedAt !== undefined && Date.now() - failedAt < FEISHU_NAME_FAILURE_TTL_MS;
+}
 
 export function registerPairingIpc(opts: SettingsIpcOptions): void {
   // ── 列出企业微信已授权用户与群聊 ──
@@ -370,6 +381,7 @@ async function approveFeishuPairingRequest(params: Record<string, unknown>): Pro
   const result = await approveChannelPairingRequest(FEISHU_CHANNEL, params);
   if (result.success && id && name) {
     saveFeishuAlias("user", id, name);
+    feishuNameFetchFailures.delete(id);
   }
   return result;
 }
@@ -714,10 +726,12 @@ async function enrichFeishuEntryNames(
   }
 
   const userTargets = entries.filter(
-    (entry) => entry.kind === "user" && !entry.name && looksLikeFeishuUserId(entry.id)
+    (entry) =>
+      entry.kind === "user" && !entry.name && looksLikeFeishuUserId(entry.id) && !isFeishuNameFetchRecentlyFailed(entry.id),
   );
   const groupTargets = entries.filter(
-    (entry) => entry.kind === "group" && !entry.name && looksLikeFeishuGroupId(entry.id)
+    (entry) =>
+      entry.kind === "group" && !entry.name && looksLikeFeishuGroupId(entry.id) && !isFeishuNameFetchRecentlyFailed(entry.id),
   );
   if (userTargets.length === 0 && groupTargets.length === 0) {
     return entries;
@@ -735,6 +749,9 @@ async function enrichFeishuEntryNames(
     if (name) {
       entry.name = name;
       saveFeishuAlias("user", entry.id, name);
+      feishuNameFetchFailures.delete(entry.id);
+    } else {
+      feishuNameFetchFailures.set(entry.id, Date.now());
     }
   }, FEISHU_NAME_FETCH_CONCURRENCY);
 
@@ -743,6 +760,9 @@ async function enrichFeishuEntryNames(
     if (name) {
       entry.name = name;
       saveFeishuAlias("group", entry.id, name);
+      feishuNameFetchFailures.delete(entry.id);
+    } else {
+      feishuNameFetchFailures.set(entry.id, Date.now());
     }
   }, FEISHU_NAME_FETCH_CONCURRENCY);
 

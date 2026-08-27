@@ -217,13 +217,6 @@ System startup integration via `app.getLoginItemSettings()` / `setLoginItemSetti
 - Pure functions for testability
 - Configurable in Setup wizard step 3 and Settings > Advanced
 
-## Gateway RPC (`gateway-rpc.ts`)
-
-Low-level WebSocket RPC for main→gateway communication:
-
-- One-shot calls: connect → Protocol 3 handshake → method → close
-- Used internally for gateway CLI invocations (e.g., `gateway stop` to probe stale ports)
-
 ## macOS Dock Visibility (`main.ts`)
 
 Dynamic Dock icon toggle: visible when any window is shown, hidden when all windows are closed (pure tray mode). Driven by `browser-window-created` + `show`/`hide`/`closed` events.
@@ -300,7 +293,6 @@ Custom NSIS assisted installer with:
 │     │     ├── dingtalk-config.ts (DingTalk channel)          │
 │     │     └── qqbot-config.ts (QQ Bot channel)               │
 │     ├── update-banner-state.ts (update UI state machine)     │
-│     ├── gateway-rpc.ts (WebSocket RPC to gateway)            │
 │     ├── build-config.ts (build-time injected config)         │
 │     ├── analytics.ts + analytics-events.ts (telemetry)       │
 │     ├── auto-updater.ts (CDN updates + progress)             │

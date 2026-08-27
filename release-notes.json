@@ -1,5 +1,12 @@
 [
   {
+    "version": "2026.827.5",
+    "notes": {
+      "zh": "加固：清理残留 gateway 锁文件前先 HTTP 探测（防 PID 复用误杀无关进程）；强杀兜底后补删锁文件防下次启动阻塞\n优化：诊断包导出压缩改异步（主进程不再因 zipSync 卡顿）；飞书授权条目名称补全增加 10 分钟失败负缓存（失败条目不再每次全量重试）\n可维护性：删除无调用的 gateway-rpc 模块与 renderIcon 死代码；清除旧布局孤儿 CSS 约 420 行；技能头像色板收敛为单一共享常量\n测试基线 534 用例全绿",
+      "en": "Hardened: stale gateway lockfile cleanup now probes HTTP before killing (prevents PID-reuse killing an unrelated process); kill fallback also removes the lockfile so the next launch is not blocked\nImproved: diagnostics bundle export compression is now async (no more zipSync jank on the main process); Feishu entry name enrichment gains a 10-minute failure negative cache (failed entries no longer retried in full every time)\nMaintainability: removed the uncalled gateway-rpc module and dead renderIcon code; deleted ~420 lines of legacy orphan CSS; skill avatar color palette consolidated to a single shared constant\n534-test baseline all green"
+    }
+  },
+  {
     "version": "2026.827.4",
     "notes": {
       "zh": "修复：800px 最小窗口下打开工具输出分栏不再横向溢出（分栏下限改为按比例收缩）\n修复：设置页配对图标按钮键盘焦点环恢复可见；全部开关支持键盘操作（Enter/Space、焦点环、读屏语义）\n优化：定时任务/技能开关统一为标准开关组件（删除两份自绘重复样式）；compose 阴影纳入 token 阶梯；技能头像暗色对比度修正；浮层间距对齐 titlebar\n可维护性：清除旧布局死样式与永不命中的媒体查询块、移除 topbar ResizeObserver 死路径、合并重复定义\n测试基线 534 用例全绿",

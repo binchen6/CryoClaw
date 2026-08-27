@@ -402,6 +402,8 @@ export class GatewayProcess {
         await sleep(500);
         if (!(await this.probeHealth())) {
           diagLog(`强杀 pid=${pid} 后端口已释放`);
+          // 被强杀的进程没机会自清 lockfile，残留死 pid 锁会阻塞新 gateway 启动（exit(1)）
+          try { fs.unlinkSync(path.join(resolveUserStateDir(), "gateway.lock")); } catch {}
           return;
         }
       }
@@ -478,6 +480,13 @@ export class GatewayProcess {
       return;
     }
 
+    // 进程还活着：先 HTTP 探测确认是"半死"（活但不响应）的 gateway 再强杀。
+    // PID 可能被复用为无关进程，不探测直接 taskkill 会误杀。
+    if (await this.probeHealth()) {
+      // 端口上有健康 gateway 响应 → 锁文件有效，交回 start() 的 stopExistingGateway 优雅停止
+      diagLog(`lockfile 指向 pid=${stalePid} 且 HTTP 健康，保留进程与 lockfile，交由端口冲突路径处理`);
+      return;
+    }
     // 进程活着但不响应 HTTP（半死状态）→ 强杀后删 lockfile
     diagLog(`WARN: lockfile 指向 pid=${stalePid}，进程存活但 HTTP 无响应，强制终止`);
     await killProcess(stalePid);

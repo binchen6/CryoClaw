@@ -5,7 +5,7 @@
 
 import { html, nothing } from "lit";
 import { t } from "./i18n.ts";
-import { renderSkillStoreView, type SkillStoreState } from "./skill-store-view.ts";
+import { renderSkillStoreView, skillAvatarColor, type SkillStoreState } from "./skill-store-view.ts";
 import { setCryoClawView } from "./app-view-switch.ts";
 import { showToast } from "./app-toast.ts";
 import "./components/toggle-switch.ts";
@@ -218,17 +218,7 @@ function groupLocalSkills(skills: SkillStatusEntry[]) {
   return ordered;
 }
 
-// 字母头像颜色
-const SKILL_COLORS = [
-  "#c0392b", "#d35400", "#e67e22", "#f39c12",
-  "#27ae60", "#1abc9c", "#2980b9", "#8e44ad",
-  "#3498db", "#16a085", "#9b59b6", "#34495e",
-];
-function skillColor(key: string): string {
-  let h = 0;
-  for (let i = 0; i < key.length; i++) h = ((h << 5) - h + key.charCodeAt(i)) | 0;
-  return SKILL_COLORS[Math.abs(h) % SKILL_COLORS.length];
-}
+// 字母头像颜色：色板与哈希函数统一在 skill-store-view.ts（单一来源）
 
 // 截断描述
 function clamp(text: string | undefined, max: number): string {
@@ -284,7 +274,7 @@ function renderInstalledSkillsView(state: AppViewState) {
               <div class="skill-store__card">
                 <div class="skill-store__card-header">
                   <!-- 字母头像底色为固定品牌色板（不随主题变化），字色恒用白色保底对比度 -->
-                  <div class="skill-store__card-icon" style="background: ${skillColor(key)}; color: #fff;">
+                  <div class="skill-store__card-icon" style="background: ${skillAvatarColor(key)}; color: #fff;">
                     <span class="skill-store__card-letter">${letter}</span>
                   </div>
                   <div class="skill-store__card-info">

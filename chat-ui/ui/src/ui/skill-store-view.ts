@@ -33,20 +33,22 @@ export type SkillStoreCallbacks = {
   onUninstall: (slug: string) => void;
 };
 
-// 字母头像颜色表（根据 slug 哈希取色）
-const AVATAR_COLORS = [
+// 字母头像颜色表（根据 slug 哈希取色）。
+// 单一来源：app-skills.ts（已安装视图）与本模块共用此色板与哈希函数，
+// 数组顺序沿用已安装视图（更高频），商店视图个别 slug 颜色因此有变化，纯外观。
+export const SKILL_AVATAR_COLORS = [
   "#c0392b", "#d35400", "#e67e22", "#f39c12",
-  "#27ae60", "#1abc9c", "#16a085", "#2980b9",
-  "#3498db", "#8e44ad", "#9b59b6", "#34495e",
+  "#27ae60", "#1abc9c", "#2980b9", "#8e44ad",
+  "#3498db", "#16a085", "#9b59b6", "#34495e",
 ];
 
-// 根据 slug 生成确定性颜色
-function avatarColor(slug: string): string {
+// 根据 key（slug 或名称）生成确定性颜色
+export function skillAvatarColor(key: string): string {
   let hash = 0;
-  for (let i = 0; i < slug.length; i++) {
-    hash = ((hash << 5) - hash + slug.charCodeAt(i)) | 0;
+  for (let i = 0; i < key.length; i++) {
+    hash = ((hash << 5) - hash + key.charCodeAt(i)) | 0;
   }
-  return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
+  return SKILL_AVATAR_COLORS[Math.abs(hash) % SKILL_AVATAR_COLORS.length];
 }
 
 // 格式化下载数：>1000 显示 1.2k
@@ -64,7 +66,7 @@ function renderSkillCard(
   onUninstall: () => void,
 ) {
   const letter = (skill.name || skill.slug || "?").charAt(0).toUpperCase();
-  const bgColor = avatarColor(skill.slug);
+  const bgColor = skillAvatarColor(skill.slug);
   return html`
     <div class="skill-store__card">
       <div class="skill-store__card-header">

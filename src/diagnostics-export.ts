@@ -6,7 +6,7 @@ import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 import { app } from "electron";
-import { zipSync } from "fflate";
+import { zip } from "fflate";
 import { resolveLogsDir, resolveUserConfigPath, resolveUserStateDir } from "./constants";
 
 // 单个日志文件最多纳入的字节数（取尾部，最近的日志最有诊断价值）
@@ -98,7 +98,7 @@ export function buildDiagnosticsDefaultFileName(): string {
   return `cryoclaw-diagnostics-${app.getVersion()}-${stamp}.zip`;
 }
 
-export function exportDiagnosticsBundle(targetZipPath: string): void {
+export async function exportDiagnosticsBundle(targetZipPath: string): Promise<void> {
   const stateDir = resolveUserStateDir();
   const files: Record<string, Uint8Array> = {
     "environment.json": new Uint8Array(Buffer.from(buildEnvironmentInfo(), "utf-8")),
@@ -118,5 +118,9 @@ export function exportDiagnosticsBundle(targetZipPath: string): void {
     } catch {}
   }
   fs.mkdirSync(path.dirname(targetZipPath), { recursive: true });
-  fs.writeFileSync(targetZipPath, zipSync(files, { level: 6 }));
+  // 异步压缩 + 异步写盘：最坏 ~10MB 的同步 zip 会冻结主进程数秒，所有 IPC 停摆
+  const zipped = await new Promise<Uint8Array>((resolve, reject) => {
+    zip(files, { level: 6 }, (err, data) => (err ? reject(err) : resolve(data)));
+  });
+  await fs.promises.writeFile(targetZipPath, zipped);
 }

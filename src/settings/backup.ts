@@ -104,7 +104,7 @@ export function registerBackupIpc(opts: SettingsIpcOptions): void {
         return { success: true, data: { canceled: true } };
       }
       // 系统保存对话框自带覆盖确认，无需二次 warning
-      exportDiagnosticsBundle(picked.filePath);
+      await exportDiagnosticsBundle(picked.filePath);
       return { success: true, data: { canceled: false, filePath: picked.filePath } };
     } catch (err: any) {
       return { success: false, message: err.message || String(err) };

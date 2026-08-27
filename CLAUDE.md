@@ -39,7 +39,6 @@ cryoclaw/
 │   ├── constants.ts        # Path resolution (dev vs packaged vs ASAR), health check params
 │   ├── gateway-process.ts  # Child process state machine + diagnostics
 │   ├── gateway-auth.ts     # Auth token read/generate/persist
-│   ├── gateway-rpc.ts      # WebSocket RPC client for main↔gateway communication
 │   ├── window.ts           # BrowserWindow lifecycle, token injection, retry
 │   ├── window-close-policy.ts  # Close behavior: hide vs destroy
 │   ├── tray.ts             # System tray icon + i18n context menu

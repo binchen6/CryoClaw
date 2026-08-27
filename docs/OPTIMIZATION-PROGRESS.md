@@ -10,7 +10,7 @@
 面向国内生态（Kimi / Moonshot / 飞书 / 企微 / 微信 / 钉钉 / QQ）。
 
 **当前状态**：
-- 重设计工程 **R1–R32 全部完成**，最新发版 **v2026.827.4**（R32 UI 设计与布局细节；v2026.827.3：R31）。
+- 重设计工程 **R1–R33 全部完成**，最新发版 **v2026.827.5**（R33 可维护性收尾；v2026.827.4：R32）。
 - 内核 openclaw **2026.7.1-2**（版本 pin 在 package.json `cryoclaw.openclaw`）；**Electron 43.4.0**（audit 0 漏洞）。
 - 测试基线 **534 pass / 0 fail / 4 skipped**（vitest 94 + node 74 + chat-ui 314 + scripts 52；0 fail 为硬指标）。
 - 重复率 **1.01%**（67 clones，阈值 5%，`npm run dupcheck` 防回退）。
@@ -136,7 +136,7 @@
 - **性能 ×8**：logger 轮转计数器卡死（每条日志同步 stat）；gateway-process `execFileSync` 冻结主进程 10s → async；skill-store 响应体无上限 → 8MB；state-archive `cpSync` 冻结 → `promises.cp`；`evictedLeadingSegments` 无上限 → 150 段；tool 消息 key 随 history.length 平移 → 固定基数 1e9；`adjustTextareaHeight` 每帧冗余布局 → 指纹守卫；managed-media 满 100 全清 → 逐出最旧。
 - **可维护性 ×8**：legacy stamp 复制粘贴（`.cryoclaw-`→`.oneclaw-`）、build-config 原子写、PowerShell 引号、vendor die 泄漏、幂等 marker 三变体、dist-win `shell:true`、死代码、search query `-` 注入面、rmSync→rmRecursive、sidebar 双调用。
 - **新增测试 2 用例**：会话切换守卫、patchSession 返回值。
-- **未修项**：飞书名称补全并发上限、loadTasks 在途丢弃、导出压缩 worker 化、kimi-auth-proxy 回环无鉴权、cleanStaleLockfile 先 probe 再杀、gateway-rpc 无调用点（疑似预留）。
+- **未修项**（后续已闭环：飞书并发上限与 loadTasks 在途排队随 R28、负缓存随 R33、cleanStaleLockfile probe 随 R33、gateway-rpc 已删除随 R33）：导出压缩 worker 化（R33 已 async 化，worker 仍 defer）、kimi-auth-proxy 回环无鉴权。
 - **教训**：gotcha #47 修复语义曾被回退——文档记载的修复语义应用单测钉死防回归（候选）。
 
 ### R25 · 主进程大文件补审（完成，随 v2026.825.0 发版）
@@ -168,7 +168,7 @@
 - ① **飞书授权条目名称补全并发限制**（settings/pairing）：`Promise.all` 无上限 → 每批 5 个串行；新环境首次打开不再触发 OpenAPI 限流致名称长期为空。
 - ② **loadTasks 在途排队**（controllers/tasks）：在途刷新期间再被请求（如 task 事件）置脏标记、完成后补跑一轮——防旧响应晚到整体覆盖事件增量（列表陈旧最长一个 ticker 周期）。
 - ③ **app-skills SkillsState 双重断言收敛**：`AppViewState`（= OpenClawApp 结构类型）本就满足 `SkillsState` 全部字段——删 7 处 `as unknown as` + 1 处冗余强转，契约由编译器接管（typecheck 证明）。
-- **仍候选**：webbridge 二进制 SHA256（需发布链哈希清单）；device-auth 签名规范化（需网关侧同步）；设备密钥 OS keychain；导出压缩 worker 化；kimi-auth-proxy 回环鉴权；cleanStaleLockfile 先 probe 再杀；IPC 细粒度授权（架构性）。
+- **仍候选**：webbridge 二进制 SHA256（需发布链哈希清单）；device-auth 签名规范化（需网关侧同步）；设备密钥 OS keychain；导出压缩 worker 化（R33 已 async 化缓解）；kimi-auth-proxy 回环鉴权；IPC 细粒度授权（架构性）。
 
 ### R29 · 任务模块跳转会话修复（完成，随 v2026.827.1 发版）
 
@@ -211,6 +211,19 @@
 - **测试 +6**：toggle-switch.test.ts 源码审计 6 例（switch 语义/键盘/repeat 守卫/aria-label 转发/focus 环/--toggle-knob）。基线 528→534。
 - **记录在案候选**：tokens-ext :root 默认值是暗色（data-theme 设置前浅色系统首帧闪暗，待翻转评估）；base.css 剩余孤儿选择器（.nav/.brand/.stat 等零引用）未清；views 30+ 处内联 style 间距未收敛；技能 12 色板两份数组未合并；settings.css 孤 \r 行尾未统一。
 
+### R33 · 可维护性收尾（完成，随 v2026.827.5 发版）
+
+用户指令：优化软件可维护性。explore 代理对 Watch list 候选逐项核实现状后实施 6 项，审查代理复审后补 2 个 minor：
+- **cleanStaleLockfile 先 probe 再杀**（R24 候选闭环）：旧逻辑 isProcessAlive 为真就直接 taskkill /F /T，PID 复用时误杀无关进程。现在杀前 `probeHealth()`：HTTP 健康则保留进程与 lockfile，交回 start() 的 stopExistingGateway 优雅停止；探测失败才认定半死强杀。复审补刀：stopExistingGateway 强杀兜底确认端口释放后补删 lockfile（被强杀进程没机会自清，死 pid 锁会阻塞下次启动 exit(1)）。
+- **诊断导出 async 化**：zipSync→fflate 异步 zip() + fs.promises.writeFile（主进程不再因 ~10MB 同步压缩/写盘卡顿）；worker 化评估为收益不成比例（数据上限 ~10MB、用户手动低频触发），defer。readLogEntries 同步读盘仍在（记录在案，非阻塞源大头）。
+- **飞书名称补全负缓存**：模块级 Map（id→失败时间戳，TTL 10min，纯内存），enrich 跳过 TTL 内失败 id、成功/approve 时删除——失败条目不再每次打开配对页全量重试。风格对齐既有 feishuTenantTokenCache。已知边界：approve 未传 name 时条目残留至 TTL 过期（可接受）。
+- **孤儿 CSS 清除 ~430 行**：base.css 603→199 行（旧 shell/topbar/brand/nav/content/page-title/grid/row/stack/filters，逐 class grep + 动态选择器复核零引用）；panels.css `.shell--chat .chat`（活 .chat 保留）；sidebar.css `.shell/.topbar` display:none 中和块（复审发现同族残留）。
+- **色板单一来源**：SKILL_AVATAR_COLORS/skillAvatarColor 收敛进 skill-store-view.ts（叶子模块无环），app-skills.ts 删本地副本；已安装视图颜色零变化，商店视图 idx 6/7/9 变化（纯外观）。
+- **死代码**：删 src/gateway-rpc.ts（callGatewayRpc 全仓零调用）+ CLAUDE.md/architecture.md 对应条目；删 icons.ts renderIcon（零调用，其引用的 nav-item__icon CSS 随孤儿清理一并消失）。
+- **文档债同步**：R24/R26 未修项清单、Watch list 候选列表按实际闭环状态重写（审查 minor）。
+- 基线不变 534 全绿（纯删减+加固，无新测试件）；重复率 1.01%。
+- **仍候选**：kimi-auth-proxy path secret 回环鉴权（中风险，~30 行 backlog）；settings.css CRLF/LF 混排统一（diff 噪音大 defer）；tokens-ext 暗色默认值翻转；views 内联 style 收敛。
+
 ## 📦 发版与实测经验（套路已验证多次）
 
 - 发版链路：`npm run build` → `npm run dist:win` → 产物级断言（@electron/asar 读 app.asar 版本/白名单）→ 静默安装 → 启动验证（gateway `GET http://127.0.0.1:18789/` HTTP 200）→ `gh release create`。发版后顺手 `npm run dupcheck` 防重复率回退。
@@ -249,7 +262,7 @@
 - webbridge 二进制下载 SHA256 校验（需发布链产出哈希清单，R25 候选）。
 - app-skills SkillsState 双重断言类型层收敛（R26 候选）。
 - device-auth 签名载荷规范化（需网关侧同步修改）。
-- 飞书名称补全并发上限/负缓存；loadTasks 在途排队重跑；导出压缩段 worker 化；kimi-auth-proxy 回环鉴权；cleanStaleLockfile 先 probe 再杀（R24 候选）。
+- 导出压缩段 worker 化（R33 已 async 化缓解，worker 化收益不成比例 defer）；kimi-auth-proxy 回环鉴权（R33 评估为中风险 backlog）。
 - `terminal.*`（内嵌终端）、worktrees、完整语音会话 UI、device/node 管理——取证为低价值或高成本，未接入。
 - IPC 通道按 webContents 来源细粒度授权（架构性改动，需逐 handler 评估）。
 - 已发送文件附件卡片化（需先解决 gateway 发送契约一致性）。

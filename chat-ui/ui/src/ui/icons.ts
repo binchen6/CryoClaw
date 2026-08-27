@@ -135,10 +135,6 @@ export function icon(name: IconName): TemplateResult {
   return icons[name];
 }
 
-export function renderIcon(name: IconName, className = "nav-item__icon"): TemplateResult {
-  return html`<span class=${className} aria-hidden="true">${icons[name]}</span>`;
-}
-
 // Legacy function for compatibility
 export function renderEmojiIcon(
   iconContent: string | TemplateResult,
