@@ -304,6 +304,9 @@ export class OpenClawApp extends LitElement {
   chatToolMessages: unknown[] = [];
   chatStream: string | null = null;
   chatStreamStartedAt: number | null = null;
+  // 最后一次流式活动时间戳（挂起流看门狗锚点）。刻意非响应式：delta 高频更新，
+  // 不值得触发 Lit 重渲染；看门狗只读它。
+  chatLastActivityAt: number | null = null;
   chatHistoryHydrationFrame: number | null = null;
   chatPendingStreamText: string | null = null;
   chatStreamFrame: number | null = null;

@@ -59,6 +59,8 @@ type ToolStreamHost = {
   // 已被 leadingSegment 冻结的累计前缀。每次冻结要把当前 chatStream 增量并入；
   // controllers/chat.ts 的 delta handler 用它从"累计文本"里切片出新段。
   chatStreamFrozenPrefix: string;
+  // 最后一次流式活动时间戳（挂起流看门狗锚点；可选以兼容测试替身）
+  chatLastActivityAt?: number | null;
   // 被 trimToolStream 淘汰的 entry 上的 leadingSegment 要保留下来，否则一轮工具调用很多时
   // （超过 TOOL_STREAM_LIMIT），早期段会被一起删掉，渲染层只剩 chatStream 的尾段，让用户看着像"开头丢了"。
   evictedLeadingSegments: StreamSegment[];
@@ -403,6 +405,16 @@ export function handleAgentEvent(host: ToolStreamHost, payload?: AgentEventPaylo
   }
 
   if (payload.stream !== "tool") {
+    // thinking/assistant 流事件：run 仍在活跃的佐证——匹配当前 run 时刷新看门狗锚点，
+    // 长思考（无 delta/无 tool）不被误判为挂起流。
+    if (
+      (payload.stream === "thinking" || payload.stream === "assistant") &&
+      host.chatRunId &&
+      (!payload.runId || payload.runId === host.chatRunId) &&
+      (!payload.sessionKey || payload.sessionKey === host.sessionKey)
+    ) {
+      host.chatLastActivityAt = Date.now();
+    }
     return;
   }
   const sessionKey = typeof payload.sessionKey === "string" ? payload.sessionKey : undefined;
@@ -419,6 +431,8 @@ export function handleAgentEvent(host: ToolStreamHost, payload?: AgentEventPaylo
   if (!host.chatRunId) {
     return;
   }
+  // 通过的 tool 事件即流式活动证据，刷新看门狗锚点
+  host.chatLastActivityAt = Date.now();
 
   const data = payload.data ?? {};
   const toolCallId = typeof data.toolCallId === "string" ? data.toolCallId : "";

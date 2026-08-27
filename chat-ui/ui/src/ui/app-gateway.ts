@@ -18,7 +18,7 @@ import { debugLog, isDebugEnabled } from "./debug.ts";
 import { loadAgents } from "./controllers/agents.ts";
 import { loadAssistantIdentity } from "./controllers/assistant-identity.ts";
 import { loadChannels } from "./controllers/channels.ts";
-import { loadChatHistory } from "./controllers/chat.ts";
+import { loadChatHistory, resetChatStreamState } from "./controllers/chat.ts";
 import { consumePendingSessionReset } from "./session-pending.ts";
 import { handleChatEvent, type ChatEventPayload } from "./controllers/chat.ts";
 import {
@@ -40,6 +40,11 @@ import { GatewayBrowserClient } from "./gateway.ts";
 import { configureManagedMedia, wsUrlToHttpOrigin } from "./chat/managed-media.ts";
 import { applySessionKeyTransition } from "./session-transition.ts";
 import { isToleratedHiddenSession } from "./session-jump.ts";
+import {
+  hasAssistantReplyAfter,
+  isStreamStalled,
+  markReconnectOrphanRun,
+} from "./stream-recovery.ts";
 import { resolveVisibleSessionSelection } from "./session-visibility.ts";
 import {
   shouldFinishUsageRefreshAttempt,
@@ -70,6 +75,9 @@ type GatewayHost = {
   sessionsIncludeGlobal: boolean;
   sessionsIncludeUnknown: boolean;
   chatRunId: string | null;
+  chatStreamStartedAt: number | null;
+  chatLastActivityAt: number | null;
+  chatMessages: unknown[];
   dirtyMeterSessions: Set<string>;
   meterTotalsBaseline: Map<string, number>;
   execApprovalQueue: ExecApprovalRequest[];
@@ -211,6 +219,43 @@ async function loadSessionsAndReconcile(host: GatewayHost) {
   reconcileSessionSelection(host);
 }
 
+// R30 挂起流看门狗：final/aborted 帧在断连/gap 窗口丢失时 chatRunId 永不清，
+// 流式气泡与 Stop 按钮永久挂起。距最后一次流式活动（delta/tool/thinking）超阈值后，
+// 拉历史对齐内核真实状态：历史里出现 run 开始后落盘的 assistant 回复 → run 实际
+// 已结束（终态帧丢失），清本地挂起态；否则（run 仍在跑/历史滞后）保持等下轮 tick。
+const STREAM_IDLE_TIMEOUT_MS = 180_000;
+
+function checkStalledStream(host: GatewayHost) {
+  if (
+    !isStreamStalled({
+      chatRunId: host.chatRunId,
+      lastActivityAt: host.chatLastActivityAt,
+      now: Date.now(),
+      idleMs: STREAM_IDLE_TIMEOUT_MS,
+    })
+  ) {
+    return;
+  }
+  // 快照 run 身份：探测 await 期间若本轮 final 到达且队列冲刷出新一轮 run，
+  // 恢复判定必须仍针对旧 run，否则会把新一轮的气泡/Stop 误清（审查发现）
+  const probeRunId = host.chatRunId;
+  const probeStartedAt = host.chatStreamStartedAt;
+  void (async () => {
+    await loadChatHistory(host as unknown as OpenClawApp, { mergeIfStale: true });
+    if (!host.chatRunId || host.chatRunId !== probeRunId) {
+      return; // 探测期间终态已清理 / 已切到新一轮 run
+    }
+    if (host.chatStreamStartedAt !== probeStartedAt) {
+      return; // 同 id 复用防御（理论上不会发生，uuid 唯一）
+    }
+    if (hasAssistantReplyAfter(host.chatMessages, probeStartedAt)) {
+      console.warn("[gateway] stalled stream recovered via history probe");
+      resetChatStreamState(host as unknown as Parameters<typeof resetChatStreamState>[0]);
+      resetToolStream(host as unknown as Parameters<typeof resetToolStream>[0]);
+    }
+  })();
+}
+
 // gap 重连状态：最多重试 3 次，指数退避 (1s, 2s, 4s)
 const GAP_RECONNECT_MAX = 3;
 let gapReconnectCount = 0;
@@ -283,15 +328,20 @@ export function connectGateway(host: GatewayHost) {
       applySnapshot(host, hello);
       // Reset orphaned chat run state from before disconnect.
       // Any in-flight run's final event was lost during the disconnect window.
-      host.chatRunId = null;
-      (host as unknown as { chatStream: string | null }).chatStream = null;
-      (host as unknown as { chatPendingStreamText: string | null }).chatPendingStreamText = null;
-      (host as unknown as { chatStreamStartedAt: number | null }).chatStreamStartedAt = null;
+      if (previousClient) {
+        // R30：断连前的在途 run 快照为 orphan——内核侧 run 可能仍在跑，
+        // 重连后同 runId 的 delta（全量累计文本）会被收养续显（见 handleChatEvent）
+        markReconnectOrphanRun(host.chatRunId);
+      }
+      // 统一走 resetChatStreamState 清理入口（R30：替代字段直赋，防双份清理逻辑漂移）
+      resetChatStreamState(host as unknown as Parameters<typeof resetChatStreamState>[0]);
       resetToolStream(host as unknown as Parameters<typeof resetToolStream>[0]);
       // R23 重连兜底：流式中途断连会清掉本地 chatStream，气泡随之消失；
-      // 握手完成后重拉持久化历史重建视图（替换语义，仅重连路径，首次连接不走）
+      // 握手完成后重拉持久化历史重建视图（仅重连路径，首次连接不走）。
+      // R30：重连读改用 mergeIfStale——撞上内核滞后快照时保留本地视图防倒退，
+      // 滞后收敛由延迟补拉（scheduleStaleHistoryRetry）接管。
       if (previousClient) {
-        void loadChatHistory(host as unknown as OpenClawApp);
+        void loadChatHistory(host as unknown as OpenClawApp, { mergeIfStale: true });
       }
       void loadAssistantIdentity(host as unknown as OpenClawApp);
       // 加载已配置模型列表（用于 per-session 模型选择器）
@@ -310,6 +360,7 @@ export function connectGateway(host: GatewayHost) {
       registerTickHandler("cron", () => loadCronJobs(host as unknown as Parameters<typeof loadCronJobs>[0]));
       registerTickHandler("sessions", () => loadSessionsAndReconcile(host));
       registerTickHandler("tasks", () => loadTasks(host as unknown as OpenClawApp));
+      registerTickHandler("stream-watchdog", () => checkStalledStream(host));
       startTicker();
     },
     onClose: ({ code, reason }) => {
@@ -322,6 +373,7 @@ export function connectGateway(host: GatewayHost) {
       unregisterTickHandler("cron");
       unregisterTickHandler("sessions");
       unregisterTickHandler("tasks");
+      unregisterTickHandler("stream-watchdog");
       stopTicker();
       // Code 1012 = Service Restart (expected during config saves, don't show as error)
       if (code !== 1012) {
@@ -343,6 +395,13 @@ export function connectGateway(host: GatewayHost) {
         console.warn(`[gateway] onGap expected=${expected} received=${received}, max retries reached`);
         host.lastError = `event gap detected (expected seq ${expected}, got ${received}); please refresh`;
         gapReconnectCount = 0;
+        // R30 软恢复：gap 耗尽不再只显示文案。丢的若是 final/aborted 帧，本地 run 态
+        // 会永久挂起——socket 未断（事件仍在流、请求可用），清态 + 重拉历史对齐内核真实状态。
+        // 清态前快照 orphan：run 内核侧仍在跑时后续 delta 可被收养续显（对齐重连路径）
+        markReconnectOrphanRun(host.chatRunId);
+        resetChatStreamState(host as unknown as Parameters<typeof resetChatStreamState>[0]);
+        resetToolStream(host as unknown as Parameters<typeof resetToolStream>[0]);
+        void loadChatHistory(host as unknown as OpenClawApp, { mergeIfStale: true });
         return;
       }
       const delay = 1000 * 2 ** gapReconnectCount;
@@ -427,10 +486,14 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
       // agent runtime 已写完 sessions.json，此时 patch pending label 不会被覆盖
       void flushPendingSessionLabel(host as unknown as OpenClawApp, sessionKey);
     } else if (state === "error" || state === "aborted") {
-      // 重置未生效（失败/中止）：撤销标记并重拉真实历史恢复视图
+      // 重置未生效（失败/中止）：撤销标记。R30：本 run 的终态无条件补拉真实历史——
+      // 中止/出错前内核可能已落盘部分回复，本地 reset 掉的文本由历史恢复（此前仅
+      // pendingReset 时补拉）；mergeIfStale 防滞后短读造成视图倒退。
+      // 外来 run（sub-agent/其他客户端）透传的终态不补拉，避免无谓 churn。
       const sessionKey = payload?.sessionKey ?? host.sessionKey;
-      if (consumePendingSessionReset(sessionKey)) {
-        void loadChatHistory(host as unknown as OpenClawApp);
+      consumePendingSessionReset(sessionKey);
+      if (isOwnRunEvent) {
+        void loadChatHistory(host as unknown as OpenClawApp, { mergeIfStale: true });
       }
     }
     return;

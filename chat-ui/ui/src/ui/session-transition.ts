@@ -1,4 +1,5 @@
 import type { ChatState } from "./controllers/chat.ts";
+import { clearReconnectOrphanRun } from "./stream-recovery.ts";
 import type { UiSettings } from "./storage.ts";
 
 export type SessionTransitionHost = ChatState & {
@@ -41,6 +42,8 @@ export function applySessionKeyTransition(
     return false;
   }
   host.sessionKey = trimmed;
+  // 切换会话：上一会话的重连 orphan 快照作废（防跨会话误收养）
+  clearReconnectOrphanRun();
   host.chatMessage = "";
   host.chatAttachments = [];
   host.chatStream = null;
@@ -48,6 +51,7 @@ export function applySessionKeyTransition(
   host.chatStreamFrozenPrefix = "";
   host.chatVisibleMessageCount = 0;
   host.chatStreamStartedAt = null;
+  host.chatLastActivityAt = null;
   host.chatRunId = null;
   host.chatQueue = [];
   host.chatAvatarUrl = null;

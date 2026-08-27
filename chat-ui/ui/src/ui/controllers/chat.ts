@@ -2,6 +2,7 @@ import type { GatewayBrowserClient } from "../gateway.ts";
 import type { ChatAttachment } from "../ui-types.ts";
 import { extractText } from "../chat/message-extract.ts";
 import { debugLog } from "../debug.ts";
+import { clearReconnectOrphanRun, liveOrphanRunId } from "../stream-recovery.ts";
 import { generateUUID } from "../uuid.ts";
 
 // delivery-mirror 是 gateway 将外发消息镜像写回 transcript 的副本。
@@ -50,6 +51,8 @@ export type ChatState = {
   // 已被 app-tool-stream 冻成 leadingSegment 的文本前缀。每帧 delta 进来要先把它切掉，
   // 否则旧段会被重复写进 chatStream，并和 leadingSegment 同时显示出来。
   chatStreamFrozenPrefix: string;
+  // 最后一次流式活动时间戳（delta 接受/tool/thinking 事件），挂起流看门狗以此为锚
+  chatLastActivityAt: number | null;
   lastError: string | null;
 };
 
@@ -114,7 +117,8 @@ function scheduleChatStreamFlush(state: ChatState) {
 }
 
 // run 结束时要连同挂起的 stream 帧一起清理，避免旧文本回写脏状态。
-function resetChatStreamState(state: ChatState) {
+// 导出供 app-gateway onHello 断连清态复用（统一清理入口，防双份逻辑漂移）。
+export function resetChatStreamState(state: ChatState) {
   if (state.chatStreamFrame !== null) {
     cancelAnimationFrame(state.chatStreamFrame);
     state.chatStreamFrame = null;
@@ -123,8 +127,59 @@ function resetChatStreamState(state: ChatState) {
   state.chatStream = null;
   state.chatRunId = null;
   state.chatStreamStartedAt = null;
+  state.chatLastActivityAt = null;
   // 新一轮 run 重新开始，frozenPrefix 也要清，避免上一轮的前缀切错本轮的累计文本。
   state.chatStreamFrozenPrefix = "";
+}
+
+// R30：mergeIfStale 保留本地（内核快照滞后）后的延迟二次拉取。
+// 此前保留后无任何重试——若本轮回复恰好撞上内核持久化窗口，用户会看到
+// 「问了没答」且要等下轮 final/手动刷新才恢复。保留时按 800/1600/2400ms
+// 退避补拉（对齐 scheduleTerminalSessionsRefresh 的持久化窗口），
+// 替换成功或会话切换即停止。同一时刻只保留一个挂起重试。
+const STALE_RETRY_DELAYS_MS = [800, 1600, 2400];
+let staleRetryTimer: ReturnType<typeof setTimeout> | null = null;
+let staleRetryKey: string | null = null;
+let staleRetryAttempt = 0;
+
+function cancelStaleHistoryRetry() {
+  if (staleRetryTimer !== null) {
+    clearTimeout(staleRetryTimer);
+    staleRetryTimer = null;
+  }
+  staleRetryKey = null;
+  staleRetryAttempt = 0;
+}
+
+// 测试专用：取消挂起的滞后补拉，避免测试进程被退避定时器拖延退出
+export function cancelStaleHistoryRetryForTests() {
+  cancelStaleHistoryRetry();
+}
+
+function scheduleStaleHistoryRetry(state: ChatState, sessionKey: string) {
+  if (staleRetryAttempt >= STALE_RETRY_DELAYS_MS.length) {
+    return;
+  }
+  if (staleRetryTimer !== null) {
+    if (staleRetryKey === sessionKey) {
+      return; // 已有同会话的挂起重试，合并
+    }
+    clearTimeout(staleRetryTimer);
+    staleRetryTimer = null;
+  }
+  staleRetryKey = sessionKey;
+  const delay = STALE_RETRY_DELAYS_MS[staleRetryAttempt];
+  staleRetryTimer = setTimeout(() => {
+    staleRetryTimer = null;
+    staleRetryAttempt++;
+    // 会话已切走/断连：放弃（loadChatHistory 内部也有守卫，这里省一次无效调用）
+    if (state.sessionKey !== sessionKey || !state.client || !state.connected) {
+      staleRetryKey = null;
+      staleRetryAttempt = 0;
+      return;
+    }
+    void loadChatHistory(state, { mergeIfStale: true });
+  }, delay);
 }
 
 export async function loadChatHistory(
@@ -169,9 +224,13 @@ export async function loadChatHistory(
             ?.kind === "compaction",
       );
       if (raw.length === 0 || !hasCompactionMarker) {
+        // 滞后读保留本地后调度退避补拉（R30），避免「问了没答」要等下轮终态
+        scheduleStaleHistoryRetry(state, requestSessionKey);
         return;
       }
     }
+    // 替换成功：滞后已收敛，停掉补拉退避
+    cancelStaleHistoryRetry();
     const deduplicated = deduplicateDeliveryMirrors(raw);
     state.chatMessages = deduplicated;
     state.chatVisibleMessageCount = Math.min(
@@ -267,9 +326,12 @@ export async function sendChatMessage(
   state.lastError = null;
   const runId = generateUUID();
   if (!opts?.preserveRunState) {
+    // 用户发起新 run：此前的重连 orphan 快照作废（防旧 run 的迟到帧被误收养进新 run）
+    clearReconnectOrphanRun();
     state.chatRunId = runId;
     state.chatStream = "";
     state.chatStreamStartedAt = now;
+    state.chatLastActivityAt = now;
     state.chatStreamFrozenPrefix = "";
   }
 
@@ -361,10 +423,24 @@ export function handleChatEvent(state: ChatState, payload?: ChatEventPayload) {
   // 迟到帧）的广播：delta 丢弃避免僵尸流式气泡；error 丢弃避免误注入带「重发」的
   // 错误卡（点了会把无关文本发出去）。final/aborted 仍透传以触发历史刷新。
   if (payload.runId && !state.chatRunId) {
-    if (payload.state === "delta" || payload.state === "error") {
+    // R30 重连续跑恢复：断连重连后 onHello 清空了本地 run 态，但内核侧 run 可能
+    // 仍在跑。断连前快照为 orphan 的 runId，其 delta（全量累计文本，天然可续）
+    // 重新收养为当前 run——流式续显、Stop 恢复可用；非 orphan 的一律按僵尸丢弃。
+    if (payload.state === "delta" && payload.runId === liveOrphanRunId()) {
+      state.chatRunId = payload.runId;
+      state.chatStreamStartedAt = Date.now();
+      state.chatLastActivityAt = Date.now();
+      state.chatStream = state.chatStream ?? "";
+      state.chatStreamFrozenPrefix = "";
+      debugLog("lifecycle", "orphan run adopted after reconnect", { runId: payload.runId });
+      // 收养后继续走下方 delta 处理
+    } else if (payload.state === "delta" || payload.state === "error") {
       return null;
+    } else {
+      // 终态透传；若是 orphan 的终态，快照随之失效
+      clearReconnectOrphanRun(payload.runId);
+      return payload.state;
     }
-    return payload.state;
   }
 
   // Final from another run (e.g. sub-agent announce): refresh history to show new message.
@@ -398,6 +474,7 @@ export function handleChatEvent(state: ChatState, payload?: ChatEventPayload) {
       const current = state.chatPendingStreamText ?? state.chatStream ?? "";
       if (!current || next.length >= current.length) {
         state.chatPendingStreamText = next;
+        state.chatLastActivityAt = Date.now();
         scheduleChatStreamFlush(state);
         debugLog("stream", "delta accept", {
           fullLen: fullText.length,
@@ -414,15 +491,18 @@ export function handleChatEvent(state: ChatState, payload?: ChatEventPayload) {
     }
   } else if (payload.state === "final") {
     debugLog("lifecycle", "chat:final → reset stream state", { runId: payload.runId });
+    clearReconnectOrphanRun(payload.runId);
     resetChatStreamState(state);
   } else if (payload.state === "aborted") {
     debugLog("lifecycle", "chat:aborted → reset stream state", { runId: payload.runId });
+    clearReconnectOrphanRun(payload.runId);
     resetChatStreamState(state);
   } else if (payload.state === "error") {
     debugLog("lifecycle", "chat:error → reset stream state", {
       runId: payload.runId,
       err: payload.errorMessage,
     });
+    clearReconnectOrphanRun(payload.runId);
     resetChatStreamState(state);
     const error = payload.errorMessage ?? "chat error";
     // R17：run 级失败也提供重发入口——从本地消息流恢复最后一条 user 消息文本

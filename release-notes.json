@@ -1,5 +1,12 @@
 [
   {
+    "version": "2026.827.2",
+    "notes": {
+      "zh": "修复：流式输出中断恢复全面加强——断连重连后仍在运行的回复自动续显（此前气泡消失且无法停止）；final/aborted 帧丢失不再导致流式气泡永久挂起（新增挂起流看门狗，180s 空闲后自动对齐内核真实状态）\n修复：中止/出错前已生成的部分回复现在会从历史恢复上屏；事件序列跳跃重试耗尽后自动软恢复\n修复：重连/终态撞上内核历史滞后快照时本地视图不再倒退，滞后时自动退避补拉收敛\n测试基线 524 用例全绿",
+      "en": "Fix: streaming interruption recovery overhaul — replies still running after a reconnect now resume streaming in place (previously the bubble vanished and could not be stopped); lost final/aborted frames no longer leave the streaming bubble hanging forever (new stalled-stream watchdog aligns with kernel state after 180s idle)\nFix: partial replies generated before abort/error are now restored from history; automatic soft recovery after event-gap retries exhaust\nFix: reconnect/terminal reads hitting the kernel's stale history snapshot no longer regress the local view; automatic backoff re-pull until convergence\n524-test baseline all green"
+    }
+  },
+  {
     "version": "2026.827.1",
     "notes": {
       "zh": "修复：任务页「打开会话」与定时任务页「跳转会话」现在真正切到目标对话（此前只写设置不切会话，点击后仍停留在旧对话）\n修复：显式跳转到已归档会话不再被 30 秒定时刷新弹回主会话\n优化：任务卡片新增耗时徽标（进行中任务实时累计），时间戳计算去重\n测试基线 513 用例全绿",

@@ -1,5 +1,16 @@
 import assert from "node:assert/strict";
-import { handleChatEvent, loadChatHistory, sendChatMessage } from "./chat.ts";
+import { mock } from "node:test";
+import {
+  cancelStaleHistoryRetryForTests,
+  handleChatEvent,
+  loadChatHistory,
+  sendChatMessage,
+} from "./chat.ts";
+import {
+  clearReconnectOrphanRun,
+  liveOrphanRunId,
+  markReconnectOrphanRun,
+} from "../stream-recovery.ts";
 import { FakeScheduler } from "../../test-utils/fake-scheduler.ts";
 
 // 最小帧调度器，手动推进 requestAnimationFrame 回调。
@@ -355,6 +366,171 @@ async function testSendFailureAfterSessionSwitchDoesNotTouchNewSession() {
   assert.equal(state.chatSending, false, "发送标志应由 finally 复位");
 }
 
+// R30 重连续跑恢复：断连重连后本地 run 态被清空，但内核侧 run 仍在跑。
+// 断连前快照为 orphan 的 runId，其 delta（全量累计文本）应被收养续显，
+// 而不是按僵尸帧丢弃。
+async function testOrphanDeltaAdoptedAfterReconnect() {
+  const raf = new FakeRaf();
+  installBrowserGlobals(raf);
+  markReconnectOrphanRun("run-orphan");
+  const state = makeState({ chatRunId: null, chatStream: null });
+
+  const result = handleChatEvent(state, {
+    runId: "run-orphan",
+    sessionKey: "session-1",
+    state: "delta",
+    message: { role: "assistant", content: [{ type: "text", text: "续跑文本" }] },
+  });
+  raf.runAll();
+
+  assert.equal(result, "delta");
+  assert.equal(state.chatRunId, "run-orphan", "orphan delta 应被收养为当前 run");
+  assert.equal(state.chatStream, "续跑文本", "收养后流式文本应续显");
+  clearReconnectOrphanRun();
+}
+
+// R30：非 orphan 的外来 delta 仍按僵尸丢弃（R18 防线不回退）。
+async function testNonOrphanDeltaStillDropped() {
+  const raf = new FakeRaf();
+  installBrowserGlobals(raf);
+  markReconnectOrphanRun("run-orphan");
+  const state = makeState({ chatRunId: null, chatStream: null });
+
+  const result = handleChatEvent(state, {
+    runId: "run-foreign",
+    sessionKey: "session-1",
+    state: "delta",
+    message: { role: "assistant", content: [{ type: "text", text: "foreign" }] },
+  });
+  raf.runAll();
+
+  assert.equal(result, null);
+  assert.equal(state.chatRunId, null, "非 orphan delta 不得收养");
+  assert.equal(state.chatStream, null);
+  clearReconnectOrphanRun();
+}
+
+// R30：orphan 快照过期后不再收养（run 大概率已终结/帧已永久丢失）。
+async function testOrphanExpiredNotAdopted() {
+  const raf = new FakeRaf();
+  installBrowserGlobals(raf);
+  markReconnectOrphanRun("run-orphan", Date.now() - 200_000);
+  const state = makeState({ chatRunId: null, chatStream: null });
+
+  const result = handleChatEvent(state, {
+    runId: "run-orphan",
+    sessionKey: "session-1",
+    state: "delta",
+    message: { role: "assistant", content: [{ type: "text", text: "过期帧" }] },
+  });
+  raf.runAll();
+
+  assert.equal(result, null, "过期 orphan 的 delta 应丢弃");
+  assert.equal(state.chatRunId, null);
+  assert.equal(liveOrphanRunId(), null, "过期快照应自动清除");
+}
+
+// R30：orphan 的终态帧透传（触发历史刷新）并清除快照。
+async function testOrphanFinalPassesAndClearsSnapshot() {
+  installBrowserGlobals(new FakeRaf());
+  markReconnectOrphanRun("run-orphan");
+  const state = makeState({ chatRunId: null });
+
+  const result = handleChatEvent(state, {
+    runId: "run-orphan",
+    sessionKey: "session-1",
+    state: "final",
+  });
+
+  assert.equal(result, "final");
+  assert.equal(liveOrphanRunId(), null, "orphan 终态后快照应清除");
+}
+
+// R30：mergeIfStale 保留本地后的退避补拉——800/1600/2400ms 依次补拉，
+// 替换成功后退避链取消不再补拉。
+async function testStaleRetryBackoffAndCancelOnReplace() {
+  installBrowserGlobals(new FakeRaf());
+  mock.timers.enable({ apis: ["setTimeout"] });
+  try {
+    const local = [1, 2, 3, 4, 5].map((i) => ({
+      role: "user",
+      content: [{ type: "text", text: `m${i}` }],
+    }));
+    const recovered = [...local, { role: "assistant", content: [{ type: "text", text: "回复" }] }];
+    let calls = 0;
+    let serveShort = true;
+    const client = {
+      request: async (method: string) => {
+        assert.equal(method, "chat.history");
+        calls++;
+        return { messages: serveShort ? [local[0]] : recovered };
+      },
+    } as any;
+    const state = makeState({ client, chatMessages: [...local] });
+
+    const flush = async () => {
+      for (let i = 0; i < 5; i++) {
+        await new Promise((r) => setImmediate(r));
+      }
+    };
+
+    await loadChatHistory(state, { mergeIfStale: true });
+    assert.equal(calls, 1);
+    assert.equal(state.chatMessages.length, 5, "首次短读应保留本地");
+
+    mock.timers.tick(800);
+    await flush();
+    assert.equal(calls, 2, "800ms 后应补拉一次");
+    assert.equal(state.chatMessages.length, 5, "仍短读仍保留");
+
+    serveShort = true; // 保持短读，验证第三次退避
+    mock.timers.tick(1600);
+    await flush();
+    assert.equal(calls, 3, "1600ms 后应第二次补拉");
+
+    serveShort = false; // 下一次补拉返回完整历史 → 替换成功 → 退避链取消
+    mock.timers.tick(2400);
+    await flush();
+    assert.equal(calls, 4);
+    assert.equal(state.chatMessages.length, 6, "完整历史应替换本地");
+
+    mock.timers.tick(10_000);
+    await flush();
+    assert.equal(calls, 4, "替换成功后不得再补拉");
+  } finally {
+    mock.timers.reset();
+    cancelStaleHistoryRetryForTests();
+  }
+}
+
+// R30：补拉期间会话切走，挂起的补拉应作废（不打到新会话头上）。
+async function testStaleRetryAbortedOnSessionSwitch() {
+  installBrowserGlobals(new FakeRaf());
+  mock.timers.enable({ apis: ["setTimeout"] });
+  try {
+    const local = [1, 2, 3].map((i) => ({ role: "user", content: [{ type: "text", text: `m${i}` }] }));
+    let calls = 0;
+    const client = {
+      request: async () => {
+        calls++;
+        return { messages: [local[0]] };
+      },
+    } as any;
+    const state = makeState({ client, chatMessages: [...local] });
+
+    await loadChatHistory(state, { mergeIfStale: true });
+    assert.equal(calls, 1);
+
+    state.sessionKey = "session-2";
+    mock.timers.tick(800);
+    await new Promise((r) => setImmediate(r));
+    assert.equal(calls, 1, "会话切走后补拉不应发出");
+  } finally {
+    mock.timers.reset();
+    cancelStaleHistoryRetryForTests();
+  }
+}
+
 async function main() {
   await testChatStreamIsRafThrottled();
   await testLoadChatHistoryBatchesInitialRender();
@@ -367,6 +543,13 @@ async function main() {
   await testMergeIfStaleKeepsLocalOnEmptyRead();
   await testMergeIfStaleReplacesOnCompaction();
   await testSendFailureAfterSessionSwitchDoesNotTouchNewSession();
+  await testOrphanDeltaAdoptedAfterReconnect();
+  await testNonOrphanDeltaStillDropped();
+  await testOrphanExpiredNotAdopted();
+  await testOrphanFinalPassesAndClearsSnapshot();
+  await testStaleRetryBackoffAndCancelOnReplace();
+  await testStaleRetryAbortedOnSessionSwitch();
+  cancelStaleHistoryRetryForTests();
   console.log("chat controller tests passed");
 }
 

@@ -10,10 +10,10 @@
 面向国内生态（Kimi / Moonshot / 飞书 / 企微 / 微信 / 钉钉 / QQ）。
 
 **当前状态**：
-- 重设计工程 **R1–R29 全部完成**，最新发版 **v2026.827.1**（R29 任务模块跳转修复；v2026.825.3：R28）。
+- 重设计工程 **R1–R30 全部完成**，最新发版 **v2026.827.2**（R30 流式中断恢复；v2026.827.1：R29）。
 - 内核 openclaw **2026.7.1-2**（版本 pin 在 package.json `cryoclaw.openclaw`）；**Electron 43.4.0**（audit 0 漏洞）。
-- 测试基线 **513 pass / 0 fail / 4 skipped**（vitest 94 + node 74 + chat-ui 293 + scripts 52；0 fail 为硬指标）。
-- 重复率 **0.99%**（65 clones，阈值 5%，`npm run dupcheck` 防回退）。
+- 测试基线 **524 pass / 0 fail / 4 skipped**（vitest 94 + node 74 + chat-ui 304 + scripts 52；0 fail 为硬指标）。
+- 重复率 **1.02%**（67 clones，阈值 5%，`npm run dupcheck` 防回退）。
 - 开源：GitHub `binchen6/CryoClaw`（AGPL-3.0-only，干净历史）；发版走本地 `dist:win` + `gh release`；CI `tests.yml` 每次 push/PR 全量回归。
 
 **常用命令**：
@@ -73,7 +73,7 @@
 
 ## ✅ 测试体系（勿重复搭建）
 
-- 基线 **513 pass / 0 fail / 4 skipped**（vitest 94 + node 74 + chat-ui 293 + scripts 52；0 fail 硬指标）。
+- 基线 **524 pass / 0 fail / 4 skipped**（vitest 94 + node 74 + chat-ui 304 + scripts 52；0 fail 硬指标）。
 - 基础设施：`tsconfig.test.json`（outDir `.test-dist/`）、`vitest.config.ts`（vitest include 列表）、`scripts/run-node-tests.js`（编译前清空 .test-dist，排除 vitest 文件）、npm scripts `test` / `test:unit(:vitest|:node)` / `test:scripts` / `test:typecheck`。
 - **chat-ui 用真 typecheck**（阶段 13 起接入；旧 `--noCheck` 假检查曾掩盖 303 个类型错误）。
 - `i18n.test.ts` 源码审计：zh/en 键集合一致、无重复键、分区语言正确。
@@ -178,6 +178,17 @@
 - **展示优化**：任务卡片新增耗时徽标（`taskDurationMs`：startedAt→endedAt，进行中用当前时间，终态缺 endedAt 退 updatedAt）；taskTimestamp 单次计算；`toTaskTimestampMs` 统一 number/ISO 解析。
 - **测试 +14**：session-jump 纯函数 ×5、taskDurationMs/toTaskTimestampMs ×5、源码审计 ×4（跳转接线钉死 `handleSessionChange`；reconcile 双调用点钉死豁免——审计模式同 i18n.test.ts）。基线 499→513。
 - **教训**：handleSessionChange 重依赖链（→ confirm-dialog → toggle-switch 顶层 `new CSSStyleSheet()`）在 node --test 下不可导入——UI 接线回归用源码审计钉住，纯逻辑抽 lean module 单测。
+
+### R30 · 流式中断恢复全面加强（完成，随 v2026.827.2 发版）
+
+用户指令：各种复杂情况下流式输出中断后能及时正确恢复。先取证（流式状态机全景 + 8 类中断场景清单），后实施 7 项：
+- **重连续跑恢复**：断连前快照在途 runId 为 orphan（`stream-recovery.ts`，TTL 120s）；重连后同 runId 的 delta（全量累计文本，天然可续）收养为当前 run——流式续显 + Stop 恢复。防线不回退：收养要求 orphan 精确匹配 + sessionKey 前置过滤，非 orphan 外来 delta 仍丢弃。
+- **挂起流看门狗**：final/aborted 帧在断连/gap 窗口丢失即永久挂起 → 新增 `chatLastActivityAt` 锚点（delta/tool/thinking 事件刷新，app.ts 非响应式字段），180s 空闲由 tick 触发历史探测，`hasAssistantReplyAfter`（run 开始后落盘的 assistant 回复）为真才清挂起态；探测带 runId+startedAt 双快照防队列冲刷出新 run 被误清（审查发现）。
+- **滞后读退避补拉**：mergeIfStale 保留本地后 800/1600/2400ms 补拉（此前无重试，「问了没答」要等下轮终态）；替换成功/会话切走即停。
+- **重连读改 mergeIfStale**（防撞上滞后快照视图倒退）；**error/aborted 本 run 无条件补拉历史**（中止前部分回复恢复上屏，外来 run 透传不补拉防 churn）；**gap 耗尽软恢复**（快照 orphan + 清态 + 重拉，此前只显示文案）；**onHello 清态统一走 `resetChatStreamState`**（消双份清理漂移）。
+- **取证确认**：内核 transcript `message.timestamp` 为 epoch ms（数值），`hasAssistantReplyAfter` 假设成立。
+- **测试 +17**：stream-recovery 纯函数 11 例；chat.test 追加 6 例（orphan 收养/丢弃/过期/终态清快照 + mock.timers 退避补拉链 ×2）。基线 513→524。
+- **已知边界**：长 silent run（>180s 无任何事件）期间看门狗每 30s 探测一次，mergeIfStale 不挡等长替换，chatVisibleMessageCount 重置有轻微滚动抖动（既有语义频率放大，可接受）。
 
 ## 📦 发版与实测经验（套路已验证多次）
 
