@@ -258,7 +258,10 @@ export async function removeCronJob(state: CronState, job: CronJob) {
   }
 }
 
-export async function loadCronRuns(state: CronState, jobId: string) {
+// isCurrent：stale 守卫（对齐 loadChatHistory 的 requestSessionKey 快照模式）——
+// 请求在途期间用户可能已收起/切换展开项，落地前回调确认该 jobId 仍是当前展开项，
+// 否则丢弃迟到结果（覆盖掉已收起时清空的 cronRuns）。
+export async function loadCronRuns(state: CronState, jobId: string, isCurrent?: () => boolean) {
   if (!state.client || !state.connected) {
     return;
   }
@@ -267,9 +270,15 @@ export async function loadCronRuns(state: CronState, jobId: string) {
       id: jobId,
       limit: 50,
     });
+    if (isCurrent && !isCurrent()) {
+      return;
+    }
     state.cronRunsJobId = jobId;
     state.cronRuns = Array.isArray(res.entries) ? res.entries : [];
   } catch (err) {
+    if (isCurrent && !isCurrent()) {
+      return;
+    }
     state.cronError = String(err);
   }
 }

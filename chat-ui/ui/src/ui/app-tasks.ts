@@ -24,9 +24,9 @@ export function renderTasksView(state: AppViewState) {
     cancellingIds: state.tasksCancellingIds,
     connected: state.connected,
     onStatusFilterChange: (status) => {
+      // 状态过滤是纯客户端筛选（views/tasks 内 filter），无需重新拉取
       state.tasksStatusFilter = status;
       state.requestUpdate();
-      void loadTasks(state);
     },
     onRefresh: () => {
       void loadTasks(state);

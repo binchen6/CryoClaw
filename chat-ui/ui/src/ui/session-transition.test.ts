@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { applySessionKeyTransition } from "./session-transition.ts";
+import { applySessionKeyTransition, clearSessionDraftSnapshot } from "./session-transition.ts";
 
 function makeHost() {
   let assistantLoads = 0;
@@ -83,8 +83,45 @@ async function testApplySessionKeyTransitionResetsComposerState() {
   assert.equal(ctx.scrollResets, 1);
 }
 
+// 切换会话时草稿/附件存入 per-session 快照，切回时恢复（一次性，恢复后即删除）。
+async function testDraftSnapshotSavedAndRestored() {
+  const ctx = makeHost();
+  // session-a 有草稿 "draft" + 附件；切到 session-b（无快照）→ 输入框为空
+  applySessionKeyTransition(ctx.host, "session-b");
+  assert.equal(ctx.host.chatMessage, "");
+  assert.deepEqual(ctx.host.chatAttachments, []);
+
+  // 在 session-b 输入新草稿，切回 session-a → 恢复旧草稿；再切回 session-b → 恢复新草稿
+  ctx.host.chatMessage = "b-draft";
+  applySessionKeyTransition(ctx.host, "session-a");
+  assert.equal(ctx.host.chatMessage, "draft", "切回应恢复原会话草稿");
+  assert.deepEqual(ctx.host.chatAttachments, [{ name: "file.txt" }], "切回应恢复原会话附件");
+
+  applySessionKeyTransition(ctx.host, "session-b");
+  assert.equal(ctx.host.chatMessage, "b-draft");
+  assert.deepEqual(ctx.host.chatAttachments, [], "session-b 无附件快照");
+
+  // 空草稿切走不留快照：清空后切到 session-a 再切回，不应复活旧草稿
+  ctx.host.chatMessage = "";
+  applySessionKeyTransition(ctx.host, "session-a");
+  applySessionKeyTransition(ctx.host, "session-b");
+  assert.equal(ctx.host.chatMessage, "", "空草稿不应残留快照");
+}
+
+// 删除会话时 clearSessionDraftSnapshot 清理快照，防同名 key 复用复活旧草稿。
+async function testClearSessionDraftSnapshot() {
+  const ctx = makeHost();
+  applySessionKeyTransition(ctx.host, "session-b");
+  clearSessionDraftSnapshot("session-a");
+  applySessionKeyTransition(ctx.host, "session-a");
+  assert.equal(ctx.host.chatMessage, "", "快照已清理，切回不应恢复草稿");
+  assert.deepEqual(ctx.host.chatAttachments, []);
+}
+
 async function main() {
   await testApplySessionKeyTransitionResetsComposerState();
+  await testDraftSnapshotSavedAndRestored();
+  await testClearSessionDraftSnapshot();
   console.log("session transition tests passed");
 }
 

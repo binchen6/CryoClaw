@@ -311,14 +311,13 @@ export async function sendChatMessage(
     }
   }
 
-  state.chatMessages = [
-    ...state.chatMessages,
-    {
-      role: "user",
-      content: contentBlocks,
-      timestamp: now,
-    },
-  ];
+  // 保留乐观气泡的对象引用：失败路径据此撤掉（preserveRunState）或打标记（供重发识别）
+  const echoMessage = {
+    role: "user",
+    content: contentBlocks,
+    timestamp: now,
+  };
+  state.chatMessages = [...state.chatMessages, echoMessage];
   state.chatVisibleMessageCount = state.chatMessages.length;
   cancelChatHistoryHydration(state);
 
@@ -374,6 +373,21 @@ export async function sendChatMessage(
       state.chatStream = null;
       state.chatStreamStartedAt = null;
     }
+    if (opts?.preserveRunState) {
+      // 队列「立即发送」失败：条目由 sendQueuedMessageNow 放回队列兜底，这里不再向
+      // 消息流注入 user 气泡+错误卡（否则与队列条目双份呈现）。撤掉未落盘的乐观
+      // 气泡，错误只写 lastError 顶部提示。
+      state.chatMessages = state.chatMessages.filter((m) => m !== echoMessage);
+      state.chatVisibleMessageCount = state.chatMessages.length;
+      state.lastError = error;
+      return null;
+    }
+    // 发送失败的乐观 user 气泡未落盘：打 cryoclawSendFailed 标记，点「重发」时
+    // （app-chat-props.ts onResendError）连同错误卡一并移除，防重发后新旧两条
+    // user 气泡并存。run 级 error 的 user 气泡已落盘（无标记），不受影响。
+    state.chatMessages = state.chatMessages.map((m) =>
+      m === echoMessage ? { ...echoMessage, cryoclawSendFailed: true } : m,
+    );
     // 不再写 lastError：错误已由下方 cryoclawError 卡片展示，避免与顶部 callout 双显示
     // 附带 resendText：消息未送达（请求失败），渲染层据此提供「重发」入口
     state.chatMessages = [

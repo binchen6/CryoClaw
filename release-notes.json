@@ -1,5 +1,12 @@
 [
   {
+    "version": "2026.827.3",
+    "notes": {
+      "zh": "修复：中止按钮不再清空输入框草稿；切换会话草稿与附件按会话保存/恢复\n修复：重发失败消息不再产生重复气泡与残留错误卡；队列「立即发送」失败不再双份呈现\n修复：断连恢复/看门狗对齐后自动冲刷消息队列；「新消息」徽标只在上翻期间真有新内容时出现\n优化：定时任务重复点击可收起、运行记录消除竞态；侧边栏定时任务徽标不再计入禁用任务；任务页筛选不再冗余拉取；队列消息行内编辑清空即删除\n测试基线 528 用例全绿",
+      "en": "Fix: abort no longer clears the composer draft; drafts and attachments are now saved/restored per session when switching conversations\nFix: resending a failed message no longer duplicates the bubble or leaves stale error cards; queue \"send now\" failures no longer render twice\nFix: message queue auto-flushes after reconnect/watchdog recovery; the \"new messages\" badge only appears when content actually arrives while scrolled up\nImproved: cron entries collapse on second click with race-free run history; sidebar cron badge no longer counts disabled jobs; tasks filter no longer refetches; clearing a queued message via inline edit deletes it\n528-test baseline all green"
+    }
+  },
+  {
     "version": "2026.827.2",
     "notes": {
       "zh": "修复：流式输出中断恢复全面加强——断连重连后仍在运行的回复自动续显（此前气泡消失且无法停止）；final/aborted 帧丢失不再导致流式气泡永久挂起（新增挂起流看门狗，180s 空闲后自动对齐内核真实状态）\n修复：中止/出错前已生成的部分回复现在会从历史恢复上屏；事件序列跳跃重试耗尽后自动软恢复\n修复：重连/终态撞上内核历史滞后快照时本地视图不再倒退，滞后时自动退避补拉收敛\n测试基线 524 用例全绿",

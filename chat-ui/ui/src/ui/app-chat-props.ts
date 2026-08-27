@@ -3,7 +3,7 @@
  * 从 app-render.ts 抽出（阶段 16 架构重构），行为与原内联 props 完全一致。
  */
 import type { AppViewState } from "./app-view-state.ts";
-import { refreshChatAvatar } from "./app-chat.ts";
+import { refreshChatAvatar, removeFailedSendArtifacts } from "./app-chat.ts";
 import { showToast } from "./app-toast.ts";
 import {
   applySessionKey,
@@ -103,10 +103,25 @@ export function buildChatProps(state: AppViewState): ChatProps {
     onBranchCheckpoint: (checkpointId: string) => {
       void handleBranchCheckpoint(state, checkpointId);
     },
-    // 错误卡片「重发」：正在发送时不重复触发；直接以 override 发送失败文本（不碰当前草稿）
+    // 错误卡片「重发」：正在发送时不重复触发；直接以 override 发送失败文本（不碰当前草稿）。
+    // 重发前移除匹配的旧错误卡；若其前一条是发送失败残留的本地乐观 user 气泡
+    // （未落盘，sendChatMessage 失败路径打了 cryoclawSendFailed 标记），一并移除——
+    // 否则重发会再乐观 append 一条 user 气泡造成双份。run 级 error 的 user 气泡
+    // 已落盘（无标记），保留。清理细节见 app-chat.ts removeFailedSendArtifacts。
     onResendError: (text: string) => {
       if (state.chatSending || !state.connected) {
         return;
+      }
+      const cleaned = removeFailedSendArtifacts(
+        state.chatMessages as unknown as Array<Record<string, unknown>>,
+        text,
+      );
+      if (cleaned) {
+        state.chatMessages = cleaned;
+        state.chatVisibleMessageCount = Math.min(
+          state.chatVisibleMessageCount,
+          cleaned.length,
+        );
       }
       void state.handleSendChat(text);
     },
@@ -117,7 +132,9 @@ export function buildChatProps(state: AppViewState): ChatProps {
     onQueueEdit: (id, newText) => state.editQueuedMessage(id, newText),
     onQueueSendNow: (id) => void state.sendQueuedMessageNow(id),
     onNewSession: () => confirmAndCreateNewSession(state),
-    showNewMessages: !state.chatUserNearBottom,
+    // 「上翻期间来了新内容」标记由 app-scroll.ts 维护；chatUserNearBottom 只表示当前
+    // 是否贴底（用户上翻但未收到新消息时也会 true→false 反转误亮徽标）
+    showNewMessages: state.chatNewMessagesBelow,
     onScrollToBottom: () => state.scrollToBottom(),
     sidebarOpen: state.sidebarOpen,
     sidebarContent: state.sidebarContent,

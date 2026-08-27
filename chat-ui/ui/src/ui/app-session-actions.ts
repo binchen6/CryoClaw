@@ -13,7 +13,7 @@ import {
   restoreCompactionCheckpoint,
 } from "./controllers/session-compaction.ts";
 import { t } from "./i18n.ts";
-import { applySessionKeyTransition } from "./session-transition.ts";
+import { applySessionKeyTransition, clearSessionDraftSnapshot } from "./session-transition.ts";
 import {
   clearToleratedHiddenSession,
   isToleratedHiddenSession,
@@ -213,6 +213,8 @@ export async function deleteSessionFromSidebar(state: AppViewState, key: string)
 
     // 3) 成功：全量刷新侧边栏；reconcileVisibleSession 会在活跃会话被删时切到下一个可见会话。
     removePendingSessionLabel(key);
+    // 同步清理该会话的草稿快照，防同名 key 复用时复活旧草稿
+    clearSessionDraftSnapshot(key);
     // 被删的若是显式跳转容忍的会话，清除容忍让 reconcile 正常切走
     clearToleratedHiddenSession(key);
     await loadSessions(state);

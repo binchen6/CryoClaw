@@ -531,6 +531,58 @@ async function testStaleRetryAbortedOnSessionSwitch() {
   }
 }
 
+// 发送失败（非 preserveRunState）：乐观 user 气泡打 cryoclawSendFailed 标记 + 注入错误卡，
+// 供 onResendError 重发时一并移除（防重发后新旧两条 user 气泡并存）。
+async function testSendFailureMarksLocalEchoForResend() {
+  installBrowserGlobals(new FakeRaf());
+  const state = makeState({
+    chatRunId: null,
+    chatStream: null,
+    client: {
+      request: async (method: string) => {
+        assert.equal(method, "chat.send");
+        throw new Error("network down");
+      },
+    },
+  });
+
+  const result = await sendChatMessage(state, "hello");
+  assert.equal(result, null, "失败的发送应返回 null");
+  assert.equal(state.chatMessages.length, 2, "应保留 user 气泡 + 错误卡");
+  const echo = state.chatMessages[0] as Record<string, unknown>;
+  assert.equal(echo.role, "user");
+  assert.equal(echo.cryoclawSendFailed, true, "未落盘的乐观气泡应打标记供重发识别");
+  const card = state.chatMessages[1] as Record<string, unknown>;
+  assert.equal(card.cryoclawError, true);
+  assert.equal(card.resendText, "hello");
+}
+
+// 队列「立即发送」（preserveRunState）失败：不向消息流注入气泡/错误卡（条目由
+// sendQueuedMessageNow 放回队列兜底，双份呈现回归），撤掉乐观气泡，错误走 lastError。
+async function testPreserveRunStateFailureDoesNotInject() {
+  installBrowserGlobals(new FakeRaf());
+  const existing = [{ role: "user", content: [{ type: "text", text: "m1" }] }];
+  const state = makeState({
+    chatMessages: [...existing],
+    chatVisibleMessageCount: 1,
+    client: {
+      request: async (method: string) => {
+        assert.equal(method, "chat.send");
+        throw new Error("network down");
+      },
+    },
+  });
+
+  const result = await sendChatMessage(state, "followup", undefined, undefined, {
+    preserveRunState: true,
+  });
+  assert.equal(result, null);
+  assert.equal(state.chatMessages.length, 1, "失败不得注入新气泡/错误卡（队列条目兜底）");
+  assert.equal((state.chatMessages[0] as Record<string, unknown>).role, "user");
+  assert.equal(state.lastError, "Error: network down", "错误应走 lastError 顶部提示");
+  assert.equal(state.chatRunId, "run-1", "preserveRunState 失败不得清本轮 run 态");
+}
+
 async function main() {
   await testChatStreamIsRafThrottled();
   await testLoadChatHistoryBatchesInitialRender();
@@ -549,6 +601,8 @@ async function main() {
   await testOrphanFinalPassesAndClearsSnapshot();
   await testStaleRetryBackoffAndCancelOnReplace();
   await testStaleRetryAbortedOnSessionSwitch();
+  await testSendFailureMarksLocalEchoForResend();
+  await testPreserveRunStateFailureDoesNotInject();
   cancelStaleHistoryRetryForTests();
   console.log("chat controller tests passed");
 }

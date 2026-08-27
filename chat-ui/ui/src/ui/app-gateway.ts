@@ -252,6 +252,8 @@ function checkStalledStream(host: GatewayHost) {
       console.warn("[gateway] stalled stream recovered via history probe");
       resetChatStreamState(host as unknown as Parameters<typeof resetChatStreamState>[0]);
       resetToolStream(host as unknown as Parameters<typeof resetToolStream>[0]);
+      // run 态已清：补一次队列冲刷，否则看门狗恢复后排队的消息会一直卡住
+      void flushChatQueueForEvent(host as unknown as Parameters<typeof flushChatQueueForEvent>[0]);
     }
   })();
 }
@@ -336,6 +338,9 @@ export function connectGateway(host: GatewayHost) {
       // 统一走 resetChatStreamState 清理入口（R30：替代字段直赋，防双份清理逻辑漂移）
       resetChatStreamState(host as unknown as Parameters<typeof resetChatStreamState>[0]);
       resetToolStream(host as unknown as Parameters<typeof resetToolStream>[0]);
+      // 重连清态后补一次队列冲刷：断连期间排队的消息不会因终态帧丢失而永久卡住
+      // （首次连接时队列为空，flush 内部自查空队列直接返回）
+      void flushChatQueueForEvent(host as unknown as Parameters<typeof flushChatQueueForEvent>[0]);
       // R23 重连兜底：流式中途断连会清掉本地 chatStream，气泡随之消失；
       // 握手完成后重拉持久化历史重建视图（仅重连路径，首次连接不走）。
       // R30：重连读改用 mergeIfStale——撞上内核滞后快照时保留本地视图防倒退，

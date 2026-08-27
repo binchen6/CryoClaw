@@ -78,7 +78,7 @@ export async function handleAbortChat(host: ChatHost) {
   if (!host.connected) {
     return;
   }
-  host.chatMessage = "";
+  // 中止只停 run，不动输入框草稿（清草稿是「发送 stop 命令」的语义，见 handleSendChat）
   await abortChatRun(host as unknown as OpenClawApp);
 }
 
@@ -257,9 +257,42 @@ export function removeQueuedMessage(host: ChatHost, id: string) {
   host.chatQueue = host.chatQueue.filter((item) => item.id !== id);
 }
 
-// 行内编辑排队消息：immutable 替换该条目（仅文本；附件保持原样）
+// 发送失败残留清理：移除匹配的发送失败错误卡（cryoclawError + resendText），
+// 以及其前一条带 cryoclawSendFailed 标记的本地乐观 user 气泡（未落盘，见
+// controllers/chat.ts 失败路径）。供错误卡「重发」（app-chat-props.ts）与队列
+// 「立即发送」失败回退复用，防止重发/回队后新旧 user 气泡双份呈现。
+// run 级 error 的 user 气泡已落盘（无标记），不受影响。返回 null 表示无匹配残留。
+export function removeFailedSendArtifacts(
+  messages: Array<Record<string, unknown>>,
+  text: string,
+): Array<Record<string, unknown>> | null {
+  let cardIndex = -1;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].cryoclawError === true && messages[i].resendText === text) {
+      cardIndex = i;
+      break;
+    }
+  }
+  if (cardIndex < 0) {
+    return null;
+  }
+  const prev = messages[cardIndex - 1];
+  const dropPrevEcho = prev?.role === "user" && prev.cryoclawSendFailed === true;
+  return messages.filter(
+    (_, i) => i !== cardIndex && !(dropPrevEcho && i === cardIndex - 1),
+  );
+}
+
+// 行内编辑排队消息：immutable 替换该条目（仅文本；附件保持原样）。
+// trim 后为空且无附件时直接删除该条目（空消息本就不允许入队，见 enqueueChatMessage）。
 export function editQueuedMessage(host: ChatHost, id: string, newText: string) {
   const trimmed = newText.trim();
+  const target = host.chatQueue.find((item) => item.id === id);
+  const hasAttachments = Boolean(target?.attachments && target.attachments.length > 0);
+  if (target && !trimmed && !hasAttachments) {
+    removeQueuedMessage(host, id);
+    return;
+  }
   host.chatQueue = host.chatQueue.map((item) =>
     item.id === id ? { ...item, message: trimmed, text: trimmed } : item,
   );
@@ -283,6 +316,18 @@ export async function sendQueuedMessageNow(host: ChatHost, id: string) {
     preserveRunState: isChatBusy(host),
   });
   if (!ok) {
+    // 空闲路径（非 preserveRunState）的失败已向消息流注入乐观气泡+错误卡：
+    // 条目放回队列前先清掉这些残留，避免与队列条目双份呈现
+    // （busy 路径 preserveRunState 本就不注入，清理无匹配时为空操作）。
+    const app = host as unknown as OpenClawApp;
+    const cleaned = removeFailedSendArtifacts(
+      app.chatMessages as unknown as Array<Record<string, unknown>>,
+      item.message ?? (item.text as string) ?? "",
+    );
+    if (cleaned) {
+      app.chatMessages = cleaned;
+      app.chatVisibleMessageCount = Math.min(app.chatVisibleMessageCount, cleaned.length);
+    }
     const queue = host.chatQueue;
     const at = Math.min(index, queue.length);
     host.chatQueue = [...queue.slice(0, at), item, ...queue.slice(at)];
@@ -310,6 +355,8 @@ export async function handleSendChat(
   }
 
   if (isChatStopCommand(message)) {
+    // stop 命令本身占着输入框：命令发出后清掉它（中止操作本身保留草稿，见 handleAbortChat）
+    host.chatMessage = "";
     await handleAbortChat(host);
     return false;
   }

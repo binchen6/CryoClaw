@@ -10,10 +10,10 @@
 面向国内生态（Kimi / Moonshot / 飞书 / 企微 / 微信 / 钉钉 / QQ）。
 
 **当前状态**：
-- 重设计工程 **R1–R30 全部完成**，最新发版 **v2026.827.2**（R30 流式中断恢复；v2026.827.1：R29）。
+- 重设计工程 **R1–R31 全部完成**，最新发版 **v2026.827.3**（R31 聊天/任务交互细节；v2026.827.2：R30）。
 - 内核 openclaw **2026.7.1-2**（版本 pin 在 package.json `cryoclaw.openclaw`）；**Electron 43.4.0**（audit 0 漏洞）。
-- 测试基线 **524 pass / 0 fail / 4 skipped**（vitest 94 + node 74 + chat-ui 304 + scripts 52；0 fail 为硬指标）。
-- 重复率 **1.02%**（67 clones，阈值 5%，`npm run dupcheck` 防回退）。
+- 测试基线 **528 pass / 0 fail / 4 skipped**（vitest 94 + node 74 + chat-ui 308 + scripts 52；0 fail 为硬指标）。
+- 重复率 **1.01%**（67 clones，阈值 5%，`npm run dupcheck` 防回退）。
 - 开源：GitHub `binchen6/CryoClaw`（AGPL-3.0-only，干净历史）；发版走本地 `dist:win` + `gh release`；CI `tests.yml` 每次 push/PR 全量回归。
 
 **常用命令**：
@@ -189,6 +189,16 @@
 - **取证确认**：内核 transcript `message.timestamp` 为 epoch ms（数值），`hasAssistantReplyAfter` 假设成立。
 - **测试 +17**：stream-recovery 纯函数 11 例；chat.test 追加 6 例（orphan 收养/丢弃/过期/终态清快照 + mock.timers 退避补拉链 ×2）。基线 513→524。
 - **已知边界**：长 silent run（>180s 无任何事件）期间看门狗每 30s 探测一次，mergeIfStale 不挡等长替换，chatVisibleMessageCount 重置有轻微滚动抖动（既有语义频率放大，可接受）。
+
+### R31 · 聊天/任务交互细节十二修（完成，随 v2026.827.3 发版）
+
+用户指令：优化现有功能细节与交互体验、聊天与任务处理的流畅性。explore 代理摸排 12 条确凿问题，实施 11 项（#9 per-session 队列成本高，记入候选）：
+- **草稿保护**：Stop 中止不再清空输入框（清草稿挪到 handleSendChat 的 stop 命令分支）；**切会话草稿/附件按 sessionKey 存取**（session-transition.ts 模块级 Map，空草稿不留条目，deleteSessionFromSidebar 清理，恢复后即删防膨胀）。
+- **发送失败闭环**：乐观 user 气泡提取为 `echoMessage` 引用——失败时打 `cryoclawSendFailed` 标记（**只在失败时打**，成功回声若预打标会被 run-error 重发误删已落盘气泡）；重发/队列回退前经共享纯函数 `removeFailedSendArtifacts`（app-chat.ts）连卡带标记气泡一并移除。preserveRunState（队列「立即发送」busy 路径）失败不再注入消息流，撤回乐观气泡只写 lastError（条目回队列兜底）；**空闲路径同样先清残留再回队**（审查 minor 修复，复用同一函数）。
+- **队列冲刷补全**：checkStalledStream 看门狗恢复分支与 onHello 重连收尾各加一次 `flushChatQueueForEvent`（内部自查空队列/断连直接返回，首次连接无副作用）。
+- **杂项**：showNewMessages 改用 `chatNewMessagesBelow`（app-scroll 维护的「上翻期间来新内容」标记，此前无读取方、误用贴底取反）；任务页状态筛选删冗余 loadTasks（纯客户端过滤）；cron 重复点击收起并清 cronRuns 防旧数据闪现；loadCronRuns 加 `isCurrent` 回调 stale 守卫（展开态在 app-cron 模块级，控制器拿不到故用回调不用快照比对）；侧边栏 cron 徽标不计 `enabled === false`；队列行内编辑清空（无附件）即删除条目。
+- **测试 +4**：chat.test 2 例（失败打标记/preserveRunState 不注入）、session-transition.test 2 例（草稿跨会话存取/删除清理）；复审后补 app-chat.test.ts 4 例（removeFailedSendArtifacts 纯函数）。基线 524→528。
+- **审查发现未修**（记录在案）：非 deleteSessionFromSidebar 路径删除的会话草稿快照残留到重启（有界、可接受）；runCronJob 内 loadCronRuns 未传 isCurrent（视觉无闪现）；per-session 队列（#9）候选。
 
 ## 📦 发版与实测经验（套路已验证多次）
 

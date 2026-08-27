@@ -146,7 +146,7 @@ export function renderApp(state: AppViewState) {
             skillsActive: cryoclawView === "skills",
             workspaceActive: cryoclawView === "workspace",
             cronActive: cryoclawView === "cron",
-            cronJobCount: state.cronJobs.filter((j) => !isExpiredOneShot(j)).length,
+            cronJobCount: state.cronJobs.filter((j) => j.enabled !== false && !isExpiredOneShot(j)).length,
             onOpenCron: () => setCryoClawView(state, "cron"),
             tasksActive: cryoclawView === "tasks",
             tasksRunningCount: state.tasks.filter((task) => isActiveTask(task)).length,

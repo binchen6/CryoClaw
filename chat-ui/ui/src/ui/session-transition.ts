@@ -32,6 +32,16 @@ function syncUrlWithSessionKey(sessionKey: string, replace: boolean) {
   }
 }
 
+// 切换前把当前会话的草稿/附件存入 per-session 快照（sessionKey → 草稿），
+// 切回时恢复；此前直接清空导致切会话丢草稿。恢复后即删除条目（一次性）。
+type SessionDraftSnapshot = { draft: string; attachments: ChatState["chatAttachments"] };
+const sessionDraftSnapshots = new Map<string, SessionDraftSnapshot>();
+
+// 会话被删除时同步清理其草稿快照（app-session-actions.ts deleteSessionFromSidebar 调用）
+export function clearSessionDraftSnapshot(sessionKey: string) {
+  sessionDraftSnapshots.delete(sessionKey);
+}
+
 export function applySessionKeyTransition(
   host: SessionTransitionHost,
   next: string,
@@ -41,11 +51,22 @@ export function applySessionKeyTransition(
   if (!trimmed || trimmed === host.sessionKey) {
     return false;
   }
+  // 先存当前会话的草稿/附件快照（空草稿不留条目，防 Map 无限增长）
+  if (host.chatMessage || host.chatAttachments.length > 0) {
+    sessionDraftSnapshots.set(host.sessionKey, {
+      draft: host.chatMessage,
+      attachments: host.chatAttachments,
+    });
+  } else {
+    sessionDraftSnapshots.delete(host.sessionKey);
+  }
+  const savedSnapshot = sessionDraftSnapshots.get(trimmed);
+  sessionDraftSnapshots.delete(trimmed);
   host.sessionKey = trimmed;
   // 切换会话：上一会话的重连 orphan 快照作废（防跨会话误收养）
   clearReconnectOrphanRun();
-  host.chatMessage = "";
-  host.chatAttachments = [];
+  host.chatMessage = savedSnapshot?.draft ?? "";
+  host.chatAttachments = savedSnapshot?.attachments ?? [];
   host.chatStream = null;
   host.chatPendingStreamText = null;
   host.chatStreamFrozenPrefix = "";

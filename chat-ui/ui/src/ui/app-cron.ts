@@ -39,11 +39,20 @@ export function renderCronView(state: AppViewState) {
     channelMeta: state.channelsSnapshot?.channelMeta ?? [],
     models: state.configuredModels,
     onToggleExpand: (jobId: string) => {
+      // 重复点击同一任务：收起，不重新拉取；同时清掉已加载的 runs，
+      // 防止下次展开时在拉取完成前闪现旧数据
+      if (cronExpandedJobId === jobId) {
+        cronExpandedJobId = null;
+        state.cronRunsJobId = null;
+        state.cronRuns = [];
+        state.requestUpdate();
+        return;
+      }
       cronExpandedJobId = jobId;
       cronShowForm = false;
       cronRunsLoading = true;
       state.requestUpdate();
-      void loadCronRuns(state, jobId).finally(() => {
+      void loadCronRuns(state, jobId, () => cronExpandedJobId === jobId).finally(() => {
         cronRunsLoading = false;
         state.requestUpdate();
       });
