@@ -583,6 +583,135 @@ async function testPreserveRunStateFailureDoesNotInject() {
   assert.equal(state.chatRunId, "run-1", "preserveRunState 失败不得清本轮 run 态");
 }
 
+// ── P2 已发送文件附件卡片化：发送序列化行为 ──
+
+function stubReadFileBase64(impl: (path: string) => Promise<unknown>) {
+  (globalThis as any).document = { querySelector: () => null };
+  (globalThis.window as any).cryoclaw = { readFileBase64: impl };
+}
+
+// 文件附件成功编码：走 apiAttachments type:"file"，不再拼文本前缀；
+// 乐观气泡挂 MediaPaths/MediaTypes（与 history 同构）。
+async function testSendFileAttachmentGoesBase64AndEchoHasMediaPaths() {
+  installBrowserGlobals(new FakeRaf());
+  stubReadFileBase64(async () => ({ base64: "aGVsbG8=", size: 5, mimeType: "text/plain" }));
+  const requests: Array<Record<string, unknown>> = [];
+  const state = makeState({
+    chatRunId: null,
+    chatStream: null,
+    client: {
+      request: async (method: string, params: Record<string, unknown>) => {
+        assert.equal(method, "chat.send");
+        requests.push(params);
+        return {};
+      },
+    },
+  });
+
+  const result = await sendChatMessage(state, "看下这个文件", [
+    { id: "att-1", filePath: "C:\\docs\\notes.txt", name: "notes.txt" },
+  ] as never);
+  assert.ok(result, "发送应成功返回 runId");
+  const payload = requests[0];
+  assert.equal(payload.message, "看下这个文件", "成功编码的文件不再拼路径文本前缀");
+  assert.deepEqual(payload.attachments, [
+    { type: "file", mimeType: "text/plain", fileName: "notes.txt", content: "aGVsbG8=" },
+  ]);
+  const echo = state.chatMessages[0] as Record<string, unknown>;
+  assert.deepEqual(echo.MediaPaths, ["C:\\docs\\notes.txt"], "乐观气泡应挂 MediaPaths");
+  assert.deepEqual(echo.MediaTypes, ["text/plain"], "乐观气泡应挂平行 MediaTypes");
+}
+
+// 超过大小上限（too-large 结构化返回）：降级为旧版文本前缀，不阻断发送。
+async function testOversizedFileFallsBackToTextPrefix() {
+  installBrowserGlobals(new FakeRaf());
+  stubReadFileBase64(async () => ({ error: "too-large", size: 99_999_999 }));
+  const requests: Array<Record<string, unknown>> = [];
+  const state = makeState({
+    client: {
+      request: async (_method: string, params: Record<string, unknown>) => {
+        requests.push(params);
+        return {};
+      },
+    },
+  });
+
+  const result = await sendChatMessage(state, "big", [
+    { id: "a1", filePath: "/tmp/big.bin", name: "big.bin" },
+  ] as never);
+  assert.ok(result);
+  const payload = requests[0];
+  assert.equal(payload.message, "/tmp/big.bin\n\nbig", "超限文件应降级为路径文本前缀");
+  assert.equal(payload.attachments, undefined, "降级后不再有 apiAttachments");
+  const echo = state.chatMessages[0] as Record<string, unknown>;
+  assert.deepEqual(echo.MediaPaths, ["/tmp/big.bin"]);
+  assert.deepEqual(echo.MediaTypes, [""], "降级文件 mime 未知记空串");
+}
+
+// 发送失败：错误卡带 resendAttachments（重发不丢附件）。
+async function testSendFailureKeepsResendAttachments() {
+  installBrowserGlobals(new FakeRaf());
+  stubReadFileBase64(async () => ({ base64: "eA==", size: 1, mimeType: "text/plain" }));
+  const state = makeState({
+    chatRunId: null,
+    chatStream: null,
+    client: {
+      request: async () => {
+        throw new Error("network down");
+      },
+    },
+  });
+
+  const result = await sendChatMessage(state, "hi", [
+    { id: "a1", filePath: "/tmp/n.txt", name: "n.txt" },
+  ] as never);
+  assert.equal(result, null);
+  const card = state.chatMessages[1] as Record<string, unknown>;
+  assert.equal(card.cryoclawError, true);
+  const ra = card.resendAttachments as Array<Record<string, unknown>>;
+  assert.equal(ra.length, 1, "错误卡应保存可重发附件");
+  assert.equal(ra[0].filePath, "/tmp/n.txt");
+}
+
+// 累计帧预算：首个大文件编码成功后，累计 base64 将超 ~23MB 的后续文件自动降级
+// 文本前缀（内核 WS 单帧上限 25MB，多附件一起发必然失败、重发死循环）。
+async function testCumulativeFrameBudgetDegradesLaterFiles() {
+  installBrowserGlobals(new FakeRaf());
+  const bigBase64 = "a".repeat(20_000_000);
+  stubReadFileBase64(async (path: string) =>
+    path.includes("big")
+      ? { base64: bigBase64, size: 15_000_000, mimeType: "application/octet-stream" }
+      : { base64: "b".repeat(5_000_000), size: 3_750_000, mimeType: "text/plain" },
+  );
+  const requests: Array<Record<string, unknown>> = [];
+  const state = makeState({
+    client: {
+      request: async (_method: string, params: Record<string, unknown>) => {
+        requests.push(params);
+        return {};
+      },
+    },
+  });
+
+  const result = await sendChatMessage(state, "two files", [
+    { id: "a1", filePath: "/tmp/big.bin", name: "big.bin" },
+    { id: "a2", filePath: "/tmp/small.txt", name: "small.txt" },
+  ] as never);
+  assert.ok(result);
+  const payload = requests[0];
+  const atts = payload.attachments as Array<Record<string, unknown>>;
+  assert.equal(atts.length, 1, "只有首个文件进 apiAttachments");
+  assert.equal(atts[0].fileName, "big.bin");
+  assert.equal(
+    payload.message,
+    "/tmp/small.txt\n\ntwo files",
+    "累计预算超限的后续文件应降级文本前缀",
+  );
+  const echo = state.chatMessages[0] as Record<string, unknown>;
+  assert.deepEqual(echo.MediaPaths, ["/tmp/big.bin", "/tmp/small.txt"]);
+  assert.deepEqual(echo.MediaTypes, ["application/octet-stream", ""]);
+}
+
 async function main() {
   await testChatStreamIsRafThrottled();
   await testLoadChatHistoryBatchesInitialRender();
@@ -603,6 +732,10 @@ async function main() {
   await testStaleRetryAbortedOnSessionSwitch();
   await testSendFailureMarksLocalEchoForResend();
   await testPreserveRunStateFailureDoesNotInject();
+  await testSendFileAttachmentGoesBase64AndEchoHasMediaPaths();
+  await testOversizedFileFallsBackToTextPrefix();
+  await testSendFailureKeepsResendAttachments();
+  await testCumulativeFrameBudgetDegradesLaterFiles();
   cancelStaleHistoryRetryForTests();
   console.log("chat controller tests passed");
 }

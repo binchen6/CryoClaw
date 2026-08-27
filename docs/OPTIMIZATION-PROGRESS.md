@@ -10,9 +10,9 @@
 面向国内生态（Kimi / Moonshot / 飞书 / 企微 / 微信 / 钉钉 / QQ）。
 
 **当前状态**：
-- 重设计工程 **R1–R34 全部完成**，最新发版 **v2026.827.6**（R34 应用更新策略与进度提示；v2026.827.5：R33）。
+- 重设计工程 **R1–R35 全部完成**，最新发版 **v2026.827.7**（R35 已发送附件卡片化+更新策略调整；v2026.827.6：R34）。
 - 内核 openclaw **2026.7.1-2**（版本 pin 在 package.json `cryoclaw.openclaw`）；**Electron 43.4.0**（audit 0 漏洞）。
-- 测试基线 **543 pass / 0 fail / 4 skipped**（vitest 94 + node 77 + chat-ui 320 + scripts 52；0 fail 为硬指标）。
+- 测试基线 **566 pass / 0 fail / 4 skipped**（vitest 94 + node 81 + chat-ui 339 + scripts 52；0 fail 为硬指标）。
 - 重复率 **1.01%**（67 clones，阈值 5%，`npm run dupcheck` 防回退）。
 - 开源：GitHub `binchen6/CryoClaw`（AGPL-3.0-only，干净历史）；发版走本地 `dist:win` + `gh release`；CI `tests.yml` 每次 push/PR 全量回归。
 
@@ -227,7 +227,7 @@
 ### R34 · 应用更新策略与进度提示（完成，随 v2026.827.6 发版；二期 P1）
 
 二期立项首项：优化软件更新策略和进度提示。实施 coder 代理 + 审查代理复审（无 blocker/major），主代复审后修 1 个 minor：
-- **周期性检查**：app-updater.ts 新增 4h setInterval（`unref`、仅 packaged 创建、stopAppUpdater 清理）；app-updater-state.ts 新增 `shouldSkipPeriodicAppUpdateCheck()` 防与手动/启动检查撞车。
+- **更新检查策略**：启动后 ~15s 静默检查一次（`unref`、仅 packaged 创建、stopAppUpdater 清理）。~~4h 周期复查~~ 用户要求去除（v2026.827.6 后随下一版移除，连带的 `shouldSkipPeriodicAppUpdateCheck()` 及 3 例周期测试一并删除；保留启动时检测+自动下载+「重启更新」提示链路，设置页手动「检查更新」保留）。
 - **更新提示链路**：chat-ui `bindAppUpdateState()`（connectedCallback 挂、防重入、disconnectedCallback 清理）+ `appUpdateBadge` 响应式字段 → 侧边栏设置入口「更新」角标（available/downloading/downloaded 三态常驻）；「重启更新」toast 带 action 常驻（`restartToApplyUpdate()` → `appUpdateQuitAndInstall`）。**复审 minor 修复**：常驻 toast 被后续普通 toast 覆盖后不再回来 → 条件补 `getToastMessage() === null`（同态且无当前 toast 时补弹）。
 - **toast 系统重写**（app-toast.ts）：ToastAction/getToastAction/hideToast/getToastMessage 导出；带 action 的 toast 常驻不自动消失，普通 toast 4s。
 - **关于页更新日志**：tab-about.ts 渲染 releaseNotes（getLocale 取 zh/en）、error 显示 `us.error` + 「重试」、进度条抽 class、「查看更新日志」按钮；`app:get-release-notes` 支持 `opts.all`（不碰 lastShownReleaseNotesVersion）。
@@ -235,6 +235,18 @@
 - **接线**：preload.ts/ipc-bridge.ts bridge 扩展；i18n 新键 zh/en 齐全（sidebar.updateBadge、settings.about.appUpdateRetry/appUpdateReleaseNotes/viewReleaseNotes/releaseNotesEmpty、appUpdate.toastDownloaded/toastRestart/restartFailed）。
 - **测试 +9**：node +3（77）、chat-ui +6（320，新增 app-update-notify.test.ts 源码审计 6 例）。基线 534→543 全绿；重复率 1.005%。
 - **不修记录在案**：渲染进程重建导致 downloaded 边沿重弹（可接受）；kernel 30s timer 无退出清理（unref 足够）；checkAppUpdate 无并发守卫（概率极低）。
+
+### R35 · 已发送附件卡片化 + 更新策略调整（完成，随 v2026.827.7 发版；二期 P2）
+
+用户指令：已发送文件附件卡片化；另要求「去掉自动检查和下载更新，只在启动时检测」（确认保留启动时检测+自动下载）。explore 代理前置取证（内核 asar 解包确证 schema/上限）→ coder 实施 → 审查代理复审（无 blocker，修 2 major + 1 minor）：
+- **文件附件走 base64 apiAttachments**：controllers/chat.ts sendChatMessage 文件附件逐个经新 IPC `file:read-base64`（main.ts，assertTrustedIpcSender + stat 预判 + 读后复核 TOCTOU 兜底）读盘编码，`{type:"file", mimeType, fileName, content}`；内核 offload media store，transcript 落顶层 MediaPaths/MediaTypes。mime 映射/路径校验/16MB 上限在纯函数 src/file-read-base64.ts。
+- **乐观气泡与历史同构**：echoMessage 挂顶层 MediaPaths（本地 filePath）/MediaTypes 平行数组；grouped-render.ts 消费（兼容单数 MediaPath/MediaType）渲染附件卡片（`name---uuid.ext` 剥 uuid 段还原原名，media-attachments.ts 纯函数）；image/* 渲 `<img class="chat-attachment-image">`（onerror 降级卡片），复用 media-enhance 卡片样式/打开定位委托；**顺手修复已发送图片/文件刷新丢失**（此前 chat-ui 无人消费 MediaPaths）+ 附件图片并入 lightbox 点击委托（审查 minor）。
+- **降级与预算**：单文件 >16MB（base64 后 ~21.9MB < WS 25MB 帧）或读取失败 → 旧版路径文本前缀 + toast；**累计帧预算 23MB**（图片 base64 计入，审查 major——多附件累计超限必败且重发死循环，现后续文件自动降级）。
+- **重发链路修复**：错误卡带 resendAttachments（app-chat.ts messageOverride 分支允许 opts.attachments），重发按 filePath 重新读盘（文件已删自动降级）；已降级文件不带回防路径文本重复。
+- **更新策略调整**：删 4h setInterval/PERIODIC_CHECK_INTERVAL_MS/periodicTimer/shouldSkipPeriodicAppUpdateCheck 及 3 例周期测试；仅启动 +15s 检测一次，autoDownload 与重启提示链路不变。
+- **安全决策记录**：file:read-base64 是任意绝对路径读取原语（≤16MB/次），assertTrustedIpcSender 只放行 file:// 主 frame；XSS 滥用面已写进 handler 注释 + docs/ipc-api.md（审查 major 闭环：后续可加 picker 路径白名单收紧）。
+- **测试 +29**：file-read-base64.test.ts 7、media-attachments.test.ts 6、attachment-cards.test.ts 12（含 lightbox 委托审计）、controllers/chat.test.ts +4（base64 发送/超限降级/错误卡附件/累计帧预算）。基线 540→566 全绿；重复率 1.012%。
+- **不修记录在案**：降级文件乐观气泡双重呈现（路径文本+卡片，刷新后只剩文本）；restoreMediaFileName 对巧合含 `---uuid` 段的本地文件名误剥（概率极低）；UNC 路径 file:// 预览不可靠（有 onerror 兜底）；media store TTL 后历史卡片打开失败静默降级（未做真机端到端）。
 
 ## 📦 发版与实测经验（套路已验证多次）
 

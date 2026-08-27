@@ -180,6 +180,8 @@ contextBridge.exposeInMainWorld("cryoclaw", {
   // 读取剪贴板中的文件路径（Cmd+C / Ctrl+C 复制的文件）
   readClipboardFilePaths: () =>
     ipcRenderer.invoke("clipboard:read-file-paths") as Promise<string[]>,
+  // 读取本地文件为 base64（文件附件走内核 apiAttachments；≤16MB，超限返回 { error:"too-large" }）
+  readFileBase64: (path: string) => ipcRenderer.invoke("file:read-base64", path),
 
   // Release Notes
   getReleaseNotes: (opts?: { all?: boolean }) => ipcRenderer.invoke("app:get-release-notes", opts),

@@ -114,8 +114,9 @@ export type ChatProps = {
   onBranchCheckpoint?: (checkpointId: string) => void;
   // 消息引用：把原文构造成引用块追加到草稿末尾，并把焦点送回输入框（可接着打字）
   onQuoteMessage?: (text: string) => void;
-  // 错误卡片「重发」：重新发送失败的用户消息文本（同步发送失败路径提供）
-  onResendError?: (text: string) => void;
+  // 错误卡片「重发」：重新发送失败的用户消息文本（同步发送失败路径提供），
+  // attachments 为错误卡上保存的附件（resendAttachments），带回防重发附件丢失
+  onResendError?: (text: string, attachments?: ChatAttachment[]) => void;
   // 目标模式（官方 session.goal）
   goal?: SessionGoal | null;
   onGoalCommand?: (text: string) => void;

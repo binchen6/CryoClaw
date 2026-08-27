@@ -319,6 +319,8 @@ interface CryoClawBridgeExtended {
       openExternal?: (url: string) => Promise<any>;
       openPath?: (path: string) => Promise<any>;
       revealPath?: (path: string) => Promise<any>;
+      // 聊天文件附件：读本地文件为 base64（≤16MB，超限返回 { error:"too-large", size }）
+      readFileBase64?: (path: string) => Promise<any>;
       quit?: () => void;
       reportSetupViewState?: (active: boolean) => void;
 }
@@ -726,6 +728,28 @@ export function openPath(path: string): Promise<void> {
 
 export function revealPath(path: string): Promise<void> {
   return oc().revealPath(path) as Promise<void>;
+}
+
+// ---------------------------------------------------------------------------
+// 聊天文件附件（file:read-base64）
+// ---------------------------------------------------------------------------
+
+export interface FileBase64Payload {
+  base64: string;
+  size: number;
+  mimeType: string;
+}
+
+// 主进程返回：成功 → { base64, size, mimeType }；超限 → { error:"too-large", size }；
+// 其余非法路径/不存在直接 reject（调用方 catch 降级）
+export type ReadFileBase64Response = FileBase64Payload | { error: string; size?: number };
+
+export async function readFileBase64(path: string): Promise<ReadFileBase64Response> {
+  const bridge = oc();
+  if (typeof bridge.readFileBase64 !== "function") {
+    throw new Error("readFileBase64 unavailable");
+  }
+  return (await bridge.readFileBase64(path)) as ReadFileBase64Response;
 }
 
 export function quit(): void {

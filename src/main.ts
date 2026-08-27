@@ -54,6 +54,7 @@ import { startGatewayControlServer, stopGatewayControlServer } from "./gateway-c
 import { migrateOpenclawConfigForKernelUpgrade } from "./openclaw-config-migration";
 import { assertTrustedIpcSender } from "./ipc-sender-guard";
 import { isSafeOpenExt } from "./safe-open";
+import { evaluateFileReadTarget, FILE_READ_MAX_BYTES, mimeTypeForPath } from "./file-read-base64";
 import { startAuthProxy, stopAuthProxy, setProxyAccessToken, setProxySearchDedicatedKey, getProxyPort } from "./kimi-auth-proxy";
 import { importOpenclawStateFromArchive, validateOpenclawStateArchive } from "./openclaw-state-archive";
 import { syncOpenClawStateAfterWrite } from "./openclaw-health-state";
@@ -782,6 +783,38 @@ ipcMain.handle("clipboard:read-file-paths", (event) => {
   } catch {
     return [];
   }
+});
+
+// 读取本地文件为 base64（聊天文件附件走内核 apiAttachments 用）。
+// 参数/大小判定在纯函数 evaluateFileReadTarget（src/file-read-base64.ts，可单测）：
+// 仅接受已存在的绝对路径普通文件，≤16MB；超限返回 { error:"too-large", size }
+// （不 throw，chat-ui 据此降级为旧版文本前缀行为），其余非法入参 reject。
+// 安全决策（记录在案）：这是向渲染层暴露的任意绝对路径读取原语（≤16MB/次），
+// 前提是 assertTrustedIpcSender 只放行 file:// 主界面 frame；渲染层 XSS 可借此
+// 读本地文件，属已接受风险（用户自选文件场景需要），后续可加 picker 路径白名单收紧。
+ipcMain.handle("file:read-base64", async (event, filePath: string) => {
+  if (!assertTrustedIpcSender(event, "file:read-base64")) return Promise.reject(new Error("IPC sender not trusted"));
+  let stat: { isFile: boolean; size: number } | null = null;
+  try {
+    const s = await fs.promises.stat(filePath);
+    stat = { isFile: s.isFile(), size: s.size };
+  } catch {
+    stat = null;
+  }
+  const verdict = evaluateFileReadTarget(filePath, stat);
+  if (!verdict.ok) {
+    if (verdict.error === "too-large") {
+      return { error: "too-large", size: verdict.size };
+    }
+    log.warn(`[security] file:read-base64 拒绝: ${verdict.error} ${String(filePath).slice(0, 100)}`);
+    return Promise.reject(new Error(verdict.error));
+  }
+  const buf = await fs.promises.readFile(filePath);
+  // TOCTOU 兜底：stat 与 readFile 之间文件可能被替换/增大，读后复核大小
+  if (buf.length > FILE_READ_MAX_BYTES) {
+    return { error: "too-large", size: buf.length };
+  }
+  return { base64: buf.toString("base64"), size: buf.length, mimeType: mimeTypeForPath(filePath) };
 });
 
 // ── Release Notes：读取打包的 changelog 并按版本过滤 ──

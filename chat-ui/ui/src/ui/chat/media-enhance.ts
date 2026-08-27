@@ -15,6 +15,7 @@
 import * as ipc from "../data/ipc-bridge.ts";
 import { t } from "../i18n.ts";
 import { showToastGlobal } from "../app-toast.ts";
+import { ref } from "lit/directives/ref.js";
 
 // MEDIA 标记：支持带引号路径与裸路径
 export const MEDIA_RE = /MEDIA:\s*(?:"([^"\n]+)"|([^\s"'<>|]+))/g;
@@ -198,6 +199,7 @@ export function buildFileCardHtml(path: string, fullMatch: string): string {
   const revealIcon = LUCIDE_OPEN + FOLDER_OPEN_ICON + "</svg>";
   return (
     `<span class="chat-file-card" role="button" tabindex="0" ` +
+    `aria-label="${escapeAttr(t("chat.fileCard.openLabel"))}: ${escapeAttr(fileNameOf(path))}" ` +
     `data-file-path="${escapeAttr(path)}" data-file-ext="${escapeAttr(ext)}" ` +
     `data-media-text="${escapeAttr(fullMatch)}" title="${escapeAttr(path)}">` +
     `<span class="chat-file-card__icon" aria-hidden="true">${icon}</span>` +
@@ -292,7 +294,7 @@ function ensureClickDelegate() {
       }
       return;
     }
-    const img = target.closest("img.chat-local-media");
+    const img = target.closest("img.chat-local-media, img.chat-attachment-image");
     if (img && (img as HTMLImageElement).src) {
       buildLightbox((img as HTMLImageElement).src);
     }
@@ -360,3 +362,12 @@ export function enhanceMedia(container: Element | undefined) {
     });
   }
 }
+
+// 已发送附件容器 ref（grouped-render.ts MediaPaths 附件区）：附件卡片渲染在
+// .chat-text 之外（无 chatTextEnhanceRef 兜底），需自行触发 enhanceMedia 安装
+// 文件卡片点击委托（幂等）。
+export const chatMediaEnhanceRef = ref((el?: Element) => {
+  if (el) {
+    enhanceMedia(el);
+  }
+});

@@ -338,7 +338,9 @@ export async function sendQueuedMessageNow(host: ChatHost, id: string) {
 export async function handleSendChat(
   host: ChatHost,
   messageOverride?: string,
-  opts?: { restoreDraft?: boolean },
+  // attachments：重发链路（错误卡「重发」）随 messageOverride 带回的附件
+  // （图片 dataUrl + 文件 filePath），缺省时重发不含附件（旧行为）。
+  opts?: { restoreDraft?: boolean; attachments?: ChatAttachment[] },
 ) {
   if (!host.connected) {
     return false;
@@ -346,7 +348,7 @@ export async function handleSendChat(
   const previousDraft = host.chatMessage;
   const message = (messageOverride ?? host.chatMessage).trim();
   const attachments = host.chatAttachments ?? [];
-  const attachmentsToSend = messageOverride == null ? attachments : [];
+  const attachmentsToSend = messageOverride == null ? attachments : (opts?.attachments ?? []);
   const hasAttachments = attachmentsToSend.length > 0;
 
   // Allow sending with just attachments (no message text required)

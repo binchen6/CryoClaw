@@ -15,7 +15,18 @@ import { isToolResultMessage, normalizeRoleForGrouping } from "./message-normali
 import { extractMessageModel, formatUsageFooter, sumGroupUsage } from "./message-meta.ts";
 import type { FileChange } from "./file-changes.ts";
 import { linkifyPaths } from "./path-linker.ts";
-import { renderMediaMarkers } from "./media-enhance.ts";
+import {
+  buildFileCardHtml,
+  chatMediaEnhanceRef,
+  localPathToFileUrl,
+  renderMediaMarkers,
+} from "./media-enhance.ts";
+import {
+  extractMessageMediaAttachments,
+  isImageMime,
+  type MessageMediaAttachment,
+} from "./media-attachments.ts";
+import type { ChatAttachment } from "../ui-types.ts";
 import { chatTextEnhanceRef } from "./code-block-enhance.ts";
 import { extractToolCards, renderToolCardSidebar } from "./tool-cards.ts";
 import { summarizeToolCards } from "./tool-summary.ts";
@@ -173,7 +184,7 @@ export function renderMessageGroup(
     isHydrating?: boolean;
     fileChanges?: FileChange[];
     onQuoteMessage?: (text: string) => void;
-    onResendError?: (text: string) => void;
+    onResendError?: (text: string, attachments?: ChatAttachment[]) => void;
   },
 ) {
   const normalizedRole = normalizeRoleForGrouping(group.role);
@@ -335,6 +346,49 @@ function renderFileChanges(changes: FileChange[]) {
   `;
 }
 
+// ── 已发送附件卡片（user 消息顶层 MediaPaths/MediaTypes，乐观气泡与 history 同构）──
+
+// 图片附件加载失败（media store TTL 清理后文件缺失等）：降级为文件卡片，仍显示文件名
+function degradeMediaImageToFileCard(event: Event, att: MessageMediaAttachment) {
+  const img = event.currentTarget as HTMLImageElement | null;
+  if (!img || !img.isConnected) {
+    return;
+  }
+  const tpl = document.createElement("template");
+  tpl.innerHTML = buildFileCardHtml(att.path, att.fileName);
+  const card = tpl.content.firstElementChild;
+  if (card) {
+    img.replaceWith(card);
+  }
+}
+
+function renderMessageMediaAttachments(atts: MessageMediaAttachment[]) {
+  if (atts.length === 0) {
+    return nothing;
+  }
+  // 文件卡片复用 media-enhance 的 buildFileCardHtml（卡片样式/图标/打开+定位委托）；
+  // 图片 mime 直渲 <img src=file://...>（页面本身 file:// 协议可直读本地文件），
+  // 加载失败 onerror 降级为文件卡片。容器 ref 确保点击委托已安装。
+  return html`
+    <div class="chat-message-attachments" ${chatMediaEnhanceRef}>
+      ${atts.map((att) => {
+        const url = isImageMime(att.mimeType) ? localPathToFileUrl(att.path) : null;
+        if (url) {
+          return html`<img
+            class="chat-attachment-image"
+            src=${url}
+            alt=${att.fileName}
+            title=${att.path}
+            loading="lazy"
+            @error=${(event: Event) => degradeMediaImageToFileCard(event, att)}
+          />`;
+        }
+        return unsafeHTML(buildFileCardHtml(att.path, att.fileName));
+      })}
+    </div>
+  `;
+}
+
 // 将多个 tool card 折叠到 <details> 元素中
 // 单一工具：「⚡ Read · src/main.ts」直接显示动作+目标；多工具：「⚡ N tools · 名单」
 function renderCollapsedToolCards(
@@ -418,7 +472,7 @@ function renderGroupedMessage(
     showReasoning: boolean;
     isHydrating?: boolean;
     onQuoteMessage?: (text: string) => void;
-    onResendError?: (text: string) => void;
+    onResendError?: (text: string, attachments?: ChatAttachment[]) => void;
   },
   onOpenSidebar?: (content: string) => void,
 ) {
@@ -431,6 +485,10 @@ function renderGroupedMessage(
   if (m.cryoclawError === true) {
     const errorText = extractTextCached(message) ?? "";
     const resendText = typeof m.resendText === "string" && m.resendText.trim() ? m.resendText : null;
+    // 发送失败时随错误卡保存的附件（controllers/chat.ts），重发时带回防附件丢失
+    const resendAttachments = Array.isArray(m.resendAttachments)
+      ? (m.resendAttachments as ChatAttachment[])
+      : undefined;
     return html`
       <div class="chat-bubble chat-error-card ${opts.isHydrating ? "" : "fade-in"}" role="alert">
         <span class="chat-error-card__icon" aria-hidden="true">${icons.warning}</span>
@@ -441,7 +499,7 @@ function renderGroupedMessage(
               type="button"
               title=${t("chat.resendError")}
               aria-label=${t("chat.resendError")}
-              @click=${() => opts.onResendError?.(resendText)}
+              @click=${() => opts.onResendError?.(resendText, resendAttachments)}
             >${icons.rotateCcw}${t("chat.resendError")}</button>`
           : nothing}
       </div>
@@ -459,6 +517,9 @@ function renderGroupedMessage(
   const hasToolCards = toolCards.length > 0;
   const images = extractImages(message);
   const hasImages = images.length > 0;
+  // 已发送附件元数据（内核 transcript 顶层 MediaPaths/MediaTypes + 乐观气泡同构字段）
+  const mediaAttachments = extractMessageMediaAttachments(message);
+  const hasMediaAttachments = mediaAttachments.length > 0;
 
   const extractedText = extractTextCached(message);
   const extractedThinking =
@@ -518,7 +579,7 @@ function renderGroupedMessage(
     return renderCollapsedToolCards(toolCards, onOpenSidebar);
   }
 
-  if (!markdown && !hasToolCards && !hasImages) {
+  if (!markdown && !hasToolCards && !hasImages && !hasMediaAttachments) {
     return nothing;
   }
 
@@ -582,6 +643,7 @@ function renderGroupedMessage(
       ${canCopyMarkdown ? renderCopyAsMarkdownButton(markdown!) : nothing}
       ${quoteButton}
       ${renderMessageImages(images)}
+      ${renderMessageMediaAttachments(mediaAttachments)}
       ${
         reasoningMarkdown
           ? renderThinkingCollapsed(reasoningMarkdown)

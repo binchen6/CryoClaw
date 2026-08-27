@@ -94,17 +94,3 @@ export function reduceAppUpdateState(state: AppUpdateState, event: AppUpdateEven
       return { ...state, status: "error", progress: null, error: event.message };
   }
 }
-
-/**
- * 周期静默复查是否应跳过：
- * 已有新版本在下载中/待安装时不再复查（避免打断进行中的下载、重复推送），
- * error/not-available/idle/checking 态均正常复查（error 不影响下一轮定时）。
- */
-export function shouldSkipPeriodicAppUpdateCheck(state: AppUpdateState): boolean {
-  return (
-    !state.supported ||
-    state.status === "available" ||
-    state.status === "downloading" ||
-    state.status === "downloaded"
-  );
-}

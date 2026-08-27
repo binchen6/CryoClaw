@@ -404,7 +404,7 @@
 }
 
 /* 历史消息 MEDIA:<非图片文件路径> 文件卡片（DOM 层注入，见 chat/media-enhance.ts） */
-.chat-text .chat-file-card {
+:is(.chat-text, .chat-message-attachments) .chat-file-card {
   display: inline-flex;
   align-items: center;
   gap: var(--spacer-10, 10px);
@@ -418,36 +418,36 @@
   transition: border-color var(--duration-fast) var(--ease-out), background var(--duration-fast) var(--ease-out)
 }
 
-.chat-text .chat-file-card:hover,
-.chat-text .chat-file-card:focus-visible {
+:is(.chat-text, .chat-message-attachments) .chat-file-card:hover,
+:is(.chat-text, .chat-message-attachments) .chat-file-card:focus-visible {
   border-color: var(--border-hover);
   background: var(--bg-hover);
   outline: none
 }
 
-.chat-text .chat-file-card--error {
+:is(.chat-text, .chat-message-attachments) .chat-file-card--error {
   border-color: var(--danger)
 }
 
-.chat-text .chat-file-card__icon {
+:is(.chat-text, .chat-message-attachments) .chat-file-card__icon {
   display: flex;
   flex-shrink: 0;
   color: var(--accent)
 }
 
-.chat-text .chat-file-card__icon svg {
+:is(.chat-text, .chat-message-attachments) .chat-file-card__icon svg {
   width: 26px;
   height: 26px
 }
 
-.chat-text .chat-file-card__info {
+:is(.chat-text, .chat-message-attachments) .chat-file-card__info {
   display: flex;
   flex-direction: column;
   gap: 2px;
   min-width: 0
 }
 
-.chat-text .chat-file-card__name {
+:is(.chat-text, .chat-message-attachments) .chat-file-card__name {
   font-size: var(--font-size-body);
   color: var(--text, inherit);
   overflow: hidden;
@@ -455,14 +455,14 @@
   white-space: nowrap
 }
 
-.chat-text .chat-file-card__meta {
+:is(.chat-text, .chat-message-attachments) .chat-file-card__meta {
   font-family: var(--mono);
   font-size: var(--font-size-meta);
   color: var(--muted);
   letter-spacing: .04em
 }
 
-.chat-text .chat-file-card__reveal {
+:is(.chat-text, .chat-message-attachments) .chat-file-card__reveal {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -478,14 +478,43 @@
   transition: color var(--duration-fast) var(--ease-out), background var(--duration-fast) var(--ease-out)
 }
 
-.chat-text .chat-file-card__reveal:hover {
+:is(.chat-text, .chat-message-attachments) .chat-file-card__reveal:hover {
   color: var(--accent);
   background: var(--accent-subtle)
 }
 
-.chat-text .chat-file-card__reveal svg {
+:is(.chat-text, .chat-message-attachments) .chat-file-card__reveal svg {
   width: 15px;
   height: 15px
+}
+
+/* 已发送附件区（user 消息顶层 MediaPaths 渲染，见 chat/grouped-render.ts）；
+   文件卡片样式复用上方 .chat-file-card 规则（:is 作用域已含本容器） */
+.chat-message-attachments {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--spacer-8);
+  margin-bottom: var(--spacer-8)
+}
+
+.chat-group.user .chat-message-attachments {
+  align-items: flex-end
+}
+
+.chat-message-attachments .chat-file-card {
+  margin: 0
+}
+
+/* 已发送图片附件（file:// 直渲；加载失败由 grouped-render 降级为文件卡片） */
+.chat-attachment-image {
+  display: block;
+  max-width: min(480px, 100%);
+  max-height: 360px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--glass-xs);
+  object-fit: contain
 }
 
 /* 子代理等待状态卡（R23，主 run 等待子代理期间的进度反馈） */

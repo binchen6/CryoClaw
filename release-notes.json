@@ -1,5 +1,12 @@
 [
   {
+    "version": "2026.827.7",
+    "notes": {
+      "zh": "新功能：已发送文件附件卡片化——文件附件走内核附件通道（base64），气泡与历史同构渲染附件卡片（文件名+图标，点击打开/定位）；已发送图片/文件刷新后不再丢失；失败重发不再丢附件\n优化：超过 16MB 或多附件累计超帧预算时自动降级为路径文本发送并提示；附件图片支持点击全屏预览\n调整：按用户要求移除 4 小时周期自动检查更新，仅在应用启动时检测（检测到仍自动下载，重启提示链路不变）\n加固：file:read-base64 通道 stat 预判+读后复核双道大小校验；更新策略、卡片样式全 token 化\n测试基线 566 用例全绿",
+      "en": "New: sent file attachments are now carded — files go through the kernel attachment channel (base64) and render as attachment cards (name + icon, click to open/reveal) in both the optimistic bubble and history; sent images/files no longer vanish after refresh; resend no longer drops attachments\nImproved: files over 16MB or exceeding the cumulative per-frame budget automatically degrade to path-text sending with a toast; attachment images support click-to-preview lightbox\nChanged: per user request, the 4-hour periodic update check is removed — updates are only checked at app startup (auto-download and the restart prompt flow are unchanged)\nHardened: file:read-base64 now double-checks size (stat + post-read); card styles fully token-based\n566-test baseline all green"
+    }
+  },
+  {
     "version": "2026.827.6",
     "notes": {
       "zh": "新功能：应用更新策略升级——启动后每 4 小时自动检查更新；下载完成后常驻「重启更新」toast（被普通 toast 覆盖后自动补弹），托盘菜单新增「重启以更新」\n新功能：设置-关于页展示当前版本更新日志（含「重试」「查看更新日志」入口）；侧边栏设置入口在有新版本/待装时显示「更新」角标\n优化：toast 系统支持常驻动作按钮（带操作的 toast 不再自动消失）；about 页错误信息可读化\n测试基线 543 用例全绿",

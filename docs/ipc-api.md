@@ -177,6 +177,14 @@
 | 方法 | IPC 通道 | 方向 |
 |---|---|---|
 | `selectFiles(options?)` | `dialog:select-files` | invoke |
+| `readFileBase64(path)` | `file:read-base64` | invoke |
+
+> `file:read-base64`：读取本地文件为 base64，供聊天文件附件走内核 apiAttachments。
+> 仅接受已存在的绝对路径普通文件，大小 ≤16MB（stat 预判 + 读后复核双道）；超限返回 `{ error: "too-large", size }`
+> （不抛错，chat-ui 据此降级为路径文本前缀），成功返回 `{ base64, size, mimeType }`；
+> 其余非法入参（非绝对路径/不存在/非普通文件）reject。
+> 安全决策：这是向渲染层暴露的任意绝对路径读取原语，`assertTrustedIpcSender` 只放行
+> file:// 主界面 frame；渲染层 XSS 可借此读本地文件，属已接受风险（用户自选文件场景需要）。
 
 ## 工具
 

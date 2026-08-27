@@ -4,6 +4,9 @@ import { extractText } from "../chat/message-extract.ts";
 import { debugLog } from "../debug.ts";
 import { clearReconnectOrphanRun, liveOrphanRunId } from "../stream-recovery.ts";
 import { generateUUID } from "../uuid.ts";
+import { readFileBase64 } from "../data/ipc-bridge.ts";
+import { t } from "../i18n.ts";
+import { showToastGlobal } from "../app-toast.ts";
 
 // delivery-mirror 是 gateway 将外发消息镜像写回 transcript 的副本。
 // 当 agent 已在 transcript 中写过同文本的 assistant 消息时，mirror 条目是冗余的，
@@ -278,10 +281,54 @@ export async function sendChatMessage(
   const hasImages = imageAttachments.length > 0;
   const hasFiles = fileAttachments.length > 0;
 
-  // 文件路径拼到消息前面，让 gateway 自行读取
+  // 文件附件：逐个读本地文件转 base64 走 apiAttachments（type:"file"，内核 offload 到
+  // media store，transcript 落 MediaPaths，刷新后附件卡片不丢）；读取失败/超过 16MB
+  // 上限的降级为旧版文本前缀（路径拼进消息文本），不阻断发送。
   const filePaths = fileAttachments.map((a) => a.filePath!);
-  const filePrefix = filePaths.length > 0
-    ? filePaths.join("\n") + "\n\n"
+  // 乐观气泡 MediaTypes 与 MediaPaths 平行（降级文件 mime 未知记空串）
+  const echoMediaTypes: string[] = [];
+  const fileApiAttachments: Array<{
+    type: "file";
+    mimeType: string;
+    fileName: string;
+    content: string;
+  }> = [];
+  const degradedFilePaths: string[] = [];
+  // 内核 WS 单帧上限 25MB（MAX_PAYLOAD_BYTES）：图片+文件附件的 base64 共享同一帧预算，
+  // 累计将超 ~23MB 时后续文件自动降级文本前缀（防多附件一起发必然失败、重发死循环）。
+  const ATTACHMENT_FRAME_BUDGET_BYTES = 23 * 1024 * 1024;
+  let frameBudgetUsed = imageAttachments.reduce(
+    (sum, att) => sum + (typeof att.dataUrl === "string" ? att.dataUrl.length : 0),
+    0,
+  );
+  for (const att of fileAttachments) {
+    const p = att.filePath!;
+    const displayName = att.name || p.split(/[\\/]/).pop() || p;
+    try {
+      const res = await readFileBase64(p);
+      if ("base64" in res && frameBudgetUsed + res.base64.length <= ATTACHMENT_FRAME_BUDGET_BYTES) {
+        frameBudgetUsed += res.base64.length;
+        fileApiAttachments.push({
+          type: "file",
+          mimeType: res.mimeType,
+          fileName: displayName,
+          content: res.base64,
+        });
+        echoMediaTypes.push(res.mimeType);
+      } else {
+        // too-large/累计帧预算超限等：降级文本前缀
+        degradedFilePaths.push(p);
+        echoMediaTypes.push("");
+        showToastGlobal(t("chat.attachmentFallbackPath").replace("{name}", displayName));
+      }
+    } catch {
+      degradedFilePaths.push(p);
+      echoMediaTypes.push("");
+      showToastGlobal(t("chat.attachmentFallbackPath").replace("{name}", displayName));
+    }
+  }
+  const filePrefix = degradedFilePaths.length > 0
+    ? degradedFilePaths.join("\n") + "\n\n"
     : "";
   const msg = (filePrefix + message).trim();
 
@@ -312,10 +359,13 @@ export async function sendChatMessage(
   }
 
   // 保留乐观气泡的对象引用：失败路径据此撤掉（preserveRunState）或打标记（供重发识别）
+  // MediaPaths/MediaTypes（本地原始 filePath 平行数组）与内核 transcript/history 的
+  // 顶层字段同构，grouped-render 据此为乐观气泡与历史消息渲染同一份附件卡片。
   const echoMessage = {
     role: "user",
     content: contentBlocks,
     timestamp: now,
+    ...(hasFiles ? { MediaPaths: [...filePaths], MediaTypes: [...echoMediaTypes] } : {}),
   };
   state.chatMessages = [...state.chatMessages, echoMessage];
   state.chatVisibleMessageCount = state.chatMessages.length;
@@ -334,8 +384,8 @@ export async function sendChatMessage(
     state.chatStreamFrozenPrefix = "";
   }
 
-  // 只有图片附件走 base64 API，文件路径已拼入消息文本
-  const apiAttachments = hasImages
+  // 图片 + 文件都走 base64 apiAttachments（文件编码失败/超限的已降级进文本前缀，不在此列）
+  const imageApiAttachments = hasImages
     ? imageAttachments
         .map((att) => {
           const parsed = att.dataUrl ? dataUrlToBase64(att.dataUrl) : null;
@@ -349,7 +399,8 @@ export async function sendChatMessage(
           };
         })
         .filter((a): a is NonNullable<typeof a> => a !== null)
-    : undefined;
+    : [];
+  const apiAttachments = [...imageApiAttachments, ...fileApiAttachments];
 
   try {
     await state.client.request("chat.send", {
@@ -357,7 +408,7 @@ export async function sendChatMessage(
       message: msg,
       deliver: false,
       idempotencyKey: runId,
-      attachments: apiAttachments,
+      attachments: apiAttachments.length > 0 ? apiAttachments : undefined,
       ...(thinkingLevel && thinkingLevel !== "off" ? { thinking: thinkingLevel } : {}),
     });
     return runId;
@@ -399,6 +450,17 @@ export async function sendChatMessage(
         // 渲染层据此走着色错误卡片（grouped-render.ts），而非普通文本气泡
         cryoclawError: true,
         resendText: msg,
+        // 重发时带回附件（图片 dataUrl + 文件 filePath），否则重发链路附件整体丢失。
+        // 文件附件重发时按 filePath 重新读盘编码；文件已删则自动降级文本前缀。
+        // 已降级进 msg 文本前缀的文件不再带回（路径已在文本里，带回会重复编码/重复前缀）。
+        ...(hasAttachments
+          ? {
+              resendAttachments: [
+                ...imageAttachments,
+                ...fileAttachments.filter((a) => !degradedFilePaths.includes(a.filePath!)),
+              ].map((a) => ({ ...a })),
+            }
+          : {}),
       },
     ];
     state.chatVisibleMessageCount = state.chatMessages.length;

@@ -743,6 +743,8 @@ export const enDict: Record<string, string> = {
   "chat.fileCard.reveal": "Show in folder",
   "chat.fileCard.openFailed": "Cannot open the file (unsupported type or missing)",
   "chat.fileCard.revealFailed": "Cannot locate the file in its folder",
+  "chat.fileCard.openLabel": "Open attachment",
+  "chat.attachmentFallbackPath": "Attachment \"{name}\" exceeds the size limit or could not be read; sent as a path reference",
   "chat.subagent.running": "Subagent running",
   "chat.subagent.waiting": "Waiting for subagent…",
   "chat.subagent.done": "Subagent completed",

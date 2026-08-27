@@ -781,6 +781,8 @@ export const zhDict: Record<string, string> = {
   "chat.fileCard.reveal": "在文件夹中显示",
   "chat.fileCard.openFailed": "无法打开该文件（类型不受支持或文件不存在）",
   "chat.fileCard.revealFailed": "无法在文件夹中定位该文件",
+  "chat.fileCard.openLabel": "打开附件",
+  "chat.attachmentFallbackPath": "附件「{name}」超过大小上限或读取失败，已按路径文本发送",
   "chat.subagent.running": "子代理运行中",
   "chat.subagent.waiting": "等待子代理返回…",
   "chat.subagent.done": "子代理已完成",

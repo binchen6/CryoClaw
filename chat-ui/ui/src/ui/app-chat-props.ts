@@ -3,6 +3,7 @@
  * 从 app-render.ts 抽出（阶段 16 架构重构），行为与原内联 props 完全一致。
  */
 import type { AppViewState } from "./app-view-state.ts";
+import type { ChatAttachment } from "./ui-types.ts";
 import { refreshChatAvatar, removeFailedSendArtifacts } from "./app-chat.ts";
 import { showToast } from "./app-toast.ts";
 import {
@@ -108,7 +109,7 @@ export function buildChatProps(state: AppViewState): ChatProps {
     // （未落盘，sendChatMessage 失败路径打了 cryoclawSendFailed 标记），一并移除——
     // 否则重发会再乐观 append 一条 user 气泡造成双份。run 级 error 的 user 气泡
     // 已落盘（无标记），保留。清理细节见 app-chat.ts removeFailedSendArtifacts。
-    onResendError: (text: string) => {
+    onResendError: (text: string, attachments?: ChatAttachment[]) => {
       if (state.chatSending || !state.connected) {
         return;
       }
@@ -123,7 +124,11 @@ export function buildChatProps(state: AppViewState): ChatProps {
           cleaned.length,
         );
       }
-      void state.handleSendChat(text);
+      // 错误卡上保存的附件（resendAttachments）随重发带回，否则附件整体丢失
+      void state.handleSendChat(
+        text,
+        attachments && attachments.length > 0 ? { attachments } : undefined,
+      );
     },
     onSend: () => state.handleSendChat(),
     canAbort: Boolean(state.chatRunId),

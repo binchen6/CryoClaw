@@ -3,7 +3,7 @@
  *
  * 状态机纯逻辑在 app-updater-state.ts；本模块只做 Electron 事件接线：
  *   - 仅 app.isPackaged 时启用（dev 模式 supported=false，IPC 返回 { supported: false } 语义）
- *   - 启动后 ~15s 静默检查一次，之后每 4h 静默复查（timer.unref，失败只记 warn 不打扰用户）
+ *   - 启动后 ~15s 静默检查一次（仅此一次，无周期复查；失败只记 warn 不打扰用户）
  *   - autoDownload=true 自动下载；autoInstallOnAppQuit=false，
  *     由设置页「重启以更新」按钮触发 quitAndInstall()
  *   - 每次状态变化经 deps.push 推送 webContents.send("app:update-state", snapshot)
@@ -22,15 +22,12 @@ import {
   AppUpdateState,
   createInitialAppUpdateState,
   reduceAppUpdateState,
-  shouldSkipPeriodicAppUpdateCheck,
 } from "./app-updater-state";
 
 export type { AppUpdateState } from "./app-updater-state";
 
-// 启动后延迟 15s 自动检查（避免与 gateway/窗口启动争资源）
+// 启动后延迟 15s 自动检查（避免与 gateway/窗口启动争资源）；无周期复查，仅此一次
 const STARTUP_CHECK_DELAY_MS = 15 * 1000;
-// 之后每 4 小时静默复查一次（与启动检查共用 checkAppUpdate 入口）
-const PERIODIC_CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000;
 
 type Deps = {
   /** 状态变化时推送渲染层（window 不存在时由调用方自行忽略） */
@@ -43,7 +40,6 @@ let state: AppUpdateState = createInitialAppUpdateState(false, "");
 let pushFn: ((state: AppUpdateState) => void) | null = null;
 let beforeQuitAndInstall: (() => void) | null = null;
 let startupTimer: NodeJS.Timeout | null = null;
-let periodicTimer: NodeJS.Timeout | null = null;
 /** 已下载完成的安装器文件名（update-downloaded 事件 info.path，仅文件名） */
 let downloadedInstallerName: string | null = null;
 
@@ -205,13 +201,6 @@ export function initAppUpdater(deps: Deps): void {
     checkAppUpdate();
   }, STARTUP_CHECK_DELAY_MS);
   startupTimer.unref?.();
-
-  // 每 4 小时静默复查；已有新版本在下载/待装时跳过（不打断进行中的下载）
-  periodicTimer = setInterval(() => {
-    if (shouldSkipPeriodicAppUpdateCheck(state)) return;
-    checkAppUpdate();
-  }, PERIODIC_CHECK_INTERVAL_MS);
-  periodicTimer.unref?.();
 }
 
 /** 退出前清理（app quit 时调用，防御性） */
@@ -219,9 +208,5 @@ export function stopAppUpdater(): void {
   if (startupTimer) {
     clearTimeout(startupTimer);
     startupTimer = null;
-  }
-  if (periodicTimer) {
-    clearInterval(periodicTimer);
-    periodicTimer = null;
   }
 }
