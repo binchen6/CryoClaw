@@ -24,7 +24,8 @@
 
 .oc-setup-progress {
   position: fixed;
-  top: 0;
+  /* 让开 44px 沉浸式 titlebar，避免 3px 进度条被 drag 区遮住 */
+  top: 44px;
   left: 0;
   width: 100%;
   height: 3px;

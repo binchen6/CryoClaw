@@ -10,7 +10,6 @@ type ScrollHost = {
   chatHasAutoScrolled: boolean;
   chatUserNearBottom: boolean;
   chatNewMessagesBelow: boolean;
-  topbarObserver: ResizeObserver | null;
 };
 
 export function scheduleChatScroll(host: ScrollHost, force = false, smooth = false) {
@@ -112,21 +111,4 @@ export function resetChatScroll(host: ScrollHost) {
   host.chatHasAutoScrolled = false;
   host.chatUserNearBottom = true;
   host.chatNewMessagesBelow = false;
-}
-
-export function observeTopbar(host: ScrollHost) {
-  if (typeof ResizeObserver === "undefined") {
-    return;
-  }
-  const topbar = host.querySelector(".topbar");
-  if (!topbar) {
-    return;
-  }
-  const update = () => {
-    const { height } = topbar.getBoundingClientRect();
-    host.style.setProperty("--topbar-height", `${height}px`);
-  };
-  update();
-  host.topbarObserver = new ResizeObserver(() => update());
-  host.topbarObserver.observe(topbar);
 }

@@ -95,7 +95,8 @@
   flex-direction: column !important;
   border: 1px solid var(--border) !important;
   border-radius: var(--radius-16) !important;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25) !important;
+  /* !important 仍需保留：覆盖 ex-redesign 同名规则的 shadow（见下方注释） */
+  box-shadow: var(--shadow-lg) !important;
   transition: border-color 150ms ease, box-shadow 150ms ease !important;
   overflow: visible;
   /* ex-redesign: 卡片底 + 内边距（redesign 同名规则的 border/radius/shadow
@@ -105,7 +106,7 @@
 }
 
 :root[data-theme=light] .chat-compose__field {
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.06) !important;
+  box-shadow: var(--shadow-md) !important;
 }
 
 .chat-compose__field:focus-within {

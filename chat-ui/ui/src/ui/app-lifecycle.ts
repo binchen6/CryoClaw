@@ -1,6 +1,6 @@
 import type { Tab } from "./navigation.ts";
 import { connectGateway } from "./app-gateway.ts";
-import { observeTopbar, scheduleChatScroll } from "./app-scroll.ts";
+import { scheduleChatScroll } from "./app-scroll.ts";
 import {
   applySettingsFromUrl,
   attachThemeListener,
@@ -24,7 +24,6 @@ type LifecycleHost = {
   chatToolMessages: unknown[];
   chatStream: string;
   popStateHandler: () => void;
-  topbarObserver: ResizeObserver | null;
 };
 
 export function handleConnected(host: LifecycleHost) {
@@ -48,15 +47,9 @@ export function deferredGatewayConnect(host: LifecycleHost) {
   connectGateway(host as unknown as Parameters<typeof connectGateway>[0]);
 }
 
-export function handleFirstUpdated(host: LifecycleHost) {
-  observeTopbar(host as unknown as Parameters<typeof observeTopbar>[0]);
-}
-
 export function handleDisconnected(host: LifecycleHost) {
   window.removeEventListener("popstate", host.popStateHandler);
   detachThemeListener(host as unknown as Parameters<typeof detachThemeListener>[0]);
-  host.topbarObserver?.disconnect();
-  host.topbarObserver = null;
 }
 
 export function handleUpdated(host: LifecycleHost, changed: Map<PropertyKey, unknown>) {

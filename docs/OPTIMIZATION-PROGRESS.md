@@ -10,9 +10,9 @@
 面向国内生态（Kimi / Moonshot / 飞书 / 企微 / 微信 / 钉钉 / QQ）。
 
 **当前状态**：
-- 重设计工程 **R1–R31 全部完成**，最新发版 **v2026.827.3**（R31 聊天/任务交互细节；v2026.827.2：R30）。
+- 重设计工程 **R1–R32 全部完成**，最新发版 **v2026.827.4**（R32 UI 设计与布局细节；v2026.827.3：R31）。
 - 内核 openclaw **2026.7.1-2**（版本 pin 在 package.json `cryoclaw.openclaw`）；**Electron 43.4.0**（audit 0 漏洞）。
-- 测试基线 **528 pass / 0 fail / 4 skipped**（vitest 94 + node 74 + chat-ui 308 + scripts 52；0 fail 为硬指标）。
+- 测试基线 **534 pass / 0 fail / 4 skipped**（vitest 94 + node 74 + chat-ui 314 + scripts 52；0 fail 为硬指标）。
 - 重复率 **1.01%**（67 clones，阈值 5%，`npm run dupcheck` 防回退）。
 - 开源：GitHub `binchen6/CryoClaw`（AGPL-3.0-only，干净历史）；发版走本地 `dist:win` + `gh release`；CI `tests.yml` 每次 push/PR 全量回归。
 
@@ -199,6 +199,17 @@
 - **杂项**：showNewMessages 改用 `chatNewMessagesBelow`（app-scroll 维护的「上翻期间来新内容」标记，此前无读取方、误用贴底取反）；任务页状态筛选删冗余 loadTasks（纯客户端过滤）；cron 重复点击收起并清 cronRuns 防旧数据闪现；loadCronRuns 加 `isCurrent` 回调 stale 守卫（展开态在 app-cron 模块级，控制器拿不到故用回调不用快照比对）；侧边栏 cron 徽标不计 `enabled === false`；队列行内编辑清空（无附件）即删除条目。
 - **测试 +4**：chat.test 2 例（失败打标记/preserveRunState 不注入）、session-transition.test 2 例（草稿跨会话存取/删除清理）；复审后补 app-chat.test.ts 4 例（removeFailedSendArtifacts 纯函数）。基线 524→528。
 - **审查发现未修**（记录在案）：非 deleteSessionFromSidebar 路径删除的会话草稿快照残留到重启（有界、可接受）；runCronJob 内 loadCronRuns 未传 isCurrent（视觉无闪现）；per-session 队列（#9）候选。
+
+### R32 · UI 设计与布局细节（完成，随 v2026.827.4 发版）
+
+用户指令：优化 UI 设计和布局细节。explore 代理全面审计（对照 TraeWork+冰蓝规范）后实施 P0/P1/P2 共 10 项，审查代理复审后修 4 个 minor：
+- **分栏溢出（P0 根因）**：窗口最小宽 800px（src/constants.ts WINDOW_MIN_WIDTH）→ 所有 ≤768px 媒体查询永不命中。`.chat-main`/`.chat-sidebar` 的 min-width 400/300 改为 `min(400px,54%)`/`min(300px,44%)`（留 2% 给分隔条）；768px chat-split 全屏兜底块**直接删除**而非改档位——该块 inset:0 会遮住 titlebar 窗口控件（复审发现），且 min() 已根治默认比例溢出。
+- **可达性**：settings.css 配对图标按钮 `box-shadow: 0 0 0 2px var(--focus-ring)` 是无效声明（--focus-ring 本身是完整阴影列表）→ `box-shadow: var(--focus-ring)`；oc-toggle-switch 补 role=switch/tabindex/aria-checked/Enter/Space（含 e.repeat 长按守卫）/:focus-visible/aria-label 转发（无 label 时不渲染空 span）；cron-manage/app-skills 两处自绘 checkbox 开关换成 oc-toggle-switch（删两份近逐字重复 CSS），调用方补 aria-label。
+- **颜色 token 化**：compose 阴影 rgba→--shadow-lg/--shadow-md（!important 保留并注释：覆盖 ex-redesign 同名规则）；resizable-divider #007bff→品牌蓝；滑块钮 #fff→新增 `--toggle-knob`（tokens-ext :root，双主题恒浅色——暗色下 --text-on-accent 为深青趴在深色 OFF 轨道上不可见，复审 minor）；技能字母头像字色回退 #fff（底色是固定品牌色板不随主题，token 反而降对比度）；glow-pulse 起始帧 #ff5c5c00→transparent。
+- **死代码清除**：app-scroll/app-lifecycle/app.ts 的 topbarObserver 死路径（TS 早无 .topbar markup）；base.css 旧 .shell/.topbar/.nav 布局块 + 1100/600/400px 三个永不命中媒体块；panels.css .shell--chat 两条；.chat-new-messages 重复定义合并进 panels.css（层叠胜者，独有属性已并入）。base.css 头注释同步更新。
+- **毛边**：cron.css 列表顶部 padding 42px→48px（让开 44px titlebar，与右侧 detail 52px 取齐）；setup.css 进度条 top:0→44px；settings.css 两处 transition:all→具体属性；plan.css 999px→var(--radius-pill)。
+- **测试 +6**：toggle-switch.test.ts 源码审计 6 例（switch 语义/键盘/repeat 守卫/aria-label 转发/focus 环/--toggle-knob）。基线 528→534。
+- **记录在案候选**：tokens-ext :root 默认值是暗色（data-theme 设置前浅色系统首帧闪暗，待翻转评估）；base.css 剩余孤儿选择器（.nav/.brand/.stat 等零引用）未清；views 30+ 处内联 style 间距未收敛；技能 12 色板两份数组未合并；settings.css 孤 \r 行尾未统一。
 
 ## 📦 发版与实测经验（套路已验证多次）
 

@@ -9,6 +9,7 @@ import { formatRelativeTimestamp, formatMs } from "../format.ts";
 import { formatCronSchedule, isExpiredOneShot } from "../presenter.ts";
 import { t } from "../i18n.ts";
 import { renderConfiguredModelOptions } from "../components/model-options.ts";
+import "../components/toggle-switch.ts";
 import { loadModelOrg } from "./settings/model-org.lib.ts";
 
 export type CronManageProps = {
@@ -110,11 +111,10 @@ function renderDetail(job: CronJob, props: CronManageProps) {
                 @click=${() => props.onRun(job.id)}>
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" stroke="none"><polygon points="6,3 20,12 6,21" /></svg>
               </button>
-              <label class="cm-detail__toggle">
-                <input type="checkbox" .checked=${enabled} ?disabled=${props.busy}
-                  @change=${() => props.onToggle(job.id, !enabled)} />
-                <span class="cm-detail__toggle-track"></span>
-              </label>
+              <oc-toggle-switch .checked=${enabled} ?disabled=${props.busy}
+                aria-label=${t("cron.enabled")}
+                @change=${() => props.onToggle(job.id, !enabled)}
+              ></oc-toggle-switch>
             `}
         </div>
       </div>

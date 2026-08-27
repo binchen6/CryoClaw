@@ -1,5 +1,12 @@
 [
   {
+    "version": "2026.827.4",
+    "notes": {
+      "zh": "修复：800px 最小窗口下打开工具输出分栏不再横向溢出（分栏下限改为按比例收缩）\n修复：设置页配对图标按钮键盘焦点环恢复可见；全部开关支持键盘操作（Enter/Space、焦点环、读屏语义）\n优化：定时任务/技能开关统一为标准开关组件（删除两份自绘重复样式）；compose 阴影纳入 token 阶梯；技能头像暗色对比度修正；浮层间距对齐 titlebar\n可维护性：清除旧布局死样式与永不命中的媒体查询块、移除 topbar ResizeObserver 死路径、合并重复定义\n测试基线 534 用例全绿",
+      "en": "Fix: tool-output split view no longer overflows horizontally at the 800px minimum window width (split panes now shrink proportionally)\nFix: keyboard focus ring restored on pairing icon buttons; all toggle switches are now keyboard-operable (Enter/Space, focus ring, screen-reader semantics)\nImproved: cron/skill toggles unified to the standard switch component (two bespoke styles removed); compose shadows moved into the token ladder; skill avatar contrast fixed in dark theme; overlay spacing aligned with the titlebar\nMaintainability: removed legacy layout dead styles and unreachable media queries, dropped the dead topbar ResizeObserver path, merged duplicate definitions\n534-test baseline all green"
+    }
+  },
+  {
     "version": "2026.827.3",
     "notes": {
       "zh": "修复：中止按钮不再清空输入框草稿；切换会话草稿与附件按会话保存/恢复\n修复：重发失败消息不再产生重复气泡与残留错误卡；队列「立即发送」失败不再双份呈现\n修复：断连恢复/看门狗对齐后自动冲刷消息队列；「新消息」徽标只在上翻期间真有新内容时出现\n优化：定时任务重复点击可收起、运行记录消除竞态；侧边栏定时任务徽标不再计入禁用任务；任务页筛选不再冗余拉取；队列消息行内编辑清空即删除\n测试基线 528 用例全绿",

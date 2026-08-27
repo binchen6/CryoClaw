@@ -7,6 +7,8 @@
 
 /* Chat UI 扩展变量 — 基于 design tokens */
 :root {
+  /* 开关滑块钮：双主题恒为浅色（暗色下 --text-on-accent 为深青，趴在深色 OFF 轨道上不可见） */
+  --toggle-knob: #ffffff;
   --bg-accent: var(--bg-secondary);
   --card: var(--bg-elevated);
   --card-foreground: var(--text-strong);

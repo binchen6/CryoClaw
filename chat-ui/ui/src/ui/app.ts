@@ -31,7 +31,6 @@ import {
   deferredGatewayConnect,
   handleConnected,
   handleDisconnected,
-  handleFirstUpdated,
   handleUpdated,
 } from "./app-lifecycle.ts";
 import { renderApp } from "./app-render.ts";
@@ -450,7 +449,6 @@ export class OpenClawApp extends LitElement {
     onPopStateInternal(this as unknown as Parameters<typeof onPopStateInternal>[0]);
   private themeMedia: MediaQueryList | null = null;
   private themeMediaHandler: ((event: MediaQueryListEvent) => void) | null = null;
-  private topbarObserver: ResizeObserver | null = null;
   private appNavigateCleanup: (() => void) | null = null;
   private gatewayReadyCleanup: (() => void) | null = null;
   private webbridgeStateCleanup: (() => void) | null = null;
@@ -478,10 +476,6 @@ export class OpenClawApp extends LitElement {
         this.showReleaseNotesModal = true;
       }
     }).catch(() => {});
-  }
-
-  protected firstUpdated() {
-    handleFirstUpdated(this as unknown as Parameters<typeof handleFirstUpdated>[0]);
   }
 
   disconnectedCallback() {

@@ -68,6 +68,7 @@ function renderSkillCard(
   return html`
     <div class="skill-store__card">
       <div class="skill-store__card-header">
+        <!-- 字母头像底色为固定品牌色板（不随主题变化），字色恒用白色保底对比度 -->
         <div class="skill-store__card-icon" style="background: ${bgColor}; color: #fff;">
           <span class="skill-store__card-letter">${letter}</span>
         </div>

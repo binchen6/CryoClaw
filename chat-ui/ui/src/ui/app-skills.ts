@@ -8,6 +8,7 @@ import { t } from "./i18n.ts";
 import { renderSkillStoreView, type SkillStoreState } from "./skill-store-view.ts";
 import { setCryoClawView } from "./app-view-switch.ts";
 import { showToast } from "./app-toast.ts";
+import "./components/toggle-switch.ts";
 import type { SkillStatusEntry } from "./types.ts";
 import {
   loadSkills,
@@ -282,6 +283,7 @@ function renderInstalledSkillsView(state: AppViewState) {
             return html`
               <div class="skill-store__card">
                 <div class="skill-store__card-header">
+                  <!-- 字母头像底色为固定品牌色板（不随主题变化），字色恒用白色保底对比度 -->
                   <div class="skill-store__card-icon" style="background: ${skillColor(key)}; color: #fff;">
                     <span class="skill-store__card-letter">${letter}</span>
                   </div>
@@ -302,15 +304,12 @@ function renderInstalledSkillsView(state: AppViewState) {
                           @click=${() => void uninstallLocalSkill(state, key)}
                         ><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg></button>`
                       : nothing}
-                    <label class="skill-toggle-switch">
-                      <input
-                        type="checkbox"
-                        .checked=${!skill.disabled}
-                        ?disabled=${isBusy}
-                        @change=${() => void updateSkillEnabled(state, key, !!skill.disabled)}
-                      />
-                      <span class="skill-toggle-slider"></span>
-                    </label>
+                    <oc-toggle-switch
+                      .checked=${!skill.disabled}
+                      ?disabled=${isBusy}
+                      aria-label=${t("skills.enable")}
+                      @change=${() => void updateSkillEnabled(state, key, !!skill.disabled)}
+                    ></oc-toggle-switch>
                   </div>
                 </div>
                 <div class="skill-store__card-desc">${clamp(skill.description as string, 160)}</div>

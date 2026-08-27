@@ -6,7 +6,7 @@
  *     @change=${(e: CustomEvent) => { e.detail.checked }}
  *   ></oc-toggle-switch>
  */
-import { LitElement, html, css } from "lit";
+import { LitElement, html, css, nothing } from "lit";
 import { property } from "lit/decorators.js";
 
 export class ToggleSwitch extends LitElement {
@@ -15,6 +15,8 @@ export class ToggleSwitch extends LitElement {
   @property({ type: Boolean }) checked = false;
   @property({ type: Boolean }) disabled = false;
   @property({ type: String }) label = "";
+  // 无文字 label 的调用方必须提供（内部 div 才是 role=switch，host 上的 aria-label 不生效）
+  @property({ type: String, attribute: "aria-label" }) ariaLabel = "";
 
   private toggle() {
     if (this.disabled) return;
@@ -22,10 +24,25 @@ export class ToggleSwitch extends LitElement {
     this.dispatchEvent(new CustomEvent("change", { detail: { checked: this.checked }, bubbles: true, composed: true }));
   }
 
+  private onKeydown(e: KeyboardEvent) {
+    if (this.disabled) return;
+    if (e.repeat) return; // 长按 repeat 不反复切换（对齐原生 checkbox 每次按键只切一次）
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault(); // Space 默认滚动页面，需拦截
+      this.toggle();
+    }
+  }
+
   render() {
     return html`
-      <div class="oc-toggle ${this.disabled ? "oc-toggle--disabled" : ""}" @click=${this.toggle}>
-        <span class="oc-toggle-label">${this.label}</span>
+      <div class="oc-toggle ${this.disabled ? "oc-toggle--disabled" : ""}"
+        role="switch"
+        aria-checked=${this.checked ? "true" : "false"}
+        aria-label=${this.ariaLabel || nothing}
+        tabindex=${this.disabled ? "-1" : "0"}
+        @click=${this.toggle}
+        @keydown=${this.onKeydown}>
+        ${this.label ? html`<span class="oc-toggle-label">${this.label}</span>` : nothing}
         <span class="oc-toggle-track ${this.checked ? "oc-toggle-track--on" : ""}">
           <span class="oc-toggle-thumb"></span>
         </span>
@@ -48,6 +65,7 @@ styleSheet.replaceSync(/* css */`
     user-select: none;
   }
   .oc-toggle--disabled { opacity: 0.5; cursor: not-allowed; }
+  .oc-toggle:focus-visible { outline: none; box-shadow: var(--focus-ring, 0 0 0 2px var(--accent, #0ea5e9)); border-radius: var(--radius-sm, 6px); }
   .oc-toggle-label { font-size: var(--heading-xs, 13px); font-weight: 500; color: var(--text-secondary, #a1a1aa); }
   .oc-toggle-track {
     position: relative;
@@ -66,7 +84,7 @@ styleSheet.replaceSync(/* css */`
     width: 20px;
     height: 20px;
     border-radius: 50%;
-    background: #fff;
+    background: var(--toggle-knob, #ffffff);
     box-shadow: var(--shadow-sm, 0 1px 3px rgba(0,0,0,0.2));
     transition: transform var(--duration-normal, 0.2s) ease;
   }

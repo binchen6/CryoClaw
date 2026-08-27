@@ -165,7 +165,34 @@
   position: relative;
   z-index: 10;
   width: 32px;
-  height: 32px
+  height: 32px;
+  /* 以下外观属性合并自原 chat.css 同名规则（本文件层叠在后，语义以这里为准） */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  color: var(--text);
+  background: var(--panel-strong);
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  cursor: pointer;
+  transition: background .15s ease-out, border-color .15s ease-out
+}
+
+.chat-new-messages:hover {
+  background: var(--panel);
+  border-color: var(--accent)
+}
+
+.chat-new-messages svg {
+  width: 16px;
+  height: 16px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.5px;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  flex-shrink: 0
 }
 
 .chat-bubble {
@@ -443,22 +470,6 @@
   display: flex;
   flex-direction: column;
   gap: 10px
-}
-
-.shell--chat .chat-compose {
-  position: sticky;
-  bottom: 0;
-  z-index: 5;
-  margin-top: 0;
-  padding-top: 12px;
-  background: linear-gradient(180deg, transparent 0%, var(--bg) 40%)
-}
-
-.shell--chat-focus .chat-compose {
-  bottom: calc(var(--shell-pad) + 8px);
-  padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
-  border-bottom-left-radius: var(--radius-lg);
-  border-bottom-right-radius: var(--radius-lg)
 }
 
 .chat-compose__field {

@@ -54,7 +54,7 @@
   color: var(--text);
   background: var(--bg-hover);
 }
-.oc-settings-pairing__icon-btn:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--focus-ring); }
+.oc-settings-pairing__icon-btn:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 .oc-settings-pairing__icon-btn svg { flex-shrink: 0; }
 .oc-settings-pairing__icon-btn--danger:hover {
   color: var(--accent);
@@ -74,7 +74,7 @@
   cursor: pointer;
   transition: background var(--transition), color var(--transition), border-color var(--transition);
 }
-.oc-settings-pairing__action-btn:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--focus-ring); }
+.oc-settings-pairing__action-btn:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 .oc-settings-pairing__action-btn svg { flex-shrink: 0; }
 .oc-settings-pairing__action-btn:disabled { cursor: default; opacity: 0.6; }
 .oc-settings-pairing__action-btn--reject:not(:disabled):hover {
@@ -643,7 +643,7 @@
   background: var(--bg-elevated);
   color: var(--text-secondary);
   cursor: pointer;
-  transition: all 120ms ease;
+  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
 }
 .oc-caps-chip:hover { border-color: var(--border-hover); color: var(--text-strong); }
 .oc-caps-chip.is-active {
@@ -682,7 +682,7 @@
   background: transparent;
   color: var(--text-secondary);
   cursor: pointer;
-  transition: all 120ms ease;
+  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
 }
 .oc-provider-group__add-btn:hover {
   border-color: var(--accent);
