@@ -10,10 +10,10 @@
 面向国内生态（Kimi / Moonshot / 飞书 / 企微 / 微信 / 钉钉 / QQ）。
 
 **当前状态**：
-- 重设计工程 **R1–R28 全部完成**，最新发版 **v2026.825.3**（R28 遗留清理；v2026.825.2：R27）。
+- 重设计工程 **R1–R29 全部完成**，最新发版 **v2026.827.1**（R29 任务模块跳转修复；v2026.825.3：R28）。
 - 内核 openclaw **2026.7.1-2**（版本 pin 在 package.json `cryoclaw.openclaw`）；**Electron 43.4.0**（audit 0 漏洞）。
-- 测试基线 **499 pass / 0 fail / 4 skipped**（vitest 94 + node 74 + chat-ui 279 + scripts 52；0 fail 为硬指标）。
-- 重复率 **1.01%**（65 clones，阈值 5%，`npm run dupcheck` 防回退）。
+- 测试基线 **513 pass / 0 fail / 4 skipped**（vitest 94 + node 74 + chat-ui 293 + scripts 52；0 fail 为硬指标）。
+- 重复率 **0.99%**（65 clones，阈值 5%，`npm run dupcheck` 防回退）。
 - 开源：GitHub `binchen6/CryoClaw`（AGPL-3.0-only，干净历史）；发版走本地 `dist:win` + `gh release`；CI `tests.yml` 每次 push/PR 全量回归。
 
 **常用命令**：
@@ -73,7 +73,7 @@
 
 ## ✅ 测试体系（勿重复搭建）
 
-- 基线 **499 pass / 0 fail / 4 skipped**（vitest 94 + node 74 + chat-ui 279 + scripts 52；0 fail 硬指标）。
+- 基线 **513 pass / 0 fail / 4 skipped**（vitest 94 + node 74 + chat-ui 293 + scripts 52；0 fail 硬指标）。
 - 基础设施：`tsconfig.test.json`（outDir `.test-dist/`）、`vitest.config.ts`（vitest include 列表）、`scripts/run-node-tests.js`（编译前清空 .test-dist，排除 vitest 文件）、npm scripts `test` / `test:unit(:vitest|:node)` / `test:scripts` / `test:typecheck`。
 - **chat-ui 用真 typecheck**（阶段 13 起接入；旧 `--noCheck` 假检查曾掩盖 303 个类型错误）。
 - `i18n.test.ts` 源码审计：zh/en 键集合一致、无重复键、分区语言正确。
@@ -169,6 +169,15 @@
 - ② **loadTasks 在途排队**（controllers/tasks）：在途刷新期间再被请求（如 task 事件）置脏标记、完成后补跑一轮——防旧响应晚到整体覆盖事件增量（列表陈旧最长一个 ticker 周期）。
 - ③ **app-skills SkillsState 双重断言收敛**：`AppViewState`（= OpenClawApp 结构类型）本就满足 `SkillsState` 全部字段——删 7 处 `as unknown as` + 1 处冗余强转，契约由编译器接管（typecheck 证明）。
 - **仍候选**：webbridge 二进制 SHA256（需发布链哈希清单）；device-auth 签名规范化（需网关侧同步）；设备密钥 OS keychain；导出压缩 worker 化；kimi-auth-proxy 回环鉴权；cleanStaleLockfile 先 probe 再杀；IPC 细粒度授权（架构性）。
+
+### R29 · 任务模块跳转会话修复（完成，随 v2026.827.1 发版）
+
+用户指令：任务页「打开会话」跳转到正确对话 + 任务页展示优化。
+- **根因**：app-tasks `onOpenChat` / app-cron `onNavigateToSession` 直接 `applySettings({sessionKey})`——只写持久化设置，不切活跃会话（`state.sessionKey` 不变、不重置流态、不拉历史），点击后仍停留旧对话。**修复**：统一走 `handleSessionChange`（与侧边栏点击同一条完整切换路径）。
+- **审查发现连带修复**：显式跳转到已归档/被过滤会话后，30s tick 的 reconcile 会把不可见当前会话弹回 main（gotchas #50 语义）→ 新增 `session-jump.ts` 容忍记录（仅显式切换写入；删除该会话时清除），两处 reconcile（app-gateway tick 路径 + app-session-actions 删除路径）均豁免。
+- **展示优化**：任务卡片新增耗时徽标（`taskDurationMs`：startedAt→endedAt，进行中用当前时间，终态缺 endedAt 退 updatedAt）；taskTimestamp 单次计算；`toTaskTimestampMs` 统一 number/ISO 解析。
+- **测试 +14**：session-jump 纯函数 ×5、taskDurationMs/toTaskTimestampMs ×5、源码审计 ×4（跳转接线钉死 `handleSessionChange`；reconcile 双调用点钉死豁免——审计模式同 i18n.test.ts）。基线 499→513。
+- **教训**：handleSessionChange 重依赖链（→ confirm-dialog → toggle-switch 顶层 `new CSSStyleSheet()`）在 node --test 下不可导入——UI 接线回归用源码审计钉住，纯逻辑抽 lean module 单测。
 
 ## 📦 发版与实测经验（套路已验证多次）
 

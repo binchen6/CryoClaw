@@ -6,6 +6,7 @@
 import { renderTasks } from "./views/tasks.ts";
 import { loadTasks, cancelTask } from "./controllers/tasks.ts";
 import { setCryoClawView } from "./app-view-switch.ts";
+import { handleSessionChange } from "./app-session-actions.ts";
 import type { AppViewState } from "./app-view-state.ts";
 
 // 打开任务实时视图
@@ -34,12 +35,8 @@ export function renderTasksView(state: AppViewState) {
       void cancelTask(state, taskId);
     },
     onOpenChat: (sessionKey) => {
-      setCryoClawView(state, "chat");
-      state.applySettings({
-        ...state.settings,
-        sessionKey,
-        cryoclawView: "chat",
-      });
+      // 走完整会话切换（重置流态/拉历史/同步 URL），与侧边栏点击一致
+      handleSessionChange(state, sessionKey);
     },
   });
 }

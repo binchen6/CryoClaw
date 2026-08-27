@@ -5,6 +5,8 @@ import {
   filterTasksByStatus,
   isActiveTask,
   sortTasks,
+  taskDurationMs,
+  toTaskTimestampMs,
   type TaskEventPayload,
 } from "./tasks.ts";
 import type { TaskSummary } from "../types.ts";
@@ -123,4 +125,42 @@ test("applyTaskEvent：restored / 未知 action / 非法 payload 返回 null 触
   assert.equal(applyTaskEvent([], undefined), null);
   assert.equal(applyTaskEvent([], { action: "upserted" }), null);
   assert.equal(applyTaskEvent([], { action: "deleted" }), null);
+});
+
+test("toTaskTimestampMs：number / ISO string 均解析，非法值返回 null", () => {
+  assert.equal(toTaskTimestampMs(123), 123);
+  assert.equal(toTaskTimestampMs("1970-01-01T00:00:01.000Z"), 1000);
+  assert.equal(toTaskTimestampMs("not-a-date"), null);
+  assert.equal(toTaskTimestampMs(undefined), null);
+  assert.equal(toTaskTimestampMs(Number.NaN), null);
+});
+
+test("taskDurationMs：startedAt→endedAt 计算耗时", () => {
+  const t = task("a", { status: "completed", startedAt: 1000, endedAt: 4000 });
+  assert.equal(taskDurationMs(t), 3000);
+});
+
+test("taskDurationMs：进行中任务用当前时间", () => {
+  const t = task("a", { status: "running", startedAt: 1000 });
+  assert.equal(taskDurationMs(t, 6000), 5000);
+});
+
+test("taskDurationMs：终态缺 endedAt 时退化用 updatedAt", () => {
+  const t = task("a", { status: "failed", startedAt: 1000, updatedAt: 2500 });
+  assert.equal(taskDurationMs(t), 1500);
+});
+
+test("taskDurationMs：缺 startedAt / 时长非正返回 null", () => {
+  assert.equal(taskDurationMs(task("a", { status: "completed", endedAt: 1000 })), null);
+  assert.equal(
+    taskDurationMs(task("b", { status: "completed", startedAt: 2000, endedAt: 1000 })),
+    null,
+  );
+  // ISO string 也可解析
+  const t = task("c", {
+    status: "completed",
+    startedAt: "1970-01-01T00:00:01.000Z",
+    endedAt: "1970-01-01T00:00:02.500Z",
+  });
+  assert.equal(taskDurationMs(t), 1500);
 });

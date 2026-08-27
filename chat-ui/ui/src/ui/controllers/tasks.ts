@@ -27,6 +27,11 @@ function toNumber(value: unknown): number | null {
   return null;
 }
 
+/** 任务时间戳（number epoch ms / ISO string）统一转 epoch ms；无法解析返回 null */
+export function toTaskTimestampMs(value: unknown): number | null {
+  return toNumber(value);
+}
+
 /** tasks.list 返回行按 updatedAt 降序，缺失时间戳的排在末尾 */
 export function sortTasks(tasks: TaskSummary[]): TaskSummary[] {
   return [...tasks].sort((a, b) => {
@@ -43,6 +48,22 @@ const ACTIVE_STATUSES = new Set<TaskStatus>(["queued", "running"]);
 
 export function isActiveTask(task: TaskSummary): boolean {
   return ACTIVE_STATUSES.has(task.status ?? "queued");
+}
+
+/**
+ * 任务耗时（ms）：startedAt → endedAt；进行中的任务用当前时间；
+ * 终态缺 endedAt 时退化用 updatedAt。无法确定（缺 startedAt / 时长非正）返回 null。
+ */
+export function taskDurationMs(task: TaskSummary, now = Date.now()): number | null {
+  const start = toNumber(task.startedAt);
+  if (start == null) {
+    return null;
+  }
+  const end = toNumber(task.endedAt) ?? (isActiveTask(task) ? now : toNumber(task.updatedAt));
+  if (end == null || end <= start) {
+    return null;
+  }
+  return end - start;
 }
 
 export function filterTasksByStatus(

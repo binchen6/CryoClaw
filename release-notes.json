@@ -1,5 +1,12 @@
 [
   {
+    "version": "2026.827.1",
+    "notes": {
+      "zh": "修复：任务页「打开会话」与定时任务页「跳转会话」现在真正切到目标对话（此前只写设置不切会话，点击后仍停留在旧对话）\n修复：显式跳转到已归档会话不再被 30 秒定时刷新弹回主会话\n优化：任务卡片新增耗时徽标（进行中任务实时累计），时间戳计算去重\n测试基线 513 用例全绿",
+      "en": "Fix: tasks view \"Open session\" and cron view \"jump to session\" now actually switch to the target conversation (previously only settings were written; the active session never changed)\nFix: explicitly jumping to an archived session no longer gets bounced back to the main session by the 30s refresh tick\nImproved: task cards now show a duration badge (live for running tasks); timestamp computation deduplicated\n513-test baseline all green"
+    }
+  },
+  {
     "version": "2026.825.3",
     "notes": {
       "zh": "优化：飞书已授权条目名称补全改为分批请求（防 OpenAPI 限流导致名称长期为空）\n优化：任务视图刷新在途时不再丢弃新请求（防止旧响应覆盖事件增量）\n可维护性：技能页收敛双重类型断言，类型契约由编译器接管\n测试基线 499 用例全绿",

@@ -39,6 +39,7 @@ import type { TaskSummary } from "./types.ts";
 import { GatewayBrowserClient } from "./gateway.ts";
 import { configureManagedMedia, wsUrlToHttpOrigin } from "./chat/managed-media.ts";
 import { applySessionKeyTransition } from "./session-transition.ts";
+import { isToleratedHiddenSession } from "./session-jump.ts";
 import { resolveVisibleSessionSelection } from "./session-visibility.ts";
 import {
   shouldFinishUsageRefreshAttempt,
@@ -183,6 +184,10 @@ function scheduleTerminalSessionsRefresh(host: OpenClawApp, refreshKey: string) 
 
 function reconcileSessionSelection(host: GatewayHost) {
   if (!host.sessionsResult) {
+    return;
+  }
+  // 显式跳转到的隐藏会话（已归档/被过滤）豁免 reconcile，防 tick 弹回 main
+  if (isToleratedHiddenSession(host.sessionKey)) {
     return;
   }
   const nextSessionKey = resolveVisibleSessionSelection(

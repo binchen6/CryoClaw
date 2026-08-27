@@ -14,6 +14,11 @@ import {
 } from "./controllers/session-compaction.ts";
 import { t } from "./i18n.ts";
 import { applySessionKeyTransition } from "./session-transition.ts";
+import {
+  clearToleratedHiddenSession,
+  isToleratedHiddenSession,
+  tolerateHiddenSession,
+} from "./session-jump.ts";
 import { resolveVisibleSessionSelection } from "./session-visibility.ts";
 import { pendingSessionLabels, removePendingSessionLabel } from "./session-pending.ts";
 import { setCryoClawView } from "./app-view-switch.ts";
@@ -47,6 +52,8 @@ export function applySessionKey(state: AppViewState, next: string, syncUrl = fal
     syncUrl,
   );
   if (changed) {
+    // 显式切换的会话可能不在可见列表（已归档/被过滤），记录容忍防 tick reconcile 弹回
+    tolerateHiddenSession(next);
     // 清空回放点缓存，避免上一会话的 checkpoints 在新会话被误展示/误操作
     state.compactionCheckpoints = [];
     state.compactionCheckpointsKey = null;
@@ -141,6 +148,10 @@ export function reconcileVisibleSession(state: AppViewState) {
   if (!state.sessionsResult) {
     return;
   }
+  // 显式跳转到的隐藏会话（已归档/被过滤）豁免 reconcile，防 tick 弹回 main
+  if (isToleratedHiddenSession(state.sessionKey)) {
+    return;
+  }
   const next = resolveVisibleSessionSelection(state.sessionKey, state.hello, state.sessionsResult);
   if (!next || next === state.sessionKey) {
     return;
@@ -202,6 +213,8 @@ export async function deleteSessionFromSidebar(state: AppViewState, key: string)
 
     // 3) 成功：全量刷新侧边栏；reconcileVisibleSession 会在活跃会话被删时切到下一个可见会话。
     removePendingSessionLabel(key);
+    // 被删的若是显式跳转容忍的会话，清除容忍让 reconcile 正常切走
+    clearToleratedHiddenSession(key);
     await loadSessions(state);
     reconcileVisibleSession(state);
   } finally {

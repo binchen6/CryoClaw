@@ -4,10 +4,10 @@
  */
 import { html, nothing } from "lit";
 import type { TaskSummary, TaskStatus } from "../types.ts";
-import { formatRelativeTimestamp } from "../format.ts";
+import { formatRelativeTimestamp, formatDurationHuman } from "../format.ts";
 import { icons } from "../icons.ts";
 import { t } from "../i18n.ts";
-import { isActiveTask } from "../controllers/tasks.ts";
+import { isActiveTask, taskDurationMs, toTaskTimestampMs } from "../controllers/tasks.ts";
 
 export type TasksProps = {
   loading: boolean;
@@ -94,16 +94,8 @@ function taskDetail(task: TaskSummary): string | null {
 
 function taskTimestamp(task: TaskSummary): string {
   const raw = task.updatedAt ?? task.startedAt ?? task.createdAt;
-  if (typeof raw === "number" && Number.isFinite(raw)) {
-    return formatRelativeTimestamp(raw);
-  }
-  if (typeof raw === "string") {
-    const parsed = Date.parse(raw);
-    if (Number.isFinite(parsed)) {
-      return formatRelativeTimestamp(parsed);
-    }
-  }
-  return "n/a";
+  const ms = toTaskTimestampMs(raw);
+  return ms != null ? formatRelativeTimestamp(ms) : "n/a";
 }
 
 function renderTaskCard(props: TasksProps, task: TaskSummary) {
@@ -111,6 +103,8 @@ function renderTaskCard(props: TasksProps, task: TaskSummary) {
   const cancelling = props.cancellingIds.has(task.id);
   const sessionKey = task.childSessionKey ?? task.sessionKey;
   const detail = taskDetail(task);
+  const timestamp = taskTimestamp(task);
+  const durationMs = taskDurationMs(task);
   return html`
     <div class="ts-card ${active ? "ts-card--active" : ""}">
       <div class="ts-card__main">
@@ -119,11 +113,12 @@ function renderTaskCard(props: TasksProps, task: TaskSummary) {
           <span class="chip ${statusChipClass(task.status ?? "queued")}">${statusLabel(task.status ?? "queued")}</span>
           <span class="chip">${runtimeLabel(task.runtime)}</span>
           ${task.agentId ? html`<span class="chip">${task.agentId}</span>` : nothing}
+          ${durationMs != null ? html`<span class="chip">${formatDurationHuman(durationMs)}</span>` : nothing}
         </div>
         ${detail ? html`<div class="ts-card__detail">${detail}</div>` : nothing}
       </div>
       <div class="ts-card__meta">
-        <span class="ts-card__time" title=${taskTimestamp(task)}>${taskTimestamp(task)}</span>
+        <span class="ts-card__time" title=${timestamp}>${timestamp}</span>
         ${sessionKey
           ? html`<button
               class="btn btn--sm"
