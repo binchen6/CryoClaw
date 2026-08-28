@@ -186,3 +186,36 @@ function escapeHtml(value: string): string {
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
 }
+
+export type MarkdownSafeSplit = { stable: string; tail: string };
+
+// 安全前缀切分（对齐官方 control-ui 流式 markdown 做法）：
+// 找到最后一个「稳定块边界」——闭合的代码围栏之后，或最后一个空行处。
+// 边界之前是已完成结构（可完整解析渲染），之后是进行中内容（调用方按纯文本渲染），
+// 避免半截代码围栏被 marked 反复解析成不同结构造成抖动。
+// 围栏按行首 ``` / ~~~ 识别；奇数个围栏说明最后一个未闭合，边界退到倒数第二个之后。
+export function splitMarkdownSafePrefix(text: string): MarkdownSafeSplit {
+  if (!text) {
+    return { stable: "", tail: "" };
+  }
+  const fenceRe = /^(```|~~~)/gm;
+  const fences: number[] = []; // 每个围栏行的行首偏移
+  let m: RegExpExecArray | null;
+  while ((m = fenceRe.exec(text)) !== null) {
+    fences.push(m.index);
+  }
+  if (fences.length >= 2) {
+    // 偶数个：最后一个是闭合围栏；奇数个：最后一个未闭合，边界取倒数第二个
+    const lastClosed = fences.length % 2 === 0 ? fences.length - 1 : fences.length - 2;
+    const cut = fences[lastClosed];
+    // 边界 = 该围栏行结束处（含行尾换行）
+    const nl = text.indexOf("\n", cut);
+    const stableEnd = nl >= 0 ? nl + 1 : text.length;
+    return { stable: text.slice(0, stableEnd), tail: text.slice(stableEnd) };
+  }
+  const lastBlank = text.lastIndexOf("\n\n");
+  if (lastBlank >= 0) {
+    return { stable: text.slice(0, lastBlank + 2), tail: text.slice(lastBlank + 2) };
+  }
+  return { stable: "", tail: text };
+}

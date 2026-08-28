@@ -90,3 +90,69 @@ test("markdown 渲染：标题保留层级结构", () => {
   const html = toSanitizedMarkdownHtml(`## 小节-${Math.random().toString(36).slice(2)}\n\n正文`);
   assert.ok(html.includes("<h2"), "二级标题应渲染为 h2");
 });
+
+// ── R41 任务 8：markdown 安全前缀切分（纯函数） ──
+
+const { splitMarkdownSafePrefix } = await import("./markdown.ts");
+
+test("splitMarkdownSafePrefix：闭合代码围栏之后切分", () => {
+  const text = "intro\n```js\ncode\n```\ntail partial `in";
+  const { stable, tail } = splitMarkdownSafePrefix(text);
+  assert.equal(stable, "intro\n```js\ncode\n```\n", "stable 应以闭合围栏行（含行尾换行）结尾");
+  assert.equal(tail, "tail partial `in", "未完成的尾部应整体归 tail");
+});
+
+test("splitMarkdownSafePrefix：单个未闭合围栏整段归 tail", () => {
+  const text = "a\n```js\nhalf";
+  const { stable, tail } = splitMarkdownSafePrefix(text);
+  assert.equal(stable, "", "未闭合围栏前无稳定边界，stable 应为空");
+  assert.equal(tail, text, "整段文本应归 tail");
+});
+
+test("splitMarkdownSafePrefix：无围栏按最后一个空行切分", () => {
+  const text = "para one\n\npara two in progress";
+  const { stable, tail } = splitMarkdownSafePrefix(text);
+  assert.equal(stable, "para one\n\n", "stable 应包含空行");
+  assert.equal(tail, "para two in progress");
+});
+
+test("splitMarkdownSafePrefix：无空行无围栏全部归 tail", () => {
+  const text = "single paragraph";
+  const { stable, tail } = splitMarkdownSafePrefix(text);
+  assert.equal(stable, "", "无稳定边界时 stable 应为空");
+  assert.equal(tail, text);
+});
+
+test("splitMarkdownSafePrefix：奇数围栏，边界取最后闭合的围栏之后", () => {
+  const text = "a\n```\nx\n```\nb\n```\npartial";
+  const { stable, tail } = splitMarkdownSafePrefix(text);
+  assert.equal(stable, "a\n```\nx\n```\n", "第三个围栏未闭合，边界应退到第二个围栏之后");
+  assert.equal(tail, "b\n```\npartial");
+});
+
+test("splitMarkdownSafePrefix：~~~ 围栏同样识别", () => {
+  const text = "a\n~~~\nx\n~~~\ntail";
+  const { stable, tail } = splitMarkdownSafePrefix(text);
+  assert.ok(stable.endsWith("~~~\n"), "stable 应以闭合的 ~~~ 围栏行结尾");
+  assert.equal(tail, "tail");
+});
+
+test("splitMarkdownSafePrefix：空字符串返回两个空串", () => {
+  const { stable, tail } = splitMarkdownSafePrefix("");
+  assert.equal(stable, "");
+  assert.equal(tail, "");
+});
+
+test("splitMarkdownSafePrefix：文本以闭合围栏结尾（无尾换行）全部归 stable", () => {
+  const text = "a\n```js\nx\n```";
+  const { stable, tail } = splitMarkdownSafePrefix(text);
+  assert.equal(stable, text, "围栏行是最后一段时整段文本应为 stable");
+  assert.equal(tail, "");
+});
+
+test("splitMarkdownSafePrefix：表格行不误判为围栏", () => {
+  const text = "| a | b |\n|---|";
+  const { stable, tail } = splitMarkdownSafePrefix(text);
+  assert.equal(stable, "", "无围栏且无空行时 stable 应为空");
+  assert.equal(tail, text);
+});
