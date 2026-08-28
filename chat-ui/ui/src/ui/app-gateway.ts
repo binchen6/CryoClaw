@@ -398,7 +398,7 @@ export function connectGateway(host: GatewayHost) {
       // 加载执行权限模式（聊天页三态）
       void (host as unknown as OpenClawApp).loadExecMode();
       void refreshActiveTab(host as unknown as Parameters<typeof refreshActiveTab>[0]);
-      // 注册定时轮询并启动客户端定时器
+      // 注册定时轮询并启动客户端定时器（"cron" 是 tick handler 标识，非视图 id，勿当死接线删）
       registerTickHandler("cron", () => loadCronJobs(host as unknown as Parameters<typeof loadCronJobs>[0]));
       registerTickHandler("sessions", () => loadSessionsAndReconcile(host));
       registerTickHandler("tasks", () => loadTasks(host as unknown as OpenClawApp));

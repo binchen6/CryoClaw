@@ -11,10 +11,17 @@ function src(rel: string): string {
   return readFileSync(new URL(`../../../../src/ui/${rel}`, import.meta.url), "utf8");
 }
 
+// 剥掉块注释与行注释：负向断言只针对真实代码，防注释中的字样误匹配
+function stripComments(code: string): string {
+  return code.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+}
+
 test("registry：extensions 视图 id + fullpage meta", () => {
   const s = src("views/registry.ts");
   assert.match(s, /"extensions",/, "CRYOCLAW_VIEW_IDS 应包含 extensions");
   assert.match(s, /extensions:\s*\{\s*id: "extensions", fullpage: true, titlebarBack: true \}/, "缺少 extensions meta");
+  // R42 第二期 T5：skills 视图已收敛进 extensions（技能 tab），视图 id 删除
+  assert.ok(!/"skills",/.test(stripComments(s)), "skills 视图 id 应已删除");
 });
 
 test("app-render：renderActiveView 分发 extensions + sidebar props 更名", () => {

@@ -105,8 +105,7 @@ const ZH_ENGLISH_ALLOWLIST = new Set([
   "setup.provider.apiType.openaiResponses",
   "tasks.runtime.acp",
   "tasks.runtime.cli",
-  // git worktree 为业界通用技术名词，zh 区保留英文
-  "sidebar.worktrees",
+  // git worktree 为业界通用技术名词，zh 区保留英文（R42 第二期 T5：sidebar.worktrees 键已删，仅余 worktrees.title）
   "worktrees.title",
 ]);
 

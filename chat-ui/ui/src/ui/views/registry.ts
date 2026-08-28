@@ -12,13 +12,9 @@ export const CRYOCLAW_VIEW_IDS = [
   "chat",
   "setup",
   "settings",
-  "skills",
-  "extensions",
   "workspace",
-  "cron",
   "tasks",
-  "worktrees",
-  "git",
+  "extensions",
 ] as const;
 
 export type CryoClawViewId = (typeof CRYOCLAW_VIEW_IDS)[number];
@@ -38,13 +34,9 @@ export const CRYOCLAW_VIEW_META: Record<CryoClawViewId, CryoClawViewMeta> = {
   chat: { id: "chat", fullpage: false, titlebarBack: false },
   setup: { id: "setup", fullpage: true, titlebarBack: false },
   settings: { id: "settings", fullpage: true, titlebarBack: true },
-  skills: { id: "skills", fullpage: true, titlebarBack: true },
-  extensions: { id: "extensions", fullpage: true, titlebarBack: true },
   workspace: { id: "workspace", fullpage: true, titlebarBack: true },
-  cron: { id: "cron", fullpage: true, titlebarBack: true },
   tasks: { id: "tasks", fullpage: true, titlebarBack: true },
-  worktrees: { id: "worktrees", fullpage: true, titlebarBack: true },
-  git: { id: "git", fullpage: true, titlebarBack: true },
+  extensions: { id: "extensions", fullpage: true, titlebarBack: true },
 };
 
 /**
@@ -56,10 +48,8 @@ export const INJECTABLE_VIEWS: readonly CryoClawViewId[] = [
   "chat",
   "setup",
   "settings",
-  "skills",
-  "extensions",
   "workspace",
-  "cron",
+  "extensions",
 ];
 
 export function isInjectableViewId(value: string): value is CryoClawViewId {

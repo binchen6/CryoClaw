@@ -10,7 +10,6 @@
 import { html, nothing } from "lit";
 import type { AppViewState } from "./app-view-state.ts";
 import { buildChatProps } from "./app-chat-props.ts";
-import { renderCronView } from "./app-cron.ts";
 import {
   createNewSession,
   createNewWorktreeSession,
@@ -24,11 +23,8 @@ import {
   resolveSessionOptions,
   updateFileDropState,
 } from "./app-session-actions.ts";
-import { renderSkillsView } from "./app-skills.ts";
 import { openExtensionsView, renderExtensionsView } from "./app-extensions.ts";
 import { openTasksView, renderTasksView } from "./app-tasks.ts";
-import { renderWorktreesView } from "./app-worktrees.ts";
-import { renderGitView } from "./app-git.ts";
 import { getToastAction, getToastMessage, hideToast } from "./app-toast.ts";
 import { setCryoClawView } from "./app-view-switch.ts";
 import { loadSessions, patchSession } from "./controllers/sessions.ts";
@@ -139,20 +135,12 @@ function renderActiveView(state: AppViewState, view: CryoClawViewId) {
       return renderSetupView(state);
     case "settings":
       return renderSettingsView(state);
-    case "skills":
-      return renderSkillsView(state);
     case "extensions":
       return renderExtensionsView(state);
     case "workspace":
       return renderWorkspaceIntegratedView(state);
-    case "cron":
-      return renderCronView(state);
     case "tasks":
       return renderTasksView(state);
-    case "worktrees":
-      return renderWorktreesView(state);
-    case "git":
-      return renderGitView(state);
     default:
       return renderChat(buildChatProps(state));
   }

@@ -20,15 +20,14 @@ let cachedPrefix: string | null = null;
 // Chat UI 的合法入口：index.html（初始加载）+ 路由 pathname。
 // renderer 的 history API 会把 URL 从 /dist/index.html 改写为 /dist/<route>
 // （如 /dist/chat?session=...），sender guard 必须容忍这些合法路由。
-// 注意：本白名单只保留当前仍然存在的视图路由（chat/setup/settings/skills/
-// workspace/cron/tasks）。历史路由 sessions/agents/overview/channels/
-// instances/usage/nodes/config/debug/logs 与已删除的 feedback 视图已从 Chat UI
-// 移除，且主进程唯一的
-// 加载入口（window.ts → buildChatUiEntryUrl）永远只指向 index.html，
-// 旧路由没有残留注入入口，故从白名单移除以收紧可信面。
+// 注意：本白名单只保留当前仍然存在的视图路由（chat/setup/settings/
+// workspace/tasks/extensions）。历史路由 sessions/agents/overview/channels/
+// instances/usage/nodes/config/debug/logs 与已删除的 feedback 视图、以及
+// R42 第二期 T5 收敛掉的 skills/cron 视图已从 Chat UI 移除，且主进程唯一的加载入口（window.ts → buildChatUiEntryUrl）永远只指向
+// index.html，旧路由没有残留注入入口，故从白名单移除以收紧可信面。
 const KNOWN_CHAT_UI_ENTRIES = new Set([
   "index.html",
-  "chat", "settings", "setup", "workspace", "tasks", "skills", "cron",
+  "chat", "settings", "setup", "workspace", "tasks", "extensions",
 ]);
 
 /** Chat UI dist 目录的 file:// 前缀（进程内不变，缓存避免重复计算），尾部带 / */

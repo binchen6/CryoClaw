@@ -1,3 +1,4 @@
+// UI 设置持久化：cryoclawView 不持久化（读侧硬编码丢弃），视图 id 变更无需持久化迁移。
 const KEY = "openclaw.control.settings.v1";
 
 import type { ThemeMode } from "./theme.ts";

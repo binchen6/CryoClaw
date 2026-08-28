@@ -169,7 +169,7 @@
   }
 }
 
-/* 侧边栏：置顶会话标记 + 任务进行中徽标 */
+/* 侧边栏：置顶会话标记 */
 .cryoclaw-sidebar__session-pin {
   display: inline-flex;
   align-items: center;
@@ -183,11 +183,6 @@
   color: var(--accent);
   stroke: currentColor;
   fill: currentColor;
-}
-
-.cryoclaw-sidebar__badge--running {
-  background: var(--accent);
-  color: var(--text-on-accent);
 }
 
 .cryoclaw-sidebar__session-add.active {

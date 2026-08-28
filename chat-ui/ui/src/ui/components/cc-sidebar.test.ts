@@ -164,3 +164,32 @@ test("cc-sidebar：disconnectedCallback 清菜单模块态（R41 审查建议顺
   assert.match(s, /disconnectedCallback\(\)/, "缺 disconnectedCallback");
   assert.match(s, /resetMenuState\(\)/, "应清会话菜单与更多菜单模块态");
 });
+
+test("cc-sidebar：无 git 时「更多」菜单按钮整体隐藏（gitAvailable === true 门控，R42 第二期 T5）", () => {
+  const code = stripComments(componentSrc);
+  // 「更多」按钮被 gitAvailable === true 包裹：无菜单项时空菜单按钮不应渲染
+  assert.match(
+    code,
+    /props\.gitAvailable === true[\s\S]{0,300}cryoclaw-sidebar__more-btn/,
+    "「更多」按钮应仅在 gitAvailable === true 时渲染（否则为空菜单）",
+  );
+  // 门控后菜单内唯一条目（Worktree 新会话）无需重复判断，直接渲染
+  assert.match(code, /cryoclaw-sidebar__more-menu[\s\S]{0,500}props\.onNewWorktreeChat/, "更多菜单应保留 Worktree 新会话条目");
+});
+
+test("cc-sidebar：设置图标徽标详情（更新/微信徽标的 tooltip 说明，R42 第二期 T5）", () => {
+  assert.match(componentSrc, /"sidebar\.updateBadgeTooltip"/, "缺更新徽标详情文案键");
+  assert.match(componentSrc, /"sidebar\.weixinBadgeTooltip"/, "缺微信徽标详情文案键");
+  // tooltip/aria-label 按徽标优先级动态：更新徽标 > 微信徽标 > 常规设置文案
+  assert.match(
+    componentSrc,
+    /props\.settingsUpdateBadge \? t\("sidebar\.updateBadgeTooltip"\) : props\.settingsBadge \? t\("sidebar\.weixinBadgeTooltip"\) : t\("sidebar\.settings"\)/,
+    "设置图标 tooltip 应按徽标态动态切换文案",
+  );
+  const zh = readSrc("i18n/zh.ts");
+  const en = readSrc("i18n/en.ts");
+  for (const key of ['"sidebar.updateBadgeTooltip"', '"sidebar.weixinBadgeTooltip"']) {
+    assert.ok(zh.includes(key), `zh.ts 缺少 ${key}`);
+    assert.ok(en.includes(key), `en.ts 缺少 ${key}`);
+  }
+});

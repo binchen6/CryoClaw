@@ -143,7 +143,8 @@ export type SidebarProps = {
   onOpenTasks: () => void;
   extensionsActive: boolean;
   workspaceActive: boolean;
-  // git 可用性：更多菜单的「Worktree 新会话」入口按 gitAvailable === true 渲染（false = 已探测无 git）
+  // git 可用性：「更多」菜单整体按 gitAvailable === true 渲染（唯一菜单项是 Worktree 新会话，
+  // 无 git 时按钮即空菜单，直接隐藏；false = 已探测无 git）
   gitAvailable: boolean | null;
   onNewWorktreeChat: () => void;
   // 当前 webbridge 模式但浏览器扩展未启用 → 显示「连接你的常用浏览器」pill
@@ -506,31 +507,31 @@ function renderSidebarInner(host: CcSidebar, props: SidebarProps) {
           >
             ${icons.messagePlus} ${t("sidebar.newChat")}
           </button>
-          <div class="cryoclaw-sidebar__more-wrap">
-            <button
-              class="cryoclaw-sidebar__more-btn ${moreMenuOpen ? "is-open" : ""}"
-              type="button"
-              aria-haspopup="menu"
-              aria-expanded=${moreMenuOpen ? "true" : "false"}
-              aria-label=${t("sidebar.more")}
-              data-tooltip=${t("sidebar.more")}
-              data-tooltip-pos="bottom"
-              @click=${(e: Event) => {
-                e.stopPropagation();
-                toggleMoreMenu(host);
-              }}
-            >${icons.moreHorizontal}</button>
-            ${moreMenuOpen
-              ? html`<div class="cryoclaw-sidebar__more-menu" role="menu" @click=${(e: Event) => e.stopPropagation()}>
-                  ${props.gitAvailable === true
-                    ? html`<button class="cryoclaw-sidebar__more-item" type="button" role="menuitem"
-                        @click=${() => { closeMoreMenu(host.bump); props.onNewWorktreeChat(); }}>
-                        ${icons.gitBranch} ${t("sidebar.newWorktreeChat")}
-                      </button>`
-                    : nothing}
-                </div>`
-              : nothing}
-          </div>
+          ${props.gitAvailable === true
+            ? html`<div class="cryoclaw-sidebar__more-wrap">
+              <button
+                class="cryoclaw-sidebar__more-btn ${moreMenuOpen ? "is-open" : ""}"
+                type="button"
+                aria-haspopup="menu"
+                aria-expanded=${moreMenuOpen ? "true" : "false"}
+                aria-label=${t("sidebar.more")}
+                data-tooltip=${t("sidebar.more")}
+                data-tooltip-pos="bottom"
+                @click=${(e: Event) => {
+                  e.stopPropagation();
+                  toggleMoreMenu(host);
+                }}
+              >${icons.moreHorizontal}</button>
+              ${moreMenuOpen
+                ? html`<div class="cryoclaw-sidebar__more-menu" role="menu" @click=${(e: Event) => e.stopPropagation()}>
+                    <button class="cryoclaw-sidebar__more-item" type="button" role="menuitem"
+                      @click=${() => { closeMoreMenu(host.bump); props.onNewWorktreeChat(); }}>
+                      ${icons.gitBranch} ${t("sidebar.newWorktreeChat")}
+                    </button>
+                  </div>`
+                : nothing}
+            </div>`
+            : nothing}
         </div>
 
         <!-- 会话列表标题行（管理已合并：归档视图切换 + 搜索） -->
@@ -637,7 +638,9 @@ function renderSidebarInner(host: CcSidebar, props: SidebarProps) {
           </span>
           <button class="cryoclaw-sidebar__rail-item ${props.settingsActive ? "active" : ""}" type="button"
             @click=${props.onOpenSettings}
-            data-tooltip=${t("sidebar.settings")} data-tooltip-pos="top" aria-label=${t("sidebar.settings")}>
+            data-tooltip=${props.settingsUpdateBadge ? t("sidebar.updateBadgeTooltip") : props.settingsBadge ? t("sidebar.weixinBadgeTooltip") : t("sidebar.settings")}
+            data-tooltip-pos="top"
+            aria-label=${props.settingsUpdateBadge ? t("sidebar.updateBadgeTooltip") : props.settingsBadge ? t("sidebar.weixinBadgeTooltip") : t("sidebar.settings")}>
             ${icons.settings}
             ${props.settingsBadge || props.settingsUpdateBadge
               ? html`<span class="cryoclaw-sidebar__rail-dot"></span>`

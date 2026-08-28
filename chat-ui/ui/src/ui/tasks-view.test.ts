@@ -6,6 +6,16 @@ function src(rel: string): string {
   return readFileSync(new URL(`../../../../src/ui/${rel}`, import.meta.url), "utf8");
 }
 
+// 剥掉块注释与行注释：负向断言只针对真实代码，防注释中的字样误匹配
+function stripComments(code: string): string {
+  return code.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+}
+
+test("registry：cron 视图 id 已删除（cron 能力收敛进 tasks 定时 tab）", () => {
+  const code = stripComments(src("views/registry.ts"));
+  assert.ok(!/"cron",/.test(code), "cron 视图 id 应已删除");
+});
+
 test("views/tasks.ts：顶层双 tab 栏（运行记录/定时任务）", () => {
   const s = src("views/tasks.ts");
   assert.match(s, /"tasks\.runsTab"/, "缺少运行记录 tab 文案");
