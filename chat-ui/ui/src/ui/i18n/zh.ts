@@ -949,6 +949,7 @@ export const zhDict: Record<string, string> = {
   "tasks.emptyFiltered": "没有符合条件的任务",
   "tasks.openSession": "打开会话",
   "tasks.viewCronJob": "查看定时任务",
+  "tasks.cronSource": "来源：{name}",
   "tasks.cancel": "取消",
   "tasks.cancelling": "取消中…",
   "cron.form.model": "模型（可选）",

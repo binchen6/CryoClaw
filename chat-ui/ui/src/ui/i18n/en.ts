@@ -883,6 +883,7 @@ export const enDict: Record<string, string> = {
   "tasks.emptyFiltered": "No matching tasks",
   "tasks.openSession": "Open session",
   "tasks.viewCronJob": "View schedule",
+  "tasks.cronSource": "Source: {name}",
   "tasks.cancel": "Cancel",
   "tasks.cancelling": "Cancelling…",
   "cron.form.model": "Model (optional)",

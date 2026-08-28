@@ -61,7 +61,7 @@ export function renderCronView(state: AppViewState, opts?: { onOpenRunsTab?: () 
       // 走完整会话切换（重置流态/拉历史/同步 URL），与侧边栏点击一致
       handleSessionChange(state, sessionKey);
     },
-    onOpenRunsTab: opts?.onOpenRunsTab ?? (() => {}),
+    onOpenRunsTab: opts?.onOpenRunsTab,
     onRemove: (jobId: string) => {
       const job = state.cronJobs.find((j) => j.id === jobId);
       if (job) {

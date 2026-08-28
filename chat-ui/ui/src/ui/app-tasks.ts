@@ -32,6 +32,7 @@ export function renderTasksView(state: AppViewState) {
     loading: state.tasksLoading,
     error: state.tasksError,
     tasks: state.tasks,
+    cronJobs: state.cronJobs,
     statusFilter: state.tasksStatusFilter,
     cancellingIds: state.tasksCancellingIds,
     connected: state.connected,

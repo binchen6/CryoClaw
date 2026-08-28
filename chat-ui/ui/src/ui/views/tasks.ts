@@ -3,7 +3,7 @@
  * 展示进行中（queued/running）与最近完成的后台任务，可取消、可跳转会话。
  */
 import { html, nothing, type TemplateResult } from "lit";
-import type { TaskSummary, TaskStatus } from "../types.ts";
+import type { CronJob, TaskSummary, TaskStatus } from "../types.ts";
 import { formatRelativeTimestamp, formatDurationHuman } from "../format.ts";
 import { icons } from "../icons.ts";
 import { t } from "../i18n.ts";
@@ -15,6 +15,7 @@ export type TasksProps = {
   loading: boolean;
   error: string | null;
   tasks: TaskSummary[];
+  cronJobs: CronJob[];
   statusFilter: TaskStatus | "all";
   cancellingIds: ReadonlySet<string>;
   connected: boolean;
@@ -108,6 +109,13 @@ function taskTimestamp(task: TaskSummary): string {
   return ms != null ? formatRelativeTimestamp(ms) : "n/a";
 }
 
+// cron 任务来源名：用 sourceId/kind 反查定时任务（内核任务行不直接带 job name）
+function cronSourceName(props: TasksProps, task: TaskSummary): string | null {
+  if (task.runtime !== "cron") return null;
+  const match = props.cronJobs.find((j) => j.id === task.sourceId || j.id === task.kind);
+  return match?.name ?? null;
+}
+
 function renderTaskCard(props: TasksProps, task: TaskSummary) {
   const active = isActiveTask(task);
   const cancelling = props.cancellingIds.has(task.id);
@@ -139,7 +147,13 @@ function renderTaskCard(props: TasksProps, task: TaskSummary) {
             </button>`
           : nothing}
         ${task.runtime === "cron"
-          ? html`<button
+          ? html`${(() => {
+              const source = cronSourceName(props, task);
+              return source
+                ? html`<span class="chip" title=${source}>${t("tasks.cronSource").replace("{name}", source)}</span>`
+                : nothing;
+            })()}
+            <button
               class="btn btn--sm"
               type="button"
               @click=${() => props.onOpenCronTab()}
