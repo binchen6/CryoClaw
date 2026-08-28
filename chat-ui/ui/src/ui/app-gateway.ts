@@ -44,6 +44,7 @@ import { isToleratedHiddenSession } from "./session-jump.ts";
 import {
   hasAssistantReplyAfter,
   isStreamStalled,
+  liveOrphanRunId,
   markReconnectOrphanRun,
 } from "./stream-recovery.ts";
 import { resolveVisibleSessionSelection } from "./session-visibility.ts";
@@ -260,6 +261,34 @@ function checkStalledStream(host: GatewayHost) {
   })();
 }
 
+// R41 重连盲区补强：断连窗口内结束的 run + 重连读连续命中滞后快照（退避窗口 800/
+// 1600/2400ms 耗尽）时，此前无任何后续刷新通道——回复静默缺失直到用户操作；看门狗也失效（onHello 已
+// resetChatStreamState 清掉 chatRunId，isStreamStalled 恒假）。存在未收养 orphan 快照期间做有限次历史探测（
+// silent，不闪加载态）；orphan 被 delta 收养或被终态清除后立即停止。
+const ORPHAN_PROBE_DELAYS_MS = [2000, 4000, 8000];
+let orphanProbeTimers: Array<ReturnType<typeof setTimeout>> = [];
+
+function cancelReconnectOrphanProbe() {
+  for (const t of orphanProbeTimers) {
+    clearTimeout(t);
+  }
+  orphanProbeTimers = [];
+}
+
+function scheduleReconnectOrphanProbe(host: GatewayHost) {
+  cancelReconnectOrphanProbe();
+  ORPHAN_PROBE_DELAYS_MS.forEach((delay) => {
+    const timer = setTimeout(() => {
+      orphanProbeTimers = orphanProbeTimers.filter((x) => x !== timer);
+      if (!liveOrphanRunId()) {
+        return; // orphan 已被收养/清除/过期——恢复链路已接管，无需再探测。
+      }
+      void loadChatHistory(host as unknown as OpenClawApp, { mergeIfStale: true, silent: true });
+    }, delay);
+    orphanProbeTimers.push(timer);
+  });
+}
+
 // gap 重连状态：最多重试 3 次，指数退避 (1s, 2s, 4s)
 const GAP_RECONNECT_MAX = 3;
 let gapReconnectCount = 0;
@@ -349,6 +378,9 @@ export function connectGateway(host: GatewayHost) {
       // 滞后收敛由延迟补拉（scheduleStaleHistoryRetry）接管。
       if (previousClient) {
         void loadChatHistory(host as unknown as OpenClawApp, { mergeIfStale: true });
+        // R41：重连读可能连续命中滞后快照（退避窗口耗尽）→ 排有限次静默探测兜底。
+        // orphan 不存在（断连前无在途 run）时 liveOrphanRunId 检查会让探测直接空转返回。
+        scheduleReconnectOrphanProbe(host);
       }
       void loadAssistantIdentity(host as unknown as OpenClawApp);
       // 加载已配置模型列表（用于 per-session 模型选择器）
@@ -378,6 +410,8 @@ export function connectGateway(host: GatewayHost) {
         return;
       }
       host.connected = false;
+      // R41：新断连作废上轮重连的挂起探测（下一轮 onHello 会重新调度）
+      cancelReconnectOrphanProbe();
       // 断开连接时注销 tick handler 并停止客户端定时器
       unregisterTickHandler("cron");
       unregisterTickHandler("sessions");
