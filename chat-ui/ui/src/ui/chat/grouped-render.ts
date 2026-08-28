@@ -3,7 +3,7 @@ import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import type { AssistantIdentity } from "../assistant-identity.ts";
 import { icons } from "../icons.ts";
 import type { MessageGroup, ToolCard } from "../types/chat-types.ts";
-import { toSanitizedMarkdownHtml } from "../markdown.ts";
+import { toSanitizedMarkdownHtml, toStreamingMarkdownHtml } from "../markdown.ts";
 import { detectTextDirection } from "../text-direction.ts";
 import { renderCopyAsMarkdownButton } from "./copy-as-markdown.ts";
 import {
@@ -565,19 +565,21 @@ function renderGroupedMessage(
     .filter(Boolean)
     .join(" ");
 
-  // ── streaming 渲染路径（R5 性能优化，与下方 history 路径刻意分叉）────────
+  // ── streaming 渲染路径（与下方 history 路径刻意分叉）────────
   // streaming 的累计文本经 rAF 每帧全量提交（controllers/chat.ts scheduleChatStreamFlush）。
-  // 若每帧都对全文 marked.parse + DOMPurify + unsafeHTML 整棵替换，长回复呈 O(n²) 增长，
-  // 且每帧新 key 会挤爆 markdown LRU 缓存。因此 streaming 期间只渲染纯文本：
-  // lit 文本绑定自动转义（无 XSS 面），CSS `white-space: pre-wrap` 保留换行；
-  // 不解析 markdown / JSON，也不触碰 markdown 缓存。run 终态后本条消息转入
-  // history，走下方 history 路径一次性解析渲染，用户可见的最终结果不变。
+  // R5 曾在此只绑纯文本（防每帧全文 marked.parse 的 O(n²)）；R41 Task 9 升级为
+  // 安全前缀渐进渲染：稳定段（已完成结构）走 toStreamingMarkdownHtml 完整解析且命中
+  // LRU，未闭合尾部转义纯文本——解析频率 = 边界推进频率（远低于帧率），而非每帧全文。
+  // 安全面：稳定段经 DOMPurify，尾部经 escapeHtml；不解析 JSON，run 终态后转入
+  // history 路径一次性完整渲染，用户可见的最终结果不变。
   if (opts.isStreaming) {
+    const streamHtml = markdown ? toStreamingMarkdownHtml(markdown) : "";
     return html`
       <div class="${bubbleClasses}">
         ${canCopyMarkdown ? renderCopyAsMarkdownButton(markdown!) : nothing}
-        ${markdown
-          ? html`<div class="chat-text chat-text--streaming" dir="${detectTextDirection(markdown)}">${markdown}</div>`
+        ${streamHtml
+          ? html`<div class="chat-text chat-text--streaming" dir="${detectTextDirection(markdown)}"
+              >${unsafeHTML(linkifyPaths(streamHtml))}</div>`
           : nothing}
       </div>
     `;

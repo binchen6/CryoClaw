@@ -2090,10 +2090,16 @@ img.chat-avatar {
   animation: ocStreamCaret 1.06s steps(2, end) infinite;
 }
 
-/* R5 流式纯文本渲染：markdown 推迟到 final 后一次性解析，
-   流式期间纯文本展示，pre-wrap 保留换行/缩进；行尾闪烁光标与块级路径一致 */
+/* R41 Task 9 流式安全前缀渐进渲染：容器 pre-wrap 仍服务于未闭合尾部纯文本段，
+   但稳定段已解析为块级元素，marked 输出的字面换行若被 pre-wrap 保留，
+   会与块级元素自身外边距叠加出双重空行——除末子块外复位为 normal；
+   末子块（尾部转义纯文本段 / 无尾时的最后稳定块）保留继承的 pre-wrap 以显换行 */
 .chat-text--streaming {
   white-space: pre-wrap;
+}
+
+.chat-text--streaming > :is(h1, h2, h3, h4, p, pre, ul, ol, blockquote, table, hr):not(:last-child) {
+  white-space: normal;
 }
 
 .chat-bubble.streaming .chat-text--streaming::after {

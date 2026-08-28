@@ -71,17 +71,17 @@ function serialize(collected: Collected): string {
   return JSON.stringify([collected.strings, collected.values]);
 }
 
-// ── R5 任务 1：streaming 纯文本渲染 ──
+// ── R5 任务 1 → R41 任务 9：streaming 安全前缀渐进 markdown 渲染 ──
 
-test("streaming：渲染为纯文本，不走 unsafeHTML 整棵替换", () => {
-  const text = "# 标题\n\n**加粗** 第二行\n- item";
+test("streaming：稳定段经 unsafeHTML 渐进渲染，不再整段纯文本绑定", () => {
+  const text = "# 标题\n\n**加粗** 第二行";
   const result = collect(renderStreamingGroup(text, Date.now()));
 
-  // 原始文本作为 lit 文本绑定原样出现（lit 自动转义，无 XSS 面）
-  assert.ok(result.values.includes(text), "streaming 应把累计文本作为纯文本绑定");
-  // 无 unsafeHTML 指令：markdown 解析推迟到 final 后
-  assert.equal(result.directiveCount, 0, "streaming 路径不应出现 unsafeHTML 指令");
-  // pre-wrap 类保留换行
+  // 稳定段（空行之前）完整解析 → 必出现 unsafeHTML 指令（解析频率 = 边界推进频率）
+  assert.ok(result.directiveCount > 0, "streaming 路径应经 unsafeHTML 渲染稳定段 markdown");
+  // 累计文本不再作为整段纯文本直接绑定（未闭合尾部经 escapeHtml 进 unsafeHTML）
+  assert.ok(!result.values.includes(text), "streaming 不应把整段累计文本作为纯文本绑定");
+  // chat-text--streaming 类保留（样式兼容：闪烁光标/块级修正都挂在该类上）
   assert.ok(
     result.strings.some((s) => s.includes("chat-text--streaming")),
     "streaming 文本节点应带 chat-text--streaming 类",

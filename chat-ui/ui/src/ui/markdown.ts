@@ -189,6 +189,29 @@ function escapeHtml(value: string): string {
 
 export type MarkdownSafeSplit = { stable: string; tail: string };
 
+// 流式渐进渲染（对齐官方安全前缀做法）：稳定段完整解析（内容作缓存键，
+// 边界不推进时命中缓存不重解析——流式期间解析频率 = 边界推进频率，
+// 而非帧率），尾部转义纯文本。尾部不进缓存（每帧都变，进缓存只会污染）。
+//
+// 演进说明（防后人按旧结论回退）：R5 曾定论「流式不解析 markdown」，因为当时是
+// 每帧对全文全量 marked.parse + DOMPurify，长回复呈 O(n²)。本函数（R41 Task 9）
+// 是有意升级：解析对象只剩不变稳定段且命中 LRU，成本降到边界推进频率；
+// 安全面不变——稳定段经 DOMPurify，尾部经 escapeHtml。
+export function toStreamingMarkdownHtml(text: string): string {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return "";
+  }
+  const { stable, tail } = splitMarkdownSafePrefix(trimmed);
+  // 稳定段走默认缓存路径：内部以 trim 后全文作键，边界不推进时稳定段内容不变即命中；
+  // splitMarkdownSafePrefix 的边界含行尾 \n，键不会因尾随空白抖动。
+  const stableHtml = stable ? toSanitizedMarkdownHtml(stable) : "";
+  if (!tail) {
+    return stableHtml;
+  }
+  return `${stableHtml}<p>${escapeHtml(tail)}</p>`;
+}
+
 // 安全前缀切分（对齐官方 control-ui 流式 markdown 做法）：
 // 找到最后一个「稳定块边界」——闭合的代码围栏之后，或最后一个空行处。
 // 边界之前是已完成结构（可完整解析渲染），之后是进行中内容（调用方按纯文本渲染），
