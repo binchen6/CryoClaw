@@ -13,7 +13,7 @@
 - 重设计工程 **R1–R39 全部完成**（二期 P1–P7 收官），最新发版 **v2026.828.2**（R39 屎山清理/健壮性/效率收尾；v2026.828.1：R38）。
 - 内核 openclaw **2026.7.1-2**（版本 pin 在 package.json `cryoclaw.openclaw`）；**Electron 43.4.0**（audit 0 漏洞）。
 - 测试基线 **650 pass / 0 fail / 4 skipped**（vitest 94 + node 130 + chat-ui 374 + scripts 52；0 fail 为硬指标）。
-- 重复率 **1.08%**（73 clones，阈值 5%，`npm run dupcheck` 防回退）。
+- 重复率 **1.06%**（69 clones，阈值 5%，`npm run dupcheck` 防回退）。
 - 开源：GitHub `binchen6/CryoClaw`（AGPL-3.0-only，干净历史）；发版走本地 `dist:win` + `gh release`；CI `tests.yml` 每次 push/PR 全量回归。
 
 **常用命令**：
