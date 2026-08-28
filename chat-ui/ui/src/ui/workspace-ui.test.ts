@@ -72,3 +72,17 @@ test("views/git.ts：embedded 变体隐藏仓库选择、保留三分组/提交"
   assert.match(s, /"git\.commitTitle"/, "提交框应保留");
   assert.match(s, /gitp-toolbar[\s\S]{0,200}props\.onRefresh/, "embedded 工具行内应有刷新入口");
 });
+
+test("views/worktrees.ts：compact 卡片仓库切换仅对活跃 worktree 生效", () => {
+  const s = src("views/worktrees.ts");
+  assert.match(s, /live && props\.onSelectRepo\?\.\(w\.path\)/, "onSelectRepo 应带 live 门控");
+});
+
+test("views/git.ts：无可用仓库时空态提示", () => {
+  const s = src("views/git.ts");
+  assert.match(s, /"git\.noRepos"/, "缺无仓库空态文案");
+  const zh = src("i18n/zh.ts");
+  const en = src("i18n/en.ts");
+  assert.ok(zh.includes('"git.noRepos"'), "zh.ts 缺 git.noRepos");
+  assert.ok(en.includes('"git.noRepos"'), "en.ts 缺 git.noRepos");
+});

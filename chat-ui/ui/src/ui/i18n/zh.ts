@@ -991,6 +991,7 @@ export const zhDict: Record<string, string> = {
   "git.repoWorktree": "隔离 Worktree",
   "git.noGit": "未检测到 git：git 面板不可用。安装 git 后重启应用即可恢复。",
   "git.notARepo": "当前目录不是 git 仓库。可在右上角切换到其它 worktree，或先将 agent workspace 指向一个 git 仓库。",
+  "git.noRepos": "未检测到 Git 仓库",
   "git.identityGuide": "提交失败：尚未配置 git 提交身份。请先在终端运行 git config --global user.name \"你的名字\" 和 git config --global user.email \"你的邮箱\"，然后重试。",
   "git.opFailed": "操作失败",
   "git.branchUnknown": "（无分支）",

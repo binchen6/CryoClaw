@@ -926,6 +926,7 @@ export const enDict: Record<string, string> = {
   "git.repoWorktree": "Worktree",
   "git.noGit": "git is not available: the git panel is disabled. Install git and restart the app to enable it.",
   "git.notARepo": "This directory is not a git repository. Switch to another worktree above, or point the agent workspace at a git checkout first.",
+  "git.noRepos": "No Git repository detected",
   "git.identityGuide": "Commit failed: git author identity is not configured. Run git config --global user.name \"Your Name\" and git config --global user.email \"you@example.com\" in a terminal, then retry.",
   "git.opFailed": "Operation failed",
   "git.branchUnknown": "(no branch)",

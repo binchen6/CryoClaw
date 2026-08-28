@@ -54,7 +54,7 @@ function renderWorktreeCard(props: WorktreesProps, w: WorktreeRecord, compact: b
     return html`
       <div
         class="wt-card wt-card--compact ${live ? "" : "wt-card--removed"}"
-        @click=${() => props.onSelectRepo?.(w.path)}
+        @click=${() => live && props.onSelectRepo?.(w.path)}
       >
         <div class="wt-card__main">
           <div class="wt-card__title">${w.name}</div>

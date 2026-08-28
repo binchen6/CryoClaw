@@ -274,6 +274,10 @@ export function renderGitPanel(props: GitPanelProps, opts?: { showRepoSelect?: b
           ? html`<div class="callout danger">${tWithDetail("git.opFailed", props.errorDetail)}</div>`
           : nothing}
 
+      ${props.repoState === null && !props.loading && !props.repoPath
+        ? html`<div class="callout info">${t("git.noRepos")}</div>`
+        : nothing}
+
       ${props.repoState === "ok" && branch
         ? html`<div class="chip-row gitp-branch-row">
             <span class="chip">${icons.gitBranch} ${branch.head ?? t("git.branchUnknown")}</span>
