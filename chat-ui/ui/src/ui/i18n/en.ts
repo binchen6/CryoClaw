@@ -169,6 +169,7 @@ export const enDict: Record<string, string> = {
   // Workspace
   "sidebar.workspace": "Workspace",
   "workspace.title": "Workspace",
+  "workspace.files": "Files",
   "workspace.refresh": "Refresh",
   "workspace.openRoot": "Open root folder",
   "workspace.close": "Close",

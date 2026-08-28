@@ -34,7 +34,7 @@ test("app-render.ts：renderActiveView 分发 git + sidebar 收到 git 面板 pr
   const s = src("app-render.ts");
   assert.match(s, /case "git":\s*\n\s*return renderGitView\(state\)/, "缺少渲染分支");
   assert.match(s, /gitPanelActive: cryoclawView === "git"/, "缺少 gitPanelActive prop");
-  assert.match(s, /onOpenGit: \(\) => openGitView\(state\)/, "缺少 onOpenGit prop");
+  assert.match(s, /onOpenGit: \(\) => openWorkspaceView\(state, "git"\)/, "缺少 onOpenGit prop");
   assert.match(s, /gitStatus\?: \(cwd: string\) => Promise<any>/, "缺少 gitStatus bridge 声明");
   assert.match(s, /gitCommit\?: \(cwd: string, message: string\) => Promise<any>/, "缺少 gitCommit bridge 声明");
 });
@@ -67,7 +67,7 @@ test("app.ts：git 面板响应式状态字段", () => {
 test("file-changes 面板「在 git 中查看」链接接线（app-chat-props / chat.ts / cc-chat-history / grouped-render）", () => {
   const chatProps = src("app-chat-props.ts");
   assert.match(chatProps, /gitAvailable: state\.gitAvailable/, "缺少 gitAvailable prop");
-  assert.match(chatProps, /onOpenGitView: \(\) => openGitView\(state\)/, "缺少 onOpenGitView prop");
+  assert.match(chatProps, /onOpenGitView: \(\) => openWorkspaceView\(state, "git"\)/, "缺少 onOpenGitView prop");
 
   const chat = src("views/chat.ts");
   assert.match(chat, /closest\("\.chat-git-view-link"\)/, "线程点击委托缺少 git 链接分支");

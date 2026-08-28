@@ -169,6 +169,7 @@ export const zhDict: Record<string, string> = {
   // 工作空间
   "sidebar.workspace": "工作空间",
   "workspace.title": "工作空间",
+  "workspace.files": "文件",
   "workspace.refresh": "刷新",
   "workspace.openRoot": "打开根目录",
   "workspace.close": "关闭",

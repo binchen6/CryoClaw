@@ -34,7 +34,7 @@ test("app-render.ts：renderActiveView 分发 worktrees + sidebar 收到 worktre
   const s = src("app-render.ts");
   assert.match(s, /case "worktrees":\s*\n\s*return renderWorktreesView\(state\)/, "缺少渲染分支");
   assert.match(s, /worktreesActive: cryoclawView === "worktrees"/, "缺少 worktreesActive prop");
-  assert.match(s, /onOpenWorktrees: \(\) => openWorktreesView\(state\)/, "缺少 onOpenWorktrees prop");
+  assert.match(s, /onOpenWorktrees: \(\) => openWorkspaceView\(state\)/, "缺少 onOpenWorktrees prop");
   assert.match(s, /gitAvailable: state\.gitAvailable/, "缺少 gitAvailable prop");
   assert.match(s, /onNewWorktreeChat: \(\) => void createNewWorktreeSession\(state\)/, "缺少新建入口 prop");
 });

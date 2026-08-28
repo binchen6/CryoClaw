@@ -6,25 +6,17 @@
 import { renderGitPanel } from "./views/git.ts";
 import {
   commitGitChanges,
-  initGitPanel,
   refreshGitStatus,
   selectGitFile,
   selectGitRepo,
   stageGitFiles,
   unstageGitFiles,
 } from "./controllers/git.ts";
-import { setCryoClawView } from "./app-view-switch.ts";
 import { showToast } from "./app-toast.ts";
 import { t } from "./i18n.ts";
 import type { AppViewState } from "./app-view-state.ts";
 
-// 打开 git 面板视图（初始化会解析 workspace 根并向主进程注册白名单根）
-export function openGitView(state: AppViewState) {
-  setCryoClawView(state, "git");
-  void initGitPanel(state);
-}
-
-export function renderGitView(state: AppViewState) {
+export function renderGitView(state: AppViewState, opts?: { showRepoSelect?: boolean }) {
   return renderGitPanel({
     gitAvailable: state.gitAvailable,
     connected: state.connected,
@@ -66,5 +58,5 @@ export function renderGitView(state: AppViewState) {
         if (ok) showToast(state, t("git.committed"));
       });
     },
-  });
+  }, opts);
 }

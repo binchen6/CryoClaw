@@ -13,7 +13,6 @@
 
 import type { GatewayBrowserClient } from "../gateway.ts";
 import { isLiveWorktree, type WorktreeRecord } from "./worktrees.ts";
-import { resolveAgentWorkspacePath } from "./workspace.ts";
 
 // ── 结构类型（与主进程 src/git-parse.ts 的输出结构对齐） ──────────────
 
@@ -97,7 +96,6 @@ export type GitPanelState = {
 };
 
 type GitBridge = {
-  workspaceSetRoot?: (root: string) => Promise<unknown>;
   gitStatus?: (cwd: string) => Promise<{
     success: boolean;
     data?: GitStatusResult;
@@ -192,21 +190,15 @@ export function gitFileKey(side: "cached" | "worktree", path: string): string {
 let statusSeq = 0;
 let diffSeq = 0;
 
-/** 进入 git 面板：解析 workspace 根（同时向主进程注册白名单根）→ 组装仓库选项 → 首刷 status */
-export async function initGitPanel(state: GitPanelState): Promise<void> {
+/** 初始化 git 面板选项：workspace 根由调用方（工作区页）解析并注册白名单一次，
+ * 这里只组装仓库选项（workspace 根 + 活跃 worktree）并首刷 status。 */
+export async function initGitPanel(
+  state: GitPanelState,
+  workspaceRoot: string | null,
+): Promise<void> {
   if (state.gitAvailable === false) {
     state.gitRepoState = "no-git";
     return;
-  }
-  let workspaceRoot: string | null = null;
-  try {
-    workspaceRoot = await resolveAgentWorkspacePath(state, "main");
-  } catch {
-    workspaceRoot = null;
-  }
-  if (workspaceRoot) {
-    // 主进程 git cwd 守卫依赖 workspace 白名单根（worktrees 根默认在白名单内）
-    await bridge()?.workspaceSetRoot?.(workspaceRoot);
   }
   state.gitRepoOptions = buildGitRepoOptions(workspaceRoot, state.worktrees);
   const stillValid = state.gitRepoOptions.some((o) => o.path === state.gitRepoPath);

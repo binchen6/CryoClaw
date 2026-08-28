@@ -205,15 +205,16 @@ function renderCommitBox(props: GitPanelProps, stagedCount: number) {
   `;
 }
 
-export function renderGitPanel(props: GitPanelProps) {
+export function renderGitPanel(props: GitPanelProps, opts?: { showRepoSelect?: boolean }) {
   const groups = props.status ? groupGitEntries(props.status.entries) : null;
   const branch = props.status?.branch ?? null;
   const hasChanges =
     !!groups && (groups.staged.length > 0 || groups.unstaged.length > 0 || groups.untracked.length > 0);
+  const showHeader = opts?.showRepoSelect !== false;
 
   return html`
     <div class="gitp-layout panel">
-      <div class="gitp-header panel__header">
+      ${showHeader ? html`<div class="gitp-header panel__header">
         <div>
           <h2 class="gitp-title panel__title">${t("git.title")}</h2>
           <p class="gitp-sub panel__subtitle">${t("git.subtitle")}</p>
@@ -242,7 +243,7 @@ export function renderGitPanel(props: GitPanelProps) {
             ${t("git.refresh")}
           </button>
         </div>
-      </div>
+      </div>` : nothing}
 
       ${!props.connected
         ? html`<div class="callout info">${t("error.disconnected")}</div>`
