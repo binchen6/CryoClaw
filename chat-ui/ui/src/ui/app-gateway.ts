@@ -33,6 +33,7 @@ import {
   recordApprovalResolved,
 } from "./controllers/approval-history.ts";
 import { loadSessions } from "./controllers/sessions.ts";
+import { applySessionsChangedPatch } from "./controllers/sessions-patch.ts";
 import { loadWorktrees } from "./controllers/worktrees.ts";
 import { applyTaskEvent, loadTasks } from "./controllers/tasks.ts";
 import { loadCommands } from "./controllers/commands.ts";
@@ -599,11 +600,17 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
     return;
   }
 
-  // 会话被增删/打补丁时：刷新侧边栏会话列表（会话管理已合并进侧边栏，
-  // 归档/置顶/未读变化都需要重拉 sessions.list 才能反映）
+  // 会话被增删/打补丁时：先试事件携带的行快照本地 patch（免一次全量 sessions.list）；
+  // 结构不符/未命中则回落全量重拉（对齐官方 control-ui 的事件驱动刷新，正确性优先）
   if (evt.event === "sessions.changed") {
     const app = host as unknown as OpenClawApp;
-    void loadSessions(app as any);
+    const patched = applySessionsChangedPatch(app.sessionsResult, evt.payload);
+    if (patched) {
+      app.sessionsResult = patched;
+      app.requestUpdate?.();
+    } else {
+      void loadSessions(app as any);
+    }
     return;
   }
 
