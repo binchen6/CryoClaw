@@ -537,6 +537,9 @@ export function handleChatEvent(state: ChatState, payload?: ChatEventPayload) {
       state.chatStream = state.chatStream ?? "";
       state.chatStreamFrozenPrefix = "";
       debugLog("lifecycle", "orphan run adopted after reconnect", { runId: payload.runId });
+      // 收养即恢复链路接管：清 orphan 快照，重连探测（scheduleReconnectOrphanProbe）
+      // 的 liveOrphanRunId() 检查随之停摆，不再发冗余静默历史拉取
+      clearReconnectOrphanRun(payload.runId);
       // 收养后继续走下方 delta 处理
     } else if (payload.state === "delta" || payload.state === "error") {
       return null;

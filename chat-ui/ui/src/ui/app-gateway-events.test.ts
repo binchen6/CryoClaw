@@ -130,3 +130,43 @@ test("app-gateway.ts：onClose 分支调用 cancelReconnectOrphanProbe（新断�
     "onClose 分支应调用 cancelReconnectOrphanProbe()，新断连作废旧探测",
   );
 });
+
+test("app-gateway.ts：onGap 分支不得调度 scheduleReconnectOrphanProbe（负向）", () => {
+  const s = src("app-gateway.ts");
+  const start = s.indexOf("onGap: ({ expected, received }) => {");
+  assert.notEqual(start, -1, "app-gateway.ts 缺少 onGap 分支");
+  // onGap 是 client 配置的最后一个回调，分支结束后紧跟配置收尾 `});`
+  const end = s.indexOf("});", start);
+  assert.notEqual(end, -1, "无法定位 onGap 分支边界");
+  const gapBranch = s.slice(start, end);
+  // 探测仅在 onHello previousClient 重连分支调度；onGap 耗尽软恢复路径不断连，
+  // 不得调度探测（否则 gap 耗尽后叠加冗余静默历史拉取）。
+  assert.equal(
+    gapBranch.includes("scheduleReconnectOrphanProbe"),
+    false,
+    "onGap 分支不得包含 scheduleReconnectOrphanProbe（探测仅限 onHello 重连分支）",
+  );
+});
+
+test("controllers/chat.ts：orphan 收养分支调用 clearReconnectOrphanRun（收养即停探测）", () => {
+  const s = src("controllers/chat.ts");
+  const start = s.indexOf(
+    'if (payload.state === "delta" && payload.runId === liveOrphanRunId())',
+  );
+  assert.notEqual(start, -1, "chat.ts 缺少 orphan 收养分支");
+  const end = s.indexOf("} else if", start);
+  assert.notEqual(end, -1, "无法定位收养分支边界");
+  const adoptBranch = s.slice(start, end);
+  assert.match(
+    adoptBranch,
+    /orphan run adopted after reconnect/,
+    "收养分支应含 debugLog(\"lifecycle\", \"orphan run adopted after reconnect\")",
+  );
+  // 收养即恢复链路接管：必须清 orphan 快照，否则 app-gateway 挂起的重连探测仍会
+  // 命中 liveOrphanRunId() 发起冗余静默历史拉取。
+  assert.match(
+    adoptBranch,
+    /clearReconnectOrphanRun\(payload\.runId\);/,
+    "收养分支应调用 clearReconnectOrphanRun(payload.runId)，收养即停重连探测",
+  );
+});
