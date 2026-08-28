@@ -143,6 +143,44 @@ export function ensureMemorySearchProxyConfig(config: any, proxyPort: number, pr
   return true;
 }
 
+// ── 指向本地代理的遗留 provider 自愈 ──
+
+// 历史遗留：旧版曾以 provider key "kimi" 写入指向本地 auth proxy 的 baseUrl
+// （http://127.0.0.1:<port>/coding，无 secret 路径段）。回环鉴权 secret 上线后
+// ensureProxyConfig 只同步 kimi-coding，遗留条目每次请求被代理 401 拒绝，
+// 主模型调用静默落入 fallback。这里把所有指向本地代理（127.0.0.1:*/[seg/]coding）
+// 的 provider 统一改写到当前端口 + secret。
+// 两道判别门防误伤用户自建的本地服务：apiKey 必须是应用占位符 "proxy-managed"
+// （遗留条目都是应用自己写的），且 secret 为空（代理未启动鉴权）时不写——
+// 此时写出的无 secret baseUrl 仍会被代理一律 401，纯属无效 churn。
+// apiKey 不动：代理会注入真实 token，客户端 apiKey 仅为占位。
+const LOCAL_PROXY_CODING_BASE_RE = /^http:\/\/127\.0\.0\.1:\d+\/(?:[^/]+\/)?coding\/?$/;
+
+export function healLegacyProxyProviders(
+  config: any,
+  proxyPort: number,
+  proxySecret = "",
+  skipKey = "kimi-coding",
+): boolean {
+  if (proxyPort <= 0 || !proxySecret) return false;
+  const providers = config?.models?.providers;
+  if (!providers || typeof providers !== "object") return false;
+
+  const expectedBase = `http://127.0.0.1:${proxyPort}/${proxySecret}/coding`;
+  let changed = false;
+  for (const [key, provider] of Object.entries(providers)) {
+    if (key === skipKey) continue;
+    const p = provider as any;
+    if (typeof p?.baseUrl !== "string") continue;
+    if (p.apiKey !== "proxy-managed") continue;
+    if (!LOCAL_PROXY_CODING_BASE_RE.test(p.baseUrl)) continue;
+    if (p.baseUrl === expectedBase) continue;
+    p.baseUrl = expectedBase;
+    changed = true;
+  }
+  return changed;
+}
+
 // 检查 kimi-search 插件是否随应用内置
 export function isKimiSearchPluginBundled(): boolean {
   const pluginDir = path.join(resolveGatewayPackageDir(), "dist", "extensions", KIMI_SEARCH_PLUGIN_ID);

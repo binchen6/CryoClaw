@@ -1,5 +1,12 @@
 [
   {
+    "version": "2026.828.3",
+    "notes": {
+      "zh": "修复：Kimi 主模型调用 401 静默降级——旧版遗留的 kimi provider 指向本地代理但缺少鉴权密钥段，每次请求被代理拒绝后落入 fallback；现启动时自动自愈所有指向本地代理的遗留 provider（仅限应用自管条目，不误伤用户自建本地服务）\n测试基线 657 用例全绿",
+      "en": "Fixed: Kimi primary-model calls failing 401 and silently falling back — a legacy kimi provider entry pointed at the local auth proxy without the path secret, so every request was rejected; startup now self-heals all legacy providers pointing at the local proxy (app-managed entries only, user-run local services are left untouched)\n657-test baseline all green"
+    }
+  },
+  {
     "version": "2026.828.2",
     "notes": {
       "zh": "安全：Kimi 回环代理增加随机密钥鉴权（此前本机任意进程可借用代理调用 Kimi API）；诊断包导出对代理 URL 中的密钥段定向打码；kimi-search 插件端点同步修复（不再缺席回退直连）\n加固：workspace 打开目录/列目录补符号链接复核；git 操作在 git 被卸载的竞态下正确归类「未安装」；git 面板状态/diff 截断时有提示；空仓库与切换竞态修复\n优化：附件降级发送后气泡不再文本+卡片双重呈现；worktrees GC 提示中文化；诊断导出全异步（主进程不再卡顿）\n可维护性：清除 20 处死代码导出与死样式；CSS 行尾统一并落地 .gitattributes；设计规范英文版同步；website 交互动效帧率优化\n测试基线 650 用例全绿",

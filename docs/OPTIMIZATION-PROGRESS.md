@@ -10,9 +10,9 @@
 面向国内生态（Kimi / Moonshot / 飞书 / 企微 / 微信 / 钉钉 / QQ）。
 
 **当前状态**：
-- 重设计工程 **R1–R39 全部完成**（二期 P1–P7 收官），最新发版 **v2026.828.2**（R39 屎山清理/健壮性/效率收尾；v2026.828.1：R38）。
+- 重设计工程 **R1–R40 全部完成**（二期 P1–P7 收官 + R40 热修复），最新发版 **v2026.828.3**（R40 kimi 代理 401 自愈；v2026.828.2：R39）。
 - 内核 openclaw **2026.7.1-2**（版本 pin 在 package.json `cryoclaw.openclaw`）；**Electron 43.4.0**（audit 0 漏洞）。
-- 测试基线 **650 pass / 0 fail / 4 skipped**（vitest 94 + node 130 + chat-ui 374 + scripts 52；0 fail 为硬指标）。
+- 测试基线 **657 pass / 0 fail / 4 skipped**（vitest 101 + node 130 + chat-ui 374 + scripts 52；0 fail 为硬指标）。
 - 重复率 **1.06%**（69 clones，阈值 5%，`npm run dupcheck` 防回退）。
 - 开源：GitHub `binchen6/CryoClaw`（AGPL-3.0-only，干净历史）；发版走本地 `dist:win` + `gh release`；CI `tests.yml` 每次 push/PR 全量回归。
 
@@ -298,6 +298,14 @@
 - **审计确认无问题**：主进程无热路径同步 IO、execFileSync 残留全为 dev-only、timer/监听器无泄漏、unhandled rejection 仅一处近零概率（已补 catch）。
 - **测试 +9**：kimi-auth-proxy 4（含真实服务 401/404 + 重启 secret 稳定）、console-level 2、diagnostics-export 3。基线 641→650 全绿。
 - **仍留 backlog**：per-session 队列（产品决策项）；resolveUserStateDir legacy 分歧（用户面风险）；R38 800×600 pill；reduced-motion 局部冗余块；jscpd 两个大 clone（热路径/跨构建根）；零消费 token 储备；refreshGitStatus 成功分支未 bump diffSeq；website pointercancel；ensureProxyConfig 每次启动重写 config（secret 轮换所致，无害记录在案）。
+
+### R40 · 热修复：kimi 代理 401 静默降级（完成，随 v2026.828.3 发版）
+
+用户报告「kimi 代理失效」。取证：gateway.log 中 `provider=kimi ... url=http://127.0.0.1:18790/coding/v1/messages status=401 elapsedMs≈7`（7ms 即本地代理直接 401，未到上游）；`~/.openclaw/openclaw.json` 里除受管 `kimi-coding`（baseUrl 带 secret）外还有一个历史遗留 `kimi` provider（`http://127.0.0.1:18790/coding`，无 secret 段），而 `agents.defaults.model.primary = kimi/k3-256k` → 主模型全 401，静默 fallback 到 deepseek。
+- **修复**：`kimi-config.ts` 新增 `healLegacyProxyProviders()`——扫描 `models.providers`，凡 baseUrl 匹配本地代理形态（`127.0.0.1:*/[seg/]coding`）且 `apiKey === "proxy-managed"`（应用自管占位符，防误伤用户自建本地服务）的条目，改写到当前端口+secret；`main.ts ensureProxyConfig` 接入并把结果并入 early-return 新鲜度判定，heal 单独记日志。
+- **边界记录在案**：secret 为空（代理未启动鉴权）时不写（写出也必 401，纯 churn）；无 kimi-coding 时不 heal（那种配置下代理根本不起，症状是显眼连接失败而非静默 fallback）。
+- **审查代理复审**：4 项反馈全部处理（apiKey 门控、空 secret 防御、边界注释、独立日志）。
+- **测试 +7**：kimi-config heal 系列 7 条（无 secret 段/旧 secret/旧端口/幂等/非本地不动含 127.0.0.1 反例/空 secret/非 proxy-managed 门控）。基线 650→657 全绿。
 
 ## 📦 发版与实测经验（套路已验证多次）
 

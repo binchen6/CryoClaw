@@ -41,7 +41,7 @@ import {
   restoreLastKnownGoodConfigSnapshot,
 } from "./config-backup";
 import { readUserConfig, writeUserConfig } from "./provider-config";
-import { resolveKimiSearchApiKey, readKimiApiKey, readKimiSearchDedicatedApiKey, writeKimiApiKey, ensureMemorySearchProxyConfig } from "./kimi-config";
+import { resolveKimiSearchApiKey, readKimiApiKey, readKimiSearchDedicatedApiKey, writeKimiApiKey, ensureMemorySearchProxyConfig, healLegacyProxyProviders } from "./kimi-config";
 import { reconcileCliOnAppLaunch } from "./cli-integration";
 import { reconcileExtensionsOnAppLaunch } from "./extension-mirror";
 import { migrateLegacyFeishuPluginEntry } from "./feishu-config";
@@ -573,6 +573,16 @@ function ensureProxyConfig(proxyPort: number): void {
     // memorySearch embedding 也走同一个代理
     const memorySearchChanged = ensureMemorySearchProxyConfig(config, proxyPort, getProxySecret());
 
+    // 历史遗留的指向本地代理的 provider（如旧版 "kimi"，无/旧 secret 段）一并改写，
+    // 否则这些条目每次请求被代理 401，主模型静默落入 fallback。
+    // 边界：本函数在 kimi-coding 缺失时直接 return，"只有遗留条目、无受管 kimi-coding"
+    // 的配置不会被治愈——但那种情况下 ensureAuthProxy 根本不会启动代理，症状是显眼的
+    // 连接失败而非静默 fallback，可接受。
+    const legacyHealed = healLegacyProxyProviders(config, proxyPort, getProxySecret());
+    if (legacyHealed) {
+      log.info(`[auth-proxy] healed legacy proxy-pointing provider(s) → 127.0.0.1:${proxyPort}/<secret>`);
+    }
+
     // kimi-search 插件端点同步必须在 early-return 之前：setup 保存会显式删 entry.config，
     // 若 baseUrl 恰好匹配而早退，端点整场缺席（插件回退内置默认端点直连上游、绕过代理），
     // 直到下次启动 secret 轮换才自愈
@@ -592,7 +602,7 @@ function ensureProxyConfig(proxyPort: number): void {
       }
     }
 
-    if (provider.baseUrl === expectedBase && provider.apiKey === "proxy-managed" && !memorySearchChanged && !searchChanged) return;
+    if (provider.baseUrl === expectedBase && provider.apiKey === "proxy-managed" && !memorySearchChanged && !searchChanged && !legacyHealed) return;
 
     // 首次迁移：真实 apiKey 存入 sidecar（非 OAuth 用户 + 有效 key）
     if (provider.apiKey && provider.apiKey !== "proxy-managed" && !loadOAuthToken()) {
