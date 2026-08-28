@@ -917,6 +917,51 @@ async function testMergeIfStaleFallsBackToHydrationWhenPartiallyVisible() {
   }
 }
 
+// R41 Task 4：看门狗/重连探测属于静默对齐，不能置 chatLoading——否则视图层每 30s
+// 在消息线程顶部闪一次「加载中」。silent 路径全程（含 await 期间）不置位；
+// 对照：不带 silent 的常规加载仍会置 true 再回 false。
+async function testSilentProbeDoesNotToggleChatLoading() {
+  installBrowserGlobals(new FakeRaf());
+  const messages = [
+    { role: "user", content: [{ type: "text", text: "m1" }] },
+    { role: "assistant", content: [{ type: "text", text: "m2" }] },
+  ];
+  let requestSawLoadingFalse = false;
+  const state = makeState({
+    client: {
+      request: async (method: string) => {
+        assert.equal(method, "chat.history");
+        // await 期间的同步可观测时刻：silent 下 chatLoading 必须仍为 false，
+        // 一旦置 true，视图层此刻就会渲染「加载中」
+        assert.equal(state.chatLoading, false, "silent 探测在请求期间不得置 chatLoading");
+        requestSawLoadingFalse = true;
+        return { messages };
+      },
+    },
+  });
+
+  assert.equal(state.chatLoading, false, "调用前应为 false");
+  await loadChatHistory(state, { mergeIfStale: true, silent: true });
+  assert.ok(requestSawLoadingFalse, "请求应实际发出");
+  assert.equal(state.chatLoading, false, "silent 探测返回后仍不得置位");
+  assert.equal(state.chatMessages.length, 2, "silent 只影响加载态，历史对齐照常落地");
+
+  // 对照：不带 silent 的常规加载仍会置 true（请求期间可观测）再回 false。
+  let normalSawLoadingTrue = false;
+  const state2 = makeState({
+    client: {
+      request: async () => {
+        assert.equal(state2.chatLoading, true, "非 silent 加载应在请求期间置 true");
+        normalSawLoadingTrue = true;
+        return { messages };
+      },
+    },
+  });
+  await loadChatHistory(state2);
+  assert.ok(normalSawLoadingTrue, "对照请求应实际发出");
+  assert.equal(state2.chatLoading, false, "非 silent 加载完成后应回 false");
+}
+
 async function main() {
   await testChatStreamIsRafThrottled();
   await testLoadChatHistoryBatchesInitialRender();
@@ -946,6 +991,7 @@ async function main() {
   await testMergeIfStaleKeepsVisibleCountWithoutHydration();
   await testReplaceWithoutMergeStillHydratesFromTwenty();
   await testMergeIfStaleFallsBackToHydrationWhenPartiallyVisible();
+  await testSilentProbeDoesNotToggleChatLoading();
   cancelStaleHistoryRetryForTests();
   console.log("chat controller tests passed");
 }

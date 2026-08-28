@@ -242,7 +242,8 @@ function checkStalledStream(host: GatewayHost) {
   const probeRunId = host.chatRunId;
   const probeStartedAt = host.chatStreamStartedAt;
   void (async () => {
-    await loadChatHistory(host as unknown as OpenClawApp, { mergeIfStale: true });
+    // silent：探测是静默对齐，不置 chatLoading，避免流式挂起期间每 30s 闪一次「加载中」
+    await loadChatHistory(host as unknown as OpenClawApp, { mergeIfStale: true, silent: true });
     if (!host.chatRunId || host.chatRunId !== probeRunId) {
       return; // 探测期间终态已清理 / 已切到新一轮 run
     }

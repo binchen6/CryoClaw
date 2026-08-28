@@ -193,14 +193,19 @@ function scheduleStaleHistoryRetry(state: ChatState, sessionKey: string) {
 
 export async function loadChatHistory(
   state: ChatState,
-  opts?: { mergeIfStale?: boolean },
+  opts?: { mergeIfStale?: boolean; silent?: boolean },
 ) {
   if (!state.client || !state.connected) {
     return;
   }
   const requestSessionKey = state.sessionKey;
   cancelChatHistoryHydration(state);
-  state.chatLoading = true;
+  // silent：看门狗/重连探测等静默对齐路径不置加载态——视图层只要 chatLoading 为真
+  // 就在消息线程顶部渲染「加载中」，探测每 30s 一次会闪屏；且置位后若被并发的常规加载
+  // 交错，还会把常规加载的加载态提前清掉。
+  if (!opts?.silent) {
+    state.chatLoading = true;
+  }
   state.lastError = null;
   try {
     const res = await state.client.request<{ messages?: Array<unknown>; thinkingLevel?: string }>(
@@ -270,7 +275,8 @@ export async function loadChatHistory(
     }
     state.lastError = String(err);
   } finally {
-    if (state.sessionKey === requestSessionKey) {
+    // silent 路径从未置位，不得在此回写 false：否则会清掉并发常规加载刚置起的加载态。
+    if (state.sessionKey === requestSessionKey && !opts?.silent) {
       state.chatLoading = false;
     }
   }
