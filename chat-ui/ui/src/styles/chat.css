@@ -2102,12 +2102,9 @@ img.chat-avatar {
   white-space: normal;
 }
 
-.chat-bubble.streaming .chat-text--streaming::after {
-  content: "▍";
-  margin-left: 2px;
-  color: var(--accent);
-  animation: ocStreamCaret 1.06s steps(2, end) infinite;
-}
+/* R41 Task 9 审查修复：容器级光标规则（.chat-text--streaming::after）已删除——
+   流式气泡拥有元素子节点后，上方末子块 ::after 规则恰好命中尾部 <p>，
+   语义正确（光标跟在正在打字的尾部文本后）；容器级规则会额外渲染悬空第二光标 */
 
 @keyframes ocStreamCaret {
   0%, 100% { opacity: 1; }
@@ -2140,7 +2137,6 @@ img.chat-avatar {
 
 @media (prefers-reduced-motion: reduce) {
   .chat-bubble.streaming .chat-text > *:last-child::after,
-  .chat-bubble.streaming .chat-text--streaming::after,
   .chat-streaming-status__dot {
     animation: none;
   }
