@@ -17,6 +17,7 @@ import { loadChatHistory } from "./controllers/chat.ts";
 import { getCachedCommands } from "./controllers/commands.ts";
 import { loadCompactionCheckpoints } from "./controllers/session-compaction.ts";
 import { listEligibleSkills } from "./controllers/skills.ts";
+import { openGitView } from "./app-git.ts";
 import { dismissPlan } from "./plan-stream.ts";
 import type { ChatProps } from "./views/chat.ts";
 
@@ -87,6 +88,9 @@ export function buildChatProps(state: AppViewState): ChatProps {
         typeof next === "function" ? next(state.chatAttachments ?? []) : next;
     },
     onShowToast: (message) => showToast(state, message),
+    // file-changes 面板「在 git 中查看」→ git 面板视图（P4）
+    gitAvailable: state.gitAvailable,
+    onOpenGitView: () => openGitView(state),
     compactionCheckpoints: state.compactionCheckpoints,
     compactionCheckpointsKey: state.compactionCheckpointsKey ?? null,
     compactionCheckpointsLoading: state.compactionCheckpointsLoading,

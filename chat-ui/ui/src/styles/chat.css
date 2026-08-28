@@ -2195,6 +2195,30 @@ img.chat-avatar {
   gap: var(--spacer-3);
 }
 
+/* file-changes 面板「在 git 中查看」链接（P4 git 面板入口） */
+.chat-file-changes__footer {
+  padding-top: var(--spacer-4);
+}
+
+.chat-git-view-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  color: var(--accent);
+  font-family: var(--font-meta);
+  font-size: var(--font-size-meta);
+}
+
+.chat-git-view-link:hover {
+  text-decoration: underline;
+}
+
+.chat-git-view-link svg {
+  width: 12px;
+  height: 12px;
+}
+
 .chat-file-change {
   display: flex;
   align-items: center;

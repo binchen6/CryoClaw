@@ -13,6 +13,7 @@ import {
   Copy,
   Cpu,
   Database,
+  Diff,
   Ellipsis,
   ExternalLink,
   Eye,
@@ -130,6 +131,8 @@ export const icons = {
   folderOpen: renderLucideIcon(FolderOpen),
   // worktree 会话徽标 / worktrees 管理入口
   gitBranch: renderLucideIcon(GitBranch),
+  // git 面板（索引/审查/提交）入口
+  diff: renderLucideIcon(Diff),
 } as const;
 
 export type IconName = keyof typeof icons;

@@ -78,6 +78,21 @@ async function guardRealPath(
   return { ok: true, target: realPath ?? filePath };
 }
 
+// 目录版守卫（git IPC 的 cwd 入参用）：目录必须在白名单根内（path 校验 + realpath
+// 复核防 symlink）。通过时返回 realpath（realpath 失败回退原路径，后续 git 自然报错）；
+// 不通过返回 null。与 guardRealPath 同规则，只是错误交由调用方组织。
+export async function resolveAllowedDir(dirPath: string): Promise<string | null> {
+  if (typeof dirPath !== "string" || !dirPath) return null;
+  if (!isInsideAnyRoot(dirPath, allowedRoots())) return null;
+  try {
+    const real = await fs.promises.realpath(dirPath);
+    return isInsideAnyRoot(real, allowedRoots()) ? real : null;
+  } catch {
+    // 目录不存在/权限问题：回退原路径，让 git 自己报具体错误
+    return dirPath;
+  }
+}
+
 export function registerWorkspaceIpc(): void {
   // 设置 workspace 根路径（渲染进程从 gateway 获取后传入）
   // 安全面：root 必须在 ~/.openclaw/workspace/ 内，阻止渲染进程任意改根目录绕过 traversal 守卫

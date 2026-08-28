@@ -142,6 +142,9 @@ export type ChatProps = {
   ) => void;
   // 轻量通知条（走 app-toast 全局模块，由状态层注入）
   onShowToast?: (message: string) => void;
+  // file-changes 面板「在 git 中查看」链接（P4 git 面板入口；gitAvailable===true 时才渲染）
+  gitAvailable?: boolean | null;
+  onOpenGitView?: () => void;
   // Scroll control
   showNewMessages?: boolean;
   onScrollToBottom?: () => void;
@@ -934,6 +937,13 @@ export function renderChat(props: ChatProps) {
       aria-live="polite"
       @scroll=${props.onChatScroll}
       @click=${(e: Event) => {
+        // file-changes 面板「在 git 中查看」链接（P4）：切到 git 面板视图
+        const gitLink = (e.target as HTMLElement).closest(".chat-git-view-link");
+        if (gitLink) {
+          e.preventDefault();
+          props.onOpenGitView?.();
+          return;
+        }
         const link = (e.target as HTMLElement).closest(".chat-path-link");
         if (!link) {
           return;
@@ -1021,6 +1031,7 @@ export function renderChat(props: ChatProps) {
               assistantAvatar: assistantIdentity.avatar,
               isHydrating,
               fileChanges: fileChangesByGroup.get(item.key),
+              gitAvailable: props.gitAvailable,
               onQuoteMessage: (text) => handleQuoteMessage(props, text),
               onResendError: props.onResendError,
             });

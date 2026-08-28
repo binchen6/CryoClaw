@@ -10,10 +10,10 @@
 面向国内生态（Kimi / Moonshot / 飞书 / 企微 / 微信 / 钉钉 / QQ）。
 
 **当前状态**：
-- 重设计工程 **R1–R36 全部完成**，最新发版 **v2026.827.8**（R36 worktrees 接入；v2026.827.7：R35）。
+- 重设计工程 **R1–R37 全部完成**，最新发版 **v2026.828.0**（R37 git 索引/提交面板；v2026.827.8：R36）。
 - 内核 openclaw **2026.7.1-2**（版本 pin 在 package.json `cryoclaw.openclaw`）；**Electron 43.4.0**（audit 0 漏洞）。
-- 测试基线 **618 pass / 0 fail / 4 skipped**（vitest 94 + node 93 + chat-ui 359 + scripts 52；0 fail 为硬指标）。
-- 重复率 **1.01%**（67 clones，阈值 5%，`npm run dupcheck` 防回退）。
+- 测试基线 **641 pass / 0 fail / 4 skipped**（vitest 94 + node 121 + chat-ui 374 + scripts 52；0 fail 为硬指标）。
+- 重复率 **1.08%**（73 clones，阈值 5%，`npm run dupcheck` 防回退）。
 - 开源：GitHub `binchen6/CryoClaw`（AGPL-3.0-only，干净历史）；发版走本地 `dist:win` + `gh release`；CI `tests.yml` 每次 push/PR 全量回归。
 
 **常用命令**：
@@ -259,6 +259,18 @@
 - **白名单双根**：workspace-ipc.ts 守卫放宽为 workspace 根 + `~/.openclaw/worktrees/`（isInsideRoot + realpath 复核不变）。
 - **测试 +26**：git-detector 6、workspace-ipc 6、worktrees controller 12、源码审计 8。基线 566→618 全绿；重复率 1.014%。
 - **记录在案（P7 候选）**：resolveUserStateDir 与内核 resolveStateDir 的 legacy（~/.clawdbot）/env trim 分歧（既有系统性假设）；删除路径依赖 worktrees 快照 map，miss 时按 canonical key 兜底查（minor-2）；open-folder/list-dir 只走 lexical guard 无 realpath 复核（既有攻击面，未扩大）；gc toast 明细英文片段；sidebar.css 9999px vs --radius-full 不统一。
+
+### R37 · Git 索引/审查/提交面板（完成，随 v2026.828.0 发版；二期 P4）
+
+用户指令：git 索引创建、审查、修改、提交。coder 实施 + 审查代理复审（无 blocker；2 major + 1 minor 发版前修掉，余进 P7）：
+- **主进程 5 通道**（src/git-ipc.ts）：git:status（porcelain v2 -z -b）/git:diff（cached/按文件懒拉）/git:stage/git:unstage/git:commit，统一 guardGitOp = assertTrustedIpcSender → no-git → cwd ∈ 白名单（workspace-ipc 新导出 resolveAllowedDir，realpath 复核防 symlink）；execFile 数组传参零 shell 面；结构化错误 no-git/denied/not-a-repo/git-error。
+- **解析器纯函数**（src/git-parse.ts）：parsePorcelainV2Status（rename -z 下源路径占下一 NUL 段、quoted 中文八进制 unquote、untracked/ignored/branch header）、parseUnifiedDiff（多文件/rename/二进制/new/delete/`\ No newline`）、sanitizeGitRelPaths（拒绝对路径/../NUL/超量）、normalizeCommitMessage。
+- **runner 抽离**（src/git-run.ts，审查 major 修复点）：maxBuffer 截断检测——Node ≥22 的 err.code 是字符串 `ERR_CHILD_PROCESS_STDIO_MAXBUFFER`（旧版 ENOBUFS/ERR_OUT_OF_RANGE 兼容），原实现只认数值 code 导致截断被静默吞掉；err.code 非数字非截断归 code 1 失败路径。git:status 同步透传 truncated。
+- **空仓库 unstage 修复**（审查 major）：unborn HEAD 下 `restore --staged` 恒定失败，自动回退 `rm --cached`；docs 注明 unstage 要求 git ≥ 2.23。
+- **chat-ui 面板**：controllers/git.ts（groupGitEntries 三分组、buildGitRepoOptions 仓库切换、initGitPanel 含 workspaceSetRoot 注册白名单根、selectGitFile 懒拉+seq 防竞态、错误模型 i18n-free 由 view 本地化）；views/git.ts（分组列表/状态字母 badge/rename old→new/行内单栏 diff 高亮/提交框 staged 非空才显示/identity 引导 callout/断连 callout（审查 minor 修复死 prop））；file-changes 面板尾部「在 git 中查看」链接（gitAvailable 才渲染）；registry/app-render/sidebar 三处接线；i18n zh/en 各 +30；misc.css gitp-* 全 token。
+- **v1 边界守住**：无 hunk 级 stage、push/pull/branch 管理、merge 冲突 UI；untracked 不可展开 diff（git 本身不含），只能 stage。
+- **测试 +44**：git-parse 23、git-run 5（截断/超时/ENOENT/信号杀死归类）、controllers/git 5、git-ui 源码审计 11。基线 618→641 全绿；重复率 1.08%（73 clones）。
+- **记录在案（P7 候选）**：断连时面板仅 callout 提示不自动重试；diff/status 截断 UI 无单独提示；ENOENT 竞态归类为 git-error 而非 no-git；selectGitFile 收起/切仓库不 bump diffSeq（不可见状态残留）；diff removed 行用 U+2212 影响复制；git.title 文案偏窄。
 
 ## 📦 发版与实测经验（套路已验证多次）
 

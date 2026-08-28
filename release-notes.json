@@ -1,5 +1,12 @@
 [
   {
+    "version": "2026.828.0",
+    "notes": {
+      "zh": "新功能：Git 面板（文件级 v1）——侧边栏新入口：staged/unstaged/untracked 分组、点击文件行内查看 diff（单栏 +/- 高亮、rename/二进制/中文路径全支持）、按文件或全部暂存/取消暂存、提交框（未配置 git 身份时给出引导）；支持切换 workspace 根与活跃 worktree 仓库；聊天文件变更面板新增「在 git 中查看」直达链接\n加固：git 操作全部走白名单目录守卫+数组传参（零注入面）；maxBuffer 截断检测适配 Node ≥22；空仓库取消暂存自动回退 rm --cached\n测试基线 641 用例全绿",
+      "en": "New: Git panel (file-level v1) — new sidebar entry: staged/unstaged/untracked groups, inline per-file diff (single-column +/- highlighting, rename/binary/CJK path support), stage/unstage per file or all, commit box with identity-setup guidance; switch between the workspace root and active worktree repos; the chat file-changes panel gains a \"view in git\" link\nHardened: all git operations are whitelist-guarded with array-form args (zero injection surface); maxBuffer truncation detection updated for Node ≥22; unstage on an unborn HEAD falls back to rm --cached\n641-test baseline all green"
+    }
+  },
+  {
     "version": "2026.827.8",
     "notes": {
       "zh": "新功能：Worktree 会话接入——侧边栏新增「Worktree 新会话」入口与 Worktrees 管理视图（列表/打开目录/恢复/删除/GC）；会话行显示分支徽标；删除会话自动清理关联 worktree（有损场景内核自动快照兜底）\n优化：无 git 环境自动降级（隐藏入口+引导提示，安装 git 重启后恢复）；workspace 安全打开白名单扩展至内核 worktrees 目录\n测试基线 618 用例全绿",

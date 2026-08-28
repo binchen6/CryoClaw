@@ -27,6 +27,7 @@ import {
 import { openSkillsView, renderSkillsView } from "./app-skills.ts";
 import { openTasksView, renderTasksView } from "./app-tasks.ts";
 import { openWorktreesView, renderWorktreesView } from "./app-worktrees.ts";
+import { openGitView, renderGitView } from "./app-git.ts";
 import { getToastAction, getToastMessage, hideToast } from "./app-toast.ts";
 import { setCryoClawView } from "./app-view-switch.ts";
 import { loadSessions, patchSession } from "./controllers/sessions.ts";
@@ -71,6 +72,12 @@ declare global {
       workspaceListDir?: (dirPath: string) => Promise<any>;
       workspaceReadFile?: (filePath: string) => Promise<any>;
       gitDetect?: () => Promise<any>;
+      // git 面板（P4）：status/diff 返回主进程解析后的结构化数据
+      gitStatus?: (cwd: string) => Promise<any>;
+      gitDiff?: (cwd: string, opts?: { cached?: boolean; path?: string }) => Promise<any>;
+      gitStage?: (cwd: string, paths: string[]) => Promise<any>;
+      gitUnstage?: (cwd: string, paths: string[]) => Promise<any>;
+      gitCommit?: (cwd: string, message: string) => Promise<any>;
       // Settings: Advanced / Gateway control
       settingsGetAdvanced?: () => Promise<any>;
       settingsSaveAdvanced?: (params: Record<string, unknown>) => Promise<any>;
@@ -108,6 +115,8 @@ function renderActiveView(state: AppViewState, view: CryoClawViewId) {
       return renderTasksView(state);
     case "worktrees":
       return renderWorktreesView(state);
+    case "git":
+      return renderGitView(state);
     default:
       return renderChat(buildChatProps(state));
   }
@@ -158,6 +167,8 @@ export function renderApp(state: AppViewState) {
             onOpenTasks: () => openTasksView(state),
             worktreesActive: cryoclawView === "worktrees",
             onOpenWorktrees: () => openWorktreesView(state),
+            gitPanelActive: cryoclawView === "git",
+            onOpenGit: () => openGitView(state),
             // git 不可用时 worktree 新建入口降级隐藏（false=已探测无 git）
             gitAvailable: state.gitAvailable,
             onNewWorktreeChat: () => void createNewWorktreeSession(state),

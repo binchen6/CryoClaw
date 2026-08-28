@@ -179,6 +179,30 @@
 | `selectFiles(options?)` | `dialog:select-files` | invoke |
 | `readFileBase64(path)` | `file:read-base64` | invoke |
 
+## Git 面板（P4，文件级 v1）
+
+| 方法 | IPC 通道 | 方向 |
+|---|---|---|
+| `gitDetect()` | `git:detect` | invoke |
+| `gitStatus(cwd)` | `git:status` | invoke |
+| `gitDiff(cwd, opts?)` | `git:diff` | invoke |
+| `gitStage(cwd, paths)` | `git:stage` | invoke |
+| `gitUnstage(cwd, paths)` | `git:unstage` | invoke |
+| `gitCommit(cwd, message)` | `git:commit` | invoke |
+
+> 全部通道 `assertTrustedIpcSender` 校验 + `cwd` 必须 ∈ workspace 白名单根
+> （`workspace-ipc.ts resolveAllowedDir`：path 校验 + realpath 复核防 symlink）。
+> 实现为 execFile git CLI 数组传参（无 shell 注入面）+ 超时 + windowsHide。
+> `git:status` 返回 `status --porcelain=v2 -z -b` 解析后的 `{branch, entries, truncated}`；
+> `git:diff`（`opts.cached` 拉 staged 区、`opts.path` 限定单文件懒拉）返回解析后的
+> `{files: DiffFile[], truncated}`；porcelain/diff 解析器在 `src/git-parse.ts`（纯函数），
+> 底层 runner 在 `src/git-run.ts`（截断检测含 Node ≥22 的 `ERR_CHILD_PROCESS_STDIO_MAXBUFFER`）。
+> 结构化错误协议：git 未安装 `{error:"no-git"}`、cwd 白名单外 `{error:"denied"}`、
+> 非 git 仓库 `{error:"not-a-repo"}`、其余 git 失败 `{error:"git-error", message: stderr}`。
+> 文件路径入参只接受仓库相对路径（`sanitizeGitRelPaths` 拒绝绝对路径与 `..` 逃逸）。
+> `git:unstage` 用 `restore --staged`（要求 git ≥ 2.23）；空仓库（unborn HEAD）自动回退
+> `rm --cached`。
+
 > `file:read-base64`：读取本地文件为 base64，供聊天文件附件走内核 apiAttachments。
 > 仅接受已存在的绝对路径普通文件，大小 ≤16MB（stat 预判 + 读后复核双道）；超限返回 `{ error: "too-large", size }`
 > （不抛错，chat-ui 据此降级为路径文本前缀），成功返回 `{ base64, size, mimeType }`；

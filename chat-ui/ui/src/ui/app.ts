@@ -243,6 +243,19 @@ export class OpenClawApp extends LitElement {
     worktreesBusyIds: { state: true },
     worktreesGcBusy: { state: true },
     gitAvailable: { state: true },
+    gitRepoPath: { state: true },
+    gitRepoOptions: { state: true },
+    gitStatusLoading: { state: true },
+    gitStatus: { state: true },
+    gitRepoState: { state: true },
+    gitErrorKind: { state: true },
+    gitErrorDetail: { state: true },
+    gitBusyPaths: { state: true },
+    gitSelectedFile: { state: true },
+    gitDiffFiles: { state: true },
+    gitDiffLoading: { state: true },
+    gitCommitMessage: { state: true },
+    gitCommitting: { state: true },
     execMode: { state: true },
     skillsLoading: { state: true },
     skillsReport: { state: true },
@@ -414,6 +427,21 @@ export class OpenClawApp extends LitElement {
   worktreesGcBusy = false;
   // git CLI 探测结果：null=未探测（无 bridge 的浏览器 dev），false 时 worktree 新建入口降级隐藏
   gitAvailable: boolean | null = null;
+
+  // Git 面板（P4，文件级 v1）：status/diff/stage/commit，数据经主进程 git:* IPC
+  gitRepoPath: string | null = null;
+  gitRepoOptions: import("./controllers/git.js").GitRepoOption[] = [];
+  gitStatusLoading = false;
+  gitStatus: import("./controllers/git.js").GitStatusResult | null = null;
+  gitRepoState: "ok" | "no-git" | "not-a-repo" | null = null;
+  gitErrorKind: "identity" | "generic" | null = null;
+  gitErrorDetail: string | null = null;
+  gitBusyPaths = new Set<string>();
+  gitSelectedFile: string | null = null;
+  gitDiffFiles: import("./controllers/git.js").DiffFile[] | null = null;
+  gitDiffLoading = false;
+  gitCommitMessage = "";
+  gitCommitting = false;
 
   // 执行权限模式（官方 tools.exec.mode 合法值：deny / allowlist / ask / auto / full；
   // 三态 UI 用其中 ask / auto / full——"approve-all" 不是内核合法值，写入会触发

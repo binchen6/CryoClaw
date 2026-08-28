@@ -163,6 +163,13 @@ contextBridge.exposeInMainWorld("cryoclaw", {
 
   // git CLI 探测（缓存结果；worktree 入口降级依据）
   gitDetect: () => ipcRenderer.invoke("git:detect"),
+  // git 面板（P4）：status/diff 返回主进程已解析的结构化数据；cwd 必须在白名单根内
+  gitStatus: (cwd: string) => ipcRenderer.invoke("git:status", cwd),
+  gitDiff: (cwd: string, opts?: { cached?: boolean; path?: string }) =>
+    ipcRenderer.invoke("git:diff", cwd, opts),
+  gitStage: (cwd: string, paths: string[]) => ipcRenderer.invoke("git:stage", cwd, paths),
+  gitUnstage: (cwd: string, paths: string[]) => ipcRenderer.invoke("git:unstage", cwd, paths),
+  gitCommit: (cwd: string, message: string) => ipcRenderer.invoke("git:commit", cwd, message),
 
   onSettingsNavigate: (cb: (payload: { tab: string; notice: string }) => void) => {
     const handler = (_e: Electron.IpcRendererEvent, payload: { tab: string; notice: string }) => cb(payload);

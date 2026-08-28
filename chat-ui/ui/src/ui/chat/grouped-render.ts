@@ -183,6 +183,8 @@ export function renderMessageGroup(
     assistantAvatar?: string | null;
     isHydrating?: boolean;
     fileChanges?: FileChange[];
+    // git 可用时 file-changes 面板尾部带「在 git 中查看」链接（点击由线程级委托处理）
+    gitAvailable?: boolean | null;
     onQuoteMessage?: (text: string) => void;
     onResendError?: (text: string, attachments?: ChatAttachment[]) => void;
   },
@@ -236,7 +238,7 @@ export function renderMessageGroup(
             opts.onOpenSidebar,
           ),
         )}
-        ${opts.fileChanges?.length ? renderFileChanges(opts.fileChanges) : nothing}
+        ${opts.fileChanges?.length ? renderFileChanges(opts.fileChanges, opts.gitAvailable) : nothing}
         <div class="chat-group-footer">
           <span class="chat-sender-name">${who}</span>
           ${assistantModel ? html`<span class="chat-group-model">${assistantModel}</span>` : nothing}
@@ -308,7 +310,8 @@ function renderMessageImages(images: ImageBlock[]) {
 }
 
 // 本轮改动文件列表（默认折叠）：badge 区分 增/删/改，路径点击经线程级处理器走 cryoclaw.openPath
-function renderFileChanges(changes: FileChange[]) {
+// git 可用时尾部带「在 git 中查看」链接（class 由 views/chat.ts 线程级点击委托处理）
+function renderFileChanges(changes: FileChange[], gitAvailable?: boolean | null) {
   const countOf = (kind: FileChange["kind"]) => changes.filter((c) => c.kind === kind).length;
   const added = countOf("added");
   const modified = countOf("modified");
@@ -341,6 +344,11 @@ function renderFileChanges(changes: FileChange[]) {
             </div>
           `,
         )}
+        ${gitAvailable === true
+          ? html`<div class="chat-file-changes__footer">
+              <a class="chat-git-view-link">${icons.diff} ${t("chat.viewInGit")}</a>
+            </div>`
+          : nothing}
       </div>
     </details>
   `;

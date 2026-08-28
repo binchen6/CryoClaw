@@ -1003,3 +1003,312 @@
     justify-content: flex-end;
   }
 }
+
+/* ── Git 面板（P4，文件级 v1）：索引/审查/提交 ────────────────────── */
+
+.gitp-layout {
+  max-width: 960px;
+  margin: 0 auto;
+  /* 顶部 48px 让开沉浸式 titlebar（与其余 fullpage 视图一致） */
+  padding: 48px 24px 48px;
+  display: grid;
+  gap: 18px;
+  color: var(--text);
+}
+
+.gitp-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--spacer-16);
+  flex-wrap: wrap;
+}
+
+.gitp-title {
+  margin: 0;
+  font-size: var(--heading-md);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--text-strong);
+}
+
+.gitp-sub {
+  margin: var(--spacer-4) 0 0;
+  font-size: var(--text-sm);
+  color: var(--muted);
+}
+
+.gitp-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--spacer-8);
+  flex-wrap: wrap;
+}
+
+.gitp-repo-select {
+  font-size: var(--text-sm);
+  color: var(--text);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--spacer-6) var(--spacer-8);
+  max-width: 280px;
+}
+
+.gitp-branch-row {
+  display: flex;
+  gap: var(--spacer-8);
+  flex-wrap: wrap;
+}
+
+.gitp-branch-row .chip svg {
+  width: 12px;
+  height: 12px;
+  stroke: currentColor;
+  fill: none;
+  vertical-align: -2px;
+}
+
+.gitp-group {
+  display: grid;
+  gap: var(--spacer-8);
+}
+
+.gitp-group__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacer-8);
+}
+
+.gitp-group__title {
+  margin: 0;
+  font-size: var(--heading-xs);
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.gitp-group__count {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.gitp-group__list {
+  display: grid;
+  gap: var(--spacer-4);
+}
+
+.gitp-file {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  transition: border-color var(--duration-fast) var(--ease-out);
+}
+
+.gitp-file.active {
+  border-color: var(--border-strong);
+}
+
+.gitp-file__main {
+  display: flex;
+  align-items: center;
+  gap: var(--spacer-8);
+  padding: var(--spacer-8) var(--spacer-12);
+  min-width: 0;
+}
+
+.gitp-file__main--clickable {
+  cursor: pointer;
+}
+
+.gitp-letter {
+  font-family: var(--mono);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  width: 18px;
+  text-align: center;
+  flex-shrink: 0;
+  border-radius: var(--radius-xs);
+  padding: 1px 0;
+}
+
+.gitp-letter--added {
+  color: var(--ok);
+  background: var(--ok-subtle);
+}
+
+.gitp-letter--deleted {
+  color: var(--danger);
+  background: var(--danger-subtle);
+}
+
+.gitp-letter--modified {
+  color: var(--accent);
+  background: var(--accent-2-subtle);
+}
+
+.gitp-letter--renamed {
+  color: var(--accent-2);
+  background: var(--accent-2-subtle);
+}
+
+.gitp-letter--conflict {
+  color: var(--danger);
+  background: var(--danger-subtle);
+}
+
+.gitp-letter--untracked {
+  color: var(--muted);
+  background: var(--glass-sm, transparent);
+}
+
+.gitp-file__path {
+  font-family: var(--mono);
+  font-size: var(--text-xs);
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.gitp-file__action {
+  flex-shrink: 0;
+}
+
+/* 单栏 diff 渲染 */
+.gitp-diff {
+  border-top: 1px solid var(--border);
+  padding: var(--spacer-8) var(--spacer-12);
+}
+
+.gitp-diff__placeholder {
+  font-size: var(--text-sm);
+  color: var(--muted);
+  padding: var(--spacer-8) 0;
+  display: flex;
+  align-items: center;
+  gap: var(--spacer-8);
+}
+
+.gitp-diff-file {
+  display: grid;
+  gap: var(--spacer-4);
+}
+
+.gitp-diff-file__path {
+  font-family: var(--mono);
+  font-size: var(--text-xs);
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gitp-diff__body {
+  margin: 0;
+  padding: var(--spacer-8);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  font-family: var(--mono);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  overflow-x: auto;
+}
+
+.gitp-diff__hunk-header {
+  color: var(--accent-2);
+  padding: var(--spacer-4) 0;
+  white-space: pre;
+}
+
+.gitp-diff__line {
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: var(--text);
+}
+
+.gitp-diff__line--added {
+  color: var(--ok);
+  background: var(--ok-subtle);
+}
+
+.gitp-diff__line--removed {
+  color: var(--danger);
+  background: var(--danger-subtle);
+}
+
+.gitp-diff__sign {
+  display: inline-block;
+  width: 14px;
+  user-select: none;
+  opacity: 0.7;
+}
+
+.gitp-diff__nonewline {
+  display: block;
+  color: var(--muted);
+  font-size: var(--text-2xs, var(--text-xs));
+}
+
+/* 提交框 */
+.gitp-commit {
+  display: grid;
+  gap: var(--spacer-8);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+  padding: var(--spacer-12) var(--spacer-16);
+}
+
+.gitp-commit__input {
+  font-family: var(--mono);
+  font-size: var(--text-sm);
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--spacer-8);
+  resize: vertical;
+  min-height: 64px;
+}
+
+.gitp-commit__input:focus {
+  outline: none;
+  border-color: var(--border-strong);
+}
+
+.gitp-commit__actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.gitp-loading {
+  display: flex;
+  align-items: center;
+  gap: var(--spacer-8);
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+.gitp-empty {
+  margin: 0;
+  padding: var(--spacer-24);
+  text-align: center;
+  color: var(--muted);
+  font-size: var(--text-sm);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-md);
+}
+
+.gitp-error-detail {
+  margin: var(--spacer-8) 0 0;
+  font-family: var(--mono);
+  font-size: var(--text-xs);
+  white-space: pre-wrap;
+  word-break: break-all;
+  opacity: 0.85;
+}

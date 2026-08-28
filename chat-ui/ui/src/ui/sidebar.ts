@@ -42,6 +42,9 @@ export type SidebarProps = {
   // worktrees 管理视图入口 + git 探测降级（gitAvailable === false 时隐藏新建入口）
   worktreesActive: boolean;
   onOpenWorktrees: () => void;
+  // git 面板（索引/审查/提交，P4 文件级 v1）
+  gitPanelActive: boolean;
+  onOpenGit: () => void;
   gitAvailable: boolean | null;
   onNewWorktreeChat: () => void;
   // 当前 webbridge 模式但浏览器扩展未启用 → 显示「连接你的常用浏览器」pill
@@ -385,6 +388,14 @@ export function renderSidebar(props: SidebarProps) {
           >
             <span class="cryoclaw-sidebar__icon">${icons.gitBranch}</span>
             <span class="cryoclaw-sidebar__label">${t("sidebar.worktrees")}</span>
+          </button>
+          <button
+            class="cryoclaw-sidebar__item ${props.gitPanelActive ? "active" : ""}"
+            type="button"
+            @click=${props.onOpenGit}
+          >
+            <span class="cryoclaw-sidebar__icon">${icons.diff}</span>
+            <span class="cryoclaw-sidebar__label">${t("sidebar.git")}</span>
           </button>
         </div>
 
