@@ -140,6 +140,8 @@ export function resetChatStreamState(state: ChatState) {
 // 「问了没答」且要等下轮 final/手动刷新才恢复。保留时按 800/1600/2400ms
 // 退避补拉（对齐 scheduleTerminalSessionsRefresh 的持久化窗口），
 // 替换成功或会话切换即停止。同一时刻只保留一个挂起重试。
+// 补拉刻意非 silent（R41 终审记录）：滞后意味着用户可见数据不全，给用户加载反馈合理；
+// 静默探测（看门狗/重连 orphan）命中滞后时也会派生本链的非 silent 补拉，属有界预期行为。
 const STALE_RETRY_DELAYS_MS = [800, 1600, 2400];
 let staleRetryTimer: ReturnType<typeof setTimeout> | null = null;
 let staleRetryKey: string | null = null;

@@ -249,3 +249,14 @@ Things that are easy to get wrong or forget when working on CryoClaw.
     正确路线：`asar extract` 原 app.asar（含 node_modules）→ 覆盖新
     dist/chat-ui/dist/shared → 重打包替换。直接拿源码 dist 目录打新 asar 会丢
     node_modules，主进程无声卡死（无日志、窗口不出），排查极费时。
+
+73. **R5「流式气泡纯文本渲染」定论已被 R41 升级，改流式渲染前先读新链路。**
+    流式期间现走 `splitMarkdownSafePrefix` 安全前缀切分 + 渐进 markdown 渲染
+    （稳定段经 `toSanitizedMarkdownHtml` 缓存解析、尾部转义纯文本，见 `markdown.ts`
+    的 `toStreamingMarkdownHtml`）。两条红线：① `.chat-text--streaming` 的子元素
+    白空复位规则（`:is(...)`）不得包含 `pre`——代码块格式依赖 UA `white-space: pre`，
+    复位成 normal 会折叠流式期间已闭合代码块的换行/缩进（R41 终审实录）；
+    ② 稳定段缓存键 = 段内容，别往键里加帧变字段（会退化回每帧全量解析的 O(n²)）。
+    渲染层已组件化：流式气泡在 `<cc-chat-stream>`、历史在 `<cc-chat-history>`、
+    侧边栏在 `<cc-sidebar>`（均无 shadow DOM，shouldUpdate 白名单门控），
+    改对应区域先去组件文件找。

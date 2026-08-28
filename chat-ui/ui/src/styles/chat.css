@@ -2098,7 +2098,9 @@ img.chat-avatar {
   white-space: pre-wrap;
 }
 
-.chat-text--streaming > :is(h1, h2, h3, h4, p, pre, ul, ol, blockquote, table, hr):not(:last-child) {
+/* pre 不在复位名单内：代码块格式依赖 UA 的 white-space: pre，
+   复位成 normal 会让流式期间已闭合代码块的换行/缩进被折叠（R41 终审修复） */
+.chat-text--streaming > :is(h1, h2, h3, h4, p, ul, ol, blockquote, table, hr):not(:last-child) {
   white-space: normal;
 }
 

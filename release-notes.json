@@ -1,5 +1,12 @@
 [
   {
+    "version": "2026.828.4",
+    "notes": {
+      "zh": "体验：消息流式全面优化（第一期，参考官方网关网页端做法）——流式期间侧边栏与历史列表不再每帧重渲染（抽出 cc-chat-stream / cc-chat-history / cc-sidebar 三个独立组件隔离）；流式气泡升级为渐进 markdown 渲染（安全前缀切分：稳定段完整渲染、未闭合尾部纯文本，消除半截代码块抖动）；每轮回复结束不再缩回 20 条再逐批补回，消除闪烁与滚动位移\n修复：刷新/恢复盲区 5 处——滞后补拉预算按会话复位（耗尽后不再永久放弃）；重连后未收养的 orphan run 做最多 3 次静默历史探测；看门狗跳过缺时间戳条目继续判定；后台会话（定时任务/渠道）回复结束即时刷新侧边栏且不再覆写最后活跃会话；静默探测不再闪「加载中」\n优化：sessions.changed 事件先本地补丁、结构不符才全量重拉，减少整表请求\n测试基线 716 用例全绿",
+      "en": "Experience: message streaming overhaul (phase 1, aligned with the official gateway web UI) — sidebar and history list no longer re-evaluate on every streaming frame (isolated into cc-chat-stream / cc-chat-history / cc-sidebar components); streaming bubbles now render progressive markdown (safe-prefix split: stable part fully rendered, unclosed tail as plain text, no half-code-block flicker); end-of-turn history refresh no longer collapses to 20 messages and re-hydrates (no flicker or scroll shift)\nFixed: five refresh/recovery gaps — stale-history retry budget resets per session switch (no longer permanently exhausted); up to 3 silent history probes after reconnect when an orphan run goes unadopted; stream watchdog skips entries missing timestamps; background sessions (cron/channels) refresh the sidebar immediately on reply completion without overwriting the last active session; silent probes no longer flash the loading state\nImproved: sessions.changed events are patched locally first, falling back to a full refetch only on structural mismatch\n716-test baseline all green"
+    }
+  },
+  {
     "version": "2026.828.3",
     "notes": {
       "zh": "修复：Kimi 主模型调用 401 静默降级——旧版遗留的 kimi provider 指向本地代理但缺少鉴权密钥段，每次请求被代理拒绝后落入 fallback；现启动时自动自愈所有指向本地代理的遗留 provider（仅限应用自管条目，不误伤用户自建本地服务）\n测试基线 657 用例全绿",

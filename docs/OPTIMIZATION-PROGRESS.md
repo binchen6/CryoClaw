@@ -10,10 +10,10 @@
 面向国内生态（Kimi / Moonshot / 飞书 / 企微 / 微信 / 钉钉 / QQ）。
 
 **当前状态**：
-- 重设计工程 **R1–R40 全部完成**（二期 P1–P7 收官 + R40 热修复），最新发版 **v2026.828.3**（R40 kimi 代理 401 自愈；v2026.828.2：R39）。
+- 重设计工程 **R1–R41 完成**（R41 消息流式体验优化第一期），最新发版 **v2026.828.4**（R41；v2026.828.3：R40 kimi 代理 401 自愈）。第二期（侧边栏重组 + 模块整合）设计已定稿（`docs/specs/2026-08-28-stream-flow-and-sidebar-design.md`），待实施。
 - 内核 openclaw **2026.7.1-2**（版本 pin 在 package.json `cryoclaw.openclaw`）；**Electron 43.4.0**（audit 0 漏洞）。
-- 测试基线 **657 pass / 0 fail / 4 skipped**（vitest 101 + node 130 + chat-ui 374 + scripts 52；0 fail 为硬指标）。
-- 重复率 **1.06%**（69 clones，阈值 5%，`npm run dupcheck` 防回退）。
+- 测试基线 **716 pass / 0 fail**（vitest 101 + node 130 + chat-ui 433 + scripts 52；0 fail 为硬指标）。
+- 重复率 **1.19%**（79 clones，阈值 5%，`npm run dupcheck` 防回退）。
 - 开源：GitHub `binchen6/CryoClaw`（AGPL-3.0-only，干净历史）；发版走本地 `dist:win` + `gh release`；CI `tests.yml` 每次 push/PR 全量回归。
 
 **常用命令**：
@@ -306,6 +306,19 @@
 - **边界记录在案**：secret 为空（代理未启动鉴权）时不写（写出也必 401，纯 churn）；无 kimi-coding 时不 heal（那种配置下代理根本不起，症状是显眼连接失败而非静默 fallback）。
 - **审查代理复审**：4 项反馈全部处理（apiKey 门控、空 secret 防御、边界注释、独立日志）。
 - **测试 +7**：kimi-config heal 系列 7 条（无 secret 段/旧 secret/旧端口/幂等/非本地不动含 127.0.0.1 反例/空 secret/非 proxy-managed 门控）。基线 650→657 全绿。
+
+### R41 · 消息流式体验优化第一期（完成，随 v2026.828.4 发版）
+
+用户指令：优化消息刷新、流式渲染及恢复、有回复及时刷新，参考 openclaw gateway 网页端（control-ui）做法。先取证官方实现（从 gateway.asar 提取 minified 产物分析），后分 12 个任务子代理实施 + 逐任务双阶段审查（规格/质量）+ 终审。
+- **渲染层组件化**（最大结构改动）：抽出 `<cc-chat-stream>`（流式气泡）/`<cc-chat-history>`（历史列表，`buildChatItems`/两个 memo 迁入）/`<cc-sidebar>`（侧边栏，`shouldUpdate` 数据字段比较 + 纪元机制），均无 shadow DOM。流式高频更新只命中流式组件；实测 50 流式帧侧边栏/历史 0 次重渲染；`buildChatItemsMemoized` memo 键去 `stream`（含不再消费的 `tasks`/`runActive`/`sessionKey`），`resolveSessionOptions` 加装配层 memo（5 数据源引用比较，否则隔离失效）。
+- **流式气泡渐进 markdown**（升级 R5 纯文本定论，对齐官方安全前缀做法）：`splitMarkdownSafePrefix`（闭合围栏/空行边界，奇数围栏退到倒数第二个）+ `toStreamingMarkdownHtml`（稳定段走 `toSanitizedMarkdownHtml` 缓存、尾部转义纯文本，解析频率 = 边界推进频率而非帧率）；配套 CSS 白空复位（**不得含 `pre`**，终审修复：含了会折叠流式期已闭合代码块格式）+ 双光标修复（删容器级 `::after` 残留规则）；`gotchas #73` 钉住新链路与两条红线。
+- **刷新/恢复 5 处盲区修复**：① 滞后补拉预算按目标会话复位（耗尽后不再永久放弃）；② 终态同会话刷新保留 `chatVisibleMessageCount`（消除每轮缩回 20 条再注水的闪烁/滚动位移）；③ 看门狗 `hasAssistantReplyAfter` 跳过缺时间戳条目继续向前扫；④ 重连后未收养 orphan 做 2/4/8s 三次静默探测（收养即清快照停探，`onGap` 软恢复不接）；⑤ 后台会话终态触发 `scheduleTerminalSessionsRefresh` + `lastActiveSessionKey` 仅当前会话写入（重启不再恢复到后台会话）。
+- **及时刷新对齐官方**：`sessions.changed` 先本地 patch（保守白名单：不新增行/不写元字段/无有效字段回落全量，内核取证事件携带行快照子集）；看门狗/重连探测走 `silent`（不闪「加载中」）；30s ticker 保留兜底。工具流 80ms 节流取证为**已存在**（`TOOL_STREAM_THROTTLE_MS`），未重复实现。
+- **终审修复**：流式代码块格式折叠（`pre` 误入复位名单，一行 CSS）；记录在案：静默探测命中滞后时派生的非 silent 补拉属有界预期行为（注释已钉）。
+- **测试 +59**：控制器修复链、安全前缀/渐进渲染、事件 patch、孤儿探测、源码审计钉接线（三组件 `shouldUpdate` 白名单/无 shadow DOM/装配顺序），基线 657→716 全绿。重复率 1.19%（阈值 5%，可见克隆均为既有）。
+- **流程**：每任务独立提交（15 个），逐任务规格符合性 + 代码质量双审，审查发现即修（4 轮修复提交）；终审 1 Blocker 修复后发版。
+- **第二期（R42 待实施）**：侧边栏图标轨重组（会话列表 ≥75% 面积 + 「更多」菜单）+ 三组模块整合（任务双 tab、扩展双 tab、工作区 IDE 式融合），设计与接线清单见 `docs/specs/2026-08-28-stream-flow-and-sidebar-design.md`；Task 12 审查建议顺手项：`cc-sidebar` 加 `disconnectedCallback` 清菜单态、`resolveSessionOptionsMemo` 依赖守护。
+- **记录在案（候选）**：协议 v4 `deltaText` 增量字段未消费（需内核取证）；`>50k` 稳定段流式每帧重解析（可加单槽 memo）；`ChatItem` 三个死 kind 与 `views/chat.ts` 再导出残留（R42 清理）；website 版本徽章随官网改版在建未同步（用户工作区）。
 
 ## 📦 发版与实测经验（套路已验证多次）
 
