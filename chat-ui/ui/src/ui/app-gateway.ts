@@ -456,11 +456,26 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
 
   if (evt.event === "chat") {
     const payload = evt.payload as ChatEventPayload | undefined;
-    if (payload?.sessionKey) {
+    // 仅当前会话的活跃事件代表「用户正在看的对话」；后台会话（cron/渠道/
+    // sub-agent）事件覆写会让重启后恢复到后台会话而非用户上次所看会话。
+    if (payload?.sessionKey && payload.sessionKey === host.sessionKey) {
       setLastActiveSessionKey(
         host as unknown as Parameters<typeof setLastActiveSessionKey>[0],
         payload.sessionKey,
       );
+    }
+    // 后台会话终态：不进 handleChatEvent（其首行按 sessionKey 过滤），
+    // 但侧边栏排序/标题/未读需要及时刷新——对齐事件驱动刷新，
+    // 不落到 30s ticker 兜底（复用既有 per-session 去重 + in-flight 合并）。
+    // delta 等高频事件仍不处理（被下方 handleChatEvent 的 sessionKey 过滤），
+    // 只补终态刷新，防刷爆。
+    if (
+      payload?.sessionKey &&
+      payload.sessionKey !== host.sessionKey &&
+      (payload.state === "final" || payload.state === "error" || payload.state === "aborted")
+    ) {
+      scheduleTerminalSessionsRefresh(host as unknown as OpenClawApp, payload.sessionKey);
+      return;
     }
     // 须在 handleChatEvent 之前判定（final 会清空 chatRunId）：本事件是否属于当前活跃 run。
     // sub-agent 等 cross-run final 只刷新历史/会话列表，绝不能 resetToolStream——
