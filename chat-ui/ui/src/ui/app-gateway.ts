@@ -33,6 +33,7 @@ import {
   recordApprovalResolved,
 } from "./controllers/approval-history.ts";
 import { loadSessions } from "./controllers/sessions.ts";
+import { loadWorktrees } from "./controllers/worktrees.ts";
 import { applyTaskEvent, loadTasks } from "./controllers/tasks.ts";
 import { loadCommands } from "./controllers/commands.ts";
 import type { TaskSummary } from "./types.ts";
@@ -356,6 +357,8 @@ export function connectGateway(host: GatewayHost) {
       void loadChannels(host as unknown as OpenClawApp, false);
       void loadSessionsAndReconcile(host);
       void loadTasks(host as unknown as OpenClawApp);
+      // worktree 徽标数据（sessions.list 行不带 worktree 字段，靠 ownerId 反推）
+      void loadWorktrees(host as unknown as OpenClawApp);
       // 预取 / 命令目录（供 compose 补全）
       void loadCommands(host.client!);
       // 加载执行权限模式（聊天页三态）

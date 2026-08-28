@@ -16,6 +16,7 @@ export const CRYOCLAW_VIEW_IDS = [
   "workspace",
   "cron",
   "tasks",
+  "worktrees",
 ] as const;
 
 export type CryoClawViewId = (typeof CRYOCLAW_VIEW_IDS)[number];
@@ -39,6 +40,7 @@ export const CRYOCLAW_VIEW_META: Record<CryoClawViewId, CryoClawViewMeta> = {
   workspace: { id: "workspace", fullpage: true, titlebarBack: true },
   cron: { id: "cron", fullpage: true, titlebarBack: true },
   tasks: { id: "tasks", fullpage: true, titlebarBack: true },
+  worktrees: { id: "worktrees", fullpage: true, titlebarBack: true },
 };
 
 export function isCryoClawViewId(value: string): value is CryoClawViewId {

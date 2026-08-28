@@ -13,6 +13,7 @@ import { buildChatProps } from "./app-chat-props.ts";
 import { renderCronView } from "./app-cron.ts";
 import {
   createNewSession,
+  createNewWorktreeSession,
   deleteSessionFromSidebar,
   ensureFileDropBridge,
   handleOpenWebUI,
@@ -25,6 +26,7 @@ import {
 } from "./app-session-actions.ts";
 import { openSkillsView, renderSkillsView } from "./app-skills.ts";
 import { openTasksView, renderTasksView } from "./app-tasks.ts";
+import { openWorktreesView, renderWorktreesView } from "./app-worktrees.ts";
 import { getToastAction, getToastMessage, hideToast } from "./app-toast.ts";
 import { setCryoClawView } from "./app-view-switch.ts";
 import { loadSessions, patchSession } from "./controllers/sessions.ts";
@@ -68,6 +70,7 @@ declare global {
       workspaceOpenFolder?: (filePath: string) => Promise<any>;
       workspaceListDir?: (dirPath: string) => Promise<any>;
       workspaceReadFile?: (filePath: string) => Promise<any>;
+      gitDetect?: () => Promise<any>;
       // Settings: Advanced / Gateway control
       settingsGetAdvanced?: () => Promise<any>;
       settingsSaveAdvanced?: (params: Record<string, unknown>) => Promise<any>;
@@ -103,6 +106,8 @@ function renderActiveView(state: AppViewState, view: CryoClawViewId) {
       return renderCronView(state);
     case "tasks":
       return renderTasksView(state);
+    case "worktrees":
+      return renderWorktreesView(state);
     default:
       return renderChat(buildChatProps(state));
   }
@@ -151,6 +156,11 @@ export function renderApp(state: AppViewState) {
             tasksActive: cryoclawView === "tasks",
             tasksRunningCount: state.tasks.filter((task) => isActiveTask(task)).length,
             onOpenTasks: () => openTasksView(state),
+            worktreesActive: cryoclawView === "worktrees",
+            onOpenWorktrees: () => openWorktreesView(state),
+            // git 不可用时 worktree 新建入口降级隐藏（false=已探测无 git）
+            gitAvailable: state.gitAvailable,
+            onNewWorktreeChat: () => void createNewWorktreeSession(state),
             webbridgeRepairVisible: state.webbridgeRepairVisible,
             webbridgeRepairBrowserName: state.webbridgeRepairBrowserName,
             webbridgeRepairChecking: state.webbridgeRepairChecking,

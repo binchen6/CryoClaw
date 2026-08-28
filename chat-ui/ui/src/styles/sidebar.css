@@ -166,6 +166,69 @@
   flex-shrink: 0;
 }
 
+/* worktree 新会话入口（new-chat 下方的次级按钮，仅 git 可用时渲染） */
+.cryoclaw-sidebar__new-worktree-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacer-8);
+  width: 100%;
+  margin-top: var(--spacer-8);
+  padding: var(--spacer-8) var(--spacer-16);
+  border-radius: 9999px;
+  background: transparent;
+  border: 1px dashed var(--border);
+  color: var(--muted);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  cursor: pointer;
+  transition: border-color var(--duration-fast) ease, color var(--duration-fast) ease;
+  -webkit-app-region: no-drag;
+}
+
+.cryoclaw-sidebar__new-worktree-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.cryoclaw-sidebar__new-worktree-btn svg {
+  width: 14px;
+  height: 14px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.5px;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  flex-shrink: 0;
+}
+
+/* 会话项 worktree 分支徽标 */
+.cryoclaw-sidebar__session-worktree {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: 5px;
+  vertical-align: middle;
+  font-size: var(--text-xs);
+  color: var(--accent);
+  background: var(--accent-subtle);
+  border-radius: var(--radius-full);
+  padding: 0 var(--spacer-8);
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cryoclaw-sidebar__session-worktree svg {
+  width: 11px;
+  height: 11px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 2px;
+  flex-shrink: 0;
+}
+
 .cryoclaw-sidebar__collapse svg {
   width: 18px;
   height: 18px;

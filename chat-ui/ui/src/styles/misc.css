@@ -877,3 +877,129 @@
   color: var(--danger);
 }
 
+
+/* ── Worktrees（worktree 管理视图） ─────────────────────────────── */
+
+.wt-layout {
+  max-width: 860px;
+  margin: 0 auto;
+  /* 顶部 48px 让开沉浸式 titlebar（与其余 fullpage 视图一致） */
+  padding: 48px 24px 48px;
+  display: grid;
+  gap: 18px;
+  color: var(--text);
+}
+
+.wt-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--spacer-16);
+  flex-wrap: wrap;
+}
+
+.wt-title {
+  margin: 0;
+  font-size: var(--heading-md);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--text-strong);
+}
+
+.wt-sub {
+  margin: var(--spacer-4) 0 0;
+  font-size: var(--text-sm);
+  color: var(--muted);
+}
+
+.wt-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--spacer-8);
+  flex-wrap: wrap;
+}
+
+.wt-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacer-16);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+  padding: var(--spacer-12) var(--spacer-16);
+  transition: border-color var(--duration-fast) var(--ease-out);
+}
+
+.wt-card:hover {
+  border-color: var(--border-strong);
+}
+
+.wt-card--removed {
+  opacity: 0.7;
+}
+
+.wt-card__main {
+  min-width: 0;
+  display: grid;
+  gap: var(--spacer-8);
+}
+
+.wt-card__title {
+  font-size: var(--heading-xs);
+  font-weight: 500;
+  color: var(--text-strong);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wt-card__detail {
+  font-size: var(--text-xs);
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wt-card__meta {
+  display: flex;
+  align-items: center;
+  gap: var(--spacer-8);
+  flex-shrink: 0;
+}
+
+.wt-card__time {
+  font-size: var(--text-xs);
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.wt-card .chip svg {
+  width: 12px;
+  height: 12px;
+  stroke: currentColor;
+  fill: none;
+  vertical-align: -2px;
+}
+
+.wt-empty {
+  margin: 0;
+  padding: var(--spacer-24);
+  text-align: center;
+  color: var(--muted);
+  font-size: var(--text-sm);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-md);
+}
+
+@media (max-width: 900px) {
+  .wt-card {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .wt-card__meta {
+    justify-content: flex-end;
+  }
+}

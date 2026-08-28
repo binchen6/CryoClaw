@@ -20,6 +20,7 @@ import {
   FileText,
   Folder,
   FolderOpen,
+  GitBranch,
   Globe,
   History,
   Image,
@@ -127,6 +128,8 @@ export const icons = {
   activity: renderLucideIcon(Activity),
   folder: renderLucideIcon(Folder),
   folderOpen: renderLucideIcon(FolderOpen),
+  // worktree 会话徽标 / worktrees 管理入口
+  gitBranch: renderLucideIcon(GitBranch),
 } as const;
 
 export type IconName = keyof typeof icons;

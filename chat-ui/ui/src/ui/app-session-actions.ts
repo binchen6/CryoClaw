@@ -8,6 +8,11 @@ import { refreshChat, refreshChatAvatar } from "./app-chat.ts";
 import { loadChatHistory } from "./controllers/chat.ts";
 import { patchSession, loadSessions } from "./controllers/sessions.ts";
 import {
+  buildWorktreeSessionMap,
+  isNotGitCheckoutError,
+  loadWorktrees,
+} from "./controllers/worktrees.ts";
+import {
   branchCompactionCheckpoint,
   loadCompactionCheckpoints,
   restoreCompactionCheckpoint,
@@ -84,10 +89,12 @@ function resolveSessionOptionLabel(
 
 export function resolveSessionOptions(
   state: AppViewState,
-): Array<{ key: string; label: string; updatedAt?: number; pinned?: boolean; unread?: boolean; archived?: boolean }> {
+): Array<{ key: string; label: string; updatedAt?: number; pinned?: boolean; unread?: boolean; archived?: boolean; worktreeBranch?: string }> {
   const sessions = state.sessionsResult?.sessions ?? [];
+  // sessions.list 行不投影 worktree 字段，徽标数据从 worktrees.list 的 ownerId 反推
+  const worktreeBySession = buildWorktreeSessionMap(state.worktrees ?? []);
   const seen = new Set<string>();
-  const options: Array<{ key: string; label: string; updatedAt?: number; pinned?: boolean; unread?: boolean; archived?: boolean }> = [];
+  const options: Array<{ key: string; label: string; updatedAt?: number; pinned?: boolean; unread?: boolean; archived?: boolean; worktreeBranch?: string }> = [];
 
   const pushOption = (
     key: string,
@@ -107,6 +114,7 @@ export function resolveSessionOptions(
       pinned: row?.pinned === true,
       unread: row?.unread === true,
       archived: row?.archived === true,
+      worktreeBranch: worktreeBySession.get(trimmedKey)?.branch,
     });
   };
 
@@ -211,6 +219,19 @@ export async function deleteSessionFromSidebar(state: AppViewState, key: string)
       // not-found 视作等效成功，继续刷新
     }
 
+    // 2.5) worktree 会话：附带删除其持有的 worktree（有改动时内核自动快照，可恢复）。
+    // 内核 sessions.delete 已对无损 worktree 做过 removeIfLossless，这里兜底有损场景；
+    // 已被内核删掉的会让 worktrees.remove 报错，吞掉即可。
+    const ownedWorktree = buildWorktreeSessionMap(state.worktrees ?? []).get(key);
+    if (ownedWorktree) {
+      try {
+        await state.client.request("worktrees.remove", { id: ownedWorktree.id });
+      } catch {
+        // 内核已清理 / worktree 已不存在：忽略
+      }
+      void loadWorktrees(state);
+    }
+
     // 3) 成功：全量刷新侧边栏；reconcileVisibleSession 会在活跃会话被删时切到下一个可见会话。
     removePendingSessionLabel(key);
     // 同步清理该会话的草稿快照，防同名 key 复用时复活旧草稿
@@ -275,16 +296,7 @@ export async function handleBranchCheckpoint(state: AppViewState, checkpointId: 
 
 // 新建会话：同步写入本地列表后再切换，异步同步到 Gateway 供跨终端访问
 export function createNewSession(state: AppViewState) {
-  const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
-  // agentId 与 resolveAgentIdForSession 同一套 fallback：当前会话 key 解析 → hello 快照默认 agent → "main"
-  const snapshot = state.hello?.snapshot as
-    | { sessionDefaults?: { defaultAgentId?: string } }
-    | undefined;
-  const agentId =
-    parseAgentSessionKey(state.sessionKey)?.agentId ??
-    snapshot?.sessionDefaults?.defaultAgentId?.trim() ??
-    "main";
-  const newKey = `agent:${agentId || "main"}:${id}`;
+  const newKey = resolveNewSessionKey(state);
   const label = t("chat.newSession");
   setCryoClawView(state, "chat");
   // 先把新会话插入本地列表，UI 立即可见正确的名称
@@ -298,6 +310,62 @@ export function createNewSession(state: AppViewState) {
   state.resetModelToDefault();
   // 标记为待自动命名。label 将在首条消息发送 + chat.event final 后持久化到 gateway。
   pendingSessionLabels.set(newKey, label);
+}
+
+// 新会话 key：与 resolveAgentIdForSession 同一套 fallback（当前会话 key 解析 → hello 默认 agent → "main"）
+function resolveNewSessionKey(state: AppViewState): string {
+  const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+  const snapshot = state.hello?.snapshot as
+    | { sessionDefaults?: { defaultAgentId?: string } }
+    | undefined;
+  const agentId =
+    parseAgentSessionKey(state.sessionKey)?.agentId ??
+    snapshot?.sessionDefaults?.defaultAgentId?.trim() ??
+    "main";
+  return `agent:${agentId || "main"}:${id}`;
+}
+
+// 在隔离 worktree 中新建会话：内核 sessions.create {worktree:true} 自动 provision
+// worktree（落 ~/.openclaw/worktrees/），失败时内核自己回滚 worktree。
+export async function createNewWorktreeSession(state: AppViewState) {
+  if (!state.client || !state.connected) {
+    return;
+  }
+  const newKey = resolveNewSessionKey(state);
+  const agentId = parseAgentSessionKey(newKey)?.agentId ?? "main";
+  let createdWorktree: { id: string; path: string; branch: string } | undefined;
+  try {
+    const res = await state.client.request<{ worktree?: { id: string; path: string; branch: string } }>(
+      "sessions.create",
+      { key: newKey, agentId, worktree: true },
+    );
+    createdWorktree = res?.worktree;
+  } catch (err) {
+    // agent workspace 不是 git 仓库是最典型失败：引导用户先指向 git 仓库
+    showToast(
+      state,
+      isNotGitCheckoutError(err)
+        ? t("worktrees.notGitCheckout")
+        : `${t("worktrees.createFailed")}: ${err instanceof Error ? err.message : String(err)}`,
+    );
+    return;
+  }
+  const label = t("chat.newSession");
+  setCryoClawView(state, "chat");
+  const sessions = state.sessionsResult?.sessions ?? [];
+  state.sessionsResult = {
+    ...state.sessionsResult,
+    sessions: [{ key: newKey, label, updatedAt: Date.now() }, ...sessions],
+  };
+  applySessionKey(state, newKey, true);
+  state.resetModelToDefault();
+  pendingSessionLabels.set(newKey, label);
+  // 内核已建会话与 worktree：刷新列表让徽标/管理视图立即反映
+  void loadSessions(state);
+  void loadWorktrees(state);
+  if (createdWorktree) {
+    showToast(state, `${t("worktrees.newSessionCreated")}: ${createdWorktree.branch}`);
+  }
 }
 
 export async function confirmAndCreateNewSession(state: AppViewState) {

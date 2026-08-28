@@ -30,6 +30,8 @@ import { registerSettingsIpc } from "./settings-ipc";
 import { registerSkillStoreIpc } from "./skill-store";
 import { registerPluginStoreIpc } from "./plugin-store";
 import { registerWorkspaceIpc } from "./workspace-ipc";
+import { registerGitIpc } from "./git-ipc";
+import { detectGitCached } from "./git-detector";
 import { isSetupComplete, resolveGatewayPort, resolveGatewayLogPath, resolveUserStateDir, resolveUserConfigPath } from "./constants";
 import { resolveGatewayAuthToken } from "./gateway-auth";
 import {
@@ -932,6 +934,9 @@ registerSettingsIpc({
 registerSkillStoreIpc();
 registerPluginStoreIpc();
 registerWorkspaceIpc();
+registerGitIpc();
+// 启动即探测 git 并缓存（worktree 入口降级依据），渲染层经 git:detect 取结果
+void detectGitCached();
 
 // ── 退出 ──
 

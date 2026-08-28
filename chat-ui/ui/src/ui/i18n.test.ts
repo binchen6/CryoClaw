@@ -105,6 +105,9 @@ const ZH_ENGLISH_ALLOWLIST = new Set([
   "setup.provider.apiType.openaiResponses",
   "tasks.runtime.acp",
   "tasks.runtime.cli",
+  // git worktree 为业界通用技术名词，zh 区保留英文
+  "sidebar.worktrees",
+  "worktrees.title",
 ]);
 
 test("i18n：zh 区值必须含中文（品牌/技术字段除外）", () => {

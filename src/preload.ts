@@ -161,6 +161,9 @@ contextBridge.exposeInMainWorld("cryoclaw", {
   workspaceReadFile: (filePath: string) =>
     ipcRenderer.invoke("workspace:read-file", filePath),
 
+  // git CLI 探测（缓存结果；worktree 入口降级依据）
+  gitDetect: () => ipcRenderer.invoke("git:detect"),
+
   onSettingsNavigate: (cb: (payload: { tab: string; notice: string }) => void) => {
     const handler = (_e: Electron.IpcRendererEvent, payload: { tab: string; notice: string }) => cb(payload);
     ipcRenderer.on("settings:navigate", handler);

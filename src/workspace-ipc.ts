@@ -1,5 +1,5 @@
 // 工作空间文件系统操作 — 目录浏览、文件读取、系统打开
-// 所有路径操作均验证在 workspace 根目录内，防止路径穿越
+// 所有路径操作均验证在允许的根目录内（workspace 根 + 内核 worktrees 目录），防止路径穿越
 import { ipcMain, shell } from "electron";
 import * as fs from "fs";
 import * as path from "path";
@@ -22,12 +22,25 @@ function isInsideRoot(target: string, root: string): boolean {
   return resolved === resolvedRoot || resolved.startsWith(resolvedRoot + path.sep);
 }
 
-// 公共守卫：检查 workspace root 和路径合法性
-function guardPath(filePath: string): { ok: true } | { ok: false; error: { success: false; message: string } } {
-  if (!workspaceRoot) {
-    return { ok: false, error: { success: false, message: "Workspace root not set" } };
+// 多根版 containment 校验（导出供单测）：target 落在任一 root 内即通过
+export function isInsideAnyRoot(target: string, roots: readonly string[]): boolean {
+  return roots.some((root) => isInsideRoot(target, root));
+}
+
+// 允许访问的根集合：workspace 根（渲染层 set-root 设定，可能未设置）+
+// 内核 worktrees 目录 ~/.openclaw/worktrees/（worktree 管理视图「打开目录」走这里）
+function allowedRoots(): string[] {
+  const roots: string[] = [];
+  if (workspaceRoot) {
+    roots.push(workspaceRoot);
   }
-  if (!isInsideRoot(filePath, workspaceRoot)) {
+  roots.push(path.join(resolveUserStateDir(), "worktrees"));
+  return roots;
+}
+
+// 公共守卫：检查路径合法性（workspace 根或 worktrees 根之内）
+function guardPath(filePath: string): { ok: true } | { ok: false; error: { success: false; message: string } } {
+  if (!isInsideAnyRoot(filePath, allowedRoots())) {
     log.error(`workspace: path traversal blocked: ${filePath}`);
     return { ok: false, error: { success: false, message: "Access denied" } };
   }
@@ -41,10 +54,9 @@ function guardPath(filePath: string): { ok: true } | { ok: false; error: { succe
 async function resolveRealInsideRoot(
   filePath: string,
 ): Promise<string | null | undefined> {
-  if (!workspaceRoot) return null;
   try {
     const real = await fs.promises.realpath(filePath);
-    return isInsideRoot(real, workspaceRoot) ? real : null;
+    return isInsideAnyRoot(real, allowedRoots()) ? real : null;
   } catch {
     // 解析失败（不存在/权限）：返回 undefined，让后续 stat/open 用原路径报具体错误
     return undefined;

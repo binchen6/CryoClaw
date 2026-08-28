@@ -1,5 +1,12 @@
 [
   {
+    "version": "2026.827.8",
+    "notes": {
+      "zh": "新功能：Worktree 会话接入——侧边栏新增「Worktree 新会话」入口与 Worktrees 管理视图（列表/打开目录/恢复/删除/GC）；会话行显示分支徽标；删除会话自动清理关联 worktree（有损场景内核自动快照兜底）\n优化：无 git 环境自动降级（隐藏入口+引导提示，安装 git 重启后恢复）；workspace 安全打开白名单扩展至内核 worktrees 目录\n测试基线 618 用例全绿",
+      "en": "New: worktree sessions — new \"Worktree session\" entry in the sidebar and a Worktrees management view (list / open folder / restore / remove / GC); session rows show a branch badge; deleting a session cleans up its worktree (the kernel auto-snapshots lossy cases)\nImproved: graceful degradation without git (entry hidden with guidance; restored after installing git and restarting); the workspace safe-open whitelist now covers the kernel worktrees directory\n618-test baseline all green"
+    }
+  },
+  {
     "version": "2026.827.7",
     "notes": {
       "zh": "新功能：已发送文件附件卡片化——文件附件走内核附件通道（base64），气泡与历史同构渲染附件卡片（文件名+图标，点击打开/定位）；已发送图片/文件刷新后不再丢失；失败重发不再丢附件\n优化：超过 16MB 或多附件累计超帧预算时自动降级为路径文本发送并提示；附件图片支持点击全屏预览\n调整：按用户要求移除 4 小时周期自动检查更新，仅在应用启动时检测（检测到仍自动下载，重启提示链路不变）\n加固：file:read-base64 通道 stat 预判+读后复核双道大小校验；更新策略、卡片样式全 token 化\n测试基线 566 用例全绿",

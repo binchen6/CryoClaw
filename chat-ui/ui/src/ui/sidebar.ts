@@ -16,6 +16,8 @@ export type SidebarSessionOption = {
   pinned?: boolean;
   unread?: boolean;
   archived?: boolean;
+  // 会话持有的活跃 worktree 分支名（由 worktrees.list 的 ownerId 反推，见 app-session-actions）
+  worktreeBranch?: string;
 };
 
 export type SidebarProps = {
@@ -37,6 +39,11 @@ export type SidebarProps = {
   cronActive: boolean;
   cronJobCount: number;
   onOpenCron: () => void;
+  // worktrees 管理视图入口 + git 探测降级（gitAvailable === false 时隐藏新建入口）
+  worktreesActive: boolean;
+  onOpenWorktrees: () => void;
+  gitAvailable: boolean | null;
+  onNewWorktreeChat: () => void;
   // 当前 webbridge 模式但浏览器扩展未启用 → 显示「连接你的常用浏览器」pill
   // 用户在浏览器外部启用扩展 CryoClaw 拿不到事件，所以 pill 改成可点击：
   // 点一次重跑 needs-repair；扩展已启用就 pill 消失，否则保持显示
@@ -170,7 +177,7 @@ function renderSessionItem(props: SidebarProps, s: SidebarSessionOption) {
       <span
         class="cryoclaw-sidebar__session-name"
         title=${s.label}
-      >${s.unread ? html`<span class="cryoclaw-sidebar__unread-dot" aria-label=${t("sidebar.unread")}></span>` : nothing}${s.label}${s.pinned ? html`<span class="cryoclaw-sidebar__session-pin" aria-label=${t("sidebar.pinned")}>${icons.pin}</span>` : nothing}</span>
+      >${s.unread ? html`<span class="cryoclaw-sidebar__unread-dot" aria-label=${t("sidebar.unread")}></span>` : nothing}${s.label}${s.pinned ? html`<span class="cryoclaw-sidebar__session-pin" aria-label=${t("sidebar.pinned")}>${icons.pin}</span>` : nothing}${s.worktreeBranch ? html`<span class="cryoclaw-sidebar__session-worktree" title=${s.worktreeBranch}>${icons.gitBranch}${s.worktreeBranch}</span>` : nothing}</span>
       <span class="cryoclaw-sidebar__session-menu-wrap">
         <button
           class="cryoclaw-sidebar__session-action ${menuOpen ? "is-open" : ""} ${deleting ? "is-loading" : ""}"
@@ -316,6 +323,19 @@ export function renderSidebar(props: SidebarProps) {
           >
             ${icons.messagePlus} ${t("sidebar.newChat")}
           </button>
+          ${props.gitAvailable === true
+            ? html`
+              <button
+                class="cryoclaw-sidebar__new-worktree-btn"
+                type="button"
+                @click=${props.onNewWorktreeChat}
+                data-tooltip=${t("sidebar.newWorktreeChatHint")}
+                data-tooltip-pos="bottom"
+              >
+                ${icons.gitBranch} ${t("sidebar.newWorktreeChat")}
+              </button>
+            `
+            : nothing}
         </div>
 
         <!-- 主导航：任务 / 定时 / 技能 / 工作区（徽标实时反映运行态） -->
@@ -357,6 +377,14 @@ export function renderSidebar(props: SidebarProps) {
           >
             <span class="cryoclaw-sidebar__icon">${icons.folder}</span>
             <span class="cryoclaw-sidebar__label">${t("sidebar.workspace")}</span>
+          </button>
+          <button
+            class="cryoclaw-sidebar__item ${props.worktreesActive ? "active" : ""}"
+            type="button"
+            @click=${props.onOpenWorktrees}
+          >
+            <span class="cryoclaw-sidebar__icon">${icons.gitBranch}</span>
+            <span class="cryoclaw-sidebar__label">${t("sidebar.worktrees")}</span>
           </button>
         </div>
 

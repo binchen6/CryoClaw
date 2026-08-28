@@ -10,9 +10,9 @@
 面向国内生态（Kimi / Moonshot / 飞书 / 企微 / 微信 / 钉钉 / QQ）。
 
 **当前状态**：
-- 重设计工程 **R1–R35 全部完成**，最新发版 **v2026.827.7**（R35 已发送附件卡片化+更新策略调整；v2026.827.6：R34）。
+- 重设计工程 **R1–R36 全部完成**，最新发版 **v2026.827.8**（R36 worktrees 接入；v2026.827.7：R35）。
 - 内核 openclaw **2026.7.1-2**（版本 pin 在 package.json `cryoclaw.openclaw`）；**Electron 43.4.0**（audit 0 漏洞）。
-- 测试基线 **566 pass / 0 fail / 4 skipped**（vitest 94 + node 81 + chat-ui 339 + scripts 52；0 fail 为硬指标）。
+- 测试基线 **618 pass / 0 fail / 4 skipped**（vitest 94 + node 93 + chat-ui 359 + scripts 52；0 fail 为硬指标）。
 - 重复率 **1.01%**（67 clones，阈值 5%，`npm run dupcheck` 防回退）。
 - 开源：GitHub `binchen6/CryoClaw`（AGPL-3.0-only，干净历史）；发版走本地 `dist:win` + `gh release`；CI `tests.yml` 每次 push/PR 全量回归。
 
@@ -247,6 +247,18 @@
 - **安全决策记录**：file:read-base64 是任意绝对路径读取原语（≤16MB/次），assertTrustedIpcSender 只放行 file:// 主 frame；XSS 滥用面已写进 handler 注释 + docs/ipc-api.md（审查 major 闭环：后续可加 picker 路径白名单收紧）。
 - **测试 +29**：file-read-base64.test.ts 7、media-attachments.test.ts 6、attachment-cards.test.ts 12（含 lightbox 委托审计）、controllers/chat.test.ts +4（base64 发送/超限降级/错误卡附件/累计帧预算）。基线 540→566 全绿；重复率 1.012%。
 - **不修记录在案**：降级文件乐观气泡双重呈现（路径文本+卡片，刷新后只剩文本）；restoreMediaFileName 对巧合含 `---uuid` 段的本地文件名误剥（概率极低）；UNC 路径 file:// 预览不可靠（有 onerror 兜底）；media store TTL 后历史卡片打开失败静默降级（未做真机端到端）。
+
+### R36 · Worktrees 接入（完成，随 v2026.827.8 发版；二期 P3）
+
+用户指令：worktrees。coder 实施 + 审查代理复审（无 blocker/major，可发版）：
+- **git 探测降级**：src/git-detector.ts（`git --version` execFile 5s 超时 + 进程级缓存 + 启动预热）；无 git 时侧边栏入口隐藏、管理视图 callout 引导（i18n 文案如实写明装 git 重启恢复）。
+- **新建 worktree 会话**：app-session-actions.ts `createNewWorktreeSession`（sessions.create {worktree:true}，非 git 仓库错误转友好引导）；侧边栏「Worktree 新会话」次级按钮（仅 gitAvailable 渲染）。
+- **徽标反推（计划断言被侦察推翻）**：sessions.list 行不投影 worktree 字段（asar 取证确证），会话行分支徽标改由 worktrees.list `ownerKind==="session" && ownerId===sessionKey` 反推（buildWorktreeSessionMap）；canonical key 全小写形态与生成 key 匹配，乐观插入不分裂。
+- **删除联动**：内核 sessions.delete 已自动 removeIfLossless；UI 侧在映射仍有活跃记录时补 worktrees.remove（有损场景内核自动快照），失败静默。
+- **管理视图**：views/worktrees.ts（列表/打开目录/打开会话/删除/恢复/GC）；registry 三处接线（gotchas #49）齐全，不开放 URL 注入；app-gateway onHello 后 loadWorktrees，断连重连自动刷新。
+- **白名单双根**：workspace-ipc.ts 守卫放宽为 workspace 根 + `~/.openclaw/worktrees/`（isInsideRoot + realpath 复核不变）。
+- **测试 +26**：git-detector 6、workspace-ipc 6、worktrees controller 12、源码审计 8。基线 566→618 全绿；重复率 1.014%。
+- **记录在案（P7 候选）**：resolveUserStateDir 与内核 resolveStateDir 的 legacy（~/.clawdbot）/env trim 分歧（既有系统性假设）；删除路径依赖 worktrees 快照 map，miss 时按 canonical key 兜底查（minor-2）；open-folder/list-dir 只走 lexical guard 无 realpath 复核（既有攻击面，未扩大）；gc toast 明细英文片段；sidebar.css 9999px vs --radius-full 不统一。
 
 ## 📦 发版与实测经验（套路已验证多次）
 

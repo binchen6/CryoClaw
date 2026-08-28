@@ -133,6 +133,8 @@ type CryoClawBridge = {
   appUpdateGetState?: () => Promise<{ success: boolean; data?: { status?: string } } | null>;
   appUpdateQuitAndInstall?: () => Promise<{ success: boolean; message?: string } | null>;
   onAppUpdateState?: (cb: (state: { status?: string }) => void) => (() => void) | void;
+  // git CLI 探测（主进程缓存结果）；worktree 入口降级依据
+  gitDetect?: () => Promise<{ success: boolean; data?: { available: boolean; version: string | null } } | null>;
 };
 
 const SHARE_PROMPT_STORE_KEY = "openclaw.share.prompt.v1";
@@ -235,6 +237,12 @@ export class OpenClawApp extends LitElement {
     tasks: { state: true },
     tasksStatusFilter: { state: true },
     tasksCancellingIds: { state: true },
+    worktreesLoading: { state: true },
+    worktreesError: { state: true },
+    worktrees: { state: true },
+    worktreesBusyIds: { state: true },
+    worktreesGcBusy: { state: true },
+    gitAvailable: { state: true },
     execMode: { state: true },
     skillsLoading: { state: true },
     skillsReport: { state: true },
@@ -398,6 +406,15 @@ export class OpenClawApp extends LitElement {
   tasksStatusFilter: import("./types.js").TaskStatus | "all" = "all";
   tasksCancellingIds = new Set<string>();
 
+  // Worktrees 管理视图 + 侧边栏会话 worktree 徽标（内核 worktrees.* RPC）
+  worktreesLoading = false;
+  worktreesError: string | null = null;
+  worktrees: import("./controllers/worktrees.js").WorktreeRecord[] = [];
+  worktreesBusyIds = new Set<string>();
+  worktreesGcBusy = false;
+  // git CLI 探测结果：null=未探测（无 bridge 的浏览器 dev），false 时 worktree 新建入口降级隐藏
+  gitAvailable: boolean | null = null;
+
   // 执行权限模式（官方 tools.exec.mode 合法值：deny / allowlist / ask / auto / full；
   // 三态 UI 用其中 ask / auto / full——"approve-all" 不是内核合法值，写入会触发
   // 内核 resolveExecPolicyForMode 抛 Unsupported exec mode）
@@ -476,7 +493,22 @@ export class OpenClawApp extends LitElement {
     this.bindWebbridgeStateChanged();
     this.bindWebbridgeRepairPoll();
     this.bindAppUpdateState();
+    this.bindGitDetection();
     this.fetchReleaseNotes();
+  }
+
+  // git CLI 探测（主进程启动时已缓存）：无 git 时 worktree 新建入口降级隐藏，
+  // worktrees 管理视图内展示提示。浏览器 dev（无 bridge）保持 null。
+  private bindGitDetection() {
+    const bridge = this.getCryoClawBridge();
+    if (!bridge?.gitDetect) return;
+    void bridge.gitDetect()
+      .then((r) => {
+        this.gitAvailable = r?.success ? r.data?.available === true : false;
+      })
+      .catch(() => {
+        this.gitAvailable = false;
+      });
   }
 
   // App 更新状态推送 → 设置入口角标 + downloaded 态 toast（带「重启更新」action）。
