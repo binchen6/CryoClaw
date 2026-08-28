@@ -1312,3 +1312,16 @@
   word-break: break-all;
   opacity: 0.85;
 }
+
+/* R42 第二期：compact/embedded 工具行（worktrees/git 精简变体，全 token） */
+.wt-compact-toolbar {
+  display: flex;
+  gap: var(--spacer-8);
+  padding: var(--spacer-8) 0;
+}
+
+.gitp-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  padding: var(--spacer-12) 0;
+}

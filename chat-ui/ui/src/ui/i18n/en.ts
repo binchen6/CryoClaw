@@ -121,7 +121,6 @@ export const enDict: Record<string, string> = {
   "cron.selectHint": "Select a task to view details",
 
   // Skill Manager
-  "sidebar.skillStore": "Skills",
   "sidebar.extensions": "Extensions",
   "extensions.tabSkills": "Skills",
   "extensions.tabPlugins": "Plugins",
@@ -210,7 +209,6 @@ export const enDict: Record<string, string> = {
   "settings.nav.advanced": "Advanced",
   "settings.nav.sessionUsage": "Session Usage",
   "settings.nav.approvals": "Approvals",
-    "settings.group.extensions": "Extensions",
     "settings.plugins.title": "Plugin Management",
     "settings.plugins.desc": "Manage installed kernel plugins, or discover and install new ones from the ClawHub marketplace.",
     "settings.plugins.installed": "Installed",

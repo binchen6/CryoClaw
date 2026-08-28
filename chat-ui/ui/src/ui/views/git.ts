@@ -210,40 +210,51 @@ export function renderGitPanel(props: GitPanelProps, opts?: { showRepoSelect?: b
   const branch = props.status?.branch ?? null;
   const hasChanges =
     !!groups && (groups.staged.length > 0 || groups.unstaged.length > 0 || groups.untracked.length > 0);
-  const showHeader = opts?.showRepoSelect !== false;
 
   return html`
     <div class="gitp-layout panel">
-      ${showHeader ? html`<div class="gitp-header panel__header">
-        <div>
-          <h2 class="gitp-title panel__title">${t("git.title")}</h2>
-          <p class="gitp-sub panel__subtitle">${t("git.subtitle")}</p>
-        </div>
-        <div class="gitp-toolbar panel__actions">
-          ${props.repoOptions.length > 1
-            ? html`<select
-                class="gitp-repo-select"
-                .value=${props.repoPath ?? ""}
-                @change=${(e: Event) => props.onRepoChange((e.target as HTMLSelectElement).value)}
+      ${opts?.showRepoSelect === false
+        ? html`<div class="gitp-toolbar">
+            <button
+              class="btn"
+              type="button"
+              ?disabled=${props.loading || !props.repoPath}
+              @click=${props.onRefresh}
+            >
+              ${props.loading ? icons.loader : icons.refreshCw}
+              ${t("git.refresh")}
+            </button>
+          </div>`
+        : html`<div class="gitp-header panel__header">
+            <div>
+              <h2 class="gitp-title panel__title">${t("git.title")}</h2>
+              <p class="gitp-sub panel__subtitle">${t("git.subtitle")}</p>
+            </div>
+            <div class="gitp-toolbar panel__actions">
+              ${props.repoOptions.length > 1
+                ? html`<select
+                    class="gitp-repo-select"
+                    .value=${props.repoPath ?? ""}
+                    @change=${(e: Event) => props.onRepoChange((e.target as HTMLSelectElement).value)}
+                  >
+                    ${props.repoOptions.map(
+                      (o) => html`<option value=${o.path} ?selected=${o.path === props.repoPath}>
+                        ${o.kind === "workspace" ? t("git.repoWorkspace") : `${t("git.repoWorktree")} · ${o.branch || o.path}`}
+                      </option>`,
+                    )}
+                  </select>`
+                : nothing}
+              <button
+                class="btn"
+                type="button"
+                ?disabled=${props.loading || !props.repoPath}
+                @click=${props.onRefresh}
               >
-                ${props.repoOptions.map(
-                  (o) => html`<option value=${o.path} ?selected=${o.path === props.repoPath}>
-                    ${o.kind === "workspace" ? t("git.repoWorkspace") : `${t("git.repoWorktree")} · ${o.branch || o.path}`}
-                  </option>`,
-                )}
-              </select>`
-            : nothing}
-          <button
-            class="btn"
-            type="button"
-            ?disabled=${props.loading || !props.repoPath}
-            @click=${props.onRefresh}
-          >
-            ${props.loading ? icons.loader : icons.refreshCw}
-            ${t("git.refresh")}
-          </button>
-        </div>
-      </div>` : nothing}
+                ${props.loading ? icons.loader : icons.refreshCw}
+                ${t("git.refresh")}
+              </button>
+            </div>
+          </div>`}
 
       ${!props.connected
         ? html`<div class="callout info">${t("error.disconnected")}</div>`

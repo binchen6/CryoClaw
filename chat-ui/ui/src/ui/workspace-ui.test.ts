@@ -61,7 +61,7 @@ test("app-render.ts：workspace 分支渲染新工作区视图", () => {
 test("views/worktrees.ts：compact 变体保留 GC/恢复/删除/打开能力", () => {
   const s = src("views/worktrees.ts");
   assert.match(s, /opts\?: \{ compact\?: boolean \}/, "缺 compact 选项");
-  assert.match(s, /props\.onGc/, "compact 态仍应有 GC 入口");
+  assert.match(s, /wt-compact-toolbar[\s\S]{0,300}props\.onGc/, "compact 工具行内应有 GC 入口");
   assert.match(s, /props\.onRestore/, "compact 态仍应有恢复入口");
 });
 
@@ -70,4 +70,5 @@ test("views/git.ts：embedded 变体隐藏仓库选择、保留三分组/提交"
   assert.match(s, /showRepoSelect/, "缺 embedded 选项");
   assert.match(s, /groupGitEntries\(props\.status\.entries\)/, "三分组应保留");
   assert.match(s, /"git\.commitTitle"/, "提交框应保留");
+  assert.match(s, /gitp-toolbar[\s\S]{0,200}props\.onRefresh/, "embedded 工具行内应有刷新入口");
 });

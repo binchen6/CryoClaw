@@ -121,7 +121,6 @@ export const zhDict: Record<string, string> = {
   "cron.selectHint": "选择一个任务查看详情",
 
   // 技能管理
-  "sidebar.skillStore": "技能",
   "sidebar.extensions": "扩展",
   "extensions.tabSkills": "技能",
   "extensions.tabPlugins": "插件",
@@ -213,7 +212,6 @@ export const zhDict: Record<string, string> = {
   "settings.nav.advanced": "高级",
   "settings.nav.sessionUsage": "会话用量",
   "settings.nav.approvals": "审批",
-  "settings.group.extensions": "扩展",
   "settings.plugins.title": "插件管理",
   "settings.plugins.desc": "管理已安装的内核插件，或从 ClawHub 市场发现并安装新插件。",
   "settings.plugins.installed": "已安装",

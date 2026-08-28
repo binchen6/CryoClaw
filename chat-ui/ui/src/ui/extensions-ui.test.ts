@@ -60,3 +60,14 @@ test("i18n：新键双区齐全，settings.nav.plugins 已删", () => {
   assert.ok(!zh.includes('"settings.nav.plugins"'), "zh.ts 应删除 settings.nav.plugins");
   assert.ok(!en.includes('"settings.nav.plugins"'), "en.ts 应删除 settings.nav.plugins");
 });
+
+test("settings：extensions 分组与死键清理彻底", () => {
+  const tabs = src("views/settings/settings-constants.ts");
+  assert.ok(!/"extensions"/.test(tabs), "分组 union 不应残留 extensions");
+  const zh = src("i18n/zh.ts");
+  const en = src("i18n/en.ts");
+  for (const key of ['"settings.group.extensions"', '"sidebar.skillStore"']) {
+    assert.ok(!zh.includes(key), `zh.ts 应删除死键 ${key}`);
+    assert.ok(!en.includes(key), `en.ts 应删除死键 ${key}`);
+  }
+});

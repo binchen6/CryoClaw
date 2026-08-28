@@ -20,7 +20,7 @@ export const CHANNEL_PLATFORMS: ChannelPlatform[] = [
 export interface SettingsTab {
   id: string;
   labelKey: string;
-  group?: "channels" | "models" | "extensions" | "system";
+  group?: "channels" | "models" | "system";
 }
 
 export const SETTINGS_TABS: SettingsTab[] = [

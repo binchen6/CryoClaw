@@ -53,6 +53,5 @@ export function renderWorkspaceIntegratedView(state: AppViewState) {
     onRepoChange: (path) => {
       void selectGitRepo(state, path);
     },
-    onSelectWorktreeRepo: (path) => openWorkspaceGitForRepo(state, path),
   });
 }

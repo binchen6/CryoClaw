@@ -20,8 +20,6 @@ export type WorkspaceViewOptions = {
   onSelectGitNode: () => void;
   onOpenFiles: () => void;
   onRepoChange: (path: string) => void;
-  /** worktree 区块节点点击 → 切换仓库上下文 + 右区切 git */
-  onSelectWorktreeRepo: (path: string) => void;
 };
 
 // 相对路径（面包屑展示）

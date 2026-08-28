@@ -187,7 +187,18 @@ export function renderWorktrees(props: WorktreesProps, opts?: { compact?: boolea
   return html`
     <div class="wt-layout ${compact ? "wt-layout--compact" : ""} panel">
       ${compact
-        ? nothing
+        ? html`<div class="wt-compact-toolbar">
+            <button class="btn btn--sm" type="button" ?disabled=${props.gcBusy || !props.connected}
+              @click=${props.onGc}>
+              ${props.gcBusy ? icons.loader : icons.trash}
+              ${props.gcBusy ? t("worktrees.gcBusy") : t("worktrees.gc")}
+            </button>
+            <button class="btn btn--sm" type="button" ?disabled=${props.loading}
+              @click=${props.onRefresh}>
+              ${props.loading ? icons.loader : icons.refreshCw}
+              ${t("worktrees.refresh")}
+            </button>
+          </div>`
         : html`
             <div class="wt-header panel__header">
               <div>
