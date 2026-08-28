@@ -89,3 +89,20 @@ test("恢复判定：缺 timestamp / 缺起始时间保守返回 false", () => {
   assert.equal(hasAssistantReplyAfter([{ role: "assistant", timestamp: 99_000 }], null), false);
   assert.equal(hasAssistantReplyAfter([], 11_000), false);
 });
+
+test("恢复判定：最后一条 assistant 缺 timestamp 时继续向前扫描", () => {
+  const messages = [
+    { role: "assistant", timestamp: 5000, content: [{ type: "text", text: "a" }] },
+    { role: "assistant", content: [{ type: "text", text: "b" }] }, // 无 timestamp
+  ];
+  assert.equal(hasAssistantReplyAfter(messages, 4000), true);
+});
+
+test("恢复判定：cryoclawError 合成卡与缺时间戳条目混合仍正确", () => {
+  const messages = [
+    { role: "assistant", timestamp: 5000, content: [] },
+    { role: "assistant", cryoclawError: true, timestamp: 6000, content: [] },
+    { role: "assistant", content: [] },
+  ];
+  assert.equal(hasAssistantReplyAfter(messages, 4000), true);
+});

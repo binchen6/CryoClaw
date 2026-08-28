@@ -75,7 +75,7 @@ export function isStreamStalled(probe: StreamIdleProbe): boolean {
 /**
  * 历史消息里是否存在 run 开始之后落盘的 assistant 回复。
  * 是 → run 的终态帧虽丢，但结果已持久化，可清本地挂起态（看门狗恢复）。
- * 消息缺 timestamp 时无法判定，保守返回 false（继续等下一轮探测）。
+ * 缺 timestamp 的条目无法判定，跳过继续向前扫（避免末尾一条缺时间戳时恒不清挂起态）。
  */
 export function hasAssistantReplyAfter(messages: unknown[], runStartedAt: number | null): boolean {
   if (runStartedAt == null || !Number.isFinite(runStartedAt)) {
@@ -93,7 +93,11 @@ export function hasAssistantReplyAfter(messages: unknown[], runStartedAt: number
       continue;
     }
     const ts = typeof m.timestamp === "number" ? m.timestamp : Number.NaN;
-    return Number.isFinite(ts) && ts >= threshold;
+    // 缺 timestamp 的条目无法判定——跳过继续向前扫（此前直接 return 导致
+    // 末尾一条缺时间戳时看门狗恒不清挂起态）；时间戳早于阈值的旧回复同样跳过
+    if (Number.isFinite(ts) && ts >= threshold) {
+      return true;
+    }
   }
   return false;
 }
