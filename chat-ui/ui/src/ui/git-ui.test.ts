@@ -8,7 +8,7 @@
 // - app-render.ts：renderActiveView 分发 + sidebar props（接线点 3）
 // - sidebar.ts：git 面板导航项
 // - app.ts：git 面板响应式状态字段
-// - file-changes 面板「在 git 中查看」链接（app-chat-props / chat.ts / grouped-render）
+// - file-changes 面板「在 git 中查看」链接（app-chat-props / chat.ts / cc-chat-history / grouped-render）
 // - 主进程：preload git* bridge；git-ipc 5 通道 + sender 校验 + 白名单 cwd 守卫
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -64,7 +64,7 @@ test("app.ts：git 面板响应式状态字段", () => {
   }
 });
 
-test("file-changes 面板「在 git 中查看」链接接线（app-chat-props / chat.ts / grouped-render）", () => {
+test("file-changes 面板「在 git 中查看」链接接线（app-chat-props / chat.ts / cc-chat-history / grouped-render）", () => {
   const chatProps = src("app-chat-props.ts");
   assert.match(chatProps, /gitAvailable: state\.gitAvailable/, "缺少 gitAvailable prop");
   assert.match(chatProps, /onOpenGitView: \(\) => openGitView\(state\)/, "缺少 onOpenGitView prop");
@@ -72,7 +72,10 @@ test("file-changes 面板「在 git 中查看」链接接线（app-chat-props / 
   const chat = src("views/chat.ts");
   assert.match(chat, /closest\("\.chat-git-view-link"\)/, "线程点击委托缺少 git 链接分支");
   assert.match(chat, /props\.onOpenGitView\?\.\(\)/, "git 链接点击应调 onOpenGitView");
-  assert.match(chat, /gitAvailable: props\.gitAvailable/, "group opts 缺少 gitAvailable");
+  // R41 Task 11：历史列表迁入 <cc-chat-history>，外层改为向组件透传 gitAvailable 属性
+  assert.match(chat, /\.gitAvailable=\$\{props\.gitAvailable\}/, "历史组件装配缺少 gitAvailable 透传");
+  const history = src("components/cc-chat-history.ts");
+  assert.match(history, /gitAvailable: this\.gitAvailable/, "group opts 缺少 gitAvailable（cc-chat-history）");
 
   const grouped = src("chat/grouped-render.ts");
   assert.match(grouped, /class="chat-git-view-link"/, "file-changes 缺少「在 git 中查看」链接");

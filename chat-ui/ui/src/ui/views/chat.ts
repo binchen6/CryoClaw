@@ -2,13 +2,9 @@ import { html, nothing } from "lit";
 import { ref } from "lit/directives/ref.js";
 import { repeat } from "lit/directives/repeat.js";
 import type { GatewaySessionRow, SessionsListResult } from "../types.ts";
-import type { ChatItem, MessageGroup } from "../types/chat-types.ts";
 import type { ChatAttachment, ChatQueueItem, ConfiguredModel } from "../ui-types.ts";
-import { renderMessageGroup } from "../chat/grouped-render.ts";
-import { computeSessionFileChanges, type FileChange } from "../chat/file-changes.ts";
-import { normalizeMessage, normalizeRoleForGrouping } from "../chat/message-normalizer.ts";
 import { icons } from "../icons.ts";
-import { getLocale, t } from "../i18n.ts";
+import { t } from "../i18n.ts";
 import { detectTextDirection } from "../text-direction.ts";
 import { renderMarkdownSidebar } from "./markdown-sidebar.ts";
 import { resolveContextMeterStats } from "../context-meter.ts";
@@ -28,6 +24,9 @@ import "../components/resizable-divider.ts";
 // 流式气泡独立组件（R41 Task 10）：chatStream 高频变化只命中组件自身重渲染，
 // 历史列表 memo 不再被每帧 invalidate（接线见 renderChat 线程尾部 <cc-chat-stream>）
 import "../components/cc-chat-stream.ts";
+// 历史消息/工具时间线列表独立组件（R41 Task 11）：草稿敲击/连接态等高频更新不再重求值这棵最重子树，
+// 历史 memo 调用点也随之移入组件（接线见 renderChat 线程内 hero 与 <cc-chat-stream> 之间）
+import "../components/cc-chat-history.ts";
 import { renderConfiguredModelOptions } from "../components/model-options.ts";
 import { loadModelOrg } from "./settings/model-org.lib.ts";
 import { computeStopButtonVisible } from "./chat-stop-button-gate.ts";
@@ -899,9 +898,6 @@ export function renderChat(props: ChatProps) {
     avatar: props.assistantAvatar ?? props.assistantAvatarUrl ?? null,
   };
 
-  const totalHistory = Array.isArray(props.messages) ? props.messages.length : 0;
-  const isHydrating = props.visibleHistoryCount > 0 && props.visibleHistoryCount < totalHistory;
-
   const hasAttachments = (props.attachments?.length ?? 0) > 0;
   const composePlaceholder = !props.connected
     ? t("chat.placeholder.disconnected")
@@ -913,9 +909,6 @@ export function renderChat(props: ChatProps) {
 
   const splitRatio = props.splitRatio ?? 0.6;
   const sidebarOpen = Boolean(props.sidebarOpen && props.onCloseSidebar);
-  const chatItems = buildChatItemsMemoized(props);
-  // 本轮改动文件列表：按组扫描 tool cards 派生（详见 chat/file-changes.ts 头注）
-  const fileChangesByGroup = computeSessionFileChangesMemoized(chatItems);
   // 当前正在执行的工具（有 call 无 result），用于流式状态行的阶段提示（供 <cc-chat-stream>）
   const activeToolName = resolveActiveToolName(
     Array.isArray(props.toolMessages) ? props.toolMessages : [],
@@ -927,9 +920,13 @@ export function renderChat(props: ChatProps) {
     : [];
   const subagentWaiting = subagentCards.some((c) => c.active);
   // 空会话（无历史/工具/流式/子代理卡且不在加载）：线程区显示居中 hero + starter prompts
+  // R41 Task 11：历史子树已移入 <cc-chat-history>，空判定改为直接按源数组判断——
+  // buildChatItems 保证每条消息必产一个条目（message/divider）、groupMessages 不丢条目，
+  // 故「两数组皆空」与原 chatItems.length === 0 语义等价（hero 与流式/子代理判定仍耦合在外层）
   const isEmptySession =
     !props.loading &&
-    chatItems.length === 0 &&
+    (Array.isArray(props.messages) ? props.messages.length : 0) === 0 &&
+    (Array.isArray(props.toolMessages) ? props.toolMessages.length : 0) === 0 &&
     props.stream === null &&
     subagentCards.length === 0;
   // starter prompt chips：点击即填入并发送（与 onGoalCommand 同样的同步「先改草稿再发送」时序）
@@ -1001,37 +998,25 @@ export function renderChat(props: ChatProps) {
           </div>
         `
         : nothing}
-      ${repeat(
-        chatItems,
-        (item) => item.key,
-        (item) => {
-          if (item.kind === "divider") {
-            return html`
-              <div class="chat-divider" role="separator" data-ts=${String(item.timestamp)}>
-                <span class="chat-divider__line"></span>
-                <span class="chat-divider__label">${item.label}</span>
-                <span class="chat-divider__line"></span>
-              </div>
-            `;
-          }
-
-          if (item.kind === "group") {
-            return renderMessageGroup(item, {
-              onOpenSidebar: props.onOpenSidebar,
-              showReasoning,
-              assistantName: props.assistantName,
-              assistantAvatar: assistantIdentity.avatar,
-              isHydrating,
-              fileChanges: fileChangesByGroup.get(item.key),
-              gitAvailable: props.gitAvailable,
-              onQuoteMessage: (text) => handleQuoteMessage(props, text),
-              onResendError: props.onResendError,
-            });
-          }
-
-          return nothing;
-        },
-      )}
+      ${
+        // R41 Task 11：历史列表（repeat(chatItems) + 分组）抽为独立组件 <cc-chat-history>——
+        // 只在消息数组/工具流/可见数等视觉属性真正变化时重渲染；草稿敲击、连接态、流式帧等
+        // 高频状态被组件 shouldUpdate 门控，不再重求值这棵最重子树。回调每帧新闭包但属性赋值
+        // 不受 shouldUpdate 影响，事件触发时仍拿最新闭包。装配顺序契约：历史先于 <cc-chat-stream>
+        // 与子代理卡（流式归 Task 10 组件，状态归 OpenClawApp）。
+        html`<cc-chat-history
+          .messages=${props.messages}
+          .toolMessages=${props.toolMessages}
+          .visibleHistoryCount=${props.visibleHistoryCount}
+          .showReasoning=${showReasoning}
+          .assistantName=${props.assistantName}
+          .assistantAvatar=${assistantIdentity.avatar}
+          .gitAvailable=${props.gitAvailable}
+          .onOpenSidebar=${props.onOpenSidebar}
+          .onQuoteMessage=${(text: string) => handleQuoteMessage(props, text)}
+          .onResendError=${props.onResendError}
+        ></cc-chat-history>`
+      }
       ${
         // R41 Task 10：流式气泡/思考指示抽为独立组件，高频更新只命中其自身 render()；
         // 出现条件与原 buildChatItems 的 stream 条目一致（stream !== null，空白时组件内部
@@ -1450,8 +1435,6 @@ export function renderChat(props: ChatProps) {
   `;
 }
 
-const CHAT_HISTORY_RENDER_LIMIT = 200;
-
 // R23：子代理等待状态卡（主 run 等待子代理期间的进度反馈；终态短暂定格）
 function subagentStatusLabel(card: SubagentCard): string {
   if (card.active) {
@@ -1494,201 +1477,10 @@ function renderSubagentCards(cards: SubagentCard[]) {
   `;
 }
 
-// 分组用 role：tool 和 assistant 归为同一组，共享 avatar 和 footer
-function groupingRole(role: string): string {
-  const r = normalizeRoleForGrouping(role);
-  return r === "tool" ? "assistant" : r;
-}
-
-function groupMessages(items: ChatItem[]): Array<ChatItem | MessageGroup> {
-  const result: Array<ChatItem | MessageGroup> = [];
-  let currentGroup: MessageGroup | null = null;
-
-  for (const item of items) {
-    if (item.kind !== "message") {
-      if (currentGroup) {
-        result.push(currentGroup);
-        currentGroup = null;
-      }
-      result.push(item);
-      continue;
-    }
-
-    const normalized = normalizeMessage(item.message);
-    const role = normalizeRoleForGrouping(normalized.role);
-    const gRole = groupingRole(role);
-    const timestamp = normalized.timestamp || Date.now();
-
-    if (!currentGroup || groupingRole(currentGroup.role) !== gRole) {
-      if (currentGroup) {
-        result.push(currentGroup);
-      }
-      currentGroup = {
-        kind: "group",
-        key: `group:${gRole}:${item.key}`,
-        role: gRole,
-        messages: [{ message: item.message, key: item.key }],
-        timestamp,
-        isStreaming: false,
-      };
-    } else {
-      currentGroup.messages.push({ message: item.message, key: item.key });
-    }
-  }
-
-  if (currentGroup) {
-    result.push(currentGroup);
-  }
-  return result;
-}
-
-function buildChatItems(props: ChatProps): Array<ChatItem | MessageGroup> {
-  const items: ChatItem[] = [];
-  const history = Array.isArray(props.messages) ? props.messages : [];
-  const tools = Array.isArray(props.toolMessages) ? props.toolMessages : [];
-  const visibleHistoryCount =
-    props.visibleHistoryCount > 0
-      ? Math.min(props.visibleHistoryCount, CHAT_HISTORY_RENDER_LIMIT, history.length)
-      : Math.min(history.length, CHAT_HISTORY_RENDER_LIMIT);
-  const historyStart = Math.max(0, history.length - visibleHistoryCount);
-  if (historyStart > 0) {
-    items.push({
-      kind: "message",
-      key: "chat:history:notice",
-      message: {
-        role: "system",
-        content: t("chat.historyTruncated")
-          .replace("{n}", String(visibleHistoryCount))
-          .replace("{m}", String(historyStart)),
-        timestamp: Date.now(),
-      },
-    });
-  }
-  for (let i = historyStart; i < history.length; i++) {
-    const msg = history[i];
-    const normalized = normalizeMessage(msg);
-    const raw = msg as Record<string, unknown>;
-    const marker = raw.__openclaw as Record<string, unknown> | undefined;
-    if (marker && marker.kind === "compaction") {
-      items.push({
-        kind: "divider",
-        key:
-          typeof marker.id === "string"
-            ? `divider:compaction:${marker.id}`
-            : `divider:compaction:${normalized.timestamp}:${i}`,
-        label: t("chat.compaction"),
-        timestamp: normalized.timestamp ?? Date.now(),
-      });
-      continue;
-    }
-
-    items.push({
-      kind: "message",
-      key: messageKey(msg, i),
-      message: msg,
-    });
-  }
-  // toolMessages 本身是摊平的时间线（由 app-tool-stream.ts::syncToolStreamMessages 构造）：
-  // 依次包含 leadingSegment 文本 / tool call / tool result，作为普通 message 追加即可，
-  // groupMessages 会按 role 自动分组成和 history 一致的 "assistant 文本+call → toolResult" 节奏。
-  // 工具调用/结果默认显示（渲染层折叠成 summary，点击展开），不依赖 showThinking 开关；
-  // showThinking 只控制思考内容的展示。
-  for (let i = 0; i < tools.length; i++) {
-    items.push({
-      kind: "message",
-      // tool 消息 key 用固定命名空间基数，不与 history.length 耦合：
-      // buildToolCallMessage/leadingSegment 消息无顶层 toolCallId/messageId，
-      // 走 messageKey 的 index 兑底分支，若用动态偏移，run 期间 chatMessages
-      // 追加（乐观 user 消息/错误卡）会让全部 tool 卡片 key 平移 → lit repeat
-      // 整批重建（hljs 重高亮、details 折叠态丢失）。history 渲染上限远小于
-      // 该基数，两个命名空间不会撞车。
-      key: messageKey(tools[i], i + 1_000_000_000),
-      message: tools[i],
-    });
-  }
-
-  // R41 Task 10：流式气泡（含空白时的思考指示）与子代理等待卡不再进 chatItems，
-  // 改由 renderChat 线程尾部的 <cc-chat-stream> / renderSubagentCards 直接装配：
-  // 每帧的流式 delta 不再 invalidate 本 memo，历史部分流式期间保持命中。
-  return groupMessages(items);
-}
-
-// ── 派生计算 memo（R5 性能优化）──────────────────────────────────
-// renderChat 每次 Lit 更新都会跑 buildChatItems + computeSessionFileChanges，
-// 但绝大多数更新（draft 敲击、连接状态、计数器）messages/toolMessages 数组
-// 引用不变（状态层一律重赋值、从不原地改，见 controllers/chat.ts /
-// app-tool-stream.ts）。按数组引用 + 相关标量浅比较做 memo，全部相同直接复用。
-// R41 Task 10：stream/streamStartedAt/tasks/runActive/sessionKey 已从比较键移除——
-// 流式条目与子代理卡移出 buildChatItems（分别由 <cc-chat-stream> / renderChat
-// 直接渲染），每帧的 stream delta 不再让 ≤200 条历史全量重建。
-type ChatItemsMemo = {
-  messages: unknown[];
-  toolMessages: unknown[];
-  visibleHistoryCount: number;
-  locale: string;
-  result: Array<ChatItem | MessageGroup>;
-};
-let chatItemsMemo: ChatItemsMemo | null = null;
-
-export function buildChatItemsMemoized(props: ChatProps): Array<ChatItem | MessageGroup> {
-  const prev = chatItemsMemo;
-  if (
-    prev &&
-    prev.messages === props.messages &&
-    prev.toolMessages === props.toolMessages &&
-    prev.visibleHistoryCount === props.visibleHistoryCount &&
-    prev.locale === getLocale()
-  ) {
-    return prev.result;
-  }
-  const result = buildChatItems(props);
-  chatItemsMemo = {
-    messages: props.messages,
-    toolMessages: props.toolMessages,
-    visibleHistoryCount: props.visibleHistoryCount,
-    locale: getLocale(),
-    result,
-  };
-  return result;
-}
-
-// fileChanges 按 chatItems 数组引用 memo：buildChatItems 命中 memo 时此处也直接复用。
-let fileChangesMemo: {
-  chatItems: Array<ChatItem | MessageGroup>;
-  result: Map<string, FileChange[]>;
-} | null = null;
-
-export function computeSessionFileChangesMemoized(
-  chatItems: Array<ChatItem | MessageGroup>,
-): Map<string, FileChange[]> {
-  if (fileChangesMemo && fileChangesMemo.chatItems === chatItems) {
-    return fileChangesMemo.result;
-  }
-  const result = computeSessionFileChanges(
-    chatItems.filter((item): item is MessageGroup => item.kind === "group"),
-  );
-  fileChangesMemo = { chatItems, result };
-  return result;
-}
-
-function messageKey(message: unknown, index: number): string {
-  const m = message as Record<string, unknown>;
-  const toolCallId = typeof m.toolCallId === "string" ? m.toolCallId : "";
-  if (toolCallId) {
-    return `tool:${toolCallId}`;
-  }
-  const id = typeof m.id === "string" ? m.id : "";
-  if (id) {
-    return `msg:${id}`;
-  }
-  const messageId = typeof m.messageId === "string" ? m.messageId : "";
-  if (messageId) {
-    return `msg:${messageId}`;
-  }
-  const timestamp = typeof m.timestamp === "number" ? m.timestamp : null;
-  const role = typeof m.role === "string" ? m.role : "unknown";
-  if (timestamp != null) {
-    return `msg:${role}:${timestamp}:${index}`;
-  }
-  return `msg:${role}:${index}`;
-}
+// R41 Task 11：历史列表构建（buildChatItems/groupMessages/messageKey）与派生 memo 已整体迁入
+// <cc-chat-history>（components/cc-chat-history.ts）——调用点随消费方移入组件，外层高频更新连
+// memo 比较都不再跑；此处再导出仅为保持既有导入契约（chat-memo.test.ts 仍从本模块导入）。
+export {
+  buildChatItemsMemoized,
+  computeSessionFileChangesMemoized,
+} from "../components/cc-chat-history.ts";

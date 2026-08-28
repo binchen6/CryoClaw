@@ -12,6 +12,8 @@ function readSrc(rel: string): string {
 
 const componentSrc = readSrc("components/cc-chat-stream.ts");
 const chatViewSrc = readSrc("views/chat.ts");
+// R41 Task 11：历史构建与 memo 已整体迁入 <cc-chat-history>，历史侧断言改钉组件文件（不弱化）
+const historySrc = readSrc("components/cc-chat-history.ts");
 
 // 提取函数体（从声明行到第一个顶格 "}" 行），用于对函数内部做否定断言；
 // 兼容 CRLF（源文件在 Windows 上可能是 \r\n 换行）
@@ -70,17 +72,17 @@ test("views/chat：renderChat 线程装配 <cc-chat-stream> 且引入组件模�
   );
 });
 
-test("views/chat：memo 类型与比较/记录逻辑不再含 stream / streamStartedAt", () => {
-  const memoType = chatViewSrc.match(/type ChatItemsMemo = \{[\s\S]*?\};/)?.[0] ?? "";
+test("cc-chat-history：memo 类型与比较/记录逻辑不含 stream / streamStartedAt（R41 Task 11 后迁至组件文件）", () => {
+  const memoType = historySrc.match(/type ChatItemsMemo = \{[\s\S]*?\};/)?.[0] ?? "";
   assert.ok(memoType, "未找到 ChatItemsMemo 类型");
   assert.ok(!/stream/i.test(memoType.replace("visibleHistoryCount", "")), "ChatItemsMemo 仍含流式键");
-  const memoized = functionBody(chatViewSrc, "export function buildChatItemsMemoized(");
+  const memoized = functionBody(historySrc, "export function buildChatItemsMemoized(");
   assert.ok(!memoized.includes("props.stream"), "memo 比较/记录仍读 props.stream");
   assert.ok(!memoized.includes("streamStartedAt"), "memo 比较/记录仍读 streamStartedAt");
 });
 
-test("views/chat：buildChatItems 不再消费 stream / streamStartedAt（历史侧与流式解耦）", () => {
-  const body = functionBody(chatViewSrc, "function buildChatItems(");
+test("cc-chat-history：buildChatItems 不再消费 stream / streamStartedAt（历史侧与流式解耦）", () => {
+  const body = functionBody(historySrc, "function buildChatItems(");
   assert.ok(!body.includes("props.stream"), "buildChatItems 仍读 props.stream");
   assert.ok(!body.includes("streamStartedAt"), "buildChatItems 仍读 streamStartedAt");
   assert.ok(!body.includes('"stream"'), "buildChatItems 仍构造 stream 条目");
