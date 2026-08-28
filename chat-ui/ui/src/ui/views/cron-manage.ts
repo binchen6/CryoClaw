@@ -28,6 +28,8 @@ export type CronManageProps = {
   models: ConfiguredModel[];
   onToggleExpand: (jobId: string) => void;
   onNavigateToSession: (sessionKey: string) => void;
+  /** 详情「最近运行」链回运行记录 tab */
+  onOpenRunsTab?: () => void;
   onRemove: (jobId: string) => void;
   onToggle: (jobId: string, enabled: boolean) => void;
   onRun: (jobId: string) => void;
@@ -162,6 +164,10 @@ function renderDetail(job: CronJob, props: CronManageProps) {
                       ${entry.durationMs != null ? html`<span class="cm-detail__run-dur">${entry.durationMs}ms</span>` : nothing}
                       ${hasSession ? html`<button class="cm-detail__run-link" type="button"
                         @click=${() => props.onNavigateToSession(entry.sessionKey!)}>${t("cron.openChat")}</button>` : nothing}
+                      ${props.onOpenRunsTab
+                        ? html`<button class="cm-detail__run-link" type="button"
+                          @click=${() => props.onOpenRunsTab!()}>${t("cron.viewRuns")}</button>`
+                        : nothing}
                     </div>
                     ${summary ? html`<div class="cm-detail__run-summary">${summary}</div>` : nothing}
                     ${error ? html`<div class="cm-detail__run-error">${error}</div>` : nothing}

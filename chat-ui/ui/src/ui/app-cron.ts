@@ -24,7 +24,7 @@ let cronRunsLoading = false;
 let cronShowForm = false;
 let cronEditingJobId: string | null = null;
 
-export function renderCronView(state: AppViewState) {
+export function renderCronView(state: AppViewState, opts?: { onOpenRunsTab?: () => void }) {
   return renderCronManage({
     jobs: state.cronJobs,
     loading: state.cronLoading,
@@ -61,6 +61,7 @@ export function renderCronView(state: AppViewState) {
       // 走完整会话切换（重置流态/拉历史/同步 URL），与侧边栏点击一致
       handleSessionChange(state, sessionKey);
     },
+    onOpenRunsTab: opts?.onOpenRunsTab ?? (() => {}),
     onRemove: (jobId: string) => {
       const job = state.cronJobs.find((j) => j.id === jobId);
       if (job) {

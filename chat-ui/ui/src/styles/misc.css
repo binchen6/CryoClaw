@@ -1325,3 +1325,10 @@
   justify-content: flex-end;
   padding: var(--spacer-12) 0;
 }
+
+/* 任务页顶层双 tab（R42） */
+.ts-tabs { display: flex; gap: var(--spacer-8); padding: var(--spacer-12) var(--spacer-16) 0; }
+.ts-tab { padding: 6px var(--spacer-12); border: none; background: transparent; border-radius: var(--radius-md); color: var(--text-secondary); font-size: 13px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; transition: color var(--duration-instant) var(--ease-standard), background-color var(--duration-instant) var(--ease-standard); }
+.ts-tab:hover { background: var(--bg-hover); color: var(--text); }
+.ts-tab--active { color: var(--brand-500); background: var(--accent-subtle); }
+.ts-tab__badge { min-width: 18px; height: 18px; padding: 0 5px; border-radius: var(--radius-full); background: var(--brand-500); color: var(--text-on-accent); font-size: 11px; line-height: 18px; text-align: center; }
