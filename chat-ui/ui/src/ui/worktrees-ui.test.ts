@@ -1,11 +1,11 @@
 // 守护回归（源码审计，同 i18n.test.ts / app-update-notify.test.ts 模式）：
-// P3「worktrees 接入」的接线钉点。重 UI 模块（app.ts / sidebar.ts / app-render.ts）
-// 在 node 下不可导入，只能钉源码；纯逻辑由 controllers/worktrees.test.ts 覆盖。
+// P3「worktrees 接入」的接线钉点。重 UI 模块（app.ts / components/cc-sidebar.ts /
+// app-render.ts）在 node 下不可导入，只能钉源码；纯逻辑由 controllers/worktrees.test.ts 覆盖。
 //
 // 钉住的不变量：
 // - views/registry.ts：worktrees 视图 id + meta（gotchas #49 接线点 1）
 // - app-render.ts：renderActiveView 分发 + sidebar props（接线点 3）
-// - sidebar.ts：导航项 / 会话 worktree 徽标 / git 降级隐藏的新建入口
+// - components/cc-sidebar.ts：导航项 / 会话 worktree 徽标 / git 降级隐藏的新建入口（R41 Task 12 自 sidebar.ts 迁入）
 // - app-session-actions.ts：sessions.create {worktree:true} 新建 + 删除附带 worktrees.remove
 // - app-gateway.ts：onHello 后拉 worktrees.list（徽标数据源）
 // - app.ts：gitDetect 探测绑定 + gitAvailable 状态
@@ -39,8 +39,8 @@ test("app-render.ts：renderActiveView 分发 worktrees + sidebar 收到 worktre
   assert.match(s, /onNewWorktreeChat: \(\) => void createNewWorktreeSession\(state\)/, "缺少新建入口 prop");
 });
 
-test("sidebar.ts：导航项 / 会话徽标 / 新建入口按 gitAvailable 降级隐藏", () => {
-  const s = src("sidebar.ts");
+test("cc-sidebar：导航项 / 会话徽标 / 新建入口按 gitAvailable 降级隐藏", () => {
+  const s = src("components/cc-sidebar.ts");
   assert.match(s, /t\("sidebar\.worktrees"\)/, "缺少 worktrees 导航项");
   assert.match(s, /props\.onOpenWorktrees/, "导航项未接 onOpenWorktrees");
   assert.match(s, /cryoclaw-sidebar__session-worktree/, "缺少会话 worktree 徽标");

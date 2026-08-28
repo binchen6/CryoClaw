@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { groupSidebarSessions } from "./sidebar-grouping.ts";
-import type { SidebarSessionOption } from "./sidebar.ts";
+import type { SidebarSessionOption } from "./components/cc-sidebar.ts";
 
 // 固定参考时间：2026-08-03 15:00 本地时间
 const NOW = new Date(2026, 7, 3, 15, 0, 0).getTime();

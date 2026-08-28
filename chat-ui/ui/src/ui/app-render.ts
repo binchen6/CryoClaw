@@ -36,7 +36,9 @@ import { t } from "./i18n.ts";
 import { icons } from "./icons.ts";
 import { isExpiredOneShot } from "./presenter.ts";
 import { resolveMainSessionKey } from "./session-visibility.ts";
-import { renderSidebar } from "./sidebar.ts";
+// 侧边栏独立组件（R41 Task 12）：流式帧等根组件高频更新不再重求值侧边栏模板树，
+// 原 renderSidebar 模板与菜单模块态整体迁入组件（接线见 renderApp 的 <cc-sidebar>）
+import "./components/cc-sidebar.ts";
 import { renderChat } from "./views/chat.ts";
 import { renderGatewayUrlConfirmation } from "./views/gateway-url-confirmation.ts";
 import { renderReleaseNotesModal } from "./views/release-notes-modal.ts";
@@ -98,6 +100,44 @@ function openWorkspaceView(state: AppViewState) {
   void initWorkspace(state);
 }
 
+// R41 Task 12：sessionOptions 原本每次 renderApp 重建新数组，但数据源只有这五个；
+// <cc-sidebar> 的 shouldUpdate 按引用比较 sessionOptions，不 memo 则流式帧每次根渲染
+// 都是新引用，侧边栏隔离失效。状态层对这两个数组一律整体重赋值、从不原地改，按引用比较安全。
+let sessionOptionsMemo: {
+  sessionsResult: AppViewState["sessionsResult"];
+  worktrees: AppViewState["worktrees"];
+  sessionKey: string;
+  sessionsIncludeArchived: boolean;
+  sidebarSessionSearch: string;
+  result: ReturnType<typeof resolveSessionOptions>;
+} | null = null;
+
+function resolveSessionOptionsMemo(state: AppViewState) {
+  const sessionsIncludeArchived = state.sessionsIncludeArchived === true;
+  const sidebarSessionSearch = state.sidebarSessionSearch ?? "";
+  const prev = sessionOptionsMemo;
+  if (
+    prev &&
+    prev.sessionsResult === state.sessionsResult &&
+    prev.worktrees === state.worktrees &&
+    prev.sessionKey === state.sessionKey &&
+    prev.sessionsIncludeArchived === sessionsIncludeArchived &&
+    prev.sidebarSessionSearch === sidebarSessionSearch
+  ) {
+    return prev.result;
+  }
+  const result = resolveSessionOptions(state);
+  sessionOptionsMemo = {
+    sessionsResult: state.sessionsResult,
+    worktrees: state.worktrees,
+    sessionKey: state.sessionKey,
+    sessionsIncludeArchived,
+    sidebarSessionSearch,
+    result,
+  };
+  return result;
+}
+
 /** 内容区分发：按当前视图渲染对应视图（新增视图接线点之一，见 views/registry.ts） */
 function renderActiveView(state: AppViewState, view: CryoClawViewId) {
   switch (view) {
@@ -129,7 +169,7 @@ export function renderApp(state: AppViewState) {
   const chatFocus = state.onboarding;
   const sidebarCollapsed = !state.onboarding && state.settings.navCollapsed;
   const currentSessionKey = state.sessionKey;
-  const sessionOptions = resolveSessionOptions(state);
+  const sessionOptions = resolveSessionOptionsMemo(state);
   const cryoclawView = state.settings.cryoclawView ?? "chat";
   const meta = CRYOCLAW_VIEW_META[cryoclawView];
 
@@ -139,7 +179,7 @@ export function renderApp(state: AppViewState) {
     >
       ${chatFocus || sidebarCollapsed || meta.fullpage
         ? nothing
-        : renderSidebar({
+        : html`<cc-sidebar .props=${{
             connected: state.connected,
             currentSessionKey,
             mainSessionKey: resolveMainSessionKey(state.hello, state.sessionsResult),
@@ -215,7 +255,7 @@ export function renderApp(state: AppViewState) {
             onOpenWebUI: () => void handleOpenWebUI(state),
             errors: [chatDisabledReason, state.lastError].filter(Boolean) as string[],
             onReconnect: () => handleReconnect(state),
-          })}
+          }}></cc-sidebar>`}
 
       <div class="cryoclaw-main">
         <div class="cryoclaw-titlebar">

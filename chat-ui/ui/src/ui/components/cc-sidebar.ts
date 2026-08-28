@@ -1,13 +1,115 @@
-/**
- * CryoClaw sidebar component.
- * Replaces the upstream 13-tab navigation with a compact chat sidebar.
- */
-import { html } from "lit";
-import { nothing } from "lit";
+import { LitElement, html, nothing } from "lit";
 import { repeat } from "lit/directives/repeat.js";
-import { t } from "./i18n.ts";
-import { icons } from "./icons.ts";
-import { groupSidebarSessions } from "./sidebar-grouping.ts";
+import { customElement } from "lit/decorators.js";
+import { t } from "../i18n.ts";
+import { icons } from "../icons.ts";
+import { groupSidebarSessions } from "../sidebar-grouping.ts";
+
+// CryoClaw sidebar 独立组件（R41 Task 12）。
+// 取代上游 13-tab 导航的紧凑聊天侧边栏：品牌区 + 主导航 6 项 + 会话列表（分组/
+// 搜索/归档/「⋯」管理菜单/内联重命名）+ 底部区（设置徽标、完整 UI/重连、错误徽标）。
+//
+// 为什么抽组件：此前侧边栏模板直接写在 renderApp 里，chatStream 流式帧等任何
+// 根组件高频更新都会让整棵侧边栏模板树重求值。抽出后：只有数据字段真正变化
+// （会话列表、视图切换、徽标、连接态等）才重求值，流式帧不再命中。
+//
+// 契约：
+// - 全部业务状态仍归 OpenClawApp（app-*.ts 模块不动），本组件只接单属性
+//   props（SidebarProps 整体传入，字段集不变）、无自有业务状态；
+// - SidebarProps 40+ 字段，回调每帧新闭包（renderApp 字面量构造），不得进
+//   shouldUpdate 比较清单，否则每次根渲染都重求值、隔离失效。事件触发经
+//   this.props 拿最新对象，闭包自然新鲜；
+// - 会话「⋯」菜单开关态（sessionMenuKey 等）为组件文件模块级状态：此前靠
+//   根 requestUpdate 连带重求值驱动，组件化后改走组件自身更新（bump）。
+//
+// 第二期（图标轨重组）将在本组件内进行，本任务仅等价搬迁、不改结构不改视觉。
+//
+// 无 shadow DOM：全局样式（styles/sidebar.css）与会话菜单的 document 级
+// querySelector 测量/外部关闭都依赖扁平 DOM。
+@customElement("cc-sidebar")
+export class CcSidebar extends LitElement {
+  static properties = {
+    props: { attribute: false },
+  };
+
+  props: SidebarProps | null = null;
+
+  // 无 shadow DOM：复用全局样式与 document 级会话菜单测量/外部关闭（扁平 DOM）
+  createRenderRoot() {
+    return this;
+  }
+
+  // 组件级更新纪元：会话菜单开关不改 props 数据，此前靠根渲染连带重求值，
+  // 组件化后由 bump() 递增纪元并触发本组件更新。若组件更新与根更新（流式帧）
+  // 同批合流，shouldUpdate 只看到 changed 里的 props，必须靠纪元差兜底，
+  // 否则菜单开/关会被数据比较吞掉。
+  private internalEpoch = 0;
+  private renderedEpoch = 0;
+  // 上一轮渲染时的「正在删除的会话」签名：删除行 spinner 状态存在
+  // app-session-actions 模块 Set 里、由 state.requestUpdate() 驱动，数据字段
+  // 全都不变——不参与比较 spinner 永远出不来。
+  private deletingSigCache = "";
+
+  // 箭头函数保持 this；暴露给类外的模板辅助函数（菜单开/关）作为刷新触发器，故不用 private。
+  bump = (): void => {
+    this.internalEpoch++;
+    this.requestUpdate();
+  };
+
+  shouldUpdate(changed: Map<PropertyKey, unknown>): boolean {
+    // 组件级触发的更新（菜单开关等）优先放行
+    if (this.internalEpoch !== this.renderedEpoch) return true;
+    if (!changed.has("props")) return false;
+    const prev = changed.get("props") as SidebarProps | null | undefined;
+    const next = this.props;
+    if (!prev || !next) return true;
+    // 布尔/数字/字符串按值，数组按引用比较。例外两处（都是根渲染每次构造的
+    // 新字面量，按引用比较会恒真、隔离失效）：
+    // - sessionOptions：由装配层按数据源 memo（app-render.ts），引用稳定；
+    // - errors：按内容比较（见 errorsEqual）。
+    let changedFlag = false;
+    for (const name of DATA_FIELDS) {
+      if (name === "errors") continue;
+      if (prev[name] !== next[name]) {
+        changedFlag = true;
+        break;
+      }
+    }
+    if (!changedFlag) changedFlag = !errorsEqual(prev.errors, next.errors);
+    // 删除中签名：会话集合引用不变时单独探测（数据字段此时必然相等，
+    // 逐个查询开销与原渲染内调用 isDeletingSession 同量级）
+    if (!changedFlag && prev.sessionOptions === next.sessionOptions) {
+      changedFlag = this.deletingSignature(next) !== this.deletingSigCache;
+    }
+    return changedFlag;
+  }
+
+  updated() {
+    // 渲染成功后同步纪元与删除签名，保证下一轮比较基线新鲜
+    this.renderedEpoch = this.internalEpoch;
+    if (this.props) this.deletingSigCache = this.deletingSignature(this.props);
+  }
+
+  private deletingSignature(props: SidebarProps): string {
+    let sig = "";
+    for (const o of props.sessionOptions) {
+      if (props.isDeletingSession(o.key)) sig += `${o.key}|`;
+    }
+    return sig;
+  }
+
+  render() {
+    const props = this.props;
+    if (!props) return nothing;
+    return renderSidebarInner(this, props);
+  }
+}
+
+declare global {
+  interface HTMLElementTagNameMap {
+    "cc-sidebar": CcSidebar;
+  }
+}
 
 export type SidebarSessionOption = {
   key: string;
@@ -77,6 +179,45 @@ export type SidebarProps = {
   onReconnect: () => void;
 };
 
+// shouldUpdate 数据字段比较清单：布尔/数字/字符串按值、数组按引用（见 shouldUpdate 注释）。
+// 全部回调（on* / isDeletingSession / requestUpdate）一律排除——每帧新闭包，
+// 引用比较恒变会让隔离彻底失效。
+const DATA_FIELDS = [
+  "connected",
+  "currentSessionKey",
+  "mainSessionKey",
+  "sessionOptions",
+  "sessionSearch",
+  "showArchived",
+  "settingsActive",
+  "tasksActive",
+  "tasksRunningCount",
+  "skillsActive",
+  "workspaceActive",
+  "cronActive",
+  "cronJobCount",
+  "worktreesActive",
+  "gitPanelActive",
+  "gitAvailable",
+  "webbridgeRepairVisible",
+  "webbridgeRepairBrowserName",
+  "webbridgeRepairChecking",
+  "settingsBadge",
+  "settingsUpdateBadge",
+  "errors",
+] as const;
+
+// errors 由装配层每次根渲染 [chatDisabledReason, lastError].filter 新建，
+// 引用必变——按元素内容比较（至多两条）。
+function errorsEqual(a: string[], b: string[]): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
+}
+
 // 双击会话名触发内联重命名：创建 input 替换 span，Enter 保存，Escape 取消。
 // 注意：input 是手工 DOM、脱离 Lit 模板实例，结束后必须 requestUpdate 让模板重新接管渲染。
 function startInlineRename(
@@ -93,7 +234,7 @@ function startInlineRename(
   let saved = false;
   const finish = () => {
     input.replaceWith(span);
-    // 模板实例仍持有 span 引用，恢复 DOM 后触发重渲染，避免后续更新写入已脱离节点
+    // 模板实例仍持有 span 引用，恢复 DOM 后触发根组件重渲染，避免后续更新写入已脱离节点
     requestUpdate();
   };
   const save = () => {
@@ -123,11 +264,12 @@ function startInlineRename(
   input.select();
 }
 
-// 会话项「⋯」菜单的本地状态（非响应式，渲染由 requestUpdate 驱动）。
+// 会话项「⋯」菜单的本地状态（非响应式，渲染由组件更新驱动）。
 // 与 chat 加号菜单同一模式：document 级点击外部关闭，关闭即注销监听。
 let sessionMenuKey: string | null = null;
 let sessionMenuOutsideCloser: ((ev: MouseEvent) => void) | null = null;
 
+// 菜单开/关只改模块态、不改 props 数据 → 触发组件自身更新（见 CcSidebar.bump）
 function closeSessionMenu(requestUpdate: () => void) {
   sessionMenuKey = null;
   if (sessionMenuOutsideCloser) {
@@ -167,7 +309,7 @@ function openSessionMenu(key: string, requestUpdate: () => void) {
 // ── 会话列表分组：实现见 sidebar-grouping.ts（置顶 + 时间分组，纯函数可测） ──
 
 // 单个会话项（正常/归档/搜索/分组渲染共用）：名称行 + 「⋯」管理菜单
-function renderSessionItem(props: SidebarProps, s: SidebarSessionOption) {
+function renderSessionItem(host: CcSidebar, props: SidebarProps, s: SidebarSessionOption) {
   const isActive = s.key === props.currentSessionKey;
   const isMain = props.mainSessionKey != null && s.key === props.mainSessionKey;
   const menuOpen = sessionMenuKey === s.key;
@@ -193,9 +335,9 @@ function renderSessionItem(props: SidebarProps, s: SidebarSessionOption) {
             e.stopPropagation();
             if (deleting) return;
             if (menuOpen) {
-              closeSessionMenu(props.requestUpdate);
+              closeSessionMenu(host.bump);
             } else {
-              openSessionMenu(s.key, props.requestUpdate);
+              openSessionMenu(s.key, host.bump);
             }
           }}
           data-tooltip=${t("sidebar.sessionActions")}
@@ -209,18 +351,18 @@ function renderSessionItem(props: SidebarProps, s: SidebarSessionOption) {
               ${!s.archived
                 ? html`
                   <button class="cryoclaw-sidebar__session-menu-item" type="button" role="menuitem"
-                    @click=${() => { closeSessionMenu(props.requestUpdate); props.onTogglePin(s.key, !s.pinned); }}>
+                    @click=${() => { closeSessionMenu(host.bump); props.onTogglePin(s.key, !s.pinned); }}>
                     <span class="cryoclaw-sidebar__session-menu-icon">${s.pinned ? icons.pinActive : icons.pin}</span>
                     <span>${s.pinned ? t("sidebar.unpinSession") : t("sidebar.pinSession")}</span>
                   </button>
                   <button class="cryoclaw-sidebar__session-menu-item" type="button" role="menuitem"
-                    @click=${() => { closeSessionMenu(props.requestUpdate); props.onToggleUnread(s.key, !s.unread); }}>
+                    @click=${() => { closeSessionMenu(host.bump); props.onToggleUnread(s.key, !s.unread); }}>
                     <span class="cryoclaw-sidebar__session-menu-icon">${s.unread ? icons.eye : icons.eyeOff}</span>
                     <span>${s.unread ? t("sidebar.markRead") : t("sidebar.markUnread")}</span>
                   </button>
                   <button class="cryoclaw-sidebar__session-menu-item" type="button" role="menuitem"
                     @click=${(e: Event) => {
-                      closeSessionMenu(props.requestUpdate);
+                      closeSessionMenu(host.bump);
                       const item = (e.currentTarget as HTMLElement).closest(".cryoclaw-sidebar__session-item")!;
                       const span = item.querySelector(".cryoclaw-sidebar__session-name") as HTMLSpanElement;
                       startInlineRename(span, s.key, s.label, props.onRenameSession, props.requestUpdate);
@@ -231,12 +373,12 @@ function renderSessionItem(props: SidebarProps, s: SidebarSessionOption) {
                   ${!isMain
                     ? html`
                       <button class="cryoclaw-sidebar__session-menu-item" type="button" role="menuitem"
-                        @click=${() => { closeSessionMenu(props.requestUpdate); props.onSetArchived(s.key, true); }}>
+                        @click=${() => { closeSessionMenu(host.bump); props.onSetArchived(s.key, true); }}>
                         <span class="cryoclaw-sidebar__session-menu-icon">${icons.archive}</span>
                         <span>${t("sidebar.archiveSession")}</span>
                       </button>
                       <button class="cryoclaw-sidebar__session-menu-item cryoclaw-sidebar__session-menu-item--danger" type="button" role="menuitem"
-                        @click=${() => { closeSessionMenu(props.requestUpdate); props.onDeleteSession(s.key); }}>
+                        @click=${() => { closeSessionMenu(host.bump); props.onDeleteSession(s.key); }}>
                         <span class="cryoclaw-sidebar__session-menu-icon">${icons.trash}</span>
                         <span>${t("sidebar.delete")}</span>
                       </button>
@@ -245,12 +387,12 @@ function renderSessionItem(props: SidebarProps, s: SidebarSessionOption) {
                 `
                 : html`
                   <button class="cryoclaw-sidebar__session-menu-item" type="button" role="menuitem"
-                    @click=${() => { closeSessionMenu(props.requestUpdate); props.onSetArchived(s.key, false); }}>
+                    @click=${() => { closeSessionMenu(host.bump); props.onSetArchived(s.key, false); }}>
                     <span class="cryoclaw-sidebar__session-menu-icon">${icons.archiveRestore}</span>
                     <span>${t("sidebar.restoreSession")}</span>
                   </button>
                   <button class="cryoclaw-sidebar__session-menu-item cryoclaw-sidebar__session-menu-item--danger" type="button" role="menuitem"
-                    @click=${() => { closeSessionMenu(props.requestUpdate); props.onDeleteSession(s.key); }}>
+                    @click=${() => { closeSessionMenu(host.bump); props.onDeleteSession(s.key); }}>
                     <span class="cryoclaw-sidebar__session-menu-icon">${icons.trash}</span>
                     <span>${t("sidebar.delete")}</span>
                   </button>
@@ -277,7 +419,9 @@ function renderErrors(props: SidebarProps) {
   };
 }
 
-export function renderSidebar(props: SidebarProps) {
+// 侧边栏模板主体（原 renderSidebar 等价搬迁：结构/文案/绑定一律不改；
+// 唯一差异——菜单开/关的刷新由根 requestUpdate 改为组件级 bump）
+function renderSidebarInner(host: CcSidebar, props: SidebarProps) {
   // 错误徽标 + 悬浮列表：两分支各引用一次，提前算好避免重复构建 TemplateResult
   const errors = renderErrors(props);
   // 刷新图标，断开连接时复用为重连按钮图标
@@ -406,7 +550,7 @@ export function renderSidebar(props: SidebarProps) {
             class="cryoclaw-sidebar__session-add ${props.showArchived ? "active" : ""}"
             type="button"
             @click=${() => {
-              closeSessionMenu(props.requestUpdate);
+              closeSessionMenu(host.bump);
               props.onToggleArchived();
             }}
             data-tooltip=${props.showArchived ? t("sidebar.backToSessions") : t("sidebar.showArchived")}
@@ -435,12 +579,12 @@ export function renderSidebar(props: SidebarProps) {
             : nothing}
           ${props.showArchived || props.sessionSearch.trim()
             ? // 归档视图 / 搜索态：平铺列表，便于扫读
-              repeat(props.sessionOptions, (s) => s.key, (s) => renderSessionItem(props, s))
+              repeat(props.sessionOptions, (s) => s.key, (s) => renderSessionItem(host, props, s))
             : // 正常视图：置顶 + 时间分组
               groupSidebarSessions(props.sessionOptions).map(
                 (group) => html`
                   <div class="cryoclaw-sidebar__group-label">${t(group.labelKey)}</div>
-                  ${repeat(group.items, (s) => s.key, (s) => renderSessionItem(props, s))}
+                  ${repeat(group.items, (s) => s.key, (s) => renderSessionItem(host, props, s))}
                 `,
               )}
         </div>

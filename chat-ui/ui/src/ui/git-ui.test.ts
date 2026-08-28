@@ -1,12 +1,12 @@
 // 守护回归（源码审计，同 worktrees-ui.test.ts 模式）：
 // P4「git 索引/审查/提交面板（文件级 v1）」的接线钉点。重 UI 模块
-// （app.ts / sidebar.ts / app-render.ts / views/git.ts）在 node 下不可导入，
+// （app.ts / components/cc-sidebar.ts / app-render.ts / views/git.ts）在 node 下不可导入，
 // 只能钉源码；纯逻辑由 controllers/git.test.ts 与 src/git-parse.test.ts 覆盖。
 //
 // 钉住的不变量：
 // - views/registry.ts：git 视图 id + meta（gotchas #49 接线点 1）
 // - app-render.ts：renderActiveView 分发 + sidebar props（接线点 3）
-// - sidebar.ts：git 面板导航项
+// - components/cc-sidebar.ts：git 面板导航项（R41 Task 12 自 sidebar.ts 迁入）
 // - app.ts：git 面板响应式状态字段
 // - file-changes 面板「在 git 中查看」链接（app-chat-props / chat.ts / cc-chat-history / grouped-render）
 // - 主进程：preload git* bridge；git-ipc 5 通道 + sender 校验 + 白名单 cwd 守卫
@@ -39,8 +39,8 @@ test("app-render.ts：renderActiveView 分发 git + sidebar 收到 git 面板 pr
   assert.match(s, /gitCommit\?: \(cwd: string, message: string\) => Promise<any>/, "缺少 gitCommit bridge 声明");
 });
 
-test("sidebar.ts：git 面板导航项", () => {
-  const s = src("sidebar.ts");
+test("cc-sidebar：git 面板导航项", () => {
+  const s = src("components/cc-sidebar.ts");
   assert.match(s, /t\("sidebar\.git"\)/, "缺少 git 导航项文案");
   assert.match(s, /props\.onOpenGit/, "导航项未接 onOpenGit");
   assert.match(s, /gitPanelActive \? "active"/, "导航项未接 active 态");
