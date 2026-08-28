@@ -40,10 +40,11 @@ function stripComments(code: string): string {
 
 test("registry：视图 id 收敛为 6 视图（R42 第二期 T5）", () => {
   const code = stripComments(src("views/registry.ts"));
-  assert.ok(!/"cron"/.test(code), "cron 视图 id 应已删除");
-  assert.ok(!/"worktrees"/.test(code), "worktrees 视图 id 应已删除");
-  assert.ok(!/"git"/.test(code), "git 视图 id 应已删除");
-  assert.ok(!/"skills"/.test(code), "skills 视图 id 应已删除");
+  // 带逗号边界（数组元素形态）避免误伤含同字的合法字符串字面量（如 "git:detect"）
+  assert.ok(!/"cron",/.test(code), "cron 视图 id 应已删除");
+  assert.ok(!/"worktrees",/.test(code), "worktrees 视图 id 应已删除");
+  assert.ok(!/"git",/.test(code), "git 视图 id 应已删除");
+  assert.ok(!/"skills",/.test(code), "skills 视图 id 应已删除");
   assert.match(code, /"chat"/, "应含 chat");
   assert.match(code, /"setup"/, "应含 setup");
   assert.match(code, /"settings"/, "应含 settings");

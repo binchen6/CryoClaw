@@ -1,4 +1,4 @@
-// 守护回归（源码审计，同 git-ui.test.ts / worktrees-ui.test.ts 模式）：
+// 守护回归（源码审计，同 workspace-ui.test.ts 模式）：
 // R41 Task 5「后台会话终态及时刷新侧边栏 + lastActiveSessionKey 守卫」+ 
 // R41 Task 6「重连 orphan 未收养时的有限次历史探测」。
 // app-gateway.ts 为重模块（依赖 gateway 客户端/大量 UI 控制器），在 node 下

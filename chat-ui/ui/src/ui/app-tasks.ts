@@ -14,7 +14,7 @@ import { handleSessionChange } from "./app-session-actions.ts";
 import type { AppViewState } from "./app-view-state.ts";
 
 // 任务页 tab 模块态（对齐 app-skills 的 skillsSubTab 模式；视图切走不重置，
-// 下次打开保留上次 tab）
+// 仅「在运行记录中查看」等内部跳转会改写；侧边栏任务入口每次打开固定回 runs）
 let tasksViewTab: TasksViewTab = "runs";
 
 // 打开任务实时视图（tab 缺省 runs；cron 时预拉定时任务列表）

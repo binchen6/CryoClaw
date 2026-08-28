@@ -1,4 +1,4 @@
-// 守护回归（源码审计，同 git-ui.test.ts 模式）：
+// 守护回归（源码审计，同 workspace-ui.test.ts 模式）：
 // R42 第二期「扩展视图（技能/插件双 tab）」的接线钉点。技能视图（skills）与
 // 设置页插件 tab 整合为新视图 extensions；插件 tab 状态复位从 cleanupSettingsView
 // 迁为 extensions 视图 leave hook。重 UI 模块（app.ts / components/cc-sidebar.ts /
