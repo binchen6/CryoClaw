@@ -136,6 +136,15 @@ test("views/workspace.ts：左导航含 Git 变更节点 + 文件树 + Worktrees
   assert.match(s, /gitRepoOptions/, "左导航应渲染仓库选择");
 });
 
+test("views/workspace.ts：文件树保留刷新/打开根目录/逐项打开能力（终审 Major 修复）", () => {
+  const s = src("views/workspace.ts");
+  assert.match(s, /onRefreshFiles/, "缺刷新回调");
+  assert.match(s, /onOpenRootFolder/, "缺打开根目录回调");
+  assert.match(s, /onOpenItemFolder/, "缺逐项打开回调");
+  assert.match(s, /"workspace\.refresh"/, "缺刷新 tooltip");
+  assert.match(s, /"workspace\.openRoot"/, "缺打开根目录 tooltip");
+});
+
 test("app-workspace.ts：worktree 节点选中 → 切仓库 + 右区切 git（联动补全）", () => {
   const s = src("app-workspace.ts");
   assert.match(s, /selectGitRepo\(state, repoPath\)/, "worktree 节点应切换 git 仓库上下文");

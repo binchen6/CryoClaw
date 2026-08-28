@@ -172,6 +172,79 @@
   flex-shrink: 0;
 }
 
+/* 文件节点头部右侧按钮组（刷新 / 打开根目录）—— 终审 Major 修复 */
+.wk-nav__node-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacer-4);
+  margin-left: auto;
+}
+
+/* 28px 方形图标按钮（节点行工具） */
+.wk-nav__icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  line-height: 1;
+  transition: background var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
+}
+.wk-nav__icon-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.wk-nav__icon-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+.wk-nav__icon-btn svg {
+  width: var(--icon-size-14);
+  height: var(--icon-size-14);
+}
+
+/* 文件/目录项内联「在文件管理器中打开」按钮：默认淡化，行内可见 */
+.wk-nav__item-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  opacity: 0.55;
+  cursor: pointer;
+  line-height: 1;
+  transition: opacity var(--duration-fast) var(--ease-standard),
+    background var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
+}
+.wk-nav__item-action:hover {
+  opacity: 1;
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.wk-nav__item-action:focus-visible {
+  opacity: 1;
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+.wk-nav__item-action svg {
+  width: var(--icon-size-14);
+  height: var(--icon-size-14);
+}
+
 .wk-nav__tree {
   display: flex;
   flex-direction: column;
@@ -373,7 +446,9 @@
 @media (prefers-reduced-motion: reduce) {
   .wk-nav__node,
   .wk-nav__item,
-  .wk-nav__repo {
+  .wk-nav__repo,
+  .wk-nav__icon-btn,
+  .wk-nav__item-action {
     transition: none;
   }
 }

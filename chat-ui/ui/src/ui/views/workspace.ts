@@ -20,6 +20,12 @@ export type WorkspaceViewOptions = {
   onSelectGitNode: () => void;
   onOpenFiles: () => void;
   onRepoChange: (path: string) => void;
+  /** 刷新文件树（重新执行 initWorkspace，由 app-workspace 注入） */
+  onRefreshFiles: () => void;
+  /** 打开工作区根目录（文件管理器，root 为 null 时 noop） */
+  onOpenRootFolder: () => void;
+  /** 逐项「在文件管理器中打开」（文件/目录项内联按钮） */
+  onOpenItemFolder: (path: string) => void;
 };
 
 // 相对路径（面包屑展示）
@@ -51,6 +57,16 @@ export function renderWorkspaceView(state: AppViewState, opts: WorkspaceViewOpti
         </select>
         <div class="wk-nav__node ${ws.mode === "files" ? "active" : ""}" @click=${opts.onOpenFiles}>
           ${icons.folder}<span>${t("workspace.files")}</span>
+          <span class="wk-nav__node-actions">
+            <button class="wk-nav__icon-btn" type="button"
+              data-tooltip=${t("workspace.refresh")} aria-label=${t("workspace.refresh")}
+              @click=${(e: Event) => { e.stopPropagation(); opts.onRefreshFiles(); }}
+            >${icons.refreshCw}</button>
+            <button class="wk-nav__icon-btn" type="button"
+              data-tooltip=${t("workspace.openRoot")} aria-label=${t("workspace.openRoot")}
+              @click=${(e: Event) => { e.stopPropagation(); opts.onOpenRootFolder(); }}
+            >${icons.folderOpen}</button>
+          </span>
         </div>
         <div class="wk-nav__tree">
           ${!isAtRoot ? html`<div class="wk-nav__item wk-nav__item--back" @click=${() => navigateWorkspaceUp(state)}>..</div>` : nothing}
@@ -63,6 +79,10 @@ export function renderWorkspaceView(state: AppViewState, opts: WorkspaceViewOpti
                     @click=${() => openWorkspaceDirectory(state, item)}>
                     <span class="wk-nav__item-icon">${item.isDir ? icons.folder : icons.fileText}</span>
                     <span class="wk-nav__item-name" title=${item.name}>${item.name}</span>
+                    <button class="wk-nav__item-action" type="button"
+                      data-tooltip=${t("workspace.openFolder")} aria-label=${t("workspace.openFolder")}
+                      @click=${(e: Event) => { e.stopPropagation(); opts.onOpenItemFolder(item.path); }}
+                    >${icons.folderOpen}</button>
                   </div>`)}
         </div>
         <div class="wk-nav__node wk-nav__node--git ${ws.mode === "git" ? "active" : ""}" @click=${opts.onSelectGitNode}>

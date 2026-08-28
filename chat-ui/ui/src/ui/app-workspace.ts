@@ -53,5 +53,17 @@ export function renderWorkspaceIntegratedView(state: AppViewState) {
     onRepoChange: (path) => {
       void selectGitRepo(state, path);
     },
+    // 终审 Major 修复：恢复旧版文件树的刷新/打开根目录/逐项打开能力（views 纯渲染，回调经 props 注入）
+    onRefreshFiles: () => {
+      void initWorkspace(state).then(() => state.requestUpdate());
+    },
+    onOpenRootFolder: () => {
+      const root = workspaceViewState.root;
+      if (!root) return;
+      void (window as any).cryoclaw?.workspaceOpenFolder?.(root);
+    },
+    onOpenItemFolder: (path) => {
+      void (window as any).cryoclaw?.workspaceOpenFolder?.(path);
+    },
   });
 }
