@@ -128,12 +128,12 @@ export function renderTabSearch(state: AppViewState) {
         .labels=${{ moonshot: t("setup.provider.label.moonshot") }}
       ></oc-provider-segment>
 
-      <div class="oc-settings__hint" style="margin-bottom:12px">${t("settings.search.guide")}
+      <div class="oc-settings__hint oc-mb-12">${t("settings.search.guide")}
         <a class="oc-settings__link" href="#" @click=${(e: Event) => { e.preventDefault(); ipc.openExternal("https://www.kimi.com/code/console"); }}>${t("settings.search.getApiKey")}</a>
       </div>
 
       ${autoReuseHint ? html`
-        <div class="oc-settings__hint" style="margin-bottom:12px;color:var(--accent)">${t("settings.search.autoReuse")}</div>
+        <div class="oc-settings__hint oc-mb-12" style="color:var(--accent)">${t("settings.search.autoReuse")}</div>
       ` : nothing}
       <div class="oc-settings__form-group">
         <label class="oc-settings__label">${t("setup.provider.apiKey")}</label>
@@ -144,7 +144,7 @@ export function renderTabSearch(state: AppViewState) {
 
       <details class="oc-settings__details-advanced">
         <summary>${t("setup.provider.oauth.advanced")}</summary>
-        <div class="oc-settings__form-group" style="margin-top:12px">
+        <div class="oc-settings__form-group oc-mt-12">
           <label class="oc-settings__label">${t("settings.search.serviceBaseUrl")}</label>
           <input class="oc-settings__input" .value=${s.serviceBaseUrl}
             @input=${(e: Event) => { s.serviceBaseUrl = (e.target as HTMLInputElement).value; state.requestUpdate(); }} />

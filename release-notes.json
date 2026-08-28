@@ -1,5 +1,12 @@
 [
   {
+    "version": "2026.828.1",
+    "notes": {
+      "zh": "设计：设计语言全面升级——排版阶梯（display 字号/字距/行高/字重体系）、精化阴影与圆角阶梯、动效 token（easing/时长）、hairline 与玻璃拟态 token；浅色/深色双主题独立调参（暗色升为一等公民，阴影、玻璃、辉光分别调校）\n设计：对话页布局重构——消息流与输入区统一 820px 阅读列宽居中（修复了 compose 与消息列错位）、空态 hero 重写（大标题排版+引导卡片渐入）、正文行高优化、新消息徽标动效、窄窗自适应\n优化：浅色系统启动不再闪暗色首帧；38 处视图内联间距样式收敛为统一原子类；暗色系统不再闪白\n测试基线 641 用例全绿",
+      "en": "Design: design language overhaul — typographic scale (display sizes, tracking, leading, weights), refined shadow and radius ladders, motion tokens (easing/duration), hairline and glassmorphism tokens; light and dark themes are now tuned independently (dark is a first-class citizen)\nDesign: chat layout rebuild — message flow and composer share a centered 820px reading column (fixes composer/message misalignment), rewritten empty-state hero (display typography + staggered guide chips), relaxed body line-height, new-message badge motion, narrow-window adaptivity\nImproved: no more dark first-frame flash on light systems; 38 inline spacing styles consolidated into utility classes; no more white flash for dark-system users\n641-test baseline all green"
+    }
+  },
+  {
     "version": "2026.828.0",
     "notes": {
       "zh": "新功能：Git 面板（文件级 v1）——侧边栏新入口：staged/unstaged/untracked 分组、点击文件行内查看 diff（单栏 +/- 高亮、rename/二进制/中文路径全支持）、按文件或全部暂存/取消暂存、提交框（未配置 git 身份时给出引导）；支持切换 workspace 根与活跃 worktree 仓库；聊天文件变更面板新增「在 git 中查看」直达链接\n加固：git 操作全部走白名单目录守卫+数组传参（零注入面）；maxBuffer 截断检测适配 Node ≥22；空仓库取消暂存自动回退 rm --cached\n测试基线 641 用例全绿",

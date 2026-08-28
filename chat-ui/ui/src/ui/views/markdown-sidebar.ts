@@ -25,7 +25,7 @@ export function renderMarkdownSidebar(props: MarkdownSidebarProps) {
           props.error
             ? html`
               <div class="callout danger">${props.error}</div>
-              <button @click=${props.onViewRawText} class="btn" style="margin-top: 12px;">
+              <button @click=${props.onViewRawText} class="btn oc-mt-12">
                 ${t("markdownSidebar.viewRaw")}
               </button>
             `

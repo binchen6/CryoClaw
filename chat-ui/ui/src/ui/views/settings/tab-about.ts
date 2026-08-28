@@ -196,7 +196,7 @@ function renderAppUpdateCard(state: AppViewState) {
   return html`
     <div class="oc-settings__card">
       <div class="oc-settings__card-title">${t("settings.about.appUpdate")}</div>
-      <div style="font-size:13px;display:flex;flex-direction:column;gap:6px">
+      <div class="oc-flex-col oc-gap-6" style="font-size:13px">
         <div><strong>${t("settings.about.appUpdateCurrent")}</strong>: ${us.currentVersion || s.cryoClawVersion || "-"}</div>
         ${us.status === "available"
           ? html`<div><strong>${tWithDetail("settings.about.appUpdateAvailable", us.version ?? "")}</strong></div>`
@@ -212,7 +212,7 @@ function renderAppUpdateCard(state: AppViewState) {
         ${us.status === "error"
           ? html`<div style="color:var(--danger)">${tWithDetail("settings.about.appUpdateError", us.error)}</div>`
           : ""}
-        <div style="display:flex;gap:8px;margin-top:4px">
+        <div class="oc-flex oc-gap-8 oc-mt-4">
           <button class="oc-settings__btn oc-settings__btn--compact" ?disabled=${checking || downloading} @click=${() => handleAppUpdateCheck(state)}>${checking ? t("settings.about.appUpdateChecking") : us.status === "error" ? t("settings.about.appUpdateRetry") : t("settings.about.appUpdateCheck")}</button>
           ${us.status === "downloaded"
             ? html`<button class="oc-settings__btn oc-settings__btn--primary oc-settings__btn--compact" @click=${() => handleAppUpdateRestart(state)}>${t("settings.about.appUpdateRestart")}</button>`
@@ -224,7 +224,7 @@ function renderAppUpdateCard(state: AppViewState) {
                 <div class="oc-settings-progress">
                   <div class="oc-settings-progress__bar" style="width:${us.progress.percent}%"></div>
                 </div>
-                <div style="margin-top:4px;color:var(--text-secondary)">${tWithDetail("settings.about.appUpdateDownloading", us.progress.percent.toFixed(1))}%</div>
+                <div class="oc-mt-4" style="color:var(--text-secondary)">${tWithDetail("settings.about.appUpdateDownloading", us.progress.percent.toFixed(1))}%</div>
               </div>
             `
           : ""}
@@ -252,13 +252,13 @@ function renderKernelCard(state: AppViewState) {
   return html`
     <div class="oc-settings__card">
       <div class="oc-settings__card-title">${t("settings.about.kernel")}</div>
-      <div style="font-size:13px;display:flex;flex-direction:column;gap:6px">
+      <div class="oc-flex-col oc-gap-6" style="font-size:13px">
         <div><strong>${t("settings.about.kernelCurrent")}</strong>: ${ks.current ?? "-"}</div>
         <div><strong>${t("settings.about.kernelLatest")}</strong>: ${ks.latest ?? t("settings.about.kernelLatestNotChecked")}</div>
         ${ks.checkError
           ? html`<div style="color:var(--danger)">${tWithDetail("settings.about.kernelCheckFailed", ks.checkError)}</div>`
           : ""}
-        <div style="display:flex;gap:8px;margin-top:4px">
+        <div class="oc-flex oc-gap-8 oc-mt-4">
           <button class="oc-settings__btn oc-settings__btn--compact" ?disabled=${disabled} @click=${() => handleKernelCheck(state)}>${t("settings.about.kernelCheck")}</button>
           ${ks.updateAvailable
             ? html`<button class="oc-settings__btn oc-settings__btn--primary oc-settings__btn--compact" ?disabled=${disabled} @click=${() => handleKernelUpdate(state)}>${t("settings.about.kernelUpdate")}</button>`
@@ -273,7 +273,7 @@ function renderKernelCard(state: AppViewState) {
                 <div style="height:6px;border-radius:3px;background:var(--border);overflow:hidden">
                   <div style="height:100%;width:${s.progress.pct}%;background:var(--accent);transition:width .2s"></div>
                 </div>
-                <div style="margin-top:4px;color:var(--text-secondary)">${s.progress.pct}% · ${s.progress.msg}</div>
+                <div class="oc-mt-4" style="color:var(--text-secondary)">${s.progress.pct}% · ${s.progress.msg}</div>
               </div>
             `
           : ""}
@@ -296,10 +296,10 @@ export function renderTabAbout(state: AppViewState) {
       <!-- Version -->
       <div class="oc-settings__card">
         <div class="oc-settings__card-title">${t("settings.about.version")}</div>
-        <div style="font-size:13px;display:flex;flex-direction:column;gap:6px">
+        <div class="oc-flex-col oc-gap-6" style="font-size:13px">
           <div><strong>${t("settings.about.cryoclaw")}</strong>: ${s.cryoClawVersion}</div>
           <div><strong>${t("settings.about.openclaw")}</strong>: ${s.openClawVersion}</div>
-          <div style="display:flex;gap:8px;margin-top:4px">
+          <div class="oc-flex oc-gap-8 oc-mt-4">
             <button class="oc-settings__btn oc-settings__btn--compact" @click=${() => handleViewReleaseNotes(state)}>${t("settings.about.viewReleaseNotes")}</button>
           </div>
         </div>

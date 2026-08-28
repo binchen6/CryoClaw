@@ -169,15 +169,31 @@
   padding: 0;
   color: var(--text);
   background: var(--panel-strong);
-  border: 1px solid var(--border);
+  border: var(--hairline);
   border-radius: 50%;
+  box-shadow: var(--shadow-md);
   cursor: pointer;
-  transition: background .15s ease-out, border-color .15s ease-out
+  /* 入场：从下方 8px 处浮入（与静态 translateY(-8px) 终态衔接，无跳变） */
+  animation: oc-new-messages-in var(--duration-normal) var(--ease-out);
+  transition: background var(--duration-fast) var(--ease-out), border-color var(--duration-fast) var(--ease-out), box-shadow var(--duration-fast) var(--ease-out)
+}
+
+@keyframes oc-new-messages-in {
+  0% {
+    opacity: 0;
+    transform: translateY(0)
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(-8px)
+  }
 }
 
 .chat-new-messages:hover {
   background: var(--panel);
-  border-color: var(--accent)
+  border-color: var(--accent);
+  box-shadow: var(--shadow-lg)
 }
 
 .chat-new-messages svg {

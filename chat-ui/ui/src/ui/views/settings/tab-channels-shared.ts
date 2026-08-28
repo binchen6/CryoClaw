@@ -136,8 +136,8 @@ export function renderAddGroupDialog(
         <input class="oc-settings__input" .value=${st.addGroupInput} placeholder=${opts.placeholder}
           @input=${(e: Event) => { st.addGroupInput = (e.target as HTMLInputElement).value; state.requestUpdate(); }}
           @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter" && !e.isComposing) opts.onConfirm(); if (e.key === "Escape") opts.onCancel(); }} />
-        ${st.addGroupError ? html`<div style="color:var(--danger);font-size:12px;margin-top:4px">${st.addGroupError}</div>` : nothing}
-        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
+        ${st.addGroupError ? html`<div class="oc-mt-4" style="color:var(--danger);font-size:12px">${st.addGroupError}</div>` : nothing}
+        <div class="oc-flex oc-gap-8 oc-justify-end oc-mt-12">
           <button class="oc-settings__btn" @click=${() => opts.onCancel()}>${t("settings.cancel")}</button>
           <button class="oc-settings__btn oc-settings__btn--primary" @click=${() => opts.onConfirm()}>${t("settings.confirm")}</button>
         </div>

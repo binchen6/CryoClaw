@@ -4,6 +4,8 @@
    纯搬运拆分，层叠顺序由 hub styles.css 的 @import 顺序决定，勿单独调整
    另：redesign.css（阶段 15/17/18 重设计 overrides）已并入本文件末尾
    「ex-redesign」区块及文中各 ex-redesign 注释标记的规则。
+   P5：消息流/分栏/hero 布局重构（居中列 --chat-column、密度节奏、
+   hairline token、≤768px 窄窗适配），不再全是纯搬运。
    ========================================================================== */
 
 
@@ -24,8 +26,9 @@
   flex: 1 1 0;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: var(--spacer-12) var(--spacer-4);
-  margin: 0 calc(-1 * var(--spacer-4));
+  /* 水平 padding 与负 margin 配对：内容列距窗边 20px（.card padding），滚动条贴右缘 */
+  padding: var(--spacer-16) var(--spacer-12);
+  margin: 0 calc(-1 * var(--spacer-12));
   min-height: 0;
   border-radius: var(--radius-12);
   background: transparent
@@ -43,16 +46,17 @@
 }
 
 .chat-attachments {
-  display: inline-flex;
+  display: flex;
   flex-wrap: wrap;
   gap: var(--spacer-8);
   padding: var(--spacer-8);
   background: var(--panel);
-  border-radius: var(--radius-8);
-  border: 1px solid var(--border);
-  width: fit-content;
-  max-width: 100%;
-  align-self: flex-start
+  border-radius: var(--radius-md);
+  border: var(--hairline);
+  /* 与消息流/compose 同一居中列（compose 容器 align-items:center，见 compose.css） */
+  width: 100%;
+  max-width: var(--chat-column);
+  align-self: center
 }
 
 .chat-attachment {
@@ -791,8 +795,9 @@
   padding-right: 1em
 }
 
-/* ex-redesign: 会话流居中列 + 密度收敛（mb 22px、max-width 820px；
-   margin-left/right 实际被 compose.css 的 0 !important 覆盖） */
+/* 会话流居中列 + 密度节奏（P5：max-width 走 --chat-column token） */
+/* 消息组：宽屏下约束阅读列宽并居中（--chat-column，P5 布局重构；
+   旧的 margin-left/right:0 !important 覆盖已随 compose.css 重构移除） */
 .chat-group {
   display: flex;
   gap: var(--spacer-12);
@@ -800,10 +805,11 @@
   margin-bottom: var(--spacer-24);
   margin-left: auto;
   margin-right: auto;
-  max-width: 820px;
+  max-width: var(--chat-column);
+  width: 100%;
   /* 新消息入场微动效（repeat 按 key 复用节点，只在元素创建时播放一次；
      prefers-reduced-motion 全局关停） */
-  animation: rise .22s var(--ease-out)
+  animation: rise var(--duration-normal) var(--ease-out)
 }
 
 .chat-group.user {
@@ -854,10 +860,12 @@
   display: flex;
   align-items: center;
   gap: var(--spacer-10);
-  margin: var(--spacer-16) var(--spacer-8);
+  /* 与消息组同一居中列 */
+  margin: var(--spacer-16) auto;
+  max-width: var(--chat-column);
   color: var(--muted);
   font-size: var(--text-xs);
-  letter-spacing: .08em;
+  letter-spacing: var(--tracking-caps);
   -webkit-user-select: none;
   user-select: none
 }
@@ -1634,18 +1642,18 @@ img.chat-avatar {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  transition: flex .25s ease-out
+  transition: flex var(--duration-normal) var(--ease-out)
 }
 
 .chat-sidebar {
   flex: 1;
   /* min(300px, 44%)：与 .chat-main 的 min(400px, 54%) 配对，窄窗口下分栏可收缩 */
   min-width: min(300px, 44%);
-  border-left: 1px solid var(--border);
+  border-left: var(--hairline);
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  animation: slide-in .2s ease-out
+  animation: slide-in var(--duration-normal) var(--ease-out)
 }
 
 @keyframes slide-in {
@@ -1672,8 +1680,8 @@ img.chat-avatar {
   justify-content: space-between;
   align-items: center;
   /* 顶部让开 44px 沉浸式 titlebar（关闭按钮原会被 drag 区压住） */
-  padding: 56px 16px 12px;
-  border-bottom: 1px solid var(--border);
+  padding: 56px var(--spacer-16) var(--spacer-12);
+  border-bottom: var(--hairline);
   flex-shrink: 0;
   position: sticky;
   top: 0;
@@ -1696,7 +1704,7 @@ img.chat-avatar {
 .sidebar-content {
   flex: 1;
   overflow: auto;
-  padding: 16px
+  padding: var(--spacer-16)
 }
 
 .sidebar-markdown {
@@ -1717,7 +1725,7 @@ img.chat-avatar {
 }
 
 
-/* ── 空会话 hero + starter prompts（阶段 16：Codex/TRAE 风空态） ── */
+/* ── 空会话 hero + starter prompts（P5 重构：display 排版阶梯 + 细腻入场节奏） ── */
 .chat-thread--empty {
   display: flex;
 }
@@ -1727,13 +1735,15 @@ img.chat-avatar {
   max-width: 640px;
   padding: var(--spacer-24) var(--spacer-20);
   text-align: center;
+  animation: dashboard-enter var(--duration-slower) var(--ease-out) backwards; /* 复用 dashboard-enter keyframes（base.css） */
 }
 
 .chat-hero__title {
   font-family: var(--font-display);
-  font-size: var(--heading-xl);
-  font-weight: 600;
-  letter-spacing: -0.02em;
+  font-size: var(--display-sm);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-tight);
+  letter-spacing: var(--tracking-display);
   color: var(--text-strong);
 }
 
@@ -1750,8 +1760,10 @@ img.chat-avatar {
 }
 
 .chat-hero__subtitle {
-  margin-top: var(--spacer-8);
+  margin-top: var(--spacer-10);
   font-size: var(--text-base);
+  line-height: var(--leading-body);
+  letter-spacing: var(--tracking-body);
   color: var(--text-secondary);
 }
 
@@ -1762,6 +1774,7 @@ img.chat-avatar {
   gap: var(--spacer-10);
 }
 
+/* chips 逐行入场（stagger-* 延迟类由视图层添加，backwards 填充防首帧闪现） */
 .chat-hero__chip {
   text-align: left;
   padding: var(--spacer-12) var(--spacer-16);
@@ -1769,9 +1782,11 @@ img.chat-avatar {
   line-height: 1.45;
   color: var(--text);
   background: var(--bg-elevated);
-  border: 1px solid var(--border);
+  border: var(--hairline);
   border-radius: var(--radius-md);
+  box-shadow: var(--shadow-xs);
   cursor: pointer;
+  animation: rise var(--duration-slow) var(--ease-out) backwards;
   transition: border-color var(--duration-fast) var(--ease-out),
     background var(--duration-fast) var(--ease-out),
     box-shadow var(--duration-fast) var(--ease-out),
@@ -1797,7 +1812,9 @@ img.chat-avatar {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .chat-hero,
   .chat-hero__chip {
+    animation: none;
     transition: none;
   }
 
@@ -2032,10 +2049,11 @@ img.chat-avatar {
   border-color: transparent;
 }
 
-/* ex-redesign 阶段 17 密度收敛：正文字号 var(--font-size-body)、行高 1.66 */
+/* 密度节奏：正文字号 var(--font-size-body)、行高走 --leading-relaxed 阶梯 */
 .chat-group.assistant .chat-group-messages .chat-bubble .chat-text {
   font-size: var(--font-size-body);
-  line-height: 1.66;
+  line-height: var(--leading-relaxed);
+  letter-spacing: var(--tracking-body);
 }
 
 /* ── 用户消息：accent 渐变胶囊，右下小圆角指向发送者 ── */
@@ -2261,4 +2279,28 @@ img.chat-avatar {
   text-overflow: ellipsis;
   white-space: nowrap;
   min-width: 0;
+}
+
+/* ── P5 窄窗适配（≤768px）：列宽约束在窄窗天然失效，收敛内边距保持节奏 ── */
+@media (max-width: 768px) {
+  .chat-thread {
+    padding: var(--spacer-12) var(--spacer-8);
+    margin: 0 calc(-1 * var(--spacer-8));
+  }
+
+  .chat-group {
+    margin-bottom: var(--spacer-20);
+  }
+
+  .chat-hero {
+    padding: var(--spacer-16) var(--spacer-12);
+  }
+
+  .chat-hero__title {
+    font-size: var(--heading-lg);
+  }
+
+  .chat-hero__chips {
+    margin-top: var(--spacer-24);
+  }
 }

@@ -130,7 +130,7 @@ export function renderPairingPanel(
       <!-- Toolbar -->
       ${hasToolbar ? html`
         <div class="oc-settings-pairing__toolbar">
-          <div class="oc-settings__label" style="margin:0">${t("settings.channels.pairing.whitelistTitle")}</div>
+          <div class="oc-settings__label oc-m-0">${t("settings.channels.pairing.whitelistTitle")}</div>
           <div class="oc-settings-pairing__toolbar-actions">
             <button class="oc-settings-pairing__icon-btn"
               ?disabled=${inflightRefresh.has(platform)}
@@ -175,14 +175,13 @@ export function renderPairingPanel(
       </div>
 
       <!-- Approved -->
-      <div class="oc-settings-pairing__section" style="margin-top:12px">
+      <div class="oc-settings-pairing__section oc-mt-12">
         <div class="oc-settings__label">${t("settings.channels.pairing.approved")}</div>
         ${allApproved.length ? allApproved.map(entry => html`
           <div class="oc-settings-pairing__item">
             <span style="font-size:11px;color:var(--text-secondary)">${entry.kind}</span>
             <span class="oc-settings-pairing__name">${(entry as any).name || entry.id}</span>
-            <button class="oc-settings-pairing__icon-btn oc-settings-pairing__icon-btn--danger"
-              style="margin-left:auto"
+            <button class="oc-settings-pairing__icon-btn oc-settings-pairing__icon-btn--danger oc-ml-auto"
               @click=${entry.onRemove}
               data-tooltip=${t("settings.channels.pairing.remove")}
               data-tooltip-pos="left"

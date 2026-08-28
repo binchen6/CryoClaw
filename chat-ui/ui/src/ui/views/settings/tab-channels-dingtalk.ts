@@ -101,8 +101,8 @@ export function renderChannelDingtalk(state: AppViewState) {
 
   return html`
     <div class="oc-settings__section">
-      <div style="display:flex;align-items:flex-start;justify-content:flex-end;margin-bottom:8px">
-        <div style="display:flex;gap:12px;flex-shrink:0">
+      <div class="oc-flex oc-items-start oc-justify-end oc-mb-8">
+        <div class="oc-flex oc-gap-12" style="flex-shrink:0">
           <a class="oc-settings__link" href="#" @click=${(e: Event) => { e.preventDefault(); ipc.openExternal("https://oneclaw.cn/docs/tutorials/dingtalk.html"); }}>${t("settings.channels.dingtalk.setupGuide")} &rarr;</a>
           <a class="oc-settings__link" href="#" @click=${(e: Event) => { e.preventDefault(); ipc.openExternal("https://open-dev.dingtalk.com/fe/app"); }}>${t("settings.channels.dingtalk.openConsole")} &rarr;</a>
         </div>
@@ -127,7 +127,7 @@ export function renderChannelDingtalk(state: AppViewState) {
           <oc-password-input .value=${s.clientSecret} @input=${(e: CustomEvent) => { s.clientSecret = e.detail.value; state.requestUpdate(); }}></oc-password-input>
         </div>
 
-        <div class="oc-settings__field-hint" style="margin-bottom:8px">${t("settings.channels.dingtalk.gatewayTokenHint")}</div>
+        <div class="oc-settings__field-hint oc-mb-8">${t("settings.channels.dingtalk.gatewayTokenHint")}</div>
 
         ${renderChannelSaveFooter(s, () => handleSave(state))}
       ` : nothing}

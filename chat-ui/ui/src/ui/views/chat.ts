@@ -977,9 +977,9 @@ export function renderChat(props: ChatProps) {
             <div class="chat-hero__subtitle">${t("chat.emptySubtitle")}</div>
             <div class="chat-hero__chips">
               ${starterKeys.map(
-                (key) => html`
+                (key, i) => html`
                   <button
-                    class="chat-hero__chip"
+                    class="chat-hero__chip stagger-${i + 1}"
                     type="button"
                     ?disabled=${!props.connected}
                     @click=${() => sendStarter(t(key))}

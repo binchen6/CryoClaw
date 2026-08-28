@@ -1,58 +1,29 @@
 /* ==========================================================================
    styles/tokens-ext.css — Chat UI 扩展变量
-   覆盖原 styles.css 行 2-82：:root 扩展变量（基于 design tokens）、浅色主题覆盖
-   纯搬运拆分，层叠顺序由 hub styles.css 的 @import 顺序决定，勿单独调整
+   基于 design tokens 的兼容别名层（--card/--popover/--panel/--ring 等存量别名，
+   均映射到 shared/design-tokens.css 的语义 token；新代码优先用语义变量，勿再扩张）
+
+   P5：:root 默认值翻转为浅色（原暗色默认值导致浅色系统在 data-theme 设置前
+   首帧闪暗）；暗色值移入 :root[data-theme=dark]，并配 prefers-color-scheme
+   兜底块，暗色系统用户在 data-theme 落地前也不会闪白。
+   层叠顺序由 hub styles.css 的 @import 顺序决定，勿单独调整
    ========================================================================== */
 
 
-/* Chat UI 扩展变量 — 基于 design tokens */
+/* Chat UI 扩展变量 — 静态（主题无关） */
 :root {
   /* 开关滑块钮：双主题恒为浅色（暗色下 --text-on-accent 为深青，趴在深色 OFF 轨道上不可见） */
   --toggle-knob: #ffffff;
-  --bg-accent: var(--bg-secondary);
-  --card: var(--bg-elevated);
-  --card-foreground: var(--text-strong);
-  --card-highlight: rgba(255, 255, 255, 0.05);
-  --popover: var(--bg-elevated);
-  --popover-foreground: var(--text-strong);
-  --panel: var(--bg-secondary);
-  --panel-strong: var(--bg-elevated);
-  --panel-hover: var(--bg-hover);
-  --chrome: rgba(11, 17, 23, 0.95);
-  --chrome-strong: rgba(11, 17, 23, 0.98);
-  --chat-text: var(--text);
-  --muted: var(--text-secondary);
-  --muted-strong: #64748b;
-  --muted-foreground: var(--text-secondary);
-  --input: var(--border);
-  --ring: var(--accent);
-  --accent-muted: var(--brand-400);
-  --accent-foreground: var(--text-on-accent);
-  --primary: var(--accent);
-  --primary-foreground: var(--text-on-accent);
-  --secondary: #182230;
-  --secondary-foreground: var(--text-strong);
-  --accent-2: #22d3ee;
-  --accent-2-muted: rgba(34, 211, 238, 0.7);
-  --accent-2-subtle: rgba(34, 211, 238, 0.15);
-  --destructive-foreground: var(--text-strong);
-  --danger: var(--destructive);
-  --danger-muted: rgba(239, 68, 68, 0.75);
-  --danger-subtle: rgba(239, 68, 68, 0.12);
-  --focus: var(--accent-glow);
-  --focus-ring: 0 0 0 2px var(--bg), 0 0 0 4px var(--ring);
-  --focus-glow: 0 0 0 2px var(--bg), 0 0 0 4px var(--ring), 0 0 20px var(--accent-glow);
-  --grid-line: rgba(255, 255, 255, 0.04);
-  --theme-switch-x: 50%;
-  --theme-switch-y: 50%;
-  --shadow-glow: 0 0 30px var(--accent-glow);
   --radius: var(--radius-sm);
   --radius-full: var(--radius-pill);
   --sidebar-width: 280px;
+  --theme-switch-x: 50%;
+  --theme-switch-y: 50%;
+  --focus-ring: 0 0 0 2px var(--bg), 0 0 0 4px var(--ring);
 }
 
-/* Chat UI 扩展变量 — 浅色覆盖 */
-:root[data-theme=light] {
+/* Chat UI 扩展变量 — 浅色（默认，data-theme 未设置时的首帧值） */
+:root {
   --bg-accent: var(--grey-50);
   --bg-content: var(--grey-50);
   --card: var(--bg-elevated);
@@ -66,9 +37,11 @@
   --chrome: rgba(255, 255, 255, 0.95);
   --chrome-strong: rgba(255, 255, 255, 0.98);
   --chat-text: var(--text);
-  --muted-strong: #475569;
+  --muted: var(--text-secondary);
+  --muted-strong: var(--grey-600);
   --muted-foreground: var(--text-muted);
   --input: var(--border);
+  --ring: var(--accent);
   --accent-muted: var(--accent);
   --accent-foreground: var(--text-on-accent);
   --primary: var(--accent);
@@ -82,8 +55,88 @@
   --danger: var(--destructive);
   --danger-muted: rgba(220, 38, 38, 0.75);
   --danger-subtle: rgba(220, 38, 38, 0.1);
-  --focus: rgba(14, 165, 233, 0.2);
+  --focus: var(--accent-glow);
   --focus-glow: 0 0 0 2px var(--bg), 0 0 0 4px var(--ring), 0 0 16px var(--accent-glow);
   --grid-line: rgba(0, 0, 0, 0.05);
   --shadow-glow: 0 0 24px var(--accent-glow);
+}
+
+/* Chat UI 扩展变量 — 暗色（data-theme=dark，Chat UI 主通道） */
+:root[data-theme=dark] {
+  --bg-accent: var(--bg-secondary);
+  --bg-content: var(--bg);
+  --card: var(--bg-elevated);
+  --card-foreground: var(--text-strong);
+  --card-highlight: rgba(255, 255, 255, 0.05);
+  --popover: var(--bg-elevated);
+  --popover-foreground: var(--text-strong);
+  --panel: var(--bg-secondary);
+  --panel-strong: var(--bg-elevated);
+  --panel-hover: var(--bg-hover);
+  --chrome: rgba(11, 17, 23, 0.95);
+  --chrome-strong: rgba(11, 17, 23, 0.98);
+  --chat-text: var(--text);
+  --muted: var(--text-secondary);
+  --muted-strong: var(--grey-500);
+  --muted-foreground: var(--text-secondary);
+  --input: var(--border);
+  --ring: var(--accent);
+  --accent-muted: var(--brand-400);
+  --accent-foreground: var(--text-on-accent);
+  --primary: var(--accent);
+  --primary-foreground: var(--text-on-accent);
+  --secondary: var(--bg-elevated);
+  --secondary-foreground: var(--text-strong);
+  --accent-2: #22d3ee;
+  --accent-2-muted: rgba(34, 211, 238, 0.7);
+  --accent-2-subtle: rgba(34, 211, 238, 0.15);
+  --destructive-foreground: var(--text-strong);
+  --danger: var(--destructive);
+  --danger-muted: rgba(239, 68, 68, 0.75);
+  --danger-subtle: rgba(239, 68, 68, 0.12);
+  --focus: var(--accent-glow);
+  --focus-glow: 0 0 0 2px var(--bg), 0 0 0 4px var(--ring), 0 0 20px var(--accent-glow);
+  --grid-line: rgba(255, 255, 255, 0.04);
+  --shadow-glow: 0 0 30px var(--accent-glow);
+}
+
+/* 暗色兜底：data-theme 未设置时跟随 OS（防暗色系统用户首帧闪白） */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme=light]) {
+    --bg-accent: var(--bg-secondary);
+    --bg-content: var(--bg);
+    --card: var(--bg-elevated);
+    --card-foreground: var(--text-strong);
+    --card-highlight: rgba(255, 255, 255, 0.05);
+    --popover: var(--bg-elevated);
+    --popover-foreground: var(--text-strong);
+    --panel: var(--bg-secondary);
+    --panel-strong: var(--bg-elevated);
+    --panel-hover: var(--bg-hover);
+    --chrome: rgba(11, 17, 23, 0.95);
+    --chrome-strong: rgba(11, 17, 23, 0.98);
+    --chat-text: var(--text);
+    --muted: var(--text-secondary);
+    --muted-strong: var(--grey-500);
+    --muted-foreground: var(--text-secondary);
+    --input: var(--border);
+    --ring: var(--accent);
+    --accent-muted: var(--brand-400);
+    --accent-foreground: var(--text-on-accent);
+    --primary: var(--accent);
+    --primary-foreground: var(--text-on-accent);
+    --secondary: var(--bg-elevated);
+    --secondary-foreground: var(--text-strong);
+    --accent-2: #22d3ee;
+    --accent-2-muted: rgba(34, 211, 238, 0.7);
+    --accent-2-subtle: rgba(34, 211, 238, 0.15);
+    --destructive-foreground: var(--text-strong);
+    --danger: var(--destructive);
+    --danger-muted: rgba(239, 68, 68, 0.75);
+    --danger-subtle: rgba(239, 68, 68, 0.12);
+    --focus: var(--accent-glow);
+    --focus-glow: 0 0 0 2px var(--bg), 0 0 0 4px var(--ring), 0 0 20px var(--accent-glow);
+    --grid-line: rgba(255, 255, 255, 0.04);
+    --shadow-glow: 0 0 30px var(--accent-glow);
+  }
 }

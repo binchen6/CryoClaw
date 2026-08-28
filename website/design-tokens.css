@@ -6,6 +6,10 @@
    设计规范：TraeWork token 体系（分组 + 数值阶梯 + 兼容别名）
    配色：CryoClaw 冰蓝系（cryo ice-blue），浅色为默认主题，暗色经
    [data-theme=dark] 或 prefers-color-scheme 双通道切换
+
+   P5 二期重构：排版阶梯（display/字距/字重/行高）、elevation 精化、
+   动效时长阶梯、hairline/玻璃拟态 token；浅色与暗色为两套独立调参的
+   一等主题（对比度、阴影深度、玻璃参数分别定义，互不覆盖降级）。
    ============================================ */
 
 /* ── 静态 token（主题无关） ── */
@@ -29,7 +33,7 @@
   --radius-xl: var(--radius-20);
   --radius-pill: 999px;
 
-  /* spacer 数值阶梯（TraeWork 规范） */
+  /* spacer 数值阶梯（TraeWork 规范，4px 基网） */
   --spacer-2: 2px;
   --spacer-3: 3px;
   --spacer-4: 4px;
@@ -51,6 +55,9 @@
   --icon-size-16: 16px;
   --icon-size-20: 20px;
   --icon-size-24: 24px;
+
+  /* 阅读列宽：宽屏下消息流/compose 的居中列约束 */
+  --chat-column: 820px;
 
   /* 字体栈（TraeWork 规范 + 中文回退） */
   --font-body: "SF Pro Text", "PingFang SC", system-ui, -apple-system,
@@ -77,15 +84,45 @@
   --heading-xl: 24px;
   --heading-2xl: 28px;
   --heading-3xl: 32px;
+  /* display 阶梯：空态 hero / 大标题专用，配合 --tracking-display 收紧字距 */
+  --display-sm: 26px;
+  --display-md: 32px;
+  --display-lg: 40px;
 
-  /* 动效 */
+  /* 字距（负数收紧用于标题/display，正数放宽用于 meta/徽章） */
+  --tracking-tight: -0.02em;
+  --tracking-display: -0.03em;
+  --tracking-body: -0.011em;
+  --tracking-wide: 0.04em;
+  --tracking-caps: 0.08em;
+
+  /* 行高阶梯 */
+  --leading-tight: 1.25;
+  --leading-title: 1.35;
+  --leading-body: 1.55;
+  --leading-relaxed: 1.7;
+
+  /* 字重阶梯 */
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+
+  /* 动效：spring 感 easing + 时长阶梯 */
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --duration-instant: 0.08s;
   --duration-fast: 0.12s;
   --duration-normal: 0.2s;
   --duration-slow: 0.35s;
+  --duration-slower: 0.5s;
   --transition: 180ms ease;
+
+  /* 玻璃拟态模糊量（配合 --glass-* 底色使用） */
+  --glass-blur-sm: 8px;
+  --glass-blur-md: 16px;
 
   /* 品牌色阶 —— CryoClaw 冰蓝（cryo ice-blue） */
   --brand-50: #f0f9ff;
@@ -138,6 +175,10 @@
   --border-hover: var(--grey-400);
   --border-focus: var(--accent);
 
+  /* hairline：1px 细分割线快捷 token（用于替代生硬实色分割线） */
+  --hairline: 1px solid var(--border);
+  --hairline-strong: 1px solid var(--border-strong);
+
   /* 强调色 —— 冰蓝 */
   --accent: var(--brand-500);
   --accent-hover: var(--brand-600);
@@ -154,7 +195,7 @@
   --warn-subtle: rgba(226, 121, 0, 0.12);
   --info: var(--brand-500);
 
-  /* 遮罩 & 玻璃 */
+  /* 遮罩 & 玻璃（浅色：深色调半透明压层） */
   --overlay: rgba(15, 23, 42, 0.42);
   --overlay-heavy: rgba(15, 23, 42, 0.7);
   --glass-xs: rgba(15, 23, 42, 0.02);
@@ -163,18 +204,24 @@
   --glass-lg: rgba(15, 23, 42, 0.12);
   --glass-border: rgba(15, 23, 42, 0.08);
 
-  /* 阴影 */
+  /* 卡片顶部高光（浅色：亮边，浮雕感） */
+  --highlight-inset: inset 0 1px 0 rgba(255, 255, 255, 0.65);
+
+  /* 阴影：浅色下低透明多层叠加，负扩散收敛投影范围 */
+  --shadow-xs: 0 1px 1px rgba(15, 23, 42, 0.04);
   --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06);
   --shadow-md: 0 4px 12px rgba(15, 23, 42, 0.08), 0 0 0 1px rgba(15, 23, 42, 0.04);
-  --shadow-lg: 0 12px 28px rgba(15, 23, 42, 0.12), 0 0 0 1px rgba(15, 23, 42, 0.04);
-  --shadow-xl: 0 24px 48px rgba(15, 23, 42, 0.15), 0 0 0 1px rgba(15, 23, 42, 0.04);
+  --shadow-lg: 0 12px 28px -4px rgba(15, 23, 42, 0.12), 0 0 0 1px rgba(15, 23, 42, 0.04);
+  --shadow-xl: 0 24px 48px -8px rgba(15, 23, 42, 0.16), 0 0 0 1px rgba(15, 23, 42, 0.04);
 
   color-scheme: light;
 }
 
-/* ── 暗色主题（深冷灰蓝） ── */
+/* ── 暗色主题（深冷灰蓝，一等公民：独立调参，非浅色覆盖层） ── */
 /* 方式 1：data-theme 属性切换（Chat UI 使用） */
 :root[data-theme=dark] {
+  /* 背景：四档深度阶梯（app < secondary < elevated < hover），
+     层级靠明度微差 + 顶部高光，不靠分割线 */
   --bg: #0b1117;
   --bg-secondary: #101823;
   --bg-elevated: #182230;
@@ -182,6 +229,7 @@
   --bg-input: #080d13;
   --bg-muted: #1b2736;
 
+  /* 文字：五级灰阶，meta 层压到 3:1 上下，正文 ≥ 10:1 */
   --text: #d7e0ea;
   --text-strong: #f1f5f9;
   --text-secondary: #93a4b8;
@@ -193,11 +241,14 @@
   --border-strong: #314357;
   --border-hover: #3f5872;
 
-  /* 暗色下品牌色亮一档保对比度 */
+  --hairline: 1px solid var(--border);
+  --hairline-strong: 1px solid var(--border-strong);
+
+  /* 暗色下品牌色亮一档保对比度，glow 更强补暗场氛围 */
   --accent: var(--brand-400);
   --accent-hover: var(--brand-300);
   --accent-subtle: rgba(56, 189, 248, 0.14);
-  --accent-glow: rgba(56, 189, 248, 0.28);
+  --accent-glow: rgba(56, 189, 248, 0.32);
 
   --ok: #2fbf8f;
   --ok-muted: rgba(47, 191, 143, 0.75);
@@ -208,6 +259,7 @@
   --warn-subtle: rgba(255, 176, 32, 0.14);
   --info: var(--brand-400);
 
+  /* 遮罩 & 玻璃（暗色：白色调半透明提亮层） */
   --overlay: rgba(0, 0, 0, 0.5);
   --overlay-heavy: rgba(0, 0, 0, 0.8);
   --glass-xs: rgba(255, 255, 255, 0.02);
@@ -216,10 +268,15 @@
   --glass-lg: rgba(255, 255, 255, 0.12);
   --glass-border: rgba(255, 255, 255, 0.08);
 
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.2);
-  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(255, 255, 255, 0.03);
-  --shadow-lg: 0 12px 28px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(255, 255, 255, 0.03);
-  --shadow-xl: 0 24px 48px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.03);
+  /* 卡片顶部高光（暗色：微弱白边，暗场分层关键） */
+  --highlight-inset: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+
+  /* 阴影：暗色下更深更实（alpha 约为浅色 3 倍），暗场浮层靠它离地 */
+  --shadow-xs: 0 1px 1px rgba(0, 0, 0, 0.18);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.28);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.32), 0 0 0 1px rgba(255, 255, 255, 0.03);
+  --shadow-lg: 0 12px 28px -4px rgba(0, 0, 0, 0.42), 0 0 0 1px rgba(255, 255, 255, 0.03);
+  --shadow-xl: 0 24px 48px -8px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.03);
 
   color-scheme: dark;
 }
@@ -245,10 +302,13 @@
     --border-strong: #314357;
     --border-hover: #3f5872;
 
+    --hairline: 1px solid var(--border);
+    --hairline-strong: 1px solid var(--border-strong);
+
     --accent: var(--brand-400);
     --accent-hover: var(--brand-300);
     --accent-subtle: rgba(56, 189, 248, 0.14);
-    --accent-glow: rgba(56, 189, 248, 0.28);
+    --accent-glow: rgba(56, 189, 248, 0.32);
 
     --ok: #2fbf8f;
     --ok-muted: rgba(47, 191, 143, 0.75);
@@ -267,10 +327,13 @@
     --glass-lg: rgba(255, 255, 255, 0.12);
     --glass-border: rgba(255, 255, 255, 0.08);
 
-    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.2);
-    --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(255, 255, 255, 0.03);
-    --shadow-lg: 0 12px 28px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(255, 255, 255, 0.03);
-    --shadow-xl: 0 24px 48px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.03);
+    --highlight-inset: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+
+    --shadow-xs: 0 1px 1px rgba(0, 0, 0, 0.18);
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.28);
+    --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.32), 0 0 0 1px rgba(255, 255, 255, 0.03);
+    --shadow-lg: 0 12px 28px -4px rgba(0, 0, 0, 0.42), 0 0 0 1px rgba(255, 255, 255, 0.03);
+    --shadow-xl: 0 24px 48px -8px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.03);
 
     color-scheme: dark;
   }

@@ -10,7 +10,7 @@
 面向国内生态（Kimi / Moonshot / 飞书 / 企微 / 微信 / 钉钉 / QQ）。
 
 **当前状态**：
-- 重设计工程 **R1–R37 全部完成**，最新发版 **v2026.828.0**（R37 git 索引/提交面板；v2026.827.8：R36）。
+- 重设计工程 **R1–R38 全部完成**，最新发版 **v2026.828.1**（R38 设计 token 现代化+对话页布局重构；v2026.828.0：R37）。
 - 内核 openclaw **2026.7.1-2**（版本 pin 在 package.json `cryoclaw.openclaw`）；**Electron 43.4.0**（audit 0 漏洞）。
 - 测试基线 **641 pass / 0 fail / 4 skipped**（vitest 94 + node 121 + chat-ui 374 + scripts 52；0 fail 为硬指标）。
 - 重复率 **1.08%**（73 clones，阈值 5%，`npm run dupcheck` 防回退）。
@@ -38,7 +38,7 @@
 | `CLAUDE.md` / `AGENTS.md`（symlink） | 项目硬规范 |
 | `docs/architecture.md` | 架构分层说明 |
 | `docs/ipc-api.md` | 主进程 IPC 通道清单 |
-| `docs/gotchas.md` | 69 条已验证坑（改代码前搜一遍） |
+| `docs/gotchas.md` | 72 条已验证坑（改代码前搜一遍） |
 | `docs/design-guidelines-zh/en.md` | TraeWork + 冰蓝 token 设计规范 |
 
 ## 🗺 关键路径地图（改动前必读）
@@ -56,10 +56,10 @@
 | 沙盒守卫 | `src/docker-check.ts` | 启用沙盒前探测（8s 超时、60s 缓存）；不可用拒绝写入 |
 | chat-ui 视图 | `chat-ui/ui/src/ui/views/` + `controllers/` | views 纯渲染，controllers 封装 RPC |
 | 视图接线 | `app-render.ts` + `views/registry.ts` | 视图 id 唯一事实来源；**新视图接线点 3 处**（gotchas #49） |
-| 样式 hub | `chat-ui/ui/src/styles.css` | **只做 @import，层叠顺序敏感**：design-tokens → tokens-ext → base → **primitives** → chat/components/panels/sidebar/skills/compose/workspace/cron/misc/panel/plan →（末尾）settings → setup |
+| 样式 hub | `chat-ui/ui/src/styles.css` | **只做 @import，层叠顺序敏感**：design-tokens → tokens-ext → base → **primitives** → **utilities** → chat/components/panels/sidebar/skills/compose/workspace/cron/misc/panel/plan →（末尾）settings → setup |
 | 设计 token | `shared/design-tokens.css` + `styles/tokens-ext.css` | TraeWork + 冰蓝；兼容别名 --accent/--bg |
 | 契约组件 | `styles/primitives.css` | cc-btn/cc-input/cc-card/cc-dialog/cc-tag/cc-menu/cc-alert/cc-skeleton/cc-table/cc-tabs/cc-chip |
-| 进度/坑 | `docs/OPTIMIZATION-PROGRESS.md` + `docs/gotchas.md` | 本文件 + 69 条已验证坑（gotchas 为准） |
+| 进度/坑 | `docs/OPTIMIZATION-PROGRESS.md` + `docs/gotchas.md` | 本文件 + 72 条已验证坑（gotchas 为准） |
 
 ## ⚙️ 运行机制既有事实（勿重复调查）
 
@@ -209,7 +209,7 @@
 - **死代码清除**：app-scroll/app-lifecycle/app.ts 的 topbarObserver 死路径（TS 早无 .topbar markup）；base.css 旧 .shell/.topbar/.nav 布局块 + 1100/600/400px 三个永不命中媒体块；panels.css .shell--chat 两条；.chat-new-messages 重复定义合并进 panels.css（层叠胜者，独有属性已并入）。base.css 头注释同步更新。
 - **毛边**：cron.css 列表顶部 padding 42px→48px（让开 44px titlebar，与右侧 detail 52px 取齐）；setup.css 进度条 top:0→44px；settings.css 两处 transition:all→具体属性；plan.css 999px→var(--radius-pill)。
 - **测试 +6**：toggle-switch.test.ts 源码审计 6 例（switch 语义/键盘/repeat 守卫/aria-label 转发/focus 环/--toggle-knob）。基线 528→534。
-- **记录在案候选**：tokens-ext :root 默认值是暗色（data-theme 设置前浅色系统首帧闪暗，待翻转评估）；base.css 剩余孤儿选择器（.nav/.brand/.stat 等零引用）未清；views 30+ 处内联 style 间距未收敛；技能 12 色板两份数组未合并；settings.css 孤 \r 行尾未统一。
+- **记录在案候选**（R38 后复核）：tokens-ext 暗色默认值翻转、views 内联 style 间距收敛已随 R38 闭环；base.css 孤儿选择器清除、技能 12 色板合并已随 R33 闭环；仅剩 settings.css 孤 \r 行尾未统一。
 
 ### R33 · 可维护性收尾（完成，随 v2026.827.5 发版）
 
@@ -222,7 +222,7 @@
 - **死代码**：删 src/gateway-rpc.ts（callGatewayRpc 全仓零调用）+ CLAUDE.md/architecture.md 对应条目；删 icons.ts renderIcon（零调用，其引用的 nav-item__icon CSS 随孤儿清理一并消失）。
 - **文档债同步**：R24/R26 未修项清单、Watch list 候选列表按实际闭环状态重写（审查 minor）。
 - 基线不变 534 全绿（纯删减+加固，无新测试件）；重复率 1.01%。
-- **仍候选**：kimi-auth-proxy path secret 回环鉴权（中风险，~30 行 backlog）；settings.css CRLF/LF 混排统一（diff 噪音大 defer）；tokens-ext 暗色默认值翻转；views 内联 style 收敛。
+- **仍候选**：kimi-auth-proxy path secret 回环鉴权（中风险，~30 行 backlog）；settings.css CRLF/LF 混排统一（diff 噪音大 defer）。~~tokens-ext 暗色默认值翻转~~、~~views 内联 style 收敛~~ 已随 R38 闭环。
 
 ### R34 · 应用更新策略与进度提示（完成，随 v2026.827.6 发版；二期 P1）
 
@@ -271,6 +271,17 @@
 - **v1 边界守住**：无 hunk 级 stage、push/pull/branch 管理、merge 冲突 UI；untracked 不可展开 diff（git 本身不含），只能 stage。
 - **测试 +44**：git-parse 23、git-run 5（截断/超时/ENOENT/信号杀死归类）、controllers/git 5、git-ui 源码审计 11。基线 618→641 全绿；重复率 1.08%（73 clones）。
 - **记录在案（P7 候选）**：断连时面板仅 callout 提示不自动重试；diff/status 截断 UI 无单独提示；ENOENT 竞态归类为 git-error 而非 no-git；selectGitFile 收起/切仓库不 bump diffSeq（不可见状态残留）；diff removed 行用 U+2212 影响复制；git.title 文案偏窄。
+
+### R38 · 设计 token 现代化 + 对话页布局重构（完成，随 v2026.828.1 发版；二期 P5）
+
+用户指令：设计 token 现代化（双主题并重）+ 对话页布局重构。纯 chat-ui/shared 样式层改动，内核零改动。
+- **token 新结构**（`shared/design-tokens.css` 全量重写，既有 token 名全保留）：新增阅读列宽 `--chat-column`(820px)、display 字号阶梯 `--display-sm/md/lg`(26/32/40)、字距 `--tracking-display/tight/body/wide/caps`、行高 `--leading-tight/title/body/relaxed`、字重 `--weight-*`、`--ease-standard`、`--duration-instant/slower`、玻璃模糊 `--glass-blur-sm/md`、hairline 快捷 token `--hairline/--hairline-strong`、卡片顶高光 `--highlight-inset`、`--shadow-xs`。**双主题独立调参**（暗色一等公民，非浅色+补丁）：阴影浅色低透明多层+负扩散、暗色 alpha ~3 倍；玻璃浅色深色压层/暗色白色提亮层；暗色 accent-glow 0.28→0.32。暗色仍双块（`[data-theme=dark]` + prefers-color-scheme 兜底）保持同步。`website/design-tokens.css` 手工同步（diff 一致）。
+- **tokens-ext 默认值翻转为浅色**（R32/R33 候选闭环）：原 `:root` 默认暗色致浅色系统首帧闪暗；现 `:root` 浅色 + `:root[data-theme=dark]` + `prefers-color-scheme: dark` 兜底双通道，暗色系统用户也不闪白。已知残留：显式选暗色但 OS 浅色的用户在 settings IPC 落地前有短暂浅色首帧（两害相权选定的闪烁更小一侧）。
+- **间距原子类 `styles/utilities.css`**（hub import 于 primitives 之后）：`oc-flex(-col)/oc-items-start/oc-justify-end/oc-gap-{4,6,8,12,16}/oc-m-0/oc-m{t|b}-{4..24}/oc-ml-auto/oc-p-16`，值全走 `--spacer` 阶梯。**收敛视图 TS 内联 style 间距 38 处**（15 个 views 文件，R32/R33 候选闭环）；功能性内联（尺寸/颜色/动态值，如 share-prompt 图标按钮尺寸）有意保留。
+- **对话页布局重构**：`.chat-group`/`.chat-divider`/compose 子级统一 `max-width: var(--chat-column)` + margin auto 居中；compose.css **删除两个杀居中的旧 `!important` 覆盖**（`.chat-group{margin-left/right:0}`、`.chat-thread{padding:8px}`）；chat-thread padding 16/12 + 负 margin 配对；空态 hero 重写（display 字号、tracking、dashboard-enter 入场、chips rise+stagger+shadow-xs+hairline；chat.ts 加 `stagger-${i+1}` class 为唯一 DOM 改动）；助手正文 line-height `--leading-relaxed`；compose 圆角 16→`--radius-20`、padding 全 token；`.chat-new-messages` 加 shadow/hairline/入场动画（终态衔接无跳变）；sidebar header/content padding token 化 + hairline；新增 ≤768px media 块收缩留白。约束守住：transition 全具体属性不用 all、prefers-reduced-motion 尊重、R32 的 `min()` 分栏收缩未回退、按钮右对齐未回退、800px 最小窗口无横向溢出。
+- **事故教训（gotchas #71）**：utilities.css 头注释写 `oc-items-*`（含 `*/`）致注释提前闭合，esbuild 打包后 base/primitives 整段嵌进 `.oc-flex-col{}`——body margin:0 丢失、全局偏移 8px+横向溢出 23px；构建退出码正常，靠产物 head 断言+截图发现。
+- **验证**：`npm run build` + `tsc --noEmit` + 全量测试 641 全绿（新增 0，设计类改动以截图为准）；CDP 截图冒烟 10 场景（light/dark × 1280/800 宽 + hero × 双主题双宽 + settings 远程控制/关于页），无横向溢出、无裸 i18n 键、无裸 hex 违和。
+- **记录在案（P7 候选）**：800×600 极限高度 + webbridge 未连接（大 pill 态）时侧边栏底部 pill 遮会话搜索框（同状态未截 baseline 对照，由 sidebar.css 本轮未变更推定既有）；显式暗色+浅色 OS 的首帧浅色闪（见上）；design-guidelines-en.md 未同步 P5 新 token 体系（双语 drift，P6 前补译或标注滞后）；CLAUDE.md 的 gotchas 计数（29 items）早已失真未同步。
 
 ## 📦 发版与实测经验（套路已验证多次）
 

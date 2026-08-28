@@ -2,6 +2,8 @@
    styles/compose.css — 输入区 Visual Polish Overrides
    覆盖原 styles.css 行 7252-7808：immersive titlebar、fullpage settings、输入区优化、ChatGPT 风格 compose 统一容器/底部工具栏/模型选择器/思考开关与级别 popover/回放分支 popover、context meter、发送按钮
    纯搬运拆分，层叠顺序由 hub styles.css 的 @import 顺序决定，勿单独调整
+   P5：compose 与消息流同一居中列（--chat-column）；删除了杀掉居中的
+   .chat-group margin:0 !important 与 .chat-thread 8px !important 旧覆盖。
    ========================================================================== */
 
 /* --- CryoClaw Visual Polish Overrides --- */
@@ -57,10 +59,10 @@
 }
 
 /* 5. Timestamps / Avatars weakened */
-/* ex-redesign: 组 footer 更克制但不全隐（opacity 0.55），hover 完整呈现 */
+/* 组 footer 更克制但不全隐（opacity 0.55），hover 完整呈现 */
 .chat-group-footer {
   opacity: 0.55;
-  transition: opacity 150ms ease;
+  transition: opacity var(--duration-fast) var(--ease-out);
 }
 
 .chat-group:hover .chat-group-footer {
@@ -71,22 +73,22 @@
   display: none !important;
 }
 
-.chat-group {
-  margin-left: 0 !important;
-  margin-right: 0 !important;
-}
-
-/* 6. General Spacing */
-.chat-thread {
-  padding-left: 8px !important;
-  padding-right: 8px !important;
-}
-
-/* 7. Chat Compose — ChatGPT 风格统一容器 */
-/* ex-redesign: 浮动卡片留白 20/24/16 + 顶部渐变融入背景 */
+/* 6. Chat Compose — ChatGPT 风格统一容器 */
+/* P5 布局重构：compose 与消息流同一居中列（--chat-column），
+   顶部渐变融入背景；旧 .chat-group margin:0 !important 覆盖已删除
+   （居中由 chat.css 的 margin:auto 生效），.chat-thread 水平 padding
+   统一在 chat.css 定义（此处旧 8px !important 覆盖一并移除） */
 .chat-compose {
-  padding: var(--spacer-20) var(--spacer-24) var(--spacer-16);
+  align-items: center;
+  padding: var(--spacer-12) var(--spacer-24) var(--spacer-20);
   background: linear-gradient(to bottom, transparent, var(--bg) 35%);
+}
+
+/* compose 直接子级（附件预览 / 输入容器）对齐居中列；
+   注意：新增 compose 直接子级会被此规则拉伸居中，需自查是否适用 */
+.chat-compose > * {
+  width: 100%;
+  max-width: var(--chat-column);
 }
 
 /* 统一容器：textarea + 底部工具栏一体化 */
@@ -94,15 +96,15 @@
   display: flex !important;
   flex-direction: column !important;
   border: 1px solid var(--border) !important;
-  border-radius: var(--radius-16) !important;
+  border-radius: var(--radius-20) !important;
   /* !important 仍需保留：覆盖 ex-redesign 同名规则的 shadow（见下方注释） */
   box-shadow: var(--shadow-lg) !important;
-  transition: border-color 150ms ease, box-shadow 150ms ease !important;
+  transition: border-color var(--duration-fast) var(--ease-out), box-shadow var(--duration-fast) var(--ease-out) !important;
   overflow: visible;
-  /* ex-redesign: 卡片底 + 内边距（redesign 同名规则的 border/radius/shadow
+  /* 卡片底 + 内边距（redesign 同名规则的 border/radius/shadow
      被上面的 !important 覆盖，只有 background/padding 生效） */
   background: var(--card);
-  padding: 10px 14px 8px;
+  padding: var(--spacer-10) var(--spacer-16) var(--spacer-8);
 }
 
 :root[data-theme=light] .chat-compose__field {
@@ -123,7 +125,7 @@
   border: none !important;
   box-shadow: none !important;
   border-radius: 0 !important;
-  padding: 10px 14px 2px !important;
+  padding: var(--spacer-10) var(--spacer-12) var(--spacer-2) !important;
   height: auto !important;
   min-height: 40px !important;
   max-height: 40vh !important;
@@ -568,5 +570,12 @@
 .chat-compose__send-btn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+}
+
+/* P5 窄窗适配（≤768px）：compose 留白收缩，列宽约束由 max-width 自然失效 */
+@media (max-width: 768px) {
+  .chat-compose {
+    padding: var(--spacer-8) var(--spacer-12) var(--spacer-12);
+  }
 }
 

@@ -29,13 +29,22 @@ CryoClaw 的设计语言 = **TraeWork token 体系 + 冰蓝（ice-blue）配色*
   兼容别名 `--radius-xs/sm/md/lg/xl`（= 4/8/12/16/20）、`--radius-pill`（999px）。
 - **spacer 数值阶梯**：`--spacer-2/3/4/6/8/10/12/16/20/24/32/40/48/64`。
 - **icon 尺寸**：`--icon-size-12/14/16/20/24`。
+- **阅读列宽**：`--chat-column`（820px，消息流/compose/分隔线共用的居中列约束）。
 - **字体栈**：`--font-body`（SF Pro Text + PingFang SC 回退）、`--font-display`、`--mono`
   （JetBrains Mono 系）、`--font-meta` = `--mono`；`--font-size-meta: 11px`、
   `--font-size-body: 14px`。
 - **字号阶梯**：正文 `--text-2xs/xs/sm/base/lg`（10/11/12/14/18），
-  标题 `--heading-xs/sm/md/lg/xl/2xl/3xl`（13/16/20/22/24/28/32）。
-- **动效**：`--ease-out/--ease-in-out/--ease-spring`，
-  `--duration-fast/normal/slow`（0.12/0.2/0.35s），`--transition: 180ms ease`。
+  标题 `--heading-xs/sm/md/lg/xl/2xl/3xl`（13/16/20/22/24/28/32），
+  display（空态 hero 等大标题）`--display-sm/md/lg`（26/32/40）。
+- **字距**：`--tracking-display`（-0.03em，display）、`--tracking-tight`（-0.02em，标题）、
+  `--tracking-body`（-0.011em，正文）、`--tracking-wide`（0.04em）、`--tracking-caps`（0.08em，徽章）。
+- **行高**：`--leading-tight/1.25`、`--leading-title/1.35`、`--leading-body/1.55`、
+  `--leading-relaxed/1.7`（助手正文）。
+- **字重**：`--weight-regular/medium/semibold/bold`（400/500/600/700）。
+- **动效**：`--ease-out/--ease-in-out/--ease-standard/--ease-spring`，
+  时长阶梯 `--duration-instant/fast/normal/slow/slower`（0.08/0.12/0.2/0.35/0.5s），
+  `--transition: 180ms ease`。
+- **玻璃模糊量**：`--glass-blur-sm/md`（8/16px，配 `--glass-*` 底色做 backdrop-filter）。
 
 ### 2.2 色板
 
@@ -46,14 +55,20 @@ CryoClaw 的设计语言 = **TraeWork token 体系 + 冰蓝（ice-blue）配色*
 
 ### 2.3 主题变量（浅色默认 / 暗色覆盖）
 
+P5 起暗色是**一等公民**：两套主题在 token 层各自独立调参（文字对比度、
+阴影深度、玻璃参数分别定义），不是「浅色 + 暗色补丁」的关系。
+
 - 背景：`--bg`、`--bg-secondary`、`--bg-elevated`、`--bg-hover`、`--bg-input`、`--bg-muted`。
 - 文字：`--text`、`--text-strong`、`--text-secondary`、`--text-muted`、`--text-faint`、
   `--text-on-accent`。
-- 边框：`--border`、`--border-strong`、`--border-hover`、`--border-focus`。
+- 边框：`--border`、`--border-strong`、`--border-hover`、`--border-focus`；
+  hairline 快捷 token `--hairline` / `--hairline-strong`（1px solid 边框色）。
 - 强调：`--accent`（浅色 = brand-500，暗色提亮 = brand-400）、`--accent-hover`、
-  `--accent-subtle`、`--accent-glow`。
-- 遮罩/玻璃：`--overlay(-heavy)`、`--glass-xs/sm/md/lg`、`--glass-border`。
-- 阴影：`--shadow-sm/md/lg/xl`。
+  `--accent-subtle`、`--accent-glow`（暗色 glow 更强，补暗场氛围）。
+- 遮罩/玻璃：`--overlay(-heavy)`、`--glass-xs/sm/md/lg`、`--glass-border`
+  （浅色 = 深色压层，暗色 = 白色提亮层，两套参数独立）。
+- 卡片顶部高光：`--highlight-inset`（浅色亮边 / 暗色微弱白边，暗场分层关键）。
+- 阴影：`--shadow-xs/sm/md/lg/xl`（浅色低透明多层 + 负扩散；暗色 alpha 约 3 倍更深更实）。
 - 暗色定义两处：`:root[data-theme=dark]`（Chat UI）与
   `@media (prefers-color-scheme: dark)`（独立页面兜底），变量集完全一致。
 
@@ -62,6 +77,17 @@ CryoClaw 的设计语言 = **TraeWork token 体系 + 冰蓝（ice-blue）配色*
 `--card`、`--popover`、`--panel`、`--ring`、`--focus-ring`、`--danger(-muted/-subtle)`、
 `--accent-2`、`--primary`、`--secondary` 等兼容别名，均映射到上述 token。新代码优先用
 第 2.3 节的语义变量；别名层为存量兼容，勿再扩张。
+
+P5 起 tokens-ext 的 `:root` 默认值为**浅色**（原暗色默认值导致浅色系统首帧闪暗）；
+暗色值在 `:root[data-theme=dark]` + `prefers-color-scheme: dark` 兜底块双通道定义，
+暗色系统用户在 data-theme 落地前也不会闪白。
+
+### 2.5 间距原子类（`styles/utilities.css`，P5 新增）
+
+视图 TS 中零散的间距需求（原来散落的 `style="margin-top:12px"` 之类）一律用
+`oc-mt-{n}` / `oc-mb-{n}` / `oc-m-0` / `oc-gap-{n}` / `oc-flex(-col)` /
+`oc-items-start` / `oc-justify-end` / `oc-ml-auto` / `oc-p-16`，值走 `--spacer`
+阶梯。功能性样式（尺寸、颜色、定位、动态值）不适用，仍写 CSS 块或保留内联。
 
 ## 3. 主题与配色使用
 
@@ -91,8 +117,8 @@ CryoClaw 的设计语言 = **TraeWork token 体系 + 冰蓝（ice-blue）配色*
 ## 5. 样式组织
 
 - **hub `chat-ui/ui/src/styles.css` 只做 `@import`，层叠顺序敏感，禁止随意调序**：
-  design-tokens → tokens-ext → base → **primitives** → chat / components / panels /
-  sidebar / skills / compose / workspace / cron / misc / panel / plan →（末尾）
+  design-tokens → tokens-ext → base → **primitives** → **utilities** → chat / components /
+  panels / sidebar / skills / compose / workspace / cron / misc / panel / plan →（末尾）
   **settings → setup**。
 - `styles/settings.css`（设置页）与 `styles/setup.css`（Setup 向导）是 R3B 从视图 TS
   内嵌 CSS（adoptedStyleSheets）抽取而来；原注入优先级高于 document 样式表，故必须

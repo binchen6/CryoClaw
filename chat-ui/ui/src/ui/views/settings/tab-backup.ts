@@ -231,7 +231,7 @@ export function renderTabBackup(state: AppViewState, notice: string | null) {
             <div class="oc-settings__card-title">${t("settings.backup.gateway")}</div>
             <span class="oc-settings-backup__meta">${gwStatusKey(gw)}</span>
           </div>
-          <div style="display:flex;gap:8px">
+          <div class="oc-flex oc-gap-8">
             ${gw === "running" ? html`
               <button class="oc-settings__btn oc-settings__btn--primary oc-settings__btn--compact" ?disabled=${actionDisabled} @click=${() => handleGatewayAction(state, "restart")}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>

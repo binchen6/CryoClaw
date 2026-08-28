@@ -48,7 +48,7 @@ export function renderSharePrompt(state: AppViewState) {
           aria-label=${state.sharePromptTitle || t("sharePrompt.title")}
         ></textarea>
         ${state.sharePromptCopyError
-          ? html`<div class="callout danger" style="margin-top: 12px;">${state.sharePromptCopyError}</div>`
+          ? html`<div class="callout danger oc-mt-12">${state.sharePromptCopyError}</div>`
           : nothing}
         <div class="exec-approval-actions" style="justify-content: flex-end;">
           <button

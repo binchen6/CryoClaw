@@ -236,3 +236,16 @@ Things that are easy to get wrong or forget when working on CryoClaw.
     `<oc-toggle-switch>` 的 click 处理器在**内层 `.oc-toggle` div** 上
     （createRenderRoot=this 无 shadow DOM），对宿主元素 click() 不触发，须
     `el.querySelector(".oc-toggle").click()`。
+
+71. **CSS 注释里绝不能出现 `*/` 序列（通配写法与斜杠相邻即中招，如 `...oc-items-* / oc-...` 中 `*` 紧跟 `/` 拼出 `*/`）。**
+    esbuild/vite 均不报错，但注释提前闭合会把后续规则吞进前一个选择器块——
+    P5 实录：utilities.css 头注释写 `oc-items-*` → 打包产物里 base.css /
+    primitives.css 整段嵌进 `.oc-flex-col{}`，body `margin:0` 丢失、
+    全局偏移 8px + 横向溢出 23px。教训：改样式 hub/原子类文件后，用
+    「产物 head 断言」（如打包产物以 `:root{--radius-2` 开头）或 CDP 冒烟复核，
+    别只信构建退出码。
+
+72. **CDP 冒烟重打 app.asar 必须基于原包 extract（保留 node_modules）。**
+    正确路线：`asar extract` 原 app.asar（含 node_modules）→ 覆盖新
+    dist/chat-ui/dist/shared → 重打包替换。直接拿源码 dist 目录打新 asar 会丢
+    node_modules，主进程无声卡死（无日志、窗口不出），排查极费时。

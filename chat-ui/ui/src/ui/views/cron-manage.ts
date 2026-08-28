@@ -322,7 +322,7 @@ function renderDetailEmpty() {
       <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" style="opacity:0.25">
         <circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" />
       </svg>
-      <p class="muted" style="margin:12px 0 0; font-size:13px;">${t("cron.selectHint")}</p>
+      <p class="muted oc-mt-12" style="font-size:13px;">${t("cron.selectHint")}</p>
     </div>
   `;
 }
@@ -375,7 +375,7 @@ export function renderCronManage(props: CronManageProps) {
         </div>
         <div class="cm-list__items">
           ${props.loading
-            ? html`<div class="muted" style="padding:16px;">${t("cron.loading")}</div>`
+            ? html`<div class="muted oc-p-16">${t("cron.loading")}</div>`
             : props.jobs.map((job) => renderListItem(job, job.id === props.expandedJobId, props))}
         </div>
       </div>

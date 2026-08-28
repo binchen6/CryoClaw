@@ -18,7 +18,7 @@ export function renderGatewayUrlConfirmation(state: AppViewState) {
           </div>
         </div>
         <div class="exec-approval-command mono">${pendingGatewayUrl}</div>
-        <div class="callout danger" style="margin-top: 12px;">
+        <div class="callout danger oc-mt-12">
           ${t("gatewayUrl.warning")}
         </div>
         <div class="exec-approval-actions">

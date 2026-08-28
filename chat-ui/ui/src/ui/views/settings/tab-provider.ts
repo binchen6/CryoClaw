@@ -1633,7 +1633,7 @@ function renderAddPanel(state: AppViewState) {
       ></oc-provider-segment>
 
       ${s.addProvider === "moonshot" ? html`
-        <div class="oc-settings__form-group" style="margin-top:12px">
+        <div class="oc-settings__form-group oc-mt-12">
           <label class="oc-settings__label">${t("setup.provider.platform")}</label>
           <div class="oc-settings__radio-group">
             <label class="oc-settings__radio">
@@ -1651,7 +1651,7 @@ function renderAddPanel(state: AppViewState) {
       ` : nothing}
 
       ${isCustom ? html`
-        <div class="oc-settings__form-group" style="margin-top:12px">
+        <div class="oc-settings__form-group oc-mt-12">
           <label class="oc-settings__label">${t("setup.provider.preset")}</label>
           <select class="oc-settings__select" .value=${s.addCustomPreset}
             @change=${(e: Event) => {
@@ -1695,7 +1695,7 @@ function renderAddPanel(state: AppViewState) {
 
       <!-- 2. API key / OAuth -->
       ${isOAuth ? html`
-        <div style="margin-top:12px">
+        <div class="oc-mt-12">
           ${s.oauthSuccess || s.pendingOAuthToken ? html`
             <div class="oc-provider-kimi-oauth-ok">${t("setup.provider.oauth.success")}</div>
           ` : s.oauthLoggedIn ? html`
@@ -1706,7 +1706,7 @@ function renderAddPanel(state: AppViewState) {
               ${s.oauthLoading ? t("setup.provider.oauth.waiting") : t("setup.provider.oauth.login")}
             </button>
           `}
-          <details class="oc-settings__details-advanced" style="margin-top:8px">
+          <details class="oc-settings__details-advanced oc-mt-8">
             <summary>${t("setup.provider.oauth.advanced")}</summary>
             <div class="oc-settings__form-group">
               <label class="oc-settings__label">${t("setup.provider.apiKey")}</label>
@@ -1717,7 +1717,7 @@ function renderAddPanel(state: AppViewState) {
           </details>
         </div>
       ` : html`
-        <div class="oc-settings__form-group" style="margin-top:12px">
+        <div class="oc-settings__form-group oc-mt-12">
           <label class="oc-settings__label">${t("setup.provider.apiKey")}</label>
           <oc-password-input .value=${s.addApiKey} .placeholder=${target?.placeholder ?? ""}
             @input=${(e: CustomEvent) => { s.addApiKey = e.detail.value; state.requestUpdate(); }}

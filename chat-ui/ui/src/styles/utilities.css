@@ -1,0 +1,39 @@
+/* ==========================================================================
+   styles/utilities.css — 间距/布局原子工具类（P5 新增）
+   用途：收敛视图 TS 中的间距类内联 style（style="margin-top:12px" 等），
+   值全部走 --spacer 阶梯；功能性布局（尺寸/颜色/定位）不适用本文件。
+   命名：oc-m{t|b|l}-{spacer 值}、oc-gap-{n}、oc-flex / oc-flex-col、
+   oc-items-start、oc-justify-end、oc-ml-auto（完整清单见下方规则）
+   层叠顺序由 hub styles.css 的 @import 顺序决定，勿单独调整
+   ========================================================================== */
+
+/* flex 骨架 */
+.oc-flex { display: flex }
+.oc-flex-col { display: flex; flex-direction: column }
+.oc-items-start { align-items: flex-start }
+.oc-justify-end { justify-content: flex-end }
+
+/* 间隙（gap 同时适用 flex/grid） */
+.oc-gap-4 { gap: var(--spacer-4) }
+.oc-gap-6 { gap: var(--spacer-6) }
+.oc-gap-8 { gap: var(--spacer-8) }
+.oc-gap-12 { gap: var(--spacer-12) }
+.oc-gap-16 { gap: var(--spacer-16) }
+
+/* 外边距 */
+.oc-m-0 { margin: 0 }
+.oc-mt-4 { margin-top: var(--spacer-4) }
+.oc-mt-6 { margin-top: var(--spacer-6) }
+.oc-mt-8 { margin-top: var(--spacer-8) }
+.oc-mt-12 { margin-top: var(--spacer-12) }
+.oc-mt-16 { margin-top: var(--spacer-16) }
+.oc-mt-24 { margin-top: var(--spacer-24) }
+.oc-mb-6 { margin-bottom: var(--spacer-6) }
+.oc-mb-8 { margin-bottom: var(--spacer-8) }
+.oc-mb-12 { margin-bottom: var(--spacer-12) }
+.oc-mb-16 { margin-bottom: var(--spacer-16) }
+.oc-mb-24 { margin-bottom: var(--spacer-24) }
+.oc-ml-auto { margin-left: auto }
+
+/* 内边距 */
+.oc-p-16 { padding: var(--spacer-16) }

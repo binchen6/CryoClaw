@@ -326,7 +326,7 @@ export function renderStep2(state: AppViewState, goToStep: (step: number) => voi
       ` : nothing}
 
       ${platformUrl ? html`
-        <div style="display:flex;gap:16px;margin-bottom:16px">
+        <div class="oc-flex oc-gap-16 oc-mb-16">
           <a class="oc-setup-link" @click=${(e: Event) => { e.preventDefault(); ipc.openExternal(platformUrl); }}>${getPlatformLinkText()}</a>
           <a class="oc-setup-link" @click=${(e: Event) => { e.preventDefault(); ipc.openExternal("https://oneclaw.cn/docs?utm_source=oneclaw"); }}>${t("setup.provider.docsLink")}</a>
         </div>
@@ -449,7 +449,7 @@ function renderOAuthSection(state: AppViewState, goToStep: (step: number) => voi
           <span>${t("setup.provider.oauth.success")}</span>
         </div>
       ` : html`
-        <div style="text-align:center;margin:24px 0">
+        <div class="oc-mt-24 oc-mb-24" style="text-align:center">
           <button class="oc-setup-btn oc-setup-btn--primary" @click=${() => handleOAuthLogin(state, goToStep)}>
             ${t("setup.provider.oauth.login")}
           </button>
@@ -463,7 +463,7 @@ function renderOAuthSection(state: AppViewState, goToStep: (step: number) => voi
           <oc-password-input .value=${s.apiKey} .placeholder=${getPlaceholder()}
             @input=${(e: CustomEvent) => { s.apiKey = e.detail.value; state.requestUpdate(); }}
           ></oc-password-input>
-          <div class="oc-setup-btn-row" style="margin-top:12px">
+          <div class="oc-setup-btn-row oc-mt-12">
             <button class="oc-setup-btn oc-setup-btn--primary" ?disabled=${s.verifying}
               @click=${() => handleVerify(state, goToStep)}>
               ${s.verifying ? "..." : t("setup.provider.verify")}

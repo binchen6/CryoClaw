@@ -489,7 +489,7 @@ export function renderTabAdvanced(state: AppViewState) {
           `)}
         </div>
         ${s.execMode === "auto" ? html`
-          <input class="oc-settings__input" style="margin-top:8px" .value=${s.execReviewerModel}
+          <input class="oc-settings__input oc-mt-8" .value=${s.execReviewerModel}
             placeholder=${t("settings.advanced.execReviewerModel")}
             @input=${(e: Event) => { s.execReviewerModel = (e.target as HTMLInputElement).value; state.requestUpdate(); }} />
         ` : nothing}
@@ -498,7 +498,7 @@ export function renderTabAdvanced(state: AppViewState) {
       <div class="oc-settings__form-group">
         <label class="oc-settings__label">${t("settings.advanced.sandboxMode")}</label>
         ${!s.dockerAvailable ? html`
-          <div class="oc-settings__hint" style="color:var(--danger);margin-bottom:6px">
+          <div class="oc-settings__hint oc-mb-6" style="color:var(--danger)">
             ⚠ ${t("settings.advanced.sandboxDockerMissing")}
           </div>
         ` : nothing}
@@ -514,7 +514,7 @@ export function renderTabAdvanced(state: AppViewState) {
           `)}
         </div>
         ${s.sandboxMode !== "off" ? html`
-          <div class="oc-settings__radio-group" style="margin-top:6px">
+          <div class="oc-settings__radio-group oc-mt-6">
             ${([["rw", "settings.advanced.sandboxRw"], ["ro", "settings.advanced.sandboxRo"], ["none", "settings.advanced.sandboxNone"]] as const).map(([value, key]) => html`
               <label class="oc-settings__radio">
                 <input type="radio" name="adv-sandbox-ws" value=${value}
@@ -525,7 +525,7 @@ export function renderTabAdvanced(state: AppViewState) {
             `)}
           </div>
         ` : nothing}
-        <div class="oc-settings__radio-group" style="margin-top:6px">
+        <div class="oc-settings__radio-group oc-mt-6">
           <label class="oc-settings__radio">
             <input type="radio" name="adv-exec-host" value="auto"
               .checked=${s.execHost === "auto"}
@@ -603,7 +603,7 @@ export function renderTabAdvanced(state: AppViewState) {
 
       <div class="oc-settings__form-group">
         <label class="oc-settings__label">${t("settings.advanced.diagnosticsTitle")}</label>
-        <p class="oc-settings__hint" style="margin:0 0 8px">${t("settings.advanced.diagnosticsDesc")}</p>
+        <p class="oc-settings__hint oc-m-0 oc-mb-8">${t("settings.advanced.diagnosticsDesc")}</p>
         <div>
           <button class="oc-settings__btn oc-settings__btn--compact" ?disabled=${s.diagnosticsBusy} @click=${() => handleExportDiagnostics(state)}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v6h16v-6"/><path d="m8 7 4-4 4 4"/><path d="M12 3v9"/></svg>
@@ -614,7 +614,7 @@ export function renderTabAdvanced(state: AppViewState) {
 
       <oc-message-box .message=${s.error ?? ""} .type=${"error"} .visible=${!!s.error}></oc-message-box>
       <oc-message-box .message=${s.successMsg ?? ""} .type=${"success"} .visible=${!!s.successMsg}></oc-message-box>
-      ${s.hint ? html`<div class="oc-settings__hint" style="margin-top:4px">${s.hint}</div>` : nothing}
+      ${s.hint ? html`<div class="oc-settings__hint oc-mt-4">${s.hint}</div>` : nothing}
 
       <div class="oc-settings__btn-row">
         <button class="oc-settings__btn oc-settings__btn--primary" ?disabled=${s.saving} @click=${() => handleSave(state)}>${t("settings.save")}</button>
