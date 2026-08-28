@@ -55,15 +55,35 @@ test("memo：messages 数组重赋值后重新计算", () => {
   assert.notEqual(second, first, "messages 引用变化应重新计算");
 });
 
-test("memo：stream 文本变化（每帧 delta）触发重算", () => {
-  const base = makeProps({ stream: "partial", streamStartedAt: 100 });
-  const first = buildChatItemsMemoized(base);
-  const second = buildChatItemsMemoized(
-    makeProps({ stream: "partial more", streamStartedAt: 100 }),
+test("memo：stream 文本每帧变化不再 invalidate 历史 memo（R41 Task 10）", () => {
+  // 新契约：流式气泡由 <cc-chat-stream> 独立渲染，stream/streamStartedAt 不再是比较键：
+  // 每帧 delta 不应触发 ≤200 条历史的全量重建（旧行为是每帧重算，R41 前钉的就是它）
+  const messages = [{ role: "user", content: "hello", timestamp: 1 }];
+  const first = buildChatItemsMemoized(
+    makeProps({ messages, stream: "partial", streamStartedAt: 100 }),
   );
-  assert.notEqual(second, first);
-  const third = buildChatItemsMemoized(makeProps({ stream: "partial more", streamStartedAt: 100 }));
-  assert.equal(third, second, "stream 文本不变时应复用");
+  const second = buildChatItemsMemoized(
+    makeProps({ messages, stream: "partial more", streamStartedAt: 100 }),
+  );
+  assert.equal(second, first, "stream delta 每帧变化时历史结果应复用同一引用");
+  const third = buildChatItemsMemoized(makeProps({ messages, stream: null, streamStartedAt: null }));
+  assert.equal(third, first, "stream 终止（置 null）也不应 invalidate 历史 memo");
+});
+
+test("buildChatItems：流式条目/思考指示/子代理卡移出（R41 Task 10，改由独立渲染装配）", () => {
+  const items = buildChatItemsMemoized(
+    makeProps({
+      messages: [{ role: "user", content: "a", timestamp: 1 }],
+      stream: "typing...",
+      streamStartedAt: 100,
+      runActive: true,
+    }),
+  );
+  for (const item of items) {
+    assert.notEqual(item.kind, "stream", "stream 条目不应再进 chatItems");
+    assert.notEqual(item.kind, "reading-indicator", "思考指示不应再进 chatItems");
+    assert.notEqual(item.kind, "subagent-cards", "子代理卡不应再进 chatItems");
+  }
 });
 
 test("memo：locale 切换后缓存失效", () => {

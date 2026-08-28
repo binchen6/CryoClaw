@@ -4,11 +4,7 @@ import { repeat } from "lit/directives/repeat.js";
 import type { GatewaySessionRow, SessionsListResult } from "../types.ts";
 import type { ChatItem, MessageGroup } from "../types/chat-types.ts";
 import type { ChatAttachment, ChatQueueItem, ConfiguredModel } from "../ui-types.ts";
-import {
-  renderMessageGroup,
-  renderReadingIndicatorGroup,
-  renderStreamingGroup,
-} from "../chat/grouped-render.ts";
+import { renderMessageGroup } from "../chat/grouped-render.ts";
 import { computeSessionFileChanges, type FileChange } from "../chat/file-changes.ts";
 import { normalizeMessage, normalizeRoleForGrouping } from "../chat/message-normalizer.ts";
 import { icons } from "../icons.ts";
@@ -29,6 +25,9 @@ import {
 } from "../chat/goal-display.ts";
 import type { SessionCompactionCheckpoint } from "../controllers/session-compaction.ts";
 import "../components/resizable-divider.ts";
+// 流式气泡独立组件（R41 Task 10）：chatStream 高频变化只命中组件自身重渲染，
+// 历史列表 memo 不再被每帧 invalidate（接线见 renderChat 线程尾部 <cc-chat-stream>）
+import "../components/cc-chat-stream.ts";
 import { renderConfiguredModelOptions } from "../components/model-options.ts";
 import { loadModelOrg } from "./settings/model-org.lib.ts";
 import { computeStopButtonVisible } from "./chat-stop-button-gate.ts";
@@ -917,12 +916,22 @@ export function renderChat(props: ChatProps) {
   const chatItems = buildChatItemsMemoized(props);
   // 本轮改动文件列表：按组扫描 tool cards 派生（详见 chat/file-changes.ts 头注）
   const fileChangesByGroup = computeSessionFileChangesMemoized(chatItems);
-  // 当前正在执行的工具（有 call 无 result），用于流式状态行的阶段提示
+  // 当前正在执行的工具（有 call 无 result），用于流式状态行的阶段提示（供 <cc-chat-stream>）
   const activeToolName = resolveActiveToolName(
     Array.isArray(props.toolMessages) ? props.toolMessages : [],
   );
-  // 空会话（无历史/工具/流式且不在加载）：线程区显示居中 hero + starter prompts
-  const isEmptySession = !props.loading && chatItems.length === 0;
+  // R23：子代理等待状态卡（原在 buildChatItems 内构造）：R41 Task 10 后随流式条目一起
+  // 移出 memo（顺序契约：置于时间线末尾、流式气泡之后，见线程尾部装配）
+  const subagentCards = props.runActive
+    ? selectSubagentCards(props.tasks as Parameters<typeof selectSubagentCards>[0], props.sessionKey)
+    : [];
+  const subagentWaiting = subagentCards.some((c) => c.active);
+  // 空会话（无历史/工具/流式/子代理卡且不在加载）：线程区显示居中 hero + starter prompts
+  const isEmptySession =
+    !props.loading &&
+    chatItems.length === 0 &&
+    props.stream === null &&
+    subagentCards.length === 0;
   // starter prompt chips：点击即填入并发送（与 onGoalCommand 同样的同步「先改草稿再发送」时序）
   const starterKeys = ["chat.starter1", "chat.starter2", "chat.starter3", "chat.starter4"];
   const sendStarter = (text: string) => {
@@ -1006,23 +1015,6 @@ export function renderChat(props: ChatProps) {
             `;
           }
 
-          if (item.kind === "reading-indicator") {
-            return renderReadingIndicatorGroup(assistantIdentity, activeToolName, item.subagentWaiting);
-          }
-
-          if (item.kind === "subagent-cards") {
-            return renderSubagentCards(item.cards);
-          }
-
-          if (item.kind === "stream") {
-            return renderStreamingGroup(
-              item.text,
-              item.startedAt,
-              props.onOpenSidebar,
-              assistantIdentity,
-            );
-          }
-
           if (item.kind === "group") {
             return renderMessageGroup(item, {
               onOpenSidebar: props.onOpenSidebar,
@@ -1040,6 +1032,23 @@ export function renderChat(props: ChatProps) {
           return nothing;
         },
       )}
+      ${
+        // R41 Task 10：流式气泡/思考指示抽为独立组件，高频更新只命中其自身 render()；
+        // 出现条件与原 buildChatItems 的 stream 条目一致（stream !== null，空白时组件内部
+        // 降级为思考指示）。子代理等待卡仍在其后（原「置于时间线末尾（流式气泡之后）」）。
+        props.stream !== null
+          ? html`<cc-chat-stream
+              .stream=${props.stream}
+              .streamStartedAt=${props.streamStartedAt}
+              .assistantName=${props.assistantName}
+              .assistantAvatar=${assistantIdentity.avatar}
+              .activeToolName=${activeToolName}
+              .subagentWaiting=${subagentWaiting}
+              .onOpenSidebar=${props.onOpenSidebar}
+            ></cc-chat-stream>`
+          : nothing
+      }
+      ${subagentCards.length > 0 ? renderSubagentCards(subagentCards) : nothing}
     </div>
   `;
 
@@ -1537,10 +1546,6 @@ function buildChatItems(props: ChatProps): Array<ChatItem | MessageGroup> {
   const items: ChatItem[] = [];
   const history = Array.isArray(props.messages) ? props.messages : [];
   const tools = Array.isArray(props.toolMessages) ? props.toolMessages : [];
-  // R23：主 run 活跃时投影当前会话的子代理任务为等待状态卡（跨会话过滤在选择函数内）
-  const subagentCards = props.runActive
-    ? selectSubagentCards(props.tasks as Parameters<typeof selectSubagentCards>[0], props.sessionKey)
-    : [];
   const visibleHistoryCount =
     props.visibleHistoryCount > 0
       ? Math.min(props.visibleHistoryCount, CHAT_HISTORY_RENDER_LIMIT, history.length)
@@ -1602,29 +1607,9 @@ function buildChatItems(props: ChatProps): Array<ChatItem | MessageGroup> {
     });
   }
 
-  if (props.stream !== null) {
-    const key = `stream:${props.sessionKey}:${props.streamStartedAt ?? "live"}`;
-    if (props.stream.trim().length > 0) {
-      items.push({
-        kind: "stream",
-        key,
-        text: props.stream,
-        startedAt: props.streamStartedAt ?? Date.now(),
-      });
-    } else {
-      items.push({ kind: "reading-indicator", key, subagentWaiting: subagentCards.some((c) => c.active) });
-    }
-  }
-
-  // R23：子代理等待状态卡置于时间线末尾（流式气泡之后），终态定格后由刷新自然移除
-  if (subagentCards.length > 0) {
-    items.push({
-      kind: "subagent-cards",
-      key: `subagent:${props.sessionKey}`,
-      cards: subagentCards,
-    });
-  }
-
+  // R41 Task 10：流式气泡（含空白时的思考指示）与子代理等待卡不再进 chatItems，
+  // 改由 renderChat 线程尾部的 <cc-chat-stream> / renderSubagentCards 直接装配：
+  // 每帧的流式 delta 不再 invalidate 本 memo，历史部分流式期间保持命中。
   return groupMessages(items);
 }
 
@@ -1633,15 +1618,13 @@ function buildChatItems(props: ChatProps): Array<ChatItem | MessageGroup> {
 // 但绝大多数更新（draft 敲击、连接状态、计数器）messages/toolMessages 数组
 // 引用不变（状态层一律重赋值、从不原地改，见 controllers/chat.ts /
 // app-tool-stream.ts）。按数组引用 + 相关标量浅比较做 memo，全部相同直接复用。
+// R41 Task 10：stream/streamStartedAt/tasks/runActive/sessionKey 已从比较键移除——
+// 流式条目与子代理卡移出 buildChatItems（分别由 <cc-chat-stream> / renderChat
+// 直接渲染），每帧的 stream delta 不再让 ≤200 条历史全量重建。
 type ChatItemsMemo = {
   messages: unknown[];
   toolMessages: unknown[];
-  tasks: unknown[] | undefined;
-  runActive: boolean;
   visibleHistoryCount: number;
-  stream: string | null;
-  streamStartedAt: number | null;
-  sessionKey: string;
   locale: string;
   result: Array<ChatItem | MessageGroup>;
 };
@@ -1653,12 +1636,7 @@ export function buildChatItemsMemoized(props: ChatProps): Array<ChatItem | Messa
     prev &&
     prev.messages === props.messages &&
     prev.toolMessages === props.toolMessages &&
-    prev.tasks === props.tasks &&
-    prev.runActive === Boolean(props.runActive) &&
     prev.visibleHistoryCount === props.visibleHistoryCount &&
-    prev.stream === props.stream &&
-    prev.streamStartedAt === props.streamStartedAt &&
-    prev.sessionKey === props.sessionKey &&
     prev.locale === getLocale()
   ) {
     return prev.result;
@@ -1667,12 +1645,7 @@ export function buildChatItemsMemoized(props: ChatProps): Array<ChatItem | Messa
   chatItemsMemo = {
     messages: props.messages,
     toolMessages: props.toolMessages,
-    tasks: props.tasks,
-    runActive: Boolean(props.runActive),
     visibleHistoryCount: props.visibleHistoryCount,
-    stream: props.stream,
-    streamStartedAt: props.streamStartedAt,
-    sessionKey: props.sessionKey,
     locale: getLocale(),
     result,
   };
