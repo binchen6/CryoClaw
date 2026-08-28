@@ -28,11 +28,12 @@
     <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.58.11.79-.25.79-.56 0-.27-.01-1.17-.02-2.12-3.2.7-3.87-1.36-3.87-1.36-.52-1.33-1.28-1.68-1.28-1.68-1.04-.71.08-.7.08-.7 1.15.08 1.76 1.18 1.76 1.18 1.03 1.76 2.69 1.25 3.35.96.1-.75.4-1.25.72-1.54-2.55-.29-5.23-1.28-5.23-5.68 0-1.26.45-2.28 1.18-3.09-.12-.29-.51-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.78 0c2.2-1.49 3.17-1.18 3.17-1.18.62 1.59.23 2.76.11 3.05.74.81 1.18 1.83 1.18 3.09 0 4.41-2.69 5.38-5.25 5.67.41.35.77 1.05.77 2.12 0 1.53-.01 2.76-.01 3.14 0 .31.2.68.8.56A10.52 10.52 0 0 0 23.5 12C23.5 5.65 18.35.5 12 .5z"/></svg>
     GitHub
   </a>
+  <span class="nav__progress" id="nav-progress" aria-hidden="true"></span>
 </header>
 
 <!-- ══════════ Hero ══════════ -->
 <section class="hero" id="top">
-  <div class="hero__aurora" aria-hidden="true">
+  <div class="hero__aurora" id="aurora" aria-hidden="true">
     <div class="aurora aurora--1"></div>
     <div class="aurora aurora--2"></div>
     <div class="aurora aurora--3"></div>
@@ -43,52 +44,103 @@
     <div class="hero__copy">
       <div class="hero__badge reveal">
         <span class="pulse-dot" aria-hidden="true"></span>
-        <span id="hero-version">v2026.821.2</span> 已发布 · GitHub Releases
+        <span id="hero-version">v2026.828.1</span> 已发布 · GitHub Releases
       </div>
-      <h1 class="hero__title reveal" style="--d:.08s">
-        一分钟装好，<br />即刻<em>开聊</em>。
+      <h1 class="hero__title">
+        <span class="hero__line reveal" style="--d:.08s">一分钟装好，</span>
+        <span class="hero__line reveal" style="--d:.18s">即刻<em>开聊</em>。</span>
       </h1>
-      <p class="hero__sub reveal" style="--d:.16s">
+      <p class="hero__sub reveal" style="--d:.28s">
         CryoClaw 是基于 openclaw 内核的高效、易用、纯净 harness。<br />
         零配置、零依赖的 OpenClaw 桌面客户端 —— 不需要 Node.js，不需要 npm。
       </p>
-      <div class="hero__cta reveal" style="--d:.24s">
-        <a class="btn btn--primary btn--lg" id="download-hero" href="https://github.com/binchen6/CryoClaw/releases/latest" target="_blank" rel="noopener">
+      <div class="hero__cta reveal" style="--d:.36s">
+        <a class="btn btn--primary btn--lg" data-magnetic id="download-hero" href="https://github.com/binchen6/CryoClaw/releases/latest" target="_blank" rel="noopener">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
           下载 Windows 版
         </a>
-        <a class="btn btn--ghost btn--lg" href="https://github.com/binchen6/CryoClaw" target="_blank" rel="noopener">
+        <a class="btn btn--ghost btn--lg" data-magnetic href="https://github.com/binchen6/CryoClaw" target="_blank" rel="noopener">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true"><path d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.58.11.79-.25.79-.56 0-.27-.01-1.17-.02-2.12-3.2.7-3.87-1.36-3.87-1.36-.52-1.33-1.28-1.68-1.28-1.68-1.04-.71.08-.7.08-.7 1.15.08 1.76 1.18 1.76 1.18 1.03 1.76 2.69 1.25 3.35.96.1-.75.4-1.25.72-1.54-2.55-.29-5.23-1.28-5.23-5.68 0-1.26.45-2.28 1.18-3.09-.12-.29-.51-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.78 0c2.2-1.49 3.17-1.18 3.17-1.18.62 1.59.23 2.76.11 3.05.74.81 1.18 1.83 1.18 3.09 0 4.41-2.69 5.38-5.25 5.67.41.35.77 1.05.77 2.12 0 1.53-.01 2.76-.01 3.14 0 .31.2.68.8.56A10.52 10.52 0 0 0 23.5 12C23.5 5.65 18.35.5 12 .5z"/></svg>
           GitHub 仓库
         </a>
       </div>
-      <div class="hero__meta reveal" style="--d:.32s">
+      <div class="hero__meta reveal" style="--d:.44s">
         <span>AGPL-3.0 开源</span><i>·</i><span>Windows x64</span><i>·</i><span>内核 openclaw 2026.7.1-2 零改动</span>
       </div>
     </div>
 
-    <!-- 应用界面 mock：流式对话动效 -->
-    <div class="hero__mock reveal" style="--d:.2s" id="showcase">
-      <div class="mock-window">
+    <!-- 应用界面 mock：与真实布局对齐（左侧边栏 + 居中消息列 + 一体化 compose） -->
+    <div class="hero__mock reveal" style="--d:.24s" id="showcase">
+      <div class="mock-window" id="mock-window">
         <div class="mock-window__bar">
-          <span class="mock-dot"></span><span class="mock-dot"></span><span class="mock-dot"></span>
+          <img src="assets/icon.png" alt="" class="mock-window__icon" />
           <span class="mock-window__title">CryoClaw</span>
+          <span class="mock-window__controls" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="5" width="14" height="14" rx="2"/></svg>
+            <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>
+          </span>
         </div>
         <div class="mock-body">
-          <div class="mock-sidebar">
-            <div class="mock-sidebar__item is-active"><span class="mock-ico">💬</span>新对话</div>
-            <div class="mock-sidebar__item"><span class="mock-ico">⚡</span>任务</div>
-            <div class="mock-sidebar__item"><span class="mock-ico">🧩</span>技能</div>
-            <div class="mock-sidebar__item"><span class="mock-ico">📁</span>工作空间</div>
-          </div>
+          <aside class="mock-sidebar">
+            <div class="mock-sidebar__brand">
+              <span class="mock-sidebar__name">CryoClaw</span>
+              <span class="mock-sidebar__sub">pure harness</span>
+            </div>
+            <div class="mock-sidebar__new">
+              <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              新对话
+            </div>
+            <div class="mock-sidebar__section">会话</div>
+            <div class="mock-sidebar__item is-active">
+              <svg class="mock-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+              周报重点总结
+            </div>
+            <div class="mock-sidebar__item">
+              <svg class="mock-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+              重构 gateway 配置
+            </div>
+            <div class="mock-sidebar__item">
+              <svg class="mock-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+              排查流式中断
+            </div>
+            <div class="mock-sidebar__nav">
+              <div class="mock-sidebar__item">
+                <svg class="mock-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                任务
+              </div>
+              <div class="mock-sidebar__item">
+                <svg class="mock-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 7V4a2 2 0 0 0-4 0v3H7a2 2 0 0 0-2 2v3a2 2 0 1 0 0 4v3a2 2 0 0 0 2 2h3v-3a2 2 0 1 1 4 0v3h3a2 2 0 0 0 2-2v-3a2 2 0 1 0 0-4V9a2 2 0 0 0-2-2h-3z"/></svg>
+                技能
+              </div>
+              <div class="mock-sidebar__item">
+                <svg class="mock-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+                工作空间
+              </div>
+              <div class="mock-sidebar__item">
+                <svg class="mock-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.01a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                设置
+              </div>
+            </div>
+          </aside>
           <div class="mock-chat">
-            <div class="mock-msg mock-msg--user">帮我总结这份周报的重点</div>
-            <div class="mock-msg mock-msg--ai">
-              <span id="stream-text"></span><span class="caret" aria-hidden="true"></span>
+            <div class="mock-chat__stream">
+              <div class="mock-msg mock-msg--user">帮我总结这份周报的重点</div>
+              <div class="mock-msg mock-msg--ai">
+                <span id="stream-text"></span><span class="caret" aria-hidden="true"></span>
+              </div>
             </div>
             <div class="mock-composer">
-              <span class="mock-composer__placeholder">输入消息或上传文件…</span>
-              <span class="mock-composer__send">↑</span>
+              <div class="mock-composer__placeholder">输入消息或上传文件…</div>
+              <div class="mock-composer__toolbar">
+                <span class="mock-composer__tools">
+                  <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21.44 11.05 12.25 20.24a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+                  <span class="mock-composer__model">Kimi K3</span>
+                </span>
+                <span class="mock-composer__send">
+                  <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
+                </span>
+              </div>
             </div>
           </div>
         </div>
@@ -98,7 +150,7 @@
   </div>
 
   <!-- 统计条 -->
-  <div class="stats reveal" style="--d:.4s">
+  <div class="stats reveal" style="--d:.48s">
     <div class="stat"><span class="stat__num" data-count="0.6" data-suffix="s">0s</span><span class="stat__label">冷启动见界面</span></div>
     <div class="stat"><span class="stat__num" data-count="487">0</span><span class="stat__label">测试用例全绿</span></div>
     <div class="stat"><span class="stat__num" data-count="237">0</span><span class="stat__label">内核 RPC 方法</span></div>
@@ -107,7 +159,7 @@
 </section>
 
 <!-- ══════════ 特性 ══════════ -->
-<section class="section" id="features">
+<section class="section section--features" id="features">
   <div class="section__head reveal">
     <span class="section__eyebrow">FEATURES</span>
     <h2 class="section__title">为「好用」做的系统性重设计</h2>
@@ -181,7 +233,7 @@
 </section>
 
 <!-- ══════════ 模型提供方 ══════════ -->
-<section class="section" id="providers">
+<section class="section section--providers" id="providers">
   <div class="section__head reveal">
     <span class="section__eyebrow">PROVIDERS</span>
     <h2 class="section__title">主流模型，全都能用</h2>
@@ -210,14 +262,14 @@
     <h2>现在就开始</h2>
     <p>下载安装包 → 选择服务商，输入 API Key → 开始对话。<br />不需要 Node.js，不需要 npm，不需要配置环境变量。</p>
     <div class="cta-card__actions">
-      <a class="btn btn--primary btn--lg" id="download-cta" href="https://github.com/binchen6/CryoClaw/releases/latest" target="_blank" rel="noopener">
+      <a class="btn btn--primary btn--lg" data-magnetic id="download-cta" href="https://github.com/binchen6/CryoClaw/releases/latest" target="_blank" rel="noopener">
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
         <span id="download-label">下载 CryoClaw for Windows</span>
       </a>
       <a class="btn btn--ghost btn--lg" href="https://github.com/binchen6/CryoClaw/releases" target="_blank" rel="noopener">全部版本</a>
     </div>
     <div class="cta-card__meta">
-      <span id="download-version">最新版本 v2026.821.2</span><i>·</i><span>Windows 10/11 x64</span><i>·</i><span>AGPL-3.0</span>
+      <span id="download-version">最新版本 v2026.828.1</span><i>·</i><span>Windows 10/11 x64</span><i>·</i><span>AGPL-3.0</span>
     </div>
   </div>
 </section>

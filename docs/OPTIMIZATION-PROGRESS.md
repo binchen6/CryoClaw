@@ -22,7 +22,7 @@
 - 重复率：`npm run dupcheck`
 - 打包（Win x64）：`npm run dist:win`（串联 build → package:resources → electron-builder，自动注入 .env + npmmirror + `--use-system-ca`）
 - 安装：`out/win32-x64/CryoClaw-Setup-<v>-x64.exe /S`（先清残留进程，见 gotchas #53；安装目录 `%LOCALAPPDATA%\Programs\CryoClaw`）
-- 发版：改 `package.json` version + `release-notes.json` 条目（日历版本 YYYY.MMDD.N）→ commit → push → dist:win → `gh release create`
+- 发版：改 `package.json` version + `release-notes.json` 条目（日历版本 YYYY.MMDD.N）→ commit → push → dist:win → `gh release create`；**顺手同步 `website/index.html` 的版本徽章硬编码 fallback**（`hero-version` / `download-version`，P6）
 
 **关键约束**：
 - 只改 CryoClaw 自己的代码；内核 openclaw（gateway.asar 内 dist）**零改动**，仅可只读取证。

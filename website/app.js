@@ -1,4 +1,6 @@
-/* CryoClaw Landing — 交互与动效 */
+/* CryoClaw Landing — 交互与动效
+   兼容基线：ES5 语法（var/function），无依赖零构建；
+   所有动效经 prefersReduced 门控，IntersectionObserver 缺失时降级为直接显示。 */
 (function () {
   "use strict";
 
@@ -28,10 +30,33 @@
     revealEls.forEach(function (el) { io.observe(el); });
   }
 
-  /* ── 导航滚动态 ── */
+  /* ── 导航滚动态 + 滚动进度条 + hero 视差（同一 rAF 节流 scroll 处理器） ── */
   var nav = document.getElementById("nav");
+  var progress = document.getElementById("nav-progress");
+  var aurora = document.getElementById("aurora");
+  var mockWrap = document.querySelector(".hero__mock");
+  var ticking = false;
   function onScroll() {
-    nav.classList.toggle("is-scrolled", window.scrollY > 24);
+    if (ticking) return;
+    ticking = true;
+    requestAnimationFrame(function () {
+      ticking = false;
+      var y = window.scrollY || window.pageYOffset || 0;
+      nav.classList.toggle("is-scrolled", y > 24);
+      if (progress) {
+        var max = document.documentElement.scrollHeight - window.innerHeight;
+        progress.style.width = (max > 0 ? (y / max) * 100 : 0) + "%";
+      }
+      if (!prefersReduced) {
+        // 视差：aurora 下移快、mock 上移慢，营造纵深（仅首屏范围内有意义）
+        if (aurora && y < window.innerHeight * 1.5) {
+          aurora.style.transform = "translateY(" + y * 0.18 + "px)";
+        }
+        if (mockWrap && y < window.innerHeight * 1.5) {
+          mockWrap.style.transform = "translateY(" + y * -0.06 + "px)";
+        }
+      }
+    });
   }
   window.addEventListener("scroll", onScroll, { passive: true });
   onScroll();
@@ -81,7 +106,7 @@
   /* ── mock 窗口流式对话 ── */
   var streamEl = document.getElementById("stream-text");
   var DEMO_LINES = [
-    "本周重点：\n\n1. 发布 v2026.821.2 —— 应用更新迁移 GitHub Releases，差分下载只拉变更块。\n2. 日志统一收口，诊断包一键导出，排障时间减半。\n3. 内核 asar 再裁 10MB，测试基线 487 用例全绿。\n\n下周：macOS 公证与 ARM64 分架构构建。",
+    "本周重点：\n\n1. 发布 v2026.828.1 —— 设计 token 现代化，浅色/暗色双主题独立调参。\n2. 对话页布局重构：消息流居中列、compose 一体化输入框。\n3. 内核 asar 再裁 10MB，测试基线 487 用例全绿。\n\n下周：macOS 公证与 ARM64 分架构构建。",
   ];
   if (streamEl && !prefersReduced) {
     var text = DEMO_LINES[0];
@@ -117,6 +142,34 @@
     }
   } else if (streamEl) {
     streamEl.textContent = DEMO_LINES[0];
+  }
+
+  /* ── spotlight 边框：特性卡光斑跟随指针 ── */
+  if (!prefersReduced && window.matchMedia("(hover: hover)").matches) {
+    document.querySelectorAll(".feature-card").forEach(function (card) {
+      card.addEventListener("pointermove", function (e) {
+        var rect = card.getBoundingClientRect();
+        card.style.setProperty("--mx", (e.clientX - rect.left) + "px");
+        card.style.setProperty("--my", (e.clientY - rect.top) + "px");
+      });
+    });
+
+    /* ── 磁性按钮：指针靠近时轻微吸附（最大 4px） ── */
+    document.querySelectorAll("[data-magnetic]").forEach(function (btn) {
+      var STRENGTH = 0.12;
+      var MAX = 4;
+      btn.addEventListener("pointermove", function (e) {
+        var rect = btn.getBoundingClientRect();
+        var dx = (e.clientX - (rect.left + rect.width / 2)) * STRENGTH;
+        var dy = (e.clientY - (rect.top + rect.height / 2)) * STRENGTH;
+        dx = Math.max(-MAX, Math.min(MAX, dx));
+        dy = Math.max(-MAX, Math.min(MAX, dy));
+        btn.style.transform = "translate(" + dx + "px," + dy + "px)";
+      });
+      btn.addEventListener("pointerleave", function () {
+        btn.style.transform = "";
+      });
+    });
   }
 
   /* ── GitHub API：取最新版本号与直链（渐进增强，失败静默保留静态文案） ── */
