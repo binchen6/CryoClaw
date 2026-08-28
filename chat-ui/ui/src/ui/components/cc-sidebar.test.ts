@@ -69,10 +69,6 @@ test("cc-sidebar：shouldUpdate 比较清单只含数据字段，排除全部回
     "tasksRunningCount",
     "extensionsActive",
     "workspaceActive",
-    "cronActive",
-    "cronJobCount",
-    "worktreesActive",
-    "gitPanelActive",
     "gitAvailable",
     "webbridgeRepairVisible",
     "webbridgeRepairBrowserName",
@@ -115,10 +111,7 @@ test("cc-sidebar：会话菜单模块态与辅助函数随迁（开关态 + docu
 });
 
 test("cc-sidebar：模板等价搬迁关键接线（导航/徽标/搜索/折叠/断连/内联重命名）", () => {
-  assert.match(componentSrc, /props\.onOpenWorktrees/, "导航项未接 onOpenWorktrees");
   assert.match(componentSrc, /props\.gitAvailable === true/, "无 git 时新建入口应隐藏（降级）");
-  assert.match(componentSrc, /props\.onOpenGit/, "导航项未接 onOpenGit");
-  assert.match(componentSrc, /gitPanelActive \? "active"/, "git 导航项未接 active 态");
   assert.match(componentSrc, /cryoclaw-sidebar__session-worktree/, "缺少会话 worktree 徽标");
   assert.match(componentSrc, /props\.onSessionSearchChange/, "搜索输入未接 onSessionSearchChange");
   assert.match(componentSrc, /props\.onToggleSidebar/, "折叠按钮未接 onToggleSidebar");
@@ -146,4 +139,28 @@ test("app-render：sessionOptions 按五个数据源 memo（根渲染每帧重�
   for (const dep of ["sessionsResult", "worktrees", "sessionKey", "sessionsIncludeArchived", "sidebarSessionSearch"]) {
     assert.ok(memoBlock.includes(dep), `sessionOptions memo 缺数据源 ${dep}`);
   }
+});
+
+test("cc-sidebar：底部 5 图标轨 + 更多菜单（主导航 6 项已移除）", () => {
+  const s = componentSrc;
+  assert.match(s, /cryoclaw-sidebar__rail/, "缺图标轨容器");
+  assert.match(s, /props\.onOpenTasks/, "图标轨缺任务入口");
+  assert.match(s, /props\.onOpenWorkspace/, "图标轨缺工作区入口");
+  assert.match(s, /props\.onOpenExtensions/, "图标轨缺扩展入口");
+  assert.match(s, /props\.onOpenWebUI/, "图标轨缺完整版网页入口");
+  assert.match(s, /props\.onOpenSettings/, "图标轨缺设置入口");
+  assert.match(s, /props\.tasksRunningCount > 0/, "任务图标缺运行中徽标");
+  assert.match(s, /t\("sidebar\.more"\)/, "缺更多菜单文案");
+  assert.match(s, /props\.onNewWorktreeChat/, "更多菜单缺 Worktree 新会话");
+  const code = stripComments(s);
+  assert.ok(!/cryoclaw-sidebar__main-nav/.test(code), "旧主导航容器应移除");
+  assert.ok(!/t\("sidebar\.cron"\)/.test(code), "定时入口应移除");
+  assert.ok(!/t\("sidebar\.worktrees"\)/.test(code), "Worktrees 入口应移除");
+  assert.ok(!/t\("sidebar\.git"\)/.test(code), "Git 入口应移除");
+});
+
+test("cc-sidebar：disconnectedCallback 清菜单模块态（R41 审查建议顺手项）", () => {
+  const s = componentSrc;
+  assert.match(s, /disconnectedCallback\(\)/, "缺 disconnectedCallback");
+  assert.match(s, /resetMenuState\(\)/, "应清会话菜单与更多菜单模块态");
 });

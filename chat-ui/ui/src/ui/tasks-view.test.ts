@@ -30,11 +30,6 @@ test("app-tasks.ts：openTasksView 支持 tab 参数并预拉对应数据", () =
   assert.match(s, /loadCronJobs\(state\)/, "缺少 loadCronJobs 调用");
 });
 
-test("app-render.ts：onOpenCron 路由到任务页定时 tab", () => {
-  const s = src("app-render.ts");
-  assert.match(s, /onOpenCron: \(\) => openTasksView\(state, "cron"\)/, "onOpenCron 应打开任务页定时 tab");
-});
-
 test("app-cron.ts：onOpenRunsTab 不默认空函数（暂留视图不渲染无效按钮）", () => {
   const s = src("app-cron.ts");
   assert.match(s, /onOpenRunsTab: opts\?\.onOpenRunsTab,/, "不应有 ?? (() => {}) 兜底");

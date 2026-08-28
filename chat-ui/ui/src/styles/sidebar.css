@@ -166,39 +166,90 @@
   flex-shrink: 0;
 }
 
-/* worktree 新会话入口（new-chat 下方的次级按钮，仅 git 可用时渲染） */
-.cryoclaw-sidebar__new-worktree-btn {
+/* 顶部操作行：新会话按钮 + 「更多」菜单（R42 第二期） */
+.cryoclaw-sidebar__top-actions {
   display: flex;
   align-items: center;
-  justify-content: center;
+  gap: var(--spacer-8);
+  padding: var(--spacer-12) 14px var(--spacer-16);
+}
+
+.cryoclaw-sidebar__new-chat-btn {
+  flex: 1;
+}
+
+.cryoclaw-sidebar__more-wrap {
+  position: relative;
+}
+
+.cryoclaw-sidebar__more-btn {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--border);
+  background: transparent;
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: color var(--duration-instant) var(--ease-standard), background-color var(--duration-instant) var(--ease-standard);
+}
+
+.cryoclaw-sidebar__more-btn:hover,
+.cryoclaw-sidebar__more-btn.is-open {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+
+.cryoclaw-sidebar__more-btn svg {
+  width: 16px;
+  height: 16px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  flex-shrink: 0;
+}
+
+.cryoclaw-sidebar__more-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 30;
+  min-width: 180px;
+  padding: 4px;
+  border-radius: var(--radius-md);
+  background: var(--popover);
+  box-shadow: var(--shadow-lg);
+  border: 1px solid var(--border);
+}
+
+.cryoclaw-sidebar__more-item {
+  display: flex;
+  align-items: center;
   gap: var(--spacer-8);
   width: 100%;
-  margin-top: var(--spacer-8);
-  padding: var(--spacer-8) var(--spacer-16);
-  border-radius: var(--radius-full);
+  padding: 8px 10px;
+  border: none;
   background: transparent;
-  border: 1px dashed var(--border);
-  color: var(--muted);
-  font-size: var(--text-sm);
-  font-weight: 500;
+  border-radius: var(--radius-md);
+  color: var(--text);
+  font-size: 13px;
+  text-align: left;
   cursor: pointer;
-  transition: border-color var(--duration-fast) ease, color var(--duration-fast) ease;
-  -webkit-app-region: no-drag;
 }
 
-.cryoclaw-sidebar__new-worktree-btn:hover {
-  border-color: var(--accent);
-  color: var(--accent);
+.cryoclaw-sidebar__more-item:hover {
+  background: var(--bg-hover);
 }
 
-.cryoclaw-sidebar__new-worktree-btn svg {
+.cryoclaw-sidebar__more-item svg {
   width: 14px;
   height: 14px;
   stroke: currentColor;
   fill: none;
-  stroke-width: 1.5px;
-  stroke-linecap: round;
-  stroke-linejoin: round;
+  stroke-width: 2;
   flex-shrink: 0;
 }
 
@@ -242,8 +293,6 @@
 .cryoclaw-sidebar__nav {
   display: flex;
   flex-direction: column;
-  gap: 0;
-  padding: 4px 0 0;
   flex: 1;
   min-height: 0;
   -webkit-app-region: no-drag;
@@ -460,45 +509,6 @@
   text-overflow: ellipsis;
 }
 
-.cryoclaw-sidebar__item--settings {
-  width: 100%;
-}
-
-.cryoclaw-sidebar__item--update {
-  width: 100%;
-  position: relative;
-  color: var(--accent);
-  background: var(--accent-subtle);
-}
-
-.cryoclaw-sidebar__item--update:hover:not(:disabled) {
-  color: var(--accent);
-  background: var(--accent-glow);
-}
-
-.cryoclaw-sidebar__item--update .cryoclaw-sidebar__label {
-  font-weight: 600;
-}
-
-.cryoclaw-sidebar__item--update:disabled {
-  cursor: default;
-  opacity: 0.78;
-}
-
-.cryoclaw-sidebar__item--update.is-loading .cryoclaw-sidebar__icon svg {
-  animation: spin 1s linear infinite;
-}
-
-.cryoclaw-sidebar__update-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  flex-shrink: 0;
-  margin-left: auto;
-  background: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-subtle);
-}
-
 /* WebBridge 待修复提示：可点击，红色与"重启更新"pill 一致 */
 .cryoclaw-sidebar__item--webbridge-repair {
   width: 100%;
@@ -531,86 +541,133 @@
   background: var(--accent-subtle);
 }
 
-/* 选中态：accent-subtle 底 + 左侧 3px accent 指示条（与会话项一致） */
-.cryoclaw-sidebar__item.active {
-  color: var(--text-strong);
-  background: var(--accent-subtle);
-  box-shadow: inset 3px 0 0 var(--accent);
-}
-
-.cryoclaw-sidebar__item.active .cryoclaw-sidebar__icon {
-  color: var(--text-strong);
-}
-
+/* 底部区域：webbridge pill（可选）+ 5 图标轨 */
 .cryoclaw-sidebar__footer {
-  padding: 8px 12px 10px;
-  border-top: 1px solid var(--border);
-  overflow: visible;
-  -webkit-app-region: no-drag;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  flex-shrink: 0;
+  overflow: visible;
+  -webkit-app-region: no-drag;
 }
 
-/* 断开连接按钮容器，撑满宽度 + 支持 hover 弹出错误列表 */
-.cryoclaw-sidebar__reconnect-wrap {
+/* webbridge pill 在 footer 中的横向留白（分隔线由 rail 的 border-top 承担） */
+.cryoclaw-sidebar__footer .cryoclaw-sidebar__item--webbridge-repair {
+  width: auto;
+  margin: 8px 12px 0;
+}
+
+/* 断连错误列表 hover 触发容器：包裹完整版网页/重连按钮 + 错误弹层 */
+.cryoclaw-sidebar__rail-error {
   position: relative;
-  width: 100%;
+  display: inline-flex;
 }
 
-/* 断连按钮：红色文字 + flex 撑满 */
-.cryoclaw-sidebar__item--disconnected {
-  color: var(--accent) !important;
-  width: 100%;
+.cryoclaw-sidebar__rail-error:hover .cryoclaw-sidebar__error-popup {
+  display: block;
 }
 
-.cryoclaw-sidebar__item--disconnected:hover {
-  color: var(--accent-hover) !important;
+/* 底部图标轨（R42 第二期）：任务(运行中徽标)/工作区/扩展 ──spacer── 完整版网页或重连(错误徽标)/设置(更新徽标) */
+.cryoclaw-sidebar__rail {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 8px;
+  border-top: 1px solid var(--border);
 }
 
-.cryoclaw-sidebar__item--disconnected svg {
+.cryoclaw-sidebar__rail-item {
+  position: relative;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border: none;
+  background: transparent;
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: color var(--duration-instant) var(--ease-standard), background-color var(--duration-instant) var(--ease-standard);
+}
+
+.cryoclaw-sidebar__rail-item:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.cryoclaw-sidebar__rail-item.active {
+  color: var(--brand-500);
+  background: var(--accent-subtle);
+}
+
+.cryoclaw-sidebar__rail-item--disconnected {
+  color: var(--accent);
+}
+
+.cryoclaw-sidebar__rail-item--disconnected:hover {
+  color: var(--accent-hover);
+}
+
+.cryoclaw-sidebar__rail-item svg {
+  width: 18px;
+  height: 18px;
   stroke: currentColor;
+  fill: none;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
-/* 错误数量红点，推到按钮行最右侧 */
+.cryoclaw-sidebar__rail-spacer {
+  flex: 1;
+}
+
+/* 任务运行中数量角标 */
+.cryoclaw-sidebar__rail-badge {
+  position: absolute;
+  top: 0;
+  right: 0;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 3px;
+  border-radius: var(--radius-full);
+  background: var(--brand-500);
+  color: var(--text-on-accent);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 15px;
+  text-align: center;
+}
+
+/* 设置更新/微信徽标圆点 */
+.cryoclaw-sidebar__rail-dot {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--brand-500);
+}
+
+/* 错误数量红点：绝对定位在按钮右上角（随图标轨按钮角标化） */
 .cryoclaw-sidebar__error-badge {
-  margin-left: auto;
+  position: absolute;
+  top: 0;
+  right: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 18px;
-  height: 18px;
-  padding: 0 5px;
-  border-radius: 9px;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 3px;
+  border-radius: var(--radius-full);
   background: var(--accent);
   color: var(--text-on-accent);
   font-size: 10px;
   font-weight: 600;
-  line-height: 18px;
+  line-height: 15px;
   text-align: center;
   flex-shrink: 0;
-}
-
-/* 侧栏通用计数徽章（cron 任务数等） */
-.cryoclaw-sidebar__badge {
-  margin-left: auto;
-  font-size: var(--text-xs);
-  min-width: 18px;
-  height: 18px;
-  line-height: 18px;
-  text-align: center;
-  border-radius: 9px;
-  background: color-mix(in srgb, var(--text-muted) 20%, transparent);
-  color: var(--text-secondary);
-  font-weight: 500;
-  flex-shrink: 0;
-  padding: 0 5px;
-}
-
-.cryoclaw-sidebar__badge--new {
-  background: var(--accent);
-  color: var(--text-on-accent);
-  font-weight: 600;
 }
 
 /* hover 弹出的错误信息列表，用 fixed 定位逃出 sidebar overflow */
@@ -628,10 +685,6 @@
   border-radius: var(--radius-sm);
   box-shadow: var(--shadow-md);
   z-index: 1000;
-}
-
-.cryoclaw-sidebar__reconnect-wrap:hover .cryoclaw-sidebar__error-popup {
-  display: block;
 }
 
 .cryoclaw-sidebar__error-item {
@@ -727,17 +780,6 @@
     padding: var(--spacer-6) var(--spacer-10);
     font-size: var(--text-sm);
   }
-}
-
-
-/* ── 主导航组（阶段 16：任务/定时/技能/工作区移至侧栏顶部） ── */
-.cryoclaw-sidebar__main-nav {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 0 10px 10px;
-  margin-bottom: 4px;
-  border-bottom: 1px solid var(--border);
 }
 
 
@@ -853,4 +895,12 @@
 /* ── 归档会话项弱化显示 ── */
 .cryoclaw-sidebar__session-item.is-archived .cryoclaw-sidebar__session-name {
   opacity: 0.65;
+}
+
+/* ── 图标轨/更多菜单：尊重减少动态效果偏好 ── */
+@media (prefers-reduced-motion: reduce) {
+  .cryoclaw-sidebar__more-btn,
+  .cryoclaw-sidebar__rail-item {
+    transition: none;
+  }
 }

@@ -925,6 +925,7 @@ export const zhDict: Record<string, string> = {
   "sidebar.git": "Git 面板",
   "sidebar.newWorktreeChat": "Worktree 新会话",
   "sidebar.newWorktreeChatHint": "在隔离的 git worktree 中新建会话（需要 agent 工作区是 git 仓库）",
+  "sidebar.more": "更多",
   "tasks.title": "任务",
   "tasks.subtitle": "后台任务的实时状态",
   "tasks.runsTab": "运行记录",

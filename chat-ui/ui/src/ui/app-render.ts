@@ -35,7 +35,6 @@ import { loadSessions, patchSession } from "./controllers/sessions.ts";
 import { isActiveTask } from "./controllers/tasks.ts";
 import { t } from "./i18n.ts";
 import { icons } from "./icons.ts";
-import { isExpiredOneShot } from "./presenter.ts";
 import { resolveMainSessionKey } from "./session-visibility.ts";
 // 侧边栏独立组件（R41 Task 12）：流式帧等根组件高频更新不再重求值侧边栏模板树，
 // 原 renderSidebar 模板与菜单模块态整体迁入组件（接线见 renderApp 的 <cc-sidebar>）
@@ -196,17 +195,10 @@ export function renderApp(state: AppViewState) {
             settingsActive: cryoclawView === "settings",
             extensionsActive: cryoclawView === "extensions",
             workspaceActive: cryoclawView === "workspace",
-            cronActive: cryoclawView === "cron",
-            cronJobCount: state.cronJobs.filter((j) => j.enabled !== false && !isExpiredOneShot(j)).length,
-            onOpenCron: () => openTasksView(state, "cron"),
             tasksActive: cryoclawView === "tasks",
             tasksRunningCount: state.tasks.filter((task) => isActiveTask(task)).length,
             onOpenTasks: () => openTasksView(state),
-            worktreesActive: cryoclawView === "worktrees",
-            onOpenWorktrees: () => openWorkspaceView(state),
-            gitPanelActive: cryoclawView === "git",
-            onOpenGit: () => openWorkspaceView(state, "git"),
-            // git 不可用时 worktree 新建入口降级隐藏（false=已探测无 git）
+            // git 不可用时「更多」菜单的 worktree 新建入口降级隐藏（false=已探测无 git）
             gitAvailable: state.gitAvailable,
             onNewWorktreeChat: () => void createNewWorktreeSession(state),
             webbridgeRepairVisible: state.webbridgeRepairVisible,

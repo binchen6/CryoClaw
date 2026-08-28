@@ -6,7 +6,7 @@
 // - app.ts 全局订阅 app:update-state（onAppUpdateState），断开时清理；
 //   downloaded 态弹带 action 的 toast（appUpdateQuitAndInstall 重启），角标驱动 appUpdateBadge
 // - app-render.ts 把 appUpdateBadge 传给 sidebar，并渲染 toast action 按钮
-// - components/cc-sidebar.ts 设置入口渲染更新角标（sidebar.updateBadge，R41 Task 12 自 sidebar.ts 迁入）
+// - components/cc-sidebar.ts 设置入口渲染更新角标（rail-dot 圆点，R42 第二期图标轨化）
 // - tab-about.ts 渲染 releaseNotes / error 详情 / 重试按钮 / 查看更新日志入口
 // - app-toast.ts 支持 action（getToastAction）且带 action 时不自动消失
 import test from "node:test";
@@ -44,7 +44,7 @@ test("app-render.ts：sidebar 收到 settingsUpdateBadge，toast 渲染 action �
 test("cc-sidebar：设置入口渲染更新角标", () => {
   const s = src("components/cc-sidebar.ts");
   assert.match(s, /props\.settingsUpdateBadge/, "sidebar 应接收 settingsUpdateBadge");
-  assert.match(s, /t\("sidebar\.updateBadge"\)/, "角标应使用 sidebar.updateBadge 文案");
+  assert.match(s, /cryoclaw-sidebar__rail-dot/, "更新角标应使用 rail-dot 圆点（R42 图标轨化）");
 });
 
 test("tab-about.ts：releaseNotes / error 详情 / 重试 / 查看更新日志", () => {

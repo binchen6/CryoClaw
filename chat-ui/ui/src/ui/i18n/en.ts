@@ -859,6 +859,7 @@ export const enDict: Record<string, string> = {
   "sidebar.git": "Git",
   "sidebar.newWorktreeChat": "New worktree session",
   "sidebar.newWorktreeChatHint": "Create a session in an isolated git worktree (agent workspace must be a git checkout)",
+  "sidebar.more": "More",
   "tasks.title": "Tasks",
   "tasks.subtitle": "Live status of background tasks",
   "tasks.runsTab": "Runs",

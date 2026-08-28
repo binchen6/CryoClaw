@@ -5,9 +5,9 @@ import { t } from "../i18n.ts";
 import { icons } from "../icons.ts";
 import { groupSidebarSessions } from "../sidebar-grouping.ts";
 
-// CryoClaw sidebar 独立组件（R41 Task 12）。
-// 取代上游 13-tab 导航的紧凑聊天侧边栏：品牌区 + 主导航 6 项 + 会话列表（分组/
-// 搜索/归档/「⋯」管理菜单/内联重命名）+ 底部区（设置徽标、完整 UI/重连、错误徽标）。
+// CryoClaw sidebar 独立组件（R41 Task 12；R42 第二期 T4 图标轨重组）。
+// 取代上游 13-tab 导航的紧凑聊天侧边栏：品牌区 + 新会话/「更多」菜单 + 会话列表（分组/
+// 搜索/归档/「⋯」管理菜单/内联重命名）+ 底部 5 图标轨（任务/工作区/扩展/完整版网页或重连/设置）。
 //
 // 为什么抽组件：此前侧边栏模板直接写在 renderApp 里，chatStream 流式帧等任何
 // 根组件高频更新都会让整棵侧边栏模板树重求值。抽出后：只有数据字段真正变化
@@ -22,7 +22,7 @@ import { groupSidebarSessions } from "../sidebar-grouping.ts";
 // - 会话「⋯」菜单开关态（sessionMenuKey 等）为组件文件模块级状态：此前靠
 //   根 requestUpdate 连带重求值驱动，组件化后改走组件自身更新（bump）。
 //
-// 第二期（图标轨重组）将在本组件内进行，本任务仅等价搬迁、不改结构不改视觉。
+// 第二期（R42 T4）：主导航 6 项收敛为底部 5 图标轨，「Worktree 新会话」移入「更多」菜单。
 //
 // 无 shadow DOM：全局样式（styles/sidebar.css）与会话菜单的 document 级
 // querySelector 测量/外部关闭都依赖扁平 DOM。
@@ -103,6 +103,11 @@ export class CcSidebar extends LitElement {
     if (!props) return nothing;
     return renderSidebarInner(this, props);
   }
+
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    resetMenuState();
+  }
 }
 
 declare global {
@@ -138,15 +143,7 @@ export type SidebarProps = {
   onOpenTasks: () => void;
   extensionsActive: boolean;
   workspaceActive: boolean;
-  cronActive: boolean;
-  cronJobCount: number;
-  onOpenCron: () => void;
-  // worktrees 管理视图入口 + git 探测降级（gitAvailable === false 时隐藏新建入口）
-  worktreesActive: boolean;
-  onOpenWorktrees: () => void;
-  // git 面板（索引/审查/提交，P4 文件级 v1）
-  gitPanelActive: boolean;
-  onOpenGit: () => void;
+  // git 可用性：更多菜单的「Worktree 新会话」入口按 gitAvailable === true 渲染（false = 已探测无 git）
   gitAvailable: boolean | null;
   onNewWorktreeChat: () => void;
   // 当前 webbridge 模式但浏览器扩展未启用 → 显示「连接你的常用浏览器」pill
@@ -194,10 +191,6 @@ const DATA_FIELDS = [
   "tasksRunningCount",
   "extensionsActive",
   "workspaceActive",
-  "cronActive",
-  "cronJobCount",
-  "worktreesActive",
-  "gitPanelActive",
   "gitAvailable",
   "webbridgeRepairVisible",
   "webbridgeRepairBrowserName",
@@ -304,6 +297,50 @@ function openSessionMenu(key: string, requestUpdate: () => void) {
       menu.classList.add("cryoclaw-sidebar__session-menu--up");
     }
   });
+}
+
+// ── 「更多」菜单本地状态（与会话菜单同一模式：rAF 延迟注册外部关闭防自触，bump 驱动更新） ──
+let moreMenuOpen = false;
+let moreMenuOutsideCloser: ((ev: MouseEvent) => void) | null = null;
+
+function closeMoreMenu(requestUpdate: () => void) {
+  moreMenuOpen = false;
+  if (moreMenuOutsideCloser) {
+    document.removeEventListener("click", moreMenuOutsideCloser);
+    moreMenuOutsideCloser = null;
+  }
+  requestUpdate();
+}
+
+function toggleMoreMenu(host: CcSidebar) {
+  if (moreMenuOpen) {
+    closeMoreMenu(host.bump);
+    return;
+  }
+  moreMenuOpen = true;
+  requestAnimationFrame(() => {
+    if (!moreMenuOpen || moreMenuOutsideCloser) return;
+    moreMenuOutsideCloser = (ev: MouseEvent) => {
+      const root = (ev.target as HTMLElement).closest?.(".cryoclaw-sidebar__more-wrap");
+      if (!root) closeMoreMenu(host.bump);
+    };
+    document.addEventListener("click", moreMenuOutsideCloser);
+  });
+  host.bump();
+}
+
+// 组件卸载清掉菜单模块态与 document 级监听（R41 审查建议顺手项）
+function resetMenuState() {
+  sessionMenuKey = null;
+  moreMenuOpen = false;
+  if (sessionMenuOutsideCloser) {
+    document.removeEventListener("click", sessionMenuOutsideCloser);
+    sessionMenuOutsideCloser = null;
+  }
+  if (moreMenuOutsideCloser) {
+    document.removeEventListener("click", moreMenuOutsideCloser);
+    moreMenuOutsideCloser = null;
+  }
 }
 
 // ── 会话列表分组：实现见 sidebar-grouping.ts（置顶 + 时间分组，纯函数可测） ──
@@ -419,8 +456,8 @@ function renderErrors(props: SidebarProps) {
   };
 }
 
-// 侧边栏模板主体（原 renderSidebar 等价搬迁：结构/文案/绑定一律不改；
-// 唯一差异——菜单开/关的刷新由根 requestUpdate 改为组件级 bump）
+// 侧边栏模板主体：品牌区 + 新会话/「更多」菜单 + 会话列表（原样）+ 底部图标轨。
+// 会话「⋯」与「更多」菜单开/关的刷新均由组件级 bump 驱动（见 CcSidebar.bump）。
 function renderSidebarInner(host: CcSidebar, props: SidebarProps) {
   // 错误徽标 + 悬浮列表：两分支各引用一次，提前算好避免重复构建 TemplateResult
   const errors = renderErrors(props);
@@ -462,85 +499,38 @@ function renderSidebarInner(host: CcSidebar, props: SidebarProps) {
       </div>
 
       <nav class="cryoclaw-sidebar__nav">
-        <!-- Prominent New Chat Button -->
-        <div style="padding: 12px 14px 16px;">
+        <div class="cryoclaw-sidebar__top-actions">
           <button
             class="cryoclaw-sidebar__new-chat-btn"
             @click=${props.onNewChat}
           >
             ${icons.messagePlus} ${t("sidebar.newChat")}
           </button>
-          ${props.gitAvailable === true
-            ? html`
-              <button
-                class="cryoclaw-sidebar__new-worktree-btn"
-                type="button"
-                @click=${props.onNewWorktreeChat}
-                data-tooltip=${t("sidebar.newWorktreeChatHint")}
-                data-tooltip-pos="bottom"
-              >
-                ${icons.gitBranch} ${t("sidebar.newWorktreeChat")}
-              </button>
-            `
-            : nothing}
-        </div>
-
-        <!-- 主导航：任务 / 定时 / 技能 / 工作区（徽标实时反映运行态） -->
-        <div class="cryoclaw-sidebar__main-nav">
-          <button
-            class="cryoclaw-sidebar__item ${props.tasksActive ? "active" : ""}"
-            type="button"
-            @click=${props.onOpenTasks}
-          >
-            <span class="cryoclaw-sidebar__icon">${icons.activity}</span>
-            <span class="cryoclaw-sidebar__label">${t("sidebar.tasks")}</span>
-            ${props.tasksRunningCount > 0
-              ? html`<span class="cryoclaw-sidebar__badge cryoclaw-sidebar__badge--running">${props.tasksRunningCount}</span>`
+          <div class="cryoclaw-sidebar__more-wrap">
+            <button
+              class="cryoclaw-sidebar__more-btn ${moreMenuOpen ? "is-open" : ""}"
+              type="button"
+              aria-haspopup="menu"
+              aria-expanded=${moreMenuOpen ? "true" : "false"}
+              aria-label=${t("sidebar.more")}
+              data-tooltip=${t("sidebar.more")}
+              data-tooltip-pos="bottom"
+              @click=${(e: Event) => {
+                e.stopPropagation();
+                toggleMoreMenu(host);
+              }}
+            >${icons.moreHorizontal}</button>
+            ${moreMenuOpen
+              ? html`<div class="cryoclaw-sidebar__more-menu" role="menu" @click=${(e: Event) => e.stopPropagation()}>
+                  ${props.gitAvailable === true
+                    ? html`<button class="cryoclaw-sidebar__more-item" type="button" role="menuitem"
+                        @click=${() => { closeMoreMenu(host.bump); props.onNewWorktreeChat(); }}>
+                        ${icons.gitBranch} ${t("sidebar.newWorktreeChat")}
+                      </button>`
+                    : nothing}
+                </div>`
               : nothing}
-          </button>
-          <button
-            class="cryoclaw-sidebar__item ${props.cronActive ? "active" : ""}"
-            type="button"
-            @click=${props.onOpenCron}
-          >
-            <span class="cryoclaw-sidebar__icon">${icons.clock}</span>
-            <span class="cryoclaw-sidebar__label">${t("sidebar.cron")}</span>
-            ${props.cronJobCount > 0
-              ? html`<span class="cryoclaw-sidebar__badge">${props.cronJobCount}</span>`
-              : nothing}
-          </button>
-          <button
-            class="cryoclaw-sidebar__item ${props.extensionsActive ? "active" : ""}"
-            type="button"
-            @click=${props.onOpenExtensions}
-          >
-            <span class="cryoclaw-sidebar__icon">${icons.puzzle}</span>
-            <span class="cryoclaw-sidebar__label">${t("sidebar.extensions")}</span>
-          </button>
-          <button
-            class="cryoclaw-sidebar__item ${props.workspaceActive ? "active" : ""}"
-            type="button"
-            @click=${props.onOpenWorkspace}
-          >
-            <span class="cryoclaw-sidebar__icon">${icons.folder}</span>
-            <span class="cryoclaw-sidebar__label">${t("sidebar.workspace")}</span>
-          </button>
-          <button
-            class="cryoclaw-sidebar__item ${props.worktreesActive ? "active" : ""}"
-            type="button"
-            @click=${props.onOpenWorktrees}
-          >
-            <span class="cryoclaw-sidebar__icon">${icons.gitBranch}</span>
-            <span class="cryoclaw-sidebar__label">${t("sidebar.worktrees")}</span>
-          </button>
-          <button
-            class="cryoclaw-sidebar__item ${props.gitPanelActive ? "active" : ""}"
-            type="button"
-            @click=${props.onOpenGit}
-          >
-            <span class="cryoclaw-sidebar__icon">${icons.diff}</span>
-            <span class="cryoclaw-sidebar__label">${t("sidebar.git")}</span>
-          </button>
+          </div>
         </div>
 
         <!-- 会话列表标题行（管理已合并：归档视图切换 + 搜索） -->
@@ -609,52 +599,51 @@ function renderSidebarInner(host: CcSidebar, props: SidebarProps) {
               `;
             })()
           : nothing}
-        <div class="cryoclaw-sidebar__group-label">${t("sidebar.groupCommon")}</div>
-        <button
-          class="cryoclaw-sidebar__item cryoclaw-sidebar__item--settings ${props.settingsActive
-            ? "active"
-            : ""}"
-          type="button"
-          @click=${props.onOpenSettings}
-        >
-          <span class="cryoclaw-sidebar__icon">${icons.settings}</span>
-          <span class="cryoclaw-sidebar__label">${t("sidebar.settings")}</span>
-          ${props.settingsBadge
-            ? html`<span class="cryoclaw-sidebar__badge cryoclaw-sidebar__badge--new">${t("sidebar.weixinBadge")}</span>`
-            : nothing}
-          ${props.settingsUpdateBadge
-            ? html`<span class="cryoclaw-sidebar__badge cryoclaw-sidebar__badge--new">${t("sidebar.updateBadge")}</span>`
-            : nothing}
-        </button>
-
-        ${props.connected
-          ? html`
-            <div class="cryoclaw-sidebar__reconnect-wrap">
-              <button
-                class="cryoclaw-sidebar__item"
-                type="button"
-                @click=${props.onOpenWebUI}
-              >
-                <span class="cryoclaw-sidebar__icon">${icons.externalLink}</span>
-                <span class="cryoclaw-sidebar__label">${t("sidebar.fullUI")}</span>
-                ${errors.badge}
-              </button>
-              ${errors.popup}
-            </div>`
-          : html`
-            <div class="cryoclaw-sidebar__reconnect-wrap">
-              <button
-                class="cryoclaw-sidebar__item cryoclaw-sidebar__item--disconnected"
-                type="button"
-                @click=${props.onReconnect}
-              >
-                <span class="cryoclaw-sidebar__icon">${refreshIcon}</span>
-                <span class="cryoclaw-sidebar__label">${t("sidebar.reconnect")}</span>
-                ${errors.badge}
-              </button>
-              ${errors.popup}
-            </div>`
-        }
+        <div class="cryoclaw-sidebar__rail">
+          <button class="cryoclaw-sidebar__rail-item ${props.tasksActive ? "active" : ""}" type="button"
+            @click=${props.onOpenTasks}
+            data-tooltip=${t("sidebar.tasks")} data-tooltip-pos="top" aria-label=${t("sidebar.tasks")}>
+            ${icons.activity}
+            ${props.tasksRunningCount > 0
+              ? html`<span class="cryoclaw-sidebar__rail-badge">${props.tasksRunningCount}</span>`
+              : nothing}
+          </button>
+          <button class="cryoclaw-sidebar__rail-item ${props.workspaceActive ? "active" : ""}" type="button"
+            @click=${props.onOpenWorkspace}
+            data-tooltip=${t("sidebar.workspace")} data-tooltip-pos="top" aria-label=${t("sidebar.workspace")}>
+            ${icons.folder}
+          </button>
+          <button class="cryoclaw-sidebar__rail-item ${props.extensionsActive ? "active" : ""}" type="button"
+            @click=${props.onOpenExtensions}
+            data-tooltip=${t("sidebar.extensions")} data-tooltip-pos="top" aria-label=${t("sidebar.extensions")}>
+            ${icons.puzzle}
+          </button>
+          <span class="cryoclaw-sidebar__rail-spacer"></span>
+          <span class="cryoclaw-sidebar__rail-error">
+            ${props.connected
+              ? html`<button class="cryoclaw-sidebar__rail-item" type="button"
+                  @click=${props.onOpenWebUI}
+                  data-tooltip=${t("sidebar.fullUI")} data-tooltip-pos="top" aria-label=${t("sidebar.fullUI")}>
+                  ${icons.externalLink}
+                  ${errors.badge}
+                </button>`
+              : html`<button class="cryoclaw-sidebar__rail-item cryoclaw-sidebar__rail-item--disconnected" type="button"
+                  @click=${props.onReconnect}
+                  data-tooltip=${t("sidebar.reconnect")} data-tooltip-pos="top" aria-label=${t("sidebar.reconnect")}>
+                  ${refreshIcon}
+                  ${errors.badge}
+                </button>`}
+            ${errors.popup}
+          </span>
+          <button class="cryoclaw-sidebar__rail-item ${props.settingsActive ? "active" : ""}" type="button"
+            @click=${props.onOpenSettings}
+            data-tooltip=${t("sidebar.settings")} data-tooltip-pos="top" aria-label=${t("sidebar.settings")}>
+            ${icons.settings}
+            ${props.settingsBadge || props.settingsUpdateBadge
+              ? html`<span class="cryoclaw-sidebar__rail-dot"></span>`
+              : nothing}
+          </button>
+        </div>
       </div>
     </aside>
   `;

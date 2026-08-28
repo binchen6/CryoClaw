@@ -5,8 +5,7 @@
 //
 // 钉住的不变量：
 // - views/registry.ts：git 视图 id + meta（gotchas #49 接线点 1）
-// - app-render.ts：renderActiveView 分发 + sidebar props（接线点 3）
-// - components/cc-sidebar.ts：git 面板导航项（R41 Task 12 自 sidebar.ts 迁入）
+// - app-render.ts：renderActiveView 分发 + git bridge 声明（接线点 3）
 // - app.ts：git 面板响应式状态字段
 // - file-changes 面板「在 git 中查看」链接（app-chat-props / chat.ts / cc-chat-history / grouped-render）
 // - 主进程：preload git* bridge；git-ipc 5 通道 + sender 校验 + 白名单 cwd 守卫
@@ -30,20 +29,11 @@ test("views/registry.ts：git 视图 id + fullpage meta（gotchas #49 接线点 
   assert.match(s, /git:\s*\{\s*id: "git", fullpage: true, titlebarBack: true \}/, "缺少 git meta");
 });
 
-test("app-render.ts：renderActiveView 分发 git + sidebar 收到 git 面板 props（接线点 3）", () => {
+test("app-render.ts：renderActiveView 分发 git + git bridge 声明（接线点 3）", () => {
   const s = src("app-render.ts");
   assert.match(s, /case "git":\s*\n\s*return renderGitView\(state\)/, "缺少渲染分支");
-  assert.match(s, /gitPanelActive: cryoclawView === "git"/, "缺少 gitPanelActive prop");
-  assert.match(s, /onOpenGit: \(\) => openWorkspaceView\(state, "git"\)/, "缺少 onOpenGit prop");
   assert.match(s, /gitStatus\?: \(cwd: string\) => Promise<any>/, "缺少 gitStatus bridge 声明");
   assert.match(s, /gitCommit\?: \(cwd: string, message: string\) => Promise<any>/, "缺少 gitCommit bridge 声明");
-});
-
-test("cc-sidebar：git 面板导航项", () => {
-  const s = src("components/cc-sidebar.ts");
-  assert.match(s, /t\("sidebar\.git"\)/, "缺少 git 导航项文案");
-  assert.match(s, /props\.onOpenGit/, "导航项未接 onOpenGit");
-  assert.match(s, /gitPanelActive \? "active"/, "导航项未接 active 态");
 });
 
 test("app.ts：git 面板响应式状态字段", () => {

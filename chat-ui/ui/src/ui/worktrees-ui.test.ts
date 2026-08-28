@@ -5,7 +5,7 @@
 // 钉住的不变量：
 // - views/registry.ts：worktrees 视图 id + meta（gotchas #49 接线点 1）
 // - app-render.ts：renderActiveView 分发 + sidebar props（接线点 3）
-// - components/cc-sidebar.ts：导航项 / 会话 worktree 徽标 / git 降级隐藏的新建入口（R41 Task 12 自 sidebar.ts 迁入）
+// - components/cc-sidebar.ts：会话 worktree 徽标 / git 降级隐藏的新建入口（更多菜单，R42 第二期 T4 迁入）
 // - app-session-actions.ts：sessions.create {worktree:true} 新建 + 删除附带 worktrees.remove
 // - app-gateway.ts：onHello 后拉 worktrees.list（徽标数据源）
 // - app.ts：gitDetect 探测绑定 + gitAvailable 状态
@@ -33,16 +33,12 @@ test("views/registry.ts：worktrees 视图 id + fullpage meta（gotchas #49 接�
 test("app-render.ts：renderActiveView 分发 worktrees + sidebar 收到 worktree props（接线点 3）", () => {
   const s = src("app-render.ts");
   assert.match(s, /case "worktrees":\s*\n\s*return renderWorktreesView\(state\)/, "缺少渲染分支");
-  assert.match(s, /worktreesActive: cryoclawView === "worktrees"/, "缺少 worktreesActive prop");
-  assert.match(s, /onOpenWorktrees: \(\) => openWorkspaceView\(state\)/, "缺少 onOpenWorktrees prop");
   assert.match(s, /gitAvailable: state\.gitAvailable/, "缺少 gitAvailable prop");
   assert.match(s, /onNewWorktreeChat: \(\) => void createNewWorktreeSession\(state\)/, "缺少新建入口 prop");
 });
 
-test("cc-sidebar：导航项 / 会话徽标 / 新建入口按 gitAvailable 降级隐藏", () => {
+test("cc-sidebar：会话徽标 / 新建入口（更多菜单）按 gitAvailable 降级隐藏", () => {
   const s = src("components/cc-sidebar.ts");
-  assert.match(s, /t\("sidebar\.worktrees"\)/, "缺少 worktrees 导航项");
-  assert.match(s, /props\.onOpenWorktrees/, "导航项未接 onOpenWorktrees");
   assert.match(s, /cryoclaw-sidebar__session-worktree/, "缺少会话 worktree 徽标");
   assert.match(s, /s\.worktreeBranch/, "徽标应渲染分支名");
   assert.match(s, /props\.gitAvailable === true/, "无 git 时新建入口应隐藏（降级）");
