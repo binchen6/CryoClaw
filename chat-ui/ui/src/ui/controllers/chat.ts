@@ -160,15 +160,21 @@ export function cancelStaleHistoryRetryForTests() {
 }
 
 function scheduleStaleHistoryRetry(state: ChatState, sessionKey: string) {
+  if (staleRetryKey !== null && staleRetryKey !== sessionKey) {
+    // 目标会话切换：预算随之复位——旧会话消耗的档位不应由新会话继承，
+    // 否则长期滞后的会话会吃光全局预算，其余会话「问了没答」永不再补拉。
+    // 无挂起定时器（旧会话预算已耗尽）同样要复位，否则耗尽态会永久传染。
+    if (staleRetryTimer !== null) {
+      clearTimeout(staleRetryTimer);
+      staleRetryTimer = null;
+    }
+    staleRetryAttempt = 0;
+  }
   if (staleRetryAttempt >= STALE_RETRY_DELAYS_MS.length) {
     return;
   }
   if (staleRetryTimer !== null) {
-    if (staleRetryKey === sessionKey) {
-      return; // 已有同会话的挂起重试，合并
-    }
-    clearTimeout(staleRetryTimer);
-    staleRetryTimer = null;
+    return; // 已有同会话的挂起重试，合并（同会话内预算不叠加消耗）
   }
   staleRetryKey = sessionKey;
   const delay = STALE_RETRY_DELAYS_MS[staleRetryAttempt];

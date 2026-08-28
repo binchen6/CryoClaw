@@ -531,6 +531,99 @@ async function testStaleRetryAbortedOnSessionSwitch() {
   }
 }
 
+// R41：补拉预算 per-session 化——会话 A 挂起重试期间切到会话 B 触发滞后保留时，
+// A 消耗过的档位不应由 B 继承，B 应从首档 800ms 重新开始（而非 1600）。
+async function testStaleRetryBudgetResetsOnTargetSessionSwitch() {
+  installBrowserGlobals(new FakeRaf());
+  mock.timers.enable({ apis: ["setTimeout"] });
+  try {
+    const local = [1, 2, 3].map((i) => ({ role: "user", content: [{ type: "text", text: `m${i}` }] }));
+    let calls = 0;
+    const client = {
+      request: async () => {
+        calls++;
+        return { messages: [local[0]] }; // 恒短读：一直保持滞后保留路径
+      },
+    } as any;
+    const flush = async () => {
+      for (let i = 0; i < 5; i++) {
+        await new Promise((r) => setImmediate(r));
+      }
+    };
+
+    // 1) 会话 A 触发滞后保留 → 800ms 后补拉仍滞后 → attempt 消耗到 1（挂起 1600 档）
+    const stateA = makeState({ client, sessionKey: "session-A", chatMessages: [...local] });
+    await loadChatHistory(stateA, { mergeIfStale: true });
+    assert.equal(calls, 1);
+    mock.timers.tick(800);
+    await flush();
+    assert.equal(calls, 2, "A 的 800ms 补拉应发出");
+
+    // 2) 切到会话 B 触发 B 的滞后保留（目标会话切换应复位预算）
+    const stateB = makeState({ client, sessionKey: "session-B", chatMessages: [...local] });
+    await loadChatHistory(stateB, { mergeIfStale: true });
+    assert.equal(calls, 3);
+
+    // 3) B 的补拉应仍是首档 800ms；若继承 A 的计数，800ms 内不会有补拉（排成 1600）
+    mock.timers.tick(800);
+    await flush();
+    assert.equal(calls, 4, "切到 B 后补拉预算应复位，800ms 首档即补拉");
+  } finally {
+    mock.timers.reset();
+    cancelStaleHistoryRetryForTests();
+  }
+}
+
+// R41：预算耗尽（800/1600/2400 全走完仍滞后）后是静默终点且永不复位，
+// 切到新会话应重新获得满额预算，否则任何会话的滞后读都不再补拉。
+async function testStaleRetryBudgetExhaustedRecoversOnSessionSwitch() {
+  installBrowserGlobals(new FakeRaf());
+  mock.timers.enable({ apis: ["setTimeout"] });
+  try {
+    const local = [1, 2, 3].map((i) => ({ role: "user", content: [{ type: "text", text: `m${i}` }] }));
+    let calls = 0;
+    const client = {
+      request: async () => {
+        calls++;
+        return { messages: [local[0]] };
+      },
+    } as any;
+    const flush = async () => {
+      for (let i = 0; i < 5; i++) {
+        await new Promise((r) => setImmediate(r));
+      }
+    };
+
+    // 1) A 上连续 3 次滞后保留耗尽预算：首读 + 800/1600/2400 三档补拉全短读 → 共 4 次调用
+    const stateA = makeState({ client, sessionKey: "session-A", chatMessages: [...local] });
+    await loadChatHistory(stateA, { mergeIfStale: true });
+    assert.equal(calls, 1);
+    mock.timers.tick(800);
+    await flush();
+    assert.equal(calls, 2);
+    mock.timers.tick(1600);
+    await flush();
+    assert.equal(calls, 3);
+    mock.timers.tick(2400);
+    await flush();
+    assert.equal(calls, 4, "预算耗尽前共应补拉 3 次");
+    mock.timers.tick(10_000);
+    await flush();
+    assert.equal(calls, 4, "A 预算耗尽后不得再补拉");
+
+    // 2) 切到 B 触发滞后保留：不得继承 A 的耗尽态静默放弃，800ms 后应补拉
+    const stateB = makeState({ client, sessionKey: "session-B", chatMessages: [...local] });
+    await loadChatHistory(stateB, { mergeIfStale: true });
+    assert.equal(calls, 5);
+    mock.timers.tick(800);
+    await flush();
+    assert.equal(calls, 6, "预算耗尽后切会话应重新补拉，而非静默放弃");
+  } finally {
+    mock.timers.reset();
+    cancelStaleHistoryRetryForTests();
+  }
+}
+
 // 发送失败（非 preserveRunState）：乐观 user 气泡打 cryoclawSendFailed 标记 + 注入错误卡，
 // 供 onResendError 重发时一并移除（防重发后新旧两条 user 气泡并存）。
 async function testSendFailureMarksLocalEchoForResend() {
@@ -730,6 +823,8 @@ async function main() {
   await testOrphanFinalPassesAndClearsSnapshot();
   await testStaleRetryBackoffAndCancelOnReplace();
   await testStaleRetryAbortedOnSessionSwitch();
+  await testStaleRetryBudgetResetsOnTargetSessionSwitch();
+  await testStaleRetryBudgetExhaustedRecoversOnSessionSwitch();
   await testSendFailureMarksLocalEchoForResend();
   await testPreserveRunStateFailureDoesNotInject();
   await testSendFileAttachmentGoesBase64AndEchoHasMediaPaths();
