@@ -274,6 +274,8 @@ function closeSessionMenu(requestUpdate: () => void) {
 }
 
 function openSessionMenu(key: string, requestUpdate: () => void) {
+  // 对称互斥：打开会话菜单先关「更多」菜单（两菜单同时开会互相屏蔽 outsideCloser）
+  closeMoreMenu(requestUpdate);
   sessionMenuKey = key;
   // 延迟一帧注册，避免触发本次打开的 click 立刻把菜单关掉。
   requestAnimationFrame(() => {
@@ -318,6 +320,8 @@ function toggleMoreMenu(host: CcSidebar) {
     closeMoreMenu(host.bump);
     return;
   }
+  // 双菜单互斥：打开「更多」菜单先关会话菜单（两个按钮的 stopPropagation 会互相屏蔽 outsideCloser）
+  closeSessionMenu(host.bump);
   moreMenuOpen = true;
   requestAnimationFrame(() => {
     if (!moreMenuOpen || moreMenuOutsideCloser) return;
@@ -525,6 +529,7 @@ function renderSidebarInner(host: CcSidebar, props: SidebarProps) {
               ${moreMenuOpen
                 ? html`<div class="cryoclaw-sidebar__more-menu" role="menu" @click=${(e: Event) => e.stopPropagation()}>
                     <button class="cryoclaw-sidebar__more-item" type="button" role="menuitem"
+                      data-tooltip=${t("sidebar.newWorktreeChatHint")}
                       @click=${() => { closeMoreMenu(host.bump); props.onNewWorktreeChat(); }}>
                       ${icons.gitBranch} ${t("sidebar.newWorktreeChat")}
                     </button>
@@ -603,6 +608,7 @@ function renderSidebarInner(host: CcSidebar, props: SidebarProps) {
         <div class="cryoclaw-sidebar__rail">
           <button class="cryoclaw-sidebar__rail-item ${props.tasksActive ? "active" : ""}" type="button"
             @click=${props.onOpenTasks}
+            aria-current=${props.tasksActive ? "page" : nothing}
             data-tooltip=${t("sidebar.tasks")} data-tooltip-pos="top" aria-label=${t("sidebar.tasks")}>
             ${icons.activity}
             ${props.tasksRunningCount > 0
@@ -611,11 +617,13 @@ function renderSidebarInner(host: CcSidebar, props: SidebarProps) {
           </button>
           <button class="cryoclaw-sidebar__rail-item ${props.workspaceActive ? "active" : ""}" type="button"
             @click=${props.onOpenWorkspace}
+            aria-current=${props.workspaceActive ? "page" : nothing}
             data-tooltip=${t("sidebar.workspace")} data-tooltip-pos="top" aria-label=${t("sidebar.workspace")}>
             ${icons.folder}
           </button>
           <button class="cryoclaw-sidebar__rail-item ${props.extensionsActive ? "active" : ""}" type="button"
             @click=${props.onOpenExtensions}
+            aria-current=${props.extensionsActive ? "page" : nothing}
             data-tooltip=${t("sidebar.extensions")} data-tooltip-pos="top" aria-label=${t("sidebar.extensions")}>
             ${icons.puzzle}
           </button>
@@ -638,6 +646,7 @@ function renderSidebarInner(host: CcSidebar, props: SidebarProps) {
           </span>
           <button class="cryoclaw-sidebar__rail-item ${props.settingsActive ? "active" : ""}" type="button"
             @click=${props.onOpenSettings}
+            aria-current=${props.settingsActive ? "page" : nothing}
             data-tooltip=${props.settingsUpdateBadge ? t("sidebar.updateBadgeTooltip") : props.settingsBadge ? t("sidebar.weixinBadgeTooltip") : t("sidebar.settings")}
             data-tooltip-pos="top"
             aria-label=${props.settingsUpdateBadge ? t("sidebar.updateBadgeTooltip") : props.settingsBadge ? t("sidebar.weixinBadgeTooltip") : t("sidebar.settings")}>

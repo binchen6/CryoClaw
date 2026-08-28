@@ -15,8 +15,8 @@ test("isTrustedChatUiUrl: history 路由改写后的 URL 可信（/dist/chat?ses
   assert.equal(isTrustedChatUiUrl(`${WIN_PREFIX}chat?session=agent%3Amain%3Amain`, WIN_PREFIX), true);
   assert.equal(isTrustedChatUiUrl(`${WIN_PREFIX}chat`, WIN_PREFIX), true);
   assert.equal(isTrustedChatUiUrl(`${WIN_PREFIX}settings#tab=provider`, WIN_PREFIX), true);
-  // 当前全部合法视图路由（R42 第二期 T5 后为 6 视图）
-  for (const route of ["setup", "workspace", "tasks", "extensions"]) {
+  // 当前全部合法视图路由
+  for (const route of ["setup", "workspace", "tasks", "skills", "cron"]) {
     assert.equal(isTrustedChatUiUrl(`${WIN_PREFIX}${route}`, WIN_PREFIX), true, `route=${route}`);
   }
   // 部署 base 路径：最多 1 个前缀段 + 已知入口

@@ -645,7 +645,7 @@
   right: 3px;
   width: 8px;
   height: 8px;
-  border-radius: 50%;
+  border-radius: var(--radius-full);
   background: var(--brand-500);
 }
 

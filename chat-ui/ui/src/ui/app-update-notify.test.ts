@@ -43,8 +43,8 @@ test("app-render.ts：sidebar 收到 settingsUpdateBadge，toast 渲染 action �
 
 test("cc-sidebar：设置入口渲染更新角标", () => {
   const s = src("components/cc-sidebar.ts");
-  assert.match(s, /props\.settingsUpdateBadge/, "sidebar 应接收 settingsUpdateBadge");
-  assert.match(s, /cryoclaw-sidebar__rail-dot/, "更新角标应使用 rail-dot 圆点（R42 图标轨化）");
+  // 关联断言：徽标（微信/更新）必须驱动 rail-dot 圆点渲染，防止退化为各自独立的存在性检查（R42 第二期 T4 质量审查）
+  assert.match(s, /props\.settingsBadge \|\| props\.settingsUpdateBadge[\s\S]{0,100}?cryoclaw-sidebar__rail-dot/, "更新/微信徽标应驱动 rail-dot 圆点");
 });
 
 test("tab-about.ts：releaseNotes / error 详情 / 重试 / 查看更新日志", () => {
