@@ -805,6 +805,118 @@ async function testCumulativeFrameBudgetDegradesLaterFiles() {
   assert.deepEqual(echo.MediaTypes, ["application/octet-stream"], "降级文件不占 MediaTypes 槽位");
 }
 
+// R41 Task 2：同会话终态刷新（mergeIfStale）保留现有可见数，不重走渐进注水——
+// 否则 60 条会话每轮终态都先缩回 20 条再逐批补回（闪烁 + 上方插入滚动位移）。
+async function testMergeIfStaleKeepsVisibleCountWithoutHydration() {
+  installBrowserGlobals(new FakeRaf());
+  const local = Array.from({ length: 50 }, (_, index) => ({
+    role: index % 2 === 0 ? "user" : "assistant",
+    content: [{ type: "text", text: `m${index}` }],
+    timestamp: index,
+  }));
+  const remote = [
+    ...local,
+    { role: "user", content: [{ type: "text", text: "m50" }] },
+    { role: "assistant", content: [{ type: "text", text: "m51" }] },
+  ];
+  const state = makeState({
+    client: makeHistoryClient(remote),
+    chatMessages: [...local],
+    chatVisibleMessageCount: 50,
+  });
+
+  const hydrationTimers: Array<() => void> = [];
+  const originalSetTimeout = globalThis.setTimeout;
+  globalThis.setTimeout = ((fn: () => void) => {
+    hydrationTimers.push(fn);
+    return hydrationTimers.length;
+  }) as typeof setTimeout;
+
+  try {
+    await loadChatHistory(state, { mergeIfStale: true });
+
+    assert.equal(state.chatMessages.length, 52, "合法变长的替换应落地");
+    assert.equal(state.chatVisibleMessageCount, 52, "终态刷新应保留可见数并展开新增消息");
+    assert.equal(state.chatHistoryHydrationFrame, null, "不得挂渐进注水（避免缩回再补回）");
+    assert.equal(hydrationTimers.length, 0, "不得调度注水定时器");
+  } finally {
+    globalThis.setTimeout = originalSetTimeout;
+  }
+}
+
+// R41 Task 2：替换语义（无 mergeIfStale，切会话/重置/首次加载）仍走 20 条渐进注水。
+async function testReplaceWithoutMergeStillHydratesFromTwenty() {
+  installBrowserGlobals(new FakeRaf());
+  const messages = Array.from({ length: 50 }, (_, index) => ({
+    role: index % 2 === 0 ? "user" : "assistant",
+    content: [{ type: "text", text: `m${index}` }],
+    timestamp: index,
+  }));
+  const state = makeState({
+    client: makeHistoryClient(messages),
+    chatVisibleMessageCount: 50,
+  });
+
+  const hydrationTimers: Array<() => void> = [];
+  const originalSetTimeout = globalThis.setTimeout;
+  globalThis.setTimeout = ((fn: () => void) => {
+    hydrationTimers.push(fn);
+    return hydrationTimers.length;
+  }) as typeof setTimeout;
+
+  try {
+    await loadChatHistory(state);
+
+    assert.equal(state.chatMessages.length, 50);
+    assert.equal(state.chatVisibleMessageCount, 20, "替换语义首帧仍只暴露 20 条");
+    assert.ok(hydrationTimers.length > 0, "替换语义应挂渐进注水");
+    while (hydrationTimers.length > 0) {
+      const timer = hydrationTimers.shift();
+      if (timer) timer();
+    }
+    assert.equal(state.chatVisibleMessageCount, 50, "注水结束后应补齐全部历史");
+  } finally {
+    globalThis.setTimeout = originalSetTimeout;
+  }
+}
+
+// R41 Task 2（边界）：先前只露出部分消息（可见数 < 本地消息数）时不得强行保持——
+// 说明注水尚未完成/视图未展开，终态刷新应回归渐进注水路径（从 20 条起）。
+async function testMergeIfStaleFallsBackToHydrationWhenPartiallyVisible() {
+  installBrowserGlobals(new FakeRaf());
+  const local = Array.from({ length: 50 }, (_, index) => ({
+    role: index % 2 === 0 ? "user" : "assistant",
+    content: [{ type: "text", text: `m${index}` }],
+    timestamp: index,
+  }));
+  const remote = [
+    ...local,
+    { role: "user", content: [{ type: "text", text: "m50" }] },
+    { role: "assistant", content: [{ type: "text", text: "m51" }] },
+  ];
+  const state = makeState({
+    client: makeHistoryClient(remote),
+    chatMessages: [...local],
+    chatVisibleMessageCount: 30,
+  });
+
+  const hydrationTimers: Array<() => void> = [];
+  const originalSetTimeout = globalThis.setTimeout;
+  globalThis.setTimeout = ((fn: () => void) => {
+    hydrationTimers.push(fn);
+    return hydrationTimers.length;
+  }) as typeof setTimeout;
+
+  try {
+    await loadChatHistory(state, { mergeIfStale: true });
+
+    assert.equal(state.chatVisibleMessageCount, 20, "部分可见时应回到 20 条起步");
+    assert.ok(hydrationTimers.length > 0, "部分可见时应挂渐进注水");
+  } finally {
+    globalThis.setTimeout = originalSetTimeout;
+  }
+}
+
 async function main() {
   await testChatStreamIsRafThrottled();
   await testLoadChatHistoryBatchesInitialRender();
@@ -831,6 +943,9 @@ async function main() {
   await testOversizedFileFallsBackToTextPrefix();
   await testSendFailureKeepsResendAttachments();
   await testCumulativeFrameBudgetDegradesLaterFiles();
+  await testMergeIfStaleKeepsVisibleCountWithoutHydration();
+  await testReplaceWithoutMergeStillHydratesFromTwenty();
+  await testMergeIfStaleFallsBackToHydrationWhenPartiallyVisible();
   cancelStaleHistoryRetryForTests();
   console.log("chat controller tests passed");
 }

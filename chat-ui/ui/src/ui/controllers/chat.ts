@@ -241,12 +241,28 @@ export async function loadChatHistory(
     // 替换成功：滞后已收敛，停掉补拉退避
     cancelStaleHistoryRetry();
     const deduplicated = deduplicateDeliveryMirrors(raw);
+    // 同会话刷新（终态/看门狗/重连的 mergeIfStale 路径）保留可见数——历史只是
+    // 追加/更新，重走 20 条渐进注水会让视图先缩回再补回（闪烁 + 上方插入位移）。
+    // 渐进注水仅服务「整段替换」的首屏（切会话/重置/首次加载）。
+    // 注意：两个条件都必须在 state.chatMessages 被替换之前读取旧值。
+    // priorCount < 旧长度说明视图尚未完全展开（注水未完成），不保留，
+    // 否则会把本应逐帧补出的消息一次性全量渲染（失去首屏防卡顿的意义）。
+    const priorCount = state.chatVisibleMessageCount;
+    const keepCount =
+      Boolean(opts?.mergeIfStale) &&
+      priorCount > 0 &&
+      priorCount >= state.chatMessages.length;
     state.chatMessages = deduplicated;
-    state.chatVisibleMessageCount = Math.min(
-      deduplicated.length,
-      INITIAL_CHAT_HISTORY_RENDER_COUNT,
-    );
-    scheduleChatHistoryHydration(state, requestSessionKey, deduplicated.length);
+    if (keepCount) {
+      // 新历史比先前可见数长时，新增消息立即可见（无需再挂注水）。
+      state.chatVisibleMessageCount = Math.max(priorCount, deduplicated.length);
+    } else {
+      state.chatVisibleMessageCount = Math.min(
+        deduplicated.length,
+        INITIAL_CHAT_HISTORY_RENDER_COUNT,
+      );
+      scheduleChatHistoryHydration(state, requestSessionKey, deduplicated.length);
+    }
     state.chatThinkingLevel = res.thinkingLevel ?? null;
   } catch (err) {
     if (state.sessionKey !== requestSessionKey) {
