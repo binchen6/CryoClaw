@@ -46,7 +46,7 @@ const s = {
   togglingId: null as string | null,
 };
 
-export function resetPluginsTab() {
+export function resetPluginsView() {
   s.initialized = false;
   s.loading = false;
   s.error = null;
@@ -297,7 +297,7 @@ function renderBody(state: AppViewState) {
   return html`<div class="oc-plugins__list">${s.marketResults.map((p) => renderMarketRow(state, p))}</div>`;
 }
 
-export function renderTabPlugins(state: AppViewState) {
+export function renderPluginsView(state: AppViewState) {
   init(state);
   return html`
     <div class="oc-settings__section">

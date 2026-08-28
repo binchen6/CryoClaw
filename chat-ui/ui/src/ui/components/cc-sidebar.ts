@@ -136,7 +136,7 @@ export type SidebarProps = {
   tasksActive: boolean;
   tasksRunningCount: number;
   onOpenTasks: () => void;
-  skillsActive: boolean;
+  extensionsActive: boolean;
   workspaceActive: boolean;
   cronActive: boolean;
   cronJobCount: number;
@@ -172,7 +172,7 @@ export type SidebarProps = {
   // App 更新待装/下载中角标（与 settingsBadge 微信徽标并列，互不影响）
   settingsUpdateBadge: boolean;
   onOpenSettings: () => void;
-  onOpenSkillStore: () => void;
+  onOpenExtensions: () => void;
   onOpenWorkspace: () => void;
   onOpenWebUI: () => void;
   errors: string[];
@@ -192,7 +192,7 @@ const DATA_FIELDS = [
   "settingsActive",
   "tasksActive",
   "tasksRunningCount",
-  "skillsActive",
+  "extensionsActive",
   "workspaceActive",
   "cronActive",
   "cronJobCount",
@@ -510,12 +510,12 @@ function renderSidebarInner(host: CcSidebar, props: SidebarProps) {
               : nothing}
           </button>
           <button
-            class="cryoclaw-sidebar__item ${props.skillsActive ? "active" : ""}"
+            class="cryoclaw-sidebar__item ${props.extensionsActive ? "active" : ""}"
             type="button"
-            @click=${props.onOpenSkillStore}
+            @click=${props.onOpenExtensions}
           >
             <span class="cryoclaw-sidebar__icon">${icons.puzzle}</span>
-            <span class="cryoclaw-sidebar__label">${t("sidebar.skillStore")}</span>
+            <span class="cryoclaw-sidebar__label">${t("sidebar.extensions")}</span>
           </button>
           <button
             class="cryoclaw-sidebar__item ${props.workspaceActive ? "active" : ""}"

@@ -30,7 +30,6 @@ export const SETTINGS_TABS: SettingsTab[] = [
   { id: "memory", labelKey: "settings.nav.memory", group: "models" },
   { id: "voice", labelKey: "settings.nav.voice", group: "models" },
   { id: "session-usage", labelKey: "settings.nav.sessionUsage", group: "models" },
-  { id: "plugins", labelKey: "settings.nav.plugins", group: "extensions" },
   { id: "appearance", labelKey: "settings.nav.appearance", group: "system" },
   { id: "advanced", labelKey: "settings.nav.advanced", group: "system" },
   { id: "approvals", labelKey: "settings.nav.approvals", group: "system" },

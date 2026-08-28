@@ -122,6 +122,9 @@ export const zhDict: Record<string, string> = {
 
   // 技能管理
   "sidebar.skillStore": "技能",
+  "sidebar.extensions": "扩展",
+  "extensions.tabSkills": "技能",
+  "extensions.tabPlugins": "插件",
   "skillStore.title": "技能",
   "skills.tabInstalled": "已安装",
   "skills.tabStore": "商店",
@@ -209,7 +212,6 @@ export const zhDict: Record<string, string> = {
   "settings.nav.advanced": "高级",
   "settings.nav.sessionUsage": "会话用量",
   "settings.nav.approvals": "审批",
-  "settings.nav.plugins": "插件",
   "settings.group.extensions": "扩展",
   "settings.plugins.title": "插件管理",
   "settings.plugins.desc": "管理已安装的内核插件，或从 ClawHub 市场发现并安装新插件。",

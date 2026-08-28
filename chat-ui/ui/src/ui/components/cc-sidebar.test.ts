@@ -67,7 +67,7 @@ test("cc-sidebar：shouldUpdate 比较清单只含数据字段，排除全部回
     "settingsActive",
     "tasksActive",
     "tasksRunningCount",
-    "skillsActive",
+    "extensionsActive",
     "workspaceActive",
     "cronActive",
     "cronJobCount",

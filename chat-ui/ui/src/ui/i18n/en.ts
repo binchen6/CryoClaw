@@ -122,6 +122,9 @@ export const enDict: Record<string, string> = {
 
   // Skill Manager
   "sidebar.skillStore": "Skills",
+  "sidebar.extensions": "Extensions",
+  "extensions.tabSkills": "Skills",
+  "extensions.tabPlugins": "Plugins",
   "skillStore.title": "Skills",
   "skills.tabInstalled": "Installed",
   "skills.tabStore": "Store",
@@ -206,7 +209,6 @@ export const enDict: Record<string, string> = {
   "settings.nav.advanced": "Advanced",
   "settings.nav.sessionUsage": "Session Usage",
   "settings.nav.approvals": "Approvals",
-    "settings.nav.plugins": "Plugins",
     "settings.group.extensions": "Extensions",
     "settings.plugins.title": "Plugin Management",
     "settings.plugins.desc": "Manage installed kernel plugins, or discover and install new ones from the ClawHub marketplace.",

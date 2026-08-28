@@ -24,10 +24,11 @@ import {
   resolveSessionOptions,
   updateFileDropState,
 } from "./app-session-actions.ts";
-import { openSkillsView, renderSkillsView } from "./app-skills.ts";
+import { renderSkillsView } from "./app-skills.ts";
+import { openExtensionsView, renderExtensionsView } from "./app-extensions.ts";
 import { openTasksView, renderTasksView } from "./app-tasks.ts";
-import { openWorktreesView, renderWorktreesView } from "./app-worktrees.ts";
-import { openGitView, renderGitView } from "./app-git.ts";
+import { renderWorktreesView } from "./app-worktrees.ts";
+import { renderGitView } from "./app-git.ts";
 import { getToastAction, getToastMessage, hideToast } from "./app-toast.ts";
 import { setCryoClawView } from "./app-view-switch.ts";
 import { loadSessions, patchSession } from "./controllers/sessions.ts";
@@ -48,7 +49,7 @@ import { renderConfirmDialog } from "./views/confirm-dialog.ts";
 import { renderSettingsView } from "./views/settings/settings-view.ts";
 import { renderSetupView } from "./views/setup/setup-view.ts";
 import { renderSharePrompt } from "./views/share-prompt.ts";
-import { initWorkspace, renderWorkspaceView } from "./views/workspace.ts";
+import { openWorkspaceView, renderWorkspaceIntegratedView } from "./app-workspace.ts";
 import { renderWebbridgePillModal } from "./views/webbridge-pill-modal.ts";
 
 declare global {
@@ -92,12 +93,6 @@ declare global {
 function openSettingsView(state: AppViewState, tabHint: string | null = null) {
   state.settingsTabHint = tabHint;
   setCryoClawView(state, "settings");
-}
-
-// 打开工作区文件浏览视图
-function openWorkspaceView(state: AppViewState) {
-  setCryoClawView(state, "workspace");
-  void initWorkspace(state);
 }
 
 // R41 Task 12：sessionOptions 原本每次 renderApp 重建新数组，但数据源只有这五个；
@@ -147,8 +142,10 @@ function renderActiveView(state: AppViewState, view: CryoClawViewId) {
       return renderSettingsView(state);
     case "skills":
       return renderSkillsView(state);
+    case "extensions":
+      return renderExtensionsView(state);
     case "workspace":
-      return renderWorkspaceView(state, () => setCryoClawView(state, "chat"));
+      return renderWorkspaceIntegratedView(state);
     case "cron":
       return renderCronView(state);
     case "tasks":
@@ -197,7 +194,7 @@ export function renderApp(state: AppViewState) {
               void loadSessions(state as unknown as Parameters<typeof loadSessions>[0]);
             },
             settingsActive: cryoclawView === "settings",
-            skillsActive: cryoclawView === "skills",
+            extensionsActive: cryoclawView === "extensions",
             workspaceActive: cryoclawView === "workspace",
             cronActive: cryoclawView === "cron",
             cronJobCount: state.cronJobs.filter((j) => j.enabled !== false && !isExpiredOneShot(j)).length,
@@ -206,9 +203,9 @@ export function renderApp(state: AppViewState) {
             tasksRunningCount: state.tasks.filter((task) => isActiveTask(task)).length,
             onOpenTasks: () => openTasksView(state),
             worktreesActive: cryoclawView === "worktrees",
-            onOpenWorktrees: () => openWorktreesView(state),
+            onOpenWorktrees: () => openWorkspaceView(state),
             gitPanelActive: cryoclawView === "git",
-            onOpenGit: () => openGitView(state),
+            onOpenGit: () => openWorkspaceView(state, "git"),
             // git 不可用时 worktree 新建入口降级隐藏（false=已探测无 git）
             gitAvailable: state.gitAvailable,
             onNewWorktreeChat: () => void createNewWorktreeSession(state),
@@ -250,7 +247,7 @@ export function renderApp(state: AppViewState) {
               localStorage.setItem("cryoclaw:weixin-badge-seen", "1");
               openSettingsView(state, null);
             },
-            onOpenSkillStore: () => openSkillsView(state),
+            onOpenExtensions: () => openExtensionsView(state),
             onOpenWorkspace: () => openWorkspaceView(state),
             onOpenWebUI: () => void handleOpenWebUI(state),
             errors: [chatDisabledReason, state.lastError].filter(Boolean) as string[],

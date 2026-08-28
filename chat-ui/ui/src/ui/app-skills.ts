@@ -6,7 +6,6 @@
 import { html, nothing } from "lit";
 import { t } from "./i18n.ts";
 import { renderSkillStoreView, skillAvatarColor, type SkillStoreState } from "./skill-store-view.ts";
-import { setCryoClawView } from "./app-view-switch.ts";
 import { showToast } from "./app-toast.ts";
 import "./components/toggle-switch.ts";
 import type { SkillStatusEntry } from "./types.ts";
@@ -337,18 +336,7 @@ function renderInstalledSkillsView(state: AppViewState) {
   `;
 }
 
-// 打开技能管理视图（默认显示已安装技能）
-export function openSkillsView(state: AppViewState, subTab: "installed" | "store" = "installed") {
-  skillsSubTab = subTab;
-  setCryoClawView(state, "skills");
-  if (subTab === "installed") {
-    void loadSkills(state);
-  } else if (!skillStoreDataLoaded) {
-    void loadSkillStoreData(state);
-  }
-}
-
-// 技能视图根渲染（app-render 的视图分支调用）
+// 技能视图根渲染（app-extensions 的扩展视图 skills tab 调用）
 export function renderSkillsView(state: AppViewState) {
   return html`
     <div class="skills-scroll panel" @scroll=${(e: Event) => {

@@ -13,6 +13,7 @@ export const CRYOCLAW_VIEW_IDS = [
   "setup",
   "settings",
   "skills",
+  "extensions",
   "workspace",
   "cron",
   "tasks",
@@ -38,6 +39,7 @@ export const CRYOCLAW_VIEW_META: Record<CryoClawViewId, CryoClawViewMeta> = {
   setup: { id: "setup", fullpage: true, titlebarBack: false },
   settings: { id: "settings", fullpage: true, titlebarBack: true },
   skills: { id: "skills", fullpage: true, titlebarBack: true },
+  extensions: { id: "extensions", fullpage: true, titlebarBack: true },
   workspace: { id: "workspace", fullpage: true, titlebarBack: true },
   cron: { id: "cron", fullpage: true, titlebarBack: true },
   tasks: { id: "tasks", fullpage: true, titlebarBack: true },
@@ -55,6 +57,7 @@ export const INJECTABLE_VIEWS: readonly CryoClawViewId[] = [
   "setup",
   "settings",
   "skills",
+  "extensions",
   "workspace",
   "cron",
 ];

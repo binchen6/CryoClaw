@@ -482,3 +482,76 @@
   cursor: not-allowed;
 }
 
+/* ==========================================================================
+   R42 第二期：扩展视图（技能/插件双 tab）—— 顶栏 tab 容器与按钮。
+   与任务页 .ts-tab 共用同一 --spacer 间距阶梯与 --radius-sm 圆角；
+   全部走 design token（无硬编码色值）；右对齐操作区预留 .ext-tabs__actions。
+   ========================================================================== */
+
+.ext-layout {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* 插件 tab 内容在扩展视图内自行滚动（设置页原由 .oc-settings-content 承载滚动） */
+.ext-layout > .oc-settings__section {
+  overflow-y: auto;
+}
+
+.ext-tabs {
+  display: flex;
+  align-items: center;
+  gap: var(--spacer-4);
+  padding: var(--spacer-12) var(--spacer-20);
+  border-bottom: var(--hairline);
+  flex-shrink: 0;
+}
+
+/* 右对齐操作区留白槽位：后续操作按钮挂此类，margin-left: auto 推至最右 */
+.ext-tabs__actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--spacer-8);
+}
+
+.ext-tab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 32px;
+  padding: 0 var(--spacer-16);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--text-base);
+  font-weight: var(--weight-medium);
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color var(--duration-fast) var(--ease-standard),
+    background var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard);
+}
+
+.ext-tab:hover {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+
+.ext-tab.active {
+  color: var(--text-strong);
+  background: var(--bg-hover);
+  border-color: var(--border);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ext-tab {
+    transition: none;
+  }
+}
+
