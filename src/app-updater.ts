@@ -202,11 +202,3 @@ export function initAppUpdater(deps: Deps): void {
   }, STARTUP_CHECK_DELAY_MS);
   startupTimer.unref?.();
 }
-
-/** 退出前清理（app quit 时调用，防御性） */
-export function stopAppUpdater(): void {
-  if (startupTimer) {
-    clearTimeout(startupTimer);
-    startupTimer = null;
-  }
-}

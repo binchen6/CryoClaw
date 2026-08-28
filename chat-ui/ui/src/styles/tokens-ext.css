@@ -64,7 +64,6 @@
 /* Chat UI 扩展变量 — 暗色（data-theme=dark，Chat UI 主通道） */
 :root[data-theme=dark] {
   --bg-accent: var(--bg-secondary);
-  --bg-content: var(--bg);
   --card: var(--bg-elevated);
   --card-foreground: var(--text-strong);
   --card-highlight: rgba(255, 255, 255, 0.05);
@@ -104,7 +103,6 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme=light]) {
     --bg-accent: var(--bg-secondary);
-    --bg-content: var(--bg);
     --card: var(--bg-elevated);
     --card-foreground: var(--text-strong);
     --card-highlight: rgba(255, 255, 255, 0.05);

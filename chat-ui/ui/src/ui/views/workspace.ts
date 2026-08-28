@@ -195,12 +195,6 @@ function relativePath(root: string, current: string): string {
   return rel || "";
 }
 
-// 刷新当前目录
-export function refreshWorkspace(state: AppViewState) {
-  if (!workspaceState.currentPath) return;
-  void loadDirectory(state, workspaceState.currentPath);
-}
-
 // 关闭回调类型
 type CloseCallback = () => void;
 

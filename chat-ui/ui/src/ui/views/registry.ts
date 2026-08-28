@@ -45,10 +45,6 @@ export const CRYOCLAW_VIEW_META: Record<CryoClawViewId, CryoClawViewMeta> = {
   git: { id: "git", fullpage: true, titlebarBack: true },
 };
 
-export function isCryoClawViewId(value: string): value is CryoClawViewId {
-  return (CRYOCLAW_VIEW_IDS as readonly string[]).includes(value);
-}
-
 /**
  * 允许经 URL query/hash（?view=）注入的视图白名单。
  * 仅 file:// 受信启动参数使用；tasks 等敏感/临时视图不开放注入

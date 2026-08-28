@@ -420,9 +420,9 @@ export function settingsVerifyKey(params: Record<string, unknown>): Promise<Veri
   return oc().settingsVerifyKey(params) as Promise<VerifyResult>;
 }
 
-/** Kimi Code 手动 key 写 sidecar + 注入 auth proxy；返回 { proxyPort } */
-export async function settingsWriteKimiApiKey(params: { apiKey: string }): Promise<{ proxyPort: number }> {
-  return unwrapData<{ proxyPort: number }>(await oc().settingsWriteKimiApiKey(params));
+/** Kimi Code 手动 key 写 sidecar + 注入 auth proxy；返回 { proxyPort, proxySecret } */
+export async function settingsWriteKimiApiKey(params: { apiKey: string }): Promise<{ proxyPort: number; proxySecret: string }> {
+  return unwrapData<{ proxyPort: number; proxySecret: string }>(await oc().settingsWriteKimiApiKey(params));
 }
 
 // ---------------------------------------------------------------------------
@@ -516,9 +516,9 @@ export async function settingsWriteKimiSearchKey(params: { apiKey: string }): Pr
   unwrapVoid(await oc().settingsWriteKimiSearchKey(params));
 }
 
-/** 确保 auth proxy 运行（memory embedding 依赖），返回 { proxyPort } */
-export async function settingsEnsureKimiProxy(): Promise<{ proxyPort: number }> {
-  return unwrapData<{ proxyPort: number }>(await oc().settingsEnsureKimiProxy());
+/** 确保 auth proxy 运行（memory embedding 依赖），返回 { proxyPort, proxySecret } */
+export async function settingsEnsureKimiProxy(): Promise<{ proxyPort: number; proxySecret: string }> {
+  return unwrapData<{ proxyPort: number; proxySecret: string }>(await oc().settingsEnsureKimiProxy());
 }
 
 // ---------------------------------------------------------------------------

@@ -778,11 +778,6 @@ export function getCliStatus(): CliStatus {
   };
 }
 
-// 判断 CLI 是否安装：兼容旧版 Windows wrapper 路径。
-export function isCliInstalled(): boolean {
-  return getCliStatus().installed;
-}
-
 // 检查磁盘上的 wrapper 内容是否与当前期望一致，一致则跳过重写。
 function isWrapperUpToDate(): boolean {
   if (IS_WIN) {

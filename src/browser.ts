@@ -101,10 +101,6 @@ export function isBrowserInstalled(target: BrowserTarget): boolean {
   return fs.existsSync(path.join(resolveUserDataDir(target), "Local State"));
 }
 
-export function listInstalledBrowsers(): BrowserTarget[] {
-  return BROWSER_TARGETS.filter((t) => isBrowserInstalled(t));
-}
-
 // ───────────────────────────── 默认浏览器 ─────────────────────────────
 // 老实现走 `plutil` (mac) / `reg query` (win) 子进程 + 解析 stdout，spawnSync
 // 同步阻塞 + 文本格式脆弱（mac 系统语言 / Win locale 都可能影响 reg 输出）。
@@ -667,27 +663,6 @@ export async function installForDefaultBrowser(
       },
     ];
   }
-}
-
-export async function uninstallForAllDetectedBrowsers(
-  extId: string,
-  options: CommonOptions = {},
-): Promise<BrowserInstallSummary[]> {
-  const out: BrowserInstallSummary[] = [];
-  for (const target of BROWSER_TARGETS) {
-    try {
-      const result = await uninstallExtension(target, extId, options);
-      out.push({ browserId: target.id, browserName: target.name, result });
-    } catch (err) {
-      out.push({
-        browserId: target.id,
-        browserName: target.name,
-        result: "not-installed",
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
-  }
-  return out;
 }
 
 export async function getExtensionStates(

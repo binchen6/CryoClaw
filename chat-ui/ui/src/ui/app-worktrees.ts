@@ -51,10 +51,10 @@ async function confirmAndGcWorktrees(state: AppViewState) {
   showToast(
     state,
     res
-      ? tWithDetail(
-          "worktrees.gcDone",
-          `${res.removed.length} removed · ${res.orphansDeleted} orphans · ${res.snapshotsPruned} snapshots`,
-        )
+      ? t("worktrees.gcDone")
+          .replace("{removed}", String(res.removed.length))
+          .replace("{orphans}", String(res.orphansDeleted))
+          .replace("{snapshots}", String(res.snapshotsPruned))
       : tWithDetail("worktrees.gcFailed", state.worktreesError),
   );
 }

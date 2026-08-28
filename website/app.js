@@ -106,7 +106,7 @@
   /* ── mock 窗口流式对话 ── */
   var streamEl = document.getElementById("stream-text");
   var DEMO_LINES = [
-    "本周重点：\n\n1. 发布 v2026.828.1 —— 设计 token 现代化，浅色/暗色双主题独立调参。\n2. 对话页布局重构：消息流居中列、compose 一体化输入框。\n3. 内核 asar 再裁 10MB，测试基线 487 用例全绿。\n\n下周：macOS 公证与 ARM64 分架构构建。",
+    "本周重点：\n\n1. 发布 v2026.828.1 —— 设计 token 现代化，浅色/暗色双主题独立调参。\n2. 对话页布局重构：消息流居中列、compose 一体化输入框。\n3. 内核 asar 再裁 10MB",
   ];
   if (streamEl && !prefersReduced) {
     var text = DEMO_LINES[0];
@@ -147,10 +147,18 @@
   /* ── spotlight 边框：特性卡光斑跟随指针 ── */
   if (!prefersReduced && window.matchMedia("(hover: hover)").matches) {
     document.querySelectorAll(".feature-card").forEach(function (card) {
+      var rafId = 0;
+      var lastE = null;
       card.addEventListener("pointermove", function (e) {
-        var rect = card.getBoundingClientRect();
-        card.style.setProperty("--mx", (e.clientX - rect.left) + "px");
-        card.style.setProperty("--my", (e.clientY - rect.top) + "px");
+        lastE = e;
+        if (rafId) return; // rAF 合帧节流：一帧内多次 pointermove 只落一次样式写
+        rafId = requestAnimationFrame(function () {
+          rafId = 0;
+          if (!lastE) return;
+          var rect = card.getBoundingClientRect();
+          card.style.setProperty("--mx", (lastE.clientX - rect.left) + "px");
+          card.style.setProperty("--my", (lastE.clientY - rect.top) + "px");
+        });
       });
     });
 
@@ -158,15 +166,38 @@
     document.querySelectorAll("[data-magnetic]").forEach(function (btn) {
       var STRENGTH = 0.12;
       var MAX = 4;
-      btn.addEventListener("pointermove", function (e) {
+      var rafId = 0;
+      var lastE = null;
+      var pressed = false;
+      var apply = function () {
+        if (!lastE) { btn.style.transform = ""; return; }
         var rect = btn.getBoundingClientRect();
-        var dx = (e.clientX - (rect.left + rect.width / 2)) * STRENGTH;
-        var dy = (e.clientY - (rect.top + rect.height / 2)) * STRENGTH;
+        var dx = (lastE.clientX - (rect.left + rect.width / 2)) * STRENGTH;
+        var dy = (lastE.clientY - (rect.top + rect.height / 2)) * STRENGTH;
         dx = Math.max(-MAX, Math.min(MAX, dx));
         dy = Math.max(-MAX, Math.min(MAX, dy));
-        btn.style.transform = "translate(" + dx + "px," + dy + "px)";
+        // 按下时保留 :active 缩放反馈（内联 transform 会盖掉 CSS 的 .btn:active scale）
+        btn.style.transform = "translate(" + dx + "px," + dy + "px)" + (pressed ? " scale(0.97)" : "");
+      };
+      btn.addEventListener("pointermove", function (e) {
+        lastE = e;
+        if (rafId) return; // rAF 合帧节流
+        rafId = requestAnimationFrame(function () {
+          rafId = 0;
+          apply();
+        });
+      });
+      btn.addEventListener("pointerdown", function () {
+        pressed = true;
+        apply();
+      });
+      btn.addEventListener("pointerup", function () {
+        pressed = false;
+        apply();
       });
       btn.addEventListener("pointerleave", function () {
+        pressed = false;
+        lastE = null;
         btn.style.transform = "";
       });
     });

@@ -112,7 +112,8 @@ export function saveKimiSearchConfig(
 const KIMI_EMBEDDING_MODEL = "bge_m3_embed";
 
 // 将 memorySearch 指向本地 auth proxy（代理注入最新 token，免密钥刷新）
-export function ensureMemorySearchProxyConfig(config: any, proxyPort: number): boolean {
+// proxySecret：回环鉴权路径段（见 kimi-auth-proxy.ts），为空时退化为无 secret 旧格式
+export function ensureMemorySearchProxyConfig(config: any, proxyPort: number, proxySecret = ""): boolean {
   if (proxyPort <= 0) return false;
 
   config.agents ??= {};
@@ -120,7 +121,7 @@ export function ensureMemorySearchProxyConfig(config: any, proxyPort: number): b
   config.agents.defaults.memorySearch ??= {};
 
   const ms = config.agents.defaults.memorySearch;
-  const expectedBase = `http://127.0.0.1:${proxyPort}/coding/v1/`;
+  const expectedBase = `http://127.0.0.1:${proxyPort}${proxySecret ? `/${proxySecret}` : ""}/coding/v1/`;
 
   // 配置未变则跳过写入
   if (

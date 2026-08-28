@@ -36,6 +36,8 @@ export type GitStatusEntry = {
 export type GitStatusResult = {
   branch: GitBranchInfo;
   entries: GitStatusEntry[];
+  /** 主进程侧 git 输出超 buffer 被截断（条目/diff 不完整） */
+  truncated?: boolean;
 };
 
 export type DiffLine = {
@@ -87,6 +89,9 @@ export type GitPanelState = {
   gitSelectedFile: string | null;
   gitDiffFiles: DiffFile[] | null;
   gitDiffLoading: boolean;
+  /** status/diff 输出被主进程截断（buffer 上限），view 据此显示提示行 */
+  gitStatusTruncated: boolean;
+  gitDiffTruncated: boolean;
   gitCommitMessage: string;
   gitCommitting: boolean;
 };
@@ -225,16 +230,20 @@ export async function refreshGitStatus(state: GitPanelState): Promise<void> {
     if (seq !== statusSeq) return;
     if (res?.success && res.data) {
       state.gitStatus = res.data;
+      state.gitStatusTruncated = res.data.truncated === true;
       state.gitRepoState = "ok";
       // 刷新后选中文件可能已消失（已 stage/commit），清空选中与 diff
       state.gitSelectedFile = null;
       state.gitDiffFiles = null;
+      state.gitDiffTruncated = false;
     } else if (res?.error === "no-git") {
       state.gitRepoState = "no-git";
       state.gitStatus = null;
+      state.gitStatusTruncated = false;
     } else if (res?.error === "not-a-repo") {
       state.gitRepoState = "not-a-repo";
       state.gitStatus = null;
+      state.gitStatusTruncated = false;
     } else {
       state.gitRepoState = null;
       state.gitErrorKind = "generic";
@@ -256,6 +265,9 @@ export async function selectGitRepo(state: GitPanelState, repoPath: string): Pro
   state.gitRepoPath = repoPath;
   state.gitSelectedFile = null;
   state.gitDiffFiles = null;
+  state.gitDiffTruncated = false;
+  // 使在途 diff 响应失效（旧仓库的迟到响应不得落入新仓库）
+  ++diffSeq;
   await refreshGitStatus(state);
 }
 
@@ -269,20 +281,24 @@ export async function selectGitFile(
   if (!b?.gitDiff || !state.gitRepoPath) return;
   const key = gitFileKey(side, path);
   if (state.gitSelectedFile === key) {
-    // 再次点击同一文件 = 收起
+    // 再次点击同一文件 = 收起（使在途 diff 响应失效，防迟到的旧响应重开已收起的 diff）
     state.gitSelectedFile = null;
     state.gitDiffFiles = null;
+    state.gitDiffTruncated = false;
+    ++diffSeq;
     return;
   }
   const seq = ++diffSeq;
   state.gitSelectedFile = key;
   state.gitDiffLoading = true;
   state.gitDiffFiles = null;
+  state.gitDiffTruncated = false;
   try {
     const res = await b.gitDiff(state.gitRepoPath, { cached: side === "cached", path });
     if (seq !== diffSeq) return;
     if (res?.success && res.data) {
       state.gitDiffFiles = res.data.files;
+      state.gitDiffTruncated = res.data.truncated === true;
     } else {
       state.gitDiffFiles = null;
       state.gitErrorKind = "generic";

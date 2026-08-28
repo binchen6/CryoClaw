@@ -61,6 +61,16 @@ function gitFailure(res: GitRunResult): { success: false; error: string; message
   return { success: false, error: "git-error", message };
 }
 
+// runGit 抛错（spawn 失败等）的统一归类：ENOENT 说明 git 二进制消失（探测后被卸载 /
+// PATH 变更的竞态），归 no-git 而非 git-error，渲染层按「未装 git」引导。
+function gitCatchResp(channel: string, err: unknown): { success: false; error: string; message?: string } {
+  log.error(`[git-ipc] ${channel} failed: ${err instanceof Error ? err.message : String(err)}`);
+  if ((err as NodeJS.ErrnoException | null)?.code === "ENOENT") {
+    return { success: false, error: "no-git", message: String(err instanceof Error ? err.message : err) };
+  }
+  return { success: false, error: "git-error", message: String(err instanceof Error ? err.message : err) };
+}
+
 export function registerGitIpc(): void {
   // 返回缓存的 git 探测结果（{available, version}）；探测本身在注册时已启动
   ipcMain.handle("git:detect", async (event) => {
@@ -78,8 +88,7 @@ export function registerGitIpc(): void {
       if (res.code !== 0) return gitFailure(res);
       return { success: true, data: { ...parsePorcelainV2Status(res.stdout), truncated: res.truncated } };
     } catch (err) {
-      log.error(`[git-ipc] git:status failed: ${err instanceof Error ? err.message : String(err)}`);
-      return { success: false, error: "git-error", message: String(err instanceof Error ? err.message : err) };
+      return gitCatchResp("git:status", err);
     }
   });
 
@@ -102,8 +111,7 @@ export function registerGitIpc(): void {
         data: { files: parseUnifiedDiff(res.stdout), truncated: res.truncated },
       };
     } catch (err) {
-      log.error(`[git-ipc] git:diff failed: ${err instanceof Error ? err.message : String(err)}`);
-      return { success: false, error: "git-error", message: String(err instanceof Error ? err.message : err) };
+      return gitCatchResp("git:diff", err);
     }
   });
 
@@ -122,8 +130,7 @@ export function registerGitIpc(): void {
         if (res.code !== 0) return gitFailure(res);
         return { success: true };
       } catch (err) {
-        log.error(`[git-ipc] ${channel} failed: ${err instanceof Error ? err.message : String(err)}`);
-        return { success: false, error: "git-error", message: String(err instanceof Error ? err.message : err) };
+        return gitCatchResp(channel, err);
       }
     });
   };
@@ -144,8 +151,7 @@ export function registerGitIpc(): void {
       if (res.code !== 0) return gitFailure(res);
       return { success: true };
     } catch (err) {
-      log.error(`[git-ipc] git:unstage failed: ${err instanceof Error ? err.message : String(err)}`);
-      return { success: false, error: "git-error", message: String(err instanceof Error ? err.message : err) };
+      return gitCatchResp("git:unstage", err);
     }
   });
 
@@ -160,8 +166,7 @@ export function registerGitIpc(): void {
       if (res.code !== 0) return gitFailure(res);
       return { success: true };
     } catch (err) {
-      log.error(`[git-ipc] git:commit failed: ${err instanceof Error ? err.message : String(err)}`);
-      return { success: false, error: "git-error", message: String(err instanceof Error ? err.message : err) };
+      return gitCatchResp("git:commit", err);
     }
   });
 }

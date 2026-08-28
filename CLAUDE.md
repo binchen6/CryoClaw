@@ -250,6 +250,6 @@ For comprehensive design guidelines, please refer to:
 
 ## Common Gotchas
 
-See [docs/gotchas.md](docs/gotchas.md) for the full list (29 items covering packaging, signing, config, tooltip, design tokens, etc.).
+See [docs/gotchas.md](docs/gotchas.md) for the full list (70+ items covering packaging, signing, config, tooltip, design tokens, etc. — the numbered list in gotchas.md is the source of truth).
 
 When you encounter a non-trivial problem and find a working solution, add it to `docs/gotchas.md` so future developers don't repeat the same investigation.

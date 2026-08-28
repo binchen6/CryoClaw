@@ -577,6 +577,8 @@ export interface MemorySaveParams {
   embeddingEnabled?: boolean;
   /** embedding 走本地 auth proxy 时的代理端口（主进程提供）；<=0 时不写 memorySearch */
   proxyPort?: number;
+  /** auth proxy 回环鉴权 path secret（主进程提供，随 proxyPort 返回） */
+  proxySecret?: string;
 }
 
 /** 移植自 settings:save-memory-config + ensureMemorySearchProxyConfig */
@@ -593,13 +595,14 @@ export function applyMemorySave(draft: Record<string, unknown>, params: MemorySa
   const defaults = ensureRecord(agents, "defaults");
   if (params.embeddingEnabled === true) {
     const proxyPort = params.proxyPort ?? 0;
+    const proxySecret = params.proxySecret ?? "";
     if (proxyPort > 0) {
       const ms = ensureRecord(defaults, "memorySearch");
       const remote = ensureRecord(ms, "remote");
       ms.enabled = true;
       ms.provider = "openai";
       ms.model = KIMI_EMBEDDING_MODEL;
-      remote.baseUrl = `http://127.0.0.1:${proxyPort}/coding/v1/`;
+      remote.baseUrl = `http://127.0.0.1:${proxyPort}${proxySecret ? `/${proxySecret}` : ""}/coding/v1/`;
       remote.apiKey = "proxy-managed";
     }
   } else if (params.embeddingEnabled === false && isRecord(defaults.memorySearch)) {

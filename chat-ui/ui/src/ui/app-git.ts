@@ -38,6 +38,8 @@ export function renderGitView(state: AppViewState) {
     selectedFile: state.gitSelectedFile,
     diffFiles: state.gitDiffFiles,
     diffLoading: state.gitDiffLoading,
+    statusTruncated: state.gitStatusTruncated,
+    diffTruncated: state.gitDiffTruncated,
     busyPaths: state.gitBusyPaths,
     commitMessage: state.gitCommitMessage,
     committing: state.gitCommitting,

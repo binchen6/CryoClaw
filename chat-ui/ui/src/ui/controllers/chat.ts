@@ -284,8 +284,9 @@ export async function sendChatMessage(
   // 文件附件：逐个读本地文件转 base64 走 apiAttachments（type:"file"，内核 offload 到
   // media store，transcript 落 MediaPaths，刷新后附件卡片不丢）；读取失败/超过 16MB
   // 上限的降级为旧版文本前缀（路径拼进消息文本），不阻断发送。
-  const filePaths = fileAttachments.map((a) => a.filePath!);
-  // 乐观气泡 MediaTypes 与 MediaPaths 平行（降级文件 mime 未知记空串）
+  // 乐观气泡 MediaPaths/MediaTypes 只含成功编码进 apiAttachments 的文件（平行数组）；
+  // 降级进文本前缀的文件不进 MediaPaths——否则同一路径既出现在文本前缀又渲染附件卡片。
+  const echoMediaPaths: string[] = [];
   const echoMediaTypes: string[] = [];
   const fileApiAttachments: Array<{
     type: "file";
@@ -314,16 +315,15 @@ export async function sendChatMessage(
           fileName: displayName,
           content: res.base64,
         });
+        echoMediaPaths.push(p);
         echoMediaTypes.push(res.mimeType);
       } else {
         // too-large/累计帧预算超限等：降级文本前缀
         degradedFilePaths.push(p);
-        echoMediaTypes.push("");
         showToastGlobal(t("chat.attachmentFallbackPath").replace("{name}", displayName));
       }
     } catch {
       degradedFilePaths.push(p);
-      echoMediaTypes.push("");
       showToastGlobal(t("chat.attachmentFallbackPath").replace("{name}", displayName));
     }
   }
@@ -365,7 +365,7 @@ export async function sendChatMessage(
     role: "user",
     content: contentBlocks,
     timestamp: now,
-    ...(hasFiles ? { MediaPaths: [...filePaths], MediaTypes: [...echoMediaTypes] } : {}),
+    ...(hasFiles && echoMediaPaths.length > 0 ? { MediaPaths: [...echoMediaPaths], MediaTypes: [...echoMediaTypes] } : {}),
   };
   state.chatMessages = [...state.chatMessages, echoMessage];
   state.chatVisibleMessageCount = state.chatMessages.length;

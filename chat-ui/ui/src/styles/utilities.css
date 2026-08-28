@@ -14,7 +14,6 @@
 .oc-justify-end { justify-content: flex-end }
 
 /* 间隙（gap 同时适用 flex/grid） */
-.oc-gap-4 { gap: var(--spacer-4) }
 .oc-gap-6 { gap: var(--spacer-6) }
 .oc-gap-8 { gap: var(--spacer-8) }
 .oc-gap-12 { gap: var(--spacer-12) }
@@ -26,7 +25,6 @@
 .oc-mt-6 { margin-top: var(--spacer-6) }
 .oc-mt-8 { margin-top: var(--spacer-8) }
 .oc-mt-12 { margin-top: var(--spacer-12) }
-.oc-mt-16 { margin-top: var(--spacer-16) }
 .oc-mt-24 { margin-top: var(--spacer-24) }
 .oc-mb-6 { margin-bottom: var(--spacer-6) }
 .oc-mb-8 { margin-bottom: var(--spacer-8) }

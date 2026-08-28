@@ -11,20 +11,6 @@ export function formatMs(ms?: number | null): string {
   return new Date(ms).toLocaleString();
 }
 
-export function formatList(values?: Array<string | null | undefined>): string {
-  if (!values || values.length === 0) {
-    return "none";
-  }
-  return values.filter((v): v is string => Boolean(v && v.trim())).join(", ");
-}
-
-export function clampText(value: string, max = 120): string {
-  if (value.length <= max) {
-    return value;
-  }
-  return `${value.slice(0, Math.max(0, max - 1))}…`;
-}
-
 export function truncateText(
   value: string,
   max: number,
@@ -46,13 +32,6 @@ export function truncateText(
 export function toNumber(value: string, fallback: number): number {
   const n = Number(value);
   return Number.isFinite(n) ? n : fallback;
-}
-
-export function parseList(input: string): string[] {
-  return input
-    .split(/[,\n]/)
-    .map((v) => v.trim())
-    .filter((v) => v.length > 0);
 }
 
 export function stripThinkingTags(value: string): string {

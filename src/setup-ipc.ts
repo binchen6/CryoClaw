@@ -14,7 +14,7 @@ import {
 import * as log from "./logger";
 import { installCli, uninstallCli } from "./cli-integration";
 import { saveKimiSearchConfig, ensureMemorySearchProxyConfig } from "./kimi-config";
-import { startAuthProxy, setProxyAccessToken, getProxyPort } from "./kimi-auth-proxy";
+import { startAuthProxy, setProxyAccessToken, getProxyPort, getProxySecret } from "./kimi-auth-proxy";
 import {
   detectExistingInstallation,
   killPortProcess,
@@ -205,7 +205,7 @@ export function registerSetupIpc(deps: SetupIpcDeps): void {
       setProxyAccessToken(params.apiKey);
     }
     return runTrackedSetupAction("verify_key", { provider }, async () =>
-      verifyProvider({ ...params, proxyPort: getProxyPort() }));
+      verifyProvider({ ...params, proxyPort: getProxyPort(), proxySecret: getProxySecret() }));
   });
 
   // ── 保存配置到 ~/.openclaw/openclaw.json ──
@@ -251,7 +251,7 @@ export function registerSetupIpc(deps: SetupIpcDeps): void {
         // kimi-code 联动：启用搜索插件 + 记忆搜索 embedding（真实 key 已由前端写 sidecar）
         if (kimiCode) {
           saveKimiSearchConfig(config, { enabled: true });
-          ensureMemorySearchProxyConfig(config, getProxyPort());
+          ensureMemorySearchProxyConfig(config, getProxyPort(), getProxySecret());
         }
 
         // 统一 gateway 鉴权配置：local 模式 + 持久化 token（单一真相源）

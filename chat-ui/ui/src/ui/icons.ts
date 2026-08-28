@@ -140,18 +140,3 @@ export type IconName = keyof typeof icons;
 export function icon(name: IconName): TemplateResult {
   return icons[name];
 }
-
-// Legacy function for compatibility
-export function renderEmojiIcon(
-  iconContent: string | TemplateResult,
-  className: string,
-): TemplateResult {
-  return html`<span class=${className} aria-hidden="true">${iconContent}</span>`;
-}
-
-export function setEmojiIcon(target: HTMLElement | null, icon: string): void {
-  if (!target) {
-    return;
-  }
-  target.textContent = icon;
-}

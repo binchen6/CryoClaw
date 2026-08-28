@@ -16,6 +16,14 @@ const MAX_LOG_BYTES_TOTAL = 8 * 1024 * 1024;
 
 const SENSITIVE_KEY_PATTERN = /(apikey|api_key|token|secret|password|credential|auth)/i;
 
+// 回环代理 URL 里的 path secret（kimi-auth-proxy）：http://127.0.0.1:<port>/<secret>/...
+// secret 嵌在 baseUrl 值里、键名不敏感，需按值定向打码（诊断包是用户外发件）
+const LOOPBACK_SECRET_PATTERN = /(127\.0\.0\.1:\d+\/)[A-Za-z0-9_-]{8,}(?=\/|$)/g;
+
+function redactStringValue(value: string): string {
+  return value.replace(LOOPBACK_SECRET_PATTERN, "$1***");
+}
+
 // 递归脱敏：敏感键的值替换为 "***"；数组/对象递归处理
 export function redactSensitiveValues(input: unknown): unknown {
   if (Array.isArray(input)) {
@@ -32,16 +40,18 @@ export function redactSensitiveValues(input: unknown): unknown {
     }
     return out;
   }
+  if (typeof input === "string") {
+    return redactStringValue(input);
+  }
   return input;
 }
 
-function readLogEntries(logsDir: string): Record<string, Uint8Array> {
+async function readLogEntries(logsDir: string): Promise<Record<string, Uint8Array>> {
   const out: Record<string, Uint8Array> = {};
   let total = 0;
   let files: string[] = [];
   try {
-    files = fs
-      .readdirSync(logsDir, { withFileTypes: true })
+    files = (await fs.promises.readdir(logsDir, { withFileTypes: true }))
       .filter((e) => e.isFile())
       .map((e) => e.name)
       .sort();
@@ -52,7 +62,7 @@ function readLogEntries(logsDir: string): Record<string, Uint8Array> {
     if (total >= MAX_LOG_BYTES_TOTAL) break;
     try {
       const full = path.join(logsDir, name);
-      const buf = fs.readFileSync(full);
+      const buf = await fs.promises.readFile(full);
       const budget = Math.min(MAX_LOG_BYTES_PER_FILE, MAX_LOG_BYTES_TOTAL - total);
       const slice = buf.length > budget ? buf.subarray(buf.length - budget) : buf;
       out[`logs/${name}`] = new Uint8Array(slice);
@@ -83,9 +93,9 @@ function buildEnvironmentInfo(): string {
   );
 }
 
-function buildSanitizedConfigSummary(): string {
+async function buildSanitizedConfigSummary(): Promise<string> {
   try {
-    const raw = fs.readFileSync(resolveUserConfigPath(), "utf-8");
+    const raw = await fs.promises.readFile(resolveUserConfigPath(), "utf-8");
     const parsed = JSON.parse(raw);
     return JSON.stringify(redactSensitiveValues(parsed), null, 2);
   } catch (err) {
@@ -102,22 +112,22 @@ export async function exportDiagnosticsBundle(targetZipPath: string): Promise<vo
   const stateDir = resolveUserStateDir();
   const files: Record<string, Uint8Array> = {
     "environment.json": new Uint8Array(Buffer.from(buildEnvironmentInfo(), "utf-8")),
-    "openclaw-config.redacted.json": new Uint8Array(Buffer.from(buildSanitizedConfigSummary(), "utf-8")),
-    ...readLogEntries(resolveLogsDir()),
+    "openclaw-config.redacted.json": new Uint8Array(Buffer.from(await buildSanitizedConfigSummary(), "utf-8")),
+    ...(await readLogEntries(resolveLogsDir())),
   };
   // 兼容期：旧根路径日志若仍存在（未迁移/迁移后遗留），一并纳入
   for (const legacy of ["app.log", "gateway.log"]) {
     try {
       const p = path.join(stateDir, legacy);
-      if (fs.existsSync(p) && !files[`logs/${legacy}`]) {
-        const buf = fs.readFileSync(p);
+      if (!files[`logs/${legacy}`]) {
+        const buf = await fs.promises.readFile(p);
         files[`logs/legacy-${legacy}`] = new Uint8Array(
           buf.length > MAX_LOG_BYTES_PER_FILE ? buf.subarray(buf.length - MAX_LOG_BYTES_PER_FILE) : buf,
         );
       }
     } catch {}
   }
-  fs.mkdirSync(path.dirname(targetZipPath), { recursive: true });
+  await fs.promises.mkdir(path.dirname(targetZipPath), { recursive: true });
   // 异步压缩 + 异步写盘：最坏 ~10MB 的同步 zip 会冻结主进程数秒，所有 IPC 停摆
   const zipped = await new Promise<Uint8Array>((resolve, reject) => {
     zip(files, { level: 6 }, (err, data) => (err ? reject(err) : resolve(data)));

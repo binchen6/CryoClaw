@@ -220,11 +220,6 @@ export function formatToolDetail(display: ToolDisplay): string | undefined {
   return parts.join(" · ");
 }
 
-export function formatToolSummary(display: ToolDisplay): string {
-  const detail = formatToolDetail(display);
-  return detail ? `${display.label}: ${detail}` : display.label;
-}
-
 function shortenHomeInString(input: string): string {
   if (!input) {
     return input;

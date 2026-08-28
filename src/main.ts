@@ -57,20 +57,14 @@ import { migrateOpenclawConfigForKernelUpgrade } from "./openclaw-config-migrati
 import { assertTrustedIpcSender } from "./ipc-sender-guard";
 import { isSafeOpenExt } from "./safe-open";
 import { evaluateFileReadTarget, FILE_READ_MAX_BYTES, mimeTypeForPath } from "./file-read-base64";
-import { startAuthProxy, stopAuthProxy, setProxyAccessToken, setProxySearchDedicatedKey, getProxyPort } from "./kimi-auth-proxy";
+import { startAuthProxy, stopAuthProxy, setProxyAccessToken, setProxySearchDedicatedKey, getProxyPort, getProxySecret } from "./kimi-auth-proxy";
 import { importOpenclawStateFromArchive, validateOpenclawStateArchive } from "./openclaw-state-archive";
 import { syncOpenClawStateAfterWrite } from "./openclaw-health-state";
 import { createOpenclawStateImportLifecycle } from "./openclaw-state-import-lifecycle";
 import { reconcileHostStateAfterOpenclawImport } from "./openclaw-state-import-host-reconcile";
 import * as log from "./logger";
 import * as analytics from "./analytics";
-
-// Electron console-message 的 legacy 数字 level 语义是 0-3（verbose/info/warning/error）
-// （gotcha #47）。此前的 LOG/WARNING/ERROR/DEBUG/INFO 标注是错误版本。
-function formatConsoleLevel(level: number): string {
-  const map = ["VERBOSE", "INFO", "WARNING", "ERROR"];
-  return map[level] ?? `LEVEL_${level}`;
-}
+import { formatConsoleLevel } from "./console-level";
 
 // 过滤渲染层高频日志，避免 onEvent/request 等每秒数百次的消息阻塞主进程
 function isNoisyRendererConsoleMessage(message: string): boolean {
@@ -567,18 +561,38 @@ function parseProxyPortFromConfig(): number {
   return 0;
 }
 
-// 确保 config 中 kimi-coding 指向代理（仅端口变化时写入）
+// 确保 config 中 kimi-coding 指向代理（仅端口/secret 变化时写入）
 function ensureProxyConfig(proxyPort: number): void {
   try {
     const config = readUserConfig();
     const provider = config?.models?.providers?.["kimi-coding"];
     if (!provider) return;
 
-    const expectedBase = `http://127.0.0.1:${proxyPort}/coding`;
+    const proxyBase = `http://127.0.0.1:${proxyPort}/${getProxySecret()}`;
+    const expectedBase = `${proxyBase}/coding`;
     // memorySearch embedding 也走同一个代理
-    const memorySearchChanged = ensureMemorySearchProxyConfig(config, proxyPort);
+    const memorySearchChanged = ensureMemorySearchProxyConfig(config, proxyPort, getProxySecret());
 
-    if (provider.baseUrl === expectedBase && provider.apiKey === "proxy-managed" && !memorySearchChanged) return;
+    // kimi-search 插件端点同步必须在 early-return 之前：setup 保存会显式删 entry.config，
+    // 若 baseUrl 恰好匹配而早退，端点整场缺席（插件回退内置默认端点直连上游、绕过代理），
+    // 直到下次启动 secret 轮换才自愈
+    const searchEntry = config?.plugins?.entries?.["kimi-search"];
+    let searchChanged = false;
+    if (searchEntry && typeof searchEntry === "object") {
+      searchEntry.config ??= {};
+      const wantSearch = `${proxyBase}/coding/v1/search`;
+      const wantFetch = `${proxyBase}/coding/v1/fetch`;
+      if (searchEntry.config.search?.baseUrl !== wantSearch) {
+        searchEntry.config.search = { baseUrl: wantSearch };
+        searchChanged = true;
+      }
+      if (searchEntry.config.fetch?.baseUrl !== wantFetch) {
+        searchEntry.config.fetch = { baseUrl: wantFetch };
+        searchChanged = true;
+      }
+    }
+
+    if (provider.baseUrl === expectedBase && provider.apiKey === "proxy-managed" && !memorySearchChanged && !searchChanged) return;
 
     // 首次迁移：真实 apiKey 存入 sidecar（非 OAuth 用户 + 有效 key）
     if (provider.apiKey && provider.apiKey !== "proxy-managed" && !loadOAuthToken()) {
@@ -588,16 +602,8 @@ function ensureProxyConfig(proxyPort: number): void {
     provider.baseUrl = expectedBase;
     provider.apiKey = "proxy-managed";
 
-    // 同步 kimi-search 插件端点到代理（默认端点在 /coding/v1/ 路径下）
-    const searchEntry = config?.plugins?.entries?.["kimi-search"];
-    if (searchEntry && typeof searchEntry === "object") {
-      searchEntry.config ??= {};
-      searchEntry.config.search = { baseUrl: `http://127.0.0.1:${proxyPort}/coding/v1/search` };
-      searchEntry.config.fetch = { baseUrl: `http://127.0.0.1:${proxyPort}/coding/v1/fetch` };
-    }
-
     writeUserConfig(config);
-    log.info(`[auth-proxy] config updated: baseUrl → 127.0.0.1:${proxyPort}`);
+    log.info(`[auth-proxy] config updated: baseUrl → 127.0.0.1:${proxyPort}/<secret>`);
   } catch (err: any) {
     log.error(`[auth-proxy] ensureProxyConfig failed: ${err.message}`);
   }

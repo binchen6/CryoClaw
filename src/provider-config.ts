@@ -169,8 +169,9 @@ export function verifyGoogle(apiKey: string): Promise<void> {
 }
 
 // Kimi Code 验证：始终通过本地 auth proxy（proxy 自动注入 OAuth token）
-export function verifyKFC(proxyPort: number, modelID?: string): Promise<void> {
-  return jsonRequest(`http://127.0.0.1:${proxyPort}/coding/v1/messages`, {
+// proxySecret：回环鉴权路径段（kimi-auth-proxy），拼进 URL 路径
+export function verifyKFC(proxyPort: number, proxySecret: string, modelID?: string): Promise<void> {
+  return jsonRequest(`http://127.0.0.1:${proxyPort}/${proxySecret}/coding/v1/messages`, {
     method: "POST",
     headers: {
       "anthropic-version": "2023-06-01",
@@ -343,6 +344,7 @@ type VerifyProviderParams = {
   secret?: string;
   customPreset?: string;
   proxyPort?: number;
+  proxySecret?: string;
 };
 
 export type VerifyProviderResult = {
@@ -361,7 +363,7 @@ function resolveImageProbeConfig(params: VerifyProviderParams): {
   baseURL?: string;
   auth: ImageProbeAuth;
 } | null {
-  const { provider, baseURL, subPlatform, apiType, customPreset, proxyPort } = params;
+  const { provider, baseURL, subPlatform, apiType, customPreset, proxyPort, proxySecret } = params;
 
   if (provider === "anthropic") {
     return { apiType: "anthropic-messages", baseURL: PROVIDER_PRESETS.anthropic.baseUrl, auth: "x-api-key" };
@@ -374,7 +376,7 @@ function resolveImageProbeConfig(params: VerifyProviderParams): {
   }
   if (provider === "moonshot") {
     if (subPlatform === "kimi-code") {
-      return { apiType: "anthropic-messages", baseURL: proxyPort ? `http://127.0.0.1:${proxyPort}/coding` : undefined, auth: "none" };
+      return { apiType: "anthropic-messages", baseURL: proxyPort ? `http://127.0.0.1:${proxyPort}${proxySecret ? `/${proxySecret}` : ""}/coding` : undefined, auth: "none" };
     }
     const sub = MOONSHOT_SUB_PLATFORMS[subPlatform || "moonshot-cn"] || MOONSHOT_SUB_PLATFORMS["moonshot-cn"];
     return { apiType: sub.api, baseURL: sub.baseUrl, auth: sub.api === "anthropic-messages" ? "x-api-key" : "bearer" };
@@ -429,6 +431,7 @@ export async function verifyProvider(
     clientSecret,
     customPreset,
     proxyPort,
+    proxySecret,
   } = params;
   try {
     switch (provider) {
@@ -444,7 +447,7 @@ export async function verifyProvider(
       case "moonshot":
         if (subPlatform === "kimi-code") {
           if (!proxyPort || proxyPort <= 0) throw new Error("Kimi Code auth proxy not running");
-          await verifyKFC(proxyPort, modelID);
+          await verifyKFC(proxyPort, proxySecret ?? "", modelID);
         } else {
           await verifyMoonshot(apiKey!, subPlatform);
         }

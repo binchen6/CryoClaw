@@ -85,9 +85,10 @@ P5 起 tokens-ext 的 `:root` 默认值为**浅色**（原暗色默认值导致�
 ### 2.5 间距原子类（`styles/utilities.css`，P5 新增）
 
 视图 TS 中零散的间距需求（原来散落的 `style="margin-top:12px"` 之类）一律用
-`oc-mt-{n}` / `oc-mb-{n}` / `oc-m-0` / `oc-gap-{n}` / `oc-flex(-col)` /
+`styles/utilities.css` 中**实际定义**的原子类——当前为 `oc-mt-{4,6,8,12,24}` /
+`oc-mb-{…}` / `oc-m-0` / `oc-gap-{6,8,12,16}` / `oc-flex(-col)` /
 `oc-items-start` / `oc-justify-end` / `oc-ml-auto` / `oc-p-16`，值走 `--spacer`
-阶梯。功能性样式（尺寸、颜色、定位、动态值）不适用，仍写 CSS 块或保留内联。
+阶梯（以文件现行集合为准，死类会清理）。功能性样式（尺寸、颜色、定位、动态值）不适用，仍写 CSS 块或保留内联。
 
 ## 3. 主题与配色使用
 

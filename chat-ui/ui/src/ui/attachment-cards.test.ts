@@ -30,9 +30,9 @@ test("controllers/chat.ts：文件附件走 readFileBase64 → apiAttachments ty
   assert.match(s, /"base64" in res/, "应按 base64 字段判定成功/超限结构");
 });
 
-test("controllers/chat.ts：乐观气泡挂 MediaPaths/MediaTypes（与 history 同构）", () => {
+test("controllers/chat.ts：乐观气泡挂 MediaPaths/MediaTypes（仅成功编码文件，与 history 同构）", () => {
   const s = src("controllers/chat.ts");
-  assert.match(s, /MediaPaths:\s*\[\.\.\.filePaths\]/, "乐观气泡应挂 MediaPaths");
+  assert.match(s, /MediaPaths:\s*\[\.\.\.echoMediaPaths\]/, "乐观气泡应挂 MediaPaths（仅成功编码文件）");
   assert.match(s, /MediaTypes:\s*\[\.\.\.echoMediaTypes\]/, "乐观气泡应挂平行 MediaTypes");
 });
 

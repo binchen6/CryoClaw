@@ -146,8 +146,10 @@ async function saveProviderFragment(apiKey: string, modelID: string, supportsIma
   if (isKimiCode) {
     const sidecar = await ipc.settingsWriteKimiApiKey({ apiKey });
     const proxyPort = sidecar?.proxyPort ?? 0;
+    const proxySecret = sidecar?.proxySecret ?? "";
     effectiveApiKey = "proxy-managed";
-    effectiveTarget = { ...target, baseUrl: `http://127.0.0.1:${proxyPort}/coding` };
+    // baseUrl 必须带 path secret（回环鉴权，见主进程 kimi-auth-proxy）
+    effectiveTarget = { ...target, baseUrl: `http://127.0.0.1:${proxyPort}${proxySecret ? `/${proxySecret}` : ""}/coding` };
   }
   const providerConfig = buildProviderConfigForAdd(effectiveTarget, effectiveApiKey, entry);
   await ipc.saveConfig({

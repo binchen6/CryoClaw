@@ -10,9 +10,9 @@
 面向国内生态（Kimi / Moonshot / 飞书 / 企微 / 微信 / 钉钉 / QQ）。
 
 **当前状态**：
-- 重设计工程 **R1–R38 全部完成**，最新发版 **v2026.828.1**（R38 设计 token 现代化+对话页布局重构；v2026.828.0：R37）。
+- 重设计工程 **R1–R39 全部完成**（二期 P1–P7 收官），最新发版 **v2026.828.2**（R39 屎山清理/健壮性/效率收尾；v2026.828.1：R38）。
 - 内核 openclaw **2026.7.1-2**（版本 pin 在 package.json `cryoclaw.openclaw`）；**Electron 43.4.0**（audit 0 漏洞）。
-- 测试基线 **641 pass / 0 fail / 4 skipped**（vitest 94 + node 121 + chat-ui 374 + scripts 52；0 fail 为硬指标）。
+- 测试基线 **650 pass / 0 fail / 4 skipped**（vitest 94 + node 130 + chat-ui 374 + scripts 52；0 fail 为硬指标）。
 - 重复率 **1.08%**（73 clones，阈值 5%，`npm run dupcheck` 防回退）。
 - 开源：GitHub `binchen6/CryoClaw`（AGPL-3.0-only，干净历史）；发版走本地 `dist:win` + `gh release`；CI `tests.yml` 每次 push/PR 全量回归。
 
@@ -282,6 +282,22 @@
 - **事故教训（gotchas #71）**：utilities.css 头注释写 `oc-items-*`（含 `*/`）致注释提前闭合，esbuild 打包后 base/primitives 整段嵌进 `.oc-flex-col{}`——body margin:0 丢失、全局偏移 8px+横向溢出 23px；构建退出码正常，靠产物 head 断言+截图发现。
 - **验证**：`npm run build` + `tsc --noEmit` + 全量测试 641 全绿（新增 0，设计类改动以截图为准）；CDP 截图冒烟 10 场景（light/dark × 1280/800 宽 + hero × 双主题双宽 + settings 远程控制/关于页），无横向溢出、无裸 i18n 键、无裸 hex 违和。
 - **记录在案（P7 候选）**：800×600 极限高度 + webbridge 未连接（大 pill 态）时侧边栏底部 pill 遮会话搜索框（同状态未截 baseline 对照，由 sidebar.css 本轮未变更推定既有）；显式暗色+浅色 OS 的首帧浅色闪（见上）；design-guidelines-en.md 未同步 P5 新 token 体系（双语 drift，P6 前补译或标注滞后）；CLAUDE.md 的 gotchas 计数（29 items）早已失真未同步。
+
+### R39 · 收尾：屎山清理/健壮性/效率（完成，随 v2026.828.2 发版；二期 P7）
+
+用户指令：清理屎山代码和历史遗留、提高健壮性与运行效率。explore 全仓审计（21 项核销表+新发现 sweep，无 P0）→ coder 实施 21/21 → 审查代理复审（无 blocker；M1/M2 发版前修，m1/m2/m4/n1/n5 顺手修）：
+- **kimi-auth-proxy 回环鉴权**（积压中风险项闭环）：path secret 方案（内核零改动约束下 header 不可行）——启动期 `crypto.randomBytes(24)` base64url、会话内稳定（重启代理不复位，有测试钉住）；`extractSecuredPath` 校验剥离前缀，无/错 secret 一律 401 先于路由；16 条消费路径逐一核实带 secret（config provider baseUrl/memorySearch/kimi-search 端点/verifyKFC/图片探测/setup/settings IPC/chat-ui 5 处 URL 构建点）；日志打码。**审查 M1 修复**：ensureProxyConfig early-return 原会跳过 kimi-search 端点同步（setup 删 entry.config 后端点整场缺席到下次启动），端点同步提前并纳入新鲜度判断。**审查 m1 修复**：诊断包脱敏对回环代理 URL 的 secret 段按值打码（`redactSensitiveValues` 字符串值走 `127.0.0.1:<port>/<seg>/` 定向替换）。
+- **行尾统一**（积压项闭环）：settings/components/misc.css 混排归一 CRLF + 新增 .gitattributes（css=crlf、ts/js/md=lf）；**审查 M2**：`git add --renormalize .` 一次性全仓归一独立提交（否则 ~400 个既有 CR blob 是后续每个提交的 churn 定时炸弹）。
+- **diagnostics-export 全异步**：readdirSync/readFileSync/existsSync/mkdirSync → fs.promises（主进程不再因同步读盘卡顿，积压项闭环）。
+- **附件降级双重呈现修复**：乐观气泡 MediaPaths 只收成功编码文件（echoMediaPaths 平行数组），降级文件仅文本前缀——气泡与 history 同构。
+- **workspace open-folder/list-dir 补 realpath 复核**（与 open-file/read-file 的 guardRealPath 对齐，symlink 信息泄漏面收敛）。
+- **git 面板打磨**：truncated 入 state + status/diff 区提示（i18n 双份）；selectGitFile 收起/切仓库补 `++diffSeq`（在途响应失效）；ENOENT 竞态归 no-git 且带 message（审查 m2）；diff removed 行 U+2212→ASCII "-"；git.title→「Git 变更/Git Changes」。
+- **i18n/文档**：gc toast 英文片段改插值双语模板；CLAUDE.md gotchas 计数 29→「70+ 以 gotchas.md 为准」；design-guidelines-en.md 补译 P5 全部新 token 章节 + utilities 段落按现行集合修正（双语同步）。
+- **死代码清除 20 处**（逐个 `\b` grep 含测试/scripts 确认）：主进程 7（checkForUpdate/isCliInstalled/isCryoclawSetupComplete/listInstalledBrowsers/uninstallForAllDetectedBrowsers/resolveOfficecliBin/stopAppUpdater）+ chat-ui 13（format×3/presenter×7/tool-display/registry/workspace/icons×2/approval-history）+ utilities.css 2 死类；formatConsoleLevel 抽 src/console-level.ts + 单测（R24 候选闭环）。
+- **杂项**：tokens-ext 删 --bg-content 暗色死声明；sidebar.css 9999px→--radius-full（999px 渲染等价）；website spotlight/磁性 pointermove rAF 合帧 + :active 缩放保留；session-transition 动态 import 补 catch；删除会话 worktree map miss 按 canonical（trim+case）兜底。
+- **审计确认无问题**：主进程无热路径同步 IO、execFileSync 残留全为 dev-only、timer/监听器无泄漏、unhandled rejection 仅一处近零概率（已补 catch）。
+- **测试 +9**：kimi-auth-proxy 4（含真实服务 401/404 + 重启 secret 稳定）、console-level 2、diagnostics-export 3。基线 641→650 全绿。
+- **仍留 backlog**：per-session 队列（产品决策项）；resolveUserStateDir legacy 分歧（用户面风险）；R38 800×600 pill；reduced-motion 局部冗余块；jscpd 两个大 clone（热路径/跨构建根）；零消费 token 储备；refreshGitStatus 成功分支未 bump diffSeq；website pointercancel；ensureProxyConfig 每次启动重写 config（secret 轮换所致，无害记录在案）。
 
 ## 📦 发版与实测经验（套路已验证多次）
 

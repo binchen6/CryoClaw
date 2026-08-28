@@ -130,12 +130,13 @@ export function registerWorkspaceIpc(): void {
   });
 
   // 在 Finder/Explorer 中显示文件所在目录
-  ipcMain.handle("workspace:open-folder", (event, filePath: string) => {
+  ipcMain.handle("workspace:open-folder", async (event, filePath: string) => {
     if (!assertTrustedIpcSender(event, "workspace:open-folder")) throw new Error("IPC sender not trusted");
-    const check = guardPath(filePath);
+    const check = await guardRealPath(filePath);
     if (!check.ok) return check.error;
+    const target = check.target;
     try {
-      shell.showItemInFolder(filePath);
+      shell.showItemInFolder(target);
       return { success: true };
     } catch (err: any) {
       log.error(`workspace:open-folder failed: ${err?.message}`);
@@ -146,23 +147,24 @@ export function registerWorkspaceIpc(): void {
   // 列出目录内容（支持子目录浏览）
   ipcMain.handle("workspace:list-dir", async (event, dirPath: string) => {
     if (!assertTrustedIpcSender(event, "workspace:list-dir")) throw new Error("IPC sender not trusted");
-    const check = guardPath(dirPath);
+    const check = await guardRealPath(dirPath);
     if (!check.ok) return check.error;
+    const target = check.target;
     try {
-      const entries = await fs.promises.readdir(dirPath, { withFileTypes: true });
+      const entries = await fs.promises.readdir(target, { withFileTypes: true });
       const items = entries
         .filter((e) => !e.name.startsWith("."))
         .map((e) => ({
           name: e.name,
           isDir: e.isDirectory(),
-          path: path.join(dirPath, e.name),
+          path: path.join(target, e.name),
         }))
         .sort((a, b) => {
           // 文件夹在前，文件在后；同类型按名称排序
           if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
           return a.name.localeCompare(b.name);
         });
-      return { success: true, data: { items, root: dirPath } };
+      return { success: true, data: { items, root: target } };
     } catch (err: any) {
       log.error(`workspace:list-dir failed: ${err?.message}`);
       return { success: false, message: err?.message ?? String(err) };

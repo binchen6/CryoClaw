@@ -254,6 +254,8 @@ export class OpenClawApp extends LitElement {
     gitSelectedFile: { state: true },
     gitDiffFiles: { state: true },
     gitDiffLoading: { state: true },
+    gitStatusTruncated: { state: true },
+    gitDiffTruncated: { state: true },
     gitCommitMessage: { state: true },
     gitCommitting: { state: true },
     execMode: { state: true },
@@ -440,6 +442,8 @@ export class OpenClawApp extends LitElement {
   gitSelectedFile: string | null = null;
   gitDiffFiles: import("./controllers/git.js").DiffFile[] | null = null;
   gitDiffLoading = false;
+  gitStatusTruncated = false;
+  gitDiffTruncated = false;
   gitCommitMessage = "";
   gitCommitting = false;
 

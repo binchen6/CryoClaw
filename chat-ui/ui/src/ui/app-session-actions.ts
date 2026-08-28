@@ -222,7 +222,19 @@ export async function deleteSessionFromSidebar(state: AppViewState, key: string)
     // 2.5) worktree 会话：附带删除其持有的 worktree（有改动时内核自动快照，可恢复）。
     // 内核 sessions.delete 已对无损 worktree 做过 removeIfLossless，这里兜底有损场景；
     // 已被内核删掉的会让 worktrees.remove 报错，吞掉即可。
-    const ownedWorktree = buildWorktreeSessionMap(state.worktrees ?? []).get(key);
+    const worktreeMap = buildWorktreeSessionMap(state.worktrees ?? []);
+    let ownedWorktree = worktreeMap.get(key);
+    if (!ownedWorktree) {
+      // map miss 兜底：内核 ownerId 记的是 canonical key（规范大小写/空白），
+      // 侧边栏 key 可能与之有大小写差异（如渠道会话），按 canonical 形式再查一次
+      const canonical = key.trim().toLowerCase();
+      for (const [ownerKey, w] of worktreeMap) {
+        if (ownerKey.trim().toLowerCase() === canonical) {
+          ownedWorktree = w;
+          break;
+        }
+      }
+    }
     if (ownedWorktree) {
       try {
         await state.client.request("worktrees.remove", { id: ownedWorktree.id });

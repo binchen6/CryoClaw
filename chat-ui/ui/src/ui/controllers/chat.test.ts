@@ -644,8 +644,8 @@ async function testOversizedFileFallsBackToTextPrefix() {
   assert.equal(payload.message, "/tmp/big.bin\n\nbig", "超限文件应降级为路径文本前缀");
   assert.equal(payload.attachments, undefined, "降级后不再有 apiAttachments");
   const echo = state.chatMessages[0] as Record<string, unknown>;
-  assert.deepEqual(echo.MediaPaths, ["/tmp/big.bin"]);
-  assert.deepEqual(echo.MediaTypes, [""], "降级文件 mime 未知记空串");
+  assert.equal(echo.MediaPaths, undefined, "降级文件不进 MediaPaths（文本前缀已呈现，避免双重呈现）");
+  assert.equal(echo.MediaTypes, undefined, "降级文件不进 MediaTypes");
 }
 
 // 发送失败：错误卡带 resendAttachments（重发不丢附件）。
@@ -708,8 +708,8 @@ async function testCumulativeFrameBudgetDegradesLaterFiles() {
     "累计预算超限的后续文件应降级文本前缀",
   );
   const echo = state.chatMessages[0] as Record<string, unknown>;
-  assert.deepEqual(echo.MediaPaths, ["/tmp/big.bin", "/tmp/small.txt"]);
-  assert.deepEqual(echo.MediaTypes, ["application/octet-stream", ""]);
+  assert.deepEqual(echo.MediaPaths, ["/tmp/big.bin"], "乐观气泡 MediaPaths 只含成功编码的文件");
+  assert.deepEqual(echo.MediaTypes, ["application/octet-stream"], "降级文件不占 MediaTypes 槽位");
 }
 
 async function main() {

@@ -26,6 +26,9 @@ export type GitPanelProps = {
   selectedFile: string | null;
   diffFiles: DiffFile[] | null;
   diffLoading: boolean;
+  /** status/diff 被主进程截断（buffer 上限）时显示提示行 */
+  statusTruncated: boolean;
+  diffTruncated: boolean;
   busyPaths: ReadonlySet<string>;
   commitMessage: string;
   committing: boolean;
@@ -64,7 +67,11 @@ function renderDiff(props: GitPanelProps) {
   if (!files || files.length === 0) {
     return html`<div class="gitp-diff__placeholder">${t("git.diffEmpty")}</div>`;
   }
-  return files.map((f) => {
+  return html`
+    ${props.diffTruncated
+      ? html`<div class="gitp-diff__placeholder gitp-diff__truncated">${t("git.diffTruncated")}</div>`
+      : nothing}
+    ${files.map((f) => {
     const displayPath = f.newPath ?? f.oldPath ?? "";
     return html`
       <div class="gitp-diff-file">
@@ -82,7 +89,7 @@ function renderDiff(props: GitPanelProps) {
                     ${h.lines.map(
                       (line) => html`
                         <div class="gitp-diff__line gitp-diff__line--${line.kind}"
-                          ><span class="gitp-diff__sign">${line.kind === "added" ? "+" : line.kind === "removed" ? "−" : " "}</span
+                          ><span class="gitp-diff__sign">${line.kind === "added" ? "+" : line.kind === "removed" ? "-" : " "}</span
                           >${line.text}${line.noNewlineAfter
                             ? html`<span class="gitp-diff__nonewline">⏎ ${t("git.noNewline")}</span>`
                             : nothing}</div
@@ -94,7 +101,8 @@ function renderDiff(props: GitPanelProps) {
               `}
       </div>
     `;
-  });
+    })}
+  `;
 }
 
 function renderFileRow(
@@ -271,6 +279,10 @@ export function renderGitPanel(props: GitPanelProps) {
         : props.repoState === "ok" && groups && !hasChanges
           ? html`<p class="gitp-empty panel__empty">${t("git.clean")}</p>`
           : nothing}
+
+      ${props.repoState === "ok" && props.statusTruncated
+        ? html`<div class="callout info">${t("git.statusTruncated")}</div>`
+        : nothing}
 
       ${groups ? renderGroup(props, "staged", groups.staged) : nothing}
       ${groups ? renderGroup(props, "unstaged", groups.unstaged) : nothing}

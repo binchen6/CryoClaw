@@ -10,7 +10,7 @@
    ============================================ */
 
 .btn {
-  border-radius: 9999px !important;
+  border-radius: var(--radius-full) !important;
 }
 
 .btn.primary {
@@ -139,7 +139,7 @@
   gap: var(--spacer-8);
   width: 100%;
   padding: var(--spacer-10) var(--spacer-16);
-  border-radius: 9999px;
+  border-radius: var(--radius-full);
   background: transparent;
   border: 1px solid var(--border-strong);
   color: var(--muted);
@@ -175,7 +175,7 @@
   width: 100%;
   margin-top: var(--spacer-8);
   padding: var(--spacer-8) var(--spacer-16);
-  border-radius: 9999px;
+  border-radius: var(--radius-full);
   background: transparent;
   border: 1px dashed var(--border);
   color: var(--muted);

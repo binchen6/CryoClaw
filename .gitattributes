@@ -1,0 +1,6 @@
+# 行尾约定：仓库索引统一 LF；Windows 工作区 CSS 强制 CRLF（与既有工作区主流一致），
+# TS/JS/MD 强制 LF（与索引现状一致，编辑器均兼容）。
+*.css text eol=crlf
+*.ts text eol=lf
+*.js text eol=lf
+*.md text eol=lf

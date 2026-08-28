@@ -237,8 +237,3 @@ export async function resolveApproval(
   await client.request(`${kind}.approval.resolve`, { id, decision });
   recordApprovalResolved(kind, { id, decision, ts: Date.now() });
 }
-
-/** 清空本地缓存（断连/离开设置页时调用） */
-export function resetApprovalHistory() {
-  store.clear();
-}

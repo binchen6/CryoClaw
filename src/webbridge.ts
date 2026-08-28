@@ -301,37 +301,6 @@ export function resolvePlatformBinaryName(
   }
 }
 
-export interface CheckForUpdateOptions {
-  dataDir: string;
-  version?: string;
-  platform?: NodeJS.Platform | string;
-  arch?: string;
-  cdnBaseUrl?: string;
-}
-
-export interface CheckForUpdateResult {
-  upToDate: boolean;
-  remoteEtag: string | null;
-}
-
-export async function checkForUpdate(
-  options: CheckForUpdateOptions,
-): Promise<CheckForUpdateResult> {
-  const platform = options.platform ?? process.platform;
-  const arch = options.arch ?? process.arch;
-  const version = resolveWebbridgeVersion(options.version);
-  const filename = resolvePlatformBinaryName(platform, arch);
-  const base = options.cdnBaseUrl ?? CDN_BASE_URL;
-  const url = `${base}/${version}/releases/${filename}`;
-
-  const head = await httpHead(url);
-  const cache = readCacheManifest(options.dataDir);
-  const upToDate = Boolean(
-    cache && head.etag && cache.etag === head.etag,
-  );
-  return { upToDate, remoteEtag: head.etag };
-}
-
 export interface InstallOptions {
   dataDir?: string;
   binaryPath?: string;

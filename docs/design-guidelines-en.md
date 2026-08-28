@@ -34,13 +34,25 @@ mirrors the current code; the single sources of truth are `shared/design-tokens.
   `--radius-xs/sm/md/lg/xl` (= 4/8/12/16/20), `--radius-pill` (999px).
 - **Spacer scale**: `--spacer-2/3/4/6/8/10/12/16/20/24/32/40/48/64`.
 - **Icon sizes**: `--icon-size-12/14/16/20/24`.
+- **Reading column width**: `--chat-column` (820px — the centered column shared by the
+  message stream, compose box, and dividers).
 - **Font stacks**: `--font-body` (SF Pro Text + PingFang SC fallback), `--font-display`,
   `--mono` (JetBrains Mono family), `--font-meta` = `--mono`; `--font-size-meta: 11px`,
   `--font-size-body: 14px`.
 - **Type scale**: body `--text-2xs/xs/sm/base/lg` (10/11/12/14/18), headings
-  `--heading-xs/sm/md/lg/xl/2xl/3xl` (13/16/20/22/24/28/32).
-- **Motion**: `--ease-out/--ease-in-out/--ease-spring`,
-  `--duration-fast/normal/slow` (0.12/0.2/0.35s), `--transition: 180ms ease`.
+  `--heading-xs/sm/md/lg/xl/2xl/3xl` (13/16/20/22/24/28/32), display (large hero titles
+  on empty states) `--display-sm/md/lg` (26/32/40).
+- **Letter spacing**: `--tracking-display` (-0.03em, display), `--tracking-tight`
+  (-0.02em, headings), `--tracking-body` (-0.011em, body), `--tracking-wide` (0.04em),
+  `--tracking-caps` (0.08em, badges).
+- **Line height**: `--leading-tight/1.25`, `--leading-title/1.35`, `--leading-body/1.55`,
+  `--leading-relaxed/1.7` (assistant body text).
+- **Font weight**: `--weight-regular/medium/semibold/bold` (400/500/600/700).
+- **Motion**: `--ease-out/--ease-in-out/--ease-standard/--ease-spring`, duration scale
+  `--duration-instant/fast/normal/slow/slower` (0.08/0.12/0.2/0.35/0.5s),
+  `--transition: 180ms ease`.
+- **Glass blur**: `--glass-blur-sm/md` (8/16px, pairs with the `--glass-*` backgrounds
+  for backdrop-filter).
 
 ### 2.2 Palette
 
@@ -51,15 +63,24 @@ mirrors the current code; the single sources of truth are `shared/design-tokens.
 
 ### 2.3 Theme variables (light default / dark override)
 
+Since P5, dark is a **first-class citizen**: the two themes are tuned independently at the
+token layer (text contrast, shadow depth, and glass parameters are each defined per
+theme) — dark is not "light plus a patch".
+
 - Backgrounds: `--bg`, `--bg-secondary`, `--bg-elevated`, `--bg-hover`, `--bg-input`,
   `--bg-muted`.
 - Text: `--text`, `--text-strong`, `--text-secondary`, `--text-muted`, `--text-faint`,
   `--text-on-accent`.
-- Borders: `--border`, `--border-strong`, `--border-hover`, `--border-focus`.
+- Borders: `--border`, `--border-strong`, `--border-hover`, `--border-focus`; hairline
+  shortcuts `--hairline` / `--hairline-strong` (1px solid border color).
 - Accent: `--accent` (light = brand-500, dark brightens to brand-400), `--accent-hover`,
-  `--accent-subtle`, `--accent-glow`.
-- Overlay/glass: `--overlay(-heavy)`, `--glass-xs/sm/md/lg`, `--glass-border`.
-- Shadows: `--shadow-sm/md/lg/xl`.
+  `--accent-subtle`, `--accent-glow` (stronger glow in dark to lift the dark scene).
+- Overlay/glass: `--overlay(-heavy)`, `--glass-xs/sm/md/lg`, `--glass-border`
+  (light = dark pressed layer, dark = white lifted layer — two independent parameter sets).
+- Card top highlight: `--highlight-inset` (bright edge in light / faint white edge in
+  dark — key to layering in the dark scene).
+- Shadows: `--shadow-xs/sm/md/lg/xl` (light: low-alpha multi-layer with negative spread;
+  dark: roughly 3× the alpha — deeper and more solid).
 - Dark is defined twice with identical variable sets: `:root[data-theme=dark]` (Chat UI)
   and `@media (prefers-color-scheme: dark)` (standalone-page fallback).
 
@@ -69,6 +90,21 @@ Compat aliases — `--card`, `--popover`, `--panel`, `--ring`, `--focus-ring`,
 `--danger(-muted/-subtle)`, `--accent-2`, `--primary`, `--secondary` — all map onto the
 tokens above. New code should prefer the semantic variables in §2.3; the alias layer exists
 for legacy compatibility, do not expand it.
+
+Since P5, the tokens-ext `:root` defaults are **light** (the old dark defaults caused a
+dark first frame on light systems); dark values are defined through two channels —
+`:root[data-theme=dark]` plus the `prefers-color-scheme: dark` fallback block — so dark
+systems no longer flash white before `data-theme` lands.
+
+### 2.5 Spacing utility classes (`styles/utilities.css`, added in P5)
+
+Incidental spacing needs in view TS (previously scattered `style="margin-top:12px"` and
+the like) always use the utility classes **defined in `styles/utilities.css`** — currently
+`oc-mt-{4,6,8,12,24}` / `oc-mb-{…}` / `oc-m-0` / `oc-gap-{6,8,12,16}` /
+`oc-flex(-col)` / `oc-items-start` / `oc-justify-end` / `oc-ml-auto` / `oc-p-16`, with
+values from the `--spacer` scale (check the file for the live set; dead classes are pruned).
+Functional styles (sizing, colors, positioning, dynamic values) are out of scope — keep
+them in CSS blocks or inline.
 
 ## 3. Theme & color usage
 
@@ -101,9 +137,9 @@ The Switch is not in primitives: use the `<oc-toggle-switch>` component
 ## 5. Style organization
 
 - **The hub `chat-ui/ui/src/styles.css` only `@import`s; cascade order is load-bearing —
-  never reorder casually**: design-tokens → tokens-ext → base → **primitives** → chat /
-  components / panels / sidebar / skills / compose / workspace / cron / misc / panel /
-  plan → (last) **settings → setup**.
+  never reorder casually**: design-tokens → tokens-ext → base → **primitives** →
+  **utilities** → chat / components / panels / sidebar / skills / compose / workspace /
+  cron / misc / panel / plan → (last) **settings → setup**.
 - `styles/settings.css` (settings page) and `styles/setup.css` (setup wizard) were
   extracted in R3B from view-TS inline CSS (adoptedStyleSheets); those used to outrank
   document stylesheets, so they must stay **last** in the import list.

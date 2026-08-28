@@ -101,7 +101,9 @@ export function applySessionKeyTransition(
   }
   void host.loadAssistantIdentity();
   if (host.client && host.connected) {
-    void import("./controllers/chat.ts").then(({ loadChatHistory }) => loadChatHistory(host as ChatState));
+    void import("./controllers/chat.ts")
+      .then(({ loadChatHistory }) => loadChatHistory(host as ChatState))
+      .catch((err) => console.warn("[session-transition] loadChatHistory failed:", err));
   }
   return true;
 }

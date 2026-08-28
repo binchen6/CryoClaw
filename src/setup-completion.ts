@@ -1,5 +1,3 @@
-import { readCryoclawConfig } from "./cryoclaw-config";
-
 // 旧逻辑保留：检查 openclaw.json 的 wizard.lastRunAt（gateway schema 兼容）
 export function isSetupCompleteFromConfig(config: any): boolean {
   if (!config || typeof config !== "object") {
@@ -14,10 +12,4 @@ export function isSetupCompleteFromConfig(config: any): boolean {
     typeof wizard.lastRunAt === "string" &&
     wizard.lastRunAt.trim() !== ""
   );
-}
-
-// 基于 cryoclaw.config.json 判定 Setup 是否完成
-export function isCryoclawSetupComplete(): boolean {
-  const config = readCryoclawConfig();
-  return !!(config?.setupCompletedAt);
 }
