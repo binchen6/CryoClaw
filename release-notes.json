@@ -1,5 +1,12 @@
 [
   {
+    "version": "2026.828.5",
+    "notes": {
+      "zh": "整合：消息流式体验优化第二期——侧边栏重组 + 三组模块整合\n侧边栏：会话列表占纵向主体，主导航 6 项收敛为底部 5 图标轨（任务/工作区/扩展/完整版网页·重连/设置）+「更多」菜单（Worktree 新会话，仅检测到 git 时显示），悬浮提示与实时徽标\n任务：运行记录与定时任务整合为双 tab，任务卡显示来源定时任务名并可跳转，定时任务详情运行记录可链回\n扩展：技能与插件整合为扩展视图双 tab，插件管理从设置页迁出\n工作区：IDE 式融合——左导航（仓库选择/文件树/「Git 变更」节点/Worktrees 区块）+ 右主区（文件预览 | Git 面板），选中 worktree 自动切换 git 仓库上下文\n收敛：视图数量 9→6（合并定时/Worktrees/Git 入口），清理死接线与死键\n测试基线 744 全绿",
+      "en": "Integration: streaming-experience optimization phase 2 — sidebar redesign + three module integrations\nSidebar: session list takes the vertical main area; 6 nav entries consolidated into a bottom 5-icon rail (Tasks / Workspace / Extensions / Full Web UI·Reconnect / Settings) plus a \"More\" menu (New Worktree Session, only when git is detected), with tooltips and live badges\nTasks: run history and scheduled jobs merged into a dual-tab view; cron task cards show their source schedule and can jump to it; scheduled-job details link back to run history\nExtensions: skills and plugins merged into one dual-tab view; plugin management moved out of Settings\nWorkspace: IDE-style fusion — left nav (repo selector / file tree / Git changes node / Worktrees block) + right pane (file preview | Git panel); selecting a worktree switches the git repo context\nConvergence: view count 9→6 (cron/worktrees/git/skills entries merged); dead wiring and dead i18n keys removed\n744-test baseline all green"
+    }
+  },
+  {
     "version": "2026.828.4",
     "notes": {
       "zh": "体验：消息流式全面优化（第一期，参考官方网关网页端做法）——流式期间侧边栏与历史列表不再每帧重渲染（抽出 cc-chat-stream / cc-chat-history / cc-sidebar 三个独立组件隔离）；流式气泡升级为渐进 markdown 渲染（安全前缀切分：稳定段完整渲染、未闭合尾部纯文本，消除半截代码块抖动）；每轮回复结束不再缩回 20 条再逐批补回，消除闪烁与滚动位移\n修复：刷新/恢复盲区 5 处——滞后补拉预算按会话复位（耗尽后不再永久放弃）；重连后未收养的 orphan run 做最多 3 次静默历史探测；看门狗跳过缺时间戳条目继续判定；后台会话（定时任务/渠道）回复结束即时刷新侧边栏且不再覆写最后活跃会话；静默探测不再闪「加载中」\n优化：sessions.changed 事件先本地补丁、结构不符才全量重拉，减少整表请求\n测试基线 716 用例全绿",

@@ -10,10 +10,10 @@
 面向国内生态（Kimi / Moonshot / 飞书 / 企微 / 微信 / 钉钉 / QQ）。
 
 **当前状态**：
-- 重设计工程 **R1–R41 完成**（R41 消息流式体验优化第一期），最新发版 **v2026.828.4**（R41；v2026.828.3：R40 kimi 代理 401 自愈）。第二期（侧边栏重组 + 模块整合）设计已定稿（`docs/specs/2026-08-28-stream-flow-and-sidebar-design.md`），待实施。
+- 重设计工程 **R1–R42 完成**（R42 侧边栏重组 + 三组模块整合），最新发版 **v2026.828.5**（R42；v2026.828.4：R41 消息流式体验优化第一期）。两期设计均落地（`docs/specs/2026-08-28-stream-flow-and-sidebar-design.md`）。
 - 内核 openclaw **2026.7.1-2**（版本 pin 在 package.json `cryoclaw.openclaw`）；**Electron 43.4.0**（audit 0 漏洞）。
-- 测试基线 **716 pass / 0 fail**（vitest 101 + node 130 + chat-ui 433 + scripts 52；0 fail 为硬指标）。
-- 重复率 **1.19%**（79 clones，阈值 5%，`npm run dupcheck` 防回退）。
+- 测试基线 **744 pass / 0 fail**（vitest 101 + node 130 + chat-ui 461 + scripts 52；0 fail 为硬指标）。
+- 重复率 **1.16%**（78 clones，阈值 5%，`npm run dupcheck` 防回退）；视图 id 收敛为 6（chat/setup/settings/workspace/tasks/extensions）。
 - 开源：GitHub `binchen6/CryoClaw`（AGPL-3.0-only，干净历史）；发版走本地 `dist:win` + `gh release`；CI `tests.yml` 每次 push/PR 全量回归。
 
 **常用命令**：
@@ -318,7 +318,19 @@
 - **测试 +59**：控制器修复链、安全前缀/渐进渲染、事件 patch、孤儿探测、源码审计钉接线（三组件 `shouldUpdate` 白名单/无 shadow DOM/装配顺序），基线 657→716 全绿。重复率 1.19%（阈值 5%，可见克隆均为既有）。
 - **流程**：每任务独立提交（15 个），逐任务规格符合性 + 代码质量双审，审查发现即修（4 轮修复提交）；终审 1 Blocker 修复后发版。
 - **第二期（R42 待实施）**：侧边栏图标轨重组（会话列表 ≥75% 面积 + 「更多」菜单）+ 三组模块整合（任务双 tab、扩展双 tab、工作区 IDE 式融合），设计与接线清单见 `docs/specs/2026-08-28-stream-flow-and-sidebar-design.md`；Task 12 审查建议顺手项：`cc-sidebar` 加 `disconnectedCallback` 清菜单态、`resolveSessionOptionsMemo` 依赖守护。
-- **记录在案（候选）**：协议 v4 `deltaText` 增量字段未消费（需内核取证）；`>50k` 稳定段流式每帧重解析（可加单槽 memo）；`ChatItem` 三个死 kind 与 `views/chat.ts` 再导出残留（R42 清理）；website 版本徽章随官网改版在建未同步（用户工作区）。
+- **记录在案（候选）**：协议 v4 `deltaText` 增量字段未消费（需内核取证）；`>50k` 稳定段流式每帧重解析（可加单槽 memo）；`ChatItem` 三个死 kind 与 `views/chat.ts` 再导出残留（R42 清理）；website 版本徽章随官网改版在建未同步（用户工作区，R42 发版时已在工作区同步至 v2026.828.5，随官网改版提交）。
+
+### R42 · 侧边栏重组 + 三组模块整合（完成，随 v2026.828.5 发版）
+
+用户指令：实施消息流式体验优化第二期（侧边栏重组 + 三组模块整合，设计 `docs/specs/2026-08-28-stream-flow-and-sidebar-design.md`）。子代理驱动：T1–T3 并发（≤2 个避共享文件冲突）+ 逐任务规格/质量双审 + 终审。
+- **任务双 tab（T1）**：tasks/cron 合并为单视图双 tab（运行记录/定时任务）；任务卡以 `sourceId` 反查显示来源定时任务名 + 双向跳转；启用中任务数徽标降入定时 tab。
+- **扩展视图（T2）**：新增 `extensions` 视图（技能/插件双 tab）；插件从设置页迁出（extensions 分组删除）；插件状态复位迁为视图 leave hook；`invalidateAllSettings` 同步。
+- **工作区页（T3）**：IDE 式融合——左导航（仓库选择/文件树/「Git 变更」节点/Worktrees 区块）+ 右主区（文件预览 | Git 面板）；worktree→git 联动（节点选中切仓库 + 刷 status）；workspace 加载逻辑抽入 `controllers/workspace.ts`；`workspaceSetRoot` 白名单注册收敛为一处；**终审 Major 修复**：文件树刷新/打开根目录/逐项打开能力恢复。
+- **侧边栏重组（T4）**：会话列表 flex:1 占纵向主体；主导航 6 项收敛为底部 5 图标轨（任务带运行中徽标/工作区/扩展/完整版网页·重连/设置带徽标点）；「Worktree 新会话」移入「更多」菜单（仅 `gitAvailable === true` 渲染）；双菜单互斥 + `disconnectedCallback` 清菜单态 + `aria-current`；R41 审查建议顺手项落地。
+- **收敛（T5）**：视图 id 9→6（删 cron/worktrees/git/skills，INJECTABLE_VIEWS 同步）；6 个死键删除；git/worktrees 审计测试合并进 `workspace-ui.test.ts`。
+- **边界记录**：主进程 `ipc-sender-guard` 白名单收紧曾越界实施后回退（主进程零改动约束，同步待下期授权）；`navigation.ts` Tab union 残留 `"cron"`/`"skills"` 为上游 13-tab 历史路由机制，另立项收口；并发提交教训：共享文件（app-render.ts）被两个任务交错提交（中间态 commit 不可独立编译，HEAD 自洽），后续并发任务应拆分共享文件触碰面或串行化。
+- **测试 +128**：新审计测试（tasks-view/extensions-ui/workspace-ui/controllers/workspace）+ 旧测试合并迁移；基线 716→744 全绿。重复率 1.19%→1.16%。
+- **记录在案（候选）**：主进程白名单同步（含 extensions 路由）待授权；docs/architecture.md 模块清单补新模块（app-extensions/app-workspace/controllers/workspace）；`cronSourceName` 的 `kind` 反查依据待内核取证；测试正则 `\[\s\S\]{0,N}` 限定长度断言的排版耦合（项目审计范式可接受）。
 
 ## 📦 发版与实测经验（套路已验证多次）
 
