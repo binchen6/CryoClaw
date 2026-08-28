@@ -102,6 +102,32 @@ test("事件元字段（ts/phase/messageId/messageSeq/agentId）不写进行", (
   assert.ok(!("agentId" in merged), "agentId 不应写入行");
 });
 
+test("事件仅含元字段：无行字段可合并 → 返回 null（调用方回落全量重拉）", () => {
+  const current = result([row("a")]);
+  // 删除类事件只带元字段、不携带行快照字段，应回落全量让被删会话立即收敛。
+  const next = applySessionsChangedPatch(current, {
+    sessionKey: "a",
+    ts: 999,
+    phase: "message",
+  });
+  assert.equal(next, null);
+  // 原列表未被改动，等全量重拉替换。
+  assert.equal(current.sessions.length, 1);
+  assert.equal(current.sessions[0].derivedTitle, "旧标题");
+});
+
+test("事件携带 key 字段：不覆盖行的 key（行身份不靠事件改）", () => {
+  const current = result([row("a")]);
+  const next = applySessionsChangedPatch(current, {
+    sessionKey: "a",
+    key: "stolen-key",
+    derivedTitle: "标题",
+  });
+  assert.ok(next);
+  assert.equal(next!.sessions[0].key, "a", "key 不应被事件覆盖");
+  assert.equal(next!.sessions[0].derivedTitle, "标题", "非元字段正常覆盖");
+});
+
 test("白名单：行已有字段被事件覆盖；行没有的字段不新增", () => {
   // 行已有 hasActiveRun → 覆盖
   const withField = result([row("a", { hasActiveRun: false })]);
