@@ -10,8 +10,8 @@
 .ts-layout {
   max-width: 860px;
   margin: 0 auto;
-  /* 顶部 48px 让开沉浸式 titlebar（与其余 fullpage 视图一致） */
-  padding: 48px 24px 48px;
+  /* 顶部让开沉浸式 titlebar（R43：统一走 --titlebar-h token，+4px 保持原 48px 视觉） */
+  padding: calc(var(--titlebar-h) + 4px) 24px 48px;
   display: grid;
   gap: 18px;
   color: var(--text);
@@ -878,8 +878,8 @@
 .wt-layout {
   max-width: 860px;
   margin: 0 auto;
-  /* 顶部 48px 让开沉浸式 titlebar（与其余 fullpage 视图一致） */
-  padding: 48px 24px 48px;
+  /* 顶部让开沉浸式 titlebar（R43：统一走 --titlebar-h token，+4px 保持原 48px 视觉） */
+  padding: calc(var(--titlebar-h) + 4px) 24px 48px;
   display: grid;
   gap: 18px;
   color: var(--text);
@@ -1004,8 +1004,8 @@
 .gitp-layout {
   max-width: 960px;
   margin: 0 auto;
-  /* 顶部 48px 让开沉浸式 titlebar（与其余 fullpage 视图一致） */
-  padding: 48px 24px 48px;
+  /* 顶部让开沉浸式 titlebar（R43：统一走 --titlebar-h token，+4px 保持原 48px 视觉） */
+  padding: calc(var(--titlebar-h) + 4px) 24px 48px;
   display: grid;
   gap: 18px;
   color: var(--text);

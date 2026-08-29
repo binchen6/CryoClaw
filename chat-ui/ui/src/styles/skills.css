@@ -506,6 +506,9 @@
   align-items: center;
   gap: var(--spacer-4);
   padding: var(--spacer-12) var(--spacer-20);
+  /* 顶部让位沉浸式标题栏（R43：--titlebar-h，避免与窗口控件重叠；
+     等效 padding: var(--titlebar-h) var(--spacer-20) var(--spacer-12)） */
+  padding-top: var(--titlebar-h);
   border-bottom: var(--hairline);
   flex-shrink: 0;
 }

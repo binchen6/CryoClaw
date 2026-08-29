@@ -109,6 +109,8 @@
   min-height: 0;
   overflow: hidden;
   color: var(--text);
+  /* 顶部让位沉浸式标题栏（R43：--titlebar-h，避免顶部按钮与窗口控件重叠） */
+  padding-top: var(--titlebar-h);
 }
 
 .wk-nav {

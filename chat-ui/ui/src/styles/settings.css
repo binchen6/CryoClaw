@@ -1134,7 +1134,8 @@
   width: 280px;
   min-width: 280px;
   border-right: 1px solid var(--border);
-  padding: 44px var(--spacer-8) var(--spacer-12);
+  /* 顶部让位沉浸式 titlebar（R43：统一走 --titlebar-h token） */
+  padding: var(--titlebar-h) var(--spacer-8) var(--spacer-12);
   display: flex;
   flex-direction: column;
   gap: var(--spacer-2);
@@ -1192,7 +1193,8 @@
   display: flex;
   flex-direction: column;
   overflow-y: auto;
-  padding: 44px var(--spacer-32) var(--spacer-32);
+  /* 顶部让位沉浸式 titlebar（R43：统一走 --titlebar-h token，与左侧 nav 对齐） */
+  padding: var(--titlebar-h) var(--spacer-32) var(--spacer-32);
   position: relative;
 }
 .oc-settings-content > * {

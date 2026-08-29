@@ -27,7 +27,8 @@
 .cm-layout__detail {
   border-left: 1px solid var(--border);
   overflow-y: auto;
-  padding: 52px 32px 24px;
+  /* 顶部让位沉浸式 titlebar（R43：--titlebar-h + 8px 保持原 52px 视觉，与左侧列表顶部对齐） */
+  padding: calc(var(--titlebar-h) + 8px) 32px 24px;
   display: flex;
   justify-content: center;
   min-width: 0; /* grid 子项防长内容（prompt/cron 表达式）撑爆轨道 */
@@ -60,8 +61,8 @@
 }
 
 .cm-list__top {
-  /* 48px 让开 44px 沉浸式 titlebar，并与右侧 detail 的顶部留白一致 */
-  padding: 48px 16px 4px;
+  /* 让开沉浸式 titlebar（R43：统一走 --titlebar-h token，+4px 保持原 48px），并与右侧 detail 的顶部留白一致 */
+  padding: calc(var(--titlebar-h) + 4px) 16px 4px;
   flex-shrink: 0;
 }
 

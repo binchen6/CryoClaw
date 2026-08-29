@@ -17,6 +17,9 @@
   --radius: var(--radius-sm);
   --radius-full: var(--radius-pill);
   --sidebar-width: 280px;
+  /* 沉浸式标题栏高度基准：主进程 titleBarOverlay 32 + drag 区协同（.cryoclaw-titlebar 44px），
+     fullpage 视图（ext-tabs/wk-layout/ts-layout 等）内容顶部据此让位，避免与窗口控件重叠 */
+  --titlebar-h: 44px;
   --theme-switch-x: 50%;
   --theme-switch-y: 50%;
   --focus-ring: 0 0 0 2px var(--bg), 0 0 0 4px var(--ring);
