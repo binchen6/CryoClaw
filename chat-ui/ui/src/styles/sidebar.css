@@ -60,8 +60,9 @@
   margin: 0;
 }
 
-/* 宿主承载宽度（R43 拖拽调宽）：内联 style 覆盖宿主 → 用户手动设定后媒体查询让位；
-   未拖拽过时仍走 --sidebar-width，窄窗媒体查询照常生效 */
+/* 宿主承载宽度（R43 拖拽调宽）：宿主内联 width 仅在用户自定义（sidebarWidth > 0）时存在，
+   自定义后用户宽度优先；未自定义（0 哨兵）时无内联宽度，走 --sidebar-width，
+   窄窗媒体查询收窄照常生效 */
 cc-sidebar {
   display: block;
   width: var(--sidebar-width);

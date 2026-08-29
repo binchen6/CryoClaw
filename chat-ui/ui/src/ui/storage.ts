@@ -16,7 +16,7 @@ export type UiSettings = {
   splitRatio: number; // Sidebar split ratio (0.4 to 0.7, default 0.6)
   navCollapsed: boolean; // Collapsible sidebar state
   navGroupsCollapsed: Record<string, boolean>; // Which nav groups are collapsed
-  sidebarWidth: number; // 侧边栏宽度，拖拽调宽持久化（220-420）
+  sidebarWidth: number; // 侧边栏宽度，拖拽调宽持久化（220-420）；0 = 未自定义哨兵（走 --sidebar-width 与媒体查询）
 };
 
 type LocationLike = Pick<Location, "host" | "protocol" | "search" | "hash">;
@@ -77,7 +77,7 @@ export function parseUiSettings(raw: string | null, locationLike: LocationLike):
     splitRatio: 0.6,
     navCollapsed: false,
     navGroupsCollapsed: {},
-    sidebarWidth: 280,
+    sidebarWidth: 0, // 0 哨兵 = 未自定义：不写内联宽度，走 --sidebar-width（含窄窗媒体查询收窄）
   };
 
   try {
@@ -124,10 +124,13 @@ export function parseUiSettings(raw: string | null, locationLike: LocationLike):
         typeof parsed.navGroupsCollapsed === "object" && parsed.navGroupsCollapsed !== null
           ? parsed.navGroupsCollapsed
           : defaults.navGroupsCollapsed,
+      // 0 = 未自定义哨兵：仅接受 220-420 的自定义值，其余回退 0（媒体查询照常生效）
       sidebarWidth:
-        typeof parsed.sidebarWidth === "number" && Number.isFinite(parsed.sidebarWidth)
-          ? Math.min(420, Math.max(220, Math.round(parsed.sidebarWidth)))
-          : defaults.sidebarWidth,
+        typeof parsed.sidebarWidth === "number" &&
+        Number.isFinite(parsed.sidebarWidth) &&
+        parsed.sidebarWidth >= 220
+          ? Math.min(420, Math.round(parsed.sidebarWidth))
+          : 0,
     };
   } catch {
     return defaults;

@@ -16,6 +16,11 @@ test("storage：UiSettings 持久化 sidebarWidth（220-420 范围校验）", ()
   assert.match(s, /420/, "缺最大宽约束");
 });
 
+test("storage：sidebarWidth 缺省 0 = 未自定义（媒体查询生效哨兵）", () => {
+  const s = src("ui/storage.ts");
+  assert.match(s, /sidebarWidth:\s*0/, "缺省应为 0 哨兵（未自定义）");
+});
+
 test("app-render：侧边栏后渲染拖拽条且宽度接线", () => {
   const s = src("ui/app-render.ts");
   assert.match(s, /cryoclaw-sidebar__resize-handle/, "缺拖拽条元素");

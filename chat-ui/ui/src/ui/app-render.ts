@@ -101,17 +101,28 @@ function clampSidebarWidth(w: number): number {
 
 // 持久宽度同步到 :root：错误弹窗等 fixed 定位元素用 var(--sidebar-width) 读宽，
 // 宿主内联 style 不反映给它们。带守卫只写变更，流式帧不重复写。
+// 0 哨兵（未自定义）：移除 :root 内联值（防御残留），让 CSS 默认值与窄窗媒体查询生效。
 let syncedSidebarWidth = -1;
 function syncSidebarWidthVar(w: number) {
   if (w === syncedSidebarWidth) return;
   syncedSidebarWidth = w;
-  document.documentElement.style.setProperty("--sidebar-width", `${w}px`);
+  if (w > 0) {
+    document.documentElement.style.setProperty("--sidebar-width", `${w}px`);
+  } else {
+    document.documentElement.style.removeProperty("--sidebar-width");
+  }
 }
 
 function startSidebarResize(e: MouseEvent, state: AppViewState) {
   e.preventDefault();
   const startX = e.clientX;
-  const startW = state.settings.sidebarWidth;
+  // 起始宽度用实测值：未自定义（0 哨兵）时可见宽度可能已被窄窗媒体查询收窄，
+  // 拖拽增量以用户看到的实际宽度为基准。
+  const hostEl = document.querySelector("cc-sidebar") as HTMLElement | null;
+  const startW =
+    state.settings.sidebarWidth > 0
+      ? state.settings.sidebarWidth
+      : Math.round(hostEl?.getBoundingClientRect().width ?? 0) || SIDEBAR_WIDTH_MIN;
   document.body.style.cursor = "col-resize";
   document.body.style.userSelect = "none";
   const onMove = (ev: MouseEvent) => {
@@ -212,7 +223,7 @@ export function renderApp(state: AppViewState) {
       ${chatFocus || sidebarCollapsed || meta.fullpage
         ? nothing
         : html`<cc-sidebar
-            style="width: ${state.settings.sidebarWidth}px"
+            style=${state.settings.sidebarWidth > 0 ? `width: ${state.settings.sidebarWidth}px` : nothing}
             .props=${{
             connected: state.connected,
             currentSessionKey,
