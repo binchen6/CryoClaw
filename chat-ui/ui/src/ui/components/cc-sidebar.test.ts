@@ -193,3 +193,10 @@ test("cc-sidebar：设置图标徽标详情（更新/微信徽标的 tooltip 说
     assert.ok(en.includes(key), `en.ts 缺少 ${key}`);
   }
 });
+
+test("sidebar.css：更多菜单与会话菜单同处菜单最高层（z-index 60）", () => {
+  // 产物位于 .test-dist/ui/src/ui/components/，四级 ../ 回到 chat-ui/ui/ 再进 src/styles/
+  const css = readFileSync(new URL("../../../../../src/styles/sidebar.css", import.meta.url), "utf8");
+  const moreMenu = css.match(/\.cryoclaw-sidebar__more-menu\s*\{[^}]*\}/)?.[0] ?? "";
+  assert.match(moreMenu, /z-index:\s*60/, "更多菜单应为菜单最高层 60");
+});

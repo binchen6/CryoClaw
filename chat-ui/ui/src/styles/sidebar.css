@@ -180,6 +180,7 @@
 
 .cryoclaw-sidebar__more-wrap {
   position: relative;
+  z-index: 1; /* 稳定定位上下文：更多菜单绝对定位以此为包含块 */
 }
 
 .cryoclaw-sidebar__more-btn {
@@ -216,7 +217,8 @@
   position: absolute;
   top: calc(100% + 4px);
   left: 0;
-  z-index: 30;
+  /* 菜单最高层：与会话菜单同级（层叠契约：菜单 60 < titlebar 100 < 浮层 1000+） */
+  z-index: 60;
   min-width: 180px;
   padding: 4px;
   border-radius: var(--radius-md);
