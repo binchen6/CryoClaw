@@ -17,7 +17,7 @@
 //   视图 .ts-layout.panel 内，根已让位）。
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 
 function css(rel: string): string {
   const raw = readFileSync(new URL(`../../../../src/styles/${rel}`, import.meta.url), "utf8");
@@ -75,25 +75,8 @@ function appRegionSelectors(source: string, value: "drag" | "no-drag"): Set<stri
   return set;
 }
 
-const STYLE_FILES = [
-  "base.css",
-  "chat.css",
-  "components.css",
-  "compose.css",
-  "cron.css",
-  "misc.css",
-  "panel.css",
-  "panels.css",
-  "plan.css",
-  "primitives.css",
-  "settings.css",
-  "setup.css",
-  "sidebar.css",
-  "skills.css",
-  "tokens-ext.css",
-  "utilities.css",
-  "workspace.css",
-];
+// 动态枚举样式目录：新增 .css 自动纳入扫描，免手工清单漂移（质量审查 M1）
+const STYLE_FILES = readdirSync(new URL("../../../../src/styles", import.meta.url)).filter((f) => f.endsWith(".css"));
 
 // ── 1. 六视图标题栏让位汇总（T2 复核）──────────────────────────────
 
@@ -121,6 +104,18 @@ test("F3 守护：cron 嵌套视图不得自带标题栏让位（双重让位）
   const cron = css("cron.css");
   assert.doesNotMatch(rule(cron, ".cm-layout__detail"), /var\(--titlebar-h\)/, "cm-layout__detail 不得双重让位");
   assert.doesNotMatch(rule(cron, ".cm-list__top"), /var\(--titlebar-h\)/, "cm-list__top 不得双重让位");
+  // 全块扫描（含 @media 分支）：防只在媒体分支回插让位绕过首块断言（质量审查 M3）
+  assert.doesNotMatch(cron, /\.cm-layout__detail[^{}]*\{[^}]*var\(--titlebar-h\)/, "cm-layout__detail 任何块（含媒体分支）不得含让位");
+  assert.doesNotMatch(cron, /\.cm-list__top[^{}]*\{[^}]*var\(--titlebar-h\)/, "cm-list__top 任何块（含媒体分支）不得含让位");
+});
+
+test("F1 同层决胜守护：确认框渲染于 <main> 之后（同层 1000 按 DOM 序后者在上）", () => {
+  // .exec-approval-overlay 与 .oc-modal-overlay 同为 1000 层，确认框浮于设置
+  // modal 之上依赖模板内渲染顺序；若未来重排根模板会静默复发（质量审查 M2）
+  const s = readFileSync(new URL("../../../../src/ui/app-render.ts", import.meta.url), "utf8");
+  const mainIdx = s.indexOf("<main");
+  const confirmIdx = s.indexOf("renderConfirmDialog(state)");
+  assert.ok(mainIdx >= 0 && confirmIdx > mainIdx, "renderConfirmDialog 应在 <main> 之后渲染");
 });
 
 // ── 2. drag 区与 no-drag 配对（逐一核对侧边栏全部可交互元素）────────
