@@ -41,3 +41,16 @@ test("sidebar.css：titlebar 高度与让位 token 同源（单点修改能力�
   const titlebar = sidebar.match(/\.cryoclaw-titlebar\s*\{[^}]*\}/)?.[0] ?? "";
   assert.match(titlebar, /height:\s*var\(--titlebar-h\)/, "titlebar 高度应走 --titlebar-h");
 });
+
+test("新整合视图响应式断点（按窗口大小自适应）", () => {
+  const ws = css("workspace.css");
+  assert.match(ws, /@media\s*\(max-width:\s*860px\)/, "workspace 缺 860px 断点");
+  assert.match(ws, /@media\s*\(max-width:\s*768px\)/, "workspace 缺 768px 断点");
+  const sk = css("skills.css");
+  assert.match(sk, /@media\s*\(max-width:\s*768px\)/, "skills 缺 768px 断点");
+});
+
+test("扩展页内容宽屏收束（不过散）", () => {
+  const sk = css("skills.css");
+  assert.match(sk, /max-width:\s*980px/, "扩展页内容缺最大宽度收束");
+});

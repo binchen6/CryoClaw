@@ -1204,6 +1204,15 @@
   margin-right: auto;
 }
 
+/* 窄窗（≤768px）：左侧导航收窄，优先保障内容区（R43 Task 4 响应式断点；
+   min-width 同源覆盖，否则 280px 下限会抵抗收窄） */
+@media (max-width: 768px) {
+  .oc-settings-nav {
+    width: 200px;
+    min-width: 200px;
+  }
+}
+
 /* Shared form styles for all settings tabs */
 .oc-settings__section {
   display: flex;

@@ -169,6 +169,14 @@
   }
 }
 
+/* 窄窗（≤720px）：任务页减横向留白，内容列更充分利用窗口（R43 Task 4 响应式断点） */
+@media (max-width: 720px) {
+  .ts-layout {
+    padding-left: var(--spacer-12);
+    padding-right: var(--spacer-12);
+  }
+}
+
 /* 侧边栏：置顶会话标记 */
 .cryoclaw-sidebar__session-pin {
   display: inline-flex;

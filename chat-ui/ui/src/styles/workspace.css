@@ -431,13 +431,19 @@
   height: var(--icon-size-14);
 }
 
-/* 窄窗：左栏收窄、防横向溢出 */
-@media (max-width: 768px) {
+/* 窄窗：左栏分级收窄、防横向溢出（R43 Task 4：860px/768px 两段断点） */
+@media (max-width: 860px) {
   .wk-layout {
     grid-template-columns: minmax(0, 200px) minmax(0, 1fr);
   }
   .wk-nav {
     padding: var(--spacer-6);
+  }
+}
+
+@media (max-width: 768px) {
+  .wk-layout {
+    grid-template-columns: minmax(0, 168px) minmax(0, 1fr);
   }
   .wk-nav__item {
     padding-left: var(--spacer-12);
