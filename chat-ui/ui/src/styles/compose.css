@@ -314,7 +314,8 @@
   padding: var(--spacer-4);
   min-width: 140px;
   box-shadow: var(--shadow-md);
-  z-index: 100;
+  /* 层叠契约（R43 QA）：菜单类 ≤60；原 100 与 titlebar 同层越界 */
+  z-index: 60;
   display: none;
 }
 
@@ -382,7 +383,8 @@
   max-height: 320px;
   overflow-y: auto;
   box-shadow: var(--shadow-md);
-  z-index: 100;
+  /* 层叠契约（R43 QA）：菜单类 ≤60；原 100 与 titlebar 同层越界 */
+  z-index: 60;
   display: none;
 }
 

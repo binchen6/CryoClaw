@@ -27,8 +27,9 @@
 .cm-layout__detail {
   border-left: 1px solid var(--border);
   overflow-y: auto;
-  /* 顶部让位沉浸式 titlebar（R43：--titlebar-h + 8px 保持原 52px 视觉，与左侧列表顶部对齐） */
-  padding: calc(var(--titlebar-h) + 8px) 32px 24px;
+  /* R43 QA：cron 视图嵌套在任务视图 .ts-layout.panel 滚动容器内（根已让位标题栏），
+     此处无需再让位（原 calc(var(--titlebar-h) + 8px) 为 fullpage 残留，双重让位） */
+  padding: 8px 32px 24px;
   display: flex;
   justify-content: center;
   min-width: 0; /* grid 子项防长内容（prompt/cron 表达式）撑爆轨道 */
@@ -61,8 +62,8 @@
 }
 
 .cm-list__top {
-  /* 让开沉浸式 titlebar（R43：统一走 --titlebar-h token，+4px 保持原 48px），并与右侧 detail 的顶部留白一致 */
-  padding: calc(var(--titlebar-h) + 4px) 16px 4px;
+  /* R43 QA：同 .cm-layout__detail——cron 嵌套在任务视图内，根已让位，双重让位移除 */
+  padding: 4px 16px 4px;
   flex-shrink: 0;
 }
 

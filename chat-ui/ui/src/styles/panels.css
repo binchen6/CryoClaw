@@ -522,7 +522,9 @@
   align-items: center;
   justify-content: center;
   padding: 24px;
-  z-index: 200
+  /* 层叠契约（R43 QA）：浮层/弹窗 ≥1000；原 200 低于 .oc-modal-overlay(1000)，
+     设置弹窗打开时触发的确认框会被盖住 */
+  z-index: 1000
 }
 
 .exec-approval-card {

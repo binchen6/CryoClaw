@@ -1,5 +1,5 @@
 // 守护回归（源码审计，同 cc-sidebar.test.ts 模式，R43 Task 2）：
-// fullpage 视图（extensions/workspace/tasks/settings/cron/setup 等）贴窗口顶部，
+// fullpage 视图（extensions/workspace/tasks/settings/setup 等）贴窗口顶部，
 // 顶部内容必须让开沉浸式标题栏（主进程 titleBarOverlay 32 + drag 区 44px，
 // sidebar.css .cryoclaw-titlebar height:44），否则与「- □ ×」窗口控件及
 // drag 区重叠无法点击。让位统一走 --titlebar-h token，防止回退成裸字面量或漏让位。
@@ -29,9 +29,8 @@ test("同模式容器让位均走 token（防裸字面量回退，补齐守护�
     const block = misc.match(new RegExp(`${cls.replace(/\./g, "\\.")}\\s*\\{[^}]*\\}`))?.[0] ?? "";
     assert.match(block, /var\(--titlebar-h\)/, `${cls} 应走 --titlebar-h`);
   }
-  const cron = css("cron.css");
-  assert.match(cron.match(/\.cm-layout__detail\s*\{[^}]*\}/)?.[0] ?? "", /var\(--titlebar-h\)/, "cm-layout__detail 应走 --titlebar-h");
-  assert.match(cron.match(/\.cm-list__top\s*\{[^}]*\}/)?.[0] ?? "", /var\(--titlebar-h\)/, "cm-list__top 应走 --titlebar-h");
+  // cron 视图（cm-layout__detail/cm-list__top）嵌套在任务视图 .ts-layout.panel 内，
+  // 根已让位，自身不得再让位（双重让位守护见 layout-qa.test.ts）
   const settings = css("settings.css");
   assert.match(settings.match(/\.oc-settings-nav\s*\{[^}]*\}/)?.[0] ?? "", /var\(--titlebar-h\)/, "oc-settings-nav 应走 --titlebar-h");
 });
