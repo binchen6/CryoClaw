@@ -58,6 +58,8 @@
 
   /* 阅读列宽：宽屏下消息流/compose 的居中列约束 */
   --chat-column: 820px;
+  /* 扩展视图内容列收束宽度，与 --chat-column 阅读列同源语义 */
+  --ext-column: 980px;
 
   /* 字体栈（TraeWork 规范 + 中文回退） */
   --font-body: "SF Pro Text", "PingFang SC", system-ui, -apple-system,

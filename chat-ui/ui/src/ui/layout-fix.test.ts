@@ -52,5 +52,18 @@ test("新整合视图响应式断点（按窗口大小自适应）", () => {
 
 test("扩展页内容宽屏收束（不过散）", () => {
   const sk = css("skills.css");
-  assert.match(sk, /max-width:\s*980px/, "扩展页内容缺最大宽度收束");
+  assert.match(sk, /max-width:\s*var\(--ext-column\)/, "扩展页内容缺最大宽度收束");
+});
+
+test("design-tokens：--ext-column 扩展视图内容列收束宽度", () => {
+  const dt = readFileSync(new URL("../../../../../../shared/design-tokens.css", import.meta.url), "utf8");
+  assert.match(dt, /--ext-column:\s*980px/, "缺扩展视图内容列宽 token");
+});
+
+test("settings 窄窗导航收窄：width 与 min-width 同源覆盖", () => {
+  const s = css("settings.css");
+  const block = s.match(/@media\s*\(max-width:\s*768px\)\s*\{([\s\S]*?)\n\}/)?.[1] ?? "";
+  const nav = block.match(/\.oc-settings-nav\s*\{[^}]*\}/)?.[0] ?? "";
+  assert.match(nav, /width:\s*200px/, "窄窗导航宽度应收窄至 200px");
+  assert.match(nav, /min-width:\s*200px/, "min-width 必须同源覆盖，否则 280px 下限抵抗收窄");
 });

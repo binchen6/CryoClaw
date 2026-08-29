@@ -125,11 +125,13 @@ function startSidebarResize(e: MouseEvent, state: AppViewState) {
       : Math.round(hostEl?.getBoundingClientRect().width ?? 0) || SIDEBAR_WIDTH_MIN;
   document.body.style.cursor = "col-resize";
   document.body.style.userSelect = "none";
+  let moved = false;
   const onMove = (ev: MouseEvent) => {
     if (ev.buttons === 0) {
       onUp();
       return;
     }
+    moved = true;
     const host = document.querySelector("cc-sidebar") as HTMLElement | null;
     if (host) host.style.width = `${clampSidebarWidth(startW + (ev.clientX - startX))}px`;
   };
@@ -138,6 +140,8 @@ function startSidebarResize(e: MouseEvent, state: AppViewState) {
     document.removeEventListener("mouseup", onUp);
     document.body.style.cursor = "";
     document.body.style.userSelect = "";
+    // 零位移按压不固化宽度：保住 0 哨兵（误碰/双击第一击不得把媒体查询收窄值持久化）
+    if (!moved) return;
     const host = document.querySelector("cc-sidebar") as HTMLElement | null;
     const w = host
       ? clampSidebarWidth(host.getBoundingClientRect().width)

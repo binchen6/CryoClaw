@@ -501,11 +501,11 @@
   overflow-y: auto;
 }
 
-/* 内容列宽屏收束：最大 980px 居中，避免宽屏过散（R43 Task 4） */
+/* 内容列宽屏收束：最大 --ext-column 居中，避免宽屏过散（R43 Task 4） */
 .ext-layout > .skills-scroll,
 .ext-layout > .oc-settings__section {
   width: 100%;
-  max-width: 980px;
+  max-width: var(--ext-column);
   margin-left: auto;
   margin-right: auto;
 }
@@ -574,4 +574,3 @@
     padding-right: var(--spacer-12);
   }
 }
-

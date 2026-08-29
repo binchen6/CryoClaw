@@ -12,8 +12,8 @@ function src(rel: string): string {
 test("storage：UiSettings 持久化 sidebarWidth（220-420 范围校验）", () => {
   const s = src("ui/storage.ts");
   assert.match(s, /sidebarWidth:\s*number/, "UiSettings 缺 sidebarWidth");
-  assert.match(s, /220/, "缺最小宽约束");
-  assert.match(s, /420/, "缺最大宽约束");
+  assert.match(s, /parsed\.sidebarWidth\s*>=\s*220/, "缺最小宽约束");
+  assert.match(s, /Math\.min\(420/, "缺最大宽约束");
 });
 
 test("storage：sidebarWidth 缺省 0 = 未自定义（媒体查询生效哨兵）", () => {
@@ -33,4 +33,10 @@ test("sidebar.css：拖拽条样式 + no-drag + 折叠态隐藏", () => {
   const block = css.match(/\.cryoclaw-sidebar__resize-handle\s*\{[^}]*\}/)?.[0] ?? "";
   assert.match(block, /-webkit-app-region:\s*no-drag/, "拖拽条必须 no-drag（sidebar 整体是 drag 区）");
   assert.match(css, /cryoclaw-shell--sidebar-collapsed\s+\.cryoclaw-sidebar__resize-handle/, "折叠态应隐藏拖拽条");
+});
+
+test("app-render：0 哨兵条件绑定与 :root 变量清除（防媒体查询被内联宽度废除）", () => {
+  const s = src("ui/app-render.ts");
+  assert.match(s, /sidebarWidth > 0\s*\?\s*`width:/s, "内联宽度必须仅在自定义时存在（0 哨兵条件绑定）");
+  assert.match(s, /removeProperty\("--sidebar-width"\)/, "0 哨兵必须清除 :root 内联变量");
 });
