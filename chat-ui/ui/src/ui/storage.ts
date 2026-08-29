@@ -16,6 +16,7 @@ export type UiSettings = {
   splitRatio: number; // Sidebar split ratio (0.4 to 0.7, default 0.6)
   navCollapsed: boolean; // Collapsible sidebar state
   navGroupsCollapsed: Record<string, boolean>; // Which nav groups are collapsed
+  sidebarWidth: number; // 侧边栏宽度，拖拽调宽持久化（220-420）
 };
 
 type LocationLike = Pick<Location, "host" | "protocol" | "search" | "hash">;
@@ -76,6 +77,7 @@ export function parseUiSettings(raw: string | null, locationLike: LocationLike):
     splitRatio: 0.6,
     navCollapsed: false,
     navGroupsCollapsed: {},
+    sidebarWidth: 280,
   };
 
   try {
@@ -122,6 +124,10 @@ export function parseUiSettings(raw: string | null, locationLike: LocationLike):
         typeof parsed.navGroupsCollapsed === "object" && parsed.navGroupsCollapsed !== null
           ? parsed.navGroupsCollapsed
           : defaults.navGroupsCollapsed,
+      sidebarWidth:
+        typeof parsed.sidebarWidth === "number" && Number.isFinite(parsed.sidebarWidth)
+          ? Math.min(420, Math.max(220, Math.round(parsed.sidebarWidth)))
+          : defaults.sidebarWidth,
     };
   } catch {
     return defaults;

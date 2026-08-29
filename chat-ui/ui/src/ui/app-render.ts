@@ -90,6 +90,53 @@ function openSettingsView(state: AppViewState, tabHint: string | null = null) {
   setCryoClawView(state, "settings");
 }
 
+// 侧边栏右缘拖拽调宽（R43）：mousemove 高频期直写 DOM 宽度，松手才持久化。
+// buttons === 0 补偿：窗口外释放鼠标时 mouseup 不派发（同 resizable-divider 模式）。
+const SIDEBAR_WIDTH_MIN = 220;
+const SIDEBAR_WIDTH_MAX = 420;
+
+function clampSidebarWidth(w: number): number {
+  return Math.min(SIDEBAR_WIDTH_MAX, Math.max(SIDEBAR_WIDTH_MIN, Math.round(w)));
+}
+
+// 持久宽度同步到 :root：错误弹窗等 fixed 定位元素用 var(--sidebar-width) 读宽，
+// 宿主内联 style 不反映给它们。带守卫只写变更，流式帧不重复写。
+let syncedSidebarWidth = -1;
+function syncSidebarWidthVar(w: number) {
+  if (w === syncedSidebarWidth) return;
+  syncedSidebarWidth = w;
+  document.documentElement.style.setProperty("--sidebar-width", `${w}px`);
+}
+
+function startSidebarResize(e: MouseEvent, state: AppViewState) {
+  e.preventDefault();
+  const startX = e.clientX;
+  const startW = state.settings.sidebarWidth;
+  document.body.style.cursor = "col-resize";
+  document.body.style.userSelect = "none";
+  const onMove = (ev: MouseEvent) => {
+    if (ev.buttons === 0) {
+      onUp();
+      return;
+    }
+    const host = document.querySelector("cc-sidebar") as HTMLElement | null;
+    if (host) host.style.width = `${clampSidebarWidth(startW + (ev.clientX - startX))}px`;
+  };
+  const onUp = () => {
+    document.removeEventListener("mousemove", onMove);
+    document.removeEventListener("mouseup", onUp);
+    document.body.style.cursor = "";
+    document.body.style.userSelect = "";
+    const host = document.querySelector("cc-sidebar") as HTMLElement | null;
+    const w = host
+      ? clampSidebarWidth(host.getBoundingClientRect().width)
+      : clampSidebarWidth(startW);
+    state.applySettings({ ...state.settings, sidebarWidth: w });
+  };
+  document.addEventListener("mousemove", onMove);
+  document.addEventListener("mouseup", onUp);
+}
+
 // R41 Task 12：sessionOptions 原本每次 renderApp 重建新数组，但数据源只有这五个；
 // <cc-sidebar> 的 shouldUpdate 按引用比较 sessionOptions，不 memo 则流式帧每次根渲染
 // 都是新引用，侧边栏隔离失效。状态层对这两个数组一律整体重赋值、从不原地改，按引用比较安全。
@@ -149,6 +196,7 @@ function renderActiveView(state: AppViewState, view: CryoClawViewId) {
 export function renderApp(state: AppViewState) {
   ensureFileDropBridge(state);
   updateFileDropState(state);
+  syncSidebarWidthVar(state.settings.sidebarWidth);
   const chatDisabledReason = state.connected ? null : t("error.disconnected");
   const chatFocus = state.onboarding;
   const sidebarCollapsed = !state.onboarding && state.settings.navCollapsed;
@@ -163,7 +211,9 @@ export function renderApp(state: AppViewState) {
     >
       ${chatFocus || sidebarCollapsed || meta.fullpage
         ? nothing
-        : html`<cc-sidebar .props=${{
+        : html`<cc-sidebar
+            style="width: ${state.settings.sidebarWidth}px"
+            .props=${{
             connected: state.connected,
             currentSessionKey,
             mainSessionKey: resolveMainSessionKey(state.hello, state.sessionsResult),
@@ -232,7 +282,12 @@ export function renderApp(state: AppViewState) {
             onOpenWebUI: () => void handleOpenWebUI(state),
             errors: [chatDisabledReason, state.lastError].filter(Boolean) as string[],
             onReconnect: () => handleReconnect(state),
-          }}></cc-sidebar>`}
+          }}></cc-sidebar>
+          <div
+            class="cryoclaw-sidebar__resize-handle"
+            @mousedown=${(e: MouseEvent) => startSidebarResize(e, state)}
+            aria-hidden="true"
+          ></div>`}
 
       <div class="cryoclaw-main">
         <div class="cryoclaw-titlebar">
