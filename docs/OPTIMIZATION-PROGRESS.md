@@ -10,10 +10,10 @@
 面向国内生态（Kimi / Moonshot / 飞书 / 企微 / 微信 / 钉钉 / QQ）。
 
 **当前状态**：
-- 重设计工程 **R1–R42 完成**（R42 侧边栏重组 + 三组模块整合），最新发版 **v2026.828.5**（R42；v2026.828.4：R41 消息流式体验优化第一期）。两期设计均落地（`docs/specs/2026-08-28-stream-flow-and-sidebar-design.md`）。
+- 重设计工程 **R1–R43 完成**（R43 UI 布局修复批次），最新发版 **v2026.829.1**（R43；v2026.828.5：R42 侧边栏重组 + 三组模块整合）。流式体验两期设计均落地（`docs/specs/2026-08-28-stream-flow-and-sidebar-design.md`）。
 - 内核 openclaw **2026.7.1-2**（版本 pin 在 package.json `cryoclaw.openclaw`）；**Electron 43.4.0**（audit 0 漏洞）。
-- 测试基线 **744 pass / 0 fail**（vitest 101 + node 130 + chat-ui 461 + scripts 52；0 fail 为硬指标）。
-- 重复率 **1.16%**（78 clones，阈值 5%，`npm run dupcheck` 防回退）；视图 id 收敛为 6（chat/setup/settings/workspace/tasks/extensions）。
+- 测试基线 **771 pass / 0 fail**（vitest 101 + node 130 + chat-ui 488 + scripts 52；0 fail 为硬指标）。
+- 重复率 **1.15%**（78 clones，阈值 5%，`npm run dupcheck` 防回退）；视图 id 收敛为 6（chat/setup/settings/workspace/tasks/extensions）。
 - 开源：GitHub `binchen6/CryoClaw`（AGPL-3.0-only，干净历史）；发版走本地 `dist:win` + `gh release`；CI `tests.yml` 每次 push/PR 全量回归。
 
 **常用命令**：
@@ -332,7 +332,20 @@
 - **测试 +128**：新审计测试（tasks-view/extensions-ui/workspace-ui/controllers/workspace）+ 旧测试合并迁移；基线 716→744 全绿。重复率 1.19%→1.16%。
 - **记录在案（候选）**：主进程白名单同步（含 extensions 路由）待授权；docs/architecture.md 模块清单补新模块（app-extensions/app-workspace/controllers/workspace）；`cronSourceName` 的 `kind` 反查依据待内核取证；测试正则 `\[\s\S\]{0,N}` 限定长度断言的排版耦合（项目审计范式可接受）。
 
+### R43 · UI 布局修复批次（完成，随 v2026.829.1 发版）
+
+用户反馈 6 项 UI 问题：「更多」菜单遮挡、fullpage 视图顶部与窗口控件重叠、布局优化、侧边栏拖宽、响应式适配、全局布局 QA。子代理驱动 4 波次（≤2 并发避共享文件冲突）+ 逐任务规格/质量双审 + 终审；实施计划 `docs/plans/2026-08-29-ui-layout-fixes.md`（本地）。
+- **层叠契约**：菜单 ≤60 / titlebar 100 / 浮层 ≥1000；「更多」菜单 30→60（T1）；确认框遮罩 200→1000 + 同层 DOM 序守护、compose popover 100→60（T5 QA）。
+- **标题栏让位（T2）**：`--titlebar-h: 44px` token（tokens-ext）；六视图让位统一 + `.cryoclaw-titlebar` 高度同源（单点可改）；既有让位全部视觉等价（calc 补偿）。
+- **侧边栏拖宽（T3）**：右缘 6px 拖拽条，220–420px 持久化（`UiSettings.sidebarWidth`）；**0 哨兵方案**：未自定义时宿主无内联宽度 + `:root` 变量清除，窄窗媒体查询照常生效；`moved` 标志零位移不固化；`buttons===0` 窗口外释放补偿；`--sidebar-width` :root 同步供错误弹层定位跟随。审查发现两次实质问题并修复：内联宽度无条件废除媒体查询（I1）→ 0 哨兵；零位移按压固化哨兵 → moved 标志。
+- **布局 + 响应式（T4）**：扩展页 `--ext-column: 980px` 内容收束（新 token）；断点：工作区 860/768 左栏分级收窄、扩展 768、任务 720、设置 768（含 `min-width` 同源覆盖）。评估：768/720 断点服务页面缩放降级，非死代码保留。
+- **全局 QA（T5）**：7 项审计清单（六视图让位 / drag 区 no-drag 配对 13 组零遗漏 / 滚动容器唯一 / z-index 契约全量扫描 17 文件 / 最小尺寸无横向溢出 / 暗色无写死色值 / 按钮右对齐）；修复 3 处：确认框被设置弹窗遮挡、compose popover 越层、cron 嵌套双重让位。
+- **守护测试 +27**：`layout-fix.test.ts` / `sidebar-resize.test.ts` / `layout-qa.test.ts`（动态样式枚举 / 全块扫描防媒体分支绕过 / 同层决胜顺序断言）；基线 744→771 全绿。重复率 1.16%→1.15%。
+- **边界记录**：主进程零改动（终审核实）；website/* 未提交改动属用户官网改版（徽章已在工作区同步，随官网改版提交）；`.cm-layout__main` 死样式待后续清理；审计断言跨文件重复（双层守护，可后续收敛为单点）。
+- **冒烟清单（真机待验）**：设置页 modal 上触发确认框应盖住 modal；思考档位/回放 popover 可点不遮挡；任务页双 tab 顶部对齐；拖宽后刷新持久化、窄窗未拖宽时自动收窄。
+
 ## 📦 发版与实测经验（套路已验证多次）
+
 
 - 发版链路：`npm run build` → `npm run dist:win` → 产物级断言（@electron/asar 读 app.asar 版本/白名单）→ 静默安装 → 启动验证（gateway `GET http://127.0.0.1:18789/` HTTP 200）→ `gh release create`。发版后顺手 `npm run dupcheck` 防重复率回退。
 - **沙箱内不做静默安装冒烟**：权限收紧/目录清空两个坑均有实录（见记忆）；安装验证走普通权限通道，沙箱用产物级断言替代。

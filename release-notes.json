@@ -1,5 +1,12 @@
 [
   {
+    "version": "2026.829.1",
+    "notes": {
+      "zh": "修复：6 项 UI 布局问题——\n「更多」菜单不再被遮挡（提升至菜单最高层，层叠契约：菜单 ≤60 / 标题栏 100 / 浮层 ≥1000）\n工作区/扩展等页面顶部不再与窗口控制按钮重叠（六视图统一 44px 标题栏让位，--titlebar-h token 单点可改）\n侧边栏支持右缘拖拽调宽（220-420px 持久化；未自定义时窄窗自动收窄照常生效）\n布局优化：扩展页内容宽屏收束居中；工作区/扩展/任务/设置新增响应式断点，按窗口大小自适应\n全局布局 QA：修复确认框被弹窗遮挡、定时内容双重顶部留白等 3 处，新增 26 条布局守护测试\n测试基线 771 全绿",
+      "en": "Fixed: six UI layout issues —\nThe \"More\" menu no longer gets covered (raised to the top menu layer; stacking contract: menus ≤60 / titlebar 100 / overlays ≥1000)\nWorkspace/Extensions pages no longer overlap the window control buttons (all six views share a 44px titlebar clearance via the --titlebar-h token)\nSidebar right edge is now drag-resizable (220-420px, persisted; narrow-window auto-shrink still applies until you customize it)\nLayout: Extensions content is now column-constrained and centered on wide screens; responsive breakpoints added to Workspace/Extensions/Tasks/Settings\nGlobal layout QA: fixed confirm dialog hidden behind modals, doubled top padding in the nested scheduled-jobs tab, and popover stacking violations; 26 new layout guard tests\n771-test baseline all green"
+    }
+  },
+  {
     "version": "2026.828.5",
     "notes": {
       "zh": "整合：消息流式体验优化第二期——侧边栏重组 + 三组模块整合\n侧边栏：会话列表占纵向主体，主导航 6 项收敛为底部 5 图标轨（任务/工作区/扩展/完整版网页·重连/设置）+「更多」菜单（Worktree 新会话，仅检测到 git 时显示），悬浮提示与实时徽标\n任务：运行记录与定时任务整合为双 tab，任务卡显示来源定时任务名并可跳转，定时任务详情运行记录可链回\n扩展：技能与插件整合为扩展视图双 tab，插件管理从设置页迁出\n工作区：IDE 式融合——左导航（仓库选择/文件树/「Git 变更」节点/Worktrees 区块）+ 右主区（文件预览 | Git 面板），选中 worktree 自动切换 git 仓库上下文\n收敛：视图数量 9→6（合并定时/Worktrees/Git 入口），清理死接线与死键\n测试基线 744 全绿",
