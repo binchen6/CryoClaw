@@ -711,7 +711,7 @@ cc-sidebar {
 }
 
 .cryoclaw-titlebar {
-  height: 44px;
+  height: var(--titlebar-h); /* 与 fullpage 让位同源（R43：单点修改能力） */
   position: absolute;
   top: 0;
   left: 0;

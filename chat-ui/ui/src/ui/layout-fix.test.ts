@@ -8,7 +8,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 function css(rel: string): string {
-  return readFileSync(new URL(`../../../../src/styles/${rel}`, import.meta.url), "utf8");
+  const raw = readFileSync(new URL(`../../../../src/styles/${rel}`, import.meta.url), "utf8");
+  return raw.replace(/\/\*[\s\S]*?\*\//g, ""); // 剥注释：防块内注释干扰规则块捕获（质量审查 Minor 加固）
 }
 
 test("tokens-ext：--titlebar-h 布局 token 存在", () => {
@@ -22,7 +23,21 @@ test("fullpage 视图顶部让位沉浸式标题栏（不再与窗口控件重�
   assert.match(wkLayout, /padding-top:\s*var\(--titlebar-h\)/, "wk-layout 缺标题栏让位");
 });
 
-test("ts-layout 顶部让位统一走 token", () => {
-  const tsLayout = css("misc.css").match(/\.ts-layout\s*\{[^}]*\}/)?.[0] ?? "";
-  assert.match(tsLayout, /var\(--titlebar-h\)/, "ts-layout 应改用 --titlebar-h");
+test("同模式容器让位均走 token（防裸字面量回退，补齐守护面）", () => {
+  const misc = css("misc.css");
+  for (const cls of [".ts-layout", ".wt-layout", ".gitp-layout"]) {
+    const block = misc.match(new RegExp(`${cls.replace(/\./g, "\\.")}\\s*\\{[^}]*\\}`))?.[0] ?? "";
+    assert.match(block, /var\(--titlebar-h\)/, `${cls} 应走 --titlebar-h`);
+  }
+  const cron = css("cron.css");
+  assert.match(cron.match(/\.cm-layout__detail\s*\{[^}]*\}/)?.[0] ?? "", /var\(--titlebar-h\)/, "cm-layout__detail 应走 --titlebar-h");
+  assert.match(cron.match(/\.cm-list__top\s*\{[^}]*\}/)?.[0] ?? "", /var\(--titlebar-h\)/, "cm-list__top 应走 --titlebar-h");
+  const settings = css("settings.css");
+  assert.match(settings.match(/\.oc-settings-nav\s*\{[^}]*\}/)?.[0] ?? "", /var\(--titlebar-h\)/, "oc-settings-nav 应走 --titlebar-h");
+});
+
+test("sidebar.css：titlebar 高度与让位 token 同源（单点修改能力）", () => {
+  const sidebar = css("sidebar.css");
+  const titlebar = sidebar.match(/\.cryoclaw-titlebar\s*\{[^}]*\}/)?.[0] ?? "";
+  assert.match(titlebar, /height:\s*var\(--titlebar-h\)/, "titlebar 高度应走 --titlebar-h");
 });

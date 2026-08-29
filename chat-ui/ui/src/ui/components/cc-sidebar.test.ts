@@ -195,8 +195,11 @@ test("cc-sidebar：设置图标徽标详情（更新/微信徽标的 tooltip 说
 });
 
 test("sidebar.css：更多菜单与会话菜单同处菜单最高层（z-index 60）", () => {
-  // 产物位于 .test-dist/ui/src/ui/components/，四级 ../ 回到 chat-ui/ui/ 再进 src/styles/
-  const css = readFileSync(new URL("../../../../../src/styles/sidebar.css", import.meta.url), "utf8");
+  // 产物位于 .test-dist/ui/src/ui/components/，五级 ../ 回到 chat-ui/ui/ 再进 src/styles/
+  const raw = readFileSync(new URL("../../../../../src/styles/sidebar.css", import.meta.url), "utf8");
+  const css = raw.replace(/\/\*[\s\S]*?\*\//g, ""); // 剥注释：防块内注释干扰规则块捕获
   const moreMenu = css.match(/\.cryoclaw-sidebar__more-menu\s*\{[^}]*\}/)?.[0] ?? "";
   assert.match(moreMenu, /z-index:\s*60/, "更多菜单应为菜单最高层 60");
+  const sessionMenu = css.match(/\.cryoclaw-sidebar__session-menu\s*\{[^}]*\}/)?.[0] ?? "";
+  assert.match(sessionMenu, /z-index:\s*60/, "会话菜单应保持菜单最高层 60（对称守护）");
 });
