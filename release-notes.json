@@ -1,5 +1,12 @@
 [
   {
+    "version": "2026.903.0",
+    "notes": {
+      "zh": "内核：适配 openclaw 2026.8.2（OpenClaw 2.0 世代）——\n内核钉版升级 2026.7.1-2 → 2026.8.2，捆绑运行时 Node 22.23.2；插件同步升级（kimi/moonshot/zai/qwen/deepseek/feishu 2026.8.2，wecom 2026.8.17 等）\n内置内核热更新修复：2026.8 起上游 preinstall 引入裸 node 版本硬校验，改用捆绑运行时执行安装——此前在 无系统 Node/版本不符 的机器上升/降级必然失败；升级/回退 2026.7.1-2 双向 e2e 实测通过\n补丁系统双形态兼容：kimi 思考档补丁适配上游包结构重构（provider-policy-api.js 新形态 + index.js 旧形态并存），asar 补丁 9/10 命中 2026.8.2（补丁 10 对 2026.8.2 废弃、对 2026.7.x 保留）\n打包对齐上游裁剪：移除已删的 skills canvas/discord/imsg 与 extensions shared/imessage；依赖安装改用捆绑 runtime 的 node+npm-cli（不再依赖系统 npm）\n新增研究文档 docs/kernel-2026.8.2-research.md 与内核换装 e2e 验证脚本\n测试基线 783 用例全绿（vitest 101 + node:test 130 + chat-ui 488 + scripts 58 等）",
+      "en": "Kernel: openclaw 2026.8.2 adaptation (OpenClaw 2.0 generation) —\nKernel pin upgraded 2026.7.1-2 → 2026.8.2 with bundled Node 22.23.2; plugins synced (kimi/moonshot/zai/qwen/deepseek/feishu 2026.8.2, wecom 2026.8.17, etc.)\nBuilt-in kernel hot-update fix: upstream ≥2026.8 preinstall adds a bare-node version gate, so installs now run under the bundled runtime — previously any upgrade/downgrade failed on machines without a matching system Node; e2e-verified upgrade to 2026.8.2 and rollback to 2026.7.1-2 both ways\nDual-shape patch system: the kimi thinking-profile patch now matches both the refactored package layout (provider-policy-api.js, new) and index.js (legacy); 9/10 asar patches hit 2026.8.2 (patch 10 retired for 2026.8.2, kept for 2026.7.x)\nPackaging aligned with upstream removals: dropped deleted skills canvas/discord/imsg and extensions shared/imessage; dependency installs now use the bundled runtime's node+npm-cli instead of system npm\nAdded docs/kernel-2026.8.2-research.md and a kernel-swap e2e verification script\n783-test baseline all green"
+    }
+  },
+  {
     "version": "2026.829.1",
     "notes": {
       "zh": "修复：6 项 UI 布局问题——\n「更多」菜单不再被遮挡（提升至菜单最高层，层叠契约：菜单 ≤60 / 标题栏 100 / 浮层 ≥1000）\n工作区/扩展等页面顶部不再与窗口控制按钮重叠（六视图统一 44px 标题栏让位，--titlebar-h token 单点可改）\n侧边栏支持右缘拖拽调宽（220-420px 持久化；未自定义时窄窗自动收窄照常生效）\n布局优化：扩展页内容宽屏收束居中；工作区/扩展/任务/设置新增响应式断点，按窗口大小自适应\n全局布局 QA：修复确认框被弹窗遮挡、定时内容双重顶部留白等 3 处，新增 26 条布局守护测试\n测试基线 771 全绿",

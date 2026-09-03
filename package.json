@@ -1,6 +1,6 @@
 {
   "name": "cryoclaw",
-  "version": "2026.829.1",
+  "version": "2026.903.0",
   "private": true,
   "description": "CryoClaw desktop app — cross-platform Electron shell for openclaw",
   "main": "dist/main.js",
@@ -56,17 +56,17 @@
     "isbinaryfile": "$isbinaryfile"
   },
   "cryoclaw": {
-    "openclaw": "2026.7.1-2",
-    "dingtalkConnector": "0.8.24",
-    "weixin": "2.4.6",
-    "wecom": "20206.7.201",
-    "officecli": "1.0.143",
-    "feishuPlugin": "2026.7.1",
+    "openclaw": "2026.8.2",
+    "dingtalkConnector": "0.8.25",
+    "weixin": "2.4.8",
+    "wecom": "2026.8.17",
+    "officecli": "1.0.147",
+    "feishuPlugin": "2026.8.2",
     "qqbotPlugin": "2026.7.1",
-    "moonshotProviderPlugin": "2026.7.1",
-    "kimiProviderPlugin": "2026.7.1",
-    "zaiProviderPlugin": "2026.7.1",
-    "qwenProviderPlugin": "2026.7.1",
-    "deepseekProviderPlugin": "2026.7.1"
+    "moonshotProviderPlugin": "2026.8.2",
+    "kimiProviderPlugin": "2026.8.2",
+    "zaiProviderPlugin": "2026.8.2",
+    "qwenProviderPlugin": "2026.8.2",
+    "deepseekProviderPlugin": "2026.8.2"
   }
 }

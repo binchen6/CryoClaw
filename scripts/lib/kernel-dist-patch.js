@@ -356,17 +356,55 @@ function hasAsarBoundaryPatchMarker(gatewayDir) {
 //
 // 幂等：已注入 /* cryoclaw-thinking-profile */ 标记则跳过；marker 不匹配返回 0
 // （上游结构变化时静默跳过，不阻断打包/升级）。
+//
+// 两种包形态（vendored @openclaw/kimi-provider 的版本决定命中哪种）：
+//   2026.7.x 包：dist/extensions/kimi/dist/index.js 内联
+//     resolveThinkingProfile: () => ({ levels: [off, on], ... }) 钩子。
+//   2026.8.x 包：index.js 变为 ESM wrapper，钩子移到
+//     dist/extensions/kimi/dist/provider-policy-api.js 的
+//     function resolveThinkingProfile({ modelId })，上游已原生支持 K3 全档位
+//     但硬编码 model ID 白名单（k3/k3-256k/k3[1m]）——白名单外、靠
+//     compat.supportedReasoningEfforts 声明能力的模型仍需本补丁。
+//     内核调用钩子时会透传 compat（thinking-*.js 的 providerContext）。
 function patchKimiThinkingProfile(gatewayDir) {
-  const target = path.join(
+  const kimiDistDir = path.join(
     gatewayDir,
     "node_modules",
     "openclaw",
     "dist",
     "extensions",
     "kimi",
-    "dist",
-    "index.js"
+    "dist"
   );
+
+  // 形态一（≥2026.8.x 包）：provider-policy-api.js 的命名函数
+  const policyFile = path.join(kimiDistDir, "provider-policy-api.js");
+  if (fs.existsSync(policyFile)) {
+    const source = fs.readFileSync(policyFile, "utf-8");
+    if (source.includes("/* cryoclaw-thinking-profile */")) return 0;
+    const marker = "function resolveThinkingProfile({ modelId }) {";
+    if (source.includes(marker)) {
+      const replacement = [
+        "function resolveThinkingProfile(context) {",
+        "\t/* cryoclaw-thinking-profile */",
+        '\tconst modelId = typeof context?.modelId === "string" ? context.modelId : "";',
+        "\tconst efforts = Array.isArray(context?.compat?.supportedReasoningEfforts)",
+        '\t\t? context.compat.supportedReasoningEfforts.filter((e) => typeof e === "string" && e.trim() && e !== "off")',
+        "\t\t: [];",
+        "\tif (efforts.length > 0) return {",
+        '\t\tlevels: [{ id: "off", label: "off" }, ...efforts.map((id) => ({ id, label: id }))],',
+        '\t\tdefaultLevel: efforts.includes("high") ? "high" : efforts[efforts.length - 1]',
+        "\t};",
+      ].join("\n");
+      fs.writeFileSync(policyFile, source.replace(marker, replacement), "utf-8");
+      return 1;
+    }
+    // 新包形态但 marker 未命中：不再尝试旧形态（index.js 只是 wrapper）
+    return 0;
+  }
+
+  // 形态二（≤2026.7.x 包）：index.js 内联钩子
+  const target = path.join(kimiDistDir, "index.js");
   if (!fs.existsSync(target)) return 0;
 
   const source = fs.readFileSync(target, "utf-8");

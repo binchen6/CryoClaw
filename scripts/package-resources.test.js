@@ -439,20 +439,14 @@ test("verifyOutput 应要求基础扩展插件存在", () => {
   writeFixture(path.join(targetBase, "app-icon.png"), "png\n");
 
   for (const id of [
-    "shared",
     "memory-core",
     "device-pair",
-    "imessage",
     "kimi-search",
     "dingtalk-connector",
     "wecom-openclaw-plugin",
   ]) {
     const extDir = path.join(targetBase, "gateway", "node_modules", "openclaw", "extensions", id);
-    if (id === "shared") {
-      fs.mkdirSync(extDir, { recursive: true });
-    } else {
-      writeFixture(path.join(extDir, "openclaw.plugin.json"), "{}\n");
-    }
+    writeFixture(path.join(extDir, "openclaw.plugin.json"), "{}\n");
   }
 
   assert.throws(

@@ -127,6 +127,13 @@ function npmRun(args, cwd) {
     cmd = resolveNpmBin();
     cmdArgs = fullArgs;
   }
+  // openclaw ≥2026.8 的 preinstall 会用裸 `node` 校验版本（>=22.22.3 <23 ||
+  // >=24.15.0 <25 || >=25.9.0），按 PATH 解析——用户机器上可能没有系统 Node，
+  // 或版本不在范围内（都会直接拒装）。把捆绑 runtime 目录前置到 PATH，确保
+  // 生命周期脚本里的 `node` 命中我们钉的 22.x 运行时。
+  const env = { ...process.env };
+  const pathKey = Object.keys(env).find((k) => k.toLowerCase() === "path") || "PATH";
+  env[pathKey] = path.join(RESOURCES_DIR, "runtime") + path.delimiter + (env[pathKey] || "");
   const result = spawnSync(cmd, cmdArgs, {
     cwd,
     encoding: "utf8",
@@ -134,6 +141,7 @@ function npmRun(args, cwd) {
     windowsHide: true,
     timeout: NPM_TIMEOUT_MS,
     maxBuffer: 32 * 1024 * 1024,
+    env,
   });
   if (result.error) throw result.error;
   if (result.status !== 0) {

@@ -1091,15 +1091,33 @@ function installDependencies(opts, gatewayDir) {
   };
   fs.writeFileSync(path.join(gatewayDir, "package.json"), JSON.stringify(pkg, null, 2));
 
-  // 使用系统 npm 执行安装
+  // 使用捆绑运行时（Step 1 下载的 Node 22.x）执行 npm install，而非宿主机 npm：
+  // openclaw ≥2026.8 的 preinstall 硬性校验 Node 版本
+  // （>=22.22.3 <23 || >=24.15.0 <25 || >=25.9.0），宿主机 Node 不在范围内
+  // （如 24.14.0）会被直接拒装；捆绑 runtime 版本由我们钉定，恒定满足，
+  // 同时也保证构建产物与宿主环境解耦。
+  const runtimeDir = path.join(path.dirname(gatewayDir), "runtime");
+  const nodeExe = path.join(runtimeDir, opts.platform === "darwin" ? "node" : "node.exe");
+  const npmCli = opts.platform === "darwin"
+    ? path.join(runtimeDir, "vendor", "npm", "bin", "npm-cli.js")
+    : path.join(runtimeDir, "node_modules", "npm", "bin", "npm-cli.js");
+  if (!fs.existsSync(nodeExe) || !fs.existsSync(npmCli)) {
+    die(`捆绑运行时缺失，无法执行 npm install: ${nodeExe} / ${npmCli}`);
+  }
+
   // --os/--cpu + npm_config_os/cpu：强制按目标平台安装，避免跨平台打包时复用宿主机原生包
   // --install-links: 对 file: 依赖做实际拷贝而非符号链接
   // --legacy-peer-deps: 防止 npm 自动安装 peerDep 拉入巨型包（如 clawdbot 205MB）
-  execSync(`npm install --omit=dev --install-links --legacy-peer-deps --os=${opts.platform} --cpu=${opts.arch}`, {
+  // PATH 前置 runtime 目录：preinstall 脚本里的裸 `node` 调用按 PATH 解析，
+  // 必须命中捆绑运行时而非宿主机 Node（Windows 上 PATH 键名大小写不敏感，
+  // 沿用原有键名避免产生重复键）。
+  const pathKey = Object.keys(process.env).find((k) => k.toLowerCase() === "path") || "PATH";
+  execSync(`"${nodeExe}" "${npmCli}" install --omit=dev --install-links --legacy-peer-deps --os=${opts.platform} --cpu=${opts.arch}`, {
     cwd: gatewayDir,
     stdio: "inherit",
     env: {
       ...process.env,
+      [pathKey]: runtimeDir + path.delimiter + (process.env[pathKey] || ""),
       NODE_ENV: "production",
       npm_config_os: opts.platform,
       npm_config_cpu: opts.arch,
@@ -1194,8 +1212,11 @@ function patchKimiThinkingProfile(gatewayDir) {
     }
     // 返回 0 有两种含义：已补丁（幂等跳过）或 marker 未命中（上游结构变化）。
     // 读目标文件区分——后者必须大声告警，否则会静默发出只有 off/on 两档的包。
-    const target = path.join(gatewayDir, "node_modules", "openclaw", "dist", "extensions", "kimi", "dist", "index.js");
-    if (fs.existsSync(target) && !fs.readFileSync(target, "utf-8").includes("cryoclaw-thinking-profile")) {
+    // kimi-provider ≥2026.8.x 包形态下补丁落在 provider-policy-api.js（index.js 是 wrapper）。
+    const kimiDist = path.join(gatewayDir, "node_modules", "openclaw", "dist", "extensions", "kimi", "dist");
+    const candidates = [path.join(kimiDist, "provider-policy-api.js"), path.join(kimiDist, "index.js")];
+    const existing = candidates.filter((f) => fs.existsSync(f));
+    if (existing.length > 0 && !existing.some((f) => fs.readFileSync(f, "utf-8").includes("cryoclaw-thinking-profile"))) {
       log("⚠⚠ kimi 思考档位补丁未命中（上游结构变化？），k3 系模型将退化为 off/on 两档！");
     }
   } catch (err) {
@@ -1307,11 +1328,11 @@ const OFFICIAL_VENDOR_PLUGINS = [
 
 
 // openclaw/skills 只保留 CryoClaw 产品需要的内置技能，上游新增 skill 不会自动打入。
+// 2026.8.x 起 canvas 变为 dist/extensions/canvas 扩展、discord/imsg skill 被上游移除，
+// 均已从白名单删除（见 docs/kernel-2026.8.2-research.md 第 6 节）。
 const OPENCLAW_SKILLS_ALLOWLIST = new Set([
-  "canvas",
   "clawhub",
   "coding-agent",
-  "discord",
   "github",
   "healthcheck",
   "model-usage",
@@ -1328,7 +1349,6 @@ const OPENCLAW_SKILLS_DARWIN_ONLY = new Set([
   "apple-notes",
   "apple-reminders",
   "camsnap",
-  "imsg",
   "peekaboo",
 ]);
 
@@ -1342,11 +1362,9 @@ const OPENCLAW_SKILLS_DARWIN_ONLY = new Set([
 // 起不再随内核 npm 包发布，由 CryoClaw 构建期 vendor（见 OFFICIAL_VENDOR_PLUGINS），
 // 需保留在 allowlist 中防止被 prune。
 const OPENCLAW_EXTENSION_ALLOWLIST = new Set([
-  "shared",
   "memory-core",
   "device-pair",
   "feishu",
-  "imessage",
   "telegram",
   "kimi-search",
   "qqbot",
@@ -1361,11 +1379,12 @@ const OPENCLAW_EXTENSION_ALLOWLIST = new Set([
 // openclaw 的 bundled extension 在 2026.3.x 位于顶层 extensions/，在 2026.4.x 迁到 dist/extensions/。
 // verifyOutput 对 bundled 列表 fallback 两处，任一存在即通过，避免跟随 openclaw 升级反复改路径。
 // CryoClaw 另行注入的插件始终写入 dist/extensions/。
+// 2026.8.x 起 imessage 移出内核包（外部官方插件 @openclaw/imessage，CryoClaw 产品面
+// 不含 iMessage，不做 vendor）；shared 扩展被上游移除。
 const REQUIRED_OPENCLAW_BUNDLED_EXTENSIONS = [
   path.join("memory-core", "openclaw.plugin.json"),
   path.join("device-pair", "openclaw.plugin.json"),
   path.join("feishu", "openclaw.plugin.json"),
-  path.join("imessage", "openclaw.plugin.json"),
 ];
 
 // In-asar injection: kimi-search + dingtalk-connector (channel shim),
@@ -2504,21 +2523,31 @@ function verifyAsarContents(asarPath) {
   // kimi 思考档位补丁必须落在 asar 内——vendorOfficialPlugin 会覆盖
   // dist/extensions/kimi/，历史上曾把 installDependencies 阶段的补丁冲掉。
   // 此处做打包后内容校验，未命中大声告警（不 die：上游若已原生修复则不阻断）。
-  const kimiExtKey = "node_modules/openclaw/dist/extensions/kimi/dist/index.js";
-  if (files.has("/" + kimiExtKey)) {
-    try {
-      let content = null;
-      for (const variant of [kimiExtKey, kimiExtKey.replace(/\//g, "\\")]) {
+  // kimi-provider ≥2026.8.x：补丁在 provider-policy-api.js；≤2026.7.x：在 index.js。
+  const kimiExtKeys = [
+    "node_modules/openclaw/dist/extensions/kimi/dist/provider-policy-api.js",
+    "node_modules/openclaw/dist/extensions/kimi/dist/index.js",
+  ];
+  try {
+    let markerFound = false;
+    let anyPresent = false;
+    for (const key of kimiExtKeys) {
+      if (!files.has("/" + key)) continue;
+      anyPresent = true;
+      for (const variant of [key, key.replace(/\//g, "\\")]) {
         try {
-          content = asar.extractFile(asarPath, variant).toString("utf-8");
+          if (asar.extractFile(asarPath, variant).toString("utf-8").includes("cryoclaw-thinking-profile")) {
+            markerFound = true;
+          }
           break;
         } catch { /* 尝试下一种路径形态 */ }
       }
-      if (content !== null && !content.includes("cryoclaw-thinking-profile")) {
-        log("⚠⚠ gateway.asar 内 kimi 插件缺少思考档位补丁标记，k3 系模型将退化为 off/on 两档！");
-      }
-    } catch { /* 校验失败不阻断打包 */ }
-  }
+      if (markerFound) break;
+    }
+    if (anyPresent && !markerFound) {
+      log("⚠⚠ gateway.asar 内 kimi 插件缺少思考档位补丁标记，k3 系模型将退化为 off/on 两档！");
+    }
+  } catch { /* 校验失败不阻断打包 */ }
 }
 
 // 递归统计文件数
