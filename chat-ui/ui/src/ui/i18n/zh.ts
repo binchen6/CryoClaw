@@ -459,7 +459,7 @@ export const zhDict: Record<string, string> = {
   "settings.about.openclaw": "OpenClaw",
   "settings.about.kernel": "内核升级",
   "settings.about.kernelCurrent": "当前版本",
-  "settings.about.kernelLatest": "最新版本",
+  "settings.about.kernelLatest": "稳定版本",
   "settings.about.kernelLatestNotChecked": "未查询",
   "settings.about.kernelCheck": "检查更新",
   "settings.about.kernelUpdate": "升级内核",
@@ -467,7 +467,7 @@ export const zhDict: Record<string, string> = {
   "settings.about.kernelUpdateConfirm": "确定要升级内核吗？升级期间服务会短暂中断。",
   "settings.about.kernelRollbackConfirm": "确定要回退到上一个内核版本吗？",
   "settings.about.kernelNotSupported": "当前环境不支持内核升级",
-  "settings.about.kernelCheckFailed": "查询最新版本失败",
+  "settings.about.kernelCheckFailed": "查询稳定版本失败",
   "settings.about.kernelUpdateSuccess": "升级成功：{from} → {to}",
   "settings.about.kernelRollbackSuccess": "回退成功：{from} → {to}",
   // App 自动更新（electron-updater）

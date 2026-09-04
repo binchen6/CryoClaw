@@ -422,7 +422,7 @@ export const enDict: Record<string, string> = {
   "settings.about.openclaw": "OpenClaw",
   "settings.about.kernel": "Kernel Update",
   "settings.about.kernelCurrent": "Current Version",
-  "settings.about.kernelLatest": "Latest Version",
+  "settings.about.kernelLatest": "Stable Version",
   "settings.about.kernelLatestNotChecked": "Not checked",
   "settings.about.kernelCheck": "Check for Updates",
   "settings.about.kernelUpdate": "Upgrade Kernel",
@@ -430,7 +430,7 @@ export const enDict: Record<string, string> = {
   "settings.about.kernelUpdateConfirm": "Upgrade the kernel? The service will be briefly interrupted.",
   "settings.about.kernelRollbackConfirm": "Roll back to the previous kernel version?",
   "settings.about.kernelNotSupported": "Kernel upgrade is not supported in this environment",
-  "settings.about.kernelCheckFailed": "Failed to check the latest version",
+  "settings.about.kernelCheckFailed": "Failed to check the stable version",
   "settings.about.kernelUpdateSuccess": "Upgraded: {from} → {to}",
   "settings.about.kernelRollbackSuccess": "Rolled back: {from} → {to}",
   // App auto update (electron-updater)

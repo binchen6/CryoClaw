@@ -2930,16 +2930,33 @@ function assertPluginsNativeEntry(targetPaths) {
 }
 
 // ─── Step 7.5: vendor 内核升级器 ───
-// 把 scripts/updater/ + scripts/lib/kernel-dist-patch.js + scripts/lib/rm-rec.js +
-// scripts/lib/kernel-prune.js + @electron/asar（含运行时依赖）复制到 targetBase/updater/，
-// afterPack 注入安装产物，供运行时内核升级/回退与 gateway CLI 控制使用。
+// 把 scripts/updater/ + scripts/lib/kernel-dist-patch.js + scripts/lib/kernel-channel.js +
+// scripts/lib/rm-rec.js + scripts/lib/kernel-prune.js + @electron/asar（含运行时依赖）
+// 复制到 targetBase/updater/，afterPack 注入安装产物，供运行时内核升级/回退与
+// gateway CLI 控制使用。kernel-update.mjs 复制时注入内置兜底稳定版（见函数体注释）。
 function vendorKernelUpdater(targetBase) {
   const updaterDir = path.join(targetBase, "updater");
   ensureDir(updaterDir);
 
-  fs.copyFileSync(
-    path.join(ROOT, "scripts", "updater", "kernel-update.mjs"),
-    path.join(updaterDir, "kernel-update.mjs")
+  // kernel-update.mjs 复制时注入内置兜底稳定版（占位符 → package.json cryoclaw.openclaw
+  // 钉版本）：远程策展清单不可达时，运行时更新目标仍等于本 app 出厂内核版本，
+  // 绝不回落 npm latest（2026.9.1 事故：dist-tag latest 指向证据链不全的发行）。
+  const pinnedKernel = (() => {
+    try {
+      const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8"));
+      return pkg.cryoclaw?.openclaw || null;
+    } catch {
+      return null;
+    }
+  })();
+  if (!pinnedKernel) die("package.json 缺少 cryoclaw.openclaw 钉版本，无法注入内核兜底稳定版");
+  const kernelUpdateSrc = fs.readFileSync(path.join(ROOT, "scripts", "updater", "kernel-update.mjs"), "utf-8");
+  if (!kernelUpdateSrc.includes("__CRYOCLAW_FALLBACK_STABLE__")) {
+    die("kernel-update.mjs 缺少 __CRYOCLAW_FALLBACK_STABLE__ 占位符（脚本被改过？）");
+  }
+  fs.writeFileSync(
+    path.join(updaterDir, "kernel-update.mjs"),
+    kernelUpdateSrc.replaceAll("__CRYOCLAW_FALLBACK_STABLE__", pinnedKernel)
   );
   fs.copyFileSync(
     path.join(ROOT, "scripts", "updater", "gateway-ctl.mjs"),
@@ -2948,6 +2965,10 @@ function vendorKernelUpdater(targetBase) {
   fs.copyFileSync(
     path.join(ROOT, "scripts", "lib", "kernel-dist-patch.js"),
     path.join(updaterDir, "kernel-dist-patch.js")
+  );
+  fs.copyFileSync(
+    path.join(ROOT, "scripts", "lib", "kernel-channel.js"),
+    path.join(updaterDir, "kernel-channel.js")
   );
   fs.copyFileSync(
     path.join(ROOT, "scripts", "lib", "rm-rec.js"),

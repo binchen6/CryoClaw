@@ -11,15 +11,16 @@
  * 同级需有 kernel-dist-patch.js、kernel-prune.js、rm-rec.js 与 node_modules/（含 @electron/asar）。
  *
  * 用法：
- *   kernel-update.mjs                 升级到 registry latest
- *   kernel-update.mjs --tag <ver>     升级到指定版本（也可用于降级）
- *   kernel-update.mjs --check         只查询当前/最新版本
+ *   kernel-update.mjs                 升级到策展稳定版（kernel-channel.json，见 kernel-channel.js 注释）
+ *   kernel-update.mjs --tag <ver>     升级到指定版本（也可用于降级/装非策展版本）
+ *   kernel-update.mjs --check         只查询当前/策展稳定版与回退可用性
  *   kernel-update.mjs --rollback      回退到最近一次备份
  *   （CLI wrapper 透传时首个参数可能是 "update"，会被忽略）
  *
  * 进度协议：stdout 每行一个 JSON 对象
  *   {"type":"progress","step":string,"pct":0-100,"msg":string}
- *   {"type":"state","current":string,"latest":string,"updateAvailable":boolean}
+ *   {"type":"state","current":string,"latest":string,"updateAvailable":boolean,"stableSource"?:string}
+ *   （latest 字段语义 = 策展稳定版；updateAvailable 仅当 current 落后于它）
  *   {"type":"done","action":"update"|"rollback","from":string,"to":string}
  *   {"type":"error","message":string}
  */
@@ -51,6 +52,11 @@ const rmRecursive = createRequire(import.meta.url)("./rm-rec.js")(xfs);
 // 运行时内核裁剪（kernel-prune.js）：npm 安装的新内核树是未裁剪的完整发布包，
 // 不裁剪会让升级后的 gateway.asar 比出厂版本膨胀上百 MB（ffmpeg/koffi/.map 等）。
 const { pruneGatewayTree } = createRequire(import.meta.url)("./kernel-prune.js")(xfs);
+
+// 内核稳定版策展渠道（kernel-channel.js）：openclaw 官方 npm dist-tag latest 会指向
+// 发行证据链未完成的版本（如 2026.9.1），直接当更新目标会诱导用户装非稳定内核。
+// 更新目标改为策展 stable：远程 kernel-channel.json → 内置兜底（构建期注入钉版本）。
+const kch = createRequire(import.meta.url)("./kernel-channel.js");
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REGISTRY = (process.env.CRYOCLAW_NPM_REGISTRY || "https://registry.npmmirror.com").replace(/\/+$/, "");
@@ -150,9 +156,9 @@ function npmRun(args, cwd) {
   return result.stdout;
 }
 
-function fetchJson(url) {
+function fetchJson(url, timeoutMs = HTTP_TIMEOUT_MS) {
   return new Promise((resolve, reject) => {
-    const req = https.get(url, { timeout: HTTP_TIMEOUT_MS }, (res) => {
+    const req = https.get(url, { timeout: timeoutMs }, (res) => {
       if (res.statusCode !== 200) {
         res.resume();
         reject(new Error(`HTTP ${res.statusCode} ${url}`));
@@ -174,10 +180,50 @@ function fetchJson(url) {
   });
 }
 
-async function fetchLatestVersion() {
-  const data = await fetchJson(`${REGISTRY}/${KERNEL_PACKAGE}/latest`);
-  if (!data || typeof data.version !== "string") throw new Error("registry 响应缺少 version");
-  return data.version;
+// ── 稳定版策展渠道 ──
+// 远程策展清单（CryoClaw 仓库 kernel-channel.json）→ 构建期注入的内置兜底。
+// 国内 raw.githubusercontent.com 常不可达，jsdelivr 镜像作第二来源；两者都失败
+// 用内置兜底（= 本 app 打包时钉的内核版本，随 app 发行更新），绝不回落 npm latest。
+const CHANNEL_URLS = [
+  "https://raw.githubusercontent.com/binchen6/CryoClaw/main/kernel-channel.json",
+  "https://fastly.jsdelivr.net/gh/binchen6/CryoClaw@main/kernel-channel.json",
+];
+const CHANNEL_FETCH_TIMEOUT_MS = 8_000;
+
+// 构建期占位符：package-resources.js 复制本脚本时替换为 package.json cryoclaw.openclaw 钉版本。
+// dev 环境（未替换）回退读仓库 package.json。
+const FALLBACK_STABLE_PLACEHOLDER = "__CRYOCLAW_FALLBACK_STABLE__";
+function fallbackStableVersion() {
+  if (kch.isValidKernelVersion(FALLBACK_STABLE_PLACEHOLDER)) return FALLBACK_STABLE_PLACEHOLDER;
+  try {
+    const pkg = JSON.parse(fs.readFileSync(path.join(SCRIPT_DIR, "..", "..", "package.json"), "utf-8"));
+    const v = pkg?.cryoclaw?.openclaw;
+    if (kch.isValidKernelVersion(v)) return v;
+  } catch {}
+  return null;
+}
+
+// 返回 { version, source }；全部来源失败时抛错（调用方按"检查失败"处理，不提示更新）。
+async function fetchStableVersion() {
+  for (const url of CHANNEL_URLS) {
+    try {
+      const manifest = kch.parseChannelManifest(await fetchJson(url, CHANNEL_FETCH_TIMEOUT_MS));
+      return { version: manifest.stable, source: url };
+    } catch {
+      // 换下一个来源
+    }
+  }
+  const fb = fallbackStableVersion();
+  if (fb) return { version: fb, source: "builtin-fallback" };
+  throw new Error("无法确定内核稳定版（策展清单不可达且无内置兜底）");
+}
+
+// updateAvailable 判定：仅当 current 落后于策展 stable（三段数字比较，prerelease
+// 后缀不参与）。current 更高（用户手动 --tag 装了更新版本）时不提示"更新"——
+// 那不是更新，是降级。
+function computeUpdateAvailable(current, stable) {
+  const cmp = kch.compareKernelVersions(current, stable);
+  return cmp !== null && cmp < 0;
 }
 
 // asar 库懒加载（ESM-only 依赖，vendor 在同级 node_modules）
@@ -341,11 +387,27 @@ async function cmdUpdate(tag) {
   }
   progress("prepare", 2, "读取当前内核版本");
   const current = await readCurrentVersion();
-  const target = tag || (await fetchLatestVersion());
+  const stable = tag ? null : await fetchStableVersion();
+  const target = tag || stable.version;
   if (!validateKernelVersion(target)) {
-    fail(`registry 返回的 latest 版本号格式非法: ${JSON.stringify(target)}`);
+    fail(`目标内核版本号格式非法: ${JSON.stringify(target)}`);
   }
-  emit({ type: "state", current, latest: target, updateAvailable: current !== target });
+  const updateAvailable = tag ? current !== target : computeUpdateAvailable(current, target);
+  emit({
+    type: "state",
+    current,
+    latest: target,
+    updateAvailable,
+    ...(stable ? { stableSource: stable.source } : {}),
+  });
+
+  // 无显式 --tag 且当前版本不落后于策展 stable：无需换装（含 current 更高的情形——
+  // 用户手动装过更新版本时，无 tag 升级绝不能暗降级）。
+  if (!tag && !updateAvailable) {
+    progress("done", 100, `当前内核 ${current} 已不落后于策展稳定版 ${target}`);
+    emit({ type: "done", action: "update", from: current, to: current });
+    return;
+  }
 
   const staging = xfs.mkdtempSync(path.join(os.tmpdir(), "cryoclaw-kernel-update-"));
   let swapped = false;
@@ -586,9 +648,9 @@ async function cmdRollback() {
 
 async function cmdCheck() {
   const current = await readCurrentVersion();
-  let latest = null;
+  let stable = null;
   try {
-    latest = await fetchLatestVersion();
+    stable = await fetchStableVersion();
   } catch (e) {
     emit({ type: "state", current, latest: null, updateAvailable: false, checkError: String(e.message || e) });
     return;
@@ -597,8 +659,9 @@ async function cmdCheck() {
   emit({
     type: "state",
     current,
-    latest,
-    updateAvailable: current !== latest,
+    latest: stable.version,
+    updateAvailable: computeUpdateAvailable(current, stable.version),
+    stableSource: stable.source,
     rollbackAvailable: backups.length > 0,
     rollbackVersion: backups[0] ? backupVersionOf(backups[0]) : null,
   });

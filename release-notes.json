@@ -1,5 +1,12 @@
 [
   {
+    "version": "2026.905.0",
+    "notes": {
+      "zh": "修复：内核更新误提示非稳定版——openclaw 官方 npm 的 latest 标签会指向发行证据链未完成的版本（如 2026.9.1），此前直接用它当更新目标；现改为 CryoClaw 策展稳定版渠道：远程 kernel-channel.json（国内镜像备选，离线时回退到随应用发行的内置版本），只有经策展确认的稳定版才会提示更新\n优化：手动装过更高内核版本（--tag 指定）的用户不再被提示「更新」到更低版本，无指定版本的升级也不会暗降级\n界面：内核升级面板「最新版本」更名为「稳定版本」",
+      "en": "Fixed: kernel update prompts for non-stable releases — openclaw's npm latest tag can point to versions with an incomplete release chain (e.g. 2026.9.1) and was used directly as the update target; now using a CryoClaw-curated stable channel: remote kernel-channel.json (with a CN mirror fallback, and a built-in version shipped with the app when offline), only curated stable versions trigger update prompts\nImproved: users who manually installed a newer kernel (via --tag) are no longer prompted to \"update\" to an older version, and untargeted upgrades no longer silently downgrade\nUI: kernel panel \"Latest Version\" renamed to \"Stable Version\""
+    }
+  },
+  {
     "version": "2026.904.2",
     "notes": {
       "zh": "修复：打包安装后 Gateway 无法启动——asar 包内内核边界补丁（openRootFile）返回了未定义的路径参数，内核 2026.8.2 的启动加载链直接崩溃；该问题自 v2026.811.8 起存在，因开发验证一直走松散文件模式而未暴露。已修复并新增 asar 打包形态冒烟测试防回归\n修复：安装过不完整扩展（如纯技能插件，目录存在但无可运行程序）时 Gateway 反复报「迁移未收敛」永不就绪——启动时自动将不可用插件降级为禁用（配置完整保留，可随时在扩展商店重装恢复）\n受影响用户说明：若你装过 holo-wechat-mp 扩展，本次更新后它会被自动禁用，在扩展商店重新安装即可恢复",

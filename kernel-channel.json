@@ -1,0 +1,6 @@
+{
+  "stable": "2026.8.2",
+  "minSupported": "2026.7.0",
+  "updatedAt": "2026-09-04",
+  "notes": "CryoClaw 策展的内核稳定版。仅当 openclaw 官方发行证据链完整（GitHub release 非 prerelease、ClawHub publish 已验证、无未跑测试豁免）时才推进 stable。运行时 kernel-update.mjs 拉取本文件（raw.githubusercontent → jsdelivr 镜像 → 构建期内置兜底），不再使用 npm dist-tag latest。"
+}
