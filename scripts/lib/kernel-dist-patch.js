@@ -191,6 +191,10 @@ function patchAsarBoundaryCheck(gatewayDir) {
 
     // 补丁 3: openRootFileSync — openclaw ≥2026.6.x 的 @openclaw/fs-safe 入口
     // （root-file-*.js）。在 resolveRootFilePathGeneric 之前拦截 ASAR 路径。
+    // rootRealPath 必须兜底 params.rootPath：它是原逻辑里 resolveRootPathSync 算出的
+    // *输出*，调用方（如 public-surface 加载链 preparePublicSurfaceModule）并不传；
+    // 直接透传 params.rootRealPath 会得到 undefined，下游 bindPluginCacheRoot 的
+    // path.resolve(undefined) 让 CLI 直接起不来（v2026.904.1 生产事故）。
     const rootFileMarker = "function openRootFileSync(params) {";
     if (result.includes(rootFileMarker)) {
       const rootFileBypass = [
@@ -200,7 +204,7 @@ function patchAsarBoundaryCheck(gatewayDir) {
         "\t\ttry {",
         "\t\t\tconst fd = ioFs.openSync(params.absolutePath, ioFs.constants.O_RDONLY);",
         "\t\t\tconst stat = ioFs.statSync(params.absolutePath);",
-        "\t\t\treturn { ok: true, path: params.absolutePath, fd, stat, rootRealPath: params.rootRealPath };",
+        "\t\t\treturn { ok: true, path: params.absolutePath, fd, stat, rootRealPath: params.rootRealPath ?? params.rootPath };",
         "\t\t} catch (e) {",
         "\t\t\treturn { ok: false, reason: 'validation', error: e };",
         "\t\t}",
@@ -219,7 +223,7 @@ function patchAsarBoundaryCheck(gatewayDir) {
         "\t\ttry {",
         "\t\t\tconst fd = ioFs.openSync(params.absolutePath, ioFs.constants.O_RDONLY);",
         "\t\t\tconst stat = ioFs.statSync(params.absolutePath);",
-        "\t\t\treturn { ok: true, path: params.absolutePath, fd, stat, rootRealPath: params.rootRealPath };",
+        "\t\t\treturn { ok: true, path: params.absolutePath, fd, stat, rootRealPath: params.rootRealPath ?? params.rootPath };",
         "\t\t} catch (e) {",
         "\t\t\treturn { ok: false, reason: 'validation', error: e };",
         "\t\t}",

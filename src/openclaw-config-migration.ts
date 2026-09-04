@@ -217,7 +217,13 @@ function migrateQQBotAllowFromWildcard(config: any): boolean {
  * extensions/ 的插件会让 gateway 启动时 "plugin verification failed" 拒绝就绪
  * （典型：official external plugins tavily/volcengine/xiaomi 的 capability consent）。
  * 把这类条目降级为 enabled:false（保留配置本体，用户之后在扩展商店重装即可）。
- * 只动 enabled===true 的条目；本就 disabled 的残留不阻断启动。 */
+ * 只动 enabled===true 的条目；本就 disabled 的残留不阻断启动。
+ *
+ * 已安装但无可运行载荷（目录在、却没有 package.json 也没有 dist/）同样降级：
+ * 典型是 ClawHub 安装的纯技能插件（只有 openclaw.plugin.json + skills/）。
+ * 内核 2026.8.2 对这类插件每轮启动都 "Repaired missing configured plugin"，
+ * 修复写入不持久 → startup 收敛检测到输入变化 → 拒绝 ready 死循环
+ * （v2026.904.1 生产事故根因之二，holo-wechat-mp 案例）。 */
 function migrateUnavailablePluginEntries(config: any): string[] {
   const entries = config?.plugins?.entries;
   if (!entries || typeof entries !== "object") return [];
@@ -232,13 +238,26 @@ function migrateUnavailablePluginEntries(config: any): string[] {
       return new Set();
     }
   };
+  // 目录内存在 package.json 或 dist/ 视为有可运行载荷
+  const hasRunnablePayload = (dir: string): boolean => {
+    try {
+      if (fs.existsSync(path.join(dir, "package.json"))) return true;
+      return fs.statSync(path.join(dir, "dist")).isDirectory();
+    } catch {
+      return false;
+    }
+  };
   const bundled = listDirs(path.join(resolveGatewayPackageDir(), "dist", "extensions"));
-  const installed = listDirs(path.join(resolveUserStateDir(), "extensions"));
+  const stateExtDir = path.join(resolveUserStateDir(), "extensions");
+  const installed = listDirs(stateExtDir);
+  // bundled 由内核发行物保证格式，不做载荷判定；状态目录里的才查
+  const resolvable = (id: string): boolean =>
+    bundled.has(id) || (installed.has(id) && hasRunnablePayload(path.join(stateExtDir, id)));
   const disabled: string[] = [];
   for (const [id, entry] of Object.entries(entries)) {
     const e = entry as any;
     if (!e || e.enabled !== true) continue;
-    if (bundled.has(id) || installed.has(id)) continue;
+    if (resolvable(id)) continue;
     e.enabled = false;
     disabled.push(id);
   }
@@ -246,7 +265,7 @@ function migrateUnavailablePluginEntries(config: any): string[] {
   const slots = config.plugins?.slots;
   if (slots && typeof slots === "object") {
     for (const [slot, pluginId] of Object.entries(slots)) {
-      if (typeof pluginId === "string" && !bundled.has(pluginId) && !installed.has(pluginId)) {
+      if (typeof pluginId === "string" && !resolvable(pluginId)) {
         delete slots[slot];
         if (!disabled.includes(pluginId)) disabled.push(pluginId);
       }
@@ -292,7 +311,7 @@ export function migrateOpenclawConfigForKernelUpgrade(): void {
     if (migratedPlanTool) parts.push(atLeast2026_8 ? "planTool 开关已落位 tools.updatePlan" : "planTool 开关已落位 tools.experimental.planTool");
     if (migratedMemorySearch) parts.push(atLeast2026_8 ? "memorySearch 已迁移到根级 memory.search" : "memory.search 已回迁至 agents.defaults.memorySearch");
     if (migratedQQBot) parts.push("channels.qqbot.allowFrom 通配符 * 已按 2026.8 契约清除");
-    if (disabledPlugins.length > 0) parts.push(`未安装的启用插件已降级为禁用: ${disabledPlugins.join(", ")}`);
+    if (disabledPlugins.length > 0) parts.push(`不可用（未安装或无可运行载荷）的启用插件已降级为禁用: ${disabledPlugins.join(", ")}`);
     log.info(`[migrate] 已适配新内核配置，${parts.join("；")}`);
   } catch {
     // 迁移失败不阻塞启动

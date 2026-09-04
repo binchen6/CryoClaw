@@ -1,5 +1,12 @@
 [
   {
+    "version": "2026.904.2",
+    "notes": {
+      "zh": "修复：打包安装后 Gateway 无法启动——asar 包内内核边界补丁（openRootFile）返回了未定义的路径参数，内核 2026.8.2 的启动加载链直接崩溃；该问题自 v2026.811.8 起存在，因开发验证一直走松散文件模式而未暴露。已修复并新增 asar 打包形态冒烟测试防回归\n修复：安装过不完整扩展（如纯技能插件，目录存在但无可运行程序）时 Gateway 反复报「迁移未收敛」永不就绪——启动时自动将不可用插件降级为禁用（配置完整保留，可随时在扩展商店重装恢复）\n受影响用户说明：若你装过 holo-wechat-mp 扩展，本次更新后它会被自动禁用，在扩展商店重新安装即可恢复",
+      "en": "Fixed: Gateway failing to start after packaged installation — the kernel boundary patch (openRootFile) inside the asar bundle returned an undefined path parameter, crashing the 2026.8.2 kernel's startup chain; present since v2026.811.8 but never caught because dev verification always ran in loose-file mode. Fixed, with new asar-form smoke tests to prevent regression\nFixed: Gateway never becoming ready (\"migration not converged\" loop) when an incompletely installed extension (e.g. a skill-only plugin with no runnable payload) is present — unavailable plugins are now auto-disabled at startup with their config preserved; reinstall from the extension store anytime to restore\nNote for affected users: if you installed the holo-wechat-mp extension, it will be auto-disabled by this update; reinstall it from the extension store to restore"
+    }
+  },
+  {
     "version": "2026.904.1",
     "notes": {
       "zh": "修复：QQ 渠道在 2026.8.2 内核下反复崩溃——官方 qqbot 插件的 import \"ws\" 命中 ws 包的 ESM 包装（wrapper.mjs），在新内核插件加载链下互操作失败（permessage-deflate ... no export named 'default'），渠道每 5 分钟崩溃重启；现构建期对 qqbot 强制单文件重打包（ws 静态内联），实测 QQ 网关连接稳定\n修复：企微/微信插件加载失败（Dynamic require of \"crypto\"）——esbuild ESM 产物注入 createRequire/__dirname 兼容 banner；插件包入口补丁同步改写 runtimeExtensions，bundle 新增内容标记使旧产物自动重建\n修复：老用户插件目录刷新漏判——镜像插件 reconcile 签名从「仅入口路径」升级为「路径+内容哈希」，同名坏 bundle 会被自动替换\n优化：代码去重——jscpd 重复率 1.15% → 0.88%（79→64 处）：webbridge 修复尾段/precheck 组装抽共享 helper、技能操作三处收敛、渠道设置页五个 tab 的样板收敛进共享模块、消息体渲染/会话落地/URL 参数读写去重\n文档：docs 目录整理——历史计划/废弃方案归档 docs/archive/，新增 docs/README.md 索引；CLAUDE.md、gotchas、ipc-api、client-ticker、README 的过时描述（Electron 版本、更新链路、主题色、blockmap 等）全部更正\n测试基线 814 用例全绿",

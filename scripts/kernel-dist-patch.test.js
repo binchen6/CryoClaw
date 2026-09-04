@@ -261,3 +261,59 @@ test("asar 补丁：无 marker 命中返回 0 且 marker 检查为 false", (t) =
   assert.equal(kdp.patchAsarBoundaryCheck(gatewayDir), 0);
   assert.equal(kdp.hasAsarBoundaryPatchMarker(gatewayDir), false);
 });
+
+// ─── asar-bypass 行为级回归：rootRealPath 不能为 undefined ───
+// v2026.904.1 生产事故：补丁 3/4 返回 rootRealPath: params.rootRealPath，但该参数
+// 是原逻辑的输出（调用方不传），下游 bindPluginCacheRoot 的 path.resolve(undefined)
+// 使内核 2026.8.2 在 asar 形态直接崩溃。这里把补丁后的函数体真正跑起来验证。
+
+function evalPatchedRootFile(patchedSource) {
+  // 补丁后的 chunk 只含函数声明，以 fs/path 为自由变量注入即可执行
+  const factory = new Function(
+    "fs",
+    "path",
+    `${patchedSource}\nreturn { openRootFileSync, openRootFile };`
+  );
+  return factory(fs, path);
+}
+
+test("asar-bypass openRootFileSync/openRootFile：rootRealPath 兜底 rootPath", async (t) => {
+  const { gatewayDir, distDir } = makeGatewayDist(t, {
+    "root-file-AAA.js": [
+      "function openRootFileSync(params) {\n\treturn resolveRootFilePathGeneric(params);\n}",
+      "async function openRootFile(params) {\n\treturn resolveRootFilePathGeneric(params);\n}",
+    ].join("\n"),
+  });
+  assert.equal(kdp.patchAsarBoundaryCheck(gatewayDir), 1);
+  const patched = fs.readFileSync(path.join(distDir, "root-file-AAA.js"), "utf-8");
+  const { openRootFileSync, openRootFile } = evalPatchedRootFile(patched);
+
+  // 伪造 asar 内部路径（目录名含 .asar 即触发 bypass，文件真实存在以便 open/stat 成功）
+  const fakeAsar = path.join(gatewayDir, "gateway.asar");
+  fs.mkdirSync(fakeAsar, { recursive: true });
+  const innerFile = path.join(fakeAsar, "plugin.js");
+  fs.writeFileSync(innerFile, "x");
+  const rootPath = path.join(fakeAsar, "plugins");
+
+  // 调用方不传 rootRealPath（public-surface 加载链的真实形态）
+  const opened = openRootFileSync({ absolutePath: innerFile, rootPath });
+  assert.equal(opened.ok, true);
+  assert.equal(opened.rootRealPath, rootPath, "rootRealPath 必须兜底为 rootPath");
+  assert.ok(opened.rootRealPath !== undefined);
+  fs.closeSync(opened.fd);
+
+  // 调用方显式传 rootRealPath 时透传
+  const opened2 = openRootFileSync({
+    absolutePath: innerFile,
+    rootPath,
+    rootRealPath: "C:\\canonical",
+  });
+  assert.equal(opened2.rootRealPath, "C:\\canonical");
+  fs.closeSync(opened2.fd);
+
+  // async 变体同样兜底
+  const openedAsync = await openRootFile({ absolutePath: innerFile, rootPath });
+  assert.equal(openedAsync.ok, true);
+  assert.equal(openedAsync.rootRealPath, rootPath);
+  fs.closeSync(openedAsync.fd);
+});

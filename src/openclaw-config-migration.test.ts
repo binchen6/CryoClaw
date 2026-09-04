@@ -553,7 +553,9 @@ test("2026.7 不动 qqbot allowFrom 通配符", async () => {
 test("2026.8: enabled 但未安装的插件条目降级为禁用", async () => {
   writeKernelVersion("2026.8.2");
   fs.mkdirSync(path.join(mockState.gatewayPkgDir, "dist", "extensions", "kimi"), { recursive: true });
-  fs.mkdirSync(path.join(mockState.userStateDir, "extensions", "openclaw-weixin"), { recursive: true });
+  const weixinDir = path.join(mockState.userStateDir, "extensions", "openclaw-weixin");
+  fs.mkdirSync(weixinDir, { recursive: true });
+  fs.writeFileSync(path.join(weixinDir, "package.json"), "{}"); // 有可运行载荷才算已安装
   mockState.currentConfig = {
     plugins: { entries: {
       kimi: { enabled: true },                 // bundled → 不动
@@ -613,5 +615,72 @@ test("2026.8: plugins.slots 引用未安装插件时摘除槽位", async () => {
   migrateOpenclawConfigForKernelUpgrade();
   expect(mockState.currentConfig.plugins.slots.memory).toBeUndefined();
   expect(mockState.currentConfig.plugins.slots.other).toBe("memory-core");
+  expect(mockState.writeCount).toBe(1);
+});
+
+// ── 2026.8: 已安装但无可运行载荷的启用插件降级（startup 收敛死循环防线）──
+// 生产事故根因之二：ClawHub 纯技能插件（holo-wechat-mp）目录存在但只有
+// openclaw.plugin.json + skills/，内核每轮 "Repaired missing configured plugin"
+// 写入不持久 → convergence refusal 死循环，gateway 永不 ready。
+
+test("2026.8: 纯技能插件（目录在但无 package.json 无 dist/）降级为禁用", async () => {
+  writeKernelVersion("2026.8.2");
+  const holoDir = path.join(mockState.userStateDir, "extensions", "holo-wechat-mp");
+  fs.mkdirSync(path.join(holoDir, "skills"), { recursive: true });
+  fs.writeFileSync(path.join(holoDir, "openclaw.plugin.json"), "{}");
+  mockState.currentConfig = {
+    plugins: { entries: { "holo-wechat-mp": { enabled: true, config: { keep: 1 } } } },
+    tools: { updatePlan: true },
+  };
+  const { migrateOpenclawConfigForKernelUpgrade } = await import("./openclaw-config-migration");
+  migrateOpenclawConfigForKernelUpgrade();
+  expect(mockState.currentConfig.plugins.entries["holo-wechat-mp"].enabled).toBe(false);
+  expect(mockState.currentConfig.plugins.entries["holo-wechat-mp"].config.keep).toBe(1); // 配置本体保留
+  expect(mockState.writeCount).toBe(1);
+});
+
+test("2026.8: 有 package.json 的已安装插件不动", async () => {
+  writeKernelVersion("2026.8.2");
+  const dir = path.join(mockState.userStateDir, "extensions", "openclaw-weixin");
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, "package.json"), "{}");
+  mockState.currentConfig = {
+    plugins: { entries: { "openclaw-weixin": { enabled: true } } },
+    tools: { updatePlan: true },
+  };
+  const { migrateOpenclawConfigForKernelUpgrade } = await import("./openclaw-config-migration");
+  migrateOpenclawConfigForKernelUpgrade();
+  expect(mockState.currentConfig.plugins.entries["openclaw-weixin"].enabled).toBe(true);
+  expect(mockState.writeCount).toBe(0);
+});
+
+test("2026.8: 有 dist/ 无 package.json 的已安装插件不动", async () => {
+  writeKernelVersion("2026.8.2");
+  fs.mkdirSync(path.join(mockState.userStateDir, "extensions", "wecom-openclaw-plugin", "dist"), { recursive: true });
+  mockState.currentConfig = {
+    plugins: { entries: { "wecom-openclaw-plugin": { enabled: true } } },
+    tools: { updatePlan: true },
+  };
+  const { migrateOpenclawConfigForKernelUpgrade } = await import("./openclaw-config-migration");
+  migrateOpenclawConfigForKernelUpgrade();
+  expect(mockState.currentConfig.plugins.entries["wecom-openclaw-plugin"].enabled).toBe(true);
+  expect(mockState.writeCount).toBe(0);
+});
+
+test("2026.8: slots 引用无载荷插件同样摘除", async () => {
+  writeKernelVersion("2026.8.2");
+  const holoDir = path.join(mockState.userStateDir, "extensions", "holo-wechat-mp");
+  fs.mkdirSync(holoDir, { recursive: true });
+  fs.writeFileSync(path.join(holoDir, "openclaw.plugin.json"), "{}");
+  mockState.currentConfig = {
+    plugins: {
+      entries: { "holo-wechat-mp": { enabled: false } },
+      slots: { context: "holo-wechat-mp" },
+    },
+    tools: { updatePlan: true },
+  };
+  const { migrateOpenclawConfigForKernelUpgrade } = await import("./openclaw-config-migration");
+  migrateOpenclawConfigForKernelUpgrade();
+  expect(mockState.currentConfig.plugins.slots.context).toBeUndefined();
   expect(mockState.writeCount).toBe(1);
 });
