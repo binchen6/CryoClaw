@@ -19,38 +19,36 @@ export function renderSharePrompt(state: AppViewState) {
   };
 
   return html`
-    <div class="exec-approval-overlay" role="dialog" aria-modal="true" aria-live="polite">
-      <div class="exec-approval-card">
-        <div class="exec-approval-header" style="align-items: flex-start;">
+    <div class="cc-dialog-overlay" role="dialog" aria-modal="true" aria-live="polite">
+      <div class="cc-dialog cc-dialog--lg">
+        <div class="cc-dialog__head">
           <div style="flex: 1; min-width: 0;">
-            <div class="exec-approval-title">${state.sharePromptTitle}</div>
-            <div class="exec-approval-sub">${state.sharePromptSubtitle}</div>
+            <div class="cc-dialog__title">${state.sharePromptTitle}</div>
+            <div class="cc-dialog__subtitle">${state.sharePromptSubtitle}</div>
           </div>
           <button
-            class="btn"
+            class="cc-dialog__close"
             type="button"
             aria-label=${t("sharePrompt.close")}
             data-tooltip=${t("sharePrompt.close")}
             @click=${() => state.dismissSharePrompt()}
-            style="width: 32px; height: 32px; padding: 0; display: inline-flex; align-items: center; justify-content: center;"
           >
-            <span aria-hidden="true" style="display: inline-flex; width: 16px; height: 16px;">
-              ${icons.x}
-            </span>
+            ${icons.x}
           </button>
         </div>
-        <textarea
-          class="exec-approval-command"
-          style="display: block; width: 100%; min-height: 320px; max-height: 320px; resize: vertical; overflow-y: auto; text-align: left; line-height: 1.6; white-space: pre-wrap;"
-          .value=${state.sharePromptText}
-          @input=${handleInput}
-          spellcheck="false"
-          aria-label=${state.sharePromptTitle || t("sharePrompt.title")}
-        ></textarea>
-        ${state.sharePromptCopyError
-          ? html`<div class="callout danger oc-mt-12">${state.sharePromptCopyError}</div>`
-          : nothing}
-        <div class="exec-approval-actions" style="justify-content: flex-end;">
+        <div class="cc-dialog__body">
+          <textarea
+            class="cc-dialog__textarea"
+            .value=${state.sharePromptText}
+            @input=${handleInput}
+            spellcheck="false"
+            aria-label=${state.sharePromptTitle || t("sharePrompt.title")}
+          ></textarea>
+          ${state.sharePromptCopyError
+            ? html`<div class="callout danger oc-mt-12">${state.sharePromptCopyError}</div>`
+            : nothing}
+        </div>
+        <div class="cc-dialog__foot">
           <button
             class="btn primary"
             @click=${() => state.handleSharePromptCopy()}

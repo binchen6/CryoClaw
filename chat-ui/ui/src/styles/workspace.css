@@ -1,8 +1,10 @@
 /* ==========================================================================
-   styles/workspace.css — Workspace 工作区页（R42 第二期）
-   覆盖原 styles.css 行 7809-8195：全局 fixed tooltip、WebBridge 修复 modal（wb-modal），
-   以及 R42 工作区页（IDE 式：wk-* 左导航/右主区）样式。
-   纯搬运拆分，层叠顺序由 hub styles.css 的 @import 顺序决定，勿单独调整
+   styles/workspace.css — Workspace 工作区页 + 全局 fixed tooltip + WebBridge modal
+   内容：全局 fixed tooltip、WebBridge 修复 modal（wb-modal，settings/webbridge 域共用），
+   以及工作区页（IDE 式：wk-* 左导航 / resizable-divider 分隔 / 右主区预览）样式。
+   2026.9 重写：wk-* 全面换新语言（hairline / hover --bg-hover / 当前项 accent-subtle /
+   面包屑 meta 小字），全部走 design tokens。
+   层叠顺序由 hub styles.css 的 @import 顺序决定，勿单独调整
    ========================================================================== */
 
 /* 全局 fixed tooltip — 不受 overflow 裁切（与 Settings 页面同一方案）
@@ -89,7 +91,7 @@
 @keyframes wb-modal-spin { to { transform: rotate(360deg); } }
 
 .fixed-tooltip--wide {
-  padding: 8px 10px;
+  padding: var(--spacer-8) var(--spacer-10);
   line-height: 1.45;
   max-width: min(700px, calc(100vw - 24px));
   width: max-content;
@@ -98,46 +100,55 @@
 }
 
 /* ==========================================================================
-   R42 第二期：工作区页（IDE 式）—— wk-* 左导航/右主区
+   工作区页（IDE 式，2026.9 重写）—— wk-* 左导航 / 拖拽分隔 / 右主区
    全 token（--spacer 阶梯 / --radius-* / --hairline / --ease-standard），禁止硬编码 hex
+   壳层标题栏已统一占位 44px（2026.9 提案 A），视图不再自行让位
    ========================================================================== */
 
 .wk-layout {
-  display: grid;
-  grid-template-columns: minmax(0, 260px) minmax(0, 1fr);
+  display: flex;
   height: 100%;
   min-height: 0;
   overflow: hidden;
   color: var(--text);
-  /* 顶部让位沉浸式标题栏（R43：--titlebar-h，避免顶部按钮与窗口控件重叠） */
-  padding-top: var(--titlebar-h);
 }
 
+/* ── 左导航面板：宽由 --wk-nav-ratio 驱动（resizable-divider 拖拽写入，默认 0.26） ── */
 .wk-nav {
+  flex: 0 0 auto;
+  width: calc(100% * var(--wk-nav-ratio, 0.26));
+  min-width: 200px;
+  max-width: 400px;
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  gap: var(--spacer-6);
-  min-width: 0;
+  gap: var(--spacer-4);
   min-height: 0;
   overflow-y: auto;
-  padding: var(--spacer-8);
-  border-right: var(--hairline);
+  padding: var(--spacer-12) var(--spacer-8);
   background: var(--bg-secondary);
 }
 
+/* 仓库选择 */
 .wk-nav__repo {
-  border: 1px solid var(--border);
-  background: var(--bg-input);
-  color: var(--text);
-  border-radius: var(--radius-sm);
-  height: 32px;
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 32px;
   padding: 0 var(--spacer-8);
-  font-size: var(--heading-xs);
+  margin-bottom: var(--spacer-4);
+  font-size: var(--text-sm);
   font-family: inherit;
+  color: var(--text);
+  background: var(--bg-input);
+  border: 1px solid transparent;
+  border-radius: var(--radius-8);
   outline: none;
-  transition: border-color var(--duration-fast) var(--ease-standard);
+  transition: border-color var(--duration-fast) var(--ease-standard),
+    box-shadow var(--duration-fast) var(--ease-standard),
+    background var(--duration-fast) var(--ease-standard);
 }
 .wk-nav__repo:focus {
+  background: var(--bg-elevated);
   border-color: var(--border-focus);
   box-shadow: var(--focus-ring);
 }
@@ -146,17 +157,18 @@
   cursor: not-allowed;
 }
 
+/* 一级节点（文件 / Git 变更）：行 hover --bg-hover，当前项 accent-subtle */
 .wk-nav__node {
   display: flex;
   align-items: center;
   gap: var(--spacer-8);
   padding: var(--spacer-6) var(--spacer-8);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-8);
   cursor: pointer;
   color: var(--text-secondary);
-  font-size: var(--heading-xs);
+  font-size: var(--text-sm);
   font-weight: var(--weight-medium);
-  line-height: 1.4;
+  line-height: var(--leading-title);
   transition: background var(--duration-fast) var(--ease-standard),
     color var(--duration-fast) var(--ease-standard);
 }
@@ -174,33 +186,39 @@
   flex-shrink: 0;
 }
 
-/* 文件节点头部右侧按钮组（刷新 / 打开根目录）—— 终审 Major 修复 */
+/* 文件节点头部右侧按钮组（刷新 / 打开根目录）：hover/聚焦时浮现 */
 .wk-nav__node-actions {
   display: flex;
   align-items: center;
-  gap: var(--spacer-4);
+  gap: var(--spacer-2);
   margin-left: auto;
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-standard);
+}
+.wk-nav__node:hover .wk-nav__node-actions,
+.wk-nav__node:focus-within .wk-nav__node-actions {
+  opacity: 1;
 }
 
-/* 28px 方形图标按钮（节点行工具） */
+/* 24px 方形图标按钮（节点行工具） */
 .wk-nav__icon-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
   padding: 0;
   border: none;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-6);
   background: transparent;
-  color: var(--text-secondary);
+  color: var(--text-muted);
   cursor: pointer;
   line-height: 1;
   transition: background var(--duration-fast) var(--ease-standard),
     color var(--duration-fast) var(--ease-standard);
 }
 .wk-nav__icon-btn:hover {
-  background: var(--bg-hover);
+  background: var(--bg-muted);
   color: var(--text);
 }
 .wk-nav__icon-btn:focus-visible {
@@ -212,33 +230,36 @@
   height: var(--icon-size-14);
 }
 
-/* 文件/目录项内联「在文件管理器中打开」按钮：默认淡化，行内可见 */
+/* 文件/目录项内联「在文件管理器中打开」按钮：默认隐藏，行 hover/聚焦浮现 */
 .wk-nav__item-action {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  width: 24px;
-  height: 24px;
+  width: 22px;
+  height: 22px;
   padding: 0;
   border: none;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-6);
   background: transparent;
   color: var(--text-muted);
-  opacity: 0.55;
+  opacity: 0;
   cursor: pointer;
   line-height: 1;
   transition: opacity var(--duration-fast) var(--ease-standard),
     background var(--duration-fast) var(--ease-standard),
     color var(--duration-fast) var(--ease-standard);
 }
-.wk-nav__item-action:hover {
+.wk-nav__item:hover .wk-nav__item-action,
+.wk-nav__item:focus-within .wk-nav__item-action,
+.wk-nav__item-action:focus-visible {
   opacity: 1;
-  background: var(--bg-hover);
+}
+.wk-nav__item-action:hover {
+  background: var(--bg-muted);
   color: var(--text);
 }
 .wk-nav__item-action:focus-visible {
-  opacity: 1;
   outline: none;
   box-shadow: var(--focus-ring);
 }
@@ -247,26 +268,28 @@
   height: var(--icon-size-14);
 }
 
+/* 文件树（导航内唯一独立滚动区） */
 .wk-nav__tree {
   display: flex;
   flex-direction: column;
-  gap: var(--spacer-2);
+  gap: 1px;
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  padding-bottom: var(--spacer-4);
 }
 
 .wk-nav__item {
   display: flex;
   align-items: center;
-  gap: var(--spacer-8);
-  padding: var(--spacer-6) var(--spacer-8);
+  gap: var(--spacer-6);
+  padding: var(--spacer-4) var(--spacer-8);
   padding-left: var(--spacer-16);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-8);
   cursor: pointer;
   color: var(--text);
   font-size: var(--text-sm);
-  line-height: 1.4;
+  line-height: var(--leading-title);
   transition: background var(--duration-fast) var(--ease-standard);
 }
 .wk-nav__item:hover {
@@ -274,11 +297,13 @@
 }
 .wk-nav__item.active {
   background: var(--accent-subtle);
+  color: var(--text-strong);
 }
 .wk-nav__item--back {
   padding-left: var(--spacer-8);
   color: var(--text-muted);
-  font-style: italic;
+  font-family: var(--font-meta);
+  font-size: var(--text-xs);
 }
 .wk-nav__item--dir {
   color: var(--text-secondary);
@@ -307,33 +332,43 @@
 }
 
 .wk-nav__hint {
-  padding: var(--spacer-12);
+  padding: var(--spacer-12) var(--spacer-8);
   text-align: center;
   color: var(--text-muted);
   font-size: var(--text-xs);
 }
 
+/* Worktrees 区块（左导航底部，hairline 分隔 + 大写小字组标签） */
 .wk-nav__section {
   display: flex;
   flex-direction: column;
-  gap: var(--spacer-6);
+  gap: var(--spacer-4);
   padding-top: var(--spacer-8);
+  margin-top: var(--spacer-4);
   border-top: var(--hairline);
 }
 
 .wk-nav__section-title {
-  font-size: var(--text-xs);
+  padding: 0 var(--spacer-8);
+  font-size: var(--text-2xs);
   font-weight: var(--weight-semibold);
-  letter-spacing: 0.04em;
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
   color: var(--text-muted);
 }
 
+/* ── 右主区 ── */
 .wk-main {
+  flex: 1;
   min-width: 0;
   min-height: 0;
   overflow: auto;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
 }
 
+/* 文件预览：面包屑头 + 内容区 */
 .wk-preview {
   display: flex;
   flex-direction: column;
@@ -344,28 +379,49 @@
 .wk-preview__header {
   display: flex;
   align-items: center;
-  padding: var(--spacer-8) var(--spacer-16);
+  gap: var(--spacer-4);
+  min-height: 40px;
+  flex-shrink: 0;
+  padding: 0 var(--spacer-16);
   border-bottom: var(--hairline);
-  font-family: var(--mono);
-  font-size: var(--text-sm);
-  color: var(--text-secondary);
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.wk-preview__crumb {
+  font-family: var(--font-meta);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
+}
+
+.wk-preview__crumb-sep {
+  color: var(--text-faint);
+  font-size: var(--text-xs);
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.wk-preview__crumb--current {
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  color: var(--text-strong);
 }
 
 .wk-preview__content {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: var(--spacer-16);
+  padding: var(--spacer-20) var(--spacer-24);
 }
 
 .wk-preview__text {
   margin: 0;
   font-family: var(--mono);
   font-size: var(--text-sm);
-  line-height: 1.6;
+  line-height: var(--leading-body);
   color: var(--text);
   white-space: pre-wrap;
   word-break: break-all;
@@ -382,6 +438,11 @@
   font-size: var(--text-sm);
 }
 
+.wk-preview__empty-icon svg {
+  width: 40px;
+  height: 40px;
+}
+
 .wk-preview__placeholder.wk-preview__error {
   color: var(--destructive);
 }
@@ -390,7 +451,7 @@
 .wk-main > .gitp-layout {
   max-width: none;
   margin: 0;
-  padding: var(--spacer-16);
+  padding: var(--spacer-16) var(--spacer-20);
   height: 100%;
   box-sizing: border-box;
 }
@@ -400,22 +461,38 @@
   max-width: none;
   margin: 0;
   padding: 0;
-  gap: var(--spacer-6);
-}
-
-.wt-card--compact {
-  padding: var(--spacer-8);
-  gap: var(--spacer-8);
-}
-
-.wt-card--compact .wt-card__main {
   gap: var(--spacer-4);
+}
+
+/* compact worktree 行：导航列表语言（hover --bg-hover，去卡片化）。
+   注意 hub 中 tasks-misc.css 在本文件之后，故用 .wk-nav 祖先抬特异性 */
+.wk-nav .wt-card--compact {
+  padding: var(--spacer-6) var(--spacer-8);
+  gap: var(--spacer-8);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-8);
+  box-shadow: none;
+  cursor: pointer;
+}
+
+.wk-nav .wt-card--compact:hover {
+  background: var(--bg-hover);
+  border: none;
+}
+
+.wk-nav .wt-card--compact .wt-card__main {
+  gap: var(--spacer-2);
+}
+
+.wk-nav .wt-card--compact .wt-card__title {
+  font-size: var(--text-sm);
 }
 
 .wt-card__actions {
   display: flex;
   align-items: center;
-  gap: var(--spacer-4);
+  gap: var(--spacer-2);
   flex-shrink: 0;
 }
 
@@ -431,19 +508,17 @@
   height: var(--icon-size-14);
 }
 
-/* 窄窗：左栏分级收窄、防横向溢出（R43 Task 4：860px/768px 两段断点） */
+/* 窄窗：左栏收窄下限、防横向溢出 */
 @media (max-width: 860px) {
-  .wk-layout {
-    grid-template-columns: minmax(0, 200px) minmax(0, 1fr);
-  }
   .wk-nav {
-    padding: var(--spacer-6);
+    min-width: 168px;
+    padding: var(--spacer-8) var(--spacer-6);
   }
 }
 
 @media (max-width: 768px) {
-  .wk-layout {
-    grid-template-columns: minmax(0, 168px) minmax(0, 1fr);
+  .wk-nav {
+    min-width: 148px;
   }
   .wk-nav__item {
     padding-left: var(--spacer-12);
@@ -453,6 +528,7 @@
 /* 减少动态效果：尊重 prefers-reduced-motion */
 @media (prefers-reduced-motion: reduce) {
   .wk-nav__node,
+  .wk-nav__node-actions,
   .wk-nav__item,
   .wk-nav__repo,
   .wk-nav__icon-btn,

@@ -184,7 +184,7 @@ function renderAppUpdateCard(state: AppViewState) {
     return html`
       <div class="oc-settings__card">
         <div class="oc-settings__card-title">${t("settings.about.appUpdate")}</div>
-        <div style="font-size:13px;color:var(--text-secondary)">${t("settings.about.appUpdateNotSupported")}</div>
+        <div class="oc-settings__meta">${t("settings.about.appUpdateNotSupported")}</div>
       </div>
     `;
   }
@@ -196,7 +196,7 @@ function renderAppUpdateCard(state: AppViewState) {
   return html`
     <div class="oc-settings__card">
       <div class="oc-settings__card-title">${t("settings.about.appUpdate")}</div>
-      <div class="oc-flex-col oc-gap-6" style="font-size:13px">
+      <div class="oc-flex-col oc-gap-6 oc-settings__meta">
         <div><strong>${t("settings.about.appUpdateCurrent")}</strong>: ${us.currentVersion || s.cryoClawVersion || "-"}</div>
         ${us.status === "available"
           ? html`<div><strong>${tWithDetail("settings.about.appUpdateAvailable", us.version ?? "")}</strong></div>`
@@ -244,7 +244,7 @@ function renderKernelCard(state: AppViewState) {
     return html`
       <div class="oc-settings__card">
         <div class="oc-settings__card-title">${t("settings.about.kernel")}</div>
-        <div style="font-size:13px;color:var(--text-secondary)">${t("settings.about.kernelNotSupported")}</div>
+        <div class="oc-settings__meta">${t("settings.about.kernelNotSupported")}</div>
       </div>
     `;
   }
@@ -252,7 +252,7 @@ function renderKernelCard(state: AppViewState) {
   return html`
     <div class="oc-settings__card">
       <div class="oc-settings__card-title">${t("settings.about.kernel")}</div>
-      <div class="oc-flex-col oc-gap-6" style="font-size:13px">
+      <div class="oc-flex-col oc-gap-6 oc-settings__meta">
         <div><strong>${t("settings.about.kernelCurrent")}</strong>: ${ks.current ?? "-"}</div>
         <div><strong>${t("settings.about.kernelLatest")}</strong>: ${ks.latest ?? t("settings.about.kernelLatestNotChecked")}</div>
         ${ks.checkError
@@ -270,8 +270,8 @@ function renderKernelCard(state: AppViewState) {
         ${s.progress
           ? html`
               <div>
-                <div style="height:6px;border-radius:3px;background:var(--border);overflow:hidden">
-                  <div style="height:100%;width:${s.progress.pct}%;background:var(--accent);transition:width .2s"></div>
+                <div class="oc-settings-progress">
+                  <div class="oc-settings-progress__bar" style="width:${s.progress.pct}%"></div>
                 </div>
                 <div class="oc-mt-4" style="color:var(--text-secondary)">${s.progress.pct}% · ${s.progress.msg}</div>
               </div>
@@ -296,7 +296,7 @@ export function renderTabAbout(state: AppViewState) {
       <!-- Version -->
       <div class="oc-settings__card">
         <div class="oc-settings__card-title">${t("settings.about.version")}</div>
-        <div class="oc-flex-col oc-gap-6" style="font-size:13px">
+        <div class="oc-flex-col oc-gap-6 oc-settings__meta">
           <div><strong>${t("settings.about.cryoclaw")}</strong>: ${s.cryoClawVersion}</div>
           <div><strong>${t("settings.about.openclaw")}</strong>: ${s.openClawVersion}</div>
           <div class="oc-flex oc-gap-8 oc-mt-4">

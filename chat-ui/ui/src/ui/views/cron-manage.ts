@@ -7,6 +7,7 @@ import type { CronFormState } from "../ui-types.ts";
 import type { ConfiguredModel } from "../ui-types.ts";
 import { formatRelativeTimestamp, formatMs } from "../format.ts";
 import { formatCronSchedule, isExpiredOneShot } from "../presenter.ts";
+import { icons } from "../icons.ts";
 import { t } from "../i18n.ts";
 import { renderConfiguredModelOptions } from "../components/model-options.ts";
 import "../components/toggle-switch.ts";
@@ -73,16 +74,14 @@ function renderListItem(job: CronJob, selected: boolean, props: CronManageProps)
       <div class="cm-list__item-schedule">${schedule}</div>
       <div class="cm-list__item-actions">
         <button class="cm-list__item-action" type="button"
+          data-tooltip=${t("cron.form.edit")} aria-label=${t("cron.form.edit")}
           @click=${(e: Event) => { e.stopPropagation(); props.onEdit(job.id); }}>
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" /><path d="m15 5 4 4" />
-          </svg>
+          ${icons.edit}
         </button>
         <button class="cm-list__item-action cm-list__item-action--danger" type="button"
+          data-tooltip=${t("cron.remove")} aria-label=${t("cron.remove")}
           @click=${(e: Event) => { e.stopPropagation(); props.onRemove(job.id); }}>
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M3 6h18" /><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" /><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
-          </svg>
+          ${icons.trash}
         </button>
       </div>
     </div>
@@ -111,7 +110,7 @@ function renderDetail(job: CronJob, props: CronManageProps) {
               <button class="cm-detail__action-btn" type="button" ?disabled=${props.busy}
                 data-tooltip=${t("cron.run")} data-tooltip-pos="bottom"
                 @click=${() => props.onRun(job.id)}>
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" stroke="none"><polygon points="6,3 20,12 6,21" /></svg>
+                ${icons.play}
               </button>
               <oc-toggle-switch .checked=${enabled} ?disabled=${props.busy}
                 aria-label=${t("cron.enabled")}
@@ -325,10 +324,8 @@ function renderForm(props: CronManageProps) {
 function renderDetailEmpty() {
   return html`
     <div class="cm-detail cm-detail--empty">
-      <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" style="opacity:0.25">
-        <circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" />
-      </svg>
-      <p class="muted oc-mt-12" style="font-size:13px;">${t("cron.selectHint")}</p>
+      <span class="cm-detail__empty-icon">${icons.clock}</span>
+      <p class="cm-detail__empty-hint">${t("cron.selectHint")}</p>
     </div>
   `;
 }
@@ -338,15 +335,11 @@ function renderDetailEmpty() {
 function renderGlobalEmpty(props: CronManageProps) {
   return html`
     <div class="cm-empty panel panel__empty">
-      <svg class="cm-empty__icon panel__empty-icon" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">
-        <circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" />
-      </svg>
+      <span class="cm-empty__icon panel__empty-icon">${icons.clock}</span>
       <p class="cm-empty__title panel__empty-title">${t("cron.noJobs")}</p>
       <p class="cm-empty__desc panel__empty-desc">${t("cron.emptyHint")}</p>
       <button class="cm-empty__action" type="button" @click=${props.onToggleForm}>
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-          <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
-        </svg>
+        ${icons.plus}
         ${t("cron.form.createFirst")}
       </button>
     </div>
@@ -373,9 +366,7 @@ export function renderCronManage(props: CronManageProps) {
         </div>
         <div class="cm-list__new-wrap">
           <button class="cm-list__new-btn" type="button" @click=${props.onToggleForm}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-              <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
-            </svg>
+            ${icons.plus}
             ${t("cron.form.new")}
           </button>
         </div>

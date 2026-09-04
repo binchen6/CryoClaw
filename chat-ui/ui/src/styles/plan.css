@@ -7,30 +7,30 @@
 
 .plan-panel {
   position: absolute;
-  /* 顶部让开 44px 沉浸式 titlebar（Windows 窗口控制钮在右上角） */
-  top: 56px;
-  right: 16px;
+  /* 标题栏让位由壳层统一承担，面板只需与内容区顶缘保持常规间距 */
+  top: var(--spacer-12);
+  right: var(--spacer-16);
   z-index: 30;
   display: flex;
   flex-direction: column;
   align-items: flex-end;
   max-width: min(360px, calc(100% - 32px));
   font-family: var(--font-body);
-  animation: fade-in .2s var(--ease-out);
+  animation: fade-in var(--duration-normal) var(--ease-out);
 }
 
 /* 折叠胶囊 */
 .plan-panel__pill {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--spacer-8);
   max-width: 100%;
-  padding: 6px 12px;
+  padding: var(--spacer-6) var(--spacer-12);
   border-radius: var(--radius-pill);
-  border: 1px solid var(--border);
-  background: var(--panel-strong);
+  border: var(--hairline);
+  background: var(--bg-elevated);
   box-shadow: var(--shadow-sm);
-  font-size: 12px;
+  font-size: var(--text-sm);
   line-height: 1.3;
   color: var(--text);
   white-space: nowrap;
@@ -42,9 +42,9 @@
 .plan-panel__dot {
   width: 8px;
   height: 8px;
-  border-radius: 50%;
+  border-radius: var(--radius-full);
   flex-shrink: 0;
-  background: var(--muted);
+  background: var(--text-muted);
 }
 
 .plan-panel__dot--active {
@@ -57,19 +57,19 @@
 }
 
 .plan-panel__progress {
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   font-variant-numeric: tabular-nums;
   flex-shrink: 0;
 }
 
 .plan-panel__current {
-  color: var(--muted);
+  color: var(--text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   min-width: 0;
 }
 
-/* 展开体：默认收起，悬停/聚焦展开 */
+/* 展开体：默认收起，悬停/聚焦展开（浮层：radius-12 + hairline + shadow-lg） */
 .plan-panel__body {
   display: none;
   margin-top: var(--spacer-6);
@@ -78,10 +78,10 @@
   max-height: 50vh;
   overflow-y: auto;
   padding: var(--spacer-10) var(--spacer-12) var(--spacer-12);
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border);
+  border-radius: var(--radius-12);
+  border: var(--hairline);
   background: var(--bg-elevated);
-  box-shadow: var(--shadow-md);
+  box-shadow: var(--shadow-lg);
 }
 
 .plan-panel:hover .plan-panel__body,
@@ -92,21 +92,22 @@
 .plan-panel__header {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 6px;
+  gap: var(--spacer-8);
+  margin-bottom: var(--spacer-6);
 }
 
 .plan-panel__title {
-  font-size: 13px;
-  font-weight: 600;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
   color: var(--text);
   flex: 1 1 auto;
   min-width: 0;
 }
 
 .plan-panel__count {
-  font-size: 12px;
-  color: var(--muted);
+  font-family: var(--font-meta);
+  font-size: var(--font-size-meta);
+  color: var(--text-muted);
   font-variant-numeric: tabular-nums;
   flex-shrink: 0;
 }
@@ -119,15 +120,15 @@
   height: 22px;
   padding: 0;
   border: none;
-  border-radius: 6px;
+  border-radius: var(--radius-6);
   background: transparent;
-  color: var(--muted);
+  color: var(--text-muted);
   cursor: pointer;
   flex-shrink: 0;
 }
 
 .plan-panel__close:hover {
-  background: var(--glass-md);
+  background: var(--bg-hover);
   color: var(--text);
 }
 
@@ -137,9 +138,9 @@
 }
 
 .plan-panel__explanation {
-  font-size: 12px;
-  color: var(--muted);
-  margin-bottom: 8px;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  margin-bottom: var(--spacer-8);
   line-height: 1.5;
   white-space: pre-wrap;
   word-break: break-word;
@@ -151,14 +152,14 @@
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--spacer-4);
 }
 
 .plan-panel__step {
   display: flex;
   align-items: flex-start;
-  gap: 8px;
-  font-size: 13px;
+  gap: var(--spacer-8);
+  font-size: var(--text-sm);
   line-height: 1.45;
   color: var(--text);
 }
@@ -167,7 +168,7 @@
   flex-shrink: 0;
   width: 16px;
   text-align: center;
-  color: var(--muted);
+  color: var(--text-muted);
 }
 
 .plan-panel__step--completed .plan-panel__step-icon {
@@ -175,7 +176,7 @@
 }
 
 .plan-panel__step--completed .plan-panel__step-text {
-  color: var(--muted);
+  color: var(--text-muted);
   text-decoration: line-through;
   text-decoration-color: var(--border-strong);
 }
@@ -186,7 +187,7 @@
 }
 
 .plan-panel__step--in_progress .plan-panel__step-text {
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
 }
 
 .plan-panel__step-text {
@@ -218,8 +219,8 @@
 /* 窄屏：面板贴顶全宽，避免遮挡消息 */
 @media (max-width: 768px) {
   .plan-panel {
-    left: 12px;
-    right: 12px;
+    left: var(--spacer-12);
+    right: var(--spacer-12);
     max-width: none;
     align-items: stretch;
   }

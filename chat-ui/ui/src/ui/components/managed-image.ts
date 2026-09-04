@@ -34,10 +34,10 @@ export class ManagedImage extends LitElement {
       max-width: min(480px, 100%);
       max-height: 360px;
       object-fit: contain;
-      border-radius: var(--radius-md, 12px);
-      border: 1px solid var(--border, #2a2c31);
+      border-radius: var(--radius-12);
+      border: var(--hairline);
       cursor: zoom-in;
-      background: var(--bg-elevated, #1e2024);
+      background: var(--bg-elevated);
     }
     img.expanded {
       max-width: 100%;
@@ -47,13 +47,13 @@ export class ManagedImage extends LitElement {
     .placeholder {
       display: flex;
       align-items: center;
-      gap: var(--spacer-8, 8px);
-      padding: var(--spacer-12, 14px) var(--spacer-16, 16px);
-      border-radius: var(--radius-md, 12px);
-      border: 1px dashed var(--border, #2a2c31);
-      color: var(--text-muted, #71717a);
-      font-family: var(--font-meta, ui-monospace, monospace);
-      font-size: var(--font-size-meta, 11px);
+      gap: var(--spacer-8);
+      padding: var(--spacer-12) var(--spacer-16);
+      border-radius: var(--radius-12);
+      border: 1px dashed var(--border-strong);
+      color: var(--text-muted);
+      font-family: var(--font-meta);
+      font-size: var(--font-size-meta);
       max-width: 480px;
       box-sizing: border-box;
     }
@@ -61,7 +61,7 @@ export class ManagedImage extends LitElement {
       width: 6px;
       height: 6px;
       border-radius: 50%;
-      background: var(--accent, #0ea5e9);
+      background: var(--accent);
       animation: ocMediaPulse 1.2s ease-in-out infinite;
       flex-shrink: 0;
     }

@@ -1,13 +1,13 @@
 /**
  * 会话列表分组（Codex threads 风）：置顶优先，其余按更新时间分时间组。
- * 纯函数模块，独立可测（<cc-sidebar> 渲染层只负责消费分组结果）。
+ * 纯函数模块，独立可测（<cc-session-panel> 渲染层只负责消费分组结果）。
  */
-import type { SidebarSessionOption } from "./components/cc-sidebar.ts";
+import type { SessionPanelSessionOption } from "./components/cc-session-panel.ts";
 
 export type SidebarSessionGroup = {
   /** i18n key（sidebar.groupPinned / groupToday / groupYesterday / groupLast7Days / groupOlder） */
   labelKey: string;
-  items: SidebarSessionOption[];
+  items: SessionPanelSessionOption[];
 };
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -25,7 +25,7 @@ function localDayStart(ts: number): number {
  * 缺 updatedAt 的会话归入「更早」。归档视图与搜索态不分组（调用方判断）。
  */
 export function groupSidebarSessions(
-  options: readonly SidebarSessionOption[],
+  options: readonly SessionPanelSessionOption[],
   now: number = Date.now(),
 ): SidebarSessionGroup[] {
   const pinned = options.filter((s) => s.pinned);
@@ -34,10 +34,10 @@ export function groupSidebarSessions(
   const yesterdayStart = todayStart - DAY_MS;
   const last7Start = todayStart - 6 * DAY_MS;
 
-  const today: SidebarSessionOption[] = [];
-  const yesterday: SidebarSessionOption[] = [];
-  const last7: SidebarSessionOption[] = [];
-  const older: SidebarSessionOption[] = [];
+  const today: SessionPanelSessionOption[] = [];
+  const yesterday: SessionPanelSessionOption[] = [];
+  const last7: SessionPanelSessionOption[] = [];
+  const older: SessionPanelSessionOption[] = [];
   for (const s of rest) {
     const ts = s.updatedAt;
     if (ts != null && ts >= todayStart) {

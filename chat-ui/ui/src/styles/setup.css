@@ -2,15 +2,24 @@
    styles/setup.css — Setup 向导(setup-view)样式
    抽取自 ui/views/setup/setup-view.ts 原 adoptedStyleSheets 注入样式,
    选择器保持不变;颜色已全部 token 化(design-tokens / tokens-ext)
+
+   2026.9 重写（提案 A）：
+   - setup 仍是唯一 fullpage 视图（无 rail、无上下文栏），壳层标题栏占位 44px，
+     内容从其下缘开始；progress 条保持 fixed top: var(--titlebar-h)
+   - hero 排版走 display 阶梯（--display-md / --tracking-display）
+   - provider 选择改为卡片栅格（hairline + radius-12 + 选中 accent 描边 +
+     accent-subtle 底），仅 setup 作用域覆盖 oc-provider-segment 默认分段样式
+   - 表单/按钮统一 32px 高、radius-8、focus-ring
    ========================================================================== */
 
 .oc-setup-container {
-  width: 65%;
+  width: min(640px, 100%);
   margin: 0 auto;
-  /* 顶部 padding 为固定定位的 progress dots 让位；底部留一点呼吸空间。
+  /* 顶部 padding 为 fixed 定位的 progress 条与 hero 留白让位；底部留呼吸空间。
      真正的滚动委托给内部 .oc-setup-step-body，因此这里 overflow:hidden
      保证按钮条（sibling of step-body）永远停在视口底部、不会被内容推下去。 */
-  padding: 72px 32px 0;
+  padding: var(--spacer-48) var(--spacer-32) 0;
+  box-sizing: border-box;
   flex: 1 1 0%;
   min-height: 0;
   display: flex;
@@ -19,37 +28,39 @@
   overflow: hidden;
 }
 .oc-setup-container--step2 {
-  /* 顶部让位沉浸式 titlebar（R43：统一走 --titlebar-h token，+4px 保持原 48px 视觉） */
-  padding-top: calc(var(--titlebar-h) + 4px);
+  /* 壳层标题栏已统一占位 44px（2026.9 提案 A），这里只留 progress 条的视觉间距 */
+  padding-top: var(--spacer-12);
 }
 
+/* 步骤进度：fixed 顶部分段条（让开 44px 壳层标题栏 drag 区，位置契约不动）。
+   现代化为圆角分段胶囊：已完成/当前 = accent，未到 = 中性 hairline 色 */
 .oc-setup-progress {
   position: fixed;
-  /* 让开沉浸式 titlebar，避免 3px 进度条被 drag 区遮住（R43：统一走 --titlebar-h token） */
   top: var(--titlebar-h);
   left: 0;
   width: 100%;
-  height: 3px;
-  background: var(--bg-secondary);
+  background: transparent;
   z-index: 100;
   display: flex;
-  gap: 0;
+  gap: var(--spacer-6);
+  padding: var(--spacer-8) var(--spacer-24) 0;
+  box-sizing: border-box;
   margin: 0;
   max-width: none;
 }
-/* 步骤指示：当前步 --accent、已完成 --ok、未到 --text-faint */
 .oc-setup-progress-dot {
   flex: 1;
-  height: 3px;
-  border-radius: 0;
-  background: var(--text-faint);
-  transition: background 0.4s var(--ease-in-out);
+  height: var(--spacer-4);
+  border-radius: var(--radius-pill);
+  background: var(--border);
+  transition: background var(--duration-slow) var(--ease-in-out);
 }
 .oc-setup-progress-dot--done {
-  background: var(--ok);
+  background: var(--accent);
 }
 .oc-setup-progress-dot--active {
   background: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-subtle);
 }
 
 .oc-setup-step {
@@ -80,28 +91,27 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: var(--radius-md);
-  margin-bottom: 16px;
+  border-radius: var(--radius-12);
+  margin-bottom: var(--spacer-16);
 }
 .oc-setup-icon--warning {
   color: var(--warn);
   background: var(--warn-subtle);
 }
-.oc-setup-icon--success {
-  color: var(--accent);
-  background: var(--accent-subtle);
-}
 
 .oc-setup-title {
-  font-size: var(--heading-2xl);
-  font-weight: 600;
-  letter-spacing: -0.02em;
+  font-family: var(--font-display);
+  font-size: var(--heading-xl);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-tight);
   margin: 0 0 var(--spacer-24);
   color: var(--text-strong);
 }
-/* 完成页品牌 hero：heading 阶梯 + accent 点缀条 */
+/* 品牌 hero（欢迎页/完成页）：display 阶梯 + accent 点缀条 */
 .oc-setup-title--hero {
   position: relative;
+  font-size: var(--display-md);
+  letter-spacing: var(--tracking-display);
   padding-bottom: var(--spacer-12);
 }
 .oc-setup-title--hero::after {
@@ -109,20 +119,22 @@
   position: absolute;
   left: 0;
   bottom: 0;
-  width: 40px;
-  height: 3px;
+  width: var(--spacer-40);
+  height: var(--spacer-3);
   border-radius: var(--radius-2);
   background: var(--accent);
 }
 .oc-setup-subtitle {
   font-size: var(--text-base);
   color: var(--text-secondary);
+  line-height: var(--leading-body);
   margin: 0 0 var(--spacer-32);
   max-width: none;
 }
 .oc-setup-reassure {
   font-size: var(--text-base);
   color: var(--text-secondary);
+  line-height: var(--leading-body);
   margin: 0 0 var(--spacer-20);
 }
 
@@ -140,17 +152,17 @@
   gap: var(--spacer-12);
   font-size: var(--text-base);
   color: var(--text-secondary);
-  line-height: 1.45;
+  line-height: var(--leading-title);
 }
 .oc-setup-feature-icon {
   flex-shrink: 0;
-  width: 28px;
-  height: 28px;
+  width: 32px;
+  height: 32px;
   display: flex;
   align-items: center;
   justify-content: center;
   background: var(--accent-subtle);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-10);
   color: var(--accent);
 }
 .oc-setup-feature-item svg { flex-shrink: 0; color: var(--accent); }
@@ -158,16 +170,17 @@
 .oc-setup-warning {
   font-size: var(--text-base);
   color: var(--warn);
-  line-height: 1.5;
+  line-height: var(--leading-body);
   margin-bottom: var(--spacer-12);
   width: 100%;
 }
 
 .oc-setup-conflict-details {
   width: 100%;
+  box-sizing: border-box;
   background: var(--bg-secondary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  border: var(--hairline);
+  border-radius: var(--radius-8);
   padding: var(--spacer-12) var(--spacer-16);
   margin-bottom: var(--spacer-20);
   text-align: left;
@@ -177,37 +190,11 @@
 .oc-setup-conflict-item { margin-bottom: var(--spacer-6); }
 .oc-setup-conflict-item:last-child { margin-bottom: 0; }
 
-/* 信息卡：对齐 cc-alert--info 语言（subtle 底 + 左侧 3px accent 条） */
-.oc-setup-info-card {
-  width: 100%;
-  display: flex;
-  align-items: flex-start;
-  gap: var(--spacer-12);
-  padding: var(--spacer-12) var(--spacer-16);
-  background: var(--accent-subtle);
-  border: 1px solid var(--border);
-  border-left: 3px solid var(--accent);
-  border-radius: var(--radius-sm);
-  margin-bottom: var(--spacer-20);
-  text-align: left;
-  font-size: var(--text-base);
-  color: var(--text-secondary);
-  line-height: 1.45;
-}
-.oc-setup-info-card--compact {
-  padding: var(--spacer-10) var(--spacer-12);
-}
-.oc-setup-info-card-text {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacer-4);
-}
-
 .oc-setup-link {
   color: var(--accent);
   cursor: pointer;
   text-decoration: none;
-  font-size: 15px;
+  font-size: var(--text-base);
 }
 .oc-setup-link:hover { text-decoration: underline; }
 
@@ -219,7 +206,7 @@
 .oc-setup-label {
   display: block;
   font-size: var(--text-sm);
-  font-weight: 500;
+  font-weight: var(--weight-medium);
   color: var(--text-secondary);
   margin-bottom: var(--spacer-6);
 }
@@ -230,12 +217,13 @@
   padding: 0 var(--spacer-12);
   font-size: var(--text-base);
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-8);
   background: var(--bg-input);
   color: var(--text);
   box-sizing: border-box;
   outline: none;
-  transition: border-color var(--transition), box-shadow var(--transition);
+  transition: border-color var(--duration-fast) var(--ease-standard),
+    box-shadow var(--duration-fast) var(--ease-standard);
   font-family: inherit;
 }
 .oc-setup-input::placeholder { color: var(--text-muted); }
@@ -257,7 +245,7 @@
 .oc-setup-radio-group {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: var(--spacer-12);
 }
 .oc-setup-radio {
   display: flex;
@@ -273,12 +261,12 @@
   width: 16px;
   height: 16px;
   border: 1.5px solid var(--border);
-  border-radius: 50%;
+  border-radius: var(--radius-pill);
   background: var(--bg-input);
   cursor: pointer;
   position: relative;
   margin: 0;
-  transition: border-color var(--transition);
+  transition: border-color var(--duration-fast) var(--ease-standard);
 }
 .oc-setup-radio input[type="radio"]:checked {
   border-color: var(--accent);
@@ -291,7 +279,7 @@
   transform: translate(-50%, -50%);
   width: 8px;
   height: 8px;
-  border-radius: 50%;
+  border-radius: var(--radius-pill);
   background: var(--accent);
 }
 
@@ -315,7 +303,8 @@
   position: relative;
   flex-shrink: 0;
   margin: 0;
-  transition: border-color var(--transition), background var(--transition);
+  transition: border-color var(--duration-fast) var(--ease-standard),
+    background var(--duration-fast) var(--ease-standard);
 }
 .oc-setup-checkbox input[type="checkbox"]:checked {
   border-color: var(--accent);
@@ -337,17 +326,18 @@
   display: flex;
   justify-content: flex-end;
   align-items: center;
-  gap: 12px;
-  padding-top: 24px;
-  padding-bottom: 16px;
+  gap: var(--spacer-12);
+  padding-top: var(--spacer-24);
+  padding-bottom: var(--spacer-16);
   width: 100%;
   flex-shrink: 0;
   background: var(--bg);
 }
-/* 作为 .oc-setup-step 直接子级的 footer 需要额外的底部呼吸空间。
-   用子组合选择器只影响 step 级 footer，不影响 oauth <details> 内嵌 btn-row。 */
+/* 作为 .oc-setup-step 直接子级的 footer：hairline 分隔 + 额外底部呼吸空间。
+   子组合选择器只影响 step 级 footer，不影响 oauth <details> 内嵌 btn-row。 */
 .oc-setup-step > .oc-setup-btn-row {
-  padding-bottom: 32px;
+  border-top: var(--hairline);
+  padding-bottom: var(--spacer-32);
 }
 
 .oc-setup-btn {
@@ -358,17 +348,21 @@
   height: 32px;
   padding: 0 var(--spacer-16);
   font-size: var(--text-base);
-  font-weight: 500;
+  font-weight: var(--weight-medium);
   line-height: 1;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-8);
   cursor: pointer;
   border: 1px solid transparent;
   white-space: nowrap;
-  transition: background var(--duration-fast) ease,
-    color var(--duration-fast) ease,
-    border-color var(--duration-fast) ease,
-    opacity var(--duration-fast) ease;
+  transition: background var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard),
+    opacity var(--duration-fast) var(--ease-standard);
   font-family: inherit;
+}
+.oc-setup-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
 }
 .oc-setup-btn:disabled {
   opacity: 0.55;
@@ -418,11 +412,12 @@
 /* 无会员提示：对齐 cc-alert--error 语言（subtle 底 + 左侧 3px destructive 条） */
 .oc-setup-oauth-no-membership {
   width: 100%;
+  box-sizing: border-box;
   padding: var(--spacer-10) var(--spacer-12);
   background: var(--danger-subtle);
-  border: 1px solid var(--border);
+  border: var(--hairline);
   border-left: 3px solid var(--destructive);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-8);
   font-size: var(--text-base);
   color: var(--text);
   margin-bottom: var(--spacer-12);
@@ -434,8 +429,8 @@
 
 .oc-setup-details-advanced {
   margin-top: var(--spacer-12);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  border: var(--hairline);
+  border-radius: var(--radius-8);
   padding: 0;
 }
 .oc-setup-details-advanced > summary {
@@ -446,7 +441,7 @@
   user-select: none;
 }
 .oc-setup-details-advanced[open] > summary {
-  border-bottom: 1px solid var(--border);
+  border-bottom: var(--hairline);
 }
 .oc-setup-details-advanced .oc-setup-form-group {
   padding: var(--spacer-12);
@@ -471,12 +466,55 @@
   color: var(--text);
 }
 
+/* ==========================================================================
+   provider 选择卡片栅格（仅 setup 作用域；设置页沿用组件默认分段样式）。
+   oc-provider-segment 以 adoptedStyleSheets 注入样式，这里用更高优先级
+   的 .oc-setup-step 作用域选择器覆盖：hairline + radius-12 卡片，
+   选中态 = accent 描边 + accent-subtle 底。
+   ========================================================================== */
+.oc-setup-step .oc-provider-seg {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+  gap: var(--spacer-8);
+  background: transparent;
+  border: none;
+  padding: 0;
+  margin-bottom: var(--spacer-20);
+}
+.oc-setup-step .oc-provider-seg__pill {
+  height: auto;
+  min-height: var(--spacer-40);
+  padding: var(--spacer-10) var(--spacer-12);
+  border: var(--hairline);
+  border-radius: var(--radius-12);
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  font-weight: var(--weight-medium);
+  box-shadow: var(--shadow-xs);
+  transition: color var(--duration-fast) var(--ease-standard),
+    background var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard),
+    box-shadow var(--duration-fast) var(--ease-standard);
+}
+.oc-setup-step .oc-provider-seg__pill:hover:not(:disabled):not(.oc-provider-seg__pill--active) {
+  border-color: var(--border-strong);
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.oc-setup-step .oc-provider-seg__pill--active {
+  border-color: var(--accent);
+  background: var(--accent-subtle);
+  color: var(--accent);
+  font-weight: var(--weight-semibold);
+  box-shadow: none;
+}
+
 /* Override password-input to match setup form field sizes (cc-input 契约) */
 .oc-setup-step .oc-password-input {
   min-height: 32px;
   padding: 0 var(--spacer-12);
   font-size: var(--text-base);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-8);
 }
 
 .oc-setup-spinner {
@@ -485,7 +523,11 @@
   height: 16px;
   border: 2px solid var(--border);
   border-top-color: var(--accent);
-  border-radius: 50%;
+  border-radius: var(--radius-pill);
   animation: oc-setup-spin 0.6s linear infinite;
+}
+.oc-setup-spinner--lg {
+  width: var(--spacer-24);
+  height: var(--spacer-24);
 }
 @keyframes oc-setup-spin { to { transform: rotate(360deg); } }

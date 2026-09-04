@@ -3,6 +3,12 @@ export const enDict: Record<string, string> = {
   // App
   "app.windowTitle": "CryoClaw - One-click installer for OpenClaw",
 
+  // Rail (icon rail, 2026.9 proposal A)
+  "rail.nav": "Main navigation",
+  "rail.chat": "Chat",
+  "panel.collapse": "Collapse session panel",
+  "panel.expand": "Expand session panel",
+
   // Sidebar
   "sidebar.brand": "CryoClaw",
   "sidebar.newChat": "New Chat",

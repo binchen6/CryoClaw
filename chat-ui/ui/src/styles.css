@@ -1,25 +1,29 @@
 /*
  * Chat UI 样式入口（hub）
  *
- * 原单文件 styles.css（约 11100 行）已按区域拆分到 ./styles/ 目录，
- * 本文件只负责按原顺序 @import 各分文件。CSS 层叠顺序 = 拆分前区块顺序
+ * 原单文件 styles.css 已按区域拆分到 ./styles/ 目录，
+ * 本文件只负责按顺序 @import 各分文件。CSS 层叠顺序 = 区块顺序
  * （后定义覆盖先定义），调整 import 顺序会导致视觉回归，请勿随意改动。
- * P5 新增 utilities.css（间距原子类），紧随 primitives 之后。
+ * 2026.9 提案 A 重写：sidebar.css 拆为 shell.css（壳/图标轨/上下文栏）+
+ * session-panel.css（会话面板）。
  */
 @import "../../../shared/design-tokens.css";
 @import "./styles/tokens-ext.css";
 @import "./styles/base.css";
 @import "./styles/primitives.css";
 @import "./styles/utilities.css";
+@import "./styles/shell.css";
+@import "./styles/session-panel.css";
 @import "./styles/chat.css";
 @import "./styles/components.css";
 @import "./styles/panels.css";
-@import "./styles/sidebar.css";
 @import "./styles/skills.css";
 @import "./styles/compose.css";
 @import "./styles/workspace.css";
 @import "./styles/cron.css";
-@import "./styles/misc.css";
+@import "./styles/chat-misc.css";
+@import "./styles/tasks-misc.css";
+@import "./styles/settings-misc.css";
 @import "./styles/panel.css";
 @import "./styles/plan.css";
 /* settings.css / setup.css 抽取自视图 TS 原 adoptedStyleSheets 注入样式;

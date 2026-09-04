@@ -40,21 +40,22 @@ styleSheet.replaceSync(/* css */`
     word-break: break-word;
     white-space: pre-wrap;
   }
-  /* cc-alert 语义：subtle 底 + 语义文字色 + 同色 25% 边 */
+  /* cc-alert 语义：subtle 底 + 语义文字色 + 同色 25% 边；
+     fallback 值与 shared/design-tokens.css 浅色主题对齐（token 缺席时兜底） */
   .oc-msgbox--error {
-    background: var(--danger-subtle, rgba(239,68,68,0.1));
-    color: var(--destructive, var(--danger, #ef4444));
-    border: 1px solid color-mix(in srgb, var(--destructive, #ef4444) 25%, transparent);
+    background: var(--danger-subtle, rgba(220,38,38,0.08));
+    color: var(--destructive, var(--danger, #dc2626));
+    border: 1px solid color-mix(in srgb, var(--destructive, #dc2626) 25%, transparent);
   }
   .oc-msgbox--success {
-    background: var(--ok-subtle, rgba(21,168,119,0.12));
-    color: var(--ok, #15a877);
-    border: 1px solid color-mix(in srgb, var(--ok, #15a877) 25%, transparent);
+    background: var(--ok-subtle, rgba(22,163,74,0.1));
+    color: var(--ok, #16a34a);
+    border: 1px solid color-mix(in srgb, var(--ok, #16a34a) 25%, transparent);
   }
   .oc-msgbox--info {
-    background: var(--accent-subtle, rgba(14,165,233,0.1));
-    color: var(--accent, #0ea5e9);
-    border: 1px solid color-mix(in srgb, var(--accent, #0ea5e9) 25%, transparent);
+    background: var(--accent-subtle, rgba(79,70,229,0.08));
+    color: var(--accent, #4f46e5);
+    border: 1px solid color-mix(in srgb, var(--accent, #4f46e5) 25%, transparent);
   }
 `);
 document.adoptedStyleSheets = [...document.adoptedStyleSheets, styleSheet];

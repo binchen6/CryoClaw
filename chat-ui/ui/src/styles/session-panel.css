@@ -1,0 +1,417 @@
+/* ==========================================================================
+   styles/session-panel.css — cc-session-panel 会话面板（2026.9 提案 A 重写）
+   仅 chat 视图显示；可折叠（navCollapsed）、右缘拖宽 220-420px（--panel-width）。
+   层叠顺序由 hub styles.css 的 @import 顺序决定，勿单独调整
+   ========================================================================== */
+
+/* 宿主承载宽度：内联 width 仅在用户自定义（sidebarWidth > 0）时存在；
+   未自定义（0 哨兵）时走 --panel-width，窄窗媒体查询收窄照常生效 */
+cc-session-panel {
+  display: block;
+  width: var(--panel-width);
+  flex-shrink: 0;
+  height: 100vh;
+}
+
+.cc-panel {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  border-right: var(--hairline);
+  background: var(--bg);
+  overflow: hidden;
+  -webkit-app-region: drag;
+}
+
+/* ── 面板头：标题 + 操作（新会话 / 更多 / 归档切换） ── */
+.cc-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacer-8);
+  padding: var(--spacer-12) var(--spacer-12) var(--spacer-8);
+  -webkit-app-region: drag;
+}
+
+.cc-panel__title {
+  font-family: var(--font-display);
+  font-size: var(--heading-xs);
+  font-weight: var(--weight-semibold);
+  color: var(--text-strong);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cc-panel__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacer-2);
+}
+
+.cc-panel__icon-btn {
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: var(--radius-8);
+  background: transparent;
+  color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+  transition: background var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
+}
+
+.cc-panel__icon-btn:hover,
+.cc-panel__icon-btn.is-open {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+
+.cc-panel__icon-btn.active {
+  color: var(--accent);
+  background: var(--accent-subtle);
+}
+
+.cc-panel__icon-btn svg {
+  width: 16px;
+  height: 16px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* ── 会话搜索 ── */
+.cc-panel__search {
+  padding: 0 var(--spacer-12) var(--spacer-8);
+  -webkit-app-region: no-drag;
+}
+
+.cc-panel__search-input {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 32px;
+  padding: 0 var(--spacer-12);
+  font-size: var(--text-sm);
+  font-family: inherit;
+  color: var(--text);
+  background: var(--bg-input);
+  border: 1px solid transparent;
+  border-radius: var(--radius-8);
+  outline: none;
+  transition: border-color var(--duration-fast) var(--ease-standard),
+    box-shadow var(--duration-fast) var(--ease-standard),
+    background var(--duration-fast) var(--ease-standard);
+}
+
+.cc-panel__search-input:focus {
+  background: var(--bg-elevated);
+  border-color: var(--border-focus);
+  box-shadow: var(--focus-ring);
+}
+
+/* ── 会话列表（唯一滚动容器） ── */
+.cc-panel__list {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 0 var(--spacer-8) var(--spacer-8);
+  -webkit-app-region: no-drag;
+}
+
+.cc-panel__empty {
+  padding: var(--spacer-24) var(--spacer-12);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.cc-panel__group-label {
+  padding: var(--spacer-12) var(--spacer-8) var(--spacer-4);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+/* ── 会话项 ── */
+.cc-panel__session-item {
+  display: flex;
+  align-items: center;
+  gap: var(--spacer-4);
+  padding: var(--spacer-6) var(--spacer-8);
+  border-radius: var(--radius-8);
+  cursor: pointer;
+  color: var(--text);
+  position: relative;
+  transition: background var(--duration-fast) var(--ease-standard);
+}
+
+.cc-panel__session-item:hover {
+  background: var(--bg-hover);
+}
+
+.cc-panel__session-item.active {
+  background: var(--accent-subtle);
+  color: var(--text-strong);
+}
+
+.cc-panel__session-item.is-archived {
+  opacity: 0.66;
+}
+
+.cc-panel__session-name {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--text-sm);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacer-6);
+}
+
+.cc-panel__unread-dot {
+  width: 6px;
+  height: 6px;
+  flex-shrink: 0;
+  border-radius: var(--radius-full);
+  background: var(--accent);
+}
+
+.cc-panel__session-pin {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.cc-panel__session-pin svg {
+  width: 12px;
+  height: 12px;
+}
+
+.cc-panel__session-worktree {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacer-2);
+  flex-shrink: 0;
+  max-width: 96px;
+  padding: 0 var(--spacer-6);
+  border-radius: var(--radius-full);
+  background: var(--accent-2-subtle);
+  color: var(--accent-2);
+  font-size: var(--text-2xs);
+  line-height: 18px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cc-panel__session-worktree svg {
+  width: 10px;
+  height: 10px;
+  flex-shrink: 0;
+}
+
+/* ── 会话项「⋯」按钮与管理菜单 ── */
+.cc-panel__session-menu-wrap {
+  position: relative;
+  flex-shrink: 0;
+  display: inline-flex;
+}
+
+.cc-panel__session-action {
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: var(--radius-6);
+  background: transparent;
+  color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-standard),
+    background var(--duration-fast) var(--ease-standard);
+}
+
+.cc-panel__session-item:hover .cc-panel__session-action,
+.cc-panel__session-action.is-open,
+.cc-panel__session-action.is-loading {
+  opacity: 1;
+}
+
+.cc-panel__session-action:hover {
+  background: var(--bg-muted);
+  color: var(--text);
+}
+
+.cc-panel__session-action svg {
+  width: 14px;
+  height: 14px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.cc-panel__session-action.is-loading svg {
+  animation: cc-panel-spin 0.8s linear infinite;
+}
+
+@keyframes cc-panel-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.cc-panel__session-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  min-width: 168px;
+  background: var(--bg-elevated);
+  border: var(--hairline);
+  border-radius: var(--radius-12);
+  box-shadow: var(--shadow-lg);
+  padding: var(--spacer-4);
+  z-index: 60;
+}
+
+.cc-panel__session-menu--up {
+  top: auto;
+  bottom: calc(100% + 4px);
+}
+
+.cc-panel__session-menu-item {
+  display: flex;
+  align-items: center;
+  gap: var(--spacer-8);
+  width: 100%;
+  padding: var(--spacer-6) var(--spacer-8);
+  border: none;
+  border-radius: var(--radius-8);
+  background: transparent;
+  color: var(--text);
+  font-size: var(--text-sm);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-standard);
+}
+
+.cc-panel__session-menu-item:hover {
+  background: var(--bg-hover);
+}
+
+.cc-panel__session-menu-item--danger {
+  color: var(--destructive);
+}
+
+.cc-panel__session-menu-item--danger:hover {
+  background: var(--danger-subtle);
+}
+
+.cc-panel__session-menu-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+.cc-panel__session-menu-icon svg {
+  width: 14px;
+  height: 14px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* ── 内联重命名输入框（手工 DOM，见组件 startInlineRename） ── */
+.cc-panel__session-edit {
+  flex: 1;
+  min-width: 0;
+  min-height: 24px;
+  padding: 0 var(--spacer-6);
+  font-size: var(--text-sm);
+  font-family: inherit;
+  color: var(--text-strong);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-focus);
+  border-radius: var(--radius-6);
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+/* ── 「更多」菜单（Worktree 新会话等） ── */
+.cc-panel__more-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.cc-panel__more-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  min-width: 188px;
+  background: var(--bg-elevated);
+  border: var(--hairline);
+  border-radius: var(--radius-12);
+  box-shadow: var(--shadow-lg);
+  padding: var(--spacer-4);
+  z-index: 60;
+  -webkit-app-region: no-drag;
+}
+
+.cc-panel__more-item {
+  display: flex;
+  align-items: center;
+  gap: var(--spacer-8);
+  width: 100%;
+  padding: var(--spacer-6) var(--spacer-8);
+  border: none;
+  border-radius: var(--radius-8);
+  background: transparent;
+  color: var(--text);
+  font-size: var(--text-sm);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-standard);
+}
+
+.cc-panel__more-item:hover {
+  background: var(--bg-hover);
+}
+
+.cc-panel__more-item svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* ── 窄窗自适应：面板默认宽收窄（未自定义时生效） ── */
+@media (max-width: 900px) {
+  :root {
+    --panel-width: 232px;
+  }
+}
+
+@media (max-width: 720px) {
+  :root {
+    --panel-width: 220px;
+  }
+}

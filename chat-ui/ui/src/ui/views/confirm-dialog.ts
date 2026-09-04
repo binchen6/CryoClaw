@@ -4,7 +4,8 @@ import { t } from "../i18n.ts";
 
 // 通用确认弹窗：替代原生 window.confirm（渲染进程里原生 confirm 无样式且阻塞）。
 // promise 化 API：const ok = await showConfirm(state, message, { danger: true });
-// 样式复用 exec-approval-overlay / exec-approval-card；danger 操作出红色确认钮。
+// 2026.9：统一 cc-dialog 浮层语言（overlay / radius-16 / shadow-xl / 按钮右对齐），
+// danger 操作出红色确认钮。
 
 interface PendingConfirm {
   message: string;
@@ -38,20 +39,18 @@ export function renderConfirmDialog(state: AppViewState) {
   if (!pending) return nothing;
   const { message, danger } = pending;
   return html`
-    <div class="exec-approval-overlay" role="dialog" aria-modal="true">
-      <div class="exec-approval-card">
-        <div class="exec-approval-header">
-          <div>
-            <div class="exec-approval-title">${t("confirm.title")}</div>
-            <div class="exec-approval-sub">${message}</div>
-          </div>
+    <div class="cc-dialog-overlay" role="dialog" aria-modal="true">
+      <div class="cc-dialog cc-dialog--sm">
+        <div class="cc-dialog__head">
+          <div class="cc-dialog__title">${t("confirm.title")}</div>
         </div>
-        <div class="exec-approval-actions">
-          <button class="btn ${danger ? "danger" : "primary"}" @click=${() => settle(state, true)}>
-            ${t("settings.confirm")}
-          </button>
+        <div class="cc-dialog__body">${message}</div>
+        <div class="cc-dialog__foot">
           <button class="btn" @click=${() => settle(state, false)}>
             ${t("settings.cancel")}
+          </button>
+          <button class="btn ${danger ? "danger" : "primary"}" @click=${() => settle(state, true)}>
+            ${t("settings.confirm")}
           </button>
         </div>
       </div>

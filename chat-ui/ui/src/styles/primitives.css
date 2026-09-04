@@ -1,33 +1,147 @@
 /* ==========================================================================
-   styles/primitives.css — CryoClaw 全局组件类（cc- 前缀）
-   依据 TraeWork 组件契约（components.css / components/*.json）实现：
-   按钮 / 表单控件 / 卡片 / 对话框 / 标签 / 菜单 / 警告条 / 骨架屏 / 表格 / 页签 / 胶囊
-   全部走 design tokens（shared/design-tokens.css + tokens-ext.css），
-   零硬编码 hex，双主题自动适配（token 层已分主题）。
+   styles/primitives.css — CryoClaw 全局原语与组件类
+   2026.9 重写（提案 A）：
+   - .btn 体系在此定义（旧 sidebar.css 的两条全局覆盖——胶囊化 !important 与
+     primary accent 填充——已随文件删除，此处按新语言重建：32px 高、radius-8、
+     weight-500，primary accent 实心，secondary/ghost hairline 变体；按钮不再
+     是胶囊，radius-full 仅保留给徽章/chip）；
+   - cc-* 原语 kit（按钮/表单/卡片/对话框/徽章/菜单/警告条/骨架屏/表格/页签）
+     供各视图迁移使用，全部走 design tokens，零硬编码色值，双主题由 token 层适配。
    层叠位置：base.css 之后、各视图样式之前，视图样式可覆盖本文件。
    ========================================================================== */
 
-/* ── 按钮（TraeWork buttons：高度固定 24/28/32，radius-8，字重 500） ── */
+/* ── 按钮（.btn：32px 高、radius-8、weight-500；默认 hairline 描边） ── */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacer-8);
+  height: 32px;
+  padding: 0 var(--spacer-12);
+  border: var(--hairline);
+  border-radius: var(--radius-8);
+  background: var(--bg-elevated);
+  color: var(--text);
+  font-family: inherit;
+  font-size: var(--text-base);
+  font-weight: var(--weight-medium);
+  line-height: 1;
+  white-space: nowrap;
+  user-select: none;
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out),
+    opacity var(--duration-fast) var(--ease-out);
+}
+
+.btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: var(--border-strong);
+}
+
+.btn:active:not(:disabled) {
+  background: var(--bg-hover);
+}
+
+.btn:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn svg {
+  width: var(--icon-size-16);
+  height: var(--icon-size-16);
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  flex-shrink: 0;
+}
+
+/* primary：accent 实心 + on-accent 文字，hover 深一档 */
+.btn.primary {
+  background: var(--accent);
+  border-color: transparent;
+  color: var(--text-on-accent);
+}
+
+.btn.primary:hover:not(:disabled),
+.btn.primary:active:not(:disabled) {
+  background: var(--accent-hover);
+  border-color: transparent;
+}
+
+/* secondary：muted 底 + hairline 描边 */
+.btn.secondary {
+  background: var(--bg-muted);
+  border: var(--hairline);
+  color: var(--text);
+}
+
+.btn.secondary:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: var(--border-strong);
+}
+
+/* ghost：透明无底无边，hover 出底色 */
+.btn.ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--text-secondary);
+}
+
+.btn.ghost:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: transparent;
+  color: var(--text);
+}
+
+/* danger：destructive subtle 底 + 语义文字 */
+.btn.danger {
+  background: var(--danger-subtle);
+  border-color: transparent;
+  color: var(--danger);
+}
+
+.btn.danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--destructive) 18%, transparent);
+}
+
+.btn--sm {
+  height: 28px;
+  padding: 0 var(--spacer-10);
+  gap: var(--spacer-6);
+  font-size: var(--text-sm);
+}
+
+/* ── cc- 按钮 kit（与 .btn 同一语言：32/28 高度，radius-8，weight-500） ── */
 .cc-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: var(--spacer-6);
-  height: 28px;
+  height: 32px;
   padding: 0 var(--spacer-12);
   border: 1px solid transparent;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-8);
   font-family: inherit;
   font-size: var(--text-base);
-  font-weight: 500;
+  font-weight: var(--weight-medium);
   line-height: 1;
   white-space: nowrap;
   user-select: none;
   cursor: pointer;
-  transition: background var(--duration-fast) ease,
-    color var(--duration-fast) ease,
-    border-color var(--duration-fast) ease,
-    opacity var(--duration-fast) ease;
+  transition: background var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out),
+    opacity var(--duration-fast) var(--ease-out);
 }
 
 .cc-btn:focus-visible {
@@ -64,7 +178,7 @@
 }
 
 .cc-btn--sm {
-  height: 24px;
+  height: 28px;
   padding: 0 var(--spacer-8);
   font-size: var(--text-sm);
 }
@@ -79,7 +193,7 @@
   background: var(--accent-hover);
 }
 
-/* secondary：灰底（浅色 = grey-100，经 --bg-muted 双主题自适应） */
+/* secondary：灰底 hairline 描边（浅色 = grey-100，经 --bg-muted 双主题自适应） */
 .cc-btn--secondary {
   background: var(--bg-muted);
   color: var(--text);
@@ -112,20 +226,20 @@
   background: color-mix(in srgb, var(--destructive) 88%, black);
 }
 
-/* ── 表单控件（TraeWork forms：min-height 32，padding 0 12，radius-8） ── */
+/* ── 表单控件（32px 高、--bg-input 底、radius-8、focus --focus-ring） ── */
 .cc-input,
 .cc-select,
 .cc-textarea {
   width: 100%;
   background: var(--bg-input);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  border: var(--hairline);
+  border-radius: var(--radius-8);
   color: var(--text);
   font-family: inherit;
   font-size: var(--text-base);
   line-height: 1.45;
-  transition: border-color var(--duration-fast) ease,
-    box-shadow var(--duration-fast) ease;
+  transition: border-color var(--duration-fast) var(--ease-out),
+    box-shadow var(--duration-fast) var(--ease-out);
 }
 
 .cc-input {
@@ -168,13 +282,13 @@
   opacity: 0.65;
 }
 
-/* ── 卡片（TraeWork card：radius-12，padding-20） ── */
+/* ── 卡片（hairline 描边 + radius-12 + --shadow-xs，克制的浮起） ── */
 .cc-card {
   background: var(--card);
   color: var(--card-foreground);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-sm);
+  border: var(--hairline);
+  border-radius: var(--radius-12);
+  box-shadow: var(--shadow-xs);
   padding: var(--spacer-20);
 }
 
@@ -189,7 +303,7 @@
   border-color: var(--border-strong);
 }
 
-/* ── 对话框（TraeWork dialog：max-width 520，head/body/foot 分区） ── */
+/* ── 对话框（radius-16 + --shadow-xl，head/body/foot 分区） ── */
 .cc-dialog-overlay {
   position: fixed;
   inset: 0;
@@ -206,8 +320,8 @@
   max-width: 520px;
   background: var(--popover);
   color: var(--popover-foreground);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
+  border: var(--hairline);
+  border-radius: var(--radius-16);
   box-shadow: var(--shadow-xl);
   overflow: hidden;
 }
@@ -221,7 +335,7 @@
 
 .cc-dialog__title {
   font-size: var(--heading-sm);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   color: var(--text-strong);
 }
 
@@ -232,7 +346,7 @@
   width: 32px;
   height: 32px;
   border: none;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-8);
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
@@ -247,7 +361,7 @@
   padding: var(--spacer-16) var(--spacer-20);
   color: var(--text-secondary);
   font-size: var(--text-base);
-  line-height: 1.55;
+  line-height: var(--leading-body);
 }
 
 .cc-dialog__foot {
@@ -257,18 +371,19 @@
   padding: var(--spacer-12) var(--spacer-20);
 }
 
-/* ── 标签（TraeWork tag：高 22，radius-8，subtle 底 + 语义文字色） ── */
+/* ── 徽章（radius-full 小胶囊仅用于徽章/chip；subtle 底 + 语义文字色） ── */
 .cc-tag {
   display: inline-flex;
   align-items: center;
   gap: var(--spacer-4);
   height: 22px;
   padding: 0 var(--spacer-8);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  border: var(--hairline);
+  border-radius: var(--radius-pill);
   background: var(--bg-muted);
   color: var(--text-secondary);
-  font-size: var(--text-sm);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
   line-height: 1;
   white-space: nowrap;
 }
@@ -297,7 +412,7 @@
   border-color: transparent;
 }
 
-/* ── 菜单（TraeWork menu：item min-height 32，radius-8） ── */
+/* ── 菜单（item min-height 32，radius-8） ── */
 .cc-menu {
   display: flex;
   flex-direction: column;
@@ -306,9 +421,9 @@
   padding: var(--spacer-4);
   background: var(--popover);
   color: var(--popover-foreground);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-md);
+  border: var(--hairline);
+  border-radius: var(--radius-12);
+  box-shadow: var(--shadow-lg);
 }
 
 .cc-menu-item {
@@ -319,7 +434,7 @@
   width: 100%;
   padding: var(--spacer-6) var(--spacer-8);
   border: none;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-8);
   background: transparent;
   color: var(--text);
   font-family: inherit;
@@ -332,15 +447,15 @@
   background: var(--bg-hover);
 }
 
-/* ── 警告条（TraeWork alert：padding 12/16 + 左侧 3px 语义条） ── */
+/* ── 警告条（padding 12/16 + 左侧 3px 语义条） ── */
 .cc-alert {
   display: flex;
   align-items: flex-start;
   gap: var(--spacer-12);
   padding: var(--spacer-12) var(--spacer-16);
-  border: 1px solid var(--border);
+  border: var(--hairline);
   border-left: 3px solid var(--text-muted);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-8);
   background: var(--bg-muted);
   color: var(--text);
   font-size: var(--text-base);
@@ -367,13 +482,13 @@
   border-left-color: var(--destructive);
 }
 
-/* ── 骨架屏（TraeWork skeleton：渐变扫光） ── */
+/* ── 骨架屏（渐变扫光） ── */
 .cc-skeleton {
   display: block;
   position: relative;
   overflow: hidden;
   background: var(--glass-md);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-8);
 }
 
 .cc-skeleton::after {
@@ -394,7 +509,7 @@
   }
 }
 
-/* ── 表格（TraeWork table：表头小字弱化，行 --border 分隔） ── */
+/* ── 表格（表头小字弱化，行 hairline 分隔） ── */
 .cc-table {
   width: 100%;
   border-collapse: collapse;
@@ -405,7 +520,7 @@
   padding: var(--spacer-12) var(--spacer-8);
   text-align: left;
   vertical-align: middle;
-  border-bottom: 1px solid var(--border);
+  border-bottom: var(--hairline);
   font-size: var(--text-base);
   line-height: 1.45;
 }
@@ -414,8 +529,8 @@
   padding-top: var(--spacer-8);
   color: var(--text-secondary);
   font-size: var(--text-sm);
-  font-weight: 500;
-  letter-spacing: 0.04em;
+  font-weight: var(--weight-medium);
+  letter-spacing: var(--tracking-wide);
   text-transform: uppercase;
 }
 
@@ -424,7 +539,7 @@
 }
 
 .cc-table tbody tr {
-  transition: background var(--duration-fast) ease;
+  transition: background var(--duration-fast) var(--ease-out);
 }
 
 .cc-table tbody tr:hover {
@@ -435,11 +550,11 @@
   border-bottom: none;
 }
 
-/* ── 页签（TraeWork tabs：下划线指示式） ── */
+/* ── 页签（下划线指示式） ── */
 .cc-tabs {
   display: flex;
   gap: var(--spacer-24);
-  border-bottom: 1px solid var(--border);
+  border-bottom: var(--hairline);
 }
 
 .cc-tab {
@@ -452,7 +567,7 @@
   color: var(--text-secondary);
   font-family: inherit;
   font-size: var(--text-base);
-  font-weight: 500;
+  font-weight: var(--weight-medium);
   cursor: pointer;
 }
 
@@ -474,14 +589,14 @@
   background: var(--accent);
 }
 
-/* ── 胶囊（可选中；.cc-switch 已由 components/toggle-switch.ts 提供，不重复） ── */
+/* ── chip（可选中小胶囊；.cc-switch 已由 components/toggle-switch.ts 提供，不重复） ── */
 .cc-chip {
   display: inline-flex;
   align-items: center;
   gap: var(--spacer-6);
   height: 28px;
   padding: 0 var(--spacer-12);
-  border: 1px solid var(--border);
+  border: var(--hairline);
   border-radius: var(--radius-pill);
   background: transparent;
   color: var(--text-secondary);
@@ -489,9 +604,9 @@
   font-size: var(--text-sm);
   white-space: nowrap;
   cursor: pointer;
-  transition: background var(--duration-fast) ease,
-    border-color var(--duration-fast) ease,
-    color var(--duration-fast) ease;
+  transition: background var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
 }
 
 .cc-chip:hover {

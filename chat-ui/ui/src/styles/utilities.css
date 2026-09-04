@@ -2,8 +2,8 @@
    styles/utilities.css — 间距/布局原子工具类（P5 新增）
    用途：收敛视图 TS 中的间距类内联 style（style="margin-top:12px" 等），
    值全部走 --spacer 阶梯；功能性布局（尺寸/颜色/定位）不适用本文件。
-   命名：oc-m{t|b|l}-{spacer 值}、oc-gap-{n}、oc-flex / oc-flex-col、
-   oc-items-start、oc-justify-end、oc-ml-auto（完整清单见下方规则）
+   命名：oc-m{t|b|l|r}-{spacer 值}、oc-p-{n}、oc-gap-{n}、oc-flex / oc-flex-col、
+   oc-items-{start|center}、oc-justify-{end|between}、oc-ml-auto（完整清单见下方规则）
    层叠顺序由 hub styles.css 的 @import 顺序决定，勿单独调整
    ========================================================================== */
 
@@ -11,27 +11,57 @@
 .oc-flex { display: flex }
 .oc-flex-col { display: flex; flex-direction: column }
 .oc-items-start { align-items: flex-start }
+.oc-items-center { align-items: center }
 .oc-justify-end { justify-content: flex-end }
+.oc-justify-between { justify-content: space-between }
+.oc-flex-wrap { flex-wrap: wrap }
+.oc-flex-1 { flex: 1; min-width: 0 }
 
 /* 间隙（gap 同时适用 flex/grid） */
+.oc-gap-2 { gap: var(--spacer-2) }
+.oc-gap-4 { gap: var(--spacer-4) }
 .oc-gap-6 { gap: var(--spacer-6) }
 .oc-gap-8 { gap: var(--spacer-8) }
+.oc-gap-10 { gap: var(--spacer-10) }
 .oc-gap-12 { gap: var(--spacer-12) }
 .oc-gap-16 { gap: var(--spacer-16) }
+.oc-gap-20 { gap: var(--spacer-20) }
+.oc-gap-24 { gap: var(--spacer-24) }
 
 /* 外边距 */
 .oc-m-0 { margin: 0 }
+.oc-mt-2 { margin-top: var(--spacer-2) }
 .oc-mt-4 { margin-top: var(--spacer-4) }
 .oc-mt-6 { margin-top: var(--spacer-6) }
 .oc-mt-8 { margin-top: var(--spacer-8) }
+.oc-mt-10 { margin-top: var(--spacer-10) }
 .oc-mt-12 { margin-top: var(--spacer-12) }
+.oc-mt-16 { margin-top: var(--spacer-16) }
+.oc-mt-20 { margin-top: var(--spacer-20) }
 .oc-mt-24 { margin-top: var(--spacer-24) }
+.oc-mt-32 { margin-top: var(--spacer-32) }
+.oc-mb-2 { margin-bottom: var(--spacer-2) }
+.oc-mb-4 { margin-bottom: var(--spacer-4) }
 .oc-mb-6 { margin-bottom: var(--spacer-6) }
 .oc-mb-8 { margin-bottom: var(--spacer-8) }
+.oc-mb-10 { margin-bottom: var(--spacer-10) }
 .oc-mb-12 { margin-bottom: var(--spacer-12) }
 .oc-mb-16 { margin-bottom: var(--spacer-16) }
+.oc-mb-20 { margin-bottom: var(--spacer-20) }
 .oc-mb-24 { margin-bottom: var(--spacer-24) }
+.oc-mb-32 { margin-bottom: var(--spacer-32) }
+.oc-ml-4 { margin-left: var(--spacer-4) }
+.oc-ml-8 { margin-left: var(--spacer-8) }
+.oc-ml-12 { margin-left: var(--spacer-12) }
+.oc-mr-4 { margin-right: var(--spacer-4) }
+.oc-mr-8 { margin-right: var(--spacer-8) }
+.oc-mr-12 { margin-right: var(--spacer-12) }
 .oc-ml-auto { margin-left: auto }
+.oc-mr-auto { margin-right: auto }
 
 /* 内边距 */
+.oc-p-8 { padding: var(--spacer-8) }
+.oc-p-12 { padding: var(--spacer-12) }
 .oc-p-16 { padding: var(--spacer-16) }
+.oc-p-20 { padding: var(--spacer-20) }
+.oc-p-24 { padding: var(--spacer-24) }

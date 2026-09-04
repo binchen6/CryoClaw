@@ -202,9 +202,9 @@ test("views/git.ts：无可用仓库时空态提示", () => {
   assert.ok(en.includes('"git.noRepos"'), "en.ts 缺 git.noRepos");
 });
 
-test("cc-sidebar：会话 worktree 徽标 + 「更多」菜单按 gitAvailable 门控", () => {
-  const s = src("components/cc-sidebar.ts");
-  assert.match(s, /cryoclaw-sidebar__session-worktree/, "缺少会话 worktree 徽标");
+test("cc-session-panel：会话 worktree 徽标 + 「更多」菜单按 gitAvailable 门控", () => {
+  const s = src("components/cc-session-panel.ts");
+  assert.match(s, /cc-panel__session-worktree/, "缺少会话 worktree 徽标");
   assert.match(s, /s\.worktreeBranch/, "徽标应渲染分支名");
   assert.match(s, /props\.gitAvailable === true/, "无 git 时「更多」菜单整体应隐藏（降级）");
   assert.match(s, /t\("sidebar\.newWorktreeChat"\)/, "缺少新建入口文案");

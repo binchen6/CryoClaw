@@ -15,11 +15,13 @@ import * as os from "os";
 // （即被 mock 的模块被 import 时）才求值。使用 const 容器对象避免 TDZ 问题。
 const mockState: {
   gatewayPkgDir: string;
+  userStateDir: string;
   currentConfig: any;
   writeCount: number;
   writeShouldThrow: boolean;
 } = {
   gatewayPkgDir: "",
+  userStateDir: "",
   currentConfig: {},
   writeCount: 0,
   writeShouldThrow: false,
@@ -28,6 +30,7 @@ const mockState: {
 vi.mock("./constants", () => ({
   // 仅暴露 migration 实际使用的一个函数；其他导出不需要
   resolveGatewayPackageDir: () => mockState.gatewayPkgDir,
+  resolveUserStateDir: () => mockState.userStateDir,
 }));
 
 vi.mock("./provider-config", () => ({
@@ -53,6 +56,9 @@ beforeEach(() => {
   tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "migrate-test-"));
   mockState.gatewayPkgDir = path.join(tmpDir, "gateway-pkg");
   fs.mkdirSync(mockState.gatewayPkgDir, { recursive: true });
+  mockState.userStateDir = path.join(tmpDir, "user-state");
+  fs.mkdirSync(path.join(mockState.userStateDir, "extensions"), { recursive: true });
+  fs.mkdirSync(path.join(mockState.gatewayPkgDir, "dist", "extensions"), { recursive: true });
   mockState.currentConfig = {};
   mockState.writeCount = 0;
   mockState.writeShouldThrow = false;
@@ -375,4 +381,237 @@ test("planTool 已为 true 时不重复写文件", async () => {
   migrateOpenclawConfigForKernelUpgrade();
   expect(mockState.currentConfig.tools.experimental.planTool).toBe(true);
   expect(mockState.writeCount).toBe(0);
+});
+
+// ── 2026.8 配置适配（tools.updatePlan / memory.search / meta.lastTouchedAt，双向）──
+
+test("2026.8: experimental.planTool 搬到 tools.updatePlan 并删除 experimental 节点", async () => {
+  writeKernelVersion("2026.8.2");
+  mockState.currentConfig = { tools: { profile: "full", experimental: { planTool: true, otherFlag: 1 } } };
+  const { migrateOpenclawConfigForKernelUpgrade } = await import("./openclaw-config-migration");
+  migrateOpenclawConfigForKernelUpgrade();
+  expect(mockState.currentConfig.tools.updatePlan).toBe(true);
+  expect(mockState.currentConfig.tools.experimental).toBeUndefined();
+  expect(mockState.currentConfig.tools.profile).toBe("full");
+  expect(mockState.writeCount).toBe(1);
+});
+
+test("2026.8: planTool 显式 false 搬到 updatePlan 保持 false", async () => {
+  writeKernelVersion("2026.8.2");
+  mockState.currentConfig = { tools: { experimental: { planTool: false } } };
+  const { migrateOpenclawConfigForKernelUpgrade } = await import("./openclaw-config-migration");
+  migrateOpenclawConfigForKernelUpgrade();
+  expect(mockState.currentConfig.tools.updatePlan).toBe(false);
+  expect(mockState.currentConfig.tools.experimental).toBeUndefined();
+  expect(mockState.writeCount).toBe(1);
+});
+
+test("2026.8: tools 节点缺失时补建 updatePlan=true", async () => {
+  writeKernelVersion("2026.8.2");
+  mockState.currentConfig = { something: "else" };
+  const { migrateOpenclawConfigForKernelUpgrade } = await import("./openclaw-config-migration");
+  migrateOpenclawConfigForKernelUpgrade();
+  expect(mockState.currentConfig.tools.updatePlan).toBe(true);
+  expect(mockState.currentConfig.tools.experimental).toBeUndefined();
+  expect(mockState.writeCount).toBe(1);
+});
+
+test("2026.8: updatePlan 已就位且无残留时不写文件", async () => {
+  writeKernelVersion("2026.8.2");
+  mockState.currentConfig = { tools: { updatePlan: true } };
+  const { migrateOpenclawConfigForKernelUpgrade } = await import("./openclaw-config-migration");
+  migrateOpenclawConfigForKernelUpgrade();
+  expect(mockState.currentConfig.tools.updatePlan).toBe(true);
+  expect(mockState.writeCount).toBe(0);
+});
+
+test("2026.8: meta.lastTouchedAt 删除，lastTouchedVersion 保留", async () => {
+  writeKernelVersion("2026.8.2");
+  mockState.currentConfig = { meta: { lastTouchedAt: "2026-09-01", lastTouchedVersion: "2026.7.1-2" }, tools: { updatePlan: true } };
+  const { migrateOpenclawConfigForKernelUpgrade } = await import("./openclaw-config-migration");
+  migrateOpenclawConfigForKernelUpgrade();
+  expect(mockState.currentConfig.meta.lastTouchedAt).toBeUndefined();
+  expect(mockState.currentConfig.meta.lastTouchedVersion).toBe("2026.7.1-2");
+  expect(mockState.writeCount).toBe(1);
+});
+
+test("2026.8: agents.defaults.memorySearch 搬到根级 memory.search", async () => {
+  writeKernelVersion("2026.8.2");
+  mockState.currentConfig = {
+    agents: { defaults: { memorySearch: { enabled: true, model: "m" }, model: "x" } },
+    tools: { updatePlan: true },
+  };
+  const { migrateOpenclawConfigForKernelUpgrade } = await import("./openclaw-config-migration");
+  migrateOpenclawConfigForKernelUpgrade();
+  expect(mockState.currentConfig.memory.search).toEqual({ enabled: true, model: "m" });
+  expect(mockState.currentConfig.agents.defaults.memorySearch).toBeUndefined();
+  expect(mockState.currentConfig.agents.defaults.model).toBe("x");
+  expect(mockState.writeCount).toBe(1);
+});
+
+test("2026.8: memory.search 同名键冲突时以根级为准，legacy 仅补缺", async () => {
+  writeKernelVersion("2026.8.2");
+  mockState.currentConfig = {
+    memory: { search: { enabled: false, model: "new" } },
+    agents: { defaults: { memorySearch: { enabled: true, remote: { baseUrl: "http://x" } } } },
+    tools: { updatePlan: true },
+  };
+  const { migrateOpenclawConfigForKernelUpgrade } = await import("./openclaw-config-migration");
+  migrateOpenclawConfigForKernelUpgrade();
+  expect(mockState.currentConfig.memory.search.enabled).toBe(false);
+  expect(mockState.currentConfig.memory.search.model).toBe("new");
+  expect(mockState.currentConfig.memory.search.remote).toEqual({ baseUrl: "http://x" });
+  expect(mockState.currentConfig.agents.defaults.memorySearch).toBeUndefined();
+});
+
+test("2026.7 不触发 2026.8 的删除/挪位规则", async () => {
+  writeKernelVersion("2026.7.1-2");
+  mockState.currentConfig = {
+    meta: { lastTouchedAt: "keep" },
+    agents: { defaults: { memorySearch: { enabled: true } } },
+    tools: { experimental: { planTool: true } },
+  };
+  const { migrateOpenclawConfigForKernelUpgrade } = await import("./openclaw-config-migration");
+  migrateOpenclawConfigForKernelUpgrade();
+  expect(mockState.currentConfig.meta.lastTouchedAt).toBe("keep");
+  expect(mockState.currentConfig.agents.defaults.memorySearch).toEqual({ enabled: true });
+  expect(mockState.currentConfig.tools.experimental.planTool).toBe(true);
+  expect(mockState.writeCount).toBe(0);
+});
+
+test("回退 2026.7: tools.updatePlan 搬回 experimental.planTool", async () => {
+  writeKernelVersion("2026.7.1-2");
+  mockState.currentConfig = { tools: { updatePlan: false } };
+  const { migrateOpenclawConfigForKernelUpgrade } = await import("./openclaw-config-migration");
+  migrateOpenclawConfigForKernelUpgrade();
+  expect(mockState.currentConfig.tools.experimental.planTool).toBe(false);
+  expect(mockState.currentConfig.tools.updatePlan).toBeUndefined();
+  expect(mockState.writeCount).toBe(1);
+});
+
+test("回退 2026.7: memory.search 搬回 agents.defaults.memorySearch 并删除空 memory 壳", async () => {
+  writeKernelVersion("2026.7.1-2");
+  mockState.currentConfig = { memory: { search: { enabled: true } }, tools: { experimental: { planTool: true } } };
+  const { migrateOpenclawConfigForKernelUpgrade } = await import("./openclaw-config-migration");
+  migrateOpenclawConfigForKernelUpgrade();
+  expect(mockState.currentConfig.agents.defaults.memorySearch).toEqual({ enabled: true });
+  expect(mockState.currentConfig.memory).toBeUndefined();
+  expect(mockState.writeCount).toBe(1);
+});
+
+// ── 2026.8: qqbot allowFrom 通配符清除（channelHostConfig 契约禁 "*"）──
+
+test("2026.8: qqbot allowFrom [\"*\"] 替换为哨兵并清掉 dmPolicy=open", async () => {
+  writeKernelVersion("2026.8.2");
+  mockState.currentConfig = {
+    channels: { qqbot: { enabled: true, allowFrom: ["*"], dmPolicy: "open" } },
+    tools: { updatePlan: true },
+  };
+  const { migrateOpenclawConfigForKernelUpgrade } = await import("./openclaw-config-migration");
+  migrateOpenclawConfigForKernelUpgrade();
+  expect(mockState.currentConfig.channels.qqbot.allowFrom).toEqual(["openclaw:approval-disabled"]);
+  expect(mockState.currentConfig.channels.qqbot.dmPolicy).toBeUndefined();
+  expect(mockState.writeCount).toBe(1);
+});
+
+test("2026.8: qqbot allowFrom 混合列表只剔除 *，显式 ID 保留", async () => {
+  writeKernelVersion("2026.8.2");
+  mockState.currentConfig = {
+    channels: { qqbot: { allowFrom: ["*", "ABCDEF123"] } },
+    tools: { updatePlan: true },
+  };
+  const { migrateOpenclawConfigForKernelUpgrade } = await import("./openclaw-config-migration");
+  migrateOpenclawConfigForKernelUpgrade();
+  expect(mockState.currentConfig.channels.qqbot.allowFrom).toEqual(["ABCDEF123"]);
+});
+
+test("2026.8: qqbot accounts.* 内的 * 同样清除", async () => {
+  writeKernelVersion("2026.8.2");
+  mockState.currentConfig = {
+    channels: { qqbot: { accounts: { bot1: { allowFrom: ["*"] } } } },
+    tools: { updatePlan: true },
+  };
+  const { migrateOpenclawConfigForKernelUpgrade } = await import("./openclaw-config-migration");
+  migrateOpenclawConfigForKernelUpgrade();
+  expect(mockState.currentConfig.channels.qqbot.accounts.bot1.allowFrom).toEqual(["openclaw:approval-disabled"]);
+});
+
+test("2026.7 不动 qqbot allowFrom 通配符", async () => {
+  writeKernelVersion("2026.7.1-2");
+  mockState.currentConfig = {
+    channels: { qqbot: { allowFrom: ["*"] } },
+    tools: { experimental: { planTool: true } },
+  };
+  const { migrateOpenclawConfigForKernelUpgrade } = await import("./openclaw-config-migration");
+  migrateOpenclawConfigForKernelUpgrade();
+  expect(mockState.currentConfig.channels.qqbot.allowFrom).toEqual(["*"]);
+  expect(mockState.writeCount).toBe(0);
+});
+
+// ── 2026.8: 未安装的启用插件降级为禁用（plugin verification failed 防线）──
+
+test("2026.8: enabled 但未安装的插件条目降级为禁用", async () => {
+  writeKernelVersion("2026.8.2");
+  fs.mkdirSync(path.join(mockState.gatewayPkgDir, "dist", "extensions", "kimi"), { recursive: true });
+  fs.mkdirSync(path.join(mockState.userStateDir, "extensions", "openclaw-weixin"), { recursive: true });
+  mockState.currentConfig = {
+    plugins: { entries: {
+      kimi: { enabled: true },                 // bundled → 不动
+      "openclaw-weixin": { enabled: true },    // 状态目录已安装 → 不动
+      tavily: { enabled: true, config: { webSearch: { apiKey: "x" } } }, // 未安装 → 禁用
+      "memory-lancedb": { enabled: false },    // 本就禁用 → 不动
+    } },
+    tools: { updatePlan: true },
+  };
+  const { migrateOpenclawConfigForKernelUpgrade } = await import("./openclaw-config-migration");
+  migrateOpenclawConfigForKernelUpgrade();
+  const entries = mockState.currentConfig.plugins.entries;
+  expect(entries.kimi.enabled).toBe(true);
+  expect(entries["openclaw-weixin"].enabled).toBe(true);
+  expect(entries.tavily.enabled).toBe(false);
+  expect(entries.tavily.config.webSearch.apiKey).toBe("x"); // 配置本体保留
+  expect(entries["memory-lancedb"].enabled).toBe(false);
+  expect(mockState.writeCount).toBe(1);
+});
+
+test("2026.8: 插件全部可解析时不写文件", async () => {
+  writeKernelVersion("2026.8.2");
+  fs.mkdirSync(path.join(mockState.gatewayPkgDir, "dist", "extensions", "kimi"), { recursive: true });
+  mockState.currentConfig = {
+    plugins: { entries: { kimi: { enabled: true } } },
+    tools: { updatePlan: true },
+  };
+  const { migrateOpenclawConfigForKernelUpgrade } = await import("./openclaw-config-migration");
+  migrateOpenclawConfigForKernelUpgrade();
+  expect(mockState.currentConfig.plugins.entries.kimi.enabled).toBe(true);
+  expect(mockState.writeCount).toBe(0);
+});
+
+test("2026.7 不做插件可用性降级", async () => {
+  writeKernelVersion("2026.7.1-2");
+  mockState.currentConfig = {
+    plugins: { entries: { tavily: { enabled: true } } },
+    tools: { experimental: { planTool: true } },
+  };
+  const { migrateOpenclawConfigForKernelUpgrade } = await import("./openclaw-config-migration");
+  migrateOpenclawConfigForKernelUpgrade();
+  expect(mockState.currentConfig.plugins.entries.tavily.enabled).toBe(true);
+  expect(mockState.writeCount).toBe(0);
+});
+
+test("2026.8: plugins.slots 引用未安装插件时摘除槽位", async () => {
+  writeKernelVersion("2026.8.2");
+  fs.mkdirSync(path.join(mockState.gatewayPkgDir, "dist", "extensions", "memory-core"), { recursive: true });
+  mockState.currentConfig = {
+    plugins: {
+      entries: { "memory-core": { enabled: true } },
+      slots: { memory: "modelstudio-memory-for-openclaw", other: "memory-core" },
+    },
+    tools: { updatePlan: true },
+  };
+  const { migrateOpenclawConfigForKernelUpgrade } = await import("./openclaw-config-migration");
+  migrateOpenclawConfigForKernelUpgrade();
+  expect(mockState.currentConfig.plugins.slots.memory).toBeUndefined();
+  expect(mockState.currentConfig.plugins.slots.other).toBe("memory-core");
+  expect(mockState.writeCount).toBe(1);
 });

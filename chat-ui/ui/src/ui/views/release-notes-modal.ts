@@ -1,6 +1,7 @@
 import { html, nothing } from "lit";
 import type { AppViewState } from "../app-view-state.ts";
 import { t } from "../i18n.ts";
+import { icons } from "../icons.ts";
 
 // "What's New" 弹窗：展示自上次打开以来的所有版本更新内容
 export function renderReleaseNotesModal(state: AppViewState) {
@@ -16,20 +17,19 @@ export function renderReleaseNotesModal(state: AppViewState) {
   };
 
   return html`
-    <div class="exec-approval-overlay" role="dialog" aria-modal="true" @click=${handleDismiss}>
-      <div class="release-notes-card" @click=${(e: Event) => e.stopPropagation()}>
-        <button class="release-notes-close" @click=${handleDismiss} aria-label=${t("releaseNotes.close")}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M18 6 6 18"/><path d="m6 6 12 12"/>
-          </svg>
-        </button>
-
-        <div class="release-notes-header">
-          <div class="release-notes-title">${t("releaseNotes.title")}</div>
-          <div class="release-notes-version">${t("releaseNotes.currentVersion")} ${currentVersion}</div>
+    <div class="cc-dialog-overlay" role="dialog" aria-modal="true" @click=${handleDismiss}>
+      <div class="cc-dialog release-notes-dialog" @click=${(e: Event) => e.stopPropagation()}>
+        <div class="cc-dialog__head">
+          <div style="flex: 1; min-width: 0;">
+            <div class="cc-dialog__title">${t("releaseNotes.title")}</div>
+            <div class="cc-dialog__subtitle">${t("releaseNotes.currentVersion")} ${currentVersion}</div>
+          </div>
+          <button class="cc-dialog__close" type="button" @click=${handleDismiss} aria-label=${t("releaseNotes.close")}>
+            ${icons.x}
+          </button>
         </div>
 
-        <div class="release-notes-entries">
+        <div class="cc-dialog__body release-notes-dialog__body">
           ${entries.map((entry) => html`
             <div class="release-notes-entry">
               <div class="release-notes-entry-version">${entry.version}</div>
@@ -38,8 +38,8 @@ export function renderReleaseNotesModal(state: AppViewState) {
           `)}
         </div>
 
-        <div class="release-notes-footer">
-          <button class="release-notes-ok-btn" @click=${handleDismiss}>
+        <div class="cc-dialog__foot">
+          <button class="btn primary" type="button" @click=${handleDismiss}>
             ${t("releaseNotes.ok")}
           </button>
         </div>

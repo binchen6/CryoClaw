@@ -1,6 +1,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import { resolveGatewayPackageDir, resolveUserStateDir } from "./constants";
+import { readKernelVersionParts } from "./openclaw-config-migration";
 
 export const KIMI_SEARCH_PLUGIN_ID = "kimi-search";
 
@@ -113,14 +114,17 @@ const KIMI_EMBEDDING_MODEL = "bge_m3_embed";
 
 // 将 memorySearch 指向本地 auth proxy（代理注入最新 token，免密钥刷新）
 // proxySecret：回环鉴权路径段（见 kimi-auth-proxy.ts），为空时退化为无 secret 旧格式
+// 落位随内核版本：2026.8 起正确路径是根级 memory.search（agents.defaults.memorySearch
+// 会被 strict 校验拒绝），旧内核仍是 agents.defaults.memorySearch；版本不可读时按旧路径。
 export function ensureMemorySearchProxyConfig(config: any, proxyPort: number, proxySecret = ""): boolean {
   if (proxyPort <= 0) return false;
 
-  config.agents ??= {};
-  config.agents.defaults ??= {};
-  config.agents.defaults.memorySearch ??= {};
+  const kernel = readKernelVersionParts();
+  const atLeast2026_8 = kernel !== null && (kernel.year > 2026 || (kernel.year === 2026 && kernel.month >= 8));
+  const ms = atLeast2026_8
+    ? (((config.memory ??= {}).search) ??= {})
+    : (((config.agents ??= {}).defaults ??= {}).memorySearch ??= {});
 
-  const ms = config.agents.defaults.memorySearch;
   const expectedBase = `http://127.0.0.1:${proxyPort}${proxySecret ? `/${proxySecret}` : ""}/coding/v1/`;
 
   // 配置未变则跳过写入

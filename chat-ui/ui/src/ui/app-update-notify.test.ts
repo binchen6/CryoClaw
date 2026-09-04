@@ -41,10 +41,10 @@ test("app-render.ts：sidebar 收到 settingsUpdateBadge，toast 渲染 action �
   assert.match(s, /getToastAction\(\)/, "应读取 toast action");
 });
 
-test("cc-sidebar：设置入口渲染更新角标", () => {
-  const s = src("components/cc-sidebar.ts");
-  // 关联断言：徽标（微信/更新）必须驱动 rail-dot 圆点渲染，防止退化为各自独立的存在性检查（R42 第二期 T4 质量审查）
-  assert.match(s, /props\.settingsBadge \|\| props\.settingsUpdateBadge[\s\S]{0,100}?cryoclaw-sidebar__rail-dot/, "更新/微信徽标应驱动 rail-dot 圆点");
+test("cc-rail：设置入口渲染更新角标", () => {
+  const s = src("components/cc-rail.ts");
+  // 关联断言：徽标（微信/更新）必须驱动 rail-dot 圆点渲染，防止退化为各自独立的存在性检查
+  assert.match(s, /props\.settingsBadge \|\| props\.settingsUpdateBadge[\s\S]{0,100}?cc-rail__dot/, "更新/微信徽标应驱动 rail-dot 圆点");
 });
 
 test("tab-about.ts：releaseNotes / error 详情 / 重试 / 查看更新日志", () => {

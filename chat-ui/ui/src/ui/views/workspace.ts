@@ -1,7 +1,8 @@
 /**
- * 工作区页（R42 第二期）—— IDE 式融合：左导航（仓库选择/文件树/Git 变更节点/
- * Worktrees 区块）+ 右主区（文件预览 | Git 面板 slot）。纯渲染，状态在
- * controllers/workspace.ts 与 app state；git/worktrees 内容以 slot 注入。
+ * 工作区页（R42 第二期，2026.9 视觉重写）—— IDE 式融合：左导航（仓库选择/文件树/
+ * Git 变更节点/Worktrees 区块）+ resizable-divider 拖拽分隔 + 右主区
+ * （文件预览：面包屑 + 内容 | Git 面板 slot）。纯渲染，状态在 controllers/workspace.ts
+ * 与 app state；git/worktrees 内容以 slot 注入。
  */
 import { html, nothing, type TemplateResult } from "lit";
 import type { AppViewState } from "../app-view-state.ts";
@@ -13,6 +14,7 @@ import {
 } from "../controllers/workspace.ts";
 import { t, tWithDetail } from "../i18n.ts";
 import { icons } from "../icons.ts";
+import "../components/resizable-divider.ts";
 
 export type WorkspaceViewOptions = {
   gitSlot: TemplateResult;
@@ -34,12 +36,41 @@ function relativePath(root: string, current: string): string {
   return current.slice(root.length).replace(/^[/\\]/, "");
 }
 
+// 左导航拖拽调宽：splitRatio 既写到布局根 CSS 变量（视觉），也记在模块级变量里
+// （Lit 重渲染会把 divider 属性重置回绑定值，模块变量保证二次拖拽不跳变）。
+// 纯视觉状态，不进 store、不持久化。
+let navSplitRatio = 0.26;
+
+function handleNavResize(e: Event) {
+  const ratio = (e as CustomEvent<{ splitRatio: number }>).detail?.splitRatio;
+  if (typeof ratio !== "number" || !Number.isFinite(ratio)) return;
+  navSplitRatio = ratio;
+  const host = e.currentTarget as HTMLElement | null;
+  const layout = host?.closest(".wk-layout") as HTMLElement | null;
+  layout?.style.setProperty("--wk-nav-ratio", ratio.toFixed(4));
+}
+
+// 文件预览头部面包屑：根名 → 各级目录 → 当前文件名（强调）
+function renderBreadcrumb(rootName: string, relPath: string, fullPath: string) {
+  const segments = relPath.split(/[/\\]/).filter(Boolean);
+  return html`
+    <header class="wk-preview__header" title=${fullPath}>
+      <span class="wk-preview__crumb">${rootName}</span>
+      ${segments.map(
+        (seg, i) => html`
+          <span class="wk-preview__crumb-sep" aria-hidden="true">›</span>
+          <span class="wk-preview__crumb ${i === segments.length - 1 ? "wk-preview__crumb--current" : ""}">${seg}</span>
+        `,
+      )}
+    </header>
+  `;
+}
+
 export function renderWorkspaceView(state: AppViewState, opts: WorkspaceViewOptions) {
   const ws = workspaceViewState;
   const isAtRoot = !ws.currentPath || !ws.root || ws.currentPath === ws.root;
   const relPath = ws.root && ws.selectedFile ? relativePath(ws.root, ws.selectedFile) : "";
   const rootName = ws.root?.split("/").pop() ?? "workspace";
-  const breadcrumb = relPath ? `${rootName}/${relPath}` : rootName;
   const canPreview = ws.selectedFileName ? isTextFile(ws.selectedFileName) : false;
 
   return html`
@@ -93,11 +124,17 @@ export function renderWorkspaceView(state: AppViewState, opts: WorkspaceViewOpti
           ${opts.worktreesSlot}
         </section>
       </aside>
+      <resizable-divider
+        .splitRatio=${navSplitRatio}
+        .minRatio=${0.16}
+        .maxRatio=${0.45}
+        @resize=${handleNavResize}
+      ></resizable-divider>
       <section class="wk-main">
         ${ws.mode === "git" ? opts.gitSlot : html`
           <div class="wk-preview">
             ${ws.selectedFile ? html`
-              <div class="wk-preview__header"><span title=${ws.selectedFile}>${breadcrumb}</span></div>
+              ${renderBreadcrumb(rootName, relPath, ws.selectedFile)}
               <div class="wk-preview__content">
                 ${ws.fileLoading
                   ? html`<div class="wk-preview__placeholder">${t("workspace.loading")}</div>`
@@ -109,7 +146,10 @@ export function renderWorkspaceView(state: AppViewState, opts: WorkspaceViewOpti
                         ? html`<div class="wk-preview__placeholder">${t("workspace.loading")}</div>`
                         : html`<div class="wk-preview__placeholder">${t("workspace.noPreview")}</div>`}
               </div>`
-            : html`<div class="wk-preview__empty panel__empty"><span>${t("workspace.selectFile")}</span></div>`}
+            : html`<div class="wk-preview__empty panel__empty">
+                <span class="panel__empty-icon wk-preview__empty-icon">${icons.fileText}</span>
+                <span>${t("workspace.selectFile")}</span>
+              </div>`}
           </div>`}
       </section>
     </div>

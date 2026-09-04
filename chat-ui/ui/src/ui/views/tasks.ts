@@ -1,6 +1,8 @@
 /**
  * Tasks 实时视图 — v2026.7 内核 tasks.list / tasks.cancel + task 事件。
  * 展示进行中（queued/running）与最近完成的后台任务，可取消、可跳转会话。
+ * 2026.9 视觉重写：任务卡 → 清单式行（状态点 + 等宽 meta + hairline 分隔），
+ * 顶层 tab → 分段控件（segmented control）。
  */
 import { html, nothing, type TemplateResult } from "lit";
 import type { CronJob, TaskSummary, TaskStatus } from "../types.ts";
@@ -25,7 +27,7 @@ export type TasksProps = {
   /** 启用中定时任务数（定时 tab 徽标） */
   cronJobCount: number;
   onTabChange: (tab: TasksViewTab) => void;
-  /** runtime === "cron" 任务卡「查看定时任务」→ 切定时 tab */
+  /** runtime === "cron" 任务行「查看定时任务」→ 切定时 tab */
   onOpenCronTab: () => void;
   onStatusFilterChange: (status: TaskStatus | "all") => void;
   onRefresh: () => void;
@@ -50,18 +52,37 @@ function statusLabel(status: TaskStatus | "all"): string {
   return t(`tasks.status.${status}`);
 }
 
-function statusChipClass(status: TaskStatus | "all"): string {
+// 状态点：running=accent（脉动）/ queued=warn / completed=ok / failed·timed_out=destructive / 其余 muted
+function statusDotClass(status: TaskStatus | "all"): string {
   switch (status) {
     case "running":
+      return "ts-dot--running";
     case "queued":
-      return "chip-warn";
+      return "ts-dot--queued";
     case "completed":
-      return "chip-ok";
+      return "ts-dot--ok";
     case "failed":
     case "timed_out":
-      return "chip-danger";
+      return "ts-dot--danger";
     default:
-      return "";
+      return "ts-dot--muted";
+  }
+}
+
+// meta 行内状态文字配色（与状态点同语义）
+function statusTextClass(status: TaskStatus | "all"): string {
+  switch (status) {
+    case "running":
+      return "ts-status--running";
+    case "queued":
+      return "ts-status--queued";
+    case "completed":
+      return "ts-status--ok";
+    case "failed":
+    case "timed_out":
+      return "ts-status--danger";
+    default:
+      return "ts-status--muted";
   }
 }
 
@@ -116,62 +137,65 @@ function cronSourceName(props: TasksProps, task: TaskSummary): string | null {
   return match?.name ?? null;
 }
 
-function renderTaskCard(props: TasksProps, task: TaskSummary) {
+function renderTaskRow(props: TasksProps, task: TaskSummary) {
   const active = isActiveTask(task);
   const cancelling = props.cancellingIds.has(task.id);
   const sessionKey = task.childSessionKey ?? task.sessionKey;
   const detail = taskDetail(task);
   const timestamp = taskTimestamp(task);
   const durationMs = taskDurationMs(task);
+  const status = task.status ?? "queued";
+  const source = cronSourceName(props, task);
+  const title = taskTitle(task);
   return html`
-    <div class="ts-card ${active ? "ts-card--active" : ""}">
-      <div class="ts-card__main">
-        <div class="ts-card__title">${taskTitle(task)}</div>
-        <div class="chip-row">
-          <span class="chip ${statusChipClass(task.status ?? "queued")}">${statusLabel(task.status ?? "queued")}</span>
-          <span class="chip">${runtimeLabel(task.runtime)}</span>
-          ${task.agentId ? html`<span class="chip">${task.agentId}</span>` : nothing}
-          ${durationMs != null ? html`<span class="chip">${formatDurationHuman(durationMs)}</span>` : nothing}
+    <div class="ts-row ${active ? "ts-row--active" : ""}">
+      <span class="ts-dot ${statusDotClass(status)}" title=${statusLabel(status)}></span>
+      <div class="ts-row__main">
+        <div class="ts-row__title" title=${title}>${title}</div>
+        <div class="ts-row__meta">
+          <span class="ts-row__meta-item ts-status ${statusTextClass(status)}">${statusLabel(status)}</span>
+          <span class="ts-row__meta-item">${runtimeLabel(task.runtime)}</span>
+          ${task.agentId ? html`<span class="ts-row__meta-item">${task.agentId}</span>` : nothing}
+          ${durationMs != null ? html`<span class="ts-row__meta-item">${formatDurationHuman(durationMs)}</span>` : nothing}
+          ${source
+            ? html`<span class="ts-row__meta-item" title=${source}>${t("tasks.cronSource").replace("{name}", source)}</span>`
+            : nothing}
         </div>
-        ${detail ? html`<div class="ts-card__detail">${detail}</div>` : nothing}
+        ${detail ? html`<div class="ts-row__detail">${detail}</div>` : nothing}
       </div>
-      <div class="ts-card__meta">
-        <span class="ts-card__time" title=${timestamp}>${timestamp}</span>
-        ${sessionKey
-          ? html`<button
-              class="btn btn--sm"
-              type="button"
-              @click=${() => props.onOpenChat(sessionKey)}
-            >
-              ${t("tasks.openSession")}
-            </button>`
-          : nothing}
-        ${task.runtime === "cron"
-          ? html`${(() => {
-              const source = cronSourceName(props, task);
-              return source
-                ? html`<span class="chip" title=${source}>${t("tasks.cronSource").replace("{name}", source)}</span>`
-                : nothing;
-            })()}
-            <button
-              class="btn btn--sm"
-              type="button"
-              @click=${() => props.onOpenCronTab()}
-            >
-              ${t("tasks.viewCronJob")}
-            </button>`
-          : nothing}
-        ${active
-          ? html`<button
-              class="btn danger btn--sm"
-              type="button"
-              ?disabled=${cancelling || !props.connected}
-              @click=${() => props.onCancel(task.id)}
-            >
-              ${cancelling ? icons.loader : nothing}
-              ${cancelling ? t("tasks.cancelling") : t("tasks.cancel")}
-            </button>`
-          : nothing}
+      <div class="ts-row__side">
+        <span class="ts-row__time" title=${timestamp}>${timestamp}</span>
+        <div class="ts-row__actions">
+          ${sessionKey
+            ? html`<button
+                class="btn btn--sm"
+                type="button"
+                @click=${() => props.onOpenChat(sessionKey)}
+              >
+                ${t("tasks.openSession")}
+              </button>`
+            : nothing}
+          ${task.runtime === "cron"
+            ? html`<button
+                class="btn btn--sm"
+                type="button"
+                @click=${() => props.onOpenCronTab()}
+              >
+                ${t("tasks.viewCronJob")}
+              </button>`
+            : nothing}
+          ${active
+            ? html`<button
+                class="btn danger btn--sm"
+                type="button"
+                ?disabled=${cancelling || !props.connected}
+                @click=${() => props.onCancel(task.id)}
+              >
+                ${cancelling ? icons.loader : nothing}
+                ${cancelling ? t("tasks.cancelling") : t("tasks.cancel")}
+              </button>`
+            : nothing}
+        </div>
       </div>
     </div>
   `;
@@ -180,7 +204,7 @@ function renderTaskCard(props: TasksProps, task: TaskSummary) {
 function renderTasksRuns(props: TasksProps) {
   const activeTasks = props.tasks.filter((task) => isActiveTask(task));
   const recentTasks = props.tasks.filter((task) => !isActiveTask(task)).slice(0, 50);
-  // 状态过滤在客户端做（tasks.list 始终全量拉取，避免污染侧边栏徽标计数）
+  // 状态过滤在客户端做（tasks.list 始终全量拉取，避免污染图标轨徽标计数）
   const filtered = props.statusFilter === "all"
     ? props.tasks
     : props.tasks.filter((task) => task.status === props.statusFilter);
@@ -222,18 +246,18 @@ function renderTasksRuns(props: TasksProps) {
               </h3>
               ${activeTasks.length === 0
                 ? html`<p class="ts-empty panel__empty">${t("tasks.noActive")}</p>`
-                : activeTasks.map((task) => renderTaskCard(props, task))}
+                : html`<div class="ts-list">${activeTasks.map((task) => renderTaskRow(props, task))}</div>`}
             </section>
             <section class="ts-section">
               <h3 class="ts-section__title">${t("tasks.recentTitle")}</h3>
               ${recentTasks.length === 0
                 ? html`<p class="ts-empty panel__empty">${t("tasks.noRecent")}</p>`
-                : recentTasks.map((task) => renderTaskCard(props, task))}
+                : html`<div class="ts-list">${recentTasks.map((task) => renderTaskRow(props, task))}</div>`}
             </section>
           `
         : filtered.length === 0
           ? html`<p class="ts-empty panel__empty">${t("tasks.emptyFiltered")}</p>`
-          : filtered.map((task) => renderTaskCard(props, task))}
+          : html`<div class="ts-list">${filtered.map((task) => renderTaskRow(props, task))}</div>`}
   `;
 }
 

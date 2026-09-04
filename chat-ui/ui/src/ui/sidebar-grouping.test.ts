@@ -2,13 +2,13 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { groupSidebarSessions } from "./sidebar-grouping.ts";
-import type { SidebarSessionOption } from "./components/cc-sidebar.ts";
+import type { SessionPanelSessionOption } from "./components/cc-session-panel.ts";
 
 // 固定参考时间：2026-08-03 15:00 本地时间
 const NOW = new Date(2026, 7, 3, 15, 0, 0).getTime();
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-function opt(key: string, extra: Partial<SidebarSessionOption> = {}): SidebarSessionOption {
+function opt(key: string, extra: Partial<SessionPanelSessionOption> = {}): SessionPanelSessionOption {
   return { key, label: key, ...extra };
 }
 

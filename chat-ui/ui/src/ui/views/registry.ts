@@ -5,7 +5,10 @@
  *   1. 本文件：CRYOCLAW_VIEW_IDS / CRYOCLAW_VIEW_META 各加一条
  *   2. storage.ts：无（union 从本文件导入，自动生效；若允许 URL 注入需加 INJECTABLE_VIEWS）
  *   3. app-render.ts：renderActiveView 的 switch 加渲染分支
- * （gotchas #49 的历史"4+1 处"已收敛到这里。）
+ *
+ * 2026.9 提案 A 重写：图标轨（cc-rail）常驻所有视图（setup 除外），
+ * 原「全页视图隐藏侧边栏 + 标题栏返回按钮」模型废弃（titlebarBack 删除），
+ * meta 只保留 fullpage（仅 setup 全屏向导）与上下文栏标题 key。
  */
 
 export const CRYOCLAW_VIEW_IDS = [
@@ -22,21 +25,21 @@ export type CryoClawViewId = (typeof CRYOCLAW_VIEW_IDS)[number];
 export type CryoClawViewMeta = {
   id: CryoClawViewId;
   /**
-   * 全页视图：隐藏侧边栏（cryoclaw-shell--fullpage），标题栏显示「返回对话」浮动按钮。
-   * chat 为主视图；setup 是全屏向导（无返回按钮）。
+   * 全屏视图：隐藏图标轨与会话面板（cryoclaw-shell--fullpage），无上下文栏。
+   * 仅 setup（首启向导）为 fullpage；chat 为主视图。
    */
   fullpage: boolean;
-  /** 标题栏是否显示「返回对话」浮动按钮（仅 fullpage 视图有意义） */
-  titlebarBack: boolean;
+  /** 上下文栏标题的 i18n key（chat 视图显示会话名，不用此字段） */
+  titleKey: string;
 };
 
 export const CRYOCLAW_VIEW_META: Record<CryoClawViewId, CryoClawViewMeta> = {
-  chat: { id: "chat", fullpage: false, titlebarBack: false },
-  setup: { id: "setup", fullpage: true, titlebarBack: false },
-  settings: { id: "settings", fullpage: true, titlebarBack: true },
-  workspace: { id: "workspace", fullpage: true, titlebarBack: true },
-  tasks: { id: "tasks", fullpage: true, titlebarBack: true },
-  extensions: { id: "extensions", fullpage: true, titlebarBack: true },
+  chat: { id: "chat", fullpage: false, titleKey: "sidebar.agent" },
+  setup: { id: "setup", fullpage: true, titleKey: "setup.welcome.title" },
+  settings: { id: "settings", fullpage: false, titleKey: "sidebar.settings" },
+  workspace: { id: "workspace", fullpage: false, titleKey: "sidebar.workspace" },
+  tasks: { id: "tasks", fullpage: false, titleKey: "sidebar.tasks" },
+  extensions: { id: "extensions", fullpage: false, titleKey: "sidebar.extensions" },
 };
 
 /**

@@ -1,0 +1,350 @@
+/* ==========================================================================
+   styles/shell.css — 应用壳（2026.9 提案 A 重写）
+   内容：.cryoclaw-shell 布局、cc-rail 图标轨、上下文栏（.cryoclaw-titlebar/
+   .cc-contextbar）、会话面板调宽手柄。会话面板自身样式在 session-panel.css。
+   层叠顺序由 hub styles.css 的 @import 顺序决定，勿单独调整
+   ========================================================================== */
+
+/* ============================================
+   Shell 骨架：图标轨 + 会话面板 + 主列（上下文栏 + 内容区）
+   ============================================ */
+
+.cryoclaw-shell {
+  display: flex;
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+.cryoclaw-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  height: 100vh;
+  overflow: hidden;
+  position: relative;
+  background: var(--bg);
+}
+
+.cryoclaw-content {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.cryoclaw-content > .card.chat {
+  flex: 1;
+  border-radius: 0;
+  border: none;
+  margin: 0;
+}
+
+.cryoclaw-content .chat {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ============================================
+   上下文栏（标题栏 44px，drag 区；交互元素一律 no-drag）
+   ============================================ */
+
+.cryoclaw-titlebar {
+  height: var(--titlebar-h);
+  flex-shrink: 0;
+  position: relative;
+  z-index: 100;
+  -webkit-app-region: drag;
+  display: flex;
+  align-items: stretch;
+  border-bottom: var(--hairline);
+}
+
+.cc-contextbar {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--spacer-8);
+  min-width: 0;
+  /* Windows/Linux：左侧留边与图标轨内容对齐；右侧给窗口控制按钮留位（titleBarOverlay 32px 高、约 138px 宽） */
+  padding: 0 150px 0 var(--spacer-12);
+}
+
+.is-mac .cc-contextbar {
+  /* macOS 红绿灯在左 */
+  padding: 0 var(--spacer-12) 0 84px;
+}
+
+.cc-contextbar__toggle {
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: var(--radius-8);
+  background: transparent;
+  color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+  transition: background var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
+}
+
+.cc-contextbar__toggle:hover {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+
+.cc-contextbar__toggle svg {
+  width: 16px;
+  height: 16px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.cc-contextbar__title {
+  font-family: var(--font-display);
+  font-size: var(--heading-xs);
+  font-weight: var(--weight-semibold);
+  color: var(--text-strong);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  -webkit-app-region: no-drag;
+  cursor: default;
+}
+
+/* ============================================
+   cc-rail 图标轨（常驻，60px）
+   ============================================ */
+
+cc-rail {
+  display: block;
+  width: var(--rail-width);
+  flex-shrink: 0;
+  height: 100vh;
+}
+
+.cc-rail {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: var(--spacer-8) 0 var(--spacer-12);
+  background: var(--bg-secondary);
+  border-right: var(--hairline);
+  -webkit-app-region: drag;
+}
+
+.cc-rail__brand {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 36px;
+  margin-bottom: var(--spacer-8);
+}
+
+.cc-rail__brand-mark {
+  width: 24px;
+  height: 24px;
+  display: block;
+}
+
+.cc-rail__brand-mark svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.cc-rail__nav {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--spacer-4);
+  width: 100%;
+}
+
+.cc-rail__footer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--spacer-4);
+  width: 100%;
+  position: relative;
+}
+
+.cc-rail__spacer {
+  flex: 1;
+}
+
+.cc-rail__item {
+  position: relative;
+  width: 40px;
+  height: 40px;
+  border: none;
+  border-radius: var(--radius-10);
+  background: transparent;
+  color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+  transition: background var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
+}
+
+.cc-rail__item:hover {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+
+.cc-rail__item.active {
+  color: var(--accent);
+  background: var(--accent-subtle);
+}
+
+.cc-rail__item svg {
+  width: 20px;
+  height: 20px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.cc-rail__item--webbridge-repair {
+  color: var(--warn);
+}
+
+.cc-rail__item--webbridge-repair:hover {
+  color: var(--warn);
+  background: var(--warn-subtle);
+}
+
+.cc-rail__item--disconnected {
+  color: var(--destructive);
+}
+
+.cc-rail__item--disconnected:hover {
+  color: var(--destructive);
+  background: var(--danger-subtle);
+}
+
+/* 数字徽标（运行中任务数 / 错误数） */
+.cc-rail__badge {
+  position: absolute;
+  top: 2px;
+  right: 0;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: var(--radius-full);
+  background: var(--accent);
+  color: var(--text-on-accent);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-semibold);
+  line-height: 16px;
+  text-align: center;
+  pointer-events: none;
+}
+
+.cc-rail__item--disconnected .cc-rail__badge {
+  background: var(--destructive);
+  color: #ffffff;
+}
+
+/* 圆点角标（设置：微信/更新提示） */
+.cc-rail__dot {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-full);
+  background: var(--destructive);
+  border: 2px solid var(--bg-secondary);
+  pointer-events: none;
+}
+
+/* 错误悬浮列表：图标轨按钮右侧弹出，hover 按钮时显示（同旧 sidebar 交互） */
+.cc-rail__error-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.cc-rail__error-popup {
+  display: none;
+  position: absolute;
+  left: calc(100% + 8px);
+  bottom: 0;
+  min-width: 240px;
+  max-width: 320px;
+  background: var(--bg-elevated);
+  border: var(--hairline);
+  border-radius: var(--radius-12);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+}
+
+.cc-rail__error-wrap:hover .cc-rail__error-popup {
+  display: block;
+}
+
+.cc-rail__error-item {
+  padding: var(--spacer-8) var(--spacer-12);
+  font-size: var(--text-sm);
+  line-height: var(--leading-title);
+  color: var(--destructive);
+  word-break: break-word;
+}
+
+.cc-rail__error-item + .cc-rail__error-item {
+  border-top: var(--hairline);
+}
+
+/* ============================================
+   会话面板调宽手柄（右缘 6px 命中区）
+   ============================================ */
+
+.cryoclaw-panel-resize {
+  width: 6px;
+  flex-shrink: 0;
+  cursor: col-resize;
+  position: relative;
+  -webkit-app-region: no-drag;
+}
+
+.cryoclaw-panel-resize::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 2px;
+  width: 2px;
+  border-radius: var(--radius-full);
+  background: transparent;
+  transition: background-color var(--duration-fast) var(--ease-standard);
+}
+
+.cryoclaw-panel-resize:hover::after,
+.cryoclaw-panel-resize:active::after {
+  background-color: var(--accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cryoclaw-panel-resize::after {
+    transition: none;
+  }
+}

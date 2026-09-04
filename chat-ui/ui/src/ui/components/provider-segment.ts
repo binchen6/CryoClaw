@@ -48,39 +48,40 @@ const styleSheet = new CSSStyleSheet();
 styleSheet.replaceSync(/* css */`
   .oc-provider-seg {
     display: flex;
-    gap: var(--spacer-2, 2px);
-    background: var(--bg-input, #f5f5f5);
-    border: 1px solid var(--border, #e4e4e7);
-    border-radius: var(--radius-sm, 8px);
-    padding: var(--spacer-2, 2px);
+    gap: var(--spacer-2);
+    background: var(--bg-input);
+    border: var(--hairline);
+    border-radius: var(--radius-8);
+    padding: var(--spacer-2);
     overflow: hidden;
     flex-shrink: 0;
-    margin-bottom: 8px;
+    margin-bottom: var(--spacer-8);
   }
   .oc-provider-seg__pill {
     flex: 1;
     height: 28px;
-    padding: 0 var(--spacer-12, 12px);
-    font-size: var(--text-base, 14px);
-    font-weight: 500;
-    color: var(--text-muted, #a1a1aa);
+    padding: 0 var(--spacer-12);
+    font-size: var(--text-base);
+    font-weight: var(--weight-medium);
+    color: var(--text-muted);
     background: transparent;
     border: none;
-    border-radius: var(--radius-6, 6px);
+    border-radius: var(--radius-6);
     cursor: pointer;
-    transition: color var(--transition, 0.18s ease), background var(--transition, 0.18s ease);
+    transition: color var(--duration-fast) var(--ease-out),
+      background var(--duration-fast) var(--ease-out);
     white-space: nowrap;
     font-family: inherit;
   }
   .oc-provider-seg__pill:hover:not(:disabled):not(.oc-provider-seg__pill--active) {
-    color: var(--text, #333);
-    background: var(--bg-hover, rgba(0,0,0,0.04));
+    color: var(--text);
+    background: var(--bg-hover);
   }
   /* 选中段：accent-subtle 底 + accent 字（cc-chip--selected / 导航 active 同语言） */
   .oc-provider-seg__pill--active {
-    color: var(--accent, #0ea5e9);
-    background: var(--accent-subtle, rgba(14,165,233,0.1));
-    font-weight: 600;
+    color: var(--accent);
+    background: var(--accent-subtle);
+    font-weight: var(--weight-semibold);
   }
   .oc-provider-seg__pill--locked { opacity: 0.4; cursor: not-allowed; }
 `);

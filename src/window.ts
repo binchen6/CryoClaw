@@ -7,13 +7,12 @@ import { shouldHideWindowOnClose } from "./window-close-policy";
 import type { AppUpdateState } from "./app-updater-state";
 import * as analytics from "./analytics";
 import {
-  WINDOW_WIDTH,
-  WINDOW_HEIGHT,
   WINDOW_MIN_WIDTH,
   WINDOW_MIN_HEIGHT,
   resolveChatUiPath,
   resolveDevBranchTag,
 } from "./constants";
+import { persistBounds, resolveInitialBounds } from "./window-bounds";
 
 interface ShowOptions {
   port: number;
@@ -52,6 +51,7 @@ export class WindowManager {
   private allowAppQuit = false;
   private crashRecoveryTimestamps: number[] = [];
   private memoryMonitorTimer: NodeJS.Timeout | null = null;
+  private boundsPersistTimer: NodeJS.Timeout | null = null;
   inSetupView = false;
   /** True from initial setup launch until setup:complete succeeds. Unlike
    *  inSetupView (tracks which view is currently displayed), this flag
@@ -74,9 +74,14 @@ export class WindowManager {
 
     const title = resolveMainWindowTitle();
     const isMac = process.platform === "darwin";
+    // 默认约占主屏工作区 80%（首次启动）；用户调整过的尺寸持久化恢复
+    const initialBounds = resolveInitialBounds();
     this.win = new BrowserWindow({
-      width: WINDOW_WIDTH,
-      height: WINDOW_HEIGHT,
+      width: initialBounds.width,
+      height: initialBounds.height,
+      ...(initialBounds.x != null && initialBounds.y != null
+        ? { x: initialBounds.x, y: initialBounds.y }
+        : {}),
       minWidth: WINDOW_MIN_WIDTH,
       minHeight: WINDOW_MIN_HEIGHT,
       show: false,
@@ -99,6 +104,18 @@ export class WindowManager {
       event.preventDefault();
       this.win?.setTitle(title);
     });
+    // 用户调整后的窗口尺寸持久化（节流 500ms；最大化/最小化态不写，
+    // 恢复时取的是常态 bounds）
+    const scheduleBoundsPersist = () => {
+      if (this.boundsPersistTimer) clearTimeout(this.boundsPersistTimer);
+      this.boundsPersistTimer = setTimeout(() => {
+        const w = this.win;
+        if (!w || w.isDestroyed() || w.isMaximized() || w.isMinimized()) return;
+        persistBounds(w.getBounds());
+      }, 500);
+    };
+    this.win.on("resize", scheduleBoundsPersist);
+    this.win.on("move", scheduleBoundsPersist);
     // 主窗口隐藏菜单栏（File/Edit/View...）
     this.win.setMenuBarVisibility(false);
     this.win.removeMenu();

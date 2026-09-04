@@ -1221,6 +1221,7 @@ export function renderChat(props: ChatProps) {
 
       <div class="chat-compose">
         ${renderAttachmentPreview(props)}
+        ${renderContextMeter(activeSession, props.dirtyMeterSessions)}
         <div class="field chat-compose__field">
           <span>${t("chat.messageLabel")}</span>
           <textarea
@@ -1409,7 +1410,6 @@ export function renderChat(props: ChatProps) {
             </div>
           </div>
           <div class="chat-compose__toolbar-right">
-            ${renderContextMeter(activeSession, props.dirtyMeterSessions)}
             ${
               // busy 时停止键与发送键并存（kimi web UI 契约）：发送=入队，不再被停止键替换
               showStop

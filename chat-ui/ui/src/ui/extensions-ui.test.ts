@@ -16,27 +16,26 @@ function stripComments(code: string): string {
   return code.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
 }
 
-test("registry：extensions 视图 id + fullpage meta", () => {
+test("registry：extensions 视图 id + meta（2026.9：非 fullpage，rail 常驻）", () => {
   const s = src("views/registry.ts");
   assert.match(s, /"extensions",/, "CRYOCLAW_VIEW_IDS 应包含 extensions");
-  assert.match(s, /extensions:\s*\{\s*id: "extensions", fullpage: true, titlebarBack: true \}/, "缺少 extensions meta");
+  assert.match(s, /extensions:\s*\{\s*id: "extensions", fullpage: false, titleKey: "sidebar\.extensions" \}/, "缺少 extensions meta");
   // R42 第二期 T5：skills 视图已收敛进 extensions（技能 tab），视图 id 删除
   assert.ok(!/"skills",/.test(stripComments(s)), "skills 视图 id 应已删除");
 });
 
-test("app-render：renderActiveView 分发 extensions + sidebar props 更名", () => {
+test("app-render：renderActiveView 分发 extensions + rail 接线", () => {
   const s = src("app-render.ts");
   assert.match(s, /case "extensions":\s*\n\s*return renderExtensionsView\(state\)/, "缺少渲染分支");
-  assert.match(s, /extensionsActive: cryoclawView === "extensions"/, "缺少 extensionsActive prop");
   assert.match(s, /onOpenExtensions: \(\) => openExtensionsView\(state\)/, "缺少 onOpenExtensions prop");
-  assert.ok(!/skillsActive: cryoclawView === "skills"/.test(s), "skillsActive prop 应已移除");
+  assert.match(s, /activeView: cryoclawView/, "应向 cc-rail 传 activeView");
 });
 
-test("cc-sidebar：技能导航项更名为扩展入口", () => {
-  const s = src("components/cc-sidebar.ts");
+test("cc-rail：扩展导航入口", () => {
+  const s = src("components/cc-rail.ts");
   assert.match(s, /t\("sidebar\.extensions"\)/, "缺少扩展入口文案");
   assert.match(s, /props\.onOpenExtensions/, "导航项未接 onOpenExtensions");
-  assert.match(s, /extensionsActive \? "active"/, "导航项未接 active 态");
+  assert.match(s, /props\.activeView === opts\.view/, "导航项未接 active 态");
 });
 
 test("settings：plugins tab 迁出（SETTINGS_TABS 无 plugins，settings-view 无渲染分支）", () => {

@@ -59,34 +59,37 @@ styleSheet.replaceSync(/* css */`
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: var(--spacer-12, 12px);
-    padding: var(--spacer-4, 4px) 0;
+    gap: var(--spacer-12);
+    padding: var(--spacer-4) 0;
     cursor: pointer;
     user-select: none;
   }
   .oc-toggle--disabled { opacity: 0.5; cursor: not-allowed; }
-  .oc-toggle:focus-visible { outline: none; box-shadow: var(--focus-ring, 0 0 0 2px var(--accent, #0ea5e9)); border-radius: var(--radius-sm, 6px); }
-  .oc-toggle-label { font-size: var(--heading-xs, 13px); font-weight: 500; color: var(--text-secondary, #a1a1aa); }
+  .oc-toggle:focus-visible { outline: none; box-shadow: var(--focus-ring); border-radius: var(--radius-8); }
+  .oc-toggle-label { font-size: var(--heading-xs); font-weight: var(--weight-medium); color: var(--text-secondary); }
   .oc-toggle-track {
     position: relative;
-    width: 42px;
-    height: 24px;
-    border-radius: var(--radius-pill, 12px);
-    background: var(--border, #ccc);
-    transition: background var(--duration-normal, 0.2s) ease;
+    box-sizing: border-box;
+    width: 40px;
+    height: 22px;
+    border-radius: var(--radius-pill);
+    background: var(--bg-muted);
+    border: 1px solid var(--border);
+    transition: background var(--duration-fast) var(--ease-out),
+      border-color var(--duration-fast) var(--ease-out);
     flex-shrink: 0;
   }
-  .oc-toggle-track--on { background: var(--accent, #0ea5e9); }
+  .oc-toggle-track--on { background: var(--accent); border-color: transparent; }
   .oc-toggle-thumb {
     position: absolute;
     top: 2px;
     left: 2px;
-    width: 20px;
-    height: 20px;
+    width: 16px;
+    height: 16px;
     border-radius: 50%;
-    background: var(--toggle-knob, #ffffff);
-    box-shadow: var(--shadow-sm, 0 1px 3px rgba(0,0,0,0.2));
-    transition: transform var(--duration-normal, 0.2s) ease;
+    background: var(--toggle-knob);
+    box-shadow: var(--shadow-sm);
+    transition: transform var(--duration-fast) var(--ease-out);
   }
   .oc-toggle-track--on .oc-toggle-thumb { transform: translateX(18px); }
 `);

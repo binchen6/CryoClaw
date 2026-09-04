@@ -53,9 +53,9 @@ export const WINDOW_LOAD_MAX_RETRIES = 20;
 export const WINDOW_LOAD_RETRY_INTERVAL_MS = 1_500;
 
 // ── 窗口尺寸 ──
+// 默认尺寸不再固定：首次启动按主屏工作区 80% 计算（src/window-bounds.ts），
+// 用户调整后的 bounds 持久化恢复；这里只保留最小约束。
 
-export const WINDOW_WIDTH = 1200;
-export const WINDOW_HEIGHT = 800;
 export const WINDOW_MIN_WIDTH = 800;
 export const WINDOW_MIN_HEIGHT = 600;
 

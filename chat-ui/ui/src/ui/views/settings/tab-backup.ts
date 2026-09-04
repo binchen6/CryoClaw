@@ -279,7 +279,7 @@ export function renderTabBackup(state: AppViewState, notice: string | null) {
             <div class="oc-settings__card-title">${t("settings.backup.resetTitle")}</div>
             <p class="oc-settings-backup__reset-desc">${t("settings.backup.resetDescription")}</p>
           </div>
-          <button class="oc-settings__btn oc-settings__btn--primary oc-settings__btn--compact" ?disabled=${actionDisabled} @click=${() => handleResetConfig(state)}>
+          <button class="oc-settings__btn oc-settings__btn--danger oc-settings__btn--compact" ?disabled=${actionDisabled} @click=${() => handleResetConfig(state)}>
             ${t("settings.backup.resetButton")}
           </button>
         </div>

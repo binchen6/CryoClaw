@@ -347,7 +347,11 @@ export function connectGateway(host: GatewayHost) {
     url: host.settings.gatewayUrl,
     token: host.settings.token.trim() ? host.settings.token : undefined,
     password: host.password.trim() ? host.password : undefined,
-    clientName: "openclaw-control-ui",
+    // 2026.8 内核：openclaw-control-ui 身份在同源 origin 下会强制校验
+    // control-ui buildId 与 gateway buildId 一致（不匹配即 1008 拒连）。
+    // CryoClaw 内嵌 UI 是独立构建，改用 webchat-ui 身份跳过该校验；
+    // origin 检查由主进程 gateway-origin.ts 的环回 Origin 改写保证通过。
+    clientName: "webchat-ui",
     mode: "webchat",
     onHello: (hello) => {
       console.info("[gateway] onHello", hello.type, hello.protocol);

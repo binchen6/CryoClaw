@@ -1,151 +1,150 @@
 /* ==========================================================================
-   styles/compose.css — 输入区 Visual Polish Overrides
-   覆盖原 styles.css 行 7252-7808：immersive titlebar、fullpage settings、输入区优化、ChatGPT 风格 compose 统一容器/底部工具栏/模型选择器/思考开关与级别 popover/回放分支 popover、context meter、发送按钮
-   纯搬运拆分，层叠顺序由 hub styles.css 的 @import 顺序决定，勿单独调整
-   P5：compose 与消息流同一居中列（--chat-column）；删除了杀掉居中的
-   .chat-group margin:0 !important 与 .chat-thread 8px !important 旧覆盖。
+   styles/compose.css — 输入区（compose）与消息流收尾
+   2026.9 重写：compose 单卡片（radius-16 + hairline + focus-ring）、内部
+   工具栏（加号菜单/思考档/模型选择器/回放）、context meter 细条贴卡片顶部、
+   accent 实心圆形发送按钮。旧壳残留块（.cryoclaw-sidebar__* 等）与
+   !important 覆盖已清除——特异性由 .chat-compose 前缀选择器保证（0,3,x），
+   高于 components.css 的 .field 系列（0,1,1 / 0,2,x）。
    ========================================================================== */
 
-/* --- CryoClaw Visual Polish Overrides --- */
-
-/* 1. Immersive Titlebar padding */
-.cryoclaw-sidebar__brand {
-  height: 44px !important;
-  /* Windows/Linux 默认：按钮靠左 */
-  padding: 3px 12px 0 12px !important;
-  display: flex !important;
-  align-items: center !important;
-  /* 字标居左、折叠按钮居右（TraeWork 品牌区） */
-  justify-content: space-between !important;
-  -webkit-app-region: drag;
-}
-
-/* macOS 红绿灯约 70px，按钮紧跟其后 */
-.is-mac .cryoclaw-sidebar__brand {
-  padding-left: 90px !important;
-}
-
-.cryoclaw-sidebar__collapse {
-  -webkit-app-region: no-drag;
-}
-
-.cryoclaw-sidebar__item,
-.cryoclaw-sidebar__session-item,
-.cryoclaw-sidebar__session-add {
-  -webkit-app-region: no-drag;
-}
-
-/* 2. Fullpage Settings */
-.cryoclaw-shell--fullpage .cryoclaw-sidebar {
-  display: none !important;
-}
-
-.cryoclaw-shell--fullpage .cryoclaw-main {
-  width: 100vw !important;
-}
-
-
-/* 4. Input Area Optimization */
-.chat-compose__field textarea {
-  border-radius: 20px !important;
-  padding-right: 48px !important;
-  padding-bottom: 12px !important;
-  min-height: 72px !important;
-  scrollbar-width: none !important;
-}
-
-.chat-compose__field textarea::-webkit-scrollbar {
-  display: none !important;
-}
-
-/* 5. Timestamps / Avatars weakened */
-/* 组 footer 更克制但不全隐（opacity 0.55），hover 完整呈现 */
+/* ── 组 footer（meta 行）：常驻小字 muted，不再 hover 才完整显示 ── */
 .chat-group-footer {
-  opacity: 0.55;
-  transition: opacity var(--duration-fast) var(--ease-out);
+  display: flex;
+  gap: var(--spacer-10);
+  align-items: center;
+  margin-top: var(--spacer-6);
 }
 
-.chat-group:hover .chat-group-footer {
-  opacity: 1;
+/* 头像在新视觉体系中隐去（助手消息扁平、用户消息右对齐气泡，无需头像锚点）；
+   特异性需压过 chat.css 的 img.chat-avatar（0,1,1） */
+.chat-group .chat-avatar {
+  display: none;
 }
 
-.chat-avatar {
-  display: none !important;
-}
-
-/* 6. Chat Compose — ChatGPT 风格统一容器 */
-/* P5 布局重构：compose 与消息流同一居中列（--chat-column），
-   顶部渐变融入背景；旧 .chat-group margin:0 !important 覆盖已删除
-   （居中由 chat.css 的 margin:auto 生效），.chat-thread 水平 padding
-   统一在 chat.css 定义（此处旧 8px !important 覆盖一并移除） */
+/* ── compose 容器：与消息流同一居中列（--chat-column），渐变融入背景 ── */
 .chat-compose {
+  position: relative;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacer-12);
+  margin-top: auto;
   align-items: center;
   padding: var(--spacer-12) var(--spacer-24) var(--spacer-20);
   background: linear-gradient(to bottom, transparent, var(--bg) 35%);
+  z-index: 10;
 }
 
-/* compose 直接子级（附件预览 / 输入容器）对齐居中列；
+/* compose 直接子级（context meter / 附件预览 / 输入卡片）对齐居中列；
    注意：新增 compose 直接子级会被此规则拉伸居中，需自查是否适用 */
 .chat-compose > * {
   width: 100%;
   max-width: var(--chat-column);
 }
 
-/* 统一容器：textarea + 底部工具栏一体化 */
-.chat-compose__field {
-  display: flex !important;
-  flex-direction: column !important;
-  border: 1px solid var(--border) !important;
-  border-radius: var(--radius-20) !important;
-  /* !important 仍需保留：覆盖 ex-redesign 同名规则的 shadow（见下方注释） */
-  box-shadow: var(--shadow-lg) !important;
-  transition: border-color var(--duration-fast) var(--ease-out), box-shadow var(--duration-fast) var(--ease-out) !important;
-  overflow: visible;
-  /* 卡片底 + 内边距（redesign 同名规则的 border/radius/shadow
-     被上面的 !important 覆盖，只有 background/padding 生效） */
-  background: var(--card);
-  padding: var(--spacer-10) var(--spacer-16) var(--spacer-8);
+/* ── Context Meter：对话记忆占用细条（3px），贴输入卡片顶部 ──
+ * 仅一根通栏进度条（无标签 / 无百分比），单色中性灰；仅反映 activeSession
+ * 的占用比，会话切换即时更新。完整数值在 hover tooltip（aria-label / title）。
+ */
+.chat-compose__ctx-meter {
+  display: block;
+  height: 3px;
+  /* 与卡片同宽；负下边距吃掉容器 gap，使底缘贴在输入卡片顶缘（留 1px 呼吸） */
+  margin: 0 0 calc(-1 * var(--spacer-12) + 1px);
+  padding: 0;
+  cursor: default;
+  user-select: none;
 }
 
-:root[data-theme=light] .chat-compose__field {
-  box-shadow: var(--shadow-md) !important;
+.chat-compose__ctx-meter-bar {
+  display: block;
+  width: 100%;
+  height: 3px;
+  border-radius: var(--radius-full);
+  background: var(--bg-muted);
+  overflow: hidden;
+}
+
+.chat-compose__ctx-meter-fill {
+  height: 100%;
+  background: color-mix(in srgb, var(--text) 72%, var(--muted));
+  border-radius: inherit;
+  transition: width var(--duration-normal) var(--ease-out);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-compose__ctx-meter-fill {
+    transition: none;
+  }
+}
+
+/* ── 输入卡片：textarea + 底部工具栏一体化 ── */
+.chat-compose__field {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacer-4);
+  border: var(--hairline);
+  border-radius: var(--radius-16);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-md);
+  padding: var(--spacer-10) var(--spacer-16) var(--spacer-8);
+  overflow: visible;
+  transition: border-color var(--duration-fast) var(--ease-out),
+    box-shadow var(--duration-fast) var(--ease-out);
+}
+
+/* 无障碍 label（.field span 由 components.css 定义，这里隐去） */
+.chat-compose__field > span {
+  display: none;
 }
 
 .chat-compose__field:focus-within {
-  border-color: var(--border-focus) !important;
-  box-shadow: var(--focus-ring) !important;
-}
-
-/* 浅色静态阴影规则特异性更高，focus 态需单独覆盖才能胜出 */
-:root[data-theme=light] .chat-compose__field:focus-within {
-  box-shadow: var(--focus-ring) !important;
+  border-color: var(--border-focus);
+  box-shadow: var(--focus-ring);
 }
 
 .chat-compose .chat-compose__field textarea {
-  border: none !important;
-  box-shadow: none !important;
-  border-radius: 0 !important;
-  padding: var(--spacer-10) var(--spacer-12) var(--spacer-2) !important;
-  height: auto !important;
-  min-height: 40px !important;
-  max-height: 40vh !important;
-  resize: none !important;
-  background: transparent !important;
-  overflow-y: auto !important;
+  width: 100%;
+  border: none;
+  box-shadow: none;
+  outline: none;
+  border-radius: 0;
+  background: transparent;
+  padding: var(--spacer-6) var(--spacer-4) var(--spacer-2);
+  height: auto;
+  min-height: 40px;
+  max-height: 40vh;
+  resize: none;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  font-family: var(--font-body);
+  font-size: var(--text-base);
+  line-height: var(--leading-body);
+  scrollbar-width: none;
 }
 
-.chat-compose__field textarea:focus {
-  border: none !important;
-  box-shadow: none !important;
-  outline: none !important;
+.chat-compose .chat-compose__field textarea::-webkit-scrollbar {
+  display: none;
 }
 
-/* 底部工具栏 — 附件、模型选择器、发送按钮 */
+.chat-compose .chat-compose__field textarea:focus {
+  border: none;
+  box-shadow: none;
+  outline: none;
+}
+
+.chat-compose .chat-compose__field textarea:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* ── 底部工具栏：加号菜单 / 思考档 / 模型选择器 / 回放 ｜ 发送按钮 ── */
 .chat-compose__toolbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--spacer-4) var(--spacer-6) var(--spacer-6);
+  padding: var(--spacer-4) 0 0;
   gap: var(--spacer-4);
 }
 
@@ -161,7 +160,7 @@
   gap: var(--spacer-8);
 }
 
-/* 工具按钮 — 无外圆角边框 */
+/* 工具按钮 — 无边框 ghost 按钮 */
 .chat-compose__tool-btn {
   display: inline-flex;
   align-items: center;
@@ -170,11 +169,12 @@
   height: 32px;
   padding: 0;
   border: none;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-8);
   background: transparent;
-  color: var(--muted);
+  color: var(--text-muted);
   cursor: pointer;
-  transition: color 150ms ease, background 150ms ease;
+  transition: color var(--duration-fast) var(--ease-out),
+    background var(--duration-fast) var(--ease-out);
   flex-shrink: 0;
 }
 
@@ -198,45 +198,47 @@
   cursor: not-allowed;
 }
 
-/* 模型选择器 — 内嵌在工具栏中，完全无边框 */
-.chat-compose__model-select,
+/* 模型选择器 — 内嵌在工具栏中，无边框；
+   .field 前缀（0,2,0）压过 components.css 的 .field select（0,1,1） */
 .field .chat-compose__model-select {
-  appearance: none !important;
-  -webkit-appearance: none !important;
-  background: transparent !important;
-  border: none !important;
-  box-shadow: none !important;
-  outline: none !important;
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  outline: none;
   font-size: var(--text-sm);
-  font-weight: 500;
-  color: var(--muted);
+  font-weight: var(--weight-medium);
+  color: var(--text-muted);
   padding: var(--spacer-6) var(--spacer-8);
   cursor: pointer;
   font-family: var(--font-body);
-  border-radius: var(--radius-sm);
-  transition: color 150ms ease;
+  border-radius: var(--radius-8);
+  transition: color var(--duration-fast) var(--ease-out),
+    background var(--duration-fast) var(--ease-out);
   max-width: 180px;
 }
 
-.chat-compose__model-select:hover:not(:disabled) {
+.field .chat-compose__model-select:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+
+.field .chat-compose__model-select:focus {
+  outline: none;
+  border: none;
+  box-shadow: none;
   color: var(--text);
 }
 
-.chat-compose__model-select:focus,
-.field .chat-compose__model-select:focus {
-  outline: none !important;
-  border: none !important;
-  box-shadow: none !important;
-}
-
-.chat-compose__model-select:disabled {
+.field .chat-compose__model-select:disabled {
   opacity: 0.4;
   cursor: not-allowed;
 }
 
 .chat-compose__model-select option {
   color: var(--text);
-  background: var(--bg);
+  background: var(--bg-elevated);
 }
 
 /* 思考强度选择器 — 图标 + 当前档位标签（mono），单击展开档位 popover */
@@ -254,16 +256,17 @@
   cursor: pointer;
   border: none;
   background: transparent;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-8);
   user-select: none;
-  transition: color 150ms ease, background 150ms ease;
-  color: var(--muted);
+  transition: color var(--duration-fast) var(--ease-out),
+    background var(--duration-fast) var(--ease-out);
+  color: var(--text-muted);
 }
 
 .chat-compose__thinking-label {
   font-family: var(--font-meta);
   font-size: var(--font-size-meta);
-  font-weight: 500;
+  font-weight: var(--weight-medium);
   line-height: 1;
 }
 
@@ -289,7 +292,7 @@
 
 .chat-compose__thinking-toggle--active:hover:not(:disabled) {
   color: var(--accent);
-  background: var(--bg-hover);
+  background: var(--accent-subtle);
 }
 
 /* OFF 状态：描边，无填充 */
@@ -300,21 +303,21 @@
   fill: none;
   stroke: currentColor;
   stroke-width: 1.5px;
-  transition: fill 150ms ease, stroke 150ms ease;
+  transition: fill var(--duration-fast) var(--ease-out),
+    stroke var(--duration-fast) var(--ease-out);
 }
 
-/* 思考级别 popover — 默认隐藏，单击 toggle 打开 */
+/* 思考级别 popover — 默认隐藏，单击 toggle 打开（菜单层 ≤60 契约） */
 .chat-compose__thinking-popover {
   position: absolute;
   bottom: calc(100% + 4px);
   left: 0;
-  background: var(--bg-elevated, var(--bg));
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+  border: var(--hairline);
+  border-radius: var(--radius-12);
   padding: var(--spacer-4);
   min-width: 140px;
-  box-shadow: var(--shadow-md);
-  /* 层叠契约（R43 QA）：菜单类 ≤60；原 100 与 titlebar 同层越界 */
+  box-shadow: var(--shadow-lg);
   z-index: 60;
   display: none;
 }
@@ -336,10 +339,10 @@
   color: var(--text);
   background: transparent;
   border: none;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-8);
   cursor: pointer;
   text-align: left;
-  transition: background 100ms ease;
+  transition: background var(--duration-fast) var(--ease-out);
 }
 
 .chat-compose__thinking-option:hover {
@@ -361,7 +364,7 @@
 
 .chat-compose__thinking-option--selected {
   color: var(--accent);
-  font-weight: 500;
+  font-weight: var(--weight-medium);
 }
 
 /* 回放/分支 popover — 复用 thinking-popover 的悬浮模式 */
@@ -375,14 +378,14 @@
   position: absolute;
   bottom: calc(100% + 4px);
   left: 0;
-  background: var(--bg-elevated, var(--bg));
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+  border: var(--hairline);
+  border-radius: var(--radius-12);
   padding: var(--spacer-6) 0;
   width: 320px;
   max-height: 320px;
   overflow-y: auto;
-  box-shadow: var(--shadow-md);
+  box-shadow: var(--shadow-lg);
   /* 层叠契约（R43 QA）：菜单类 ≤60；原 100 与 titlebar 同层越界 */
   z-index: 60;
   display: none;
@@ -395,18 +398,18 @@
 .chat-compose__rewind-title {
   padding: var(--spacer-4) var(--spacer-12) var(--spacer-6);
   font-size: var(--text-sm);
-  font-weight: 600;
-  color: var(--muted);
+  font-weight: var(--weight-semibold);
+  color: var(--text-muted);
 }
 
 .chat-compose__rewind-status {
   padding: var(--spacer-6) var(--spacer-12);
   font-size: var(--text-sm);
-  color: var(--muted);
+  color: var(--text-muted);
 }
 
 .chat-compose__rewind-status--error {
-  color: var(--danger, #d64545);
+  color: var(--danger);
   word-break: break-all;
 }
 
@@ -416,7 +419,7 @@
   justify-content: space-between;
   gap: var(--spacer-8);
   padding: var(--spacer-6) var(--spacer-12);
-  border-top: 1px solid var(--border);
+  border-top: var(--hairline);
 }
 
 .chat-compose__rewind-item-meta {
@@ -435,12 +438,12 @@
 
 .chat-compose__rewind-item-reason,
 .chat-compose__rewind-item-tokens {
-  color: var(--muted);
+  color: var(--text-muted);
 }
 
 .chat-compose__rewind-item-summary {
   flex-basis: 100%;
-  color: var(--muted);
+  color: var(--text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -448,7 +451,7 @@
 
 .chat-compose__rewind-item-actions {
   display: flex;
-  gap: 4px;
+  gap: var(--spacer-4);
   flex-shrink: 0;
 }
 
@@ -461,14 +464,16 @@
   font-family: var(--font-body);
   color: var(--text);
   background: transparent;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  border: var(--hairline);
+  border-radius: var(--radius-8);
   cursor: pointer;
-  transition: background 100ms ease;
+  transition: background var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out);
 }
 
 .chat-compose__rewind-action:hover:not(:disabled) {
   background: var(--bg-hover);
+  border-color: var(--border-strong);
 }
 
 .chat-compose__rewind-action:disabled {
@@ -484,57 +489,7 @@
   stroke-width: 2px;
 }
 
-/* ── Context Meter ──
- * 发送按钮左侧的对话记忆占用指示：仅一根短进度条（无标签 / 无百分比）。
- * 单色黑/白/灰，无色阶变化；仅反映 activeSession 的占用比，会话切换会即时更新。
- * 完整数值在 hover tooltip 中可见（aria-label / title）。
- */
-.chat-compose__ctx-meter {
-  display: inline-flex;
-  align-items: center;
-  justify-content: flex-end;
-  width: auto;
-  height: 32px;
-  margin: 0 6px 0 0;
-  flex-shrink: 0;
-  align-self: center;
-  cursor: default;
-  user-select: none;
-}
-
-.chat-compose__ctx-meter-bar {
-  display: inline-block;
-  width: 42px;
-  height: 5px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--muted) 24%, transparent);
-  overflow: hidden;
-}
-
-.chat-compose__ctx-meter-fill {
-  height: 100%;
-  background: color-mix(in srgb, var(--text) 72%, var(--muted));
-  border-radius: inherit;
-  transition: width 300ms ease;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .chat-compose__ctx-meter-fill {
-    transition: none;
-  }
-}
-
-@media (max-width: 560px) {
-  .chat-compose__ctx-meter {
-    margin-right: 4px;
-  }
-
-  .chat-compose__ctx-meter-bar {
-    width: 34px;
-  }
-}
-
-/* 发送按钮 — 圆形 */
+/* 发送/停止按钮 — accent 实心圆形 */
 .chat-compose__send-btn {
   display: inline-flex;
   align-items: center;
@@ -543,12 +498,13 @@
   height: 32px;
   padding: 0;
   border: none;
-  border-radius: 50%;
+  border-radius: var(--radius-full);
   background: var(--accent);
   color: var(--text-on-accent);
   cursor: pointer;
-  /* ex-redesign: hover 轻微放大需要 transform/background 过渡 */
-  transition: transform 0.12s ease, opacity 150ms ease, background 0.15s ease;
+  transition: transform var(--duration-fast) var(--ease-out),
+    opacity var(--duration-fast) var(--ease-out),
+    background var(--duration-fast) var(--ease-out);
   flex-shrink: 0;
 }
 
@@ -563,8 +519,6 @@
 }
 
 .chat-compose__send-btn:hover:not(:disabled) {
-  /* ex-redesign: hover 轻微放大 + accent-hover 底，禁用保持弱化 */
-  opacity: 1;
   transform: scale(1.08);
   background: var(--accent-hover);
 }
@@ -574,10 +528,9 @@
   cursor: not-allowed;
 }
 
-/* P5 窄窗适配（≤768px）：compose 留白收缩，列宽约束由 max-width 自然失效 */
+/* 窄窗适配（≤768px）：compose 留白收缩，列宽约束由 max-width 自然失效 */
 @media (max-width: 768px) {
   .chat-compose {
     padding: var(--spacer-8) var(--spacer-12) var(--spacer-12);
   }
 }
-

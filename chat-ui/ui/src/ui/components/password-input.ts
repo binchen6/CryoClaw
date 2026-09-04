@@ -63,30 +63,32 @@ styleSheet.replaceSync(/* css */`
     display: flex;
     align-items: center;
   }
-  .oc-password__input {
-    flex: 1;
-    padding-right: 40px !important;
-  }
   .oc-password-input {
     width: 100%;
     min-height: 32px;
-    padding: 0 var(--spacer-12, 12px);
-    border: 1px solid var(--border, #e0e0e0);
-    border-radius: var(--radius-sm, 8px);
-    background: var(--bg-input, #f5f5f5);
-    color: var(--text, #333);
-    font-size: var(--text-base, 14px);
+    padding: 0 var(--spacer-12);
+    border: var(--hairline);
+    border-radius: var(--radius-8);
+    background: var(--bg-input);
+    color: var(--text);
+    font-size: var(--text-base);
     outline: none;
     box-sizing: border-box;
     font-family: inherit;
-    transition: border-color var(--transition, 0.18s ease), box-shadow var(--transition, 0.18s ease);
+    transition: border-color var(--duration-fast) var(--ease-out),
+      box-shadow var(--duration-fast) var(--ease-out);
+  }
+  /* 后定义覆盖 .oc-password-input 的 padding-right，给可视切换钮让位（无需 !important） */
+  .oc-password__input {
+    flex: 1;
+    padding-right: var(--spacer-40);
   }
   .oc-password-input::placeholder {
-    color: var(--text-muted, #a1a1aa);
+    color: var(--text-muted);
   }
   .oc-password-input:focus {
-    border-color: var(--border-focus, var(--accent, #0ea5e9));
-    box-shadow: var(--focus-ring, 0 0 0 3px var(--accent-subtle, rgba(14,165,233,0.15)));
+    border-color: var(--border-focus);
+    box-shadow: var(--focus-ring);
   }
   .oc-password-input:disabled {
     opacity: 0.6;
@@ -94,7 +96,7 @@ styleSheet.replaceSync(/* css */`
   }
   .oc-password__toggle {
     position: absolute;
-    right: 4px;
+    right: var(--spacer-4);
     top: 50%;
     transform: translateY(-50%);
     width: 24px;
@@ -103,16 +105,17 @@ styleSheet.replaceSync(/* css */`
     border: none;
     padding: 0;
     cursor: pointer;
-    color: var(--text-muted, #a1a1aa);
+    color: var(--text-muted);
     display: flex;
     align-items: center;
     justify-content: center;
-    border-radius: var(--radius-sm, 8px);
-    transition: color var(--transition, 0.18s ease), background var(--transition, 0.18s ease);
+    border-radius: var(--radius-6);
+    transition: color var(--duration-fast) var(--ease-out),
+      background var(--duration-fast) var(--ease-out);
   }
   .oc-password__toggle:hover {
-    color: var(--text-secondary, #71717a);
-    background: var(--bg-hover, rgba(0,0,0,0.04));
+    color: var(--text-secondary);
+    background: var(--bg-hover);
   }
 `);
 document.adoptedStyleSheets = [...document.adoptedStyleSheets, styleSheet];

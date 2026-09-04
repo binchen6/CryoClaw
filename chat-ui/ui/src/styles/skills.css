@@ -1,7 +1,12 @@
 /* ==========================================================================
-   styles/skills.css — 技能商店与已安装技能
-   覆盖原 styles.css 行 6746-7251：技能商店（搜索/排序/卡片）、技能页子标签、已安装技能分组折叠/筛选/API key 行/toggle-switch/卸载按钮
-   纯搬运拆分，层叠顺序由 hub styles.css 的 @import 顺序决定，勿单独调整
+   styles/skills.css — 扩展视图（技能商店/已安装技能）+ 全局对话框扩展
+   2026.9 重写（提案 A）：
+   - 技能商店卡片：hairline + radius-12 + hover 微浮起（--shadow-md），图标块 radius-10
+   - 已安装技能分组：干净的分区标题 + hairline
+   - .ext-tabs：下划线指示器（accent），内容列 --ext-column 居中
+   - 全局对话框：复用 primitives.css 的 cc-dialog 契约，这里补尺寸变体、
+     副标题/代码块/长文本域等辅助元素与入场动效
+   层叠顺序由 hub styles.css 的 @import 顺序决定，勿单独调整
    ========================================================================== */
 
 /* ── 技能商店 ── */
@@ -9,29 +14,31 @@
 .skill-store {
   max-width: 720px;
   margin: 0 auto;
-  /* 顶部留出 titlebar 高度 */
-  padding: 48px 16px 24px;
+  /* 壳层标题栏已统一占位 44px（2026.9 提案 A），顶部只留内容呼吸 */
+  padding: var(--spacer-24) var(--spacer-16);
 }
 
 .skill-store__header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 20px;
+  margin-bottom: var(--spacer-20);
 }
 
 .skill-store__title {
+  font-family: var(--font-display);
   font-size: var(--heading-md);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-tight);
   margin: 0;
   color: var(--text-strong);
 }
 
 .skill-store__toolbar {
   display: flex;
-  gap: 12px;
+  gap: var(--spacer-12);
   align-items: center;
-  margin-bottom: 16px;
+  margin-bottom: var(--spacer-16);
   flex-wrap: wrap;
 }
 
@@ -46,13 +53,14 @@
   min-height: 32px;
   padding: 0 var(--spacer-12);
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-8);
   background: var(--bg-input);
   color: var(--text);
   font-size: var(--text-base);
   font-family: inherit;
   outline: none;
-  transition: border-color var(--transition), box-shadow var(--transition);
+  transition: border-color var(--duration-fast) var(--ease-standard),
+    box-shadow var(--duration-fast) var(--ease-standard);
   box-sizing: border-box;
 }
 
@@ -67,7 +75,7 @@
 
 .skill-store__sort {
   display: flex;
-  gap: 8px;
+  gap: var(--spacer-8);
   align-items: center;
 }
 
@@ -84,7 +92,9 @@
   font-family: inherit;
   color: var(--text-secondary);
   cursor: pointer;
-  transition: color var(--duration-fast) ease, background var(--duration-fast) ease, border-color var(--duration-fast) ease;
+  transition: color var(--duration-fast) var(--ease-standard),
+    background var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard);
 }
 
 .skill-store__sort-btn:hover {
@@ -101,28 +111,31 @@
 .skill-store__list {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--spacer-12);
 }
 
-/* 技能卡片：cc-card--interactive 语言 */
+/* 技能卡片：hairline + radius-12，hover 微浮起（--shadow-md + 1px 上移） */
 .skill-store__card {
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
+  border: var(--hairline);
+  border-radius: var(--radius-12);
   padding: var(--spacer-16);
   background: var(--card);
-  box-shadow: var(--shadow-sm);
-  transition: border-color var(--duration-fast) var(--ease-out), box-shadow var(--duration-fast) var(--ease-out);
+  box-shadow: var(--shadow-xs);
+  transition: border-color var(--duration-fast) var(--ease-out),
+    box-shadow var(--duration-fast) var(--ease-out),
+    transform var(--duration-fast) var(--ease-out);
 }
 
 .skill-store__card:hover {
   border-color: var(--border-strong);
   box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
 }
 
 .skill-store__card-header {
   display: flex;
   align-items: flex-start;
-  gap: 12px;
+  gap: var(--spacer-12);
 }
 
 .skill-store__card-icon {
@@ -132,12 +145,12 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-10);
 }
 
 .skill-store__card-letter {
-  font-size: 18px;
-  font-weight: 700;
+  font-size: var(--text-lg);
+  font-weight: var(--weight-bold);
   line-height: 1;
   user-select: none;
 }
@@ -148,42 +161,41 @@
 }
 
 .skill-store__card-name {
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--text);
+  font-size: var(--heading-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--text-strong);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .skill-store__card-meta {
-  font-size: 12px;
-  color: var(--muted);
-  margin-top: 2px;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  margin-top: var(--spacer-2);
   display: flex;
-  gap: 8px;
+  gap: var(--spacer-8);
   align-items: center;
 }
 
-.skill-store__card-author {
-  font-weight: 500;
-}
-
 .skill-store__card-downloads {
-  opacity: 0.7;
+  color: var(--text-faint);
 }
 
+/* 卡片 action 区域右对齐，垃圾桶在左、开关在最右 */
 .skill-store__card-action {
-  flex-shrink: 0;
   display: flex;
-  gap: 6px;
+  align-items: center;
+  gap: var(--spacer-8);
+  flex-shrink: 0;
+  margin-left: auto;
 }
 
 .skill-store__card-desc {
-  margin-top: 8px;
-  font-size: 13px;
-  color: var(--muted);
-  line-height: 1.5;
+  margin-top: var(--spacer-8);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  line-height: var(--leading-body);
 }
 
 /* 技能商店按钮：cc-btn 契约（高 28、radius-8） */
@@ -193,14 +205,21 @@
   justify-content: center;
   height: 28px;
   border: 1px solid transparent;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-8);
   padding: 0 var(--spacer-12);
   font-size: var(--text-base);
-  font-weight: 500;
+  font-weight: var(--weight-medium);
   font-family: inherit;
   cursor: pointer;
-  transition: color var(--duration-fast) ease, background var(--duration-fast) ease, border-color var(--duration-fast) ease;
+  transition: color var(--duration-fast) var(--ease-standard),
+    background var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard);
   white-space: nowrap;
+}
+
+.skill-store__btn:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
 }
 
 .skill-store__btn--install {
@@ -229,27 +248,13 @@
   border-color: var(--border-strong);
 }
 
-.skill-store__btn--load-more {
-  background: var(--bg-muted);
-  border-color: var(--border);
-  border-radius: var(--radius-sm);
-  color: var(--text);
-  width: 100%;
-  height: 32px;
-}
-
-.skill-store__btn--load-more:hover {
-  background: var(--bg-hover);
-  border-color: var(--border-strong);
-}
-
 .skill-store__loading,
 .skill-store__empty,
 .skill-store__error {
   text-align: center;
-  padding: 32px 16px;
-  font-size: 14px;
-  color: var(--muted);
+  padding: var(--spacer-32) var(--spacer-16);
+  font-size: var(--text-base);
+  color: var(--text-muted);
 }
 
 .skill-store__error {
@@ -260,29 +265,25 @@
 .skill-store__toast {
   position: fixed;
   /* 让开 44px titlebar；限宽避免长文案伸到窗口控制钮下 */
-  top: 56px;
+  top: calc(var(--titlebar-h) + var(--spacer-12));
   max-width: min(480px, calc(100vw - 160px));
   left: 50%;
   transform: translateX(-50%);
   padding: var(--spacer-10) var(--spacer-20);
   font-size: var(--heading-xs);
-  font-weight: 500;
-  border-radius: var(--radius-sm);
+  font-weight: var(--weight-medium);
+  border-radius: var(--radius-8);
   color: var(--accent);
   background: var(--accent-subtle);
   border: 1px solid color-mix(in srgb, var(--accent) 25%, transparent);
-  z-index: 9999;
+  z-index: 1000;
   pointer-events: none;
-  animation: skill-toast-in 0.2s ease forwards;
+  animation: skill-toast-in var(--duration-normal) var(--ease-out) forwards;
 }
 
 @keyframes skill-toast-in {
   from { opacity: 0; transform: translateX(-50%) translateY(-8px); }
   to { opacity: 1; transform: translateX(-50%) translateY(0); }
-}
-
-.skill-store__load-more {
-  margin-top: 16px;
 }
 
 /* 技能页滚动容器 */
@@ -297,55 +298,62 @@
   display: none;
 }
 
-/* 技能页子标签栏 */
+/* 技能页子标签栏（下划线指示器，与 .ext-tabs 同语言） */
 .skills-tab-bar {
   display: flex;
   gap: 0;
   align-items: center;
-  border-bottom: 1px solid var(--border);
-  margin-bottom: 16px;
+  border-bottom: var(--hairline);
+  margin-bottom: var(--spacer-16);
 }
 
 .skills-tab-bar__actions {
   margin-left: auto;
   display: flex;
-  gap: 8px;
+  gap: var(--spacer-8);
   align-items: center;
 }
 
 .skills-tab-btn {
-  padding: 10px 20px;
+  padding: var(--spacer-8) var(--spacer-16);
   border: none;
   background: none;
-  color: var(--muted);
-  font-size: 14px;
-  font-weight: 500;
+  color: var(--text-secondary);
+  font-size: var(--text-base);
+  font-weight: var(--weight-medium);
+  font-family: inherit;
   cursor: pointer;
   border-bottom: 2px solid transparent;
-  transition: color 0.15s, border-color 0.15s;
+  margin-bottom: -1px;
+  transition: color var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard);
 }
 
 .skills-tab-btn:hover {
-  color: var(--text);
+  color: var(--text-strong);
 }
 
 .skills-tab-btn.active {
-  color: var(--text);
+  color: var(--accent);
   border-bottom-color: var(--accent);
 }
 
-/* 已安装技能：分组折叠 */
+/* 已安装技能：分组折叠 —— 分区标题 + hairline */
 .skills-group {
-  margin-bottom: 8px;
+  margin-bottom: var(--spacer-16);
 }
 
 .skills-group__header {
   display: flex;
   align-items: center;
-  padding: 10px 0;
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--muted);
+  gap: var(--spacer-8);
+  padding: var(--spacer-8) 0 var(--spacer-10);
+  margin-bottom: var(--spacer-12);
+  border-bottom: var(--hairline);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-wide);
+  color: var(--text-secondary);
   cursor: pointer;
   user-select: none;
   list-style: none;
@@ -357,13 +365,13 @@
 
 /* 分组数量 badge */
 .skills-group__count {
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--muted);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+  letter-spacing: normal;
+  color: var(--text-muted);
   background: var(--bg-muted);
-  padding: 1px 8px;
-  border-radius: var(--radius-sm);
-  margin-left: 6px;
+  padding: var(--spacer-2) var(--spacer-8);
+  border-radius: var(--radius-pill);
 }
 
 /* 折叠箭头（推至最右） */
@@ -375,52 +383,42 @@
   border-right: 2px solid currentColor;
   border-bottom: 2px solid currentColor;
   transform: rotate(-45deg);
-  transition: transform 0.2s;
+  transition: transform var(--duration-normal) var(--ease-standard);
   flex-shrink: 0;
 }
 
-.skills-group[open]>.skills-group__header>.skills-group__chevron {
+.skills-group[open] > .skills-group__header > .skills-group__chevron {
   transform: rotate(45deg);
 }
 
 /* 已安装技能：筛选行 */
 .skills-count {
-  font-size: 13px;
-  color: var(--muted);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
   white-space: nowrap;
 }
 
 /* 已安装技能：状态 badge */
 .skills-badge {
   display: inline-block;
-  font-size: 11px;
-  padding: 1px 6px;
-  border-radius: var(--radius-xs);
+  font-size: var(--text-xs);
+  padding: var(--spacer-2) var(--spacer-6);
+  border-radius: var(--radius-6);
   background: var(--bg-muted);
-  color: var(--muted);
-}
-
-.skills-badge--ok {
-  background: var(--ok-subtle);
-  color: var(--ok);
-}
-
-.skills-badge--warn {
-  background: var(--danger-subtle);
-  color: var(--danger);
+  color: var(--text-muted);
 }
 
 /* 已安装技能：缺失依赖提示 */
 .skills-missing {
-  margin-top: 6px;
-  font-size: 12px;
-  color: var(--muted);
+  margin-top: var(--spacer-6);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
 }
 
 /* 已安装技能：操作结果消息 */
 .skills-msg {
-  margin-top: 6px;
-  font-size: 12px;
+  margin-top: var(--spacer-6);
+  font-size: var(--text-sm);
 }
 
 .skills-msg--ok {
@@ -434,27 +432,17 @@
 /* 已安装技能：API key 输入行 */
 .skills-apikey-row {
   display: flex;
-  gap: 8px;
-  margin-top: 8px;
+  gap: var(--spacer-8);
+  margin-top: var(--spacer-8);
 }
 
 .skills-apikey-row .skill-store__search-input {
   flex: 1;
-  font-size: 13px;
-  padding: 6px 10px;
+  font-size: var(--text-sm);
 }
 
 .skills-apikey-row .skill-store__btn {
   flex-shrink: 0;
-}
-
-/* 已安装技能：卡片 action 区域右对齐，垃圾桶在左、开关在最右 */
-.skill-store__card-action {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-shrink: 0;
-  margin-left: auto;
 }
 
 /* 已安装技能：卸载垃圾桶按钮 */
@@ -465,11 +453,12 @@
   width: 32px;
   height: 32px;
   border: none;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-8);
   background: none;
-  color: var(--muted);
+  color: var(--text-muted);
   cursor: pointer;
-  transition: color var(--duration-fast) ease, background var(--duration-fast) ease;
+  transition: color var(--duration-fast) var(--ease-standard),
+    background var(--duration-fast) var(--ease-standard);
 }
 
 .skill-card__uninstall:hover:not(:disabled) {
@@ -483,9 +472,8 @@
 }
 
 /* ==========================================================================
-   R42 第二期：扩展视图（技能/插件双 tab）—— 顶栏 tab 容器与按钮。
-   与任务页 .ts-tab 共用同一 --spacer 间距阶梯与 --radius-sm 圆角；
-   全部走 design token（无硬编码色值）；右对齐操作区预留 .ext-tabs__actions。
+   扩展视图（技能/插件双 tab）—— 下划线指示器 tab 栏（accent 激活态），
+   内容列宽屏收束 --ext-column 居中。
    ========================================================================== */
 
 .ext-layout {
@@ -501,7 +489,7 @@
   overflow-y: auto;
 }
 
-/* 内容列宽屏收束：最大 --ext-column 居中，避免宽屏过散（R43 Task 4） */
+/* 内容列宽屏收束：最大 --ext-column 居中，避免宽屏过散 */
 .ext-layout > .skills-scroll,
 .ext-layout > .oc-settings__section {
   width: 100%;
@@ -514,20 +502,11 @@
   display: flex;
   align-items: center;
   gap: var(--spacer-4);
-  padding: var(--spacer-12) var(--spacer-20);
-  /* 顶部让位沉浸式标题栏（R43：--titlebar-h，避免与窗口控件重叠；
-     等效 padding: var(--titlebar-h) var(--spacer-20) var(--spacer-12)） */
-  padding-top: var(--titlebar-h);
+  /* 壳层标题栏已统一占位 44px（2026.9 提案 A），视图不再自行让位；
+     底部 padding 为 0，让 tab 下划线与 hairline 重合 */
+  padding: var(--spacer-12) var(--spacer-20) 0;
   border-bottom: var(--hairline);
   flex-shrink: 0;
-}
-
-/* 右对齐操作区留白槽位：后续操作按钮挂此类，margin-left: auto 推至最右 */
-.ext-tabs__actions {
-  margin-left: auto;
-  display: flex;
-  align-items: center;
-  gap: var(--spacer-8);
 }
 
 .ext-tab {
@@ -535,9 +514,11 @@
   align-items: center;
   justify-content: center;
   height: 32px;
-  padding: 0 var(--spacer-16);
-  border: 1px solid transparent;
-  border-radius: var(--radius-sm);
+  padding: 0 var(--spacer-12);
+  border: none;
+  border-bottom: 2px solid transparent;
+  /* 下划线压住行底 hairline */
+  margin-bottom: -1px;
   background: transparent;
   color: var(--text-secondary);
   font-size: var(--text-base);
@@ -546,31 +527,145 @@
   cursor: pointer;
   white-space: nowrap;
   transition: color var(--duration-fast) var(--ease-standard),
-    background var(--duration-fast) var(--ease-standard),
     border-color var(--duration-fast) var(--ease-standard);
 }
 
 .ext-tab:hover {
-  color: var(--text);
-  background: var(--bg-hover);
+  color: var(--text-strong);
 }
 
 .ext-tab.active {
-  color: var(--text-strong);
-  background: var(--bg-hover);
-  border-color: var(--border);
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+  font-weight: var(--weight-semibold);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .ext-tab {
+  .ext-tab,
+  .skills-tab-btn,
+  .skill-store__card {
     transition: none;
   }
 }
 
-/* 窄窗（≤768px）：tab 栏收窄横向留白（R43 Task 4 响应式断点） */
+/* 窄窗（≤768px）：tab 栏收窄横向留白 */
 @media (max-width: 768px) {
   .ext-tabs {
     padding-left: var(--spacer-12);
     padding-right: var(--spacer-12);
+  }
+}
+
+/* ==========================================================================
+   全局对话框扩展 —— 基座契约在 primitives.css（.cc-dialog-overlay 压层
+   --overlay / 卡片 radius-16 + --shadow-xl + hairline / 标题 --heading-sm
+   semibold / __foot 按钮右对齐）。这里只补尺寸变体、辅助元素与入场动效；
+   confirm / share-prompt / release-notes / webbridge-pill / gateway-url /
+   restart-gateway 六个全局弹窗共用。
+   ========================================================================== */
+
+.cc-dialog {
+  animation: cc-dialog-in var(--duration-normal) var(--ease-out);
+}
+
+@keyframes cc-dialog-in {
+  from { opacity: 0; transform: translateY(var(--spacer-8)) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+
+/* 头部含副标题/关闭钮时顶对齐更稳 */
+.cc-dialog__head {
+  align-items: flex-start;
+}
+
+.cc-dialog__close svg {
+  width: var(--icon-size-16);
+  height: var(--icon-size-16);
+  display: block;
+}
+
+/* 尺寸变体：确认类小窗 / 内容类长窗 */
+.cc-dialog--sm {
+  max-width: 400px;
+}
+
+.cc-dialog--lg {
+  max-width: 560px;
+}
+
+.cc-dialog__subtitle {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  line-height: var(--leading-title);
+  margin-top: var(--spacer-4);
+}
+
+/* 保留换行的正文（webbridge pill 的多行说明） */
+.cc-dialog__body--pre {
+  white-space: pre-wrap;
+}
+
+/* 等宽代码块（gateway URL 展示） */
+.cc-dialog__code {
+  margin-top: var(--spacer-12);
+  padding: var(--spacer-10) var(--spacer-12);
+  background: var(--bg-muted);
+  border: var(--hairline);
+  border-radius: var(--radius-8);
+  word-break: break-all;
+  white-space: pre-wrap;
+  font-family: var(--mono);
+  font-size: var(--text-sm);
+  color: var(--text);
+}
+
+/* 长文本域（分享 prompt 编辑） */
+.cc-dialog__textarea {
+  display: block;
+  width: 100%;
+  min-height: 320px;
+  max-height: 320px;
+  resize: vertical;
+  overflow-y: auto;
+  box-sizing: border-box;
+  padding: var(--spacer-10) var(--spacer-12);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-8);
+  background: var(--bg-input);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: var(--text-sm);
+  line-height: var(--leading-body);
+  white-space: pre-wrap;
+  text-align: left;
+  outline: none;
+  transition: border-color var(--duration-fast) var(--ease-standard),
+    box-shadow var(--duration-fast) var(--ease-standard);
+}
+
+.cc-dialog__textarea:focus {
+  border-color: var(--border-focus);
+  box-shadow: var(--focus-ring);
+}
+
+/* What's New：条目列表在 body 内滚动，头尾固定 */
+.release-notes-dialog {
+  max-height: 70vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.release-notes-dialog__body {
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacer-12);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cc-dialog {
+    animation: none;
   }
 }

@@ -158,7 +158,6 @@ export function renderSettingsView(state: AppViewState) {
   return html`
     <div class="oc-settings-container">
       <nav class="oc-settings-nav">
-        <div class="oc-settings-nav__title">${t("settings.title")}</div>
         ${SETTINGS_TABS.map((tab, idx) => {
           const prev = SETTINGS_TABS[idx - 1];
           const groupLabel = tab.group && tab.group !== prev?.group

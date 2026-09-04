@@ -3,18 +3,18 @@
    所有 CSS 文件通过 @import 引用此文件
    修改此文件 = 全局生效
 
-   设计规范：TraeWork token 体系（分组 + 数值阶梯 + 兼容别名）
-   配色：CryoClaw 冰蓝系（cryo ice-blue），浅色为默认主题，暗色经
-   [data-theme=dark] 或 prefers-color-scheme 双通道切换
+   2026.9 重写（提案 A）：视觉语言从「冰蓝+冷灰蓝」切换为
+   「中性灰 + 单一 indigo 强调色」（Linear/Notion 式清爽现代风）。
+   token 名称保持不变（下游零改名成本），值全面重调；
+   浅色为默认一等主题，暗色为独立调参的近黑中性主题。
 
-   P5 二期重构：排版阶梯（display/字距/字重/行高）、elevation 精化、
-   动效时长阶梯、hairline/玻璃拟态 token；浅色与暗色为两套独立调参的
-   一等主题（对比度、阴影深度、玻璃参数分别定义，互不覆盖降级）。
+   设计规范：数值阶梯（radius/spacer/text）+ 语义 token 双层结构；
+   双通道主题：[data-theme=dark] 或 prefers-color-scheme 切换。
    ============================================ */
 
 /* ── 静态 token（主题无关） ── */
 :root {
-  /* radius 数值阶梯（TraeWork 规范） */
+  /* radius 数值阶梯 */
   --radius-2: 2px;
   --radius-4: 4px;
   --radius-6: 6px;
@@ -33,7 +33,7 @@
   --radius-xl: var(--radius-20);
   --radius-pill: 999px;
 
-  /* spacer 数值阶梯（TraeWork 规范，4px 基网） */
+  /* spacer 数值阶梯（4px 基网） */
   --spacer-2: 2px;
   --spacer-3: 3px;
   --spacer-4: 4px;
@@ -57,41 +57,41 @@
   --icon-size-24: 24px;
 
   /* 阅读列宽：宽屏下消息流/compose 的居中列约束 */
-  --chat-column: 820px;
-  /* 扩展视图内容列收束宽度，与 --chat-column 阅读列同源语义 */
-  --ext-column: 980px;
+  --chat-column: 760px;
+  /* 扩展视图内容列收束宽度 */
+  --ext-column: 960px;
 
-  /* 字体栈（TraeWork 规范 + 中文回退） */
-  --font-body: "SF Pro Text", "PingFang SC", system-ui, -apple-system,
+  /* 字体栈（中性工程风 + 中文回退） */
+  --font-body: "Inter", "SF Pro Text", "PingFang SC", system-ui, -apple-system,
     "Segoe UI", Roboto, "Microsoft YaHei", "Hiragino Sans GB", sans-serif;
-  --font-display: "SF Pro", "PingFang SC", system-ui, -apple-system,
+  --font-display: "Inter", "SF Pro", "PingFang SC", system-ui, -apple-system,
     "Segoe UI", Roboto, "Microsoft YaHei", "Hiragino Sans GB", sans-serif;
   --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas,
     "Courier New", monospace;
-  /* 元信息专用（模型标签 / 工具名 / token / 时间戳 / 路径）：等宽、小字号 */
+  /* 元信息专用（模型标签 / 工具名 / token / 时间戳 / 路径） */
   --font-meta: var(--mono);
   --font-size-meta: 11px;
   --font-size-body: 14px;
 
-  /* 字号阶梯（TraeWork body/heading 规范） */
+  /* 字号阶梯 */
   --text-2xs: 10px;
   --text-xs: 11px;
-  --text-sm: 12px;
+  --text-sm: 12.5px;
   --text-base: 14px;
   --text-lg: 18px;
   --heading-xs: 13px;
-  --heading-sm: 16px;
-  --heading-md: 20px;
-  --heading-lg: 22px;
+  --heading-sm: 15px;
+  --heading-md: 18px;
+  --heading-lg: 20px;
   --heading-xl: 24px;
   --heading-2xl: 28px;
   --heading-3xl: 32px;
-  /* display 阶梯：空态 hero / 大标题专用，配合 --tracking-display 收紧字距 */
+  /* display 阶梯：空态 hero / 大标题专用 */
   --display-sm: 26px;
   --display-md: 32px;
   --display-lg: 40px;
 
-  /* 字距（负数收紧用于标题/display，正数放宽用于 meta/徽章） */
+  /* 字距 */
   --tracking-tight: -0.02em;
   --tracking-display: -0.03em;
   --tracking-body: -0.011em;
@@ -101,8 +101,8 @@
   /* 行高阶梯 */
   --leading-tight: 1.25;
   --leading-title: 1.35;
-  --leading-body: 1.55;
-  --leading-relaxed: 1.7;
+  --leading-body: 1.6;
+  --leading-relaxed: 1.75;
 
   /* 字重阶梯 */
   --weight-regular: 400;
@@ -110,7 +110,7 @@
   --weight-semibold: 600;
   --weight-bold: 700;
 
-  /* 动效：spring 感 easing + 时长阶梯 */
+  /* 动效：easing + 时长阶梯 */
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
   --ease-standard: cubic-bezier(0.2, 0, 0, 1);
@@ -126,36 +126,36 @@
   --glass-blur-sm: 8px;
   --glass-blur-md: 16px;
 
-  /* 品牌色阶 —— CryoClaw 冰蓝（cryo ice-blue） */
-  --brand-50: #f0f9ff;
-  --brand-100: #e0f2fe;
-  --brand-200: #bae6fd;
-  --brand-300: #7dd3fc;
-  --brand-400: #38bdf8;
-  --brand-500: #0ea5e9;
-  --brand-600: #0284c7;
-  --brand-700: #0369a1;
-  --brand-800: #075985;
-  --brand-900: #0c4a6e;
-  --brand-950: #082f49;
+  /* 品牌色阶 —— indigo（单一强调色，Linear 式工程感） */
+  --brand-50: #eef2ff;
+  --brand-100: #e0e7ff;
+  --brand-200: #c7d2fe;
+  --brand-300: #a5b4fc;
+  --brand-400: #818cf8;
+  --brand-500: #6366f1;
+  --brand-600: #4f46e5;
+  --brand-700: #4338ca;
+  --brand-800: #3730a3;
+  --brand-900: #312e81;
+  --brand-950: #1e1b4b;
 
-  /* 冷灰阶（微蓝相，工程工具感） */
-  --grey-50: #f8fafc;
-  --grey-100: #f1f5f9;
-  --grey-200: #e2e8f0;
-  --grey-300: #cbd5e1;
-  --grey-400: #94a3b8;
-  --grey-500: #64748b;
-  --grey-600: #475569;
-  --grey-700: #334155;
-  --grey-800: #1e293b;
-  --grey-900: #0f172a;
-  --grey-950: #020617;
+  /* 中性灰阶（零色相，Notion 式纸感） */
+  --grey-50: #fafafa;
+  --grey-100: #f5f5f5;
+  --grey-200: #e5e5e5;
+  --grey-300: #d4d4d4;
+  --grey-400: #a3a3a3;
+  --grey-500: #737373;
+  --grey-600: #525252;
+  --grey-700: #404040;
+  --grey-800: #262626;
+  --grey-900: #171717;
+  --grey-950: #0a0a0a;
 }
 
-/* ── 浅色主题（默认） ── */
+/* ── 浅色主题（默认，一等公民） ── */
 :root {
-  /* 背景 */
+  /* 背景：纸白层级（app 白 / 次级浅灰 / 浮层白 / hover 浅灰） */
   --bg: #ffffff;
   --bg-secondary: var(--grey-50);
   --bg-elevated: #ffffff;
@@ -163,102 +163,101 @@
   --bg-input: var(--grey-100);
   --bg-muted: var(--grey-100);
 
-  /* 文字 */
-  --text: var(--grey-800);
+  /* 文字：中性灰五级 */
+  --text: var(--grey-700);
   --text-strong: var(--grey-900);
   --text-secondary: var(--grey-600);
   --text-muted: var(--grey-400);
   --text-faint: var(--grey-300);
   --text-on-accent: #ffffff;
 
-  /* 边框 */
+  /* 边框：hairline 优先 */
   --border: var(--grey-200);
   --border-strong: var(--grey-300);
   --border-hover: var(--grey-400);
   --border-focus: var(--accent);
 
-  /* hairline：1px 细分割线快捷 token（用于替代生硬实色分割线） */
+  /* hairline：1px 细分割线快捷 token */
   --hairline: 1px solid var(--border);
   --hairline-strong: 1px solid var(--border-strong);
 
-  /* 强调色 —— 冰蓝 */
-  --accent: var(--brand-500);
-  --accent-hover: var(--brand-600);
-  --accent-subtle: rgba(14, 165, 233, 0.1);
-  --accent-glow: rgba(14, 165, 233, 0.2);
+  /* 强调色 —— indigo */
+  --accent: var(--brand-600);
+  --accent-hover: var(--brand-700);
+  --accent-subtle: rgba(79, 70, 229, 0.08);
+  --accent-glow: rgba(79, 70, 229, 0.16);
 
-  /* 语义色（TraeWork status 数值） */
-  --ok: #15a877;
-  --ok-muted: rgba(21, 168, 119, 0.75);
-  --ok-subtle: rgba(21, 168, 119, 0.12);
-  --destructive: #e8463a;
-  --warn: #e27900;
-  --warn-muted: rgba(226, 121, 0, 0.75);
-  --warn-subtle: rgba(226, 121, 0, 0.12);
-  --info: var(--brand-500);
+  /* 语义色 */
+  --ok: #16a34a;
+  --ok-muted: rgba(22, 163, 74, 0.75);
+  --ok-subtle: rgba(22, 163, 74, 0.1);
+  --destructive: #dc2626;
+  --warn: #d97706;
+  --warn-muted: rgba(217, 119, 6, 0.75);
+  --warn-subtle: rgba(217, 119, 6, 0.1);
+  --info: var(--brand-600);
 
   /* 遮罩 & 玻璃（浅色：深色调半透明压层） */
-  --overlay: rgba(15, 23, 42, 0.42);
-  --overlay-heavy: rgba(15, 23, 42, 0.7);
-  --glass-xs: rgba(15, 23, 42, 0.02);
-  --glass-sm: rgba(15, 23, 42, 0.04);
-  --glass-md: rgba(15, 23, 42, 0.06);
-  --glass-lg: rgba(15, 23, 42, 0.12);
-  --glass-border: rgba(15, 23, 42, 0.08);
+  --overlay: rgba(23, 23, 23, 0.4);
+  --overlay-heavy: rgba(23, 23, 23, 0.68);
+  --glass-xs: rgba(23, 23, 23, 0.02);
+  --glass-sm: rgba(23, 23, 23, 0.04);
+  --glass-md: rgba(23, 23, 23, 0.06);
+  --glass-lg: rgba(23, 23, 23, 0.12);
+  --glass-border: rgba(23, 23, 23, 0.08);
 
   /* 卡片顶部高光（浅色：亮边，浮雕感） */
   --highlight-inset: inset 0 1px 0 rgba(255, 255, 255, 0.65);
 
-  /* 阴影：浅色下低透明多层叠加，负扩散收敛投影范围 */
-  --shadow-xs: 0 1px 1px rgba(15, 23, 42, 0.04);
-  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06);
-  --shadow-md: 0 4px 12px rgba(15, 23, 42, 0.08), 0 0 0 1px rgba(15, 23, 42, 0.04);
-  --shadow-lg: 0 12px 28px -4px rgba(15, 23, 42, 0.12), 0 0 0 1px rgba(15, 23, 42, 0.04);
-  --shadow-xl: 0 24px 48px -8px rgba(15, 23, 42, 0.16), 0 0 0 1px rgba(15, 23, 42, 0.04);
+  /* 阴影：浅色下低透明多层叠加，收敛克制 */
+  --shadow-xs: 0 1px 1px rgba(23, 23, 23, 0.04);
+  --shadow-sm: 0 1px 2px rgba(23, 23, 23, 0.05);
+  --shadow-md: 0 4px 12px rgba(23, 23, 23, 0.07), 0 0 0 1px rgba(23, 23, 23, 0.03);
+  --shadow-lg: 0 12px 28px -4px rgba(23, 23, 23, 0.1), 0 0 0 1px rgba(23, 23, 23, 0.03);
+  --shadow-xl: 0 24px 48px -8px rgba(23, 23, 23, 0.14), 0 0 0 1px rgba(23, 23, 23, 0.03);
 
   color-scheme: light;
 }
 
-/* ── 暗色主题（深冷灰蓝，一等公民：独立调参，非浅色覆盖层） ── */
+/* ── 暗色主题（近黑中性，一等公民：独立调参，非浅色覆盖层） ── */
 /* 方式 1：data-theme 属性切换（Chat UI 使用） */
 :root[data-theme=dark] {
-  /* 背景：四档深度阶梯（app < secondary < elevated < hover），
-     层级靠明度微差 + 顶部高光，不靠分割线 */
-  --bg: #0b1117;
-  --bg-secondary: #101823;
-  --bg-elevated: #182230;
-  --bg-hover: #1f2c3e;
-  --bg-input: #080d13;
-  --bg-muted: #1b2736;
+  /* 背景：四档深度阶梯（app < secondary < elevated < hover） */
+  --bg: #101012;
+  --bg-secondary: #17171a;
+  --bg-elevated: #1e1e22;
+  --bg-hover: #26262b;
+  --bg-input: #0b0b0d;
+  --bg-muted: #1b1b1f;
 
-  /* 文字：五级灰阶，meta 层压到 3:1 上下，正文 ≥ 10:1 */
-  --text: #d7e0ea;
-  --text-strong: #f1f5f9;
-  --text-secondary: #93a4b8;
-  --text-muted: var(--grey-500);
-  --text-faint: var(--grey-600);
-  --text-on-accent: var(--brand-950);
+  /* 文字：五级灰阶 */
+  --text: #d4d4d8;
+  --text-strong: #fafafa;
+  --text-secondary: #a1a1aa;
+  --text-muted: #71717a;
+  --text-faint: #52525b;
+  --text-on-accent: #ffffff;
 
-  --border: #22303f;
-  --border-strong: #314357;
-  --border-hover: #3f5872;
+  --border: #26262b;
+  --border-strong: #3f3f46;
+  --border-hover: #52525b;
 
   --hairline: 1px solid var(--border);
   --hairline-strong: 1px solid var(--border-strong);
 
-  /* 暗色下品牌色亮一档保对比度，glow 更强补暗场氛围 */
+  /* 暗色下 accent 亮一档保对比度 */
   --accent: var(--brand-400);
   --accent-hover: var(--brand-300);
-  --accent-subtle: rgba(56, 189, 248, 0.14);
-  --accent-glow: rgba(56, 189, 248, 0.32);
+  --accent-subtle: rgba(129, 140, 248, 0.14);
+  --accent-glow: rgba(129, 140, 248, 0.28);
 
-  --ok: #2fbf8f;
-  --ok-muted: rgba(47, 191, 143, 0.75);
-  --ok-subtle: rgba(47, 191, 143, 0.14);
-  --destructive: #f0665b;
-  --warn: #ffb020;
-  --warn-muted: rgba(255, 176, 32, 0.75);
-  --warn-subtle: rgba(255, 176, 32, 0.14);
+  --ok: #4ade80;
+  --ok-muted: rgba(74, 222, 128, 0.75);
+  --ok-subtle: rgba(74, 222, 128, 0.12);
+  --destructive: #f87171;
+  --warn: #fbbf24;
+  --warn-muted: rgba(251, 191, 36, 0.75);
+  --warn-subtle: rgba(251, 191, 36, 0.12);
   --info: var(--brand-400);
 
   /* 遮罩 & 玻璃（暗色：白色调半透明提亮层） */
@@ -270,15 +269,15 @@
   --glass-lg: rgba(255, 255, 255, 0.12);
   --glass-border: rgba(255, 255, 255, 0.08);
 
-  /* 卡片顶部高光（暗色：微弱白边，暗场分层关键） */
-  --highlight-inset: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  /* 卡片顶部高光（暗色：微弱白边） */
+  --highlight-inset: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 
-  /* 阴影：暗色下更深更实（alpha 约为浅色 3 倍），暗场浮层靠它离地 */
-  --shadow-xs: 0 1px 1px rgba(0, 0, 0, 0.18);
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.28);
-  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.32), 0 0 0 1px rgba(255, 255, 255, 0.03);
-  --shadow-lg: 0 12px 28px -4px rgba(0, 0, 0, 0.42), 0 0 0 1px rgba(255, 255, 255, 0.03);
-  --shadow-xl: 0 24px 48px -8px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.03);
+  /* 阴影：暗色下更深更实 */
+  --shadow-xs: 0 1px 1px rgba(0, 0, 0, 0.2);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.34), 0 0 0 1px rgba(255, 255, 255, 0.02);
+  --shadow-lg: 0 12px 28px -4px rgba(0, 0, 0, 0.44), 0 0 0 1px rgba(255, 255, 255, 0.02);
+  --shadow-xl: 0 24px 48px -8px rgba(0, 0, 0, 0.52), 0 0 0 1px rgba(255, 255, 255, 0.02);
 
   color-scheme: dark;
 }
@@ -286,39 +285,39 @@
 /* 方式 2：OS 系统偏好切换（Settings/Setup iframe 使用） */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme=light]) {
-    --bg: #0b1117;
-    --bg-secondary: #101823;
-    --bg-elevated: #182230;
-    --bg-hover: #1f2c3e;
-    --bg-input: #080d13;
-    --bg-muted: #1b2736;
+    --bg: #101012;
+    --bg-secondary: #17171a;
+    --bg-elevated: #1e1e22;
+    --bg-hover: #26262b;
+    --bg-input: #0b0b0d;
+    --bg-muted: #1b1b1f;
 
-    --text: #d7e0ea;
-    --text-strong: #f1f5f9;
-    --text-secondary: #93a4b8;
-    --text-muted: var(--grey-500);
-    --text-faint: var(--grey-600);
-    --text-on-accent: var(--brand-950);
+    --text: #d4d4d8;
+    --text-strong: #fafafa;
+    --text-secondary: #a1a1aa;
+    --text-muted: #71717a;
+    --text-faint: #52525b;
+    --text-on-accent: #ffffff;
 
-    --border: #22303f;
-    --border-strong: #314357;
-    --border-hover: #3f5872;
+    --border: #26262b;
+    --border-strong: #3f3f46;
+    --border-hover: #52525b;
 
     --hairline: 1px solid var(--border);
     --hairline-strong: 1px solid var(--border-strong);
 
     --accent: var(--brand-400);
     --accent-hover: var(--brand-300);
-    --accent-subtle: rgba(56, 189, 248, 0.14);
-    --accent-glow: rgba(56, 189, 248, 0.32);
+    --accent-subtle: rgba(129, 140, 248, 0.14);
+    --accent-glow: rgba(129, 140, 248, 0.28);
 
-    --ok: #2fbf8f;
-    --ok-muted: rgba(47, 191, 143, 0.75);
-    --ok-subtle: rgba(47, 191, 143, 0.14);
-    --destructive: #f0665b;
-    --warn: #ffb020;
-    --warn-muted: rgba(255, 176, 32, 0.75);
-    --warn-subtle: rgba(255, 176, 32, 0.14);
+    --ok: #4ade80;
+    --ok-muted: rgba(74, 222, 128, 0.75);
+    --ok-subtle: rgba(74, 222, 128, 0.12);
+    --destructive: #f87171;
+    --warn: #fbbf24;
+    --warn-muted: rgba(251, 191, 36, 0.75);
+    --warn-subtle: rgba(251, 191, 36, 0.12);
     --info: var(--brand-400);
 
     --overlay: rgba(0, 0, 0, 0.5);
@@ -329,13 +328,13 @@
     --glass-lg: rgba(255, 255, 255, 0.12);
     --glass-border: rgba(255, 255, 255, 0.08);
 
-    --highlight-inset: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    --highlight-inset: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 
-    --shadow-xs: 0 1px 1px rgba(0, 0, 0, 0.18);
-    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.28);
-    --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.32), 0 0 0 1px rgba(255, 255, 255, 0.03);
-    --shadow-lg: 0 12px 28px -4px rgba(0, 0, 0, 0.42), 0 0 0 1px rgba(255, 255, 255, 0.03);
-    --shadow-xl: 0 24px 48px -8px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.03);
+    --shadow-xs: 0 1px 1px rgba(0, 0, 0, 0.2);
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+    --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.34), 0 0 0 1px rgba(255, 255, 255, 0.02);
+    --shadow-lg: 0 12px 28px -4px rgba(0, 0, 0, 0.44), 0 0 0 1px rgba(255, 255, 255, 0.02);
+    --shadow-xl: 0 24px 48px -8px rgba(0, 0, 0, 0.52), 0 0 0 1px rgba(255, 255, 255, 0.02);
 
     color-scheme: dark;
   }

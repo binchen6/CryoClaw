@@ -3,6 +3,12 @@ export const zhDict: Record<string, string> = {
   // App
   "app.windowTitle": "CryoClaw 一键安装OpenClaw",
 
+  // Rail（图标轨，2026.9 提案 A）
+  "rail.nav": "主导航",
+  "rail.chat": "对话",
+  "panel.collapse": "折叠会话面板",
+  "panel.expand": "展开会话面板",
+
   // Sidebar
   "sidebar.brand": "CryoClaw",
   "sidebar.newChat": "新建对话",

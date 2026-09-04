@@ -1,6 +1,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import { app, clipboard, dialog, ipcMain, shell, Menu, BrowserWindow } from "electron";
+import { installGatewayOriginRewrite } from "./gateway-origin";
 // CryoClaw 面向中文用户：强制 Chromium locale 为 zh-CN，
 // 使渲染层 navigator.language 返回 zh，chat-ui i18n 默认显示中文。
 // 必须在 app ready 之前调用。
@@ -1005,6 +1006,10 @@ function syncAppFocusState(trigger: string): void {
 
 app.whenReady().then(async () => {
   log.info("app ready");
+
+  // 2026.8 起 gateway 强制 Origin 校验，file:// 渲染进程直连本地 gateway 会被拒；
+  // 在创建窗口前安装环回 ws Origin 改写（见 gateway-origin.ts）
+  installGatewayOriginRewrite();
 
   // 所有窗口的 show/hide/closed 事件统一驱动 Dock 可见性
   app.on("browser-window-created", (_e, win) => {

@@ -3,22 +3,27 @@
    基于 design tokens 的兼容别名层（--card/--popover/--panel/--ring 等存量别名，
    均映射到 shared/design-tokens.css 的语义 token；新代码优先用语义变量，勿再扩张）
 
-   P5：:root 默认值翻转为浅色（原暗色默认值导致浅色系统在 data-theme 设置前
-   首帧闪暗）；暗色值移入 :root[data-theme=dark]，并配 prefers-color-scheme
-   兜底块，暗色系统用户在 data-theme 落地前也不会闪白。
+   2026.9 重写（提案 A）：
+   - --sidebar-width 更名为 --panel-width（会话面板；默认值 280→264px），
+     新增 --rail-width（图标轨 60px）；
+   - :root 默认值为浅色（防浅色系统首帧闪暗）；暗色值在 [data-theme=dark]
+     与 prefers-color-scheme 兜底块双通道定义。
    层叠顺序由 hub styles.css 的 @import 顺序决定，勿单独调整
    ========================================================================== */
 
 
 /* Chat UI 扩展变量 — 静态（主题无关） */
 :root {
-  /* 开关滑块钮：双主题恒为浅色（暗色下 --text-on-accent 为深青，趴在深色 OFF 轨道上不可见） */
+  /* 开关滑块钮：双主题恒为浅色 */
   --toggle-knob: #ffffff;
   --radius: var(--radius-sm);
   --radius-full: var(--radius-pill);
-  --sidebar-width: 280px;
-  /* 沉浸式标题栏高度基准：主进程 titleBarOverlay 32 + drag 区协同（.cryoclaw-titlebar 44px），
-     fullpage 视图（ext-tabs/wk-layout/ts-layout 等）内容顶部据此让位，避免与窗口控件重叠 */
+  /* 会话面板（cc-session-panel）默认宽度；用户拖宽后由 :root 内联覆盖 */
+  --panel-width: 264px;
+  /* 图标轨（cc-rail）宽度：所有视图（除 setup）常驻 */
+  --rail-width: 60px;
+  /* 沉浸式标题栏/上下文栏高度：壳层统一占位，视图内容从 44px 下缘开始，
+     视图自身禁止再做顶部让位 */
   --titlebar-h: 44px;
   --theme-switch-x: 50%;
   --theme-switch-y: 50%;
@@ -37,7 +42,7 @@
   --panel: var(--bg);
   --panel-strong: var(--grey-50);
   --panel-hover: var(--bg-hover);
-  --chrome: rgba(255, 255, 255, 0.95);
+  --chrome: rgba(255, 255, 255, 0.92);
   --chrome-strong: rgba(255, 255, 255, 0.98);
   --chat-text: var(--text);
   --muted: var(--text-secondary);
@@ -51,13 +56,13 @@
   --primary-foreground: var(--text-on-accent);
   --secondary: var(--grey-100);
   --secondary-foreground: var(--text);
-  --accent-2: #0891b2;
-  --accent-2-muted: rgba(8, 145, 178, 0.75);
-  --accent-2-subtle: rgba(8, 145, 178, 0.12);
+  --accent-2: #7c3aed;
+  --accent-2-muted: rgba(124, 58, 237, 0.75);
+  --accent-2-subtle: rgba(124, 58, 237, 0.1);
   --destructive-foreground: var(--text-strong);
   --danger: var(--destructive);
   --danger-muted: rgba(220, 38, 38, 0.75);
-  --danger-subtle: rgba(220, 38, 38, 0.1);
+  --danger-subtle: rgba(220, 38, 38, 0.08);
   --focus: var(--accent-glow);
   --focus-glow: 0 0 0 2px var(--bg), 0 0 0 4px var(--ring), 0 0 16px var(--accent-glow);
   --grid-line: rgba(0, 0, 0, 0.05);
@@ -75,11 +80,11 @@
   --panel: var(--bg-secondary);
   --panel-strong: var(--bg-elevated);
   --panel-hover: var(--bg-hover);
-  --chrome: rgba(11, 17, 23, 0.95);
-  --chrome-strong: rgba(11, 17, 23, 0.98);
+  --chrome: rgba(16, 16, 18, 0.92);
+  --chrome-strong: rgba(16, 16, 18, 0.98);
   --chat-text: var(--text);
   --muted: var(--text-secondary);
-  --muted-strong: var(--grey-500);
+  --muted-strong: #a1a1aa;
   --muted-foreground: var(--text-secondary);
   --input: var(--border);
   --ring: var(--accent);
@@ -89,13 +94,13 @@
   --primary-foreground: var(--text-on-accent);
   --secondary: var(--bg-elevated);
   --secondary-foreground: var(--text-strong);
-  --accent-2: #22d3ee;
-  --accent-2-muted: rgba(34, 211, 238, 0.7);
-  --accent-2-subtle: rgba(34, 211, 238, 0.15);
+  --accent-2: #a78bfa;
+  --accent-2-muted: rgba(167, 139, 250, 0.7);
+  --accent-2-subtle: rgba(167, 139, 250, 0.14);
   --destructive-foreground: var(--text-strong);
   --danger: var(--destructive);
-  --danger-muted: rgba(239, 68, 68, 0.75);
-  --danger-subtle: rgba(239, 68, 68, 0.12);
+  --danger-muted: rgba(248, 113, 113, 0.75);
+  --danger-subtle: rgba(248, 113, 113, 0.12);
   --focus: var(--accent-glow);
   --focus-glow: 0 0 0 2px var(--bg), 0 0 0 4px var(--ring), 0 0 20px var(--accent-glow);
   --grid-line: rgba(255, 255, 255, 0.04);
@@ -114,11 +119,11 @@
     --panel: var(--bg-secondary);
     --panel-strong: var(--bg-elevated);
     --panel-hover: var(--bg-hover);
-    --chrome: rgba(11, 17, 23, 0.95);
-    --chrome-strong: rgba(11, 17, 23, 0.98);
+    --chrome: rgba(16, 16, 18, 0.92);
+    --chrome-strong: rgba(16, 16, 18, 0.98);
     --chat-text: var(--text);
     --muted: var(--text-secondary);
-    --muted-strong: var(--grey-500);
+    --muted-strong: #a1a1aa;
     --muted-foreground: var(--text-secondary);
     --input: var(--border);
     --ring: var(--accent);
@@ -128,13 +133,13 @@
     --primary-foreground: var(--text-on-accent);
     --secondary: var(--bg-elevated);
     --secondary-foreground: var(--text-strong);
-    --accent-2: #22d3ee;
-    --accent-2-muted: rgba(34, 211, 238, 0.7);
-    --accent-2-subtle: rgba(34, 211, 238, 0.15);
+    --accent-2: #a78bfa;
+    --accent-2-muted: rgba(167, 139, 250, 0.7);
+    --accent-2-subtle: rgba(167, 139, 250, 0.14);
     --destructive-foreground: var(--text-strong);
     --danger: var(--destructive);
-    --danger-muted: rgba(239, 68, 68, 0.75);
-    --danger-subtle: rgba(239, 68, 68, 0.12);
+    --danger-muted: rgba(248, 113, 113, 0.75);
+    --danger-subtle: rgba(248, 113, 113, 0.12);
     --focus: var(--accent-glow);
     --focus-glow: 0 0 0 2px var(--bg), 0 0 0 4px var(--ring), 0 0 20px var(--accent-glow);
     --grid-line: rgba(255, 255, 255, 0.04);

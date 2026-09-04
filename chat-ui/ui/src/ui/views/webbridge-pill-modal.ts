@@ -2,7 +2,7 @@ import { html, nothing } from "lit";
 import type { AppViewState } from "../app-view-state.ts";
 import { t } from "../i18n.ts";
 
-// Pill 修复后的反馈 modal —— 视觉跟 settings 的 wb-modal 一致（同名 class）
+// Pill 修复后的反馈 modal —— 2026.9 统一 cc-dialog 浮层语言
 // 4 种 kind 决定标题/正文文字；统一一个「知道了」按钮关闭
 export function renderWebbridgePillModal(state: AppViewState) {
   const m = state.webbridgePillModal;
@@ -56,13 +56,15 @@ export function renderWebbridgePillModal(state: AppViewState) {
   };
 
   return html`
-    <div class="wb-modal-overlay" role="dialog" aria-modal="true" @click=${close}>
-      <div class="wb-modal-card" @click=${(e: Event) => e.stopPropagation()}>
-        <h3 class="wb-modal-title">${title}</h3>
+    <div class="cc-dialog-overlay" role="dialog" aria-modal="true" @click=${close}>
+      <div class="cc-dialog cc-dialog--sm" @click=${(e: Event) => e.stopPropagation()}>
+        <div class="cc-dialog__head">
+          <div class="cc-dialog__title">${title}</div>
+        </div>
         ${skipDesc
           ? nothing
-          : html`<p class="wb-modal-desc" style="white-space: pre-wrap;">${desc}</p>`}
-        <div class="wb-modal-actions">
+          : html`<div class="cc-dialog__body cc-dialog__body--pre">${desc}</div>`}
+        <div class="cc-dialog__foot">
           <button class="btn primary" type="button" @click=${close}>
             ${t("sidebar.webbridgePillModalConfirm")}
           </button>

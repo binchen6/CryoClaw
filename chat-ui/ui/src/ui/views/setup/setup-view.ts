@@ -63,7 +63,7 @@ export function renderSetupView(state: AppViewState) {
         </div>
       ` : nothing}
 
-      ${step === -1 ? html`<div class="oc-setup-spinner" style="width:24px;height:24px"></div>` : nothing}
+      ${step === -1 ? html`<div class="oc-setup-spinner oc-setup-spinner--lg"></div>` : nothing}
       ${step === 0 ? renderStep0(state, setupState.conflictResult!, (s) => goToStep(s, state)) : nothing}
       ${step === 1 ? renderStep1(state, (s) => goToStep(s, state)) : nothing}
       ${step === 2 ? renderStep2(state, (s) => goToStep(s, state)) : nothing}

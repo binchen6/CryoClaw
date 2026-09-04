@@ -16,20 +16,18 @@ export function renderRestartGatewayDialog(state: AppViewState) {
   };
 
   return html`
-    <div class="exec-approval-overlay" role="dialog" aria-modal="true">
-      <div class="exec-approval-card">
-        <div class="exec-approval-header">
-          <div>
-            <div class="exec-approval-title">${t("restartDialog.title")}</div>
-            <div class="exec-approval-sub">${t("restartDialog.subtitle")}</div>
-          </div>
+    <div class="cc-dialog-overlay" role="dialog" aria-modal="true">
+      <div class="cc-dialog cc-dialog--sm">
+        <div class="cc-dialog__head">
+          <div class="cc-dialog__title">${t("restartDialog.title")}</div>
         </div>
-        <div class="exec-approval-actions">
-          <button class="btn primary" @click=${handleRestart}>
-            ${t("restartDialog.restart")}
-          </button>
+        <div class="cc-dialog__body">${t("restartDialog.subtitle")}</div>
+        <div class="cc-dialog__foot">
           <button class="btn" @click=${handleDismiss}>
             ${t("restartDialog.dismiss")}
+          </button>
+          <button class="btn primary" @click=${handleRestart}>
+            ${t("restartDialog.restart")}
           </button>
         </div>
       </div>
