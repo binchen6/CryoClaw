@@ -470,6 +470,10 @@ export const zhDict: Record<string, string> = {
   "settings.about.kernelCheckFailed": "查询稳定版本失败",
   "settings.about.kernelUpdateSuccess": "升级成功：{from} → {to}",
   "settings.about.kernelRollbackSuccess": "回退成功：{from} → {to}",
+  // 内核自动升级全局横幅（内核低于最低支持版本时启动后自动升级）
+  "kernelAutoUpgrade.title": "正在自动升级内核…",
+  "kernelAutoUpgrade.done": "内核自动升级完成",
+  "kernelAutoUpgrade.error": "内核自动升级失败",
   // App 自动更新（electron-updater）
   "settings.about.appUpdate": "应用更新",
   "settings.about.appUpdateNotSupported": "当前环境不支持应用更新",
@@ -743,6 +747,13 @@ export const zhDict: Record<string, string> = {
   "setup.provider.oauth.noMembership": "登录成功，但当前账号未开通 Kimi 会员，请订阅后重试。",
   "setup.provider.oauth.subscribeLink": "前往订阅 →",
   "setup.provider.oauth.or": "或手动输入 API Key",
+
+  // Setup: Quickstart（环境变量快速采用）
+  "setup.quickstart.title": "检测到本机已有 API 访问",
+  "setup.quickstart.subtitle": "以下环境变量中已有 API Key，可一键验证并直接使用",
+  "setup.quickstart.adopt": "采用",
+  "setup.quickstart.verifying": "验证中…",
+  "setup.quickstart.failed": "验证失败：",
 
   // Setup: Done
   "setup.done.title": "配置完成！",

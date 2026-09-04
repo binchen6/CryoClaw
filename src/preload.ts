@@ -33,6 +33,10 @@ contextBridge.exposeInMainWorld("cryoclaw", {
   detectInstallation: () => ipcRenderer.invoke("setup:detect-installation"),
   resolveConflict: (params: Record<string, unknown>) =>
     ipcRenderer.invoke("setup:resolve-conflict", params),
+  // 快速通道：检测/采用环境变量中已有的 provider API Key
+  detectEnvKeys: () => ipcRenderer.invoke("setup:detect-env-keys"),
+  adoptEnvKey: (params: Record<string, unknown>) =>
+    ipcRenderer.invoke("setup:adopt-env-key", params),
 
   // Kimi OAuth
   kimiOAuthLogin: () => ipcRenderer.invoke("kimi-oauth:login"),
@@ -231,8 +235,8 @@ contextBridge.exposeInMainWorld("cryoclaw", {
     ipcRenderer.on("app:navigate", listener);
     return () => ipcRenderer.removeListener("app:navigate", listener);
   },
-  onKernelUpdateProgress: (cb: (payload: { step: string; pct: number; msg: string }) => void) => {
-    const listener = (_event: Electron.IpcRendererEvent, payload: { step: string; pct: number; msg: string }) => {
+  onKernelUpdateProgress: (cb: (payload: { step: string; pct: number; msg: string; source?: "auto" | "manual" }) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, payload: { step: string; pct: number; msg: string; source?: "auto" | "manual" }) => {
       cb(payload);
     };
     ipcRenderer.on("kernel:update-progress", listener);

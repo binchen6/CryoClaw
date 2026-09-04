@@ -41,6 +41,7 @@ import { renderChat } from "./views/chat.ts";
 import { renderGatewayUrlConfirmation } from "./views/gateway-url-confirmation.ts";
 import { renderReleaseNotesModal } from "./views/release-notes-modal.ts";
 import { renderUpdateAvailableDialog } from "./views/update-available-dialog.ts";
+import { renderKernelAutoUpgradeBanner } from "./views/kernel-auto-upgrade-banner.ts";
 import { CRYOCLAW_VIEW_META, type CryoClawViewId } from "./views/registry.ts";
 import { renderRestartGatewayDialog } from "./views/restart-gateway-dialog.ts";
 import { renderConfirmDialog } from "./views/confirm-dialog.ts";
@@ -357,6 +358,7 @@ export function renderApp(state: AppViewState) {
       ${renderSharePrompt(state)}
       ${renderReleaseNotesModal(state)}
       ${renderUpdateAvailableDialog(state)}
+      ${renderKernelAutoUpgradeBanner(state.kernelAutoUpgrade, () => state.dismissKernelAutoUpgrade())}
       ${renderWebbridgePillModal(state)}
       ${getToastMessage()
         ? html`<div class="global-toast ${getToastAction() ? "global-toast--action" : ""}">

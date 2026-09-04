@@ -1,5 +1,9 @@
 ; CryoClaw NSIS 自定义钩子
 ; 功能：安装前杀进程、更新时跳过多余页面（只显示进度条）、卸载时提供 CLI 清理和用户数据删除选项
+;
+; 品牌位图不走本文件（命令行 -D 已定义同名宏，!define 会冲突）：
+; Welcome 侧图 / 页头图由 electron-builder.yml 的 nsis.installerSidebar / installerHeader 指定，
+; 位图由 scripts/gen-installer-bitmaps.ps1 生成（indigo 渐变 + 图标，与应用品牌色一致）。
 
 ; ============================================================
 ; 自定义 Welcome 页：更新时自动跳过，首次安装正常显示

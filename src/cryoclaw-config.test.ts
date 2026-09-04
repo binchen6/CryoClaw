@@ -126,3 +126,71 @@ test("markSetupComplete 写入 setupCompletedAt", async () => {
   expect(config?.setupCompletedAt).toBeTruthy();
   expect(typeof config?.setupCompletedAt).toBe("string");
 });
+
+test("migrateFromLegacy 补齐 legacy 文件的全部已知字段", async () => {
+  const { migrateFromLegacy, readCryoclawConfig } = await import("./cryoclaw-config");
+  fs.writeFileSync(
+    path.join(stateDir.dir, "oneclaw.config.json"),
+    JSON.stringify({
+      setupCompletedAt: "2025-12-01T00:00:00.000Z",
+      updateChannel: "dev",
+      cliPreference: "installed",
+      channelId: "channel-x",
+      channelSource: "installer",
+      lastShownReleaseNotesVersion: "2026.2.1",
+      skillStore: { registryUrl: "https://legacy.registry" },
+    }),
+    "utf-8",
+  );
+
+  const result = migrateFromLegacy();
+  expect(result.setupCompletedAt).toBe("2025-12-01T00:00:00.000Z");
+  expect(result.updateChannel).toBe("dev");
+  expect(result.cliPreference).toBe("installed");
+  expect(result.channelId).toBe("channel-x");
+  expect(result.channelSource).toBe("installer");
+  expect(result.lastShownReleaseNotesVersion).toBe("2026.2.1");
+  expect(result.skillStore?.registryUrl).toBe("https://legacy.registry");
+
+  // 已落盘到新文件
+  const saved = readCryoclawConfig();
+  expect(saved?.updateChannel).toBe("dev");
+  expect(saved?.channelId).toBe("channel-x");
+});
+
+test("migrateFromLegacy 新文件已存在的值优先，仅补齐缺失字段", async () => {
+  const { migrateFromLegacy, readCryoclawConfig } = await import("./cryoclaw-config");
+  fs.writeFileSync(
+    path.join(stateDir.dir, "cryoclaw.config.json"),
+    JSON.stringify({ updateChannel: "off", skillStore: { registryUrl: "https://new.registry" } }),
+    "utf-8",
+  );
+  fs.writeFileSync(
+    path.join(stateDir.dir, "oneclaw.config.json"),
+    JSON.stringify({
+      updateChannel: "dev",
+      channelId: "channel-x",
+      skillStore: { registryUrl: "https://legacy.registry" },
+    }),
+    "utf-8",
+  );
+
+  const result = migrateFromLegacy();
+  // 新文件已有值不被覆盖
+  expect(result.updateChannel).toBe("off");
+  expect(result.skillStore?.registryUrl).toBe("https://new.registry");
+  // 缺失字段从 legacy 补齐
+  expect(result.channelId).toBe("channel-x");
+  expect(readCryoclawConfig()?.channelId).toBe("channel-x");
+});
+
+test("migrateFromLegacy 不迁移 gatewayControl（运行时连接信息）", async () => {
+  const { migrateFromLegacy } = await import("./cryoclaw-config");
+  fs.writeFileSync(
+    path.join(stateDir.dir, "oneclaw.config.json"),
+    JSON.stringify({ gatewayControl: { port: 12345, token: "stale" } }),
+    "utf-8",
+  );
+  const result = migrateFromLegacy();
+  expect(result.gatewayControl).toBeUndefined();
+});

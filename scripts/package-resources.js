@@ -2931,7 +2931,8 @@ function assertPluginsNativeEntry(targetPaths) {
 
 // ─── Step 7.5: vendor 内核升级器 ───
 // 把 scripts/updater/ + scripts/lib/kernel-dist-patch.js + scripts/lib/kernel-channel.js +
-// scripts/lib/rm-rec.js + scripts/lib/kernel-prune.js + @electron/asar（含运行时依赖）
+// scripts/lib/rm-rec.js + scripts/lib/kernel-prune.js + scripts/lib/kernel-config-snapshot.js +
+// @electron/asar（含运行时依赖）
 // 复制到 targetBase/updater/，afterPack 注入安装产物，供运行时内核升级/回退与
 // gateway CLI 控制使用。kernel-update.mjs 复制时注入内置兜底稳定版（见函数体注释）。
 function vendorKernelUpdater(targetBase) {
@@ -2977,6 +2978,10 @@ function vendorKernelUpdater(targetBase) {
   fs.copyFileSync(
     path.join(ROOT, "scripts", "lib", "kernel-prune.js"),
     path.join(updaterDir, "kernel-prune.js")
+  );
+  fs.copyFileSync(
+    path.join(ROOT, "scripts", "lib", "kernel-config-snapshot.js"),
+    path.join(updaterDir, "kernel-config-snapshot.js")
   );
 
   // @electron/asar 版本与仓库 node_modules 对齐，避免构建期/运行期行为漂移

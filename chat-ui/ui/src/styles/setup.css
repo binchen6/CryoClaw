@@ -427,13 +427,69 @@
   gap: var(--spacer-6);
 }
 
+/* 快速通道：环境变量已存 key 的一键采用卡片（hairline + radius-12，与 provider 卡片同语言） */
+.oc-setup-quickstart {
+  width: 100%;
+  box-sizing: border-box;
+  border: var(--hairline);
+  border-radius: var(--radius-12);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-xs);
+  padding: var(--spacer-12) var(--spacer-16);
+  margin-bottom: var(--spacer-20);
+}
+.oc-setup-quickstart__head { margin-bottom: var(--spacer-4); }
+.oc-setup-quickstart__title {
+  font-size: var(--text-base);
+  font-weight: var(--weight-semibold);
+  color: var(--text-strong);
+}
+.oc-setup-quickstart__subtitle {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  margin-top: var(--spacer-4);
+}
+.oc-setup-quickstart__item {
+  display: flex;
+  align-items: center;
+  gap: var(--spacer-12);
+  padding: var(--spacer-8) 0;
+}
+.oc-setup-quickstart__item + .oc-setup-quickstart__item {
+  border-top: var(--hairline);
+}
+.oc-setup-quickstart__meta {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacer-8);
+  flex-wrap: wrap;
+}
+.oc-setup-quickstart__provider {
+  font-size: var(--text-base);
+  font-weight: var(--weight-medium);
+  color: var(--text);
+}
+.oc-setup-quickstart__env,
+.oc-setup-quickstart__key {
+  font-family: var(--mono);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  word-break: break-all;
+}
+.oc-setup-quickstart__error {
+  font-size: var(--text-sm);
+  color: var(--destructive);
+  padding-bottom: var(--spacer-8);
+}
+
 .oc-setup-details-advanced {
   margin-top: var(--spacer-12);
   border: var(--hairline);
   border-radius: var(--radius-8);
   padding: 0;
-}
-.oc-setup-details-advanced > summary {
+}.oc-setup-details-advanced > summary {
   cursor: pointer;
   padding: var(--spacer-8) var(--spacer-12);
   font-size: var(--text-base);

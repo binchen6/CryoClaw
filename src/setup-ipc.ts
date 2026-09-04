@@ -12,6 +12,12 @@ import {
   writeUserConfig,
 } from "./provider-config";
 import * as log from "./logger";
+import {
+  detectEnvProviderKeys,
+  resolveEnvCandidate,
+  buildEnvProviderConfig,
+  MIN_ENV_KEY_LENGTH,
+} from "./setup-env-detect";
 import { installCli, uninstallCli } from "./cli-integration";
 import { saveKimiSearchConfig, ensureMemorySearchProxyConfig } from "./kimi-config";
 import { startAuthProxy, setProxyAccessToken, getProxyPort, getProxySecret } from "./kimi-auth-proxy";
@@ -92,6 +98,80 @@ async function runTrackedSetupAction<T extends SetupActionResult>(
     });
     throw err;
   }
+}
+
+// setup:save-config 与 setup:adopt-env-key 共用的落盘逻辑：
+// 写 provider fragment + primary model + 一批 baseline 默认值（行为与 R4 手动路径完全一致）。
+// 成功落盘后缓存埋点上下文（latestSetupCompletedProps），失败抛出由调用方转 { success:false }。
+function persistSetupProviderConfig(params: {
+  providerKey: string;
+  providerConfig: Record<string, unknown>;
+  primaryModel: string;
+  kimiCode: boolean;
+  // buildSetupCompletedProps 用的原始表单字段（provider/modelID/baseURL/subPlatform）
+  trackedSource: {
+    provider: string;
+    modelID: string;
+    baseURL?: string;
+    subPlatform?: string;
+  };
+}): void {
+  const { providerKey, providerConfig, primaryModel, kimiCode } = params;
+  // 读取现有配置
+  const config = readUserConfig();
+
+  // 初始化嵌套结构
+  config.models ??= {};
+  config.models.providers ??= {};
+  config.agents ??= {};
+  config.agents.defaults ??= {};
+  config.agents.defaults.model ??= {};
+  // 长对话压缩保护：保留最近轮次原文、审计摘要质量、守住关键标识符
+  config.agents.defaults.compaction ??= {};
+  config.agents.defaults.compaction.mode = "safeguard";
+
+  config.models.providers[providerKey] = providerConfig;
+  config.agents.defaults.model.primary = primaryModel;
+
+  // kimi-code 联动：启用搜索插件 + 记忆搜索 embedding（真实 key 已由前端写 sidecar）
+  if (kimiCode) {
+    saveKimiSearchConfig(config, { enabled: true });
+    ensureMemorySearchProxyConfig(config, getProxyPort(), getProxySecret());
+  }
+
+  // 统一 gateway 鉴权配置：local 模式 + 持久化 token（单一真相源）
+  config.gateway ??= {};
+  config.gateway.mode = "local";
+  ensureGatewayAuthTokenInConfig(config);
+
+  // 默认使用 kimi-webbridge 模式：browser 插件关闭 + skill 默认启用
+  // Setup 完成后台会下载二进制 + 装浏览器扩展；下载失败会降级到 openclaw 模式
+  Object.assign(config, applyBrowserModeConfig(config, "webbridge"));
+
+  // 显式禁用 iMessage 频道（openclaw 默认启用，会因 macOS 权限拒绝产生大量错误日志）
+  config.channels ??= {};
+  config.channels.imessage ??= {};
+  config.channels.imessage.enabled = false;
+
+  // 禁止 gateway 自行检查 npm 更新（CryoClaw 整包打包，用户无法独立更新 gateway）
+  config.update ??= {};
+  config.update.checkOnStart = false;
+
+  // 开箱即用：显式启用全部工具（openclaw 2026.3.2 起默认 messaging，只有消息类工具）
+  config.tools ??= {};
+  config.tools.profile = "full";
+
+  // 启用实验性 update_plan 工具（任务拆解/进度跟踪）
+  config.tools.experimental ??= {};
+  config.tools.experimental.planTool = true;
+
+  // Step 2 不写 wizard，避免生成 schema 未识别字段。
+  // Setup 完成标记仅在 Step 3（Gateway 成功启动）后写入 wizard.lastRunAt。
+  delete config.wizard;
+
+  writeUserConfig(config);
+  // 配置落盘成功后再缓存埋点上下文，避免失败时污染事件参数。
+  latestSetupCompletedProps = buildSetupCompletedProps(params.trackedSource, config);
 }
 
 // 注册 Setup 相关 IPC
@@ -232,66 +312,84 @@ export function registerSetupIpc(deps: SetupIpcDeps): void {
         return { success: false, message: "缺少 provider 配置参数。" };
       }
       try {
-        // 读取现有配置
-        const config = readUserConfig();
-
-        // 初始化嵌套结构
-        config.models ??= {};
-        config.models.providers ??= {};
-        config.agents ??= {};
-        config.agents.defaults ??= {};
-        config.agents.defaults.model ??= {};
-        // 长对话压缩保护：保留最近轮次原文、审计摘要质量、守住关键标识符
-        config.agents.defaults.compaction ??= {};
-        config.agents.defaults.compaction.mode = "safeguard";
-
-        config.models.providers[providerKey] = providerConfig;
-        config.agents.defaults.model.primary = primaryModel;
-
-        // kimi-code 联动：启用搜索插件 + 记忆搜索 embedding（真实 key 已由前端写 sidecar）
-        if (kimiCode) {
-          saveKimiSearchConfig(config, { enabled: true });
-          ensureMemorySearchProxyConfig(config, getProxyPort(), getProxySecret());
-        }
-
-        // 统一 gateway 鉴权配置：local 模式 + 持久化 token（单一真相源）
-        config.gateway ??= {};
-        config.gateway.mode = "local";
-        ensureGatewayAuthTokenInConfig(config);
-
-        // 默认使用 kimi-webbridge 模式：browser 插件关闭 + skill 默认启用
-        // Setup 完成后台会下载二进制 + 装浏览器扩展；下载失败会降级到 openclaw 模式
-        Object.assign(config, applyBrowserModeConfig(config, "webbridge"));
-
-        // 显式禁用 iMessage 频道（openclaw 默认启用，会因 macOS 权限拒绝产生大量错误日志）
-        config.channels ??= {};
-        config.channels.imessage ??= {};
-        config.channels.imessage.enabled = false;
-
-        // 禁止 gateway 自行检查 npm 更新（CryoClaw 整包打包，用户无法独立更新 gateway）
-        config.update ??= {};
-        config.update.checkOnStart = false;
-
-        // 开箱即用：显式启用全部工具（openclaw 2026.3.2 起默认 messaging，只有消息类工具）
-        config.tools ??= {};
-        config.tools.profile = "full";
-
-        // 启用实验性 update_plan 工具（任务拆解/进度跟踪）
-        config.tools.experimental ??= {};
-        config.tools.experimental.planTool = true;
-
-        // Step 2 不写 wizard，避免生成 schema 未识别字段。
-        // Setup 完成标记仅在 Step 3（Gateway 成功启动）后写入 wizard.lastRunAt。
-        delete config.wizard;
-
-        writeUserConfig(config);
-        // 配置落盘成功后再缓存埋点上下文，避免失败时污染事件参数。
-        latestSetupCompletedProps = buildSetupCompletedProps(params, config);
+        persistSetupProviderConfig({ providerKey, providerConfig, primaryModel, kimiCode, trackedSource: params });
         return { success: true };
       } catch (err: any) {
         return { success: false, message: err.message || String(err) };
       }
     });
+  });
+
+  // ── 快速通道：检测环境变量中已有的 provider API Key ──
+  // 只返回掩码列表（providerKey/envVar/maskedKey），明文 key 不出主进程。
+  ipcMain.handle("setup:detect-env-keys", async (event) => {
+    if (!assertTrustedIpcSender(event, "setup:detect-env-keys")) throw new Error("IPC sender not trusted");
+    try {
+      return { success: true, data: detectEnvProviderKeys(process.env) };
+    } catch (err: any) {
+      log.error(`[setup] 环境变量 key 检测失败: ${err?.message ?? err}`);
+      return { success: true, data: [] };
+    }
+  });
+
+  // ── 快速通道：采用环境变量 key（验证 → 落盘，复用 save-config 的共享落盘逻辑） ──
+  // 渲染层只传 { providerKey, envVar }；明文 key 由主进程自己从 process.env 读。
+  ipcMain.handle("setup:adopt-env-key", async (_event, params) => {
+    if (!assertTrustedIpcSender(_event, "setup:adopt-env-key")) throw new Error("IPC sender not trusted");
+    const providerKey = typeof params?.providerKey === "string" ? params.providerKey.trim() : "";
+    const envVar = typeof params?.envVar === "string" ? params.envVar.trim() : "";
+    // 安全面：(providerKey, envVar) 必须是 ENV_KEY_CANDIDATES 表内组合，
+    // 防渲染层任意指定环境变量名偷值。
+    const candidate = resolveEnvCandidate(providerKey, envVar);
+    const trackedProps = {
+      provider: candidate?.verifyProvider ?? providerKey,
+      model: candidate?.defaultModel,
+      via: "env_quickstart",
+    };
+    const result = await runTrackedSetupAction("save_config", trackedProps, async () => {
+      if (!candidate) {
+        return { success: false, message: "未知的 provider/环境变量组合。" };
+      }
+      const apiKey = (process.env[envVar] ?? "").trim();
+      if (apiKey.length < MIN_ENV_KEY_LENGTH) {
+        return { success: false, message: `环境变量 ${envVar} 不存在或值无效。` };
+      }
+      // 真实验证（与手动配置同一条 verifyProvider 链路）
+      const verify = await verifyProvider({
+        provider: candidate.verifyProvider,
+        apiKey,
+        subPlatform: candidate.verifySubPlatform,
+        customPreset: candidate.verifyCustomPreset,
+        modelID: candidate.defaultModel,
+        proxyPort: getProxyPort(),
+        proxySecret: getProxySecret(),
+      });
+      if (!verify.success) {
+        // 验证失败不落盘
+        return { success: false, message: verify.message ?? "验证失败" };
+      }
+      try {
+        const providerConfig = buildEnvProviderConfig(candidate, apiKey, verify.supportsImage);
+        persistSetupProviderConfig({
+          providerKey: candidate.providerKey,
+          providerConfig,
+          primaryModel: `${candidate.providerKey}/${candidate.defaultModel}`,
+          kimiCode: false,
+          trackedSource: {
+            provider: candidate.verifyProvider,
+            modelID: candidate.defaultModel,
+            baseURL: candidate.baseUrl,
+            subPlatform: candidate.verifySubPlatform,
+          },
+        });
+        return { success: true };
+      } catch (err: any) {
+        return { success: false, message: err.message || String(err) };
+      }
+    });
+    return result.success
+      ? { ok: true, providerKey, model: candidate?.defaultModel }
+      : { ok: false, providerKey, error: result.message };
   });
 
   // ── Setup 完成：启动 Gateway → 标记完成 → 导航到 Chat ──

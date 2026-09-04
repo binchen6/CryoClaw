@@ -684,3 +684,13 @@ test("2026.8: slots 引用无载荷插件同样摘除", async () => {
   expect(mockState.currentConfig.plugins.slots.context).toBeUndefined();
   expect(mockState.writeCount).toBe(1);
 });
+
+test("迁移抛错时记 log.error（不再静默吞错）", async () => {
+  writeKernelVersion("2026.7.1-2");
+  mockState.currentConfig = { agents: { defaults: { llm: "x" } } };
+  mockState.writeShouldThrow = true;
+  const logger = await import("./logger");
+  const { migrateOpenclawConfigForKernelUpgrade } = await import("./openclaw-config-migration");
+  expect(() => migrateOpenclawConfigForKernelUpgrade()).not.toThrow();
+  expect(logger.error).toHaveBeenCalledWith(expect.stringContaining("迁移失败"));
+});

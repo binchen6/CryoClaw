@@ -1,5 +1,12 @@
 [
   {
+    "version": "2026.907.0",
+    "notes": {
+      "zh": "安装器界面焕新：安装/卸载向导换装应用同款品牌视觉（indigo 渐变侧图 + 页头横幅）\n新手引导新增「快速通道」：检测到本机已有的 API key 环境变量（OpenAI / Anthropic / Moonshot / Google / DeepSeek）可一键采用，自动真实验证并写入配置；密钥明文不离开主进程，界面仅显示掩码\n内核版本兜底自动升级：内核低于最低支持版本（2026.7.0）时启动后自动升级到策展稳定版 2026.8.2，右上角横幅实时显示进度，失败自动回滚\n迁移与可恢复性加固：内核自动回滚同步反向迁移配置；导入 .openclaw 归档前自动创建应急备份、失败自动还原；老版本迁移不再丢失更新渠道等既有设置；内核备份附带配置快照\n全新安装默认内核 2026.8.2；应用更新继续使用差异更新（只下载变化部分）",
+      "en": "Installer UI refresh: the install/uninstall wizard now carries the app's brand identity (indigo-gradient sidebar + header banner)\nNew setup fast lane: existing provider API keys found in environment variables (OpenAI / Anthropic / Moonshot / Google / DeepSeek) can be adopted with one click — verified against the real API and written to config; plaintext keys never leave the main process and the UI shows only masked values\nAutomatic kernel floor upgrade: when the kernel is below the minimum supported version (2026.7.0), it auto-upgrades to the curated stable 2026.8.2 after startup with live progress in a banner; failures roll back automatically\nMigration & recoverability hardening: automatic kernel rollback now reverse-migrates config; importing a .openclaw archive creates an emergency backup first with auto-restore on failure; legacy migrations no longer drop existing settings like update channel; kernel backups now include a config snapshot\nFresh installs ship kernel 2026.8.2 by default; app updates continue to use differential downloads (only changed blocks are fetched)"
+    }
+  },
+  {
     "version": "2026.906.0",
     "notes": {
       "zh": "新功能：更新提示弹窗——启动时自动检查到新版本会弹出更新日志，由你决定何时更新（不再静默后台下载，点击「更新」才开始下载，弹窗内显示下载进度）\n新功能：暂缓更新——可选 7 天 / 1 个月 / 3 个月 / 永久 / 自定义天数，期内不再自动检查更新；设置-关于页可随时恢复\n优化：安装更新改为带进度条的安装器窗口，换装进度可见（此前为无界面的静默安装）\n界面：设置-关于页适配新流程（「更新」按钮手动触发下载、显示暂缓状态与恢复入口）",

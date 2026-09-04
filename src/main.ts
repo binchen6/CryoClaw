@@ -51,7 +51,7 @@ import { uninstallGatewayDaemon, cleanGatewayLockFiles } from "./install-detecto
 import { runQuitCleanup } from "./quit-cleanup";
 import { detectOwnership, migrateFromLegacy, readCryoclawConfig, writeCryoclawConfig, appendChannelUtm } from "./cryoclaw-config";
 import { startTokenRefresh, stopTokenRefresh, loadOAuthToken } from "./kimi-oauth";
-import { initKernelUpdater, getKernelUpdateState, checkKernelUpdate, runKernelUpdate, runKernelRollback } from "./kernel-updater";
+import { initKernelUpdater, getKernelUpdateState, checkKernelUpdate, runKernelUpdate, runKernelRollback, isKernelBelowMinSupported } from "./kernel-updater";
 import { initAppUpdater, quitAndInstallAppUpdate } from "./app-updater";
 import { startGatewayControlServer, stopGatewayControlServer } from "./gateway-control-server";
 import { migrateOpenclawConfigForKernelUpgrade } from "./openclaw-config-migration";
@@ -524,6 +524,14 @@ function requestGatewayRestart(source: string): void {
   }, 800);
 }
 
+// 导入 .openclaw 前的应急归档目录（必须在状态目录之外）：
+// 导入会清空状态目录，应急归档是中途失败时唯一的恢复来源。
+// 目录与内核备份（%LOCALAPPDATA%\CryoClaw\kernel-backup）保持同级约定。
+function resolveOpenclawImportBackupDir(): string {
+  const base = process.env.LOCALAPPDATA || app.getPath("appData");
+  return path.join(base, "CryoClaw", "import-backup");
+}
+
 const openclawStateImportLifecycle = createOpenclawStateImportLifecycle({
   quiesceGateway: async () => {
     cancelPendingGatewayRestart("settings:import-openclaw-state");
@@ -531,13 +539,13 @@ const openclawStateImportLifecycle = createOpenclawStateImportLifecycle({
   },
   validateArchive: (filePath) => validateOpenclawStateArchive(filePath, resolveUserStateDir()),
   stopGateway: () => gateway.stop({ waitForStarting: true }),
-  importArchive: (filePath) => log.withFileLoggingPaused(() => importOpenclawStateFromArchive(filePath, resolveUserStateDir())),
+  importArchive: (filePath) => log.withFileLoggingPaused(() => importOpenclawStateFromArchive(filePath, resolveUserStateDir(), resolveOpenclawImportBackupDir())),
   reconcileHostState: reconcileHostStateAfterOpenclawImport,
   syncImportedConfigState: () => syncOpenClawStateAfterWrite(resolveUserConfigPath()),
   startGateway: async () => {
     const running = await ensureGatewayRunning("settings:import-openclaw-state");
     if (!running) {
-      throw new Error(".openclaw 已导入，但 Gateway 启动失败。请检查导入的配置或恢复最近可用快照。");
+      throw new Error(`.openclaw 已导入，但 Gateway 启动失败。请检查导入的配置；导入前的状态已备份到 ${resolveOpenclawImportBackupDir()} 下的应急归档，可从设置页导入该文件恢复。`);
     }
   },
 });
@@ -1004,6 +1012,34 @@ function syncAppFocusState(trigger: string): void {
 
 // ── 应用就绪 ──
 
+// 内核版本低于最低支持版本（kernel-channel.json minSupported，判定见 kernel-updater.ts）
+// 时的启动后自动升级调度。护栏：仅打包环境生效；模块级布尔防重复调度；
+// 结果只记日志，绝不 throw、不弹窗（进度经 kernel:update-progress 推到渲染层全局横幅）。
+let autoKernelUpgradeScheduled = false;
+function scheduleAutoKernelUpgradeIfNeeded(): void {
+  if (!app.isPackaged) return;
+  if (autoKernelUpgradeScheduled) return;
+  if (!isKernelBelowMinSupported()) return;
+  autoKernelUpgradeScheduled = true;
+  // 延迟 25s：错开启动高峰与 30s 的内核版本静默检查，且 unref 不阻塞退出
+  const timer = setTimeout(() => {
+    if (openclawStateImportLifecycle.isImportActive()) {
+      log.warn("[kernel-updater] 自动升级取消：.openclaw 导入进行中");
+      return;
+    }
+    log.info("[kernel-updater] 内核版本低于最低支持版本，开始自动升级");
+    runKernelUpdate(undefined, "auto")
+      .then((r) => {
+        if (r.ok) log.info(`[kernel-updater] 自动升级完成: ${r.from} → ${r.to}`);
+        else log.warn(`[kernel-updater] 自动升级失败: ${r.error}`);
+      })
+      .catch((err: any) => {
+        log.warn(`[kernel-updater] 自动升级异常: ${err?.message ?? err}`);
+      });
+  }, 25 * 1000);
+  timer.unref?.();
+}
+
 app.whenReady().then(async () => {
   log.info("app ready");
 
@@ -1121,6 +1157,9 @@ app.whenReady().then(async () => {
     },
     restart: async () => {
       await gateway.stop();
+      // 覆盖 CLI 直跑 `openclaw update --rollback` 后再 restart 的场景：
+      // 内核已被换回旧版，先按双向规则把配置迁回旧落位再启动
+      migrateOpenclawConfigForKernelUpgrade();
       const ok = await ensureGatewayRunning("gateway-control:restart");
       if (!ok) throw new Error("Gateway 重启后未通过健康检查");
     },
@@ -1172,6 +1211,7 @@ app.whenReady().then(async () => {
       });
       await startGatewayAndShowMain("app:startup");
       await earlyWindow;
+      scheduleAutoKernelUpgradeIfNeeded();
       break;
     }
 
@@ -1191,6 +1231,7 @@ app.whenReady().then(async () => {
       });
       await startGatewayAndShowMain("app:startup:legacy-migrate");
       await earlyWindow;
+      scheduleAutoKernelUpgradeIfNeeded();
       break;
     }
 

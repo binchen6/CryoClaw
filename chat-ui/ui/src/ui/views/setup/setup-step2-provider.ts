@@ -5,6 +5,7 @@ import { html, nothing } from "lit";
 import type { AppViewState } from "../../app-view-state.ts";
 import { t } from "../../i18n.ts";
 import * as ipc from "../../data/ipc-bridge.ts";
+import type { EnvKeyCandidate } from "../../data/ipc-bridge.ts";
 import { runKimiOAuthLogin } from "../../data/kimi-oauth-flow.ts";
 import "../../components/password-input.ts";
 import "../../components/message-box.ts";
@@ -36,6 +37,89 @@ const s = {
   oauthNoMembership: false,
   error: null as string | null,
 };
+
+// 快速通道（环境变量检测）状态：进入 step2 检测一次；无结果则不渲染（零干扰）
+const qs = {
+  loaded: false,
+  candidates: [] as EnvKeyCandidate[],
+  adoptingEnvVar: null as string | null,
+  errors: {} as Record<string, string>,
+};
+
+// 进入 step2 时检测一次本机环境变量中的 provider key（失败静默，不影响手动配置）
+function maybeLoadEnvKeys(state: AppViewState) {
+  if (qs.loaded) return;
+  qs.loaded = true;
+  void ipc.detectEnvKeys().then(list => {
+    qs.candidates = list;
+    state.requestUpdate();
+  }).catch(() => {});
+}
+
+async function handleAdoptEnvKey(candidate: EnvKeyCandidate, state: AppViewState, goToStep: (step: number) => void) {
+  if (qs.adoptingEnvVar) return;
+  qs.adoptingEnvVar = candidate.envVar;
+  delete qs.errors[candidate.envVar];
+  state.requestUpdate();
+  try {
+    const result = await ipc.adoptEnvKey({ providerKey: candidate.providerKey, envVar: candidate.envVar });
+    if (result.ok) {
+      // 与手动保存成功同路径
+      goToStep(3);
+      return;
+    }
+    qs.errors[candidate.envVar] = result.error ?? t("setup.error.verifyFailed");
+  } catch (e: any) {
+    qs.errors[candidate.envVar] = t("setup.error.connection") + (e?.message ?? "");
+  }
+  qs.adoptingEnvVar = null;
+  state.requestUpdate();
+}
+
+// 快速通道卡片的 provider 显示名：复用 segment 的 label，未覆盖的（如 deepseek）回退 providerKey
+const QUICKSTART_LABEL_KEYS: Record<string, string> = {
+  moonshot: "setup.provider.label.moonshot",
+  anthropic: "setup.provider.label.anthropic",
+  openai: "setup.provider.label.openai",
+  google: "setup.provider.label.google",
+};
+
+function quickstartProviderLabel(providerKey: string): string {
+  const key = QUICKSTART_LABEL_KEYS[providerKey];
+  return key ? t(key) : providerKey;
+}
+
+function renderQuickstart(state: AppViewState, goToStep: (step: number) => void) {
+  if (!qs.candidates.length) return nothing;
+  return html`
+    <div class="oc-setup-quickstart">
+      <div class="oc-setup-quickstart__head">
+        <div class="oc-setup-quickstart__title">${t("setup.quickstart.title")}</div>
+        <div class="oc-setup-quickstart__subtitle">${t("setup.quickstart.subtitle")}</div>
+      </div>
+      ${qs.candidates.map(c => {
+        const adopting = qs.adoptingEnvVar === c.envVar;
+        const error = qs.errors[c.envVar];
+        return html`
+          <div class="oc-setup-quickstart__item">
+            <div class="oc-setup-quickstart__meta">
+              <span class="oc-setup-quickstart__provider">${quickstartProviderLabel(c.providerKey)}</span>
+              <span class="oc-setup-quickstart__env">${c.envVar}</span>
+              <span class="oc-setup-quickstart__key">${c.maskedKey}</span>
+            </div>
+            <button class="oc-setup-btn oc-setup-btn--primary" ?disabled=${!!qs.adoptingEnvVar}
+              @click=${() => handleAdoptEnvKey(c, state, goToStep)}>
+              ${adopting
+                ? html`<span class="oc-setup-spinner"></span>${t("setup.quickstart.verifying")}`
+                : t("setup.quickstart.adopt")}
+            </button>
+          </div>
+          ${error ? html`<div class="oc-setup-quickstart__error">${t("setup.quickstart.failed")}${error}</div>` : nothing}
+        `;
+      })}
+    </div>
+  `;
+}
 
 function getSubPlatform(): string {
   return s.subPlatform;
@@ -288,6 +372,7 @@ function onPresetChange(value: string, state: AppViewState) {
 
 export function renderStep2(state: AppViewState, goToStep: (step: number) => void) {
   maybeLoadGatewayModels(state);
+  maybeLoadEnvKeys(state);
   const models = getModels();
   const platformUrl = getPlatformUrl();
   const isOAuth = s.currentProvider === "moonshot" && s.subPlatform === "kimi-code";
@@ -301,6 +386,8 @@ export function renderStep2(state: AppViewState, goToStep: (step: number) => voi
     <div class="oc-setup-step">
       <div class="oc-setup-step-body">
       <h2 class="oc-setup-title">${t("setup.provider.title")}</h2>
+
+      ${renderQuickstart(state, goToStep)}
 
       <oc-provider-segment
         .providers=${PROVIDER_DISPLAY_ORDER.map(p => p)}

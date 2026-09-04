@@ -160,6 +160,8 @@ export interface KernelUpdateProgress {
   step: string;
   pct: number;
   msg: string;
+  /** 触发来源：auto = 启动后自动升级（全局横幅），manual = 设置页手动触发 */
+  source?: "auto" | "manual";
 }
 
 // App 自动更新（electron-updater）状态；supported=false 表示 dev/未打包环境不支持
@@ -199,6 +201,20 @@ export interface NavigatePayload {
 }
 
 export type GatewayState = "running" | "starting" | "stopping" | "stopped";
+
+// Setup 快速通道：环境变量中检测到的 provider key（仅掩码，明文不出主进程）
+export interface EnvKeyCandidate {
+  providerKey: string;
+  envVar: string;
+  maskedKey: string;
+}
+
+export interface AdoptEnvKeyResult {
+  ok: boolean;
+  providerKey: string;
+  model?: string;
+  error?: string;
+}
 
 export interface PairingRequest {
   code: string;
@@ -241,6 +257,8 @@ interface CryoClawBridgeExtended {
       saveConfig?: (params: Record<string, unknown>) => Promise<any>;
       completeSetup?: (params?: Record<string, unknown>) => Promise<any>;
       setupGetLaunchAtLogin?: () => Promise<any>;
+      detectEnvKeys?: () => Promise<any>;
+      adoptEnvKey?: (params: Record<string, unknown>) => Promise<any>;
       // Kimi OAuth
       kimiOAuthLogin?: () => Promise<any>;
       kimiOAuthCancel?: () => Promise<any>;
@@ -362,7 +380,7 @@ function unwrapVoid(result: any): void {
 }
 
 // ---------------------------------------------------------------------------
-// Setup IPC (6)
+// Setup IPC (8)
 // ---------------------------------------------------------------------------
 
 export async function detectInstallation(): Promise<DetectionResult> {
@@ -391,6 +409,16 @@ export async function completeSetup(params?: Record<string, unknown>): Promise<S
 
 export async function setupGetLaunchAtLogin(): Promise<LaunchAtLoginState> {
   return unwrapData<LaunchAtLoginState>(await oc().setupGetLaunchAtLogin());
+}
+
+// Setup 快速通道：检测本机环境变量中的 provider API Key（返回掩码列表）
+export async function detectEnvKeys(): Promise<EnvKeyCandidate[]> {
+  return unwrapData<EnvKeyCandidate[]>(await oc().detectEnvKeys());
+}
+
+// Setup 快速通道：采用环境变量 key（主进程验证 → 落盘；失败返回 error 不抛出）
+export async function adoptEnvKey(params: { providerKey: string; envVar: string }): Promise<AdoptEnvKeyResult> {
+  return (await oc().adoptEnvKey(params)) as AdoptEnvKeyResult;
 }
 
 // ---------------------------------------------------------------------------

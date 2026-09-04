@@ -106,29 +106,60 @@ export function detectOwnership(): OwnershipState {
 
 // ── 迁移 ──
 
-// 从 legacy 文件迁移到 cryoclaw.config.json（老用户升级）
+// 从 legacy 文件迁移到 cryoclaw.config.json（老用户升级）。
+// legacy（oneclaw.config.json）的全部已知字段都会补齐进新文件；
+// 新文件已存在的值优先，不覆盖用户在新版本里已有的设置。
+// 逐个核对 CryoclawConfig 后的刻意排除：gatewayControl 是主进程运行时写入的
+// 控制服务连接信息（port/token 随即失效），迁移旧值反而有害。
 export function migrateFromLegacy(): CryoclawConfig {
-  // 读取 wizard.lastRunAt
-  let setupCompletedAt: string | undefined;
+  const newPath = resolveCryoclawConfigPath();
+  // readCryoclawConfig 在新文件缺失时会 fallback 读 legacy，这里必须显式只读新文件
+  const config: CryoclawConfig = fs.existsSync(newPath) ? readCryoclawConfig() ?? {} : {};
+
+  // 读取 legacy 配置（oneclaw.config.json）
+  let legacy: CryoclawConfig = {};
+  try {
+    const parsed = JSON.parse(fs.readFileSync(resolveLegacyConfigPath(), "utf-8"));
+    if (parsed && typeof parsed === "object") legacy = parsed as CryoclawConfig;
+  } catch {}
+
+  // setupCompletedAt 的另一个来源：openclaw.json 的 wizard.lastRunAt
+  let wizardLastRunAt: string | undefined;
   try {
     const raw = fs.readFileSync(resolveUserConfigPath(), "utf-8");
-    const config = JSON.parse(raw);
-    if (config?.wizard?.lastRunAt) {
-      setupCompletedAt = config.wizard.lastRunAt;
+    const parsed = JSON.parse(raw);
+    if (parsed?.wizard?.lastRunAt) {
+      wizardLastRunAt = parsed.wizard.lastRunAt;
     }
   } catch {}
 
-  // 读取 skill-store.json
-  let skillStore: CryoclawConfig["skillStore"];
-  const skillStorePath = resolveSkillStoreConfigPath();
+  // skillStore.registryUrl 的另一个来源：legacy skill-store.json
+  let legacyRegistryUrl: string | undefined;
   try {
-    const raw = JSON.parse(fs.readFileSync(skillStorePath, "utf-8"));
+    const raw = JSON.parse(fs.readFileSync(resolveSkillStoreConfigPath(), "utf-8"));
     if (raw?.registryUrl) {
-      skillStore = { registryUrl: raw.registryUrl };
+      legacyRegistryUrl = raw.registryUrl;
     }
   } catch {}
 
-  const config: CryoclawConfig = { setupCompletedAt, skillStore };
+  // 仅补齐缺失字段：新文件已有值一律不动
+  const fillIfMissing = <K extends keyof CryoclawConfig>(key: K, value: CryoclawConfig[K] | undefined): void => {
+    if (config[key] === undefined && value !== undefined) config[key] = value;
+  };
+  fillIfMissing("setupCompletedAt", legacy.setupCompletedAt ?? wizardLastRunAt);
+  fillIfMissing("cliPreference", legacy.cliPreference);
+  fillIfMissing("updateChannel", legacy.updateChannel);
+  fillIfMissing("lastShownReleaseNotesVersion", legacy.lastShownReleaseNotesVersion);
+  fillIfMissing("channelId", legacy.channelId);
+  fillIfMissing("channelSource", legacy.channelSource);
+  // skillStore 按子字段补齐：新文件已写 registryUrl 时不覆盖
+  if (config.skillStore?.registryUrl === undefined) {
+    const registryUrl = legacy.skillStore?.registryUrl ?? legacyRegistryUrl;
+    if (registryUrl !== undefined) {
+      config.skillStore = { ...config.skillStore, registryUrl };
+    }
+  }
+
   writeCryoclawConfig(config);
   return config;
 }

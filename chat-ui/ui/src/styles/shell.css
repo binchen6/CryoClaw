@@ -348,3 +348,99 @@ cc-rail {
     transition: none;
   }
 }
+
+/* ============================================
+   内核自动升级横幅（主内容区右上角浮出卡片）
+   indigo 主色；done 态成功色、error 态警告色 + 关闭按钮
+   ============================================ */
+
+.kernel-auto-banner {
+  position: fixed;
+  top: calc(var(--titlebar-h) + var(--spacer-8));
+  right: var(--spacer-16);
+  z-index: 10000;
+  width: 320px;
+  padding: var(--spacer-10) var(--spacer-12);
+  border: var(--hairline);
+  border-radius: var(--radius-12);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-lg);
+  font-size: var(--text-sm);
+}
+
+.kernel-auto-banner__head {
+  display: flex;
+  align-items: center;
+  gap: var(--spacer-8);
+}
+
+.kernel-auto-banner__title {
+  flex: 1;
+  min-width: 0;
+  font-weight: var(--weight-semibold);
+  color: var(--accent);
+}
+
+.kernel-auto-banner--done .kernel-auto-banner__title {
+  color: var(--ok);
+}
+
+.kernel-auto-banner--error .kernel-auto-banner__title {
+  color: var(--warn);
+}
+
+.kernel-auto-banner__pct {
+  flex-shrink: 0;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.kernel-auto-banner__close {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: var(--radius-8);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.kernel-auto-banner__close:hover {
+  background: var(--bg-muted);
+  color: var(--text-strong);
+}
+
+.kernel-auto-banner__msg {
+  margin-top: var(--spacer-4);
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kernel-auto-banner__progress {
+  margin-top: var(--spacer-8);
+  height: var(--spacer-6);
+  border-radius: var(--radius-pill);
+  background: var(--bg-muted);
+  overflow: hidden;
+}
+
+.kernel-auto-banner__bar {
+  height: 100%;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  transition: width var(--duration-normal) var(--ease-out);
+}
+
+.kernel-auto-banner--done .kernel-auto-banner__bar {
+  background: var(--ok);
+}
+
+.kernel-auto-banner--error .kernel-auto-banner__bar {
+  background: var(--warn);
+}

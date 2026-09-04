@@ -16,6 +16,8 @@ const VITEST_FILES = new Set([
   "openclaw-config-migration",
   "openclaw-health-state",
   "startup-ownership",
+  "openclaw-state-archive",
+  "openclaw-state-import-lifecycle",
 ]);
 
 const root = resolve(__dirname, "..");

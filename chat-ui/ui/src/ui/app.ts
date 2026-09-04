@@ -4,7 +4,7 @@ import type { AppViewState } from "./app-view-state.ts";
 import type { ExecApprovalRequest } from "./controllers/exec-approval.ts";
 import type { SkillMessage } from "./controllers/skills.ts";
 import type { SessionCompactionCheckpoint } from "./controllers/session-compaction.ts";
-import type { NavigatePayload as IpcNavigatePayload, AppUpdateState } from "./data/ipc-bridge.ts";
+import type { NavigatePayload as IpcNavigatePayload, AppUpdateState, KernelUpdateProgress } from "./data/ipc-bridge.ts";
 import type { GatewayBrowserClient, GatewayHelloOk } from "./gateway.ts";
 import type { Tab } from "./navigation.ts";
 import type { ResolvedTheme, ThemeMode } from "./theme.ts";
@@ -135,6 +135,8 @@ type CryoClawBridge = {
   appUpdateQuitAndInstall?: () => Promise<{ success: boolean; message?: string } | null>;
   appUpdateSnooze?: (opts: { days?: number; forever?: boolean }) => Promise<{ success: boolean; data?: AppUpdateState; message?: string } | null>;
   onAppUpdateState?: (cb: (state: AppUpdateState) => void) => (() => void) | void;
+  // 内核升级进度推送；仅 source==="auto" 驱动全局横幅（manual 由设置-关于页自理）
+  onKernelUpdateProgress?: (cb: (p: KernelUpdateProgress) => void) => (() => void) | void;
   // git CLI 探测（主进程缓存结果）；worktree 入口降级依据
   gitDetect?: () => Promise<{ success: boolean; data?: { available: boolean; version: string | null } } | null>;
 };
@@ -284,6 +286,7 @@ export class OpenClawApp extends LitElement {
     appUpdateBadge: { state: true },
     showUpdateDialog: { state: true },
     appUpdateDialog: { state: true },
+    kernelAutoUpgrade: { state: true },
     updateSnoozeOpen: { state: true },
     updateSnoozeDays: { state: true },
     webbridgeRepairVisible: { state: true },
@@ -489,6 +492,9 @@ export class OpenClawApp extends LitElement {
   // 弹窗内完成 下载进度 → 重启安装；「暂缓」由主进程持久化并跳过启动自动检查
   showUpdateDialog = false;
   appUpdateDialog: AppUpdateState | null = null;
+  // 内核自动升级全局横幅：主进程推 source==="auto" 的 kernel:update-progress 时显示；
+  // done 态几秒后自动清除，error 态常驻直到用户关闭。manual 进度由设置-关于页自理
+  kernelAutoUpgrade: KernelUpdateProgress | null = null;
   updateSnoozeOpen = false;
   updateSnoozeDays = "";
   // 当前是 webbridge 模式 + 浏览器扩展未启用 → 主窗左侧栏显示「连接你的常用浏览器」pill
@@ -522,6 +528,9 @@ export class OpenClawApp extends LitElement {
   private gatewayReadyCleanup: (() => void) | null = null;
   private webbridgeStateCleanup: (() => void) | null = null;
   private appUpdateStateCleanup: (() => void) | null = null;
+  private kernelUpdateProgressCleanup: (() => void) | null = null;
+  // done 态横幅的自动清除计时器（新事件到达时重置）
+  private kernelAutoUpgradeDoneTimer: ReturnType<typeof setTimeout> | null = null;
   // 上一次 App 更新状态：仅在「进入」downloaded 态时弹 toast，避免同态重复推送重复打扰
   private appUpdatePrevStatus = "";
   // 本会话内被用户关过弹窗的版本号：同版本不再自动弹（可从设置页/角标再打开）
@@ -539,6 +548,7 @@ export class OpenClawApp extends LitElement {
     this.bindWebbridgeStateChanged();
     this.bindWebbridgeRepairPoll();
     this.bindAppUpdateState();
+    this.bindKernelUpdateProgress();
     this.bindGitDetection();
     this.fetchReleaseNotes();
   }
@@ -602,6 +612,41 @@ export class OpenClawApp extends LitElement {
     this.showUpdateDialog = false;
     this.updateSnoozeOpen = false;
     if (this.appUpdateDialog?.version) this.updateDialogDismissedFor = this.appUpdateDialog.version;
+  }
+
+  // 内核升级进度推送 → 仅 source==="auto"（启动后自动升级）驱动全局横幅；
+  // manual 进度由设置-关于页（tab-about）自己的订阅处理，这里直接忽略避免互相干扰
+  private bindKernelUpdateProgress() {
+    if (this.kernelUpdateProgressCleanup) return;
+    const bridge = this.getCryoClawBridge();
+    if (!bridge?.onKernelUpdateProgress) return;
+    const unsubscribe = bridge.onKernelUpdateProgress((p) => this.handleKernelUpdateProgress(p));
+    this.kernelUpdateProgressCleanup = typeof unsubscribe === "function" ? unsubscribe : null;
+  }
+
+  private handleKernelUpdateProgress(p: KernelUpdateProgress | null) {
+    if (!p || p.source !== "auto") return;
+    if (this.kernelAutoUpgradeDoneTimer) {
+      clearTimeout(this.kernelAutoUpgradeDoneTimer);
+      this.kernelAutoUpgradeDoneTimer = null;
+    }
+    this.kernelAutoUpgrade = { step: p.step, pct: p.pct, msg: p.msg, source: p.source };
+    // done 终态：展示几秒后自动清除；error 态常驻，由用户点关闭（dismissKernelAutoUpgrade）
+    if (p.step === "done") {
+      this.kernelAutoUpgradeDoneTimer = setTimeout(() => {
+        this.kernelAutoUpgradeDoneTimer = null;
+        this.kernelAutoUpgrade = null;
+      }, 6000);
+    }
+  }
+
+  // error 态横幅的关闭按钮
+  dismissKernelAutoUpgrade() {
+    if (this.kernelAutoUpgradeDoneTimer) {
+      clearTimeout(this.kernelAutoUpgradeDoneTimer);
+      this.kernelAutoUpgradeDoneTimer = null;
+    }
+    this.kernelAutoUpgrade = null;
   }
 
   // 「立即更新」：触发下载（autoDownload=false，只此入口），弹窗内转进度条
@@ -676,6 +721,12 @@ export class OpenClawApp extends LitElement {
     this.webbridgeStateCleanup = null;
     this.appUpdateStateCleanup?.();
     this.appUpdateStateCleanup = null;
+    this.kernelUpdateProgressCleanup?.();
+    this.kernelUpdateProgressCleanup = null;
+    if (this.kernelAutoUpgradeDoneTimer) {
+      clearTimeout(this.kernelAutoUpgradeDoneTimer);
+      this.kernelAutoUpgradeDoneTimer = null;
+    }
     handleDisconnected(this as unknown as Parameters<typeof handleDisconnected>[0]);
     super.disconnectedCallback();
   }

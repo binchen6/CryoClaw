@@ -12,6 +12,8 @@ export default defineConfig({
       "src/openclaw-config-migration.test.ts",
       "src/openclaw-health-state.test.ts",
       "src/startup-ownership.test.ts",
+      "src/openclaw-state-archive.test.ts",
+      "src/openclaw-state-import-lifecycle.test.ts",
     ],
   },
 });

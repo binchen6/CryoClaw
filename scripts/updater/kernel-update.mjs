@@ -8,7 +8,8 @@
  *
  * 运行环境：CryoClaw-CLI.exe / CryoClaw.exe + ELECTRON_RUN_AS_NODE=1（Node ≥22）。
  * 安装位置：<install>/resources/resources/updater/kernel-update.mjs，
- * 同级需有 kernel-dist-patch.js、kernel-prune.js、rm-rec.js 与 node_modules/（含 @electron/asar）。
+ * 同级需有 kernel-dist-patch.js、kernel-channel.js、kernel-prune.js、rm-rec.js、
+ * kernel-config-snapshot.js 与 node_modules/（含 @electron/asar）。
  *
  * 用法：
  *   kernel-update.mjs                 升级到策展稳定版（kernel-channel.json，见 kernel-channel.js 注释）
@@ -57,6 +58,9 @@ const { pruneGatewayTree } = createRequire(import.meta.url)("./kernel-prune.js")
 // 发行证据链未完成的版本（如 2026.9.1），直接当更新目标会诱导用户装非稳定内核。
 // 更新目标改为策展 stable：远程 kernel-channel.json → 内置兜底（构建期注入钉版本）。
 const kch = createRequire(import.meta.url)("./kernel-channel.js");
+
+// 内核备份附存 openclaw.json 配置快照（kernel-config-snapshot.js）
+const kcs = createRequire(import.meta.url)("./kernel-config-snapshot.js");
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REGISTRY = (process.env.CRYOCLAW_NPM_REGISTRY || "https://registry.npmmirror.com").replace(/\/+$/, "");
@@ -504,6 +508,15 @@ async function cmdUpdate(tag) {
     if (xfs.existsSync(ASAR_UNPACKED_DIR)) {
       xfs.cpSync(ASAR_UNPACKED_DIR, path.join(backupDir, "gateway.asar.unpacked"), { recursive: true });
     }
+    // 同目录附存 openclaw.json 快照：回退不自动恢复配置（避免覆盖用户新配置），
+    // 但回退完成时会提示快照位置，便于手动核对。失败仅告警，不阻断升级。
+    try {
+      if (kcs.snapshotOpenclawConfig(backupDir)) {
+        progress("backup", 81, "已附存 openclaw.json 配置快照");
+      }
+    } catch (e) {
+      progress("backup", 81, `openclaw.json 配置快照附存失败（不阻断升级）: ${e.message || e}`);
+    }
 
     progress("swap", 88, "换装新内核");
     // 同卷临时名 + rename 进位：先复制新物到 RESOURCES_DIR 下临时名，再依次 rename
@@ -641,6 +654,11 @@ async function cmdRollback() {
   clearCompileCache();
   writeState({ lastAction: "rollback", previous: current, current: backupVersion });
   progress("cleanup", 90, "清理");
+  // 备份里若带 openclaw.json 快照，提示位置；刻意不自动恢复，避免覆盖用户新配置
+  const configSnapshot = path.join(backupDir, "openclaw.json");
+  if (xfs.existsSync(configSnapshot)) {
+    progress("cleanup", 92, `备份含配置快照（未自动恢复，需要时请手动核对）: ${configSnapshot}`);
+  }
   emit({ type: "done", action: "rollback", from: current, to: backupVersion });
 }
 

@@ -44,7 +44,8 @@ export function readKernelVersionParts(): { year: number; month: number } | null
   }
 }
 
-function versionAtLeast(version: { year: number; month: number }, since: { year: number; month: number }): boolean {
+// 导出给 kernel-updater 做最低支持版本判定。
+export function versionAtLeast(version: { year: number; month: number }, since: { year: number; month: number }): boolean {
   return version.year > since.year || (version.year === since.year && version.month >= since.month);
 }
 
@@ -313,7 +314,8 @@ export function migrateOpenclawConfigForKernelUpgrade(): void {
     if (migratedQQBot) parts.push("channels.qqbot.allowFrom 通配符 * 已按 2026.8 契约清除");
     if (disabledPlugins.length > 0) parts.push(`不可用（未安装或无可运行载荷）的启用插件已降级为禁用: ${disabledPlugins.join(", ")}`);
     log.info(`[migrate] 已适配新内核配置，${parts.join("；")}`);
-  } catch {
-    // 迁移失败不阻塞启动
+  } catch (err: any) {
+    // 迁移失败不阻塞启动，但必须留痕（此前静默吞错，出问题无从排查）
+    log.error(`[migrate] 内核配置迁移失败: ${err?.message ?? err}`);
   }
 }

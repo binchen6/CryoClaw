@@ -433,6 +433,10 @@ export const enDict: Record<string, string> = {
   "settings.about.kernelCheckFailed": "Failed to check the stable version",
   "settings.about.kernelUpdateSuccess": "Upgraded: {from} → {to}",
   "settings.about.kernelRollbackSuccess": "Rolled back: {from} → {to}",
+  // Kernel auto-upgrade global banner (triggered after launch when kernel is below minSupported)
+  "kernelAutoUpgrade.title": "Upgrading kernel…",
+  "kernelAutoUpgrade.done": "Kernel upgraded",
+  "kernelAutoUpgrade.error": "Kernel auto-upgrade failed",
   // App auto update (electron-updater)
   "settings.about.appUpdate": "App Update",
   "settings.about.appUpdateNotSupported": "App update is not supported in this environment",
@@ -706,6 +710,13 @@ export const enDict: Record<string, string> = {
   "setup.provider.oauth.noMembership": "Login succeeded, but your account has no active Kimi membership. Please subscribe and try again.",
   "setup.provider.oauth.subscribeLink": "Subscribe now →",
   "setup.provider.oauth.or": "or enter API Key manually",
+
+  // Setup: Quickstart (adopt env-var API keys)
+  "setup.quickstart.title": "Existing API access detected",
+  "setup.quickstart.subtitle": "API keys were found in the environment variables below — verify and use them with one click",
+  "setup.quickstart.adopt": "Use",
+  "setup.quickstart.verifying": "Verifying…",
+  "setup.quickstart.failed": "Verification failed: ",
 
   // Setup: Done
   "setup.done.title": "All Set!",

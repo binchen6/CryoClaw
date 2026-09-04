@@ -12,6 +12,7 @@ import {
   validatePortablePath,
 } from "./openclaw-state-archive-paths";
 import { readArchive } from "./openclaw-state-archive-zip";
+import { formatTimestamp } from "./time-format";
 
 export { buildOpenclawStateArchiveDefaultFileName };
 
@@ -26,6 +27,9 @@ type OpenclawStateEntry = {
 const ZIP_CHUNK_SIZE = 64 * 1024;
 const ARCHIVE_MARKER_NAME = ".oneclaw-openclaw-state-archive";
 const ARCHIVE_MARKER_CONTENT = "oneclaw-openclaw-state-archive/v1\n";
+// 导入前应急归档的文件名前缀与滚动保留份数（目录由调用方注入，须在状态目录之外）
+const PRE_IMPORT_BACKUP_PREFIX = "state-pre-import-";
+const PRE_IMPORT_BACKUP_KEEP = 2;
 // Runtime-only locks/logs are host-specific; they are skipped on export and
 // stripped again after import in case a third-party archive includes them.
 // "logs" 是整个日志目录（R20 起 app.log/gateway.log 与内核日志都归集于此）。
@@ -92,15 +96,69 @@ export async function validateOpenclawStateArchive(
 export async function importOpenclawStateFromArchive(
   zipPath: string,
   stateDir: string,
+  emergencyBackupDir: string,
 ): Promise<void> {
   assertArchiveOutsideStateDir(zipPath, stateDir);
   // Revalidate at the destructive boundary: the selected ZIP path can change
   // while the gateway is stopping, and clearing the current state is irreversible.
   await validateOpenclawStateArchive(zipPath, stateDir);
-  clearStateDirForImport(stateDir);
-  await readArchive(zipPath, stateDir, stateDir);
-  removeVolatileRuntimeFiles(stateDir);
-  removeArchiveMarker(stateDir);
+
+  // 清空状态目录不可逆：先把当前状态导出为应急归档（状态目录之外，滚动保留
+  // 最近 PRE_IMPORT_BACKUP_KEEP 份）。导出失败则中止导入——不做无保护清空。
+  let backupZip: string;
+  try {
+    backupZip = await createPreImportEmergencyBackup(stateDir, emergencyBackupDir);
+  } catch (err) {
+    throw new Error(`导入前备份当前 .openclaw 失败，已中止导入（现有状态未改动）: ${toError(err).message}`);
+  }
+
+  try {
+    clearStateDirForImport(stateDir);
+    await readArchive(zipPath, stateDir, stateDir);
+    removeVolatileRuntimeFiles(stateDir);
+    removeArchiveMarker(stateDir);
+  } catch (err) {
+    // 解压/清理中途失败：best-effort 从应急归档还原导入前状态，还原结果写进错误文案
+    const base = toError(err).message;
+    let restoreError: Error | null = null;
+    try {
+      clearStateDirForImport(stateDir);
+      await readArchive(backupZip, stateDir, stateDir);
+      removeArchiveMarker(stateDir);
+    } catch (restoreErr) {
+      restoreError = toError(restoreErr);
+    }
+    if (restoreError) {
+      throw new Error(`${base}；自动还原也失败（${restoreError.message}），导入前的状态归档保留在 ${backupZip}，可在设置页导入该文件手动恢复`);
+    }
+    throw new Error(`${base}；已从应急归档自动还原导入前的状态（归档保留在 ${backupZip}）`);
+  }
+}
+
+// 把当前状态目录导出为应急归档，返回归档路径；随后滚动清理旧归档。
+async function createPreImportEmergencyBackup(stateDir: string, backupDir: string): Promise<string> {
+  const zipPath = path.join(backupDir, `${PRE_IMPORT_BACKUP_PREFIX}${formatTimestamp(new Date())}.zip`);
+  await exportOpenclawStateToArchive(stateDir, zipPath);
+  prunePreImportEmergencyBackups(backupDir);
+  return zipPath;
+}
+
+// 文件名含秒级时间戳，字典序即时间序；只保留最近 PRE_IMPORT_BACKUP_KEEP 份
+function prunePreImportEmergencyBackups(backupDir: string): void {
+  let names: string[];
+  try {
+    names = fs
+      .readdirSync(backupDir)
+      .filter((name) => name.startsWith(PRE_IMPORT_BACKUP_PREFIX) && name.endsWith(".zip"))
+      .sort();
+  } catch {
+    return;
+  }
+  for (const old of names.slice(0, Math.max(0, names.length - PRE_IMPORT_BACKUP_KEEP))) {
+    try {
+      fs.rmSync(path.join(backupDir, old), { force: true });
+    } catch {}
+  }
 }
 
 function clearStateDirForImport(stateDir: string): void {

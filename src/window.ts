@@ -304,8 +304,8 @@ export class WindowManager {
     this.allowAppQuit = true;
   }
 
-  // 向渲染层广播内核升级进度（若窗口存在）。
-  pushKernelUpdateProgress(payload: { step: string; pct: number; msg: string }): void {
+  // 向渲染层广播内核升级进度（若窗口存在）。source 区分自动/手动触发。
+  pushKernelUpdateProgress(payload: { step: string; pct: number; msg: string; source?: "auto" | "manual" }): void {
     if (!this.win || this.win.isDestroyed()) {
       return;
     }

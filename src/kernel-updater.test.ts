@@ -21,9 +21,11 @@ import type { Deps, KernelUpdateState } from "./kernel-updater";
 const mockState: {
   resourcesDir: string;
   spawnImpl: (args: string[]) => ChildLike;
+  kernelVersionParts: { year: number; month: number } | null;
 } = {
   resourcesDir: "",
   spawnImpl: () => makeChild([]),
+  kernelVersionParts: null,
 };
 
 vi.mock("child_process", () => ({
@@ -45,6 +47,10 @@ vi.mock("./logger", () => ({
 
 vi.mock("./openclaw-config-migration", () => ({
   migrateOpenclawConfigForKernelUpgrade: vi.fn(),
+  // 版本判定由测试直接喂 parts（真实实现读 gateway 包 package.json）
+  readKernelVersionParts: () => mockState.kernelVersionParts,
+  versionAtLeast: (v: { year: number; month: number }, s: { year: number; month: number }) =>
+    v.year > s.year || (v.year === s.year && v.month >= s.month),
 }));
 
 // ── Helpers ──
@@ -150,6 +156,7 @@ beforeEach(() => {
   fs.writeFileSync(updaterScriptPath, "// mock");
   // 默认 spawn 行为：空事件、退出 0
   mockState.spawnImpl = () => makeChild([]);
+  mockState.kernelVersionParts = null;
 });
 
 afterEach(() => {
@@ -550,10 +557,136 @@ test("runKernelUpdate：progress 事件全部转发到 push", async () => {
   await runKernelUpdate();
   const progressPushes = (deps.push as any).mock.calls
     .map((c: any[]) => c[0])
-    .filter((p: any) => p.step !== "gateway-stop" && p.step !== "gateway-start" && p.step !== "auto-rollback");
-  // 3 个 progress 事件（staging / swap / smoke）
+    .filter((p: any) => !["gateway-stop", "gateway-start", "auto-rollback", "done", "error"].includes(p.step));
+  // 3 个 progress 事件（staging / swap / smoke），手动触发带 source: "manual"
   expect(progressPushes).toHaveLength(3);
-  expect(progressPushes[0]).toEqual({ step: "staging", pct: 10, msg: "下载" });
-  expect(progressPushes[1]).toEqual({ step: "swap", pct: 50, msg: "换装" });
-  expect(progressPushes[2]).toEqual({ step: "smoke", pct: 90, msg: "冒烟" });
+  expect(progressPushes[0]).toEqual({ step: "staging", pct: 10, msg: "下载", source: "manual" });
+  expect(progressPushes[1]).toEqual({ step: "swap", pct: 50, msg: "换装", source: "manual" });
+  expect(progressPushes[2]).toEqual({ step: "smoke", pct: 90, msg: "冒烟", source: "manual" });
+  // 成功补推 done 终态（自动升级的全局横幅靠它收敛）
+  expect(deps.push).toHaveBeenCalledWith(expect.objectContaining({ step: "done", pct: 100, source: "manual" }));
+});
+
+// ── 最低支持版本判定（kernel-channel.json minSupported = 2026.7）──
+
+test("isKernelBelowMinSupported：低于 2026.7 返回 true", async () => {
+  mockState.kernelVersionParts = { year: 2026, month: 6 };
+  const { isKernelBelowMinSupported } = await import("./kernel-updater");
+  expect(isKernelBelowMinSupported()).toBe(true);
+});
+
+test("isKernelBelowMinSupported：等于/高于 2026.7 返回 false", async () => {
+  const { isKernelBelowMinSupported } = await import("./kernel-updater");
+  mockState.kernelVersionParts = { year: 2026, month: 7 };
+  expect(isKernelBelowMinSupported()).toBe(false);
+  mockState.kernelVersionParts = { year: 2026, month: 8 };
+  expect(isKernelBelowMinSupported()).toBe(false);
+  mockState.kernelVersionParts = { year: 2027, month: 1 };
+  expect(isKernelBelowMinSupported()).toBe(false);
+});
+
+test("isKernelBelowMinSupported：版本读不到（null）保守返回 false", async () => {
+  mockState.kernelVersionParts = null;
+  const { isKernelBelowMinSupported } = await import("./kernel-updater");
+  expect(isKernelBelowMinSupported()).toBe(false);
+});
+
+// ── 自动升级（source="auto"）透传 ──
+
+test("runKernelUpdate(source=auto)：所有 push 带 source=auto，成功推 done 终态", async () => {
+  const events = makeProgressEvents();
+  mockState.spawnImpl = () => makeChild(events);
+  const { initKernelUpdater, runKernelUpdate } = await import("./kernel-updater");
+  const deps = makeDeps();
+  initKernelUpdater(deps);
+  const result = await runKernelUpdate(undefined, "auto");
+  expect(result.ok).toBe(true);
+  const pushes = (deps.push as any).mock.calls.map((c: any[]) => c[0]);
+  expect(pushes.length).toBeGreaterThan(0);
+  for (const p of pushes) {
+    expect(p.source).toBe("auto");
+  }
+  expect(deps.push).toHaveBeenCalledWith(expect.objectContaining({ step: "done", pct: 100, source: "auto" }));
+});
+
+test("runKernelUpdate(source=auto)：失败推 error 终态且带 source=auto", async () => {
+  // 未到 swap 就失败：无回滚，直接 error 结论
+  mockState.spawnImpl = () => makeChild([{ type: "progress", step: "staging", pct: 5, msg: "下载" }], 1);
+  const { initKernelUpdater, runKernelUpdate } = await import("./kernel-updater");
+  const deps = makeDeps();
+  initKernelUpdater(deps);
+  const result = await runKernelUpdate(undefined, "auto");
+  expect(result.ok).toBe(false);
+  expect(deps.push).toHaveBeenCalledWith(expect.objectContaining({ step: "error", pct: 100, source: "auto" }));
+});
+
+// ── 回滚路径的配置迁移（K1）──
+
+test("runKernelUpdate：自动回滚后、恢复启动前会再次执行配置迁移", async () => {
+  mockState.spawnImpl = (args) =>
+    args.includes("--rollback") ? makeChild(makeRollbackEvents()) : makeChild(makeProgressEvents());
+  const { initKernelUpdater, runKernelUpdate } = await import("./kernel-updater");
+  const deps = makeDeps({
+    startGateway: vi.fn()
+      .mockResolvedValueOnce(false) // update 后健康检查失败
+      .mockResolvedValueOnce(true), // rollback 后恢复成功
+  });
+  initKernelUpdater(deps);
+  const result = await runKernelUpdate();
+  expect(result.ok).toBe(false);
+  const migration = await import("./openclaw-config-migration");
+  const migrateMock = migration.migrateOpenclawConfigForKernelUpgrade as any;
+  // update 换装成功后 1 次 + 自动回滚后恢复启动前 1 次
+  expect(migrateMock).toHaveBeenCalledTimes(2);
+  // 第二次迁移必须发生在回滚后恢复启动（第 2 次 startGateway）之前
+  const startOrder = (deps.startGateway as any).mock.invocationCallOrder;
+  expect(migrateMock.mock.invocationCallOrder[1]).toBeLessThan(startOrder[1]);
+});
+
+test("runKernelUpdate：catch 兜底 best-effort 回滚成功后、恢复启动前执行配置迁移", async () => {
+  mockState.spawnImpl = (args) => {
+    if (args.includes("--rollback")) return makeChild(makeRollbackEvents());
+    // update 路径：swap 之后失败
+    return makeChild(
+      [
+        { type: "progress", step: "swap", pct: 50, msg: "换装" },
+        { type: "error", message: "asar 校验失败" },
+      ],
+      1,
+    );
+  };
+  const { initKernelUpdater, runKernelUpdate } = await import("./kernel-updater");
+  const deps = makeDeps();
+  initKernelUpdater(deps);
+  const result = await runKernelUpdate();
+  expect(result.ok).toBe(false);
+  const migration = await import("./openclaw-config-migration");
+  const migrateMock = migration.migrateOpenclawConfigForKernelUpgrade as any;
+  // update 未走到换装成功 → 仅回滚后迁移 1 次，且在恢复启动之前
+  expect(migrateMock).toHaveBeenCalledTimes(1);
+  expect(migrateMock.mock.invocationCallOrder[0]).toBeLessThan(
+    (deps.startGateway as any).mock.invocationCallOrder[0],
+  );
+});
+
+test("runKernelUpdate：catch 兜底回滚失败时不执行配置迁移", async () => {
+  mockState.spawnImpl = (args) => {
+    if (args.includes("--rollback")) {
+      // 回滚本身也失败
+      return makeChild([{ type: "error", message: "rollback 失败" }], 1);
+    }
+    return makeChild(
+      [
+        { type: "progress", step: "swap", pct: 50, msg: "换装" },
+        { type: "error", message: "asar 校验失败" },
+      ],
+      1,
+    );
+  };
+  const { initKernelUpdater, runKernelUpdate } = await import("./kernel-updater");
+  initKernelUpdater(makeDeps());
+  const result = await runKernelUpdate();
+  expect(result.ok).toBe(false);
+  const migration = await import("./openclaw-config-migration");
+  expect(migration.migrateOpenclawConfigForKernelUpgrade).not.toHaveBeenCalled();
 });

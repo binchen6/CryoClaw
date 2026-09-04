@@ -7,6 +7,9 @@
  *   - 升级/回退编排：停 gateway → 跑 updater 脚本（JSONL 进度转发渲染层）
  *     → 重启 gateway → 健康检查失败时自动回滚
  *   - 单任务并发护栏
+ *   - 最低支持版本判定（isKernelBelowMinSupported）：门槛与根目录
+ *     kernel-channel.json 的 minSupported 字段保持一致（运行时暂不远程读取，
+ *     调整 minSupported 时需同步修改本文件的 MIN_SUPPORTED_KERNEL_VERSION）
  */
 
 import { spawn } from "child_process";
@@ -14,7 +17,7 @@ import { StringDecoder } from "string_decoder";
 import * as fs from "fs";
 import * as path from "path";
 import { resolveResourcesPath, resolveNodeBin, resolveNodeExtraEnv, resolveCliExe } from "./constants";
-import { migrateOpenclawConfigForKernelUpgrade } from "./openclaw-config-migration";
+import { migrateOpenclawConfigForKernelUpgrade, readKernelVersionParts, versionAtLeast } from "./openclaw-config-migration";
 import * as log from "./logger";
 
 // ── 类型 ──
@@ -36,6 +39,8 @@ export type KernelUpdateProgress = {
   step: string;
   pct: number;
   msg: string;
+  /** 触发来源：auto = 启动后自动升级（渲染层全局横幅），manual = 设置页手动触发 */
+  source?: "auto" | "manual";
 };
 
 export type KernelUpdateResult =
@@ -63,6 +68,17 @@ function resolveUpdaterScript(): string {
 
 export function isKernelUpdaterAvailable(): boolean {
   return fs.existsSync(resolveUpdaterScript());
+}
+
+// 最低支持内核版本：与根目录 kernel-channel.json 的 minSupported 字段保持一致
+// （运行时暂不远程读取该文件，策展方推进 minSupported 时需同步修改此处）。
+const MIN_SUPPORTED_KERNEL_VERSION = { year: 2026, month: 7 };
+
+/** 当前内核版本是否低于最低支持版本；读不到版本时保守返回 false（不触发自动升级）。 */
+export function isKernelBelowMinSupported(): boolean {
+  const parts = readKernelVersionParts();
+  if (!parts) return false;
+  return !versionAtLeast(parts, MIN_SUPPORTED_KERNEL_VERSION);
 }
 
 export function getKernelUpdateState(): KernelUpdateState {
@@ -181,7 +197,7 @@ export async function checkKernelUpdate(): Promise<KernelUpdateState> {
 }
 
 /** 升级（tag 为空 = latest）或回退的公共编排。 */
-async function orchestrate(args: string[]): Promise<KernelUpdateResult> {
+async function orchestrate(args: string[], source: "auto" | "manual" = "manual"): Promise<KernelUpdateResult> {
   if (!deps) return { ok: false, error: "kernel-updater 未初始化" };
   if (running) return { ok: false, error: "已有内核升级任务进行中" };
   if (!isKernelUpdaterAvailable()) return { ok: false, error: "当前环境缺少内核升级器资源" };
@@ -193,13 +209,13 @@ async function orchestrate(args: string[]): Promise<KernelUpdateResult> {
   // 追踪是否走到过 swap 阶段：走到过说明 asar 可能已被换装，失败时需先自动回滚
   let sawSwap = false;
   try {
-    d.push({ step: "gateway-stop", pct: 0, msg: "停止 Gateway" });
+    d.push({ step: "gateway-stop", pct: 0, msg: "停止 Gateway", source });
     await d.stopGateway();
 
     const events = await runUpdater(args, (e) => {
       if (e.type === "progress") {
         if (e.step === "swap") sawSwap = true;
-        d.push({ step: e.step, pct: e.pct, msg: e.msg });
+        d.push({ step: e.step, pct: e.pct, msg: e.msg, source });
       }
     });
     const done = events.find((e) => e.type === "done");
@@ -211,38 +227,51 @@ async function orchestrate(args: string[]): Promise<KernelUpdateResult> {
     // 避免旧配置残留让新内核校验报错、起不来
     migrateOpenclawConfigForKernelUpgrade();
 
-    d.push({ step: "gateway-start", pct: 97, msg: "重启 Gateway 并健康检查" });
+    d.push({ step: "gateway-start", pct: 97, msg: "重启 Gateway 并健康检查", source });
     const healthy = await d.startGateway();
     if (healthy) {
       lastCheck = { current: done.to, latest: lastCheck.latest ?? null, updateAvailable: false, rollbackAvailable: true };
+      // 终态事件：自动升级的全局横幅靠它收敛（done 几秒后自动消失）
+      d.push({
+        step: "done",
+        pct: 100,
+        msg: done.action === "rollback" ? `内核已回退到 ${done.to}` : `内核已升级到 ${done.to}`,
+        source,
+      });
       return { ok: true, action: done.action, from: done.from, to: done.to };
     }
 
     // 升级后 gateway 起不来：update 场景自动回滚
     if (done.action === "update") {
       log.warn("[kernel-updater] 新内核健康检查失败，自动回滚");
-      d.push({ step: "auto-rollback", pct: 98, msg: "新内核启动失败，自动回滚" });
+      d.push({ step: "auto-rollback", pct: 98, msg: "新内核启动失败，自动回滚", source });
       await d.stopGateway();
       await runUpdater(["--rollback"], (e) => {
-        if (e.type === "progress") d.push({ step: e.step, pct: e.pct, msg: e.msg });
+        if (e.type === "progress") d.push({ step: e.step, pct: e.pct, msg: e.msg, source });
       });
+      // 回滚换装完成、重启 gateway 前重跑配置迁移：双向规则会把
+      // tools.updatePlan 等 2026.8 新落位搬回旧内核位置，保证旧内核校验通过
+      migrateOpenclawConfigForKernelUpgrade();
       const restored = await d.startGateway();
-      return {
-        ok: false,
-        error: restored
-          ? `新内核 ${done.to} 启动失败，已自动回滚到 ${done.from}`
-          : `新内核 ${done.to} 启动失败，自动回滚后仍无法启动，请手动检查`,
-      };
+      const error = restored
+        ? `新内核 ${done.to} 启动失败，已自动回滚到 ${done.from}`
+        : `新内核 ${done.to} 启动失败，自动回滚后仍无法启动，请手动检查`;
+      d.push({ step: "error", pct: 100, msg: error, source });
+      return { ok: false, error };
     }
-    return { ok: false, error: `回退到 ${done.to} 后 Gateway 启动失败，请查看日志` };
+    const error = `回退到 ${done.to} 后 Gateway 启动失败，请查看日志`;
+    d.push({ step: "error", pct: 100, msg: error, source });
+    return { ok: false, error };
   } catch (err: any) {
     log.error(`[kernel-updater] ${err?.message ?? err}`);
     // 脚本在 swap 之后失败：asar 可能已被换装，先尽力回滚（best-effort，失败吞掉）
     if (sawSwap) {
       try {
         await runUpdater(["--rollback"], (e) => {
-          if (e.type === "progress") d.push({ step: e.step, pct: e.pct, msg: e.msg });
+          if (e.type === "progress") d.push({ step: e.step, pct: e.pct, msg: e.msg, source });
         });
+        // best-effort 回滚成功：恢复启动前同样把配置迁回旧内核落位
+        migrateOpenclawConfigForKernelUpgrade();
       } catch (rollbackErr: any) {
         log.error(`[kernel-updater] 失败后自动回滚未成功: ${rollbackErr?.message ?? rollbackErr}`);
       }
@@ -258,14 +287,16 @@ async function orchestrate(args: string[]): Promise<KernelUpdateResult> {
       }
     }
     const baseError = String(err?.message ?? err);
-    return { ok: false, error: restored ? baseError : `${baseError}；且 Gateway 恢复启动失败，请手动检查或重启应用` };
+    const error = restored ? baseError : `${baseError}；且 Gateway 恢复启动失败，请手动检查或重启应用`;
+    d.push({ step: "error", pct: 100, msg: error, source });
+    return { ok: false, error };
   } finally {
     running = false;
   }
 }
 
-export async function runKernelUpdate(tag?: string): Promise<KernelUpdateResult> {
-  return orchestrate(tag ? ["--tag", tag] : []);
+export async function runKernelUpdate(tag?: string, source: "auto" | "manual" = "manual"): Promise<KernelUpdateResult> {
+  return orchestrate(tag ? ["--tag", tag] : [], source);
 }
 
 export async function runKernelRollback(): Promise<KernelUpdateResult> {
