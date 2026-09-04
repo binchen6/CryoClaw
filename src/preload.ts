@@ -17,7 +17,11 @@ contextBridge.exposeInMainWorld("cryoclaw", {
   // App 自动更新（electron-updater）
   appUpdateGetState: () => ipcRenderer.invoke("app-update:get-state"),
   appUpdateCheck: () => ipcRenderer.invoke("app-update:check"),
+  appUpdateDownload: () => ipcRenderer.invoke("app-update:download"),
   appUpdateQuitAndInstall: () => ipcRenderer.invoke("app-update:quit-and-install"),
+  appUpdateSnooze: (opts: { days?: number; forever?: boolean }) =>
+    ipcRenderer.invoke("app-update:snooze", opts),
+  appUpdateClearSnooze: () => ipcRenderer.invoke("app-update:clear-snooze"),
 
   // Setup 相关
   verifyKey: (params: Record<string, unknown>) =>

@@ -5,7 +5,7 @@ import { app, ipcMain } from "electron";
 import { resolveGatewayPackageDir, resolveGatewayPort, resolveUserConfigPath } from "../constants";
 import { readUserConfig } from "../provider-config";
 import { assertTrustedIpcSender } from "../ipc-sender-guard";
-import { checkAppUpdate, getAppUpdateState, quitAndInstallAppUpdate } from "../app-updater";
+import { checkAppUpdate, clearAppUpdateSnooze, downloadAppUpdate, getAppUpdateState, quitAndInstallAppUpdate, snoozeAppUpdate } from "../app-updater";
 import * as fs from "fs";
 import * as path from "path";
 
@@ -75,5 +75,41 @@ export function registerAboutIpc(): void {
     } catch (err: any) {
       return { success: false, message: String(err?.message ?? err) };
     }
+  });
+
+  // 用户点「更新」开始下载（autoDownload=false，仅此入口触发下载）
+  ipcMain.handle("app-update:download", (event) => {
+    if (!assertTrustedIpcSender(event, "app-update:download")) throw new Error("IPC sender not trusted");
+    try {
+      downloadAppUpdate();
+      return { success: true, data: getAppUpdateState() };
+    } catch (err: any) {
+      return { success: false, message: String(err?.message ?? err) };
+    }
+  });
+
+  // 暂缓更新提示：{ days: number } | { forever: true }；非法输入拒绝
+  ipcMain.handle("app-update:snooze", (event, opts: { days?: number; forever?: boolean }) => {
+    if (!assertTrustedIpcSender(event, "app-update:snooze")) throw new Error("IPC sender not trusted");
+    try {
+      if (opts?.forever === true) {
+        snoozeAppUpdate("forever");
+      } else {
+        const days = Number(opts?.days);
+        if (!Number.isFinite(days) || days <= 0 || days > 3650) {
+          return { success: false, message: "暂缓天数非法（1–3650）" };
+        }
+        snoozeAppUpdate(Date.now() + days * 86_400_000);
+      }
+      return { success: true, data: getAppUpdateState() };
+    } catch (err: any) {
+      return { success: false, message: String(err?.message ?? err) };
+    }
+  });
+
+  ipcMain.handle("app-update:clear-snooze", (event) => {
+    if (!assertTrustedIpcSender(event, "app-update:clear-snooze")) throw new Error("IPC sender not trusted");
+    clearAppUpdateSnooze();
+    return { success: true, data: getAppUpdateState() };
   });
 }

@@ -3,9 +3,12 @@
  *
  * 状态机纯逻辑在 app-updater-state.ts；本模块只做 Electron 事件接线：
  *   - 仅 app.isPackaged 时启用（dev 模式 supported=false，IPC 返回 { supported: false } 语义）
- *   - 启动后 ~15s 静默检查一次（仅此一次，无周期复查；失败只记 warn 不打扰用户）
- *   - autoDownload=true 自动下载；autoInstallOnAppQuit=false，
- *     由设置页「重启以更新」按钮触发 quitAndInstall()
+ *   - 启动后 ~15s 自动检查一次（仅此一次，无周期复查；失败只记 warn 不打扰用户）；
+ *     用户设过「暂缓」且未到期时跳过自动检查（见 update-snooze.ts），手动检查不受影响
+ *   - autoDownload=false：发现新版本只弹窗提示（更新日志 + 更新/暂缓），
+ *     用户点「更新」后才经 downloadAppUpdate() 下载
+ *   - 安装不静默：quitAndInstall 拉起带进度条的 NSIS 安装器窗口（无 /S），
+ *     autoInstallOnAppQuit=false
  *   - 每次状态变化经 deps.push 推送 webContents.send("app:update-state", snapshot)
  *
  * IPC handlers 注册在 settings/about.ts（app-update:* 通道）。
@@ -23,6 +26,7 @@ import {
   createInitialAppUpdateState,
   reduceAppUpdateState,
 } from "./app-updater-state";
+import { clearSnooze, isUpdateSnoozed, readSnooze, writeSnooze, SnoozeUntil } from "./update-snooze";
 
 export type { AppUpdateState } from "./app-updater-state";
 
@@ -49,7 +53,12 @@ function formatUpdaterError(err: unknown): string {
 
 function publish(event: AppUpdateEvent): void {
   state = reduceAppUpdateState(state, event);
-  pushFn?.({ ...state });
+  pushFn?.(snapshotState());
+}
+
+// 输出快照：合并暂缓状态（非状态机字段，每次现算保证推送/拉取一致）
+function snapshotState(): AppUpdateState {
+  return { ...state, snoozedUntil: readSnooze()?.until ?? null };
 }
 
 // 从 app 根目录 release-notes.json 按版本号取更新说明（缺失时返回 null，不阻断更新流程）
@@ -67,7 +76,7 @@ function readReleaseNotesForVersion(version: string): { zh?: string; en?: string
 }
 
 export function getAppUpdateState(): AppUpdateState {
-  return { ...state };
+  return snapshotState();
 }
 
 /** 触发一次检查；失败只记日志，error 事件负责推进状态机。 */
@@ -78,6 +87,32 @@ export function checkAppUpdate(): void {
     // checkForUpdates 直接 reject 时 error 事件可能未触发，兜底推进状态机保证可重试
     publish({ type: "error", message: formatUpdaterError(err) });
   });
+}
+
+/** 用户点「更新」后开始下载；仅 available 态可用（autoDownload=false）。 */
+export function downloadAppUpdate(): void {
+  if (!state.supported || state.status !== "available") {
+    throw new Error("当前没有可下载的更新");
+  }
+  log.info(`[app-updater] 用户确认下载更新 ${state.version}`);
+  void autoUpdater.downloadUpdate().catch((err) => {
+    log.warn(`[app-updater] 下载更新失败: ${formatUpdaterError(err)}`);
+    publish({ type: "error", message: formatUpdaterError(err) });
+  });
+}
+
+/** 设置更新提示暂缓（until: epoch ms 或 "forever"），并推送最新快照。 */
+export function snoozeAppUpdate(until: SnoozeUntil): void {
+  writeSnooze(until);
+  log.info(`[app-updater] 更新提示暂缓: ${until === "forever" ? "永久" : `至 ${new Date(until).toISOString()}`}`);
+  pushFn?.(snapshotState());
+}
+
+/** 清除暂缓（设置页可手动恢复自动检查）。 */
+export function clearAppUpdateSnooze(): void {
+  clearSnooze();
+  log.info("[app-updater] 更新提示暂缓已清除");
+  pushFn?.(snapshotState());
 }
 
 /**
@@ -119,12 +154,13 @@ export function quitAndInstallAppUpdate(): void {
   // 实测发现 electron-updater 内部 spawn 的 NSIS 安装器在真实 app 上下文中
   // 会于 ~37s 后静默死亡（uninstall/copy 阶段之前），而手动 spawn
   // （detached + stdio:ignore + unref）同参数同 exe 换装全部成功。
-  // 参数与 electron-updater 一致：--updated /S（静默） --force-run（装完自启新版）
+  // 非静默（无 /S）：安装器窗口带进度条，用户可观察换装进度（v2026.906.0 起），
+  // --force-run 装完自启新版。
   const installerPath = getPendingInstallerPath();
   if (installerPath) {
     log.info(`[app-updater] 启动安装器: ${installerPath}`);
     try {
-      const child = spawn(installerPath, ["--updated", "/S", "--force-run"], {
+      const child = spawn(installerPath, ["--updated", "--force-run"], {
         detached: true,
         stdio: "ignore",
       });
@@ -139,8 +175,8 @@ export function quitAndInstallAppUpdate(): void {
     log.warn("[app-updater] 未找到 pending 安装器，回退 quitAndInstall");
   }
   beforeQuitAndInstall?.();
-  // isSilent=true：NSIS 一键静默换装（/S），forceRunAfter=true 装完自动拉起新版
-  autoUpdater.quitAndInstall(true, true);
+  // isSilent=false：NSIS 安装器窗口带进度条；forceRunAfter=true 装完自动拉起新版
+  autoUpdater.quitAndInstall(false, true);
 }
 
 export function initAppUpdater(deps: Deps): void {
@@ -153,7 +189,7 @@ export function initAppUpdater(deps: Deps): void {
     return;
   }
 
-  autoUpdater.autoDownload = true;
+  autoUpdater.autoDownload = false;
   autoUpdater.autoInstallOnAppQuit = false;
   // 不使用 web installer（静默 NSIS 换装），消除 electron-updater 启动警告
   autoUpdater.disableWebInstaller = true;
@@ -196,8 +232,13 @@ export function initAppUpdater(deps: Deps): void {
     publish({ type: "error", message: formatUpdaterError(err) });
   });
 
-  // 启动后静默检查一次；失败由 error 事件 + catch 记日志，不弹窗打扰用户
+  // 启动后自动检查一次；暂缓期内跳过（手动检查不受影响）。
+  // 失败由 error 事件 + catch 记日志，不弹窗打扰用户
   startupTimer = setTimeout(() => {
+    if (isUpdateSnoozed()) {
+      log.info("[app-updater] 更新提示暂缓中，跳过启动自动检查");
+      return;
+    }
     checkAppUpdate();
   }, STARTUP_CHECK_DELAY_MS);
   startupTimer.unref?.();

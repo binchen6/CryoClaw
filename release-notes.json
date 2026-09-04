@@ -1,5 +1,12 @@
 [
   {
+    "version": "2026.906.0",
+    "notes": {
+      "zh": "新功能：更新提示弹窗——启动时自动检查到新版本会弹出更新日志，由你决定何时更新（不再静默后台下载，点击「更新」才开始下载，弹窗内显示下载进度）\n新功能：暂缓更新——可选 7 天 / 1 个月 / 3 个月 / 永久 / 自定义天数，期内不再自动检查更新；设置-关于页可随时恢复\n优化：安装更新改为带进度条的安装器窗口，换装进度可见（此前为无界面的静默安装）\n界面：设置-关于页适配新流程（「更新」按钮手动触发下载、显示暂缓状态与恢复入口）",
+      "en": "New: update prompt dialog — when a new version is found at startup, a dialog shows the release notes and lets you decide when to update (no more silent background downloads; downloading starts only after you click \"Update\", with in-dialog progress)\nNew: snooze update prompts — 7 days / 1 month / 3 months / forever / custom days; no automatic checks while snoozed, resume anytime from Settings → About\nImproved: installing an update now shows an installer window with a progress bar instead of a silent install\nUI: Settings → About adapted to the new flow (manual \"Update\" button to start the download, snooze status with a resume entry)"
+    }
+  },
+  {
     "version": "2026.905.0",
     "notes": {
       "zh": "修复：内核更新误提示非稳定版——openclaw 官方 npm 的 latest 标签会指向发行证据链未完成的版本（如 2026.9.1），此前直接用它当更新目标；现改为 CryoClaw 策展稳定版渠道：远程 kernel-channel.json（国内镜像备选，离线时回退到随应用发行的内置版本），只有经策展确认的稳定版才会提示更新\n优化：手动装过更高内核版本（--tag 指定）的用户不再被提示「更新」到更低版本，无指定版本的升级也不会暗降级\n界面：内核升级面板「最新版本」更名为「稳定版本」",

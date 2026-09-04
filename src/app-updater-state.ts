@@ -34,6 +34,9 @@ export type AppUpdateState = {
   releaseNotes: { zh?: string; en?: string } | null;
   progress: AppUpdateProgress | null;
   error: string | null;
+  /** 更新提示暂缓到的时刻（epoch ms）或 "forever"；null = 未暂缓。
+   * 非状态机字段：由 app-updater 在 publish/getState 时合并（见 update-snooze.ts） */
+  snoozedUntil?: number | "forever" | null;
 };
 
 export type AppUpdateEvent =
@@ -53,6 +56,7 @@ export function createInitialAppUpdateState(supported: boolean, currentVersion: 
     releaseNotes: null,
     progress: null,
     error: null,
+    snoozedUntil: null,
   };
 }
 

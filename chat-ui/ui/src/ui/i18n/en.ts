@@ -451,10 +451,31 @@ export const enDict: Record<string, string> = {
   "settings.about.viewReleaseNotes": "View Release Notes",
   "settings.about.releaseNotesEmpty": "No release notes available",
 
-  // App update global toast
+  // App update global toast + update-available dialog
   "appUpdate.toastDownloaded": "New version downloaded; restart to finish updating",
   "appUpdate.toastRestart": "Restart",
   "appUpdate.restartFailed": "Failed to restart for update",
+  "appUpdate.dialogTitle": "New Version Available",
+  "appUpdate.updateNow": "Update",
+  "appUpdate.snooze": "Snooze",
+  "appUpdate.snoozeTitle": "Snooze update prompts",
+  "appUpdate.snooze7d": "7 days",
+  "appUpdate.snooze1m": "1 month",
+  "appUpdate.snooze3m": "3 months",
+  "appUpdate.snoozeForever": "Forever",
+  "appUpdate.snoozeCustomPlaceholder": "Custom days",
+  "appUpdate.snoozeCustomConfirm": "OK",
+  "appUpdate.snoozeCustomInvalid": "Enter a number of days between 1 and 3650",
+  "appUpdate.snoozeDone": "Snoozed — no automatic update checks until then",
+  "appUpdate.snoozeFailed": "Failed to snooze",
+  "appUpdate.snoozedHint": "Update prompts snoozed",
+  "appUpdate.snoozedForever": "forever",
+  "appUpdate.resumeCheck": "Resume auto-check",
+  "appUpdate.downloading": "Downloading",
+  "appUpdate.downloadFailed": "Failed to download update",
+  "appUpdate.downloadedHint": "Download complete. Click \"Restart & Install\" to quit the app and run the installer with a visible progress bar; the new version starts automatically when done.",
+  "appUpdate.restartInstall": "Restart & Install",
+  "appUpdate.retryDownload": "Retry Download",
 
   // Settings: Channels
   "settings.channels.desc": "Connect WeChat, Feishu, WeCom, DingTalk, Kimi, or QQ to remote-control CryoClaw from chat apps",

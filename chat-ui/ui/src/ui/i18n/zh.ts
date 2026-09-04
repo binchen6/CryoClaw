@@ -488,10 +488,31 @@ export const zhDict: Record<string, string> = {
   "settings.about.viewReleaseNotes": "查看更新日志",
   "settings.about.releaseNotesEmpty": "暂无更新日志",
 
-  // App 更新全局提示（toast）
+  // App 更新全局提示（toast + 更新弹窗）
   "appUpdate.toastDownloaded": "新版本已下载完成，重启后生效",
   "appUpdate.toastRestart": "重启更新",
   "appUpdate.restartFailed": "重启更新失败",
+  "appUpdate.dialogTitle": "发现新版本",
+  "appUpdate.updateNow": "更新",
+  "appUpdate.snooze": "暂缓",
+  "appUpdate.snoozeTitle": "暂缓更新提示",
+  "appUpdate.snooze7d": "7 天",
+  "appUpdate.snooze1m": "1 个月",
+  "appUpdate.snooze3m": "3 个月",
+  "appUpdate.snoozeForever": "永久",
+  "appUpdate.snoozeCustomPlaceholder": "自定义天数",
+  "appUpdate.snoozeCustomConfirm": "确定",
+  "appUpdate.snoozeCustomInvalid": "请输入 1–3650 之间的天数",
+  "appUpdate.snoozeDone": "已暂缓，期内不再自动检查更新",
+  "appUpdate.snoozeFailed": "暂缓设置失败",
+  "appUpdate.snoozedHint": "更新提示已暂缓",
+  "appUpdate.snoozedForever": "永久",
+  "appUpdate.resumeCheck": "恢复自动检查",
+  "appUpdate.downloading": "正在下载",
+  "appUpdate.downloadFailed": "下载更新失败",
+  "appUpdate.downloadedHint": "下载完成。点击「重启安装」后将退出应用并运行带进度条的安装器，完成后自动启动新版本。",
+  "appUpdate.restartInstall": "重启安装",
+  "appUpdate.retryDownload": "重试下载",
 
   // Settings: Channels
   "settings.channels.desc": "连接微信、飞书、企业微信、钉钉、Kimi 或 QQ，从聊天软件远程控制 CryoClaw",

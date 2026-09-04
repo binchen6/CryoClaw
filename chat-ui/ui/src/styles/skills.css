@@ -669,3 +669,51 @@
     animation: none;
   }
 }
+
+/* 更新弹窗：暂缓面板（预设按钮 + 自定义天数） */
+.update-snooze-panel {
+  border: 1px solid var(--border-default, var(--border));
+  border-radius: var(--radius-md, 8px);
+  padding: var(--spacer-12);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacer-12);
+}
+
+.update-snooze-panel__title {
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.update-snooze-panel__options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacer-8);
+}
+
+.update-snooze-panel__custom {
+  display: flex;
+  gap: var(--spacer-8);
+  align-items: center;
+}
+
+.update-snooze-panel__input {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-8);
+  background: var(--bg-input);
+  color: var(--text);
+  font-size: var(--text-base);
+  font-family: inherit;
+  padding: 0 var(--spacer-12);
+  min-height: 32px;
+  outline: none;
+}
+
+.update-snooze-panel__input:focus {
+  border-color: var(--border-focus);
+  box-shadow: var(--focus-ring);
+}
+
+.update-snooze-panel__input {
+  width: 140px;
+}

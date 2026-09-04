@@ -187,6 +187,8 @@ export interface AppUpdateState {
   releaseNotes: { zh?: string; en?: string } | null;
   progress: AppUpdateProgress | null;
   error: string | null;
+  /** 更新提示暂缓到的时刻（epoch ms）或 "forever"；null/缺省 = 未暂缓 */
+  snoozedUntil?: number | "forever" | null;
 }
 
 export interface NavigatePayload {
@@ -307,7 +309,10 @@ interface CryoClawBridgeExtended {
       // App 自动更新
       appUpdateGetState?: () => Promise<any>;
       appUpdateCheck?: () => Promise<any>;
+      appUpdateDownload?: () => Promise<any>;
       appUpdateQuitAndInstall?: () => Promise<any>;
+      appUpdateSnooze?: (opts: { days?: number; forever?: boolean }) => Promise<any>;
+      appUpdateClearSnooze?: () => Promise<any>;
       onAppUpdateState?: (cb: (payload: any) => void) => () => void;
       // Release Notes（all=true 返回全部条目，供「查看更新日志」重看）
       getReleaseNotes?: (opts?: { all?: boolean }) => Promise<any>;
@@ -678,8 +683,20 @@ export async function appUpdateCheck(): Promise<AppUpdateState> {
   return unwrapData<AppUpdateState>(await oc().appUpdateCheck());
 }
 
+export async function appUpdateDownload(): Promise<AppUpdateState> {
+  return unwrapData<AppUpdateState>(await oc().appUpdateDownload?.());
+}
+
 export async function appUpdateQuitAndInstall(): Promise<void> {
   unwrapVoid(await oc().appUpdateQuitAndInstall());
+}
+
+export async function appUpdateSnooze(opts: { days?: number; forever?: boolean }): Promise<AppUpdateState> {
+  return unwrapData<AppUpdateState>(await oc().appUpdateSnooze?.(opts));
+}
+
+export async function appUpdateClearSnooze(): Promise<AppUpdateState> {
+  return unwrapData<AppUpdateState>(await oc().appUpdateClearSnooze?.());
 }
 
 export function onAppUpdateState(cb: (s: AppUpdateState) => void): () => void {

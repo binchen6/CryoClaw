@@ -63,3 +63,84 @@ test("app-toast.ts：支持 action 且带 action 时不自动消失", () => {
   assert.match(s, /export function hideToast/, "应导出 hideToast");
   assert.match(s, /if \(!action\)/, "仅无 action 的 toast 走 4s 自动消失");
 });
+
+// ── v2026.906.0：更新弹窗 + 暂缓 + 非静默换装 守护 ──
+
+// 主进程源码（仓库根 src/；编译产物上 6 级到仓库根）
+function mainSrc(rel: string): string {
+  return readFileSync(new URL(`../../../../../../src/${rel}`, import.meta.url), "utf8");
+}
+
+test("主进程 app-updater.ts：autoDownload=false + 启动检查受暂缓门控", () => {
+  const s = mainSrc("app-updater.ts");
+  assert.match(s, /autoUpdater\.autoDownload = false/, "应关闭自动下载（用户点「更新」才下载）");
+  assert.match(s, /isUpdateSnoozed\(\)/, "启动自动检查应查暂缓状态");
+  assert.match(s, /downloadAppUpdate\(\)[\s\S]*?autoUpdater\.downloadUpdate\(\)/, "downloadAppUpdate 应调 downloadUpdate");
+  assert.match(s, /snoozeAppUpdate[\s\S]*?writeSnooze/, "snoozeAppUpdate 应持久化暂缓");
+});
+
+test("主进程 app-updater.ts：换装非静默（无 /S，安装器带进度条）", () => {
+  const s = mainSrc("app-updater.ts");
+  assert.match(s, /spawn\(installerPath, \["--updated", "--force-run"\]/, "spawn 安装器不应带 /S");
+  assert.match(s, /quitAndInstall\(false, true\)/, "回退路径应 isSilent=false");
+  assert.doesNotMatch(s, /\["--updated", "\/S"/, "不应再出现静默换装参数");
+});
+
+test("主进程 about.ts：download/snooze/clear-snooze 通道均校验 sender", () => {
+  const s = mainSrc("settings/about.ts");
+  for (const ch of ["app-update:download", "app-update:snooze", "app-update:clear-snooze"]) {
+    assert.match(s, new RegExp(`assertTrustedIpcSender\\(event, "${ch.replace(":", "\\:")}"\\)`), `${ch} 应校验 sender`);
+  }
+  // snooze 天数上限守卫（防超大时间戳）
+  assert.match(s, /days > 3650/, "snooze 应限制天数上限");
+});
+
+test("preload：app-update 新通道齐备", () => {
+  const s = mainSrc("preload.ts");
+  assert.match(s, /app-update:download/, "缺少 appUpdateDownload");
+  assert.match(s, /app-update:snooze/, "缺少 appUpdateSnooze");
+  assert.match(s, /app-update:clear-snooze/, "缺少 appUpdateClearSnooze");
+});
+
+test("app.ts：available 自动弹窗 + 同版本关闭后不重复弹 + snooze/download 动作", () => {
+  const s = src("app.ts");
+  assert.match(s, /showUpdateDialog = true/, "进入 available 应自动弹出更新弹窗");
+  assert.match(s, /updateDialogDismissedFor/, "应记住本会话已关闭弹窗的版本");
+  assert.match(s, /appUpdateDownload\?\.\(\)/, "startUpdateDownload 应调 appUpdateDownload");
+  assert.match(s, /appUpdateSnooze\?\.\(opts\)/, "snoozeUpdate 应调 appUpdateSnooze");
+  assert.match(s, /snoozeUpdateCustom\(\)[\s\S]*?days > 3650/, "自定义暂缓应校验天数范围");
+});
+
+test("update-available-dialog.ts：更新/暂缓按钮 + 四预设 + 自定义 + 进度条 + 重启安装", () => {
+  const s = src("views/update-available-dialog.ts");
+  assert.match(s, /appUpdate\.updateNow/, "应有「更新」按钮");
+  assert.match(s, /appUpdate\.snooze"/, "应有「暂缓」按钮");
+  for (const opt of ["days: 7", "days: 30", "days: 90", "forever: true"]) {
+    assert.ok(s.includes(opt), `暂缓预设缺 ${opt}`);
+  }
+  assert.match(s, /updateSnoozeDays/, "应有自定义天数输入");
+  assert.match(s, /oc-settings-progress__bar/, "下载中应渲染进度条");
+  assert.match(s, /appUpdate\.restartInstall/, "downloaded 态应有「重启安装」");
+  assert.match(s, /releaseNotes\[lang/, "更新日志应按 locale 取值");
+});
+
+test("app-render.ts 挂载更新弹窗", () => {
+  const s = src("app-render.ts");
+  assert.match(s, /renderUpdateAvailableDialog\(state\)/, "app-render 应渲染更新弹窗");
+});
+
+test("tab-about.ts：available 态「更新」按钮 + 暂缓状态行与恢复入口", () => {
+  const s = src("views/settings/tab-about.ts");
+  assert.match(s, /handleAppUpdateDownload/, "available 态应有下载按钮（autoDownload=false）");
+  assert.match(s, /appUpdateClearSnooze/, "应有恢复自动检查入口");
+  assert.match(s, /snoozedUntil/, "应展示暂缓状态");
+});
+
+test("i18n：更新弹窗 key 双区齐全（抽样；全集一致性由 i18n.test.ts 保证）", () => {
+  const zh = src("i18n/zh.ts");
+  const en = src("i18n/en.ts");
+  for (const key of ["appUpdate.dialogTitle", "appUpdate.snoozeForever", "appUpdate.downloadedHint", "appUpdate.restartInstall", "appUpdate.resumeCheck"]) {
+    assert.ok(zh.includes(`"${key}"`), `zh 缺 ${key}`);
+    assert.ok(en.includes(`"${key}"`), `en 缺 ${key}`);
+  }
+});

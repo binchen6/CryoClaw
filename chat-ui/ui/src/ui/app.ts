@@ -4,7 +4,7 @@ import type { AppViewState } from "./app-view-state.ts";
 import type { ExecApprovalRequest } from "./controllers/exec-approval.ts";
 import type { SkillMessage } from "./controllers/skills.ts";
 import type { SessionCompactionCheckpoint } from "./controllers/session-compaction.ts";
-import type { NavigatePayload as IpcNavigatePayload } from "./data/ipc-bridge.ts";
+import type { NavigatePayload as IpcNavigatePayload, AppUpdateState } from "./data/ipc-bridge.ts";
 import type { GatewayBrowserClient, GatewayHelloOk } from "./gateway.ts";
 import type { Tab } from "./navigation.ts";
 import type { ResolvedTheme, ThemeMode } from "./theme.ts";
@@ -34,7 +34,7 @@ import {
   handleUpdated,
 } from "./app-lifecycle.ts";
 import { renderApp } from "./app-render.ts";
-import { getToastMessage, showToast } from "./app-toast.ts";
+import { showToast } from "./app-toast.ts";
 import {
   handleChatScroll as handleChatScrollInternal,
   resetChatScroll as resetChatScrollInternal,
@@ -129,10 +129,12 @@ type CryoClawBridge = {
   onWebbridgeStateChanged?: (cb: () => void) => (() => void) | void;
   getReleaseNotes?: () => Promise<ReleaseNotesData | null>;
   dismissReleaseNotes?: (version: string) => Promise<void>;
-  // App 自动更新全局感知（角标 + toast）；响应为 { success, data } 包装
-  appUpdateGetState?: () => Promise<{ success: boolean; data?: { status?: string } } | null>;
+  // App 自动更新全局感知（角标 + 更新弹窗）；响应为 { success, data } 包装
+  appUpdateGetState?: () => Promise<{ success: boolean; data?: AppUpdateState } | null>;
+  appUpdateDownload?: () => Promise<{ success: boolean; data?: AppUpdateState; message?: string } | null>;
   appUpdateQuitAndInstall?: () => Promise<{ success: boolean; message?: string } | null>;
-  onAppUpdateState?: (cb: (state: { status?: string }) => void) => (() => void) | void;
+  appUpdateSnooze?: (opts: { days?: number; forever?: boolean }) => Promise<{ success: boolean; data?: AppUpdateState; message?: string } | null>;
+  onAppUpdateState?: (cb: (state: AppUpdateState) => void) => (() => void) | void;
   // git CLI 探测（主进程缓存结果）；worktree 入口降级依据
   gitDetect?: () => Promise<{ success: boolean; data?: { available: boolean; version: string | null } } | null>;
 };
@@ -280,6 +282,10 @@ export class OpenClawApp extends LitElement {
     showReleaseNotesModal: { state: true },
     releaseNotesData: { state: true },
     appUpdateBadge: { state: true },
+    showUpdateDialog: { state: true },
+    appUpdateDialog: { state: true },
+    updateSnoozeOpen: { state: true },
+    updateSnoozeDays: { state: true },
     webbridgeRepairVisible: { state: true },
     webbridgeRepairBrowserName: { state: true },
     webbridgeRepairChecking: { state: true },
@@ -479,6 +485,12 @@ export class OpenClawApp extends LitElement {
   releaseNotesData: ReleaseNotesData | null = null;
   // App 更新角标：有待装/下载中更新时设置入口常驻徽标（由主进程 app:update-state 推送驱动）
   appUpdateBadge = false;
+  // 「发现新版本」弹窗：available 态自动弹出（同版本被关过就不再自动弹），
+  // 弹窗内完成 下载进度 → 重启安装；「暂缓」由主进程持久化并跳过启动自动检查
+  showUpdateDialog = false;
+  appUpdateDialog: AppUpdateState | null = null;
+  updateSnoozeOpen = false;
+  updateSnoozeDays = "";
   // 当前是 webbridge 模式 + 浏览器扩展未启用 → 主窗左侧栏显示「连接你的常用浏览器」pill
   // 用户点 pill → 重跑 needs-repair；扩展已启用则 pill 消失，否则保持
   // checking 期间图标换成转圈 loader
@@ -512,6 +524,8 @@ export class OpenClawApp extends LitElement {
   private appUpdateStateCleanup: (() => void) | null = null;
   // 上一次 App 更新状态：仅在「进入」downloaded 态时弹 toast，避免同态重复推送重复打扰
   private appUpdatePrevStatus = "";
+  // 本会话内被用户关过弹窗的版本号：同版本不再自动弹（可从设置页/角标再打开）
+  private updateDialogDismissedFor: string | null = null;
 
   createRenderRoot() {
     return this;
@@ -558,23 +572,80 @@ export class OpenClawApp extends LitElement {
     this.appUpdateStateCleanup = typeof unsubscribe === "function" ? unsubscribe : null;
   }
 
-  private handleAppUpdateState(us: { status?: string } | null) {
+  private handleAppUpdateState(us: AppUpdateState | null) {
     const status = typeof us?.status === "string" ? us.status : "";
     // 有新版本（可用/下载中/待装）时角标常驻；回到 idle/not-available/error 等态时消失
     this.appUpdateBadge =
       status === "available" || status === "downloading" || status === "downloaded";
     const prev = this.appUpdatePrevStatus;
     this.appUpdatePrevStatus = status;
-    if (status === "downloaded" && (prev !== "downloaded" || getToastMessage() === null)) {
-      showToast(this, t("appUpdate.toastDownloaded"), {
-        label: t("appUpdate.toastRestart"),
-        onClick: () => void this.restartToApplyUpdate(),
-      });
+    // 弹窗数据源：有可展示状态（available/downloading/downloaded/error 带版本）时同步快照
+    if (us && us.version && ["available", "downloading", "downloaded", "error"].includes(status)) {
+      this.appUpdateDialog = us;
+      // 刚进入 available 且该版本本会话没被关过 → 自动弹出更新提示
+      if (status === "available" && prev !== "available" && this.updateDialogDismissedFor !== us.version) {
+        this.showUpdateDialog = true;
+        this.updateSnoozeOpen = false;
+      }
+      // 下载完成：弹窗若开着则切到「重启安装」内容；关着则 toast 兜底
+      if (status === "downloaded" && prev !== "downloaded" && !this.showUpdateDialog) {
+        showToast(this, t("appUpdate.toastDownloaded"), {
+          label: t("appUpdate.toastRestart"),
+          onClick: () => void this.restartToApplyUpdate(),
+        });
+      }
     }
   }
 
-  // toast「重启更新」action：走与设置-关于页重启按钮相同的 IPC
-  private async restartToApplyUpdate() {
+  // 点 X / overlay：本次会话内同版本不再自动弹（用户可从设置页或角标再次打开）
+  closeUpdateDialog() {
+    this.showUpdateDialog = false;
+    this.updateSnoozeOpen = false;
+    if (this.appUpdateDialog?.version) this.updateDialogDismissedFor = this.appUpdateDialog.version;
+  }
+
+  // 「立即更新」：触发下载（autoDownload=false，只此入口），弹窗内转进度条
+  async startUpdateDownload() {
+    const bridge = this.getCryoClawBridge();
+    try {
+      const r = await bridge?.appUpdateDownload?.();
+      if (r && r.success === false) throw new Error(r.message ?? "");
+      if (r?.success && r.data) this.appUpdateDialog = r.data;
+    } catch (err) {
+      showToast(this, tWithDetail("appUpdate.downloadFailed", err instanceof Error ? err.message : String(err)));
+    }
+  }
+
+  // 「暂缓」：预设/永久由主进程持久化；期内启动不再自动检查更新
+  async snoozeUpdate(opts: { days?: number; forever?: boolean }) {
+    const bridge = this.getCryoClawBridge();
+    try {
+      const r = await bridge?.appUpdateSnooze?.(opts);
+      if (r && r.success === false) throw new Error(r.message ?? "");
+      this.showUpdateDialog = false;
+      this.updateSnoozeOpen = false;
+      if (this.appUpdateDialog?.version) this.updateDialogDismissedFor = this.appUpdateDialog.version;
+      showToast(this, t("appUpdate.snoozeDone"));
+    } catch (err) {
+      showToast(this, tWithDetail("appUpdate.snoozeFailed", err instanceof Error ? err.message : String(err)));
+    }
+  }
+
+  setUpdateSnoozeDays(value: string) {
+    this.updateSnoozeDays = value;
+  }
+
+  snoozeUpdateCustom() {
+    const days = Number(this.updateSnoozeDays);
+    if (!Number.isFinite(days) || days <= 0 || days > 3650) {
+      showToast(this, t("appUpdate.snoozeCustomInvalid"));
+      return;
+    }
+    void this.snoozeUpdate({ days: Math.floor(days) });
+  }
+
+  // toast/弹窗「重启更新」action：走与设置-关于页重启按钮相同的 IPC
+  async restartToApplyUpdate() {
     const bridge = this.getCryoClawBridge();
     try {
       const r = await bridge?.appUpdateQuitAndInstall?.();

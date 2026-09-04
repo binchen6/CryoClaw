@@ -177,6 +177,37 @@ async function handleAppUpdateRestart(state: AppViewState) {
   }
 }
 
+// autoDownload=false 后，available 态需用户显式触发下载（与更新弹窗「更新」按钮同 IPC）
+async function handleAppUpdateDownload(state: AppViewState) {
+  s.appUpdateMsg = null;
+  try {
+    s.appUpdate = await ipc.appUpdateDownload();
+  } catch (e) {
+    s.appUpdateMsg = { ok: false, text: String(e) };
+    state.requestUpdate();
+  }
+}
+
+async function handleAppUpdateClearSnooze(state: AppViewState) {
+  s.appUpdateMsg = null;
+  try {
+    s.appUpdate = await ipc.appUpdateClearSnooze();
+  } catch (e) {
+    s.appUpdateMsg = { ok: false, text: String(e) };
+    state.requestUpdate();
+  }
+}
+
+function formatSnoozeUntil(until: number | "forever" | null | undefined): string | null {
+  if (until == null) return null;
+  if (until === "forever") return t("appUpdate.snoozedForever");
+  try {
+    return new Date(until).toLocaleDateString();
+  } catch {
+    return null;
+  }
+}
+
 function renderAppUpdateCard(state: AppViewState) {
   const us = s.appUpdate;
   if (!us) return html``;
@@ -214,10 +245,19 @@ function renderAppUpdateCard(state: AppViewState) {
           : ""}
         <div class="oc-flex oc-gap-8 oc-mt-4">
           <button class="oc-settings__btn oc-settings__btn--compact" ?disabled=${checking || downloading} @click=${() => handleAppUpdateCheck(state)}>${checking ? t("settings.about.appUpdateChecking") : us.status === "error" ? t("settings.about.appUpdateRetry") : t("settings.about.appUpdateCheck")}</button>
+          ${us.status === "available"
+            ? html`<button class="oc-settings__btn oc-settings__btn--primary oc-settings__btn--compact" @click=${() => handleAppUpdateDownload(state)}>${t("appUpdate.updateNow")}</button>`
+            : ""}
           ${us.status === "downloaded"
             ? html`<button class="oc-settings__btn oc-settings__btn--primary oc-settings__btn--compact" @click=${() => handleAppUpdateRestart(state)}>${t("settings.about.appUpdateRestart")}</button>`
             : ""}
         </div>
+        ${formatSnoozeUntil(us.snoozedUntil)
+          ? html`<div class="oc-flex oc-gap-8 oc-mt-4" style="align-items:center">
+              <span style="color:var(--text-secondary)">${t("appUpdate.snoozedHint")}: ${formatSnoozeUntil(us.snoozedUntil)}</span>
+              <button class="oc-settings__btn oc-settings__btn--compact" @click=${() => handleAppUpdateClearSnooze(state)}>${t("appUpdate.resumeCheck")}</button>
+            </div>`
+          : ""}
         ${downloading && us.progress
           ? html`
               <div>
