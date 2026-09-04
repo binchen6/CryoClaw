@@ -44,6 +44,34 @@ function getErrorMessage(err: unknown) {
   return String(err);
 }
 
+// skills 写操作统一骨架（updateSkillEnabled / saveSkillApiKey / installSkill 共用）：
+// busy 标记 → 执行动作 → 刷新列表 + 成功/失败消息 → busy 复位。action 返回成功消息文本。
+async function runSkillMutation(
+  state: SkillsState,
+  skillKey: string,
+  action: () => Promise<string>,
+) {
+  state.skillsBusyKey = skillKey;
+  state.skillsError = null;
+  try {
+    const message = await action();
+    await loadSkills(state);
+    setSkillMessage(state, skillKey, {
+      kind: "success",
+      message,
+    });
+  } catch (err) {
+    const message = getErrorMessage(err);
+    state.skillsError = message;
+    setSkillMessage(state, skillKey, {
+      kind: "error",
+      message,
+    });
+  } finally {
+    state.skillsBusyKey = null;
+  }
+}
+
 export async function loadSkills(state: SkillsState, options?: LoadSkillsOptions) {
   if (options?.clearMessages && Object.keys(state.skillMessages).length > 0) {
     state.skillMessages = {};
@@ -73,54 +101,26 @@ export function updateSkillEdit(state: SkillsState, skillKey: string, value: str
 }
 
 export async function updateSkillEnabled(state: SkillsState, skillKey: string, enabled: boolean) {
-  if (!state.client || !state.connected) {
+  const client = state.client;
+  if (!client || !state.connected) {
     return;
   }
-  state.skillsBusyKey = skillKey;
-  state.skillsError = null;
-  try {
-    await state.client.request("skills.update", { skillKey, enabled });
-    await loadSkills(state);
-    setSkillMessage(state, skillKey, {
-      kind: "success",
-      message: enabled ? t("skills.messageEnabled") : t("skills.messageDisabled"),
-    });
-  } catch (err) {
-    const message = getErrorMessage(err);
-    state.skillsError = message;
-    setSkillMessage(state, skillKey, {
-      kind: "error",
-      message,
-    });
-  } finally {
-    state.skillsBusyKey = null;
-  }
+  await runSkillMutation(state, skillKey, async () => {
+    await client.request("skills.update", { skillKey, enabled });
+    return enabled ? t("skills.messageEnabled") : t("skills.messageDisabled");
+  });
 }
 
 export async function saveSkillApiKey(state: SkillsState, skillKey: string) {
-  if (!state.client || !state.connected) {
+  const client = state.client;
+  if (!client || !state.connected) {
     return;
   }
-  state.skillsBusyKey = skillKey;
-  state.skillsError = null;
-  try {
+  await runSkillMutation(state, skillKey, async () => {
     const apiKey = state.skillEdits[skillKey] ?? "";
-    await state.client.request("skills.update", { skillKey, apiKey });
-    await loadSkills(state);
-    setSkillMessage(state, skillKey, {
-      kind: "success",
-      message: t("skills.messageApiKeySaved"),
-    });
-  } catch (err) {
-    const message = getErrorMessage(err);
-    state.skillsError = message;
-    setSkillMessage(state, skillKey, {
-      kind: "error",
-      message,
-    });
-  } finally {
-    state.skillsBusyKey = null;
-  }
+    await client.request("skills.update", { skillKey, apiKey });
+    return t("skills.messageApiKeySaved");
+  });
 }
 
 export type EligibleSkillOption = {
@@ -165,14 +165,13 @@ export async function installSkill(
   name: string,
   installId: string,
 ) {
-  if (!state.client || !state.connected) {
+  const client = state.client;
+  if (!client || !state.connected) {
     return;
   }
-  state.skillsBusyKey = skillKey;
-  state.skillsError = null;
-  try {
+  await runSkillMutation(state, skillKey, async () => {
     // skills.install 可能跑 npm/git 安装，走 per-request 长超时（120s），不用默认 30s
-    const result = await state.client.request<{ message?: string }>(
+    const result = await client.request<{ message?: string }>(
       "skills.install",
       {
         name,
@@ -181,19 +180,6 @@ export async function installSkill(
       },
       { timeoutMs: 120_000 },
     );
-    await loadSkills(state);
-    setSkillMessage(state, skillKey, {
-      kind: "success",
-      message: result?.message ?? t("skills.messageInstalled"),
-    });
-  } catch (err) {
-    const message = getErrorMessage(err);
-    state.skillsError = message;
-    setSkillMessage(state, skillKey, {
-      kind: "error",
-      message,
-    });
-  } finally {
-    state.skillsBusyKey = null;
-  }
+    return result?.message ?? t("skills.messageInstalled");
+  });
 }

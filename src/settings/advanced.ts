@@ -3,31 +3,22 @@
  * docker 检测；热应用模式、执行权限、沙箱、iMessage 已由前端走 config.patch）。
  */
 import { app, ipcMain } from "electron";
-import * as fs from "fs";
-import {
-  resolveWebbridgeBinaryPath,
-  readWebbridgeExtensionId,
-} from "../constants";
 import {
   applyBrowserModeConfig,
   coerceBrowserMode,
-  DEFAULT_PROCESS_EXEC,
   detectBrowserMode,
-  getDefaultBrowser,
-  getExtensionStates,
 } from "../browser";
 import {
   migrateBrowserProfileForCurrentGateway,
   normalizeRequestedBrowserProfileForSave,
 } from "../browser-profile-config";
-import { getWebbridgePrecheck } from "../webbridge";
 import { readUserConfig, writeUserConfig } from "../provider-config";
 import { readSkillStoreRegistry, writeSkillStoreRegistry } from "../skill-store";
 import { checkDockerAvailable } from "../docker-check";
 import { getLaunchAtLoginState, setLaunchAtLoginEnabled } from "../launch-at-login";
 import { assertTrustedIpcSender } from "../ipc-sender-guard";
 import { runTrackedSettingsAction } from "./tracked";
-import { readKimiWebbridgeSkillEnabled, getCurrentBrowserMode, specFromExtId } from "./webbridge";
+import { runWebbridgePrecheck } from "./webbridge";
 import type { SettingsIpcOptions } from "./types";
 
 export function registerAdvancedIpc(opts: SettingsIpcOptions): void {
@@ -87,20 +78,7 @@ export function registerAdvancedIpc(opts: SettingsIpcOptions): void {
           // config.patch（渠道凭据等）会被旧快照整文件覆盖（lost update）。
           // precheck 输入全部独立读磁盘，不依赖本次将要写入的 config。
           if (coercedMode === "webbridge") {
-            const def = await getDefaultBrowser();
-            const pre = await getWebbridgePrecheck({
-              binaryPath: resolveWebbridgeBinaryPath(),
-              extensionId: readWebbridgeExtensionId(),
-              fileExists: fs.existsSync,
-              readExtensionStates: (extId) =>
-                getExtensionStates(specFromExtId(extId), {
-                  processExec: DEFAULT_PROCESS_EXEC,
-                  processCheckBrowserId: def?.target.id,
-                }),
-              getDefaultBrowser,
-              readSkillEnabled: readKimiWebbridgeSkillEnabled,
-              currentBrowserMode: getCurrentBrowserMode(),
-            });
+            const pre = await runWebbridgePrecheck();
             if (!pre.ok) {
               return {
                 success: false,

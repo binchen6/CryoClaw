@@ -309,18 +309,22 @@ export async function handleBranchCheckpoint(state: AppViewState, checkpointId: 
 // 新建会话：同步写入本地列表后再切换，异步同步到 Gateway 供跨终端访问
 export function createNewSession(state: AppViewState) {
   const newKey = resolveNewSessionKey(state);
+  adoptNewSession(state, newKey);
+}
+
+// 新会话落本地并切换：先把新会话插入本地列表（UI 立即可见正确的名称），
+// 再切 key、重置模型选择为默认，最后标记为待自动命名
+// （label 将在首条消息发送 + chat.event final 后持久化到 gateway）
+function adoptNewSession(state: AppViewState, newKey: string) {
   const label = t("chat.newSession");
   setCryoClawView(state, "chat");
-  // 先把新会话插入本地列表，UI 立即可见正确的名称
   const sessions = state.sessionsResult?.sessions ?? [];
   state.sessionsResult = {
     ...state.sessionsResult,
     sessions: [{ key: newKey, label, updatedAt: Date.now() }, ...sessions],
   };
   applySessionKey(state, newKey, true);
-  // 新建会话时重置模型选择为默认
   state.resetModelToDefault();
-  // 标记为待自动命名。label 将在首条消息发送 + chat.event final 后持久化到 gateway。
   pendingSessionLabels.set(newKey, label);
 }
 
@@ -362,16 +366,7 @@ export async function createNewWorktreeSession(state: AppViewState) {
     );
     return;
   }
-  const label = t("chat.newSession");
-  setCryoClawView(state, "chat");
-  const sessions = state.sessionsResult?.sessions ?? [];
-  state.sessionsResult = {
-    ...state.sessionsResult,
-    sessions: [{ key: newKey, label, updatedAt: Date.now() }, ...sessions],
-  };
-  applySessionKey(state, newKey, true);
-  state.resetModelToDefault();
-  pendingSessionLabels.set(newKey, label);
+  adoptNewSession(state, newKey);
   // 内核已建会话与 worktree：刷新列表让徽标/管理视图立即反映
   void loadSessions(state);
   void loadWorktrees(state);

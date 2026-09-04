@@ -11,10 +11,9 @@ import * as ipc from "../../data/ipc-bridge.ts";
 import "../../components/toggle-switch.ts";
 import "../../components/password-input.ts";
 import "../../components/message-box.ts";
-import { getConfigSnapshot, getCachedConfigSnapshot } from "../../controllers/config.ts";
 import { runConfigPatch } from "./tab-patch.ts";
 import { extractDingtalkView, applyDingtalkSave } from "./tab-channels.lib.ts";
-import { markChannelSaved, renderChannelSaveFooter, runChannelToggle, runChannelSave } from "./tab-channels-shared.ts";
+import { markChannelSaved, renderChannelSaveFooter, runChannelToggle, runChannelSave, initChannelTabOnce, loadBundledRuntimeState, verifyChannelCredentials } from "./tab-channels-shared.ts";
 
 // DingTalk 面板状态必须可整体回滚，避免未保存凭据残留到下次打开。
 function createDingtalkState() {
@@ -41,27 +40,16 @@ export function resetDingtalkTab() {
 }
 
 async function init(state: AppViewState) {
-  if (s.initialized) return;
-  s.initialized = true;
-  try {
-    if (state.client && state.connected) {
-      await getConfigSnapshot(state.client);
-      const config = getCachedConfigSnapshot()?.config;
-      if (config) {
-        const view = extractDingtalkView(config);
-        s.enabled = view.enabled;
-        s.clientId = view.clientId;
-        s.clientSecret = view.clientSecret;
-        s.sessionTimeout = view.sessionTimeout;
-      }
-    }
-    const runtime = await ipc.settingsGetChannelRuntimeState().catch(() => null);
-    if (runtime) {
-      s.bundled = runtime.bundled.dingtalk;
-      s.bundleMessage = runtime.bundleMessages.dingtalk ?? "";
-    }
-    state.requestUpdate();
-  } catch {}
+  await initChannelTabOnce(state, s, {
+    applyConfig: (config) => {
+      const view = extractDingtalkView(config);
+      s.enabled = view.enabled;
+      s.clientId = view.clientId;
+      s.clientSecret = view.clientSecret;
+      s.sessionTimeout = view.sessionTimeout;
+    },
+    loadExtra: () => loadBundledRuntimeState("dingtalk", s),
+  });
 }
 
 /** 统一保存：启用时先主进程验证凭据 → config.patch 写入。 */
@@ -70,11 +58,7 @@ async function saveDingtalk(state: AppViewState): Promise<boolean> {
     if (!s.clientId) { s.error = t("settings.channels.dingtalk.clientIdRequired"); return false; }
     if (!s.clientSecret) { s.error = t("settings.channels.dingtalk.clientSecretRequired"); return false; }
     if (!s.bundled) { s.error = s.bundleMessage || t("settings.channels.dingtalk.notBundled"); return false; }
-    const verifyResult = await ipc.settingsVerifyKey({ provider: "dingtalk", clientId: s.clientId, clientSecret: s.clientSecret });
-    if (!verifyResult.success) {
-      s.error = tWithDetail("settings.error.verifyFailed", verifyResult.message ?? verifyResult.error);
-      return false;
-    }
+    if (!(await verifyChannelCredentials(s, { provider: "dingtalk", clientId: s.clientId, clientSecret: s.clientSecret }))) return false;
   }
   const outcome = await runConfigPatch(state, draft => {
     applyDingtalkSave(draft, { enabled: s.enabled, clientId: s.clientId, clientSecret: s.clientSecret });

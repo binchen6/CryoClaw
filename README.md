@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/binchen6/CryoClaw/releases/latest"><img src="https://img.shields.io/github/v/release/binchen6/CryoClaw?style=flat-square&color=0EA5E9" alt="Latest Release" /></a>
+  <a href="https://github.com/binchen6/CryoClaw/releases/latest"><img src="https://img.shields.io/github/v/release/binchen6/CryoClaw?style=flat-square&color=6366f1" alt="Latest Release" /></a>
   <a href="https://github.com/binchen6/CryoClaw/blob/main/LICENSE"><img src="https://img.shields.io/github/license/binchen6/CryoClaw?style=flat-square" alt="License" /></a>
 </p>
 
@@ -39,7 +39,7 @@ CryoClaw 是在 **[OneClaw](https://github.com/oneclaw/oneclaw)**（AGPL-3.0）�
 
 | 维度 | OneClaw | CryoClaw |
 |---|---|---|
-| 视觉设计 | 原版主题 | 全新冰蓝 TraeWork 设计体系（浅色/暗色双主题、design token + cc-* 原语组件） |
+| 视觉设计 | 原版主题 | 2026.9 全新设计体系（中性灰 + indigo 强调色、浅色一等 + 暗色配套、design token + cc-* 原语组件、图标轨应用壳） |
 | 更新策略 | 应用自动更新（CDN） | 应用自动更新（GitHub Releases + blockmap 差分下载，设置页可手动检查）+ 内核升级/回退（差分 ASAR 换装）双通道 |
 | 设置架构 | 主进程自研读写 IPC | 全面切换内核 `config.get`/`config.patch`（乐观锁 + RFC7396 diff），退役 15+ 自研 IPC |
 | 流式渲染 | 逐帧全量 markdown | 逐帧纯文本流式 + 终态一次性排版（消除 O(n²) 卡顿），折叠区懒渲染 |
@@ -111,9 +111,9 @@ CryoClaw (Electron 43 + TypeScript 5.9)
 - **稳定性**：渲染进程崩溃自动恢复（60s 滑窗熔断）+ 内存软监控；退出时自动清理临时缓存（保留用户配置与会话历史）。
 - **内核升级**：设置页「内核升级」卡片或 `openclaw update` CLI，差分换装、双备份、健康检查失败自动回滚。
 - **执行权限**：请求批准 / 智能审批 / 完全同意三态 + Docker 沙箱前置守卫；支持 `update_plan` 计划悬浮面板、目标模式、消息队列、`/` 命令补全。
-- **样式体系**：`shared/design-tokens.css`（TraeWork token + 冰蓝 brand-500 `#0EA5E9`）+ `styles/primitives.css` 契约组件，禁止硬编码颜色。
-- **测试**：vitest（主进程单测）+ node:test（编译产物/脚本）+ chat-ui typecheck 与单测 + scripts 用例，`npm test` 一键全量（基线 657 pass / 0 fail）。
-- **代码质量**：`npm run dupcheck`（jscpd，配置 `.jscpd.json`，阈值 5%）度量全源码重复率，当前 1.06%；公共逻辑集中在渠道面板共享模块、Kimi OAuth 流程、安全打开白名单等共享模块。
+- **样式体系**：`shared/design-tokens.css`（中性灰 + indigo brand-500 `#6366f1`，浅色一等）+ `styles/primitives.css` 契约组件，禁止硬编码颜色。
+- **测试**：vitest（主进程单测）+ node:test（编译产物/脚本）+ chat-ui typecheck 与单测 + scripts 用例，`npm test` 一键全量（基线 807 pass / 0 fail）。
+- **代码质量**：`npm run dupcheck`（jscpd，配置 `.jscpd.json`，阈值 5%）度量全源码重复率，当前 1.15%；公共逻辑集中在渠道面板共享模块、Kimi OAuth 流程、安全打开白名单等共享模块。
 
 详细架构与历史优化记录见 `docs/architecture.md` 与 `docs/OPTIMIZATION-PROGRESS.md`。
 

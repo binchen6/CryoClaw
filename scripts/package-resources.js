@@ -19,6 +19,7 @@ const {
 } = require("./lib/openclaw-version-utils");
 const {
   ensurePluginNativeEntry,
+  rebundlePluginDistChunks,
   resolveOpenClawPluginEntry,
   NATIVE_EXT,
 } = require("./lib/bundle-plugin-entry");
@@ -1318,13 +1319,23 @@ const CHANNEL_MIRROR_PLUGINS = [
 // 内核原生支持该形态）原样 vendor 到 dist/extensions/，恢复 2026.4.x 时代的内置形态。
 const OFFICIAL_VENDOR_PLUGINS = [
   { id: "feishu", packageName: "@openclaw/feishu", envKey: "CRYOCLAW_FEISHU_PACKAGE_SOURCE", pkgJsonKey: "feishuPlugin" },
-  { id: "qqbot", packageName: "@openclaw/qqbot", envKey: "CRYOCLAW_QQBOT_PACKAGE_SOURCE", pkgJsonKey: "qqbotPlugin" },
+  // qqbot 强制走 esbuild 重 bundle：其 ESM chunk 静态 `import WebSocket from "ws"`
+  // 解析到 ws@8.21.0 exports.import → wrapper.mjs → 深引用 CJS lib 文件，在内核
+  // 2026.8.2 插件加载链（jiti 2.7.0）下互操作失败（"./lib/permessage-deflate.js
+  // does not provide an export named 'default'"），channel 反复崩溃。重 bundle 后
+  // ws 被静态内联，运行时不再 import "ws"。
+  { id: "qqbot", packageName: "@openclaw/qqbot", envKey: "CRYOCLAW_QQBOT_PACKAGE_SOURCE", pkgJsonKey: "qqbotPlugin", forceRebundle: true },
   { id: "moonshot", packageName: "@openclaw/moonshot-provider", envKey: "CRYOCLAW_MOONSHOT_PROVIDER_PACKAGE_SOURCE", pkgJsonKey: "moonshotProviderPlugin" },
   { id: "kimi", packageName: "@openclaw/kimi-provider", envKey: "CRYOCLAW_KIMI_PROVIDER_PACKAGE_SOURCE", pkgJsonKey: "kimiProviderPlugin" },
   { id: "zai", packageName: "@openclaw/zai-provider", envKey: "CRYOCLAW_ZAI_PROVIDER_PACKAGE_SOURCE", pkgJsonKey: "zaiProviderPlugin" },
   { id: "qwen", packageName: "@openclaw/qwen-provider", envKey: "CRYOCLAW_QWEN_PROVIDER_PACKAGE_SOURCE", pkgJsonKey: "qwenProviderPlugin" },
   { id: "deepseek", packageName: "@openclaw/deepseek-provider", envKey: "CRYOCLAW_DEEPSEEK_PROVIDER_PACKAGE_SOURCE", pkgJsonKey: "deepseekProviderPlugin" },
 ];
+
+// forceRebundle 插件的 wasm/worker 类依赖（silk-wasm / mpg123-decoder /
+// @eshaz/web-worker）esbuild 无法静态打包，保留在插件自己的 node_modules 里，
+// 运行时经 banner 注入的 createRequire / 原生 dynamic import 解析。
+const FORCE_REBUNDLE_EXTRA_EXTERNAL = ["silk-wasm", "mpg123-decoder", "@eshaz/web-worker"];
 
 
 // openclaw/skills 只保留 CryoClaw 产品需要的内置技能，上游新增 skill 不会自动打入。
@@ -2147,6 +2158,44 @@ async function bundleAllPlugins(targetPaths, opts) {
     // 重 bundle 成 single-file（不传 allowNativeSkip），确保 `openclaw` 只出现
     // 在入口，由 jiti aliasMap 覆盖。
     await normalizePluginEntry(plugin.id, pluginDir);
+  }
+
+  // (3.5) vendored 官方插件中标了 forceRebundle 的（qqbot）强制重 bundle：
+  //       入口 single-file 化（不传 allowNativeSkip），并把 dist/ 下含静态
+  //       `import "ws"` 的 chunk 原地重 bundle（ws 静态内联；相对导入保持
+  //       external，跨 chunk 模块级单例继续共享磁盘上的同一份模块）。
+  //       根因见 OFFICIAL_VENDOR_PLUGINS 中 qqbot 条目注释。
+  for (const plugin of OFFICIAL_VENDOR_PLUGINS) {
+    if (!plugin.forceRebundle) continue;
+    const pluginDir = path.join(bundledDir, plugin.id);
+    if (!fs.existsSync(pluginDir)) continue; // 被 winArm64Cross 跳过的插件
+    await normalizePluginEntry(plugin.id, pluginDir, {
+      entryOverride: readVendoredPluginRuntimeEntry(pluginDir),
+      extraExternal: FORCE_REBUNDLE_EXTRA_EXTERNAL,
+    });
+    const rebundled = await rebundlePluginDistChunks(pluginDir, {
+      label: plugin.id,
+      extraExternal: FORCE_REBUNDLE_EXTRA_EXTERNAL,
+    });
+    if (rebundled.action === "rebundled") {
+      log(`插件 ${plugin.id} 原地重 bundle ws chunk: ${rebundled.rebundled.join(", ")}`);
+    }
+  }
+}
+
+// vendored npm 形态官方插件的真实运行入口是 package.json
+// openclaw.runtimeExtensions[0]（extensions[0] 指向发布包内不存在的源码
+// ./index.ts，resolveOpenClawPluginEntry 会判 missing）。读不出来返回
+// undefined，由 ensurePluginNativeEntry 走标准 resolve。
+function readVendoredPluginRuntimeEntry(pluginDir) {
+  try {
+    const pkg = JSON.parse(fs.readFileSync(path.join(pluginDir, "package.json"), "utf-8"));
+    const rel = pkg && pkg.openclaw && Array.isArray(pkg.openclaw.runtimeExtensions)
+      ? pkg.openclaw.runtimeExtensions[0]
+      : null;
+    return typeof rel === "string" && rel.trim() ? rel.trim() : undefined;
+  } catch {
+    return undefined;
   }
 }
 

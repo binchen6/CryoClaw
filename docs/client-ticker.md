@@ -26,6 +26,7 @@ CryoClaw Chat UI 的统一轮询机制。
 | `cron` | 轮询 `cron.list`，更新侧边栏 badge | `app-gateway.ts` |
 | `sessions` | 轮询会话列表，保持侧边栏对话列表同步 | `app-gateway.ts` |
 | `tasks` | 轮询 `tasks.list`，保持侧边栏任务 badge 与任务视图同步 | `app-gateway.ts` |
+| `stream-watchdog` | 挂起流看门狗（`checkStalledStream`），探测丢失 final/aborted 的流式 run | `app-gateway.ts` |
 
 ## 添加新的轮询逻辑
 

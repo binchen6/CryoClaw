@@ -1,7 +1,7 @@
 # CryoClaw IPC API Reference
 
 > Preload (`src/preload.ts`) 通过 `contextBridge.exposeInMainWorld("cryoclaw", {...})` 暴露的完整 IPC 接口清单。
-> Electron 40 默认 sandbox 模式，所有渲染进程与主进程的交互必须经过此桥接层。
+> Electron 43 默认 sandbox 模式，所有渲染进程与主进程的交互必须经过此桥接层。
 
 ## Gateway 控制
 
@@ -14,15 +14,18 @@
 
 ## 自动更新
 
-> 已移除：CryoClaw 自身的"检查更新"功能已删除（应用更新由内核升级器 `kernel:*` 系列接管，
-> 见下方「内核升级」节）。本节保留作为历史参考，相关 IPC 通道不再存在。
+> R20 起由 `src/app-updater.ts` 重新引入（electron-updater，generic provider 走 GitHub Releases）：
+> 仅 packaged 环境启用（dev 下 `supported=false`）；启动后 ~15s 静默检查一次（无周期复查），
+> 自动下载，downloaded 后由用户确认重启安装。换装为自实现 spawn（见 gotchas #67），
+> `quitAndInstall()` 仅作文件缺失时的回退。状态机纯逻辑在 `src/app-updater-state.ts`，
+> IPC handlers 注册在 `src/settings/about.ts`（全部过 `assertTrustedIpcSender`）。
 
-| 方法 | IPC 通道 | 方向 | 状态 |
-|---|---|---|---|
-| ~~`checkForUpdates()`~~ | ~~`app:check-updates`~~ | send | 已删除 |
-| ~~`getUpdateState()`~~ | ~~`app:get-update-state`~~ | invoke | 已删除 |
-| ~~`downloadAndInstallUpdate()`~~ | ~~`app:download-and-install-update`~~ | invoke | 已删除 |
-| ~~`onUpdateState(cb)`~~ | ~~`app:update-state`~~ | 推送 | 已删除 |
+| 方法 | IPC 通道 | 方向 |
+|---|---|---|
+| `appUpdateGetState()` | `app-update:get-state` | invoke，返回 `{success, data: AppUpdateState}` |
+| `appUpdateCheck()` | `app-update:check` | invoke，触发一次检查并返回当前 state |
+| `appUpdateQuitAndInstall()` | `app-update:quit-and-install` | invoke，启动 pending 安装器后 `app.quit()` |
+| `onAppUpdateState(cb)` | `app:update-state` | 推送（状态快照，返回 unsubscribe 函数） |
 
 ## Setup
 

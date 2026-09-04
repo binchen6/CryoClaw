@@ -14,6 +14,7 @@ import { getConfigSnapshot, getCachedConfigSnapshot } from "../../controllers/co
 import { runConfigPatch } from "./tab-patch.ts";
 import { extractWeixinEnabled, applyWeixinSave } from "./tab-channels.lib.ts";
 import { updateChannelEnabled, syncChannelEnabledFromSnapshot } from "./tab-channels.ts";
+import { initChannelTabOnce } from "./tab-channels-shared.ts";
 import { showConfirm } from "../confirm-dialog.ts";
 
 // Weixin 面板状态必须可整体回滚，避免二维码和账号缓存残留到下次打开。
@@ -43,17 +44,10 @@ async function refreshAccounts(): Promise<void> {
 }
 
 async function init(state: AppViewState) {
-  if (s.initialized) return;
-  s.initialized = true;
-  try {
-    if (state.client && state.connected) {
-      await getConfigSnapshot(state.client);
-      const config = getCachedConfigSnapshot()?.config;
-      if (config) s.enabled = extractWeixinEnabled(config);
-    }
-    await refreshAccounts();
-    state.requestUpdate();
-  } catch {}
+  await initChannelTabOnce(state, s, {
+    applyConfig: (config) => { s.enabled = extractWeixinEnabled(config); },
+    loadExtra: refreshAccounts,
+  });
 }
 
 async function startLogin(state: AppViewState) {

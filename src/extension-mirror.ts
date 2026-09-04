@@ -19,6 +19,7 @@
  * 这样即便某次 reconcile 出错，用户已有的 channel 仍能继续工作。
  */
 
+import * as crypto from "crypto";
 import * as fs from "fs";
 import * as path from "path";
 import {
@@ -42,12 +43,14 @@ function readPluginVersion(dir: string): string | null {
 }
 
 /**
- * 读 `<dir>/package.json` 的 `openclaw.extensions[0]`。
+ * 读 `<dir>/package.json` 的 `openclaw.extensions[0]`，并拼上入口文件内容 hash。
  *
  * 这是 CryoClaw 入口标准化（ensurePluginNativeEntry）在构建期改写的字段。
  * reconcile 时把它一起纳入"相等"判定——即便 plugin version 没变，只要 CryoClaw
  * 改了 bundle 策略（如把 `.ts` 入口替换为 `./dist/cryoclaw-bundle.mjs`），
- * dest 也会被强制刷新。
+ * dest 也会被强制刷新。内容 hash 覆盖"入口路径不变但 bundle 内容重建"的情况
+ * （如 2026.9 的 createRequire banner 注入——路径同为 cryoclaw-bundle.mjs，
+ * 老用户目录里的无 banner 旧产物必须被换掉）。
  */
 function readPluginEntrySig(dir: string): string | null {
   try {
@@ -55,7 +58,17 @@ function readPluginEntrySig(dir: string): string | null {
     const pkg = JSON.parse(raw);
     const exts = pkg?.openclaw?.extensions;
     if (Array.isArray(exts) && exts.length > 0 && typeof exts[0] === "string") {
-      return exts[0];
+      let contentSig = "";
+      try {
+        contentSig = crypto
+          .createHash("sha256")
+          .update(fs.readFileSync(path.resolve(dir, exts[0])))
+          .digest("hex")
+          .slice(0, 16);
+      } catch {
+        // 入口文件缺失：hash 为空串，两侧都缺仍视为相等，一侧缺则不等触发刷新
+      }
+      return `${exts[0]}#${contentSig}`;
     }
     return null;
   } catch {

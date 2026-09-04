@@ -12,11 +12,10 @@ import * as ipc from "../../data/ipc-bridge.ts";
 import "../../components/toggle-switch.ts";
 import "../../components/password-input.ts";
 import "../../components/message-box.ts";
-import { getConfigSnapshot, getCachedConfigSnapshot } from "../../controllers/config.ts";
 import { runConfigPatch } from "./tab-patch.ts";
 import { extractWecomView, applyWecomSave } from "./tab-channels.lib.ts";
 import { loadPairingData, type PairingPanelState } from "./tab-channels-pairing-panel.ts";
-import { markChannelSaved, renderChannelSaveFooter, renderAddGroupDialog, renderChannelPairingSection, createChannelPanelBaseState, runChannelToggle, runChannelSave } from "./tab-channels-shared.ts";
+import { markChannelSaved, renderChannelSaveFooter, renderAddGroupDialog, renderChannelPairingSection, createChannelPanelBaseState, runChannelToggle, runChannelSave, initChannelTabOnce, loadBundledRuntimeState, verifyChannelCredentials, openChannelAddGroupDialog, closeChannelAddGroupDialog, confirmChannelAddGroup } from "./tab-channels-shared.ts";
 
 // WeCom 面板状态必须可整体回滚，避免未保存表单和配对缓存跨会话残留。
 function createWecomState() {
@@ -41,30 +40,19 @@ export function resetWecomTab() {
 }
 
 async function init(state: AppViewState) {
-  if (s.initialized) return;
-  s.initialized = true;
-  try {
-    if (state.client && state.connected) {
-      await getConfigSnapshot(state.client);
-      const config = getCachedConfigSnapshot()?.config;
-      if (config) {
-        const view = extractWecomView(config);
-        s.enabled = view.enabled;
-        s.botId = view.botId;
-        s.secret = view.secret;
-        s.dmPolicy = view.dmPolicy;
-        s.groupPolicy = view.groupPolicy;
-        s.groupAllowFrom = view.groupAllowFrom;
-      }
-    }
-    const runtime = await ipc.settingsGetChannelRuntimeState().catch(() => null);
-    if (runtime) {
-      s.bundled = runtime.bundled.wecom;
-      s.bundleMessage = runtime.bundleMessages.wecom ?? "";
-    }
-    state.requestUpdate();
-    refreshWecomPairing(state);
-  } catch {}
+  await initChannelTabOnce(state, s, {
+    applyConfig: (config) => {
+      const view = extractWecomView(config);
+      s.enabled = view.enabled;
+      s.botId = view.botId;
+      s.secret = view.secret;
+      s.dmPolicy = view.dmPolicy;
+      s.groupPolicy = view.groupPolicy;
+      s.groupAllowFrom = view.groupAllowFrom;
+    },
+    loadExtra: () => loadBundledRuntimeState("wecom", s),
+    after: () => refreshWecomPairing(state),
+  });
 }
 
 export async function refreshWecomPairing(state: AppViewState) {
@@ -78,11 +66,7 @@ async function saveWecom(state: AppViewState, enabled: boolean): Promise<boolean
     if (!s.botId) { s.error = t("settings.channels.wecom.botIdRequired"); return false; }
     if (!s.secret) { s.error = t("settings.channels.wecom.secretRequired"); return false; }
     if (!s.bundled) { s.error = s.bundleMessage || t("settings.channels.wecom.notBundled"); return false; }
-    const verifyResult = await ipc.settingsVerifyKey({ provider: "wecom", botId: s.botId, secret: s.secret });
-    if (!verifyResult.success) {
-      s.error = tWithDetail("settings.error.verifyFailed", verifyResult.message ?? verifyResult.error);
-      return false;
-    }
+    if (!(await verifyChannelCredentials(s, { provider: "wecom", botId: s.botId, secret: s.secret }))) return false;
   }
   const outcome = await runConfigPatch(state, draft => {
     applyWecomSave(draft, {
@@ -117,31 +101,15 @@ async function handleSave(state: AppViewState) {
 }
 
 function openAddGroupDialog(state: AppViewState) {
-  s.addGroupDialogOpen = true;
-  s.addGroupInput = "";
-  s.addGroupError = null;
-  state.requestUpdate();
+  openChannelAddGroupDialog(state, s);
 }
 
 function confirmAddGroup(state: AppViewState) {
-  const id = s.addGroupInput.trim();
-  if (!id) return;
-  if (s.groupAllowFrom.includes(id)) {
-    s.addGroupDialogOpen = false;
-    s.addGroupError = null;
-    state.requestUpdate();
-    return;
-  }
-  s.groupAllowFrom = [...s.groupAllowFrom, id];
-  s.addGroupDialogOpen = false;
-  s.addGroupError = null;
-  state.requestUpdate();
+  confirmChannelAddGroup(state, s);
 }
 
 function cancelAddGroup(state: AppViewState) {
-  s.addGroupDialogOpen = false;
-  s.addGroupError = null;
-  state.requestUpdate();
+  closeChannelAddGroupDialog(state, s);
 }
 
 export function renderChannelWecom(state: AppViewState) {

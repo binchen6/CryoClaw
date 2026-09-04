@@ -11,10 +11,9 @@ import * as ipc from "../../data/ipc-bridge.ts";
 import "../../components/toggle-switch.ts";
 import "../../components/password-input.ts";
 import "../../components/message-box.ts";
-import { getConfigSnapshot, getCachedConfigSnapshot } from "../../controllers/config.ts";
 import { runConfigPatch } from "./tab-patch.ts";
 import { extractQqbotView, applyQqbotSave } from "./tab-channels.lib.ts";
-import { markChannelSaved, renderChannelSaveFooter, runChannelToggle, runChannelSave } from "./tab-channels-shared.ts";
+import { markChannelSaved, renderChannelSaveFooter, runChannelToggle, runChannelSave, initChannelTabOnce, loadBundledRuntimeState, verifyChannelCredentials } from "./tab-channels-shared.ts";
 
 // QQ Bot 面板状态必须可整体回滚，避免未保存凭据残留到下次打开。
 function createQqbotState() {
@@ -41,27 +40,16 @@ export function resetQqbotTab() {
 }
 
 async function init(state: AppViewState) {
-  if (s.initialized) return;
-  s.initialized = true;
-  try {
-    if (state.client && state.connected) {
-      await getConfigSnapshot(state.client);
-      const config = getCachedConfigSnapshot()?.config;
-      if (config) {
-        const view = extractQqbotView(config);
-        s.enabled = view.enabled;
-        s.appId = view.appId;
-        s.clientSecret = view.clientSecret;
-        s.markdownSupport = view.markdownSupport;
-      }
-    }
-    const runtime = await ipc.settingsGetChannelRuntimeState().catch(() => null);
-    if (runtime) {
-      s.bundled = runtime.bundled.qqbot;
-      s.bundleMessage = runtime.bundleMessages.qqbot ?? "";
-    }
-    state.requestUpdate();
-  } catch {}
+  await initChannelTabOnce(state, s, {
+    applyConfig: (config) => {
+      const view = extractQqbotView(config);
+      s.enabled = view.enabled;
+      s.appId = view.appId;
+      s.clientSecret = view.clientSecret;
+      s.markdownSupport = view.markdownSupport;
+    },
+    loadExtra: () => loadBundledRuntimeState("qqbot", s),
+  });
 }
 
 /** 统一保存：启用时先主进程验证凭据 → config.patch 写入。 */
@@ -70,11 +58,7 @@ async function saveQqbot(state: AppViewState): Promise<boolean> {
     if (!s.appId) { s.error = t("settings.channels.qqbot.appIdRequired"); return false; }
     if (!s.clientSecret) { s.error = t("settings.channels.qqbot.clientSecretRequired"); return false; }
     if (!s.bundled) { s.error = s.bundleMessage || t("settings.channels.qqbot.notBundled"); return false; }
-    const verifyResult = await ipc.settingsVerifyKey({ provider: "qqbot", appId: s.appId, clientSecret: s.clientSecret });
-    if (!verifyResult.success) {
-      s.error = tWithDetail("settings.error.verifyFailed", verifyResult.message ?? verifyResult.error);
-      return false;
-    }
+    if (!(await verifyChannelCredentials(s, { provider: "qqbot", appId: s.appId, clientSecret: s.clientSecret }))) return false;
   }
   const outcome = await runConfigPatch(state, draft => {
     applyQqbotSave(draft, {

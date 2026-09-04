@@ -10,9 +10,9 @@
 面向国内生态（Kimi / Moonshot / 飞书 / 企微 / 微信 / 钉钉 / QQ）。
 
 **当前状态**：
-- 重设计工程 **R1–R43 完成**（R43 UI 布局修复批次），最新发版 **v2026.829.1**（R43；v2026.828.5：R42 侧边栏重组 + 三组模块整合）。流式体验两期设计均落地（`docs/specs/2026-08-28-stream-flow-and-sidebar-design.md`）。
-- 内核 openclaw **2026.7.1-2**（版本 pin 在 package.json `cryoclaw.openclaw`）；**Electron 43.4.0**（audit 0 漏洞）。
-- 测试基线 **771 pass / 0 fail**（vitest 101 + node 130 + chat-ui 488 + scripts 52；0 fail 为硬指标）。
+- 重设计工程 **R1–R44 完成**（R44 2026.9 UI 全面重写 + 2026.8.2 内核适配），最新发版 **v2026.904.0**（R44；v2026.903.0：同批首版）。流式体验两期设计均落地（`docs/archive/specs/2026-08-28-stream-flow-and-sidebar-design.md`）。
+- 内核 openclaw **2026.8.2**（版本 pin 在 package.json `cryoclaw.openclaw`）；**Electron 43.4.0**（audit 0 漏洞）。
+- 测试基线 **807 pass / 0 fail**（vitest + node + chat-ui + scripts；0 fail 为硬指标）。
 - 重复率 **1.15%**（78 clones，阈值 5%，`npm run dupcheck` 防回退）；视图 id 收敛为 6（chat/setup/settings/workspace/tasks/extensions）。
 - 开源：GitHub `binchen6/CryoClaw`（AGPL-3.0-only，干净历史）；发版走本地 `dist:win` + `gh release`；CI `tests.yml` 每次 push/PR 全量回归。
 
@@ -28,7 +28,7 @@
 - 只改 CryoClaw 自己的代码；内核 openclaw（gateway.asar 内 dist）**零改动**，仅可只读取证。
 - 不 git commit（除非用户明确要求）。
 - 新敏感 IPC 通道必须加 `assertTrustedIpcSender`（src/ipc-sender-guard.ts）。
-- **UI 规范**：TraeWork 规范 + 冰蓝 token（`shared/design-tokens.css`，brand-500 `#0EA5E9`）；样式走 design token / cc-* 原语；**禁止硬编码 hex**；按钮右对齐；浅色默认主题，暗色 `[data-theme=dark]`。
+- **UI 规范**：2026.9 新规范——中性灰 + 单一 indigo 强调色（`shared/design-tokens.css`，brand-500 `#6366f1`），浅色为一等主题；样式走 design token / cc-* 原语；**禁止硬编码 hex**；按钮右对齐。契约见 `docs/ui-rewrite-2026.9-contract.md` 与 `docs/design-guidelines-zh.md`。
 - 布局：顶部沉浸式 titlebar 44px，浮层 top ≥ 56px；窄窗（≤768px）media query；grid 防溢出 `minmax(0,1fr)` + `min-width:0`。
 
 **文档导航**：
@@ -38,8 +38,8 @@
 | `CLAUDE.md` / `AGENTS.md`（symlink） | 项目硬规范 |
 | `docs/architecture.md` | 架构分层说明 |
 | `docs/ipc-api.md` | 主进程 IPC 通道清单 |
-| `docs/gotchas.md` | 72 条已验证坑（改代码前搜一遍） |
-| `docs/design-guidelines-zh/en.md` | TraeWork + 冰蓝 token 设计规范 |
+| `docs/gotchas.md` | 73 条已验证坑（改代码前搜一遍） |
+| `docs/design-guidelines-zh/en.md` | 2026.9 设计规范（中性灰 + indigo token） |
 
 ## 🗺 关键路径地图（改动前必读）
 
@@ -57,9 +57,9 @@
 | chat-ui 视图 | `chat-ui/ui/src/ui/views/` + `controllers/` | views 纯渲染，controllers 封装 RPC |
 | 视图接线 | `app-render.ts` + `views/registry.ts` | 视图 id 唯一事实来源；**新视图接线点 3 处**（gotchas #49） |
 | 样式 hub | `chat-ui/ui/src/styles.css` | **只做 @import，层叠顺序敏感**：design-tokens → tokens-ext → base → **primitives** → **utilities** → chat/components/panels/sidebar/skills/compose/workspace/cron/misc/panel/plan →（末尾）settings → setup |
-| 设计 token | `shared/design-tokens.css` + `styles/tokens-ext.css` | TraeWork + 冰蓝；兼容别名 --accent/--bg |
+| 设计 token | `shared/design-tokens.css` + `styles/tokens-ext.css` | 中性灰 + indigo；兼容别名 --accent/--bg |
 | 契约组件 | `styles/primitives.css` | cc-btn/cc-input/cc-card/cc-dialog/cc-tag/cc-menu/cc-alert/cc-skeleton/cc-table/cc-tabs/cc-chip |
-| 进度/坑 | `docs/OPTIMIZATION-PROGRESS.md` + `docs/gotchas.md` | 本文件 + 72 条已验证坑（gotchas 为准） |
+| 进度/坑 | `docs/OPTIMIZATION-PROGRESS.md` + `docs/gotchas.md` | 本文件 + 73 条已验证坑（gotchas 为准） |
 
 ## ⚙️ 运行机制既有事实（勿重复调查）
 
@@ -317,12 +317,12 @@
 - **终审修复**：流式代码块格式折叠（`pre` 误入复位名单，一行 CSS）；记录在案：静默探测命中滞后时派生的非 silent 补拉属有界预期行为（注释已钉）。
 - **测试 +59**：控制器修复链、安全前缀/渐进渲染、事件 patch、孤儿探测、源码审计钉接线（三组件 `shouldUpdate` 白名单/无 shadow DOM/装配顺序），基线 657→716 全绿。重复率 1.19%（阈值 5%，可见克隆均为既有）。
 - **流程**：每任务独立提交（15 个），逐任务规格符合性 + 代码质量双审，审查发现即修（4 轮修复提交）；终审 1 Blocker 修复后发版。
-- **第二期（R42 待实施）**：侧边栏图标轨重组（会话列表 ≥75% 面积 + 「更多」菜单）+ 三组模块整合（任务双 tab、扩展双 tab、工作区 IDE 式融合），设计与接线清单见 `docs/specs/2026-08-28-stream-flow-and-sidebar-design.md`；Task 12 审查建议顺手项：`cc-sidebar` 加 `disconnectedCallback` 清菜单态、`resolveSessionOptionsMemo` 依赖守护。
+- **第二期（R42 待实施）**：侧边栏图标轨重组（会话列表 ≥75% 面积 + 「更多」菜单）+ 三组模块整合（任务双 tab、扩展双 tab、工作区 IDE 式融合），设计与接线清单见 `docs/archive/specs/2026-08-28-stream-flow-and-sidebar-design.md`；Task 12 审查建议顺手项：`cc-sidebar` 加 `disconnectedCallback` 清菜单态、`resolveSessionOptionsMemo` 依赖守护。
 - **记录在案（候选）**：协议 v4 `deltaText` 增量字段未消费（需内核取证）；`>50k` 稳定段流式每帧重解析（可加单槽 memo）；`ChatItem` 三个死 kind 与 `views/chat.ts` 再导出残留（R42 清理）；website 版本徽章随官网改版在建未同步（用户工作区，R42 发版时已在工作区同步至 v2026.828.5，随官网改版提交）。
 
 ### R42 · 侧边栏重组 + 三组模块整合（完成，随 v2026.828.5 发版）
 
-用户指令：实施消息流式体验优化第二期（侧边栏重组 + 三组模块整合，设计 `docs/specs/2026-08-28-stream-flow-and-sidebar-design.md`）。子代理驱动：T1–T3 并发（≤2 个避共享文件冲突）+ 逐任务规格/质量双审 + 终审。
+用户指令：实施消息流式体验优化第二期（侧边栏重组 + 三组模块整合，设计 `docs/archive/specs/2026-08-28-stream-flow-and-sidebar-design.md`）。子代理驱动：T1–T3 并发（≤2 个避共享文件冲突）+ 逐任务规格/质量双审 + 终审。
 - **任务双 tab（T1）**：tasks/cron 合并为单视图双 tab（运行记录/定时任务）；任务卡以 `sourceId` 反查显示来源定时任务名 + 双向跳转；启用中任务数徽标降入定时 tab。
 - **扩展视图（T2）**：新增 `extensions` 视图（技能/插件双 tab）；插件从设置页迁出（extensions 分组删除）；插件状态复位迁为视图 leave hook；`invalidateAllSettings` 同步。
 - **工作区页（T3）**：IDE 式融合——左导航（仓库选择/文件树/「Git 变更」节点/Worktrees 区块）+ 右主区（文件预览 | Git 面板）；worktree→git 联动（节点选中切仓库 + 刷 status）；workspace 加载逻辑抽入 `controllers/workspace.ts`；`workspaceSetRoot` 白名单注册收敛为一处；**终审 Major 修复**：文件树刷新/打开根目录/逐项打开能力恢复。
@@ -334,7 +334,7 @@
 
 ### R43 · UI 布局修复批次（完成，随 v2026.829.1 发版）
 
-用户反馈 6 项 UI 问题：「更多」菜单遮挡、fullpage 视图顶部与窗口控件重叠、布局优化、侧边栏拖宽、响应式适配、全局布局 QA。子代理驱动 4 波次（≤2 并发避共享文件冲突）+ 逐任务规格/质量双审 + 终审；实施计划 `docs/plans/2026-08-29-ui-layout-fixes.md`（本地）。
+用户反馈 6 项 UI 问题：「更多」菜单遮挡、fullpage 视图顶部与窗口控件重叠、布局优化、侧边栏拖宽、响应式适配、全局布局 QA。子代理驱动 4 波次（≤2 并发避共享文件冲突）+ 逐任务规格/质量双审 + 终审；实施计划 `docs/archive/plans/2026-08-29-ui-layout-fixes.md`。
 - **层叠契约**：菜单 ≤60 / titlebar 100 / 浮层 ≥1000；「更多」菜单 30→60（T1）；确认框遮罩 200→1000 + 同层 DOM 序守护、compose popover 100→60（T5 QA）。
 - **标题栏让位（T2）**：`--titlebar-h: 44px` token（tokens-ext）；六视图让位统一 + `.cryoclaw-titlebar` 高度同源（单点可改）；既有让位全部视觉等价（calc 补偿）。
 - **侧边栏拖宽（T3）**：右缘 6px 拖拽条，220–420px 持久化（`UiSettings.sidebarWidth`）；**0 哨兵方案**：未自定义时宿主无内联宽度 + `:root` 变量清除，窄窗媒体查询照常生效；`moved` 标志零位移不固化；`buttons===0` 窗口外释放补偿；`--sidebar-width` :root 同步供错误弹层定位跟随。审查发现两次实质问题并修复：内联宽度无条件废除媒体查询（I1）→ 0 哨兵；零位移按压固化哨兵 → moved 标志。
@@ -343,6 +343,14 @@
 - **守护测试 +27**：`layout-fix.test.ts` / `sidebar-resize.test.ts` / `layout-qa.test.ts`（动态样式枚举 / 全块扫描防媒体分支绕过 / 同层决胜顺序断言）；基线 744→771 全绿。重复率 1.16%→1.15%。
 - **边界记录**：主进程零改动（终审核实）；website/* 未提交改动属用户官网改版（徽章已在工作区同步，随官网改版提交）；`.cm-layout__main` 死样式待后续清理；审计断言跨文件重复（双层守护，可后续收敛为单点）。
 - **冒烟清单（真机待验）**：设置页 modal 上触发确认框应盖住 modal；思考档位/回放 popover 可点不遮挡；任务页双 tab 顶部对齐；拖宽后刷新持久化、窄窗未拖宽时自动收窄。
+
+### R44 · 2026.9 UI 全面重写 + 2026.8.2 内核升级适配（完成，随 v2026.903.0 / v2026.904.0 发版）
+
+用户指令：UI 全面重写（2026.9 新设计契约）+ 内核 openclaw 2026.8.2 升级适配。
+- **UI 重写**：新应用壳 `cc-rail` / `cc-session-panel` 替换旧侧边栏布局；浅色升为一等主题；主题色从冰蓝 `#0EA5E9` 切换为中性灰 + 单一 indigo 强调色（`--brand-500: #6366f1`，`shared/design-tokens.css`）；默认窗口尺寸调为屏幕 80%。契约文档 `docs/ui-rewrite-2026.9-contract.md`，规范见 `docs/design-guidelines-zh.md`。
+- **内核 2026.8.2 适配**：配置双向迁移（新旧 schema 互转）；不兼容插件自动降级；gateway 握手 Origin 改写；webchat-ui 客户端身份适配。内核调研取证见 `docs/kernel-2026.8.2-research.md`。
+- 内核 pin：`package.json` `cryoclaw.openclaw` = 2026.8.2；发版 v2026.903.0 → v2026.904.0。
+- **测试基线 771→807 全绿**。
 
 ## 📦 发版与实测经验（套路已验证多次）
 

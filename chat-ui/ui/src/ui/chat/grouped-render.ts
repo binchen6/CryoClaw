@@ -473,6 +473,40 @@ function renderThinkingCollapsed(reasoningMarkdown: string) {
     </details>
   `;
 }
+
+// 图片/附件/思考/JSON 卡/正文/工具卡的公共组装（工具消息懒渲染 body 与普通气泡共用）。
+// mediaAttachments 仅普通气泡路径传入；工具消息 body 不传，保持不渲染附件的原行为。
+function renderMessageBodyParts(opts: {
+  images: ImageBlock[];
+  mediaAttachments?: MessageMediaAttachment[];
+  reasoningMarkdown: string | null;
+  jsonResult: ReturnType<typeof detectJson>;
+  markdown: string | null;
+  toolCards: ToolCard[];
+  hasToolCards: boolean;
+  onOpenSidebar?: (content: string) => void;
+}) {
+  return html`
+    ${renderMessageImages(opts.images)}
+    ${opts.mediaAttachments ? renderMessageMediaAttachments(opts.mediaAttachments) : nothing}
+    ${opts.reasoningMarkdown ? renderThinkingCollapsed(opts.reasoningMarkdown) : nothing}
+    ${
+      opts.jsonResult
+        ? html`<details class="chat-json-collapse">
+            <summary class="chat-json-summary">
+              <span class="chat-json-badge">JSON</span>
+              <span class="chat-json-label">${jsonSummaryLabel(opts.jsonResult.parsed)}</span>
+            </summary>
+            <pre class="chat-json-content"><code>${opts.jsonResult.pretty}</code></pre>
+          </details>`
+        : opts.markdown
+          ? html`<div class="chat-text" ${chatTextEnhanceRef} dir="${detectTextDirection(opts.markdown)}">${unsafeHTML(linkifyPaths(renderMediaMarkers(toSanitizedMarkdownHtml(opts.markdown))))}</div>`
+          : nothing
+    }
+    ${opts.hasToolCards ? renderCollapsedToolCards(opts.toolCards, opts.onOpenSidebar) : nothing}
+  `;
+}
+
 function renderGroupedMessage(
   message: unknown,
   opts: {
@@ -604,24 +638,16 @@ function renderGroupedMessage(
   if (isToolMessage) {
     // 懒渲染：折叠时 body 不解析 markdown、不挂载（见 hydrateLazyDetailsBody 头注），
     // 首次展开才一次性渲染；图片/思考/JSON/正文/工具卡全部推迟到展开时求值。
-    const bodyFn = () => html`
-      ${renderMessageImages(images)}
-      ${reasoningMarkdown ? renderThinkingCollapsed(reasoningMarkdown) : nothing}
-      ${
-        jsonResult
-          ? html`<details class="chat-json-collapse">
-              <summary class="chat-json-summary">
-                <span class="chat-json-badge">JSON</span>
-                <span class="chat-json-label">${jsonSummaryLabel(jsonResult.parsed)}</span>
-              </summary>
-              <pre class="chat-json-content"><code>${jsonResult.pretty}</code></pre>
-            </details>`
-          : markdown
-            ? html`<div class="chat-text" ${chatTextEnhanceRef} dir="${detectTextDirection(markdown)}">${unsafeHTML(linkifyPaths(renderMediaMarkers(toSanitizedMarkdownHtml(markdown))))}</div>`
-            : nothing
-      }
-      ${hasToolCards ? renderCollapsedToolCards(toolCards, onOpenSidebar) : nothing}
-    `;
+    const bodyFn = () =>
+      renderMessageBodyParts({
+        images,
+        reasoningMarkdown,
+        jsonResult,
+        markdown,
+        toolCards,
+        hasToolCards,
+        onOpenSidebar,
+      });
     return html`
       <div class="${bubbleClasses}">
         ${canCopyMarkdown ? renderCopyAsMarkdownButton(markdown!) : nothing}
@@ -652,27 +678,16 @@ function renderGroupedMessage(
     <div class="${bubbleClasses}">
       ${canCopyMarkdown ? renderCopyAsMarkdownButton(markdown!) : nothing}
       ${quoteButton}
-      ${renderMessageImages(images)}
-      ${renderMessageMediaAttachments(mediaAttachments)}
-      ${
-        reasoningMarkdown
-          ? renderThinkingCollapsed(reasoningMarkdown)
-          : nothing
-      }
-      ${
-        jsonResult
-          ? html`<details class="chat-json-collapse">
-              <summary class="chat-json-summary">
-                <span class="chat-json-badge">JSON</span>
-                <span class="chat-json-label">${jsonSummaryLabel(jsonResult.parsed)}</span>
-              </summary>
-              <pre class="chat-json-content"><code>${jsonResult.pretty}</code></pre>
-            </details>`
-          : markdown
-            ? html`<div class="chat-text" ${chatTextEnhanceRef} dir="${detectTextDirection(markdown)}">${unsafeHTML(linkifyPaths(renderMediaMarkers(toSanitizedMarkdownHtml(markdown))))}</div>`
-            : nothing
-      }
-      ${hasToolCards ? renderCollapsedToolCards(toolCards, onOpenSidebar) : nothing}
+      ${renderMessageBodyParts({
+        images,
+        mediaAttachments,
+        reasoningMarkdown,
+        jsonResult,
+        markdown,
+        toolCards,
+        hasToolCards,
+        onOpenSidebar,
+      })}
     </div>
   `;
 }

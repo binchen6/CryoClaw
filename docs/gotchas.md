@@ -14,11 +14,11 @@ Things that are easy to get wrong or forget when working on CryoClaw.
 
 6. **macOS signing.** By default uses ad-hoc identity (`-`). Set `CRYOCLAW_MAC_SIGN_AND_NOTARIZE=true` + `CSC_NAME`, `APPLE_API_KEY`, `APPLE_API_KEY_ID`, `APPLE_API_ISSUER` in `.env` for real signing.
 
-7. **Version is auto-derived from git tag.** Format: `YYYY.MMDD.N` (e.g. `v2026.318.0`). `package.json` stays `0.0.0-dev`; CI extracts version from tag via `npm version`. Never manually edit `package.json` version.
+7. **Version is manually bumped in `package.json`.** Format: `YYYY.MMDD.N` (e.g. `2026.904.0`). The `version` field carries the real calendar version and is bumped by hand each release; git tag is not the driver. See [releasing.md](releasing.md) for the release flow.
 
 8. **No local upstream directory needed.** openclaw is installed from npm directly during `package:resources`. The `upstream/` directory is no longer required.
 
-9. **Blockmap generation is disabled.** Both DMG and NSIS have blockmap/differential disabled to avoid unnecessary `.blockmap` files.
+9. **Blockmap/differential updates are enabled.** Releases must ship the `.blockmap` files alongside the installer and `latest.yml` — do not strip them from the release assets.
 
 10. **macOS auto-update requires ZIP.** electron-updater needs the ZIP artifact, not DMG. Both are built: DMG for manual distribution, ZIP for auto-update.
 
@@ -54,7 +54,7 @@ Things that are easy to get wrong or forget when working on CryoClaw.
 
 26. **Windows CLI wrapper lives in `%LOCALAPPDATA%\CryoClaw\bin\`.** Not in `~/.openclaw/bin/` like POSIX. Legacy path migration handles old users who had wrappers in `~/.openclaw/bin/`.
 
-27. **Client-side polling uses shared ticker.** All periodic polling in Chat UI must go through the 60s `client-ticker.ts` mechanism (`registerTickHandler`/`unregisterTickHandler`). Do not create standalone `setInterval` calls. See [client-ticker.md](client-ticker.md).
+27. **Client-side polling uses shared ticker.** All periodic polling in Chat UI must go through the 30s `client-ticker.ts` mechanism (`registerTickHandler`/`unregisterTickHandler`). Do not create standalone `setInterval` calls. See [client-ticker.md](client-ticker.md).
 
 28. **Tooltips must use the global fixed-position approach.** Never use CSS `::after` pseudo-elements for tooltips — they get clipped by any parent with `overflow: auto/hidden`. Use the shared `.fixed-tooltip` DOM element with JS event delegation (`mouseover` + `getBoundingClientRect()`). Chat UI initializes it in `main.ts`, Settings in `settings.js`. Just add `data-tooltip="text"` to any element. Use `data-tooltip-pos="bottom"` for downward tooltips.
 

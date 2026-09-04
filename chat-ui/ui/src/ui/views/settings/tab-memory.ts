@@ -11,9 +11,9 @@ import { t, tWithDetail } from "../../i18n.ts";
 import * as ipc from "../../data/ipc-bridge.ts";
 import "../../components/toggle-switch.ts";
 import "../../components/message-box.ts";
-import { getConfigSnapshot, getCachedConfigSnapshot } from "../../controllers/config.ts";
 import { runConfigPatch } from "./tab-patch.ts";
 import { extractMemoryView, applyMemorySave } from "./tab-channels.lib.ts";
+import { initChannelTabOnce } from "./tab-channels-shared.ts";
 
 // Memory 页状态必须可重建，避免用户丢弃的开关草稿污染下次打开。
 function createMemoryState() {
@@ -43,21 +43,14 @@ function resetMemoryState() {
 }
 
 async function init(state: AppViewState) {
-  if (s.initialized) return;
-  s.initialized = true;
-  try {
-    if (state.client && state.connected) {
-      await getConfigSnapshot(state.client);
-      const config = getCachedConfigSnapshot()?.config;
-      if (config) {
-        const view = extractMemoryView(config);
-        s.sessionMemoryEnabled = view.sessionMemoryEnabled;
-        s.embeddingEnabled = view.embeddingEnabled;
-        s.isKimiCodeConfigured = view.isKimiCodeConfigured;
-      }
-      state.requestUpdate();
-    }
-  } catch {}
+  await initChannelTabOnce(state, s, {
+    applyConfig: (config) => {
+      const view = extractMemoryView(config);
+      s.sessionMemoryEnabled = view.sessionMemoryEnabled;
+      s.embeddingEnabled = view.embeddingEnabled;
+      s.isKimiCodeConfigured = view.isKimiCodeConfigured;
+    },
+  });
 }
 
 async function handleSave(state: AppViewState) {

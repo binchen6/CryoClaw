@@ -52,7 +52,6 @@ private_keys/
 # dev 多实例隔离状态目录
 .dev-state/
 
-docs/plans/
 docs/research/
 docs/progress/
 

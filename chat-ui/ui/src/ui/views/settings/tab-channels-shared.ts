@@ -5,9 +5,61 @@
 import { html, nothing } from "lit";
 import type { TemplateResult } from "lit";
 import type { AppViewState } from "../../app-view-state.ts";
-import { t } from "../../i18n.ts";
+import { t, tWithDetail } from "../../i18n.ts";
+import * as ipc from "../../data/ipc-bridge.ts";
+import { getConfigSnapshot, getCachedConfigSnapshot } from "../../controllers/config.ts";
 import { updateChannelEnabled, syncChannelEnabledFromSnapshot } from "./tab-channels.ts";
 import { renderPairingPanel, type PairingPanelState } from "./tab-channels-pairing-panel.ts";
+
+// 渠道/记忆子面板 init 公共骨架（dingtalk / qqbot / wecom / weixin / memory 共用）：
+// 首次打开时从 config 快照填充表单，再做面板自定义的附加加载（runtime 探测、账号列表等）。
+export async function initChannelTabOnce(
+  state: AppViewState,
+  st: { initialized: boolean },
+  opts: {
+    applyConfig?: (config: Record<string, unknown>) => void;
+    loadExtra?: () => Promise<void>;
+    after?: () => void;
+  },
+): Promise<void> {
+  if (st.initialized) return;
+  st.initialized = true;
+  try {
+    if (state.client && state.connected) {
+      await getConfigSnapshot(state.client);
+      const config = getCachedConfigSnapshot()?.config;
+      if (config) opts.applyConfig?.(config);
+    }
+    await opts.loadExtra?.();
+    state.requestUpdate();
+    opts.after?.();
+  } catch {}
+}
+
+// bundled 运行态探测（dingtalk / qqbot / wecom 共用）：未打包时携带主进程提示文案。
+export async function loadBundledRuntimeState(
+  platform: "dingtalk" | "qqbot" | "wecom",
+  st: { bundled: boolean; bundleMessage: string },
+): Promise<void> {
+  const runtime = await ipc.settingsGetChannelRuntimeState().catch(() => null);
+  if (runtime) {
+    st.bundled = runtime.bundled[platform];
+    st.bundleMessage = runtime.bundleMessages[platform] ?? "";
+  }
+}
+
+// 保存前凭据验证（dingtalk / qqbot / wecom / feishu 共用）：失败时写入统一错误消息。
+export async function verifyChannelCredentials(
+  st: { error: string | null },
+  params: Record<string, unknown>,
+): Promise<boolean> {
+  const verifyResult = await ipc.settingsVerifyKey(params);
+  if (!verifyResult.success) {
+    st.error = tWithDetail("settings.error.verifyFailed", verifyResult.message ?? verifyResult.error);
+    return false;
+  }
+  return true;
+}
 
 export interface ChannelFeedbackState {
   enabled: boolean;
@@ -116,6 +168,48 @@ export function renderChannelSaveFooter(
 export interface AddGroupDialogState {
   addGroupInput: string;
   addGroupError: string | null;
+}
+
+// 添加群弹窗完整状态（feishu / wecom 白名单模式共用）：含开关与白名单草稿。
+export interface AddGroupDialogFullState extends AddGroupDialogState {
+  addGroupDialogOpen: boolean;
+  groupAllowFrom: string[];
+}
+
+// 打开添加群弹窗（清空上次输入）
+export function openChannelAddGroupDialog(state: AppViewState, st: AddGroupDialogFullState) {
+  st.addGroupDialogOpen = true;
+  st.addGroupInput = "";
+  st.addGroupError = null;
+  state.requestUpdate();
+}
+
+// 关闭添加群弹窗（取消/确认后共用）
+export function closeChannelAddGroupDialog(state: AppViewState, st: AddGroupDialogFullState) {
+  st.addGroupDialogOpen = false;
+  st.addGroupError = null;
+  state.requestUpdate();
+}
+
+// 确认添加群：feishu 传 validate 做群号前缀校验，wecom 不校验。
+// 只改本地草稿，随「保存」一起 config.patch 落盘。
+export function confirmChannelAddGroup(
+  state: AppViewState,
+  st: AddGroupDialogFullState,
+  validate?: (id: string) => string | null,
+) {
+  const id = st.addGroupInput.trim();
+  if (!id) return;
+  const invalidMsg = validate?.(id) ?? null;
+  if (invalidMsg) {
+    st.addGroupError = invalidMsg;
+    state.requestUpdate();
+    return;
+  }
+  if (!st.groupAllowFrom.includes(id)) {
+    st.groupAllowFrom = [...st.groupAllowFrom, id];
+  }
+  closeChannelAddGroupDialog(state, st);
 }
 
 // 添加群弹窗（feishu / wecom 白名单模式共用）。

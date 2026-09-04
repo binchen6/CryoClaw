@@ -36,13 +36,27 @@ function parseInjectedCryoclawView(raw: string | null | undefined): UiSettings["
   return view && isInjectableViewId(view) ? view : null;
 }
 
+// URL 查询/hash 参数读取（applySettingsFromUrl 与 cleanInjectedCryoclawViewFromUrl 共用）
+function readUrlParams() {
+  const url = new URL(window.location.href);
+  const params = new URLSearchParams(url.search);
+  const hashParams = new URLSearchParams(url.hash.startsWith("#") ? url.hash.slice(1) : url.hash);
+  return { url, params, hashParams };
+}
+
+// 把清理后的参数写回地址栏（无刷新）
+function writeUrlParams(url: URL, params: URLSearchParams, hashParams: URLSearchParams) {
+  url.search = params.toString();
+  const nextHash = hashParams.toString();
+  url.hash = nextHash ? `#${nextHash}` : "";
+  window.history.replaceState({}, "", url.toString());
+}
+
 function cleanInjectedCryoclawViewFromUrl() {
   if (typeof window === "undefined") {
     return;
   }
-  const url = new URL(window.location.href);
-  const params = new URLSearchParams(url.search);
-  const hashParams = new URLSearchParams(url.hash.startsWith("#") ? url.hash.slice(1) : url.hash);
+  const { url, params, hashParams } = readUrlParams();
   let changed = false;
 
   if (params.has("view")) {
@@ -57,10 +71,7 @@ function cleanInjectedCryoclawViewFromUrl() {
     return;
   }
 
-  url.search = params.toString();
-  const nextHash = hashParams.toString();
-  url.hash = nextHash ? `#${nextHash}` : "";
-  window.history.replaceState({}, "", url.toString());
+  writeUrlParams(url, params, hashParams);
 }
 
 export function applySettings(host: SettingsHost, next: UiSettings) {
@@ -96,9 +107,7 @@ export function applySettingsFromUrl(host: SettingsHost) {
   if (!window.location.search && !window.location.hash) {
     return;
   }
-  const url = new URL(window.location.href);
-  const params = new URLSearchParams(url.search);
-  const hashParams = new URLSearchParams(url.hash.startsWith("#") ? url.hash.slice(1) : url.hash);
+  const { url, params, hashParams } = readUrlParams();
 
   const tokenRaw = params.get("token") ?? hashParams.get("token");
   const passwordRaw = params.get("password") ?? hashParams.get("password");
@@ -165,10 +174,7 @@ export function applySettingsFromUrl(host: SettingsHost) {
   if (!shouldCleanUrl) {
     return;
   }
-  url.search = params.toString();
-  const nextHash = hashParams.toString();
-  url.hash = nextHash ? `#${nextHash}` : "";
-  window.history.replaceState({}, "", url.toString());
+  writeUrlParams(url, params, hashParams);
 }
 
 export function setTheme(host: SettingsHost, next: ThemeMode, context?: ThemeTransitionContext) {

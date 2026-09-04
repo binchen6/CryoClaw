@@ -16,7 +16,7 @@ import { getConfigSnapshot, getCachedConfigSnapshot } from "../../controllers/co
 import { runConfigPatch } from "./tab-patch.ts";
 import { extractFeishuView, applyFeishuSave, looksLikeFeishuGroupId } from "./tab-channels.lib.ts";
 import { loadPairingData, type PairingPanelState } from "./tab-channels-pairing-panel.ts";
-import { markChannelSaved, renderChannelSaveFooter, renderAddGroupDialog, renderChannelPairingSection, createChannelPanelBaseState, runChannelToggle, runChannelSave } from "./tab-channels-shared.ts";
+import { markChannelSaved, renderChannelSaveFooter, renderAddGroupDialog, renderChannelPairingSection, createChannelPanelBaseState, runChannelToggle, runChannelSave, verifyChannelCredentials, openChannelAddGroupDialog, closeChannelAddGroupDialog, confirmChannelAddGroup } from "./tab-channels-shared.ts";
 
 // Feishu 面板状态必须可整体回滚，避免未保存表单和配对缓存跨会话残留。
 function createFeishuState() {
@@ -74,11 +74,7 @@ export async function refreshFeishuPairing(state: AppViewState) {
 /** 统一保存：主进程验证凭据 → config.patch 写入。 */
 async function saveFeishu(state: AppViewState, enabled: boolean): Promise<boolean> {
   if (enabled) {
-    const verifyResult = await ipc.settingsVerifyKey({ provider: "feishu", appId: s.appId, appSecret: s.appSecret });
-    if (!verifyResult.success) {
-      s.error = tWithDetail("settings.error.verifyFailed", verifyResult.message ?? verifyResult.error);
-      return false;
-    }
+    if (!(await verifyChannelCredentials(s, { provider: "feishu", appId: s.appId, appSecret: s.appSecret }))) return false;
   }
   let rejected = false;
   const outcome = await runConfigPatch(state, draft => {
@@ -120,33 +116,17 @@ async function handleSave(state: AppViewState) {
 }
 
 function openAddGroupDialog(state: AppViewState) {
-  s.addGroupDialogOpen = true;
-  s.addGroupInput = "";
-  s.addGroupError = null;
-  state.requestUpdate();
+  openChannelAddGroupDialog(state, s);
 }
 
 function confirmAddGroup(state: AppViewState) {
-  const id = s.addGroupInput.trim();
-  if (!id) return;
-  if (!looksLikeFeishuGroupId(id)) {
-    s.addGroupError = t("settings.channels.feishu.addGroupInvalidPrefix");
-    state.requestUpdate();
-    return;
-  }
-  // 群白名单只改本地草稿，随「保存」一起 config.patch 落盘
-  if (!s.groupAllowFrom.includes(id)) {
-    s.groupAllowFrom = [...s.groupAllowFrom, id];
-  }
-  s.addGroupDialogOpen = false;
-  s.addGroupError = null;
-  state.requestUpdate();
+  confirmChannelAddGroup(state, s, (id) =>
+    looksLikeFeishuGroupId(id) ? null : t("settings.channels.feishu.addGroupInvalidPrefix"),
+  );
 }
 
 function cancelAddGroup(state: AppViewState) {
-  s.addGroupDialogOpen = false;
-  s.addGroupError = null;
-  state.requestUpdate();
+  closeChannelAddGroupDialog(state, s);
 }
 
 export function renderChannelFeishu(state: AppViewState) {

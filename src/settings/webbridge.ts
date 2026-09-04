@@ -208,6 +208,40 @@ const runDefaultBrowserPrecheck = (
     currentBrowserMode: getCurrentBrowserMode(),
   });
 
+// 完整 precheck（settings:webbridge-precheck / save-advanced 切 webbridge 服务端兑底共用）：
+// 先探测默认浏览器，再查 binary/skill/extension 三项 + skill enabled 漂移。
+export const runWebbridgePrecheck = async () => {
+  const def = await getDefaultBrowser();
+  return getWebbridgePrecheck({
+    binaryPath: resolveWebbridgeBinaryPath(),
+    extensionId: readWebbridgeExtensionId(),
+    fileExists: fs.existsSync,
+    readExtensionStates: (extId) =>
+      getExtensionStates(specFromExtId(extId), {
+        processExec: DEFAULT_PROCESS_EXEC,
+        processCheckBrowserId: def?.target.id,
+      }),
+    getDefaultBrowser,
+    readSkillEnabled: readKimiWebbridgeSkillEnabled,
+    currentBrowserMode: getCurrentBrowserMode(),
+  });
+};
+
+// 修复成功后的收尾（repair-and-enable / pill-repair 共用）：
+// 写 webbridge config + 重启 gateway——确保新装的 binary/skill enable=true 立即生效；
+// 即便已经在 webbridge 模式，applyBrowserModeConfig 也会把 skill enabled 翻回 true（修复 drift）。
+// 含扩展修复 → 主动 open 引导页（同时启动浏览器触发"启用扩展"prompt），避免用户多走一步「手动开浏览器」。
+const finalizeWebbridgeRepair = async (
+  opts: SettingsIpcOptions,
+  includesExtension: boolean,
+): Promise<boolean> => {
+  const config = readUserConfig();
+  Object.assign(config, applyBrowserModeConfig(config, "webbridge"));
+  writeUserConfig(config);
+  opts.requestGatewayRestart?.();
+  return includesExtension ? await openWebbridgeEnableGuideInBrowser() : false;
+};
+
 export function registerWebbridgeIpc(opts: SettingsIpcOptions): void {
   // ── WebBridge 安装状态（只读，不调 CLI） ──
   // 单一默认浏览器策略：只对默认浏览器查进程，避免 Win 下 Defender 实时扫描 tasklist
@@ -238,20 +272,7 @@ export function registerWebbridgeIpc(opts: SettingsIpcOptions): void {
   ipcMain.handle("settings:webbridge-precheck", async (event) => {
     if (!assertTrustedIpcSender(event, "settings:webbridge-precheck")) throw new Error("IPC sender not trusted");
     try {
-      const def = await getDefaultBrowser();
-      const result = await getWebbridgePrecheck({
-        binaryPath: resolveWebbridgeBinaryPath(),
-        extensionId: readWebbridgeExtensionId(),
-        fileExists: fs.existsSync,
-        readExtensionStates: (extId) =>
-          getExtensionStates(specFromExtId(extId), {
-            processExec: DEFAULT_PROCESS_EXEC,
-            processCheckBrowserId: def?.target.id,
-          }),
-        getDefaultBrowser,
-        readSkillEnabled: readKimiWebbridgeSkillEnabled,
-        currentBrowserMode: getCurrentBrowserMode(),
-      });
+      const result = await runWebbridgePrecheck();
       return { success: true, data: result };
     } catch (err: any) {
       return { success: false, message: err.message || String(err) };
@@ -386,15 +407,10 @@ export function registerWebbridgeIpc(opts: SettingsIpcOptions): void {
         };
       }
       // 三项全过 → 写 webbridge config + 重启 gateway
-      const config = readUserConfig();
-      Object.assign(config, applyBrowserModeConfig(config, "webbridge"));
-      writeUserConfig(config);
-      opts.requestGatewayRestart?.();
-      // 含扩展修复 → 主动 open 引导页（同时启动浏览器触发"启用扩展"prompt）
-      // 跟 pill-repair 行为一致：避免用户多走一步「手动开浏览器」
-      const openedBrowser = pre.missing.extension
-        ? await openWebbridgeEnableGuideInBrowser()
-        : false;
+      const openedBrowser = await finalizeWebbridgeRepair(
+        opts,
+        pre.missing.extension,
+      );
       return { success: true, data: summary, openedBrowser };
     } catch (err: any) {
       return { success: false, message: err.message || String(err) };
@@ -486,18 +502,12 @@ export function registerWebbridgeIpc(opts: SettingsIpcOptions): void {
       }
 
       // 5. 写 config 重启 gateway——确保新装的 binary/skill enable=true 立即生效
-      // 即便已经在 webbridge 模式，applyBrowserModeConfig 会把 skill enabled 翻回 true（修复 drift）
-      const config = readUserConfig();
-      Object.assign(config, applyBrowserModeConfig(config, "webbridge"));
-      writeUserConfig(config);
-      opts.requestGatewayRestart?.();
-
       // 修复路径走到这里时浏览器一定已关闭（缺扩展时 step 2 已要求关 + 杀 background）
-      // 含扩展修复 → 主动 open 引导页（同时启动浏览器触发"启用扩展"prompt）
       // 仅 binary/skill 修复 → 不开浏览器，前端弹简短「WebBridge 已修复」modal
-      const openedBrowser = pre.missing.extension
-        ? await openWebbridgeEnableGuideInBrowser()
-        : false;
+      const openedBrowser = await finalizeWebbridgeRepair(
+        opts,
+        pre.missing.extension,
+      );
       return {
         success: true,
         code: "READY",

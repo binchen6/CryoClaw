@@ -22,13 +22,13 @@ The main process spawns a gateway subprocess, waits for its health check, then o
 
 | Layer | Choice |
 |---|---|
-| Shell | Electron 40.10.6 (embedded Node 24.15, required by openclaw ≥2026.7 engines) |
+| Shell | Electron ^43.4.0 (embedded Node 24, required by openclaw ≥2026.7 engines) |
 | Language | TypeScript → CommonJS (no ESM) |
 | Chat UI | Lit 3 + Vite (file:// loaded SPA) |
 | Packager | electron-builder 26.7.0 |
-| Updater | electron-updater (generic provider, CDN at `oneclaw.cn`) |
+| Updater | electron-updater (generic provider, GitHub Releases) |
 | Targets | macOS DMG + ZIP (arm64/x64), Windows NSIS (x64/arm64) |
-| Version scheme | Calendar-based: `YYYY.MMDD.N` (e.g. `2026.318.0`), auto-derived from git tag |
+| Version scheme | Calendar-based: `YYYY.MMDD.N` (e.g. `2026.904.0`), manually bumped in `package.json` (see docs/releasing.md) |
 
 ## Repository Layout
 
@@ -86,7 +86,7 @@ cryoclaw/
 │   ├── dist-all-parallel.sh    # Parallel cross-platform build
 │   └── clean.sh
 ├── assets/                 # Icons: .icns, .ico, .png, tray templates
-├── docs/                   # Plans, design guidelines, architecture docs
+├── docs/                   # Architecture, design guidelines, IPC/gotchas docs (index: docs/README.md)
 ├── .github/workflows/      # CI: tests.yml (full regression on push/PR)
 ├── electron-builder.yml    # Build config (DMG + ZIP for mac, NSIS for win)
 ├── tsconfig.json           # target ES2022, module CommonJS
@@ -240,7 +240,7 @@ For comprehensive design guidelines, please refer to:
 - [Design Guidelines (English)](docs/design-guidelines-en.md)
 - [Design Guidelines (Chinese)](docs/design-guidelines-zh.md)
 
-1. **Theme color is ice-blue, via design tokens.** The accent is the CryoClaw ice-blue (`--brand-500: #0EA5E9`) from the TraeWork token system (`shared/design-tokens.css`). Always style via design tokens and the `cc-*` component primitives (`chat-ui/ui/src/styles/primitives.css`) — never hardcode hex. See docs/design-guidelines-zh.md for the full spec. Semantic status colors (error red, warning amber) are separate from the accent. (The old "signature red `#c0392b`" rule is retired.)
+1. **Theme is neutral gray + a single indigo accent, via design tokens.** Per the 2026.9 design spec, the accent is indigo (`--brand-500: #6366f1`) from `shared/design-tokens.css`, and the light theme is the first-class theme. Always style via design tokens and the `cc-*` component primitives (`chat-ui/ui/src/styles/primitives.css`) — never hardcode hex. See docs/design-guidelines-zh.md for the full spec and docs/ui-rewrite-2026.9-contract.md for the 2026.9 rewrite contract. Semantic status colors (error red, warning amber) are separate from the accent. (The old ice-blue `#0EA5E9` and "signature red `#c0392b`" rules are retired.)
 
 2. **No `text-transform: uppercase` on labels.** Labels should display as written — respect the original casing of brand names (Chrome, iMessage) and CJK text.
 
