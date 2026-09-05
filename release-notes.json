@@ -1,5 +1,12 @@
 [
   {
+    "version": "2026.909.0",
+    "notes": {
+      "zh": "界面：技能商店与技能页的头像色板收敛为 CryoBlue 蓝青同族色系，告别杂色，与应用整体设计语言一致\n界面：会话面板分隔条加宽命中区并常驻可见细线，悬停/拖拽时显示加粗辉光指示条，调整布局更好找、更跟手\n界面：全屏空状态页标题统一提升到展示字号阶梯（任务管理等页面），视觉层级更清晰\n工程：修复网关冒烟测试在注入了 OPENCLAW_CONFIG_PATH 等环境变量的宿主机上误报失败（子进程环境隔离加固）",
+      "en": "UI: skill store and skills page avatar palette narrowed to the CryoBlue blue-cyan family — no more mixed hues, consistent with the app's design language\nUI: session panel splitter gains a wider hit area and an always-visible hairline, with a thicker glowing indicator on hover/drag — easier to find and grab\nUI: full-screen empty-state titles (task management and similar pages) unified into the display type scale for clearer visual hierarchy\nEngineering: fixed the gateway asar smoke test falsely failing on hosts that inject OPENCLAW_CONFIG_PATH and similar environment variables (child-process environment isolation hardened)"
+    }
+  },
+  {
     "version": "2026.908.0",
     "notes": {
       "zh": "修复：Kimi 模型静默落入备用链——内置回环鉴权代理在本机环回地址上要求握手密钥，kimi-code 侧不携带该密钥时主模型 401 后静默切换 fallback；现已移除该代理特性，Kimi 通道直连\n品牌焕新：全新 CryoBlue 蓝青混色设计体系——为高效工作服务的沉稳蓝（活力而不抢眼），浅色一等 + 暗色独立调参双主题，应用图标、托盘图标、安装器界面同步换新\n图标体系：全部界面图标换为自绘 CryoIcons（24 网格、2px 描边、纯几何造型），移除第三方图标库依赖，包体更小\n官网重设计：浅色一等 + CryoBlue 混色，与应用同一套设计语言",
