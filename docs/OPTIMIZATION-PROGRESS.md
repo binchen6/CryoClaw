@@ -10,9 +10,9 @@
 面向国内生态（Kimi / Moonshot / 飞书 / 企微 / 微信 / 钉钉 / QQ）。
 
 **当前状态**：
-- 重设计工程 **R1–R50 完成**（R50 确立 CryoBlue 蓝青混色设计规范 + CryoIcons 自绘图标 + 官网重设计；R49 移除 kimi-auth-proxy 回环鉴权，修复主模型静默 401 落入 fallback），最新发版 **v2026.908.0**。流式体验两期设计均落地（`docs/archive/specs/2026-08-28-stream-flow-and-sidebar-design.md`）。
+- 重设计工程 **R1–R51 完成**（R51 落地 UI 精修建议 + 官网响应式平板/手机独立排版 + stats 口径修正 326 RPC；R50 确立 CryoBlue 蓝青混色设计规范 + CryoIcons 自绘图标 + 官网重设计；R49 移除 kimi-auth-proxy 回环鉴权），最新发版 **v2026.908.0**。流式体验两期设计均落地（`docs/archive/specs/2026-08-28-stream-flow-and-sidebar-design.md`）。
 - 内核 openclaw **2026.8.2**（版本 pin 在 package.json `cryoclaw.openclaw`；更新目标走 `kernel-channel.json` 策展渠道，minSupported 2026.7.0）；**Electron 43.4.0**（audit 0 漏洞）。
-- 测试基线 **902 pass / 0 fail / 4 skipped**（vitest 146 + node 157 + chat-ui 521 + scripts 78；2026-09-05 实测，0 fail 为硬指标；scripts 的 asar 冒烟 1 fail 为干净树同样失败的既有环境问题）。
+- 测试基线 **903 pass / 0 fail / 4 skipped**（vitest 146 + node 157 + chat-ui 521 + scripts 79；2026-09-05 实测，0 fail 为硬指标；R51 已闭环 asar 冒烟的环境污染问题——宿主 `OPENCLAW_CONFIG_PATH` 穿透隔离，测试已加固剔除）。
 - 重复率 **1.15%**（78 clones，阈值 5%，`npm run dupcheck` 防回退）；视图 id 收敛为 6（chat/setup/settings/workspace/tasks/extensions）。
 - 开源：GitHub `binchen6/CryoClaw`（AGPL-3.0-only，干净历史）；发版走本地 `dist:win` + `gh release`；CI `tests.yml` 每次 push/PR 全量回归。
 
@@ -396,6 +396,18 @@
 - **规范文档**：`design-guidelines-zh/en.md` 更新总则/色板/配色章节并新增第 6 节「图标系统（CryoIcons）」绘制与扩展规范；CLAUDE.md 规则 1、README badge（color=1a6fd0）同步。
 - **官网重设计**：浅色一等（纸白中性底）+ CryoBlue，`website/design-tokens.css` 主题块整段重写（浅色默认 + 暗色独立调参 + OS 偏好兜底）；styles.css 去硬编码（orb 混合模式/透明度 token 化，修复 `var(--accent-gl)` 拼写 bug 导致 orb--1 隐形）；文案更新（CryoBlue 设计体系卡、对比行、演示流文本、版本徽章、统计 902 用例）。Electron 无头截图验证五个屏位渲染通过。
 - **测试**：全量 902 pass / 0 fail / 4 skipped（2026-09-05）；dupcheck 1.03%（阈值 5%）；shell.css 残留 `#ffffff` 改 `--text-on-accent`。
+
+### R51 · UI 精修建议落地 + 官网响应式（平板/手机独立排版）+ stats 口径修正（完成）
+
+用户要求：落地 R50 审查中提出的其余 UI 建议，官网适配手机端与平板端（单独设计排版）。
+- **建议① skill 头像色板收敛**：`skill-store-view.ts` 的 `SKILL_AVATAR_COLORS` 从 Flat UI 多色板（含 #c0392b 红）换成 CryoBlue 同族 10 色（蓝青交错，白字对比均 ≥3:1）；app-skills.ts 共用此函数，单点全覆盖。
+- **建议③ 拖拽指示条**：`.cryoclaw-panel-resize` 命中区 6px→8px，常态显示 hairline 细线（原透明不可发现），hover/active 指示条 2px→4px + `accent-glow` 辉光。
+- **建议④ 空态字号阶梯**：`.panel__empty-title` 从 --heading-sm(16px) 升至 `var(--heading-xl)`(24px) + font-display + tracking-display（cron-manage 等全屏空态共用；窄侧栏 `.cc-panel__empty` 故意不动）。
+- **建议② 官网 stats 口径修正**：解包当前 gateway.asar 实测 `method-scopes-*.js` 注册表得 **326 个 RPC 方法**（旧 237 为内核升级前数据）；「53MB 存储裁剪 / 226.8MB」随内核升级过时（当前 asar 312MB），第 4 个 stat 改为 **49 枚 CryoIcons 自绘图标**，对比表「存储体积」行改「图标体系」行；README 同步（657-test→902、1.06%→1.03%、去掉死数字体积表述）。
+- **官网响应式独立排版**：平板 701–1080px——nav 压缩、hero 收紧、960 以下 hero 上下堆叠居中 + mock 取消倾斜 + stats 2×2、bento 双列重组、步骤横向卡（序号左文字右）、compare 列宽收紧；手机 ≤700px 另起排版——nav 只留品牌+GitHub、hero 去 100vh 撑高 + CTA 全宽纵向、mock 收侧栏、stats 2×2 紧凑卡、**步骤改竖向时间线**（圆点序号 + 连接线）、**对比表转卡片流**（表头隐藏、每行成卡、CryoClaw 列 accent 左边条 + 底色）、CTA 全宽按钮列、页脚居中堆叠。
+- **冒烟测试环境隔离加固（顺带）**：`gateway-asar-smoke.test.js` 子进程环境剔除宿主注入的 `OPENCLAW_*/CLAWDBOT_*` 全家桶——Kimi Work 运行时会注入 `OPENCLAW_CONFIG_PATH` 指向 daimon shim 空配置，穿透 `OPENCLAW_STATE_DIR` 隔离导致 gateway 误报「missing gateway.mode」（退出码 78）。根因定位链：守卫逻辑取证（`snapshot.valid=false` 时回退 `cfg` 丢 gateway.mode）→ 字段二分排除 qqbot → env 审计发现 `OPENCLAW_CONFIG_PATH` 污染。**此前基线备注的「asar 冒烟 1 fail 既有环境问题」由此闭环**，scripts 测试 78→79。
+- **测试**：全量 **903 pass / 0 fail / 4 skipped**（vitest 146 + node 157 + chat-ui 521 + scripts 79；2026-09-05 实测）；chat-ui build 通过。三宽度（1440/834/390）无头截图验证横向溢出均 0px，手机时间线/卡片流、平板堆叠排版逐项看图确认。
+- **双仓同步**：博客版（`blog/public/CryoClaw/`）整拷 styles.css + 定向 patch stats 三处（保留 `<base href>`、加速下载双按钮、`/api/cryoclaw-dl` 等部署差异），起临时静态服务器复验三宽度溢出 0px；两仓 commit + push，Cloudflare Pages 自动部署。
 
 ## 📦 发版与实测经验（套路已验证多次）
 
