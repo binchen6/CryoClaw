@@ -1,4 +1,4 @@
-/* CryoClaw Landing — 2026.9 R2 品牌焕新（浅色一等 · CryoBlue 混色）交互与动效
+/* CryoClaw Landing — 2026.9 R3 博客部署版（浅色一等 · CryoBlue 混色 · 动态发布信息 · 下载加速）交互与动效
    兼容基线：现代浏览器（Chrome/Edge 111+、Safari 15.4+、Firefox 115+），无依赖零构建。
    所有动效经 prefersReduced 门控；IntersectionObserver 缺失时降级为直接显示。 */
 (function () {
@@ -183,7 +183,7 @@
     });
   }
 
-  /* ── GitHub API：取最新版本号与直链（渐进增强，失败静默保留静态文案） ── */
+  /* ── GitHub API：动态发布信息（版本号/直链/大小/日期/更新亮点），失败静默保留静态兜底 ── */
   fetch("https://api.github.com/repos/binchen6/CryoClaw/releases/latest")
     .then(function (r) { return r.ok ? r.json() : null; })
     .then(function (data) {
@@ -193,13 +193,60 @@
       if (heroVer) heroVer.textContent = "v" + version;
       var dlVer = document.getElementById("download-version");
       if (dlVer) dlVer.textContent = "最新版本 v" + version;
+      var dlLabel = document.getElementById("download-label");
+      if (dlLabel) dlLabel.textContent = (dlLabel.getAttribute("data-prefix") || "下载") + " v" + version;
+
       var asset = (data.assets || []).find(function (a) { return /Setup.*x64\.exe$/i.test(a.name); });
       if (asset) {
         ["download-hero", "download-cta"].forEach(function (id) {
           var el = document.getElementById(id);
-          if (el) el.href = asset.browser_download_url;
+          // download-hero / download-fast 走本站加速节点（/api/cryoclaw-dl），官方源按钮直连 GitHub
+          if (el && id === "download-cta") el.href = asset.browser_download_url;
         });
+        var sizeEl = document.getElementById("download-size");
+        if (sizeEl && asset.size) {
+          sizeEl.textContent = "Windows x64 · " + (asset.size / 1024 / 1024).toFixed(0) + " MB";
+        }
+      }
+      if (data.published_at) {
+        var dateEl = document.getElementById("download-date");
+        if (dateEl) {
+          var d = new Date(data.published_at);
+          dateEl.textContent = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0") + " 发布";
+        }
+      }
+      // 更新亮点：取 release notes 中文段落的第一条
+      if (data.body) {
+        var zhMatch = data.body.match(/### 中文\n([\s\S]*?)(?:\n###|$)/);
+        var firstLine = (zhMatch ? zhMatch[1] : data.body).split("\n").map(function (l) { return l.trim(); }).filter(Boolean)[0];
+        if (firstLine && firstLine.length > 110) firstLine = firstLine.slice(0, 110) + "…";
+        var box = document.getElementById("whatsnew");
+        if (box && firstLine) {
+          box.innerHTML = "<strong>v" + version + " 更新亮点</strong><br />" + firstLine.replace(/</g, "&lt;") + " <a href=\"https://github.com/binchen6/CryoClaw/releases/latest\" target=\"_blank\" rel=\"noopener\" style=\"color:var(--accent)\">查看完整更新 →</a>";
+          box.classList.add("is-on");
+        }
       }
     })
     .catch(function () { /* 离线/限流时用静态兜底 */ });
+
+  /* ── 导航 scrollspy：当前区块高亮 ── */
+  var spyLinks = Array.prototype.slice.call(document.querySelectorAll(".nav__links a"));
+  var spyMap = {};
+  spyLinks.forEach(function (a) {
+    var id = (a.getAttribute("href") || "").replace(/^#/, "");
+    var sec = id && document.getElementById(id);
+    if (sec) spyMap[id] = a;
+  });
+  var spyIds = Object.keys(spyMap);
+  if (spyIds.length && "IntersectionObserver" in window) {
+    var spyIO = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        if (!entry.isIntersecting) return;
+        spyLinks.forEach(function (a) { a.classList.remove("is-active"); });
+        var link = spyMap[entry.target.id];
+        if (link) link.classList.add("is-active");
+      });
+    }, { rootMargin: "-30% 0px -55% 0px" });
+    spyIds.forEach(function (id) { spyIO.observe(document.getElementById(id)); });
+  }
 })();

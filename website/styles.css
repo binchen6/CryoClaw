@@ -460,3 +460,37 @@ strong { color: var(--text-strong); font-weight: var(--weight-semibold); }
   .bento__card::after { display: none; }
   .mock { transform: none; }
 }
+
+
+/* ═══════════ 2026.9 R3 博客部署版增补 ═══════════ */
+
+/* 锚点滚动预留导航高度 */
+html { scroll-padding-top: 88px; }
+
+/* 导航 scrollspy 当前区块高亮 */
+.nav__links a.is-active { color: var(--accent); background: var(--accent-subtle); }
+
+/* 下载区补充说明与更新亮点 */
+.cta__note { position: relative; z-index: 1; margin-top: var(--spacer-16); font-size: var(--text-xs); color: var(--text-muted); line-height: var(--leading-body); max-width: 520px; margin-left: auto; margin-right: auto; }
+.cta__whatsnew { position: relative; z-index: 1; margin-top: var(--spacer-20); padding: var(--spacer-12) var(--spacer-20); border: var(--hairline); border-radius: var(--radius-14); background: var(--glass); backdrop-filter: blur(var(--glass-blur-sm)); font-size: var(--text-sm); color: var(--text-secondary); line-height: var(--leading-body); max-width: 560px; margin-left: auto; margin-right: auto; text-align: left; display: none; }
+.cta__whatsnew.is-on { display: block; }
+.cta__whatsnew strong { color: var(--accent); font-weight: var(--weight-semibold); }
+
+/* hero mock 待机微浮动（动效 gated by reduced-motion 下方） */
+@media (hover: hover) and (prefers-reduced-motion: no-preference) {
+  .hero__mock { animation: heroFloat 7s ease-in-out infinite; }
+}
+@keyframes heroFloat {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+
+/* bento 卡错落进场（未显式给 --d 的卡按序延迟） */
+.bento__card:nth-child(2) { --d: .06s; }
+.bento__card:nth-child(3) { --d: .12s; }
+.bento__card:nth-child(4) { --d: .10s; }
+.bento__card:nth-child(5) { --d: .16s; }
+.bento__card:nth-child(6) { --d: .14s; }
+.bento__card:nth-child(7) { --d: .20s; }
+.bento__card:nth-child(8) { --d: .18s; }
+.bento__card:nth-child(9) { --d: .24s; }
