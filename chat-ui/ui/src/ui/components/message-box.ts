@@ -54,8 +54,8 @@ styleSheet.replaceSync(/* css */`
   }
   .oc-msgbox--info {
     background: var(--accent-subtle, rgba(79,70,229,0.08));
-    color: var(--accent, #4f46e5);
-    border: 1px solid color-mix(in srgb, var(--accent, #4f46e5) 25%, transparent);
+    color: var(--accent, #1a6fd0);
+    border: 1px solid color-mix(in srgb, var(--accent, #1a6fd0) 25%, transparent);
   }
 `);
 document.adoptedStyleSheets = [...document.adoptedStyleSheets, styleSheet];

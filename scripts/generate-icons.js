@@ -2,8 +2,8 @@
 /**
  * CryoClaw 图标生成脚本（纯 Node，无第三方依赖）
  *
- * 标识：尖顶六边形冰晶（冰蓝渐变 #7DD3FC → #0284C7）+ 三道爪痕负空间。
- * 主图标为深色圆角方底（#075985 → #0C4A6E）；macOS Template 为纯黑 + alpha。
+ * 标识：尖顶六边形冰晶（CryoBlue 蓝青混色渐变 #4BA4E6 → #1A6FD0，2026.9 R2b 品牌色）+ 三道爪痕负空间。
+ * 主图标为深色圆角方底（#163E75 → #0F2A4E）；macOS Template 为纯黑 + alpha。
  *
  * 光栅化：SDF（多边形/锥形贝塞尔爪痕）+ 超采样盒式降采样，边缘平滑。
  * 编码：手写 PNG（zlib deflate）、ICO（内嵌 PNG，Vista+）、ICNS（ic07–ic12 内嵌 PNG）。
@@ -32,12 +32,12 @@ function mixColor(c1, c2, t) {
 }
 
 const COLORS = {
-  bgTop: hexColor("#075985"),
-  bgBottom: hexColor("#0C4A6E"),
-  crystalTop: hexColor("#7DD3FC"),
-  crystalBottom: hexColor("#0284C7"),
-  trayDark: hexColor("#0C4A6E"), // 浅色任务栏用深色剪影
-  trayLight: hexColor("#F0F9FF"), // 深色任务栏用浅色剪影
+  bgTop: hexColor("#163E75"),
+  bgBottom: hexColor("#0F2A4E"),
+  crystalTop: hexColor("#4BA4E6"),
+  crystalBottom: hexColor("#1A6FD0"),
+  trayDark: hexColor("#164A90"), // 浅色任务栏用深色剪影
+  trayLight: hexColor("#EEF6FD"), // 深色任务栏用浅色剪影
   template: hexColor("#000000"), // macOS 模板：纯黑 + alpha
 };
 

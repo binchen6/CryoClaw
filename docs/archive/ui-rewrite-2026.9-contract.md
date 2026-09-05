@@ -1,5 +1,10 @@
 # UI 重写契约（2026.9 提案 A 落地）— 子任务执行约束
 
+> **状态：已完成（v2026.903.0 落地全部契约项，随 R44 发版；存档保留供回溯）。**
+> 抽查对证：`cc-rail`/`cc-session-panel` 组件（`chat-ui/ui/src/ui/components/`，无 Shadow DOM）、
+> 上下文栏与 `--titlebar-h: 44px`（`styles/shell.css`）、浅色一等主题与 indigo 强调色
+> （`shared/design-tokens.css`）均与本文一致。现行设计规范以 `docs/design-guidelines-zh.md` 为准。
+
 本文是 2026.9 UI 大规模重写的**强制契约**。所有视图/样式重写必须遵守；违反红线 = 返工。
 
 ## 新布局模型（提案 A）

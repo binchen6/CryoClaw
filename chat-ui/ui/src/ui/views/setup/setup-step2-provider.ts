@@ -64,6 +64,8 @@ async function handleAdoptEnvKey(candidate: EnvKeyCandidate, state: AppViewState
   try {
     const result = await ipc.adoptEnvKey({ providerKey: candidate.providerKey, envVar: candidate.envVar });
     if (result.ok) {
+      // 成功路径也复位进行中标记（防御未来重入/回退到本步），再跳转
+      qs.adoptingEnvVar = null;
       // 与手动保存成功同路径
       goToStep(3);
       return;
@@ -230,10 +232,8 @@ async function saveProviderFragment(apiKey: string, modelID: string, supportsIma
   if (isKimiCode) {
     const sidecar = await ipc.settingsWriteKimiApiKey({ apiKey });
     const proxyPort = sidecar?.proxyPort ?? 0;
-    const proxySecret = sidecar?.proxySecret ?? "";
     effectiveApiKey = "proxy-managed";
-    // baseUrl 必须带 path secret（回环鉴权，见主进程 kimi-auth-proxy）
-    effectiveTarget = { ...target, baseUrl: `http://127.0.0.1:${proxyPort}${proxySecret ? `/${proxySecret}` : ""}/coding` };
+    effectiveTarget = { ...target, baseUrl: `http://127.0.0.1:${proxyPort}/coding` };
   }
   const providerConfig = buildProviderConfigForAdd(effectiveTarget, effectiveApiKey, entry);
   await ipc.saveConfig({
@@ -507,7 +507,7 @@ export function renderStep2(state: AppViewState, goToStep: (step: number) => voi
       </div>
 
       <div class="oc-setup-btn-row">
-        <button class="oc-setup-btn oc-setup-btn--secondary" @click=${() => goToStep(1)}>
+        <button class="oc-setup-btn oc-setup-btn--secondary" ?disabled=${s.verifying || !!qs.adoptingEnvVar} @click=${() => goToStep(1)}>
           ${t("setup.provider.back")}
         </button>
         ${!isOAuth ? html`

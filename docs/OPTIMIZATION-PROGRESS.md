@@ -10,9 +10,9 @@
 面向国内生态（Kimi / Moonshot / 飞书 / 企微 / 微信 / 钉钉 / QQ）。
 
 **当前状态**：
-- 重设计工程 **R1–R44 完成**（R44 2026.9 UI 全面重写 + 2026.8.2 内核适配），最新发版 **v2026.904.0**（R44；v2026.903.0：同批首版）。流式体验两期设计均落地（`docs/archive/specs/2026-08-28-stream-flow-and-sidebar-design.md`）。
-- 内核 openclaw **2026.8.2**（版本 pin 在 package.json `cryoclaw.openclaw`）；**Electron 43.4.0**（audit 0 漏洞）。
-- 测试基线 **807 pass / 0 fail**（vitest + node + chat-ui + scripts；0 fail 为硬指标）。
+- 重设计工程 **R1–R50 完成**（R50 确立 CryoBlue 蓝青混色设计规范 + CryoIcons 自绘图标 + 官网重设计；R49 移除 kimi-auth-proxy 回环鉴权，修复主模型静默 401 落入 fallback），最新发版 **v2026.908.0**。流式体验两期设计均落地（`docs/archive/specs/2026-08-28-stream-flow-and-sidebar-design.md`）。
+- 内核 openclaw **2026.8.2**（版本 pin 在 package.json `cryoclaw.openclaw`；更新目标走 `kernel-channel.json` 策展渠道，minSupported 2026.7.0）；**Electron 43.4.0**（audit 0 漏洞）。
+- 测试基线 **902 pass / 0 fail / 4 skipped**（vitest 146 + node 157 + chat-ui 521 + scripts 78；2026-09-05 实测，0 fail 为硬指标；scripts 的 asar 冒烟 1 fail 为干净树同样失败的既有环境问题）。
 - 重复率 **1.15%**（78 clones，阈值 5%，`npm run dupcheck` 防回退）；视图 id 收敛为 6（chat/setup/settings/workspace/tasks/extensions）。
 - 开源：GitHub `binchen6/CryoClaw`（AGPL-3.0-only，干净历史）；发版走本地 `dist:win` + `gh release`；CI `tests.yml` 每次 push/PR 全量回归。
 
@@ -28,7 +28,7 @@
 - 只改 CryoClaw 自己的代码；内核 openclaw（gateway.asar 内 dist）**零改动**，仅可只读取证。
 - 不 git commit（除非用户明确要求）。
 - 新敏感 IPC 通道必须加 `assertTrustedIpcSender`（src/ipc-sender-guard.ts）。
-- **UI 规范**：2026.9 新规范——中性灰 + 单一 indigo 强调色（`shared/design-tokens.css`，brand-500 `#6366f1`），浅色为一等主题；样式走 design token / cc-* 原语；**禁止硬编码 hex**；按钮右对齐。契约见 `docs/ui-rewrite-2026.9-contract.md` 与 `docs/design-guidelines-zh.md`。
+- **UI 规范**：2026.9 R2b——中性灰 + CryoBlue 蓝青混色强调色（`shared/design-tokens.css`，浅色主色 brand-600 `#1a6fd0`，辅色 cyan `--accent-2`；签名渐变蓝→青仅用于品牌时刻），浅色为一等主题；图标全部自绘（CryoIcons，`icons.ts`，24 网格/2px 描边/currentColor）；样式走 design token / cc-* 原语；**禁止硬编码 hex**；按钮右对齐。规范全文见 `docs/design-guidelines-zh.md`。
 - 布局：顶部沉浸式 titlebar 44px，浮层 top ≥ 56px；窄窗（≤768px）media query；grid 防溢出 `minmax(0,1fr)` + `min-width:0`。
 
 **文档导航**：
@@ -38,8 +38,8 @@
 | `CLAUDE.md` / `AGENTS.md`（symlink） | 项目硬规范 |
 | `docs/architecture.md` | 架构分层说明 |
 | `docs/ipc-api.md` | 主进程 IPC 通道清单 |
-| `docs/gotchas.md` | 73 条已验证坑（改代码前搜一遍） |
-| `docs/design-guidelines-zh/en.md` | 2026.9 设计规范（中性灰 + indigo token） |
+| `docs/gotchas.md` | 77 条已验证坑（改代码前搜一遍） |
+| `docs/design-guidelines-zh/en.md` | 2026.9 R2b 设计规范（中性灰 + CryoBlue 混色 token + CryoIcons 图标规范） |
 
 ## 🗺 关键路径地图（改动前必读）
 
@@ -57,7 +57,7 @@
 | chat-ui 视图 | `chat-ui/ui/src/ui/views/` + `controllers/` | views 纯渲染，controllers 封装 RPC |
 | 视图接线 | `app-render.ts` + `views/registry.ts` | 视图 id 唯一事实来源；**新视图接线点 3 处**（gotchas #49） |
 | 样式 hub | `chat-ui/ui/src/styles.css` | **只做 @import，层叠顺序敏感**：design-tokens → tokens-ext → base → **primitives** → **utilities** → chat/components/panels/sidebar/skills/compose/workspace/cron/misc/panel/plan →（末尾）settings → setup |
-| 设计 token | `shared/design-tokens.css` + `styles/tokens-ext.css` | 中性灰 + indigo；兼容别名 --accent/--bg |
+| 设计 token | `shared/design-tokens.css` + `styles/tokens-ext.css` | 中性灰 + CryoBlue 混色；兼容别名 --accent/--bg |
 | 契约组件 | `styles/primitives.css` | cc-btn/cc-input/cc-card/cc-dialog/cc-tag/cc-menu/cc-alert/cc-skeleton/cc-table/cc-tabs/cc-chip |
 | 进度/坑 | `docs/OPTIMIZATION-PROGRESS.md` + `docs/gotchas.md` | 本文件 + 73 条已验证坑（gotchas 为准） |
 
@@ -347,10 +347,55 @@
 ### R44 · 2026.9 UI 全面重写 + 2026.8.2 内核升级适配（完成，随 v2026.903.0 / v2026.904.0 发版）
 
 用户指令：UI 全面重写（2026.9 新设计契约）+ 内核 openclaw 2026.8.2 升级适配。
-- **UI 重写**：新应用壳 `cc-rail` / `cc-session-panel` 替换旧侧边栏布局；浅色升为一等主题；主题色从冰蓝 `#0EA5E9` 切换为中性灰 + 单一 indigo 强调色（`--brand-500: #6366f1`，`shared/design-tokens.css`）；默认窗口尺寸调为屏幕 80%。契约文档 `docs/ui-rewrite-2026.9-contract.md`，规范见 `docs/design-guidelines-zh.md`。
+- **UI 重写**：新应用壳 `cc-rail` / `cc-session-panel` 替换旧侧边栏布局；浅色升为一等主题；主题色从冰蓝 `#0EA5E9` 切换为中性灰 + 单一 indigo 强调色（`--brand-500: #6366f1`，`shared/design-tokens.css`）；默认窗口尺寸调为屏幕 80%。契约文档 `docs/archive/ui-rewrite-2026.9-contract.md`（已完成存档），规范见 `docs/design-guidelines-zh.md`。
 - **内核 2026.8.2 适配**：配置双向迁移（新旧 schema 互转）；不兼容插件自动降级；gateway 握手 Origin 改写；webchat-ui 客户端身份适配。内核调研取证见 `docs/kernel-2026.8.2-research.md`。
 - 内核 pin：`package.json` `cryoclaw.openclaw` = 2026.8.2；发版 v2026.903.0 → v2026.904.0。
 - **测试基线 771→807 全绿**。
+
+### R45 · asar gateway 启动崩溃修复 + 无载荷插件收敛降级（完成，随 v2026.904.2 发版）
+
+- **问题**：打包安装后 gateway 无法启动——kernel-dist-patch 补丁 3/4 的 asar-bypass 分支 `rootRealPath` 为 undefined，2026.8.2 启动加载链直接崩溃（自 v2026.811.8 潜伏，dev 验证一直走散文件模式未暴露）；另装过无 payload 插件（目录在但无 package.json 且无 dist/，如纯技能插件）时 gateway 反复报「迁移未收敛」永不就绪。
+- **方案**：`rootRealPath` 兜底 `params.rootPath`；迁移规则把此类 enabled 插件降级为禁用（配置完整保留，扩展商店重装可恢复）。
+- **证据**：新增 `scripts/gateway-asar-smoke.test.js`（真实 asar 形态启动冒烟，`OPENCLAW_STATE_DIR` 隔离）+ kernel-dist-patch / openclaw-config-migration 测试扩充；提交 7bd4df0。
+
+### R46 · 内核更新改策展稳定版渠道（完成，随 v2026.905.0 发版）
+
+- **问题**：openclaw npm `latest` dist-tag 指向发行证据链未完成的 2026.9.1，被直接当更新目标误报「有新版本」。
+- **方案**：新增 `kernel-channel.json`（仓库根策展清单）+ `scripts/lib/kernel-channel.js`（版本比较/清单解析）；`kernel-update.mjs fetchStableVersion()` 远程双源（raw.githubusercontent → jsdelivr 镜像，8s 超时）→ 构建期注入内置兜底，绝不回落 npm latest；`updateAvailable` 改三段数字比较，current 更高不再提示降级，无 tag 且不落后时早退。
+- **证据**：`scripts/kernel-channel.test.js`；设置页内核面板「最新版本」→「稳定版本」（zh/en）；提交 dc45243。
+
+### R47 · 更新弹窗 + 暂缓机制 + 非静默换装（完成，随 v2026.906.0 发版）
+
+- **问题**：发现新版本即静默后台下载，用户无决策点；换装为无界面静默安装（`/S`），进度不可见。
+- **方案**：`autoDownload=false`，启动检查发现新版仅弹窗（更新日志 + 更新/暂缓，chat-ui `views/update-available-dialog.ts`，下载进度 → 重启安装同弹窗完成）；`src/update-snooze.ts` 暂缓持久化（7 天/1 月/3 月/永久/自定义 1–3650 天，存 `userData/app-update-snooze.json`），期内跳过启动自动检查；quitAndInstall 去 `/S` 拉起带进度条的 NSIS 安装器窗口；设置-关于页适配（available 态手动下载按钮 + 暂缓状态/恢复入口）。
+- **证据**：守护测试 9 个（`app-update-notify.test.ts` 源码审计）+ update-snooze 纯逻辑 3 个；提交 a05fb5e。
+
+### R48 · 安装器品牌视觉 + Setup 快速通道 + 内核兜底自动升级 + 迁移可恢复性（完成，随 v2026.907.0 发版）
+
+- **安装器品牌视觉**：Welcome 侧图/页头图走 `electron-builder.yml` 的 `nsis.installerSidebar`/`installerHeader`（installer.nsh 里 `!define` 同名宏会与命令行 `-D` 冲突，gotchas #74）；位图由 `scripts/gen-installer-bitmaps.ps1` 生成（.ps1 必须带 BOM，gotchas #75）。
+- **Setup 快速通道**：`src/setup-env-detect.ts` 扫描环境变量已有的 provider key（OPENAI/ANTHROPIC/MOONSHOT/GOOGLE·GEMINI/DEEPSEEK），`setup:detect-env-keys` 只回掩码、`setup:adopt-env-key` 白名单校验 + 真实验证落盘——明文 key 不出主进程。
+- **内核兜底自动升级**：`isKernelBelowMinSupported()`（门槛 2026.7，与 kernel-channel.json minSupported 双处同步）→ `main.ts scheduleAutoKernelUpgradeIfNeeded()`（仅 packaged、延迟 25s、导入进行中取消、失败不弹窗）；`kernel:update-progress` 载荷新增 `source:"auto"|"manual"`，渲染层 `kernel-auto-upgrade-banner` 全局横幅呈现。
+- **迁移可恢复性**：导入 .openclaw 前自动创建应急归档（`%LOCALAPPDATA%\CryoClaw\import-backup`，滚动 2 份，解压失败自动还原，备份失败中止导入）；内核回滚三处（升级失败自动回滚/best-effort 回滚/换装成功）重跑双向配置迁移；内核备份附存 openclaw.json 快照（`scripts/lib/kernel-config-snapshot.js`，不自动恢复）；`cryoclaw-config.ts` 老版本迁移改「仅补齐缺失字段」（不再丢 updateChannel 等既有设置）。
+- **证据**：新增测试件 setup-env-detect / kernel-config-snapshot / openclaw-state-archive / openclaw-state-import-lifecycle / kernel-auto-upgrade-banner / setup-quickstart 等；提交 41fbd7f。全量基线 889 pass / 0 fail / 4 skipped（2026-09-04 实测）。
+
+### R49 · 移除 kimi-auth-proxy 回环鉴权（完成）
+
+用户报告「kimi 回环鉴权导致无法使用 kimi 模型」。取证本机 `~/.openclaw/openclaw.json`：`kimi` 与 `kimi-coding` 两个 provider 的 baseUrl 均烙着某次会话的旧 path secret，主模型 `kimi/k3-256k` 每次请求被本机代理 401（7ms 内本地拒绝，未到上游），静默 fallback 到 deepseek——R40 事故的复发形态。
+- **决策**：secret 写在 openclaw.json 里，应用重启即轮换，任何同步缺口（early-return/heal 盲区/手动改配置）都会让主模型静默 401；维护 16 条消费路径的成本远超「本机进程白嫖 token」这一低威胁场景收益。按用户授权直接移除该特性。
+- **实施**：`kimi-auth-proxy.ts` 删 `generateProxySecret`/`extractSecuredPath`/`getProxySecret`/secret 状态，`handleRequest` 直接路由（未知路径仍 404、无 token 仍 401——代理自身 token 缺失语义保留）；`kimi-config.ts` `ensureMemorySearchProxyConfig` 去 secret 参数；**`healLegacyProxyProviders` 保留并反转语义**——把带旧 secret 段/旧端口的本地代理 provider 改写为当前端口无 secret 形态（用户现有坏配置下次启动自动治愈，主模型 `kimi/k3-256k` 无需手动干预）；`main.ts` ensureProxyConfig、`provider-config.ts` verifyKFC/图片探测、`setup-ipc.ts`/`settings/verify.ts` IPC 返回值（不再回 proxySecret）、chat-ui 五处 URL 构建点（setup-step2/tab-provider×2/tab-provider.lib/tab-channels.lib/tab-memory）全部改为 `http://127.0.0.1:<port>/coding` 形态。
+- **保留**：diagnostics-export 对回环 URL 路径段的按值打码（磁盘上旧配置仍可能带历史 secret，无副作用防御）。
+- **测试**：kimi-auth-proxy.test 重写为 3 例（路由 404/无 token 401/重启可再起；用 `keepAlive:false` agent 规避同端口快速重 bind 时复用已掐死池化 socket 的 ECONNRESET 假阳性）；kimi-config heal 系列更新为无 secret 断言 6 例。全量回归：vitest 146 + node 157 + chat-ui 521 + scripts 78 全绿；scripts 的 asar 冒烟 1 fail 为干净树上同样失败的既有问题（环境缺 gateway.mode），与本次无关。
+- **记录在案**：威胁模型变化——本机任意进程可经 127.0.0.1:<port>/coding 借用代理注入的 token 调 Kimi API（白名单路由、固定上游、监听仅回环；接受此残余风险换取配置零同步面）。
+
+### R50 · CryoBlue 设计规范确立 + CryoIcons 自绘图标 + 官网重设计（完成）
+
+用户要求：确立完整设计规范（理念/字体/色彩/排版/全套自设计图标），品牌色固定为「为高效和工作服务的沉稳蓝」并可做混色（更活力、不抢眼、耐看、有辅色和色阶），精修全部页面，重设计官网，走审查-测试-发版-去敏-push-发行版固定流程。
+- **CryoBlue 混色体系**：musepool 参照检索（cyan-blue 主色 + 同族 tint + 蓝青渐变品牌时刻模式）后定案——自绘 brand 色阶（`#eef6fd…#0f2a4e`），浅色主色 brand-600 `#1a6fd0`（蓝向青偏移，白底对比度 ≈4.6:1 过 AA），基准 brand-500 `#2a89dd`；辅色 cyan（`--accent-2` 浅色 `#0891b2` / 暗色 `#22d3ee`）仅作第二强调；品牌签名渐变 蓝→青（`#2a89dd→#06b6d4` / 暗色 `#85c2ee→#22d3ee`）只用于 logo / 官网 hero / 安装器等品牌时刻，UI 内部只用纯色 accent。token 名称零改名，值全量迁移。
+- **CryoIcons 自绘图标**：`icons.ts` 49 个图标全部手写 SVG（24 网格、2px 描边、round cap/join、currentColor、纯几何；唯二填充例外 = moreHorizontal 圆点 + pinActive 激活态），media-enhance 文件卡片图标同步自绘；**移除 lucide 依赖**（vendor-misc 分包瘦身），135 条 path 经语法校验，chat-ui 521 测试全绿（含 grouped-render 的 unsafeSVG 审计）。
+- **品牌资产换新**：`generate-icons.js`（冰晶主图标/托盘/ICO/ICNS）与 `gen-installer-bitmaps.ps1`（安装器位图）换 CryoBlue 并重跑；红色吉祥物（favicon + cc-rail 品牌标）换蓝（渐变 #4ba4e6→#1a6fd0）。
+- **规范文档**：`design-guidelines-zh/en.md` 更新总则/色板/配色章节并新增第 6 节「图标系统（CryoIcons）」绘制与扩展规范；CLAUDE.md 规则 1、README badge（color=1a6fd0）同步。
+- **官网重设计**：浅色一等（纸白中性底）+ CryoBlue，`website/design-tokens.css` 主题块整段重写（浅色默认 + 暗色独立调参 + OS 偏好兜底）；styles.css 去硬编码（orb 混合模式/透明度 token 化，修复 `var(--accent-gl)` 拼写 bug 导致 orb--1 隐形）；文案更新（CryoBlue 设计体系卡、对比行、演示流文本、版本徽章、统计 902 用例）。Electron 无头截图验证五个屏位渲染通过。
+- **测试**：全量 902 pass / 0 fail / 4 skipped（2026-09-05）；dupcheck 1.03%（阈值 5%）；shell.css 残留 `#ffffff` 改 `--text-on-accent`。
 
 ## 📦 发版与实测经验（套路已验证多次）
 
@@ -391,7 +436,7 @@
 - webbridge 二进制下载 SHA256 校验（需发布链产出哈希清单，R25 候选）。
 - app-skills SkillsState 双重断言类型层收敛（R26 候选）。
 - device-auth 签名载荷规范化（需网关侧同步修改）。
-- 导出压缩段 worker 化（R33 已 async 化缓解，worker 化收益不成比例 defer）；kimi-auth-proxy 回环鉴权（R33 评估为中风险 backlog）。
+- 导出压缩段 worker 化（R33 已 async 化缓解，worker 化收益不成比例 defer）；~~kimi-auth-proxy 回环鉴权~~（R49 已移除该特性）。
 - `terminal.*`（内嵌终端）、worktrees、完整语音会话 UI、device/node 管理——取证为低价值或高成本，未接入。
 - IPC 通道按 webContents 来源细粒度授权（架构性改动，需逐 handler 评估）。
 - 已发送文件附件卡片化（需先解决 gateway 发送契约一致性）。

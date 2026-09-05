@@ -10,6 +10,8 @@ type OpenclawStateImportLifecycleDeps = {
   reconcileHostState: () => Promise<void>;
   syncImportedConfigState: () => void | Promise<void>;
   startGateway: () => Promise<void>;
+  // 入口护栏（可选）：与内核升级互斥等外部冲突检查，抛错即拒绝导入
+  assertImportAllowed?: () => void;
 };
 
 export function createOpenclawStateImportLifecycle(deps: OpenclawStateImportLifecycleDeps) {
@@ -21,6 +23,7 @@ export function createOpenclawStateImportLifecycle(deps: OpenclawStateImportLife
       if (importActive) {
         throw new Error("正在导入 .openclaw 数据包，请稍后再试。");
       }
+      deps.assertImportAllowed?.();
 
       importActive = true;
       try {

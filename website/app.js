@@ -1,17 +1,15 @@
-/* CryoClaw Landing — 交互与动效
-   兼容基线：ES5 语法（var/function），无依赖零构建；
-   所有动效经 prefersReduced 门控，IntersectionObserver 缺失时降级为直接显示。 */
+/* CryoClaw Landing — 2026.9 R2 品牌焕新（浅色一等 · CryoBlue 混色）交互与动效
+   兼容基线：现代浏览器（Chrome/Edge 111+、Safari 15.4+、Firefox 115+），无依赖零构建。
+   所有动效经 prefersReduced 门控；IntersectionObserver 缺失时降级为直接显示。 */
 (function () {
   "use strict";
 
   var prefersReduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  // ?snap=1：截图/打印模式——全部 reveal 直接可见、关闭平滑滚动
+  // ?snap=1：截图/打印模式——全部 reveal 直接可见、关闭平滑滚动与倾斜/磁吸
   var snapMode = /[?&]snap=1/.test(location.search);
   if (snapMode) {
     document.documentElement.style.scrollBehavior = "auto";
     prefersReduced = true;
-    var heroEl = document.querySelector(".hero");
-    if (heroEl) heroEl.style.minHeight = "0";
   }
 
   /* ── 滚动 reveal ── */
@@ -26,15 +24,14 @@
           io.unobserve(entry.target);
         }
       });
-    }, { threshold: 0.12 });
+    }, { threshold: 0.12, rootMargin: "0px 0px -60px 0px" });
     revealEls.forEach(function (el) { io.observe(el); });
   }
 
-  /* ── 导航滚动态 + 滚动进度条 + hero 视差（同一 rAF 节流 scroll 处理器） ── */
+  /* ── 导航滚动态 + 进度条 + 背景视差（同 rAF 节流 scroll） ── */
   var nav = document.getElementById("nav");
   var progress = document.getElementById("nav-progress");
-  var aurora = document.getElementById("aurora");
-  var mockWrap = document.querySelector(".hero__mock");
+  var bgOrbs = document.querySelectorAll(".bg__orb");
   var ticking = false;
   function onScroll() {
     if (ticking) return;
@@ -47,14 +44,13 @@
         var max = document.documentElement.scrollHeight - window.innerHeight;
         progress.style.width = (max > 0 ? (y / max) * 100 : 0) + "%";
       }
-      if (!prefersReduced) {
-        // 视差：aurora 下移快、mock 上移慢，营造纵深（仅首屏范围内有意义）
-        if (aurora && y < window.innerHeight * 1.5) {
-          aurora.style.transform = "translateY(" + y * 0.18 + "px)";
-        }
-        if (mockWrap && y < window.innerHeight * 1.5) {
-          mockWrap.style.transform = "translateY(" + y * -0.06 + "px)";
-        }
+      if (!prefersReduced && bgOrbs.length) {
+        // 光斑反向视差，营造纵深
+        var dy = y * 0.06;
+        bgOrbs.forEach(function (orb, i) {
+          var dir = i % 2 === 0 ? 1 : -1;
+          orb.style.transform = "translateY(" + (dy * dir) + "px)";
+        });
       }
     });
   }
@@ -71,7 +67,7 @@
       return;
     }
     var start = null;
-    var duration = 1400;
+    var duration = 1500;
     function tick(ts) {
       if (!start) start = ts;
       var p = Math.min((ts - start) / duration, 1);
@@ -86,10 +82,7 @@
   if ("IntersectionObserver" in window) {
     var statIO = new IntersectionObserver(function (entries) {
       entries.forEach(function (entry) {
-        if (entry.isIntersecting) {
-          animateCount(entry.target);
-          statIO.unobserve(entry.target);
-        }
+        if (entry.isIntersecting) { animateCount(entry.target); statIO.unobserve(entry.target); }
       });
     }, { threshold: 0.4 });
     statNums.forEach(function (el) { statIO.observe(el); });
@@ -99,59 +92,46 @@
 
   /* ── 提供商跑马灯：复制一份实现无缝循环 ── */
   var track = document.getElementById("provider-track");
-  if (track) {
-    track.innerHTML += track.innerHTML;
-  }
+  if (track) track.innerHTML += track.innerHTML;
 
   /* ── mock 窗口流式对话 ── */
   var streamEl = document.getElementById("stream-text");
   var DEMO_LINES = [
-    "本周重点：\n\n1. 发布 v2026.828.1 —— 设计 token 现代化，浅色/暗色双主题独立调参。\n2. 对话页布局重构：消息流居中列、compose 一体化输入框。\n3. 内核 asar 再裁 10MB",
+    "本周重点：\n\n1. 品牌焕新 —— CryoBlue 蓝青混色 + CryoIcons 自绘图标。\n2. 对话页布局重构：消息流居中列、compose 一体化输入框。\n3. 内核 asar 再裁 10MB。",
   ];
   if (streamEl && !prefersReduced) {
-    var text = DEMO_LINES[0];
-    var idx = 0;
+    var text = DEMO_LINES[0], idx = 0;
     function typeNext() {
       if (idx <= text.length) {
         streamEl.textContent = text.slice(0, idx);
         idx++;
         var ch = text.charAt(idx - 1);
-        var delay = ch === "\n" ? 160 : 24 + Math.random() * 40;
+        var delay = ch === "\n" ? 150 : 22 + Math.random() * 38;
         setTimeout(typeNext, delay);
       } else {
-        setTimeout(function () {
-          idx = 0;
-          streamEl.textContent = "";
-          typeNext();
-        }, 6000);
+        setTimeout(function () { idx = 0; streamEl.textContent = ""; typeNext(); }, 6500);
       }
     }
-    // 等 mock 进入视口再开始打字
     if ("IntersectionObserver" in window) {
       var started = false;
       var mockIO = new IntersectionObserver(function (entries) {
         if (entries[0].isIntersecting && !started) {
-          started = true;
-          setTimeout(typeNext, 600);
-          mockIO.disconnect();
+          started = true; setTimeout(typeNext, 600); mockIO.disconnect();
         }
       }, { threshold: 0.3 });
       mockIO.observe(streamEl.closest(".hero__mock") || streamEl);
-    } else {
-      typeNext();
-    }
+    } else { typeNext(); }
   } else if (streamEl) {
     streamEl.textContent = DEMO_LINES[0];
   }
 
-  /* ── spotlight 边框：特性卡光斑跟随指针 ── */
+  /* ── spotlight 边框：bento 卡光斑跟随指针（rAF 合帧） ── */
   if (!prefersReduced && window.matchMedia("(hover: hover)").matches) {
-    document.querySelectorAll(".feature-card").forEach(function (card) {
-      var rafId = 0;
-      var lastE = null;
+    document.querySelectorAll("[data-spot]").forEach(function (card) {
+      var rafId = 0, lastE = null;
       card.addEventListener("pointermove", function (e) {
         lastE = e;
-        if (rafId) return; // rAF 合帧节流：一帧内多次 pointermove 只落一次样式写
+        if (rafId) return;
         rafId = requestAnimationFrame(function () {
           rafId = 0;
           if (!lastE) return;
@@ -161,44 +141,44 @@
         });
       });
     });
+  }
 
-    /* ── 磁性按钮：指针靠近时轻微吸附（最大 4px） ── */
+  /* ── 3D 倾斜：应用窗口 mock ── */
+  var tiltWrap = document.getElementById("tilt");
+  if (tiltWrap && !prefersReduced && window.matchMedia("(hover: hover)").matches) {
+    var mockEl = tiltWrap.querySelector(".mock");
+    var raf = 0;
+    tiltWrap.addEventListener("pointermove", function (e) {
+      if (raf) return;
+      raf = requestAnimationFrame(function () {
+        raf = 0;
+        var rect = tiltWrap.getBoundingClientRect();
+        var px = (e.clientX - rect.left) / rect.width - 0.5;
+        var py = (e.clientY - rect.top) / rect.height - 0.5;
+        // 覆盖 CSS 默认微倾，动态追加
+        mockEl.style.transform = "rotateY(" + (px * 7) + "deg) rotateX(" + (-py * 6) + "deg)";
+      });
+    });
+    tiltWrap.addEventListener("pointerleave", function () {
+      mockEl.style.transform = "";
+      mockEl.style.transition = "transform .6s cubic-bezier(.16,1,.3,1)";
+      setTimeout(function () { mockEl.style.transition = ""; }, 600);
+    });
+  }
+
+  /* ── 磁吸按钮：朝指针轻微位移 ── */
+  if (!prefersReduced && window.matchMedia("(hover: hover)").matches) {
     document.querySelectorAll("[data-magnetic]").forEach(function (btn) {
-      var STRENGTH = 0.12;
-      var MAX = 4;
-      var rafId = 0;
-      var lastE = null;
-      var pressed = false;
-      var apply = function () {
-        if (!lastE) { btn.style.transform = ""; return; }
-        var rect = btn.getBoundingClientRect();
-        var dx = (lastE.clientX - (rect.left + rect.width / 2)) * STRENGTH;
-        var dy = (lastE.clientY - (rect.top + rect.height / 2)) * STRENGTH;
-        dx = Math.max(-MAX, Math.min(MAX, dx));
-        dy = Math.max(-MAX, Math.min(MAX, dy));
-        // 按下时保留 :active 缩放反馈（内联 transform 会盖掉 CSS 的 .btn:active scale）
-        btn.style.transform = "translate(" + dx + "px," + dy + "px)" + (pressed ? " scale(0.97)" : "");
-      };
       btn.addEventListener("pointermove", function (e) {
-        lastE = e;
-        if (rafId) return; // rAF 合帧节流
-        rafId = requestAnimationFrame(function () {
-          rafId = 0;
-          apply();
-        });
-      });
-      btn.addEventListener("pointerdown", function () {
-        pressed = true;
-        apply();
-      });
-      btn.addEventListener("pointerup", function () {
-        pressed = false;
-        apply();
+        var rect = btn.getBoundingClientRect();
+        var x = (e.clientX - rect.left - rect.width / 2) * 0.16;
+        var y = (e.clientY - rect.top - rect.height / 2) * 0.16;
+        btn.style.transform = "translate(" + x + "px," + y + "px)";
       });
       btn.addEventListener("pointerleave", function () {
-        pressed = false;
-        lastE = null;
         btn.style.transform = "";
+        btn.style.transition = "transform .4s cubic-bezier(.34,1.56,.64,1)";
+        setTimeout(function () { btn.style.transition = ""; }, 400);
       });
     });
   }
@@ -213,9 +193,7 @@
       if (heroVer) heroVer.textContent = "v" + version;
       var dlVer = document.getElementById("download-version");
       if (dlVer) dlVer.textContent = "最新版本 v" + version;
-      var asset = (data.assets || []).find(function (a) {
-        return /Setup.*x64\.exe$/i.test(a.name);
-      });
+      var asset = (data.assets || []).find(function (a) { return /Setup.*x64\.exe$/i.test(a.name); });
       if (asset) {
         ["download-hero", "download-cta"].forEach(function (id) {
           var el = document.getElementById(id);

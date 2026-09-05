@@ -690,3 +690,65 @@ test("runKernelUpdate：catch 兜底回滚失败时不执行配置迁移", async
   const migration = await import("./openclaw-config-migration");
   expect(migration.migrateOpenclawConfigForKernelUpgrade).not.toHaveBeenCalled();
 });
+
+// ── checkKernelUpdate 与升级编排并发（F10）──
+
+test("checkKernelUpdate：升级进行中返回缓存状态，不 spawn --check", async () => {
+  const blocker = makeBlockingChild();
+  let spawnCount = 0;
+  mockState.spawnImpl = () => {
+    spawnCount++;
+    return blocker as any;
+  };
+  const { initKernelUpdater, runKernelUpdate, checkKernelUpdate, getKernelUpdateState } = await import("./kernel-updater");
+  initKernelUpdater(makeDeps());
+  const firstPromise = runKernelUpdate();
+  await new Promise((r) => setImmediate(r));
+  expect(getKernelUpdateState().running).toBe(true);
+  const spawnBeforeCheck = spawnCount;
+  const state = await checkKernelUpdate();
+  // running 中不 spawn --check，直接返回缓存（含 running=true）
+  expect(spawnCount).toBe(spawnBeforeCheck);
+  expect(state.running).toBe(true);
+  blocker.release(makeProgressEvents());
+  await firstPromise;
+});
+
+// ── done/error 终态载荷携带 version/action（渲染层 i18n 插值，F3）──
+
+test("runKernelUpdate：done 终态带 version 与 action=update", async () => {
+  mockState.spawnImpl = () => makeChild(makeProgressEvents());
+  const { initKernelUpdater, runKernelUpdate } = await import("./kernel-updater");
+  const deps = makeDeps();
+  initKernelUpdater(deps);
+  await runKernelUpdate();
+  expect(deps.push).toHaveBeenCalledWith(
+    expect.objectContaining({ step: "done", version: "2026.7.2", action: "update" }),
+  );
+});
+
+test("runKernelUpdate：自动回滚失败的 error 终态带 version 与 action", async () => {
+  mockState.spawnImpl = (args) =>
+    args.includes("--rollback") ? makeChild(makeRollbackEvents()) : makeChild(makeProgressEvents());
+  const { initKernelUpdater, runKernelUpdate } = await import("./kernel-updater");
+  const deps = makeDeps({
+    startGateway: vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true),
+  });
+  initKernelUpdater(deps);
+  await runKernelUpdate();
+  expect(deps.push).toHaveBeenCalledWith(
+    expect.objectContaining({ step: "error", version: "2026.7.2", action: "update" }),
+  );
+});
+
+test("runKernelRollback：done 终态带 action=rollback", async () => {
+  mockState.spawnImpl = (args) =>
+    args.includes("--rollback") ? makeChild(makeRollbackEvents()) : makeChild([]);
+  const { initKernelUpdater, runKernelRollback } = await import("./kernel-updater");
+  const deps = makeDeps();
+  initKernelUpdater(deps);
+  await runKernelRollback();
+  expect(deps.push).toHaveBeenCalledWith(
+    expect.objectContaining({ step: "done", version: "2026.7.1-2", action: "rollback" }),
+  );
+});

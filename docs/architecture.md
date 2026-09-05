@@ -61,6 +61,11 @@ First-launch wizard flow:
 - **Step 2**: Provider Config (API key + provider selection, or Kimi OAuth login)
 - **Step 3**: Done — optional toggles for Install CLI + Launch at Login
 
+v2026.907.0 起 Step 2 有「快速通道」（`setup-env-detect.ts`）：扫描本机环境变量中已有的
+provider API Key（OpenAI / Anthropic / Moonshot / Google / DeepSeek），一键采用——
+`setup:detect-env-keys` 只回掩码列表，`setup:adopt-env-key` 由主进程读明文、真实验证、
+落盘（明文 key 不出主进程，详见 docs/ipc-api.md）。
+
 Config is written to `~/.openclaw/openclaw.json`. Setup completion is marked by `config.wizard.lastRunAt`.
 
 ## Settings Page (`settings-ipc.ts`, `settings/`)
@@ -119,6 +124,16 @@ Non-destructive config safety net:
 - **Setup baseline**: Read-only copy of initial post-wizard config
 - **Recovery flow**: On startup, if config is invalid JSON or gateway fails to start, the main process offers "Restore Last Known Good" / "Open Settings" / "Dismiss"
 - **Factory reset**: Delete config entirely and relaunch into Setup wizard (preserves chat history)
+- **导入应急归档（v2026.907.0）**：`settings:import-openclaw-state` 导入会清空状态目录，
+  清空前自动把当前状态导出为应急归档（`%LOCALAPPDATA%\CryoClaw\import-backup`，
+  滚动保留 2 份，见 `openclaw-state-archive.ts`）；备份失败中止导入，解压中途失败
+  best-effort 自动还原。
+- **内核配置迁移双向可回退（v2026.907.0 加固）**：`openclaw-config-migration.ts` 的
+  2026.8 挪位类规则（planTool、memorySearch）是双向的——内核回退到 <2026.8 时按反向
+  规则搬回旧位置；`kernel-updater.ts` 在换装成功、自动回滚、best-effort 回滚三处都会
+  重跑迁移，保证回退后配置仍被旧内核接受。内核备份同时附存 `openclaw.json` 快照
+  （`scripts/lib/kernel-config-snapshot.js`，回退时**不自动恢复**，避免覆盖回退前新写的
+  配置，提示用户手动核对）。
 
 ## Share Copy (`share-copy.ts`)
 
@@ -225,18 +240,50 @@ Dynamic Dock icon toggle: visible when any window is shown, hidden when all wind
 
 Tray context menu labels are localized (Chinese/English) based on `app.getLocale()`. Menu includes: Open Dashboard, Gateway status, Restart Gateway, Settings, Quit.
 
-## Auto-Updater
+## App Auto-Updater (`app-updater.ts` + `update-snooze.ts`)
 
-> **已移除**：CryoClaw 自身的"检查更新"功能已删除（应用更新由内核升级器 `kernel:*` 系列接管，
-> 见 `docs/OPTIMIZATION-PROGRESS.md` 阶段 1）。原 `auto-updater.ts` + `update-banner-state.ts`
-> + chat-ui 更新 banner 已在阶段 4 清理。下方为历史说明，仅作参考。
+> 阶段 4 曾整体删除，R20 以 GitHub Releases 方案重新引入；本节描述现行行为。
 
-Historical CDN-based update flow via `electron-updater`:
+App 级更新客户端（electron-updater，provider = GitHub Releases）：
+
+- 仅 packaged 环境启用；启动后 ~15s 检查一次（无周期复查），失败只记日志不打扰用户
+- **v2026.906.0 起弹窗决策模式**：`autoDownload=false`，发现新版本弹出更新弹窗
+  （chat-ui `views/update-available-dialog.ts`，更新日志 + 更新/暂缓）；点「更新」才下载，
+  下载进度与「重启安装」在同一弹窗完成；设置-关于页有手动下载按钮与暂缓状态/恢复入口
+- **暂缓机制**（`update-snooze.ts`）：7 天/1 月/3 月/永久/自定义（1–3650 天），持久化在
+  `userData/app-update-snooze.json`；期内跳过启动自动检查，手动检查不受影响
+- **非静默换装**：quitAndInstall 拉起带进度条的 NSIS 安装器窗口（去 `/S`，
+  `autoInstallOnAppQuit=false`）；换装 spawn 为自实现（gotchas #67），
+  `autoUpdater.quitAndInstall()` 仅作 pending 安装器缺失时的回退
+- 状态机纯逻辑在 `app-updater-state.ts`；IPC 通道 `app-update:*` 见 docs/ipc-api.md
+
+Historical CDN-based update flow via `electron-updater`（阶段 4 前的旧方案，仅作参考）:
 
 - macOS requires ZIP artifact (DMG is for manual distribution)
 - Auto-check every 4 hours (30s startup delay)
 - Download progress shown in tray tooltip
 - Pre-quit callback ensures window close policy doesn't block `quitAndInstall()`
+
+## 内核升级器与策展渠道（`kernel-updater.ts` + `scripts/updater/kernel-update.mjs`）
+
+内核（openclaw runtime）升级独立于 App 更新，走自研差分 asar 换装链路（staging install →
+carryOverInjected → 补丁命中校验 → 冒烟 → 重打 → 备份 → rename，失败自动回滚）。
+
+- **策展稳定版渠道（v2026.905.0 起）**：更新目标不再取 npm `latest` dist-tag（会指向发行
+  证据链未完成的版本，见 gotchas #76），改为仓库根 `kernel-channel.json` 策展清单——
+  运行时远程双源拉取（raw.githubusercontent.com → fastly.jsdelivr.net 镜像，各 8s 超时），
+  双源失败回退到**构建期注入的内置兜底版本**（package-resources.js 复制脚本时替换
+  `__CRYOCLAW_FALLBACK_STABLE__` 占位符为 `package.json` 的 `cryoclaw.openclaw` 钉版本），
+  绝不回落 npm latest。`updateAvailable` 用三段数字比较：current 更高（手动 `--tag` 装过
+  新版）时不提示「更新」（那是降级）；无 tag 且 current 不落后 stable 时早退。
+- **minSupported 兜底自动升级（v2026.907.0）**：内核低于 `kernel-channel.json` 的
+  `minSupported`（判定门槛硬编码在 `kernel-updater.ts` 的 `MIN_SUPPORTED_KERNEL_VERSION`，
+  推进 minSupported 需同步两处）时，`main.ts scheduleAutoKernelUpgradeIfNeeded()` 在启动
+  后延迟 25s 自动升级到策展 stable：仅 packaged 生效、模块级布尔防重复调度、.openclaw
+  导入进行中取消、失败只记日志不弹窗。进度经 `kernel:update-progress`（载荷带
+  `source: "auto" | "manual"`）推到渲染层全局横幅（chat-ui
+  `views/kernel-auto-upgrade-banner.ts`）。
+- 配置随版本双向迁移（见「Config Backup & Recovery」）；编排整体看门狗 15 分钟。
 
 ## Incremental Resource Packaging (`package-resources.js`)
 
@@ -292,14 +339,15 @@ Custom NSIS assisted installer with:
 │     │     ├── wecom-config.ts (WeCom channel)                │
 │     │     ├── dingtalk-config.ts (DingTalk channel)          │
 │     │     └── qqbot-config.ts (QQ Bot channel)               │
-│     ├── update-banner-state.ts (update UI state machine)     │
 │     ├── build-config.ts (build-time injected config)         │
 │     ├── analytics.ts + analytics-events.ts (telemetry)       │
-│     ├── auto-updater.ts (CDN updates + progress)             │
+│     ├── app-updater.ts (GitHub Releases 更新)                │
+│     ├── update-snooze.ts (更新暂缓持久化)                    │
+│     ├── kernel-updater.ts (内核换装 + 兜底升级)              │
 │     ├── gateway-auth.ts (token management)                   │
 │     └── logger.ts (file + console)                           │
 │                                                              │
-│  preload.ts ─── contextBridge (~72 IPC + 5 listeners)        │
+│  preload.ts ─── contextBridge (~77 IPC + 5 listeners)        │
 └──────────────────┬───────────────────────────────────────────┘
                    │
      ┌─────────────┴─────────────┐

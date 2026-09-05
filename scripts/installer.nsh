@@ -1,9 +1,9 @@
-; CryoClaw NSIS 自定义钩子
+﻿; CryoClaw NSIS 自定义钩子
 ; 功能：安装前杀进程、更新时跳过多余页面（只显示进度条）、卸载时提供 CLI 清理和用户数据删除选项
 ;
 ; 品牌位图不走本文件（命令行 -D 已定义同名宏，!define 会冲突）：
 ; Welcome 侧图 / 页头图由 electron-builder.yml 的 nsis.installerSidebar / installerHeader 指定，
-; 位图由 scripts/gen-installer-bitmaps.ps1 生成（indigo 渐变 + 图标，与应用品牌色一致）。
+; 位图由 scripts/gen-installer-bitmaps.ps1 生成（沉稳蓝渐变 + 图标，与应用品牌色一致）。
 
 ; ============================================================
 ; 自定义 Welcome 页：更新时自动跳过，首次安装正常显示
@@ -126,6 +126,9 @@
 !macro customUnInstallSection
   ; 默认勾选：删除 CLI wrapper 和 PATH 注入
   Section "un.删除命令行工具 (openclaw CLI)"
+    ; electron-builder 更新安装会静默（/S）运行旧版卸载器，默认勾选的 section 会被执行；
+    ; 更新场景绝不能删 CLI wrapper/PATH——新版启动时 reconcileCliOnAppLaunch 会自愈重建。
+    ${ifNot} ${isUpdated}
     ; 删除当前版本 wrapper（%LOCALAPPDATA%\CryoClaw\bin\）
     Delete "$LOCALAPPDATA\CryoClaw\bin\openclaw.cmd"
     Delete "$LOCALAPPDATA\CryoClaw\bin\clawhub.cmd"
@@ -158,6 +161,7 @@
 
     nsExec::ExecToLog 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$TEMP\cryoclaw-uninstall-path.ps1"'
     Delete "$TEMP\cryoclaw-uninstall-path.ps1"
+    ${endif}
   SectionEnd
 
   ; 默认不勾选：删除 WebBridge 二进制、缓存、日志

@@ -15,8 +15,14 @@
 ## 自动更新
 
 > R20 起由 `src/app-updater.ts` 重新引入（electron-updater，generic provider 走 GitHub Releases）：
-> 仅 packaged 环境启用（dev 下 `supported=false`）；启动后 ~15s 静默检查一次（无周期复查），
-> 自动下载，downloaded 后由用户确认重启安装。换装为自实现 spawn（见 gotchas #67），
+> 仅 packaged 环境启用（dev 下 `supported=false`）；启动后 ~15s 检查一次（无周期复查）。
+> **v2026.906.0 起改为「弹窗决策」模式**：`autoDownload=false`，发现新版本仅弹窗
+> （更新日志 + 更新/暂缓，渲染层 `views/update-available-dialog.ts`），用户点「更新」
+> 才经 `app-update:download` 开始下载；下载进度与「重启安装」在同一弹窗完成。
+> 暂缓持久化在 `src/update-snooze.ts`（`userData/app-update-snooze.json`，
+> 7 天/1 月/3 月/永久/自定义 1–3650 天），期内跳过启动自动检查，手动检查不受影响；
+> `AppUpdateState` 带 `snoozedUntil` 字段。安装**非静默**：quitAndInstall 拉起带进度条的
+> NSIS 安装器窗口（去 `/S`）。换装仍为自实现 spawn（见 gotchas #67），
 > `quitAndInstall()` 仅作文件缺失时的回退。状态机纯逻辑在 `src/app-updater-state.ts`，
 > IPC handlers 注册在 `src/settings/about.ts`（全部过 `assertTrustedIpcSender`）。
 
@@ -24,6 +30,9 @@
 |---|---|---|
 | `appUpdateGetState()` | `app-update:get-state` | invoke，返回 `{success, data: AppUpdateState}` |
 | `appUpdateCheck()` | `app-update:check` | invoke，触发一次检查并返回当前 state |
+| `appUpdateDownload()` | `app-update:download` | invoke，available 态开始下载（唯一下载入口，906.0 新增） |
+| `appUpdateSnooze(opts)` | `app-update:snooze` | invoke，`{days: 1–3650}` 或 `{forever: true}`（906.0 新增） |
+| `appUpdateClearSnooze()` | `app-update:clear-snooze` | invoke，清除暂缓恢复自动检查（906.0 新增） |
 | `appUpdateQuitAndInstall()` | `app-update:quit-and-install` | invoke，启动 pending 安装器后 `app.quit()` |
 | `onAppUpdateState(cb)` | `app:update-state` | 推送（状态快照，返回 unsubscribe 函数） |
 
@@ -40,10 +49,19 @@
 > 不走 `config.patch`），主进程仅写 baseline 默认值与 primary model。
 
 | `setupGetLaunchAtLogin()` | `setup:get-launch-at-login` | invoke |
+| `detectEnvKeys()` | `setup:detect-env-keys` | invoke，返回 `{success, data: [{providerKey, envVar, maskedKey}]}` |
+| `adoptEnvKey(params)` | `setup:adopt-env-key` | invoke，入参 `{providerKey, envVar}`，返回 `{ok, providerKey, model?}` 或 `{ok:false, error}` |
 | `completeSetup(params?)` | `setup:complete` | invoke |
 | `retryRandomPort()` | `setup:retry-random-port` | invoke |
 | `detectInstallation()` | `setup:detect-installation` | invoke |
 | `resolveConflict(params)` | `setup:resolve-conflict` | invoke |
+
+> v2026.907.0 起 Setup「快速通道」：`setup:detect-env-keys` 扫描环境变量（OPENAI /
+> ANTHROPIC / MOONSHOT / GOOGLE·GEMINI / DEEPSEEK_API_KEY，映射表见
+> `src/setup-env-detect.ts` 的 `ENV_KEY_CANDIDATES`）返回**掩码列表**；`setup:adopt-env-key`
+> 只收 `{providerKey, envVar}`（必须是映射表内组合，防渲染层任意指定变量名偷值），明文
+> key 由主进程自读 `process.env`、走与手动配置相同的 `verifyProvider` 真实验证后落盘。
+> **设计红线：明文 key 不出主进程**，渲染层只接触掩码。
 
 ## Kimi OAuth
 
@@ -228,3 +246,8 @@
 | `onSettingsNavigate(cb)` | `settings:navigate` | Settings tab 导航（含 notice） |
 | `onNavigate(cb)` | `app:navigate` | Chat UI 视图切换（返回 unsubscribe 函数） |
 | `onKernelUpdateProgress(cb)` | `kernel:update-progress` | 内核升级进度推送（返回 unsubscribe 函数） |
+
+> `kernel:update-progress` 载荷为 `{step, pct, msg, source?}`；v2026.907.0 起新增
+> `source: "auto" | "manual"` 字段，区分手动升级与「内核低于 minSupported 的兜底自动
+> 升级」（`main.ts scheduleAutoKernelUpgradeIfNeeded`），渲染层全局横幅
+> （`views/kernel-auto-upgrade-banner.ts`）据此呈现并靠 `step:"done"` 终态收敛。

@@ -6,7 +6,7 @@
    骨架 = 左侧 200px 分组导航 + 右侧约 800px 收束内容列（唯一滚动容器）。
 
    视觉语言：Linear/Notion 式 —— hairline 边框、radius-8 控件 / radius-12 卡片、
-   --shadow-xs 卡片微阴影、单一 indigo 强调色；颜色/间距/圆角/字号/阴影全走
+   --shadow-xs 卡片微阴影、单一沉稳蓝强调色；颜色/间距/圆角/字号/阴影全走
    design-tokens / tokens-ext，禁止硬编码色值与 [data-theme] / prefers-color-scheme 块。
    ========================================================================== */
 

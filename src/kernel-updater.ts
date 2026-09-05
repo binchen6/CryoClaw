@@ -41,6 +41,10 @@ export type KernelUpdateProgress = {
   msg: string;
   /** 触发来源：auto = 启动后自动升级（渲染层全局横幅），manual = 设置页手动触发 */
   source?: "auto" | "manual";
+  /** done/error 终态附带的目标版本（渲染层 i18n 插值用；脚本直转的进度无此字段） */
+  version?: string;
+  /** done 终态附带动作：区分升级/回退（渲染层选择不同 i18n 文案） */
+  action?: "update" | "rollback";
 };
 
 export type KernelUpdateResult =
@@ -181,6 +185,8 @@ function runUpdater(args: string[], onEvent: (e: UpdaterEvent) => void): Promise
 // ── IPC 操作 ──
 
 export async function checkKernelUpdate(): Promise<KernelUpdateState> {
+  // 升级/回退进行中直接返回缓存状态，不 spawn --check：避免 swap 中途并发读版本
+  if (running) return getKernelUpdateState();
   if (!isKernelUpdaterAvailable()) return getKernelUpdateState();
   const events = await runUpdater(["--check"], () => {});
   const state = events.find((e) => e.type === "state");
@@ -231,12 +237,15 @@ async function orchestrate(args: string[], source: "auto" | "manual" = "manual")
     const healthy = await d.startGateway();
     if (healthy) {
       lastCheck = { current: done.to, latest: lastCheck.latest ?? null, updateAvailable: false, rollbackAvailable: true };
-      // 终态事件：自动升级的全局横幅靠它收敛（done 几秒后自动消失）
+      // 终态事件：自动升级的全局横幅靠它收敛（done 几秒后自动消失）；
+      // version/action 供渲染层按 step 码本地化插值
       d.push({
         step: "done",
         pct: 100,
         msg: done.action === "rollback" ? `内核已回退到 ${done.to}` : `内核已升级到 ${done.to}`,
         source,
+        version: done.to,
+        action: done.action,
       });
       return { ok: true, action: done.action, from: done.from, to: done.to };
     }
@@ -256,7 +265,7 @@ async function orchestrate(args: string[], source: "auto" | "manual" = "manual")
       const error = restored
         ? `新内核 ${done.to} 启动失败，已自动回滚到 ${done.from}`
         : `新内核 ${done.to} 启动失败，自动回滚后仍无法启动，请手动检查`;
-      d.push({ step: "error", pct: 100, msg: error, source });
+      d.push({ step: "error", pct: 100, msg: error, source, version: done.to, action: done.action });
       return { ok: false, error };
     }
     const error = `回退到 ${done.to} 后 Gateway 启动失败，请查看日志`;

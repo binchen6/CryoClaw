@@ -1,4 +1,4 @@
-﻿# gen-installer-bitmaps.ps1 — 生成 NSIS 安装器品牌位图（应用 indigo 风格统一）
+﻿# gen-installer-bitmaps.ps1 — 生成 NSIS 安装器品牌位图（应用沉稳蓝风格统一）
 # 产物（git-tracked，生成一次提交，样式调整时重跑本脚本）：
 #   assets/installer-welcome.bmp  164x314  Welcome/Finish 页左侧竖图
 #   assets/installer-header.bmp   150x57   内页顶部右侧品牌图
@@ -11,9 +11,9 @@ $root = Split-Path -Parent $PSScriptRoot
 $iconPath = Join-Path $root "assets\icon.png"
 $icon = [System.Drawing.Image]::FromFile($iconPath)
 
-$brand600 = [System.Drawing.Color]::FromArgb(0x4F, 0x46, 0xE5)  # #4f46e5
-$brand800 = [System.Drawing.Color]::FromArgb(0x37, 0x30, 0xA3)  # #3730a3
-$brand950 = [System.Drawing.Color]::FromArgb(0x1E, 0x1B, 0x4B)  # #1e1b4b
+$brand600 = [System.Drawing.Color]::FromArgb(0x1A, 0x6F, 0xD0)  # #1a6fd0
+$brand800 = [System.Drawing.Color]::FromArgb(0x16, 0x4A, 0x90)  # #164a90
+$brand950 = [System.Drawing.Color]::FromArgb(0x0F, 0x2A, 0x4E)  # #0f2a4e
 
 function Save-Bmp([System.Drawing.Bitmap]$bmp, [string]$name) {
   $out = Join-Path $root "assets\$name"
@@ -25,7 +25,7 @@ function Save-Bmp([System.Drawing.Bitmap]$bmp, [string]$name) {
   Write-Host "已生成 $out"
 }
 
-# ── Welcome 竖图 164x314：indigo 垂直渐变 + 居中图标 + 底部产品名 ──
+# ── Welcome 竖图 164x314：沉稳蓝垂直渐变 + 居中图标 + 底部产品名 ──
 $w = 164; $h = 314
 $bmp = New-Object System.Drawing.Bitmap $w, $h
 $g = [System.Drawing.Graphics]::FromImage($bmp)
@@ -51,7 +51,7 @@ $sf = New-Object System.Drawing.StringFormat
 $sf.Alignment = [System.Drawing.StringAlignment]::Center
 $g.DrawString("CryoClaw", $font, $textBrush, [float]($w / 2), 258.0, $sf)
 $font2 = [System.Drawing.Font]::new("Segoe UI", 7.5)
-$dimBrush = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(200, 0xC7, 0xD2, 0xFE))
+$dimBrush = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(200, 0xBF, 0xDB, 0xFE))
 $g.DrawString("AI Agent Gateway", $font2, $dimBrush, [float]($w / 2), 282.0, $sf)
 $g.Dispose()
 Save-Bmp $bmp "installer-welcome.bmp"

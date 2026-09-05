@@ -235,8 +235,8 @@ contextBridge.exposeInMainWorld("cryoclaw", {
     ipcRenderer.on("app:navigate", listener);
     return () => ipcRenderer.removeListener("app:navigate", listener);
   },
-  onKernelUpdateProgress: (cb: (payload: { step: string; pct: number; msg: string; source?: "auto" | "manual" }) => void) => {
-    const listener = (_event: Electron.IpcRendererEvent, payload: { step: string; pct: number; msg: string; source?: "auto" | "manual" }) => {
+  onKernelUpdateProgress: (cb: (payload: { step: string; pct: number; msg: string; source?: "auto" | "manual"; version?: string; action?: "update" | "rollback" }) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, payload: { step: string; pct: number; msg: string; source?: "auto" | "manual"; version?: string; action?: "update" | "rollback" }) => {
       cb(payload);
     };
     ipcRenderer.on("kernel:update-progress", listener);

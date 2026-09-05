@@ -11,7 +11,7 @@ import {
   writeKimiApiKey,
   readKimiApiKey,
 } from "../kimi-config";
-import { startAuthProxy, setProxyAccessToken, setProxySearchDedicatedKey, getProxyPort, getProxySecret } from "../kimi-auth-proxy";
+import { startAuthProxy, setProxyAccessToken, setProxySearchDedicatedKey, getProxyPort } from "../kimi-auth-proxy";
 import { SHARE_COPY_PAYLOAD } from "../share-copy";
 import { assertTrustedIpcSender } from "../ipc-sender-guard";
 import { runTrackedSettingsAction } from "./tracked";
@@ -29,7 +29,7 @@ export function registerVerifyIpc(): void {
       setProxyAccessToken(params.apiKey);
     }
     return runTrackedSettingsAction("verify_key", { provider }, async () =>
-      verifyProvider({ ...params, proxyPort: getProxyPort(), proxySecret: getProxySecret() }));
+      verifyProvider({ ...params, proxyPort: getProxyPort() }));
   });
 
   // ── 写入 Kimi Code 手动 API Key（sidecar + 注入 auth proxy；config 只写 proxy-managed 占位符） ──
@@ -45,7 +45,7 @@ export function registerVerifyIpc(): void {
       }
       writeKimiApiKey(apiKey);
       setProxyAccessToken(apiKey);
-      return { success: true, data: { proxyPort: getProxyPort(), proxySecret: getProxySecret() } };
+      return { success: true, data: { proxyPort: getProxyPort() } };
     } catch (err: any) {
       return { success: false, message: err.message || String(err) };
     }
@@ -90,7 +90,7 @@ export function registerVerifyIpc(): void {
       if (getProxyPort() <= 0) {
         await startAuthProxy();
       }
-      return { success: true, data: { proxyPort: getProxyPort(), proxySecret: getProxySecret() } };
+      return { success: true, data: { proxyPort: getProxyPort() } };
     } catch (err: any) {
       return { success: false, message: err.message || String(err) };
     }

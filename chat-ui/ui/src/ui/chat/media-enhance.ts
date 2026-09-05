@@ -9,7 +9,7 @@
  *      为文件卡片挂 document 级事件委托（打开/定位）。
  * 与代码块/公式增强同模式：不动 marked/DOMPurify 管线、幂等。
  *
- * 文件卡片图标：lucide v0.577.0（ISC 许可）内联 SVG，按扩展名类别区分。
+ * 文件卡片图标：CryoIcons 自绘内联 SVG（24x24 / 2px 描边 / currentColor），按扩展名类别区分。
  */
 
 import * as ipc from "../data/ipc-bridge.ts";
@@ -137,30 +137,31 @@ function escapeAttr(value: string): string {
     .replace(/>/g, "&gt;");
 }
 
-// ── 文件卡片图标（lucide v0.577.0，ISC）──
+// ── 文件卡片图标（CryoIcons 自绘，与 icons.ts 同一规范）──
 
-const LUCIDE_OPEN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">';
+const SVG_OPEN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">';
 
-const FILE_OUTLINE = '<path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z"></path><path d="M14 2v5a1 1 0 0 0 1 1h5"></path>';
+// 文档外形（折角）
+const FILE_OUTLINE = '<path d="M13.5 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8.5z"></path><path d="M13.5 3v5.5H19"></path>';
 
 const ICON_BY_CATEGORY: Record<string, string> = {
-  // file-text
-  text: `${FILE_OUTLINE}<path d="M10 9H8"></path><path d="M16 13H8"></path><path d="M16 17H8"></path>`,
-  // file-spreadsheet
-  sheet: `${FILE_OUTLINE}<path d="M8 13h2"></path><path d="M14 13h2"></path><path d="M8 17h2"></path><path d="M14 17h2"></path>`,
-  // file-archive
-  archive: `${FILE_OUTLINE}<path d="M8 12v-1"></path><path d="M8 18v-2"></path><path d="M8 7V6"></path><circle cx="8" cy="20" r="2"></circle>`,
-  // file-code
-  code: `${FILE_OUTLINE}<path d="M10 12.5 8 15l2 2.5"></path><path d="m14 12.5 2 2.5-2 2.5"></path>`,
-  // file-headphone
-  audio: '<path d="M4 6.835V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.706.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2h-.343"></path><path d="M14 2v5a1 1 0 0 0 1 1h5"></path><path d="M2 19a2 2 0 0 1 4 0v1a2 2 0 0 1-4 0v-4a6 6 0 0 1 12 0v4a2 2 0 0 1-4 0v-1a2 2 0 0 1 4 0"></path>',
-  // file-play（视频）
-  video: `${FILE_OUTLINE}<path d="M15.033 13.44a.647.647 0 0 1 0 1.12l-4.065 2.352a.645.645 0 0 1-.968-.56v-4.704a.645.645 0 0 1 .967-.56z"></path>`,
-  // file（通用）
+  // 文本：两行内容
+  text: `${FILE_OUTLINE}<path d="M9 12.5h6"></path><path d="M9 16h6"></path>`,
+  // 表格：四格
+  sheet: `${FILE_OUTLINE}<path d="M8.5 12.5h2"></path><path d="M13.5 12.5h2"></path><path d="M8.5 16h2"></path><path d="M13.5 16h2"></path>`,
+  // 压缩包：拉链 + 拉头
+  archive: `${FILE_OUTLINE}<path d="M12 9.5V11"></path><path d="M12 13v1.5"></path><circle cx="12" cy="17.2" r="1.6"></circle>`,
+  // 代码：一对尖括号
+  code: `${FILE_OUTLINE}<path d="m10.2 12-2.2 2.3 2.2 2.2"></path><path d="m14.3 12 2.2 2.3-2.2 2.2"></path>`,
+  // 音频：耳机
+  audio: `${FILE_OUTLINE}<path d="M8.8 18.2v-1a3.2 3.2 0 0 1 6.4 0v1"></path><path d="M8.8 17.2H8a.9.9 0 0 0-.9.9v.7a.9.9 0 0 0 .9.9h.8z"></path><path d="M15.2 17.2h.8a.9.9 0 0 1 .9.9v.7a.9.9 0 0 1-.9.9h-.8z"></path>`,
+  // 视频：播放三角
+  video: `${FILE_OUTLINE}<path d="M10.5 12.2l4.5 2.6-4.5 2.6z"></path>`,
+  // 通用文档
   generic: FILE_OUTLINE,
 };
 
-const FOLDER_OPEN_ICON = '<path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"></path>';
+const FOLDER_OPEN_ICON = '<path d="M3.5 18V6.5A1.5 1.5 0 0 1 5 5h4l2 2.5h8A1.5 1.5 0 0 1 20.5 9v1"></path><path d="m3.5 18 2-6.5A1.5 1.5 0 0 1 7 10h13.5a1.5 1.5 0 0 1 1.4 2l-2 6.5a1.5 1.5 0 0 1-1.4 1H5A1.5 1.5 0 0 1 3.5 18z"></path>';
 
 export function fileCategoryOf(ext: string): string {
   switch (ext) {
@@ -195,8 +196,8 @@ function fileNameOf(path: string): string {
 // 根元素用 <span>：替换点位于 marked 生成的 <p> 内，<div> 会触发隐式闭合段落（phrasing content 合法性）。
 export function buildFileCardHtml(path: string, fullMatch: string): string {
   const ext = fileExtOf(path);
-  const icon = LUCIDE_OPEN + (ICON_BY_CATEGORY[fileCategoryOf(ext)] ?? ICON_BY_CATEGORY.generic) + "</svg>";
-  const revealIcon = LUCIDE_OPEN + FOLDER_OPEN_ICON + "</svg>";
+  const icon = SVG_OPEN + (ICON_BY_CATEGORY[fileCategoryOf(ext)] ?? ICON_BY_CATEGORY.generic) + "</svg>";
+  const revealIcon = SVG_OPEN + FOLDER_OPEN_ICON + "</svg>";
   return (
     `<span class="chat-file-card" role="button" tabindex="0" ` +
     `aria-label="${escapeAttr(t("chat.fileCard.openLabel"))}: ${escapeAttr(fileNameOf(path))}" ` +

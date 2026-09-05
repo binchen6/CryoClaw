@@ -1,12 +1,17 @@
-# CryoClaw Design Guidelines (2026.9 rewrite)
+# CryoClaw Design Guidelines (2026.9 R2 brand refresh)
 
-CryoClaw's design language = **neutral grey + a single indigo accent** (Linear/Notion-style
-clean and modern). Light is the default first-class theme; dark is an independently tuned
-near-black neutral theme. The two themes are defined separately at the token layer — dark
-is not "light plus a patch". This document mirrors the current code; the sources of truth
-are `shared/design-tokens.css`, `chat-ui/ui/src/styles/tokens-ext.css`,
-`chat-ui/ui/src/styles/primitives.css`, and the binding contract
-`docs/ui-rewrite-2026.9-contract.md` — when in doubt, the code and the contract win.
+CryoClaw's design language = **neutral grey + the CryoBlue blue-cyan blended accent**
+(Linear/Notion-style clean and modern). The brand color is a calm, work-oriented blue shifted
+towards cyan (self-drawn CryoBlue scale; light-theme primary `#1a6fd0`, secondary cyan
+`#0891b2`) — cool, trustworthy, lively yet never garish, easy on the eyes for long sessions.
+The signature gradient (blue→cyan `#2a89dd → #06b6d4`) is reserved for brand moments
+(logo / website hero / installer); inside the UI only the solid accent is used. Light is the
+default first-class theme; dark is an independently tuned near-black neutral theme. The two themes
+are defined separately at the token layer — dark is not "light plus a patch". This document mirrors
+the current code; the sources of truth are `shared/design-tokens.css`,
+`chat-ui/ui/src/styles/tokens-ext.css`, `chat-ui/ui/src/styles/primitives.css`,
+`chat-ui/ui/src/ui/icons.ts` (the CryoIcons self-drawn icon system), and the binding contract
+`docs/archive/ui-rewrite-2026.9-contract.md` (completed, archived) — when in doubt, the code and the contract win.
 
 ## 1. Principles
 
@@ -38,8 +43,9 @@ are `shared/design-tokens.css`, `chat-ui/ui/src/styles/tokens-ext.css`,
    reserved for small indicator elements (badges, tags, chips) — buttons are no longer
    capsules.
 9. **Components have no Shadow DOM** (`createRenderRoot() { return this; }`) — all styles
-   live in global CSS; no new npm dependencies; use the existing icons in `icons.ts` and
-   report missing icons instead of adding a library.
+   live in global CSS; no new npm dependencies; icons always come from the CryoIcons
+   self-drawn system (`icons.ts`, spec in §6) — draw new ones per that spec instead of
+   adding a third-party icon library.
 
 ## 2. Token system
 
@@ -77,15 +83,16 @@ were fully retuned.
 
 ### 2.2 Palette
 
-- **Brand indigo scale**: `--brand-50 … --brand-950` (`#eef2ff` … `#1e1b4b`), light-theme
-  primary **`--brand-600: #4f46e5`**.
+- **Brand CryoBlue scale** (self-drawn blue × cyan blend, not a stock library scale):
+  `--brand-50 … --brand-950` (`#eef6fd` … `#0f2a4e`), light-theme primary
+  **`--brand-600: #1a6fd0`** (≈4.6:1 on white, passes AA), base `--brand-500: #2a89dd`.
 - **Neutral grey scale** (zero hue, Notion-style paper feel): `--grey-50 … --grey-950`
   (`#fafafa` … `#0a0a0a`).
 - Semantic colors: `--ok` (`#16a34a`), `--destructive` (`#dc2626`), `--warn` (`#d97706`),
   `--info` (= brand), each with `-muted` / `-subtle` variants; in dark mode the semantic
   colors brighten individually (`#4ade80` / `#f87171` / `#fbbf24`).
-- **Secondary accent violet**: `--accent-2` (defined in tokens-ext; `#7c3aed` light,
-  `#a78bfa` dark, with `-muted`/`-subtle`) — only for second-emphasis spots like worktree
+- **Secondary accent cyan**: `--accent-2` (defined in tokens-ext; `#0891b2` light,
+  `#22d3ee` dark, with `-muted`/`-subtle`) — only for second-emphasis spots like worktree
   badges; never replaces the primary accent.
 
 ### 2.3 Theme variables (light default / dark independently tuned)
@@ -101,8 +108,8 @@ parameters are each defined per theme — dark is not derived from light.
 - Borders: `--border`, `--border-strong`, `--border-hover`, `--border-focus`; hairline
   shortcuts `--hairline` / `--hairline-strong` (1px solid border color) — always prefer
   hairlines for separation, no heavy divider lines.
-- Accent: `--accent` (light = brand-600 `#4f46e5`, dark brightens one step to brand-400
-  `#818cf8`), `--accent-hover` (brand-700 / brand-300), `--accent-subtle`,
+- Accent: `--accent` (light = brand-600 `#1a6fd0`, dark brightens one step to brand-400
+  `#4ba4e6`), `--accent-hover` (brand-700 / brand-300), `--accent-subtle`,
   `--accent-glow` (stronger glow in dark to lift the dark scene).
 - Overlay/glass: `--overlay(-heavy)`, `--glass-xs/sm/md/lg`, `--glass-border`
   (light = dark pressed layer, dark = white lifted layer — two independent parameter sets).
@@ -149,13 +156,13 @@ scale (check the file for the live set; dead classes are pruned). Functional sty
 
 ## 3. Theme & color usage
 
-- The accent is always indigo `--accent`; violet `--accent-2` is second emphasis only;
-  red/green/amber are semantic status colors only (error/ok/warn), never theme colors.
+- The accent is always the steady blue `--accent`; cyan `--accent-2` is second emphasis
+  only; red/green/amber are semantic status colors only (error/ok/warn), never theme colors.
 - Large white space + hairline dividers + subtle tonal separation instead of hard lines;
   hover feedback = slight background tint (`--bg-hover`) + stronger border
   (`--border-strong`). Section spacing ≥ `--spacer-24`.
-- The old "ice-blue brand `#0EA5E9`" rule and the even older "signature red `#c0392b`"
-  rule are both retired — do not reference them.
+- The old "indigo brand `#6366f1`", the older "ice-blue brand `#0EA5E9`", and the even
+  older "signature red `#c0392b`" rules are all retired — do not reference them.
 - **Theme-adaptation red line (restated, hard rule)**: view CSS contains no
   `[data-theme=]` override blocks, no `@media (prefers-color-scheme)` blocks, no
   hardcoded color values — all theme differences are carried by the tokens above.
@@ -301,7 +308,39 @@ never auto-dismisses, and carries a small accent-outlined button
 The Switch is not in primitives: use the `<oc-toggle-switch>` component
 (`ui/components/toggle-switch.ts`, iOS style, knob is white in both themes).
 
-## 6. Style organization
+## 6. Icon system (CryoIcons, self-drawn)
+
+Since the 2026.9 R2 refresh, **all app icons are drawn in-house**
+(`chat-ui/ui/src/ui/icons.ts` plus the file-card icons in
+`chat-ui/ui/src/ui/chat/media-enhance.ts`) — zero third-party icon-library dependencies.
+
+### 6.1 Drawing spec (hard rules)
+
+- **Canvas**: `viewBox="0 0 24 24"`, content inside the ~2.5–21.5 safe area.
+- **Stroke**: `stroke="currentColor"`, `stroke-width="2"`, `stroke-linecap="round"`,
+  `stroke-linejoin="round"`, `fill="none"`; icons always inherit text color — never
+  hardcode a color.
+- **Geometry language**: pure primitives — straight lines, circles/arcs, rounded
+  rectangles (rx 1.2–2). No stacked fills, no gradients, no drop shadows.
+- **The only two fill exceptions**: `moreHorizontal` dots (small `fill="currentColor"`
+  circles) and `pinActive` (whole-shape fill as the single "active" visual difference).
+- **Semantics over pictorial complexity**: prefer simple geometry (e.g. settings = center
+  circle + 8 spokes); icons must stay legible at their 16–20px display size.
+- Coordinates snap to 0.5 steps (pixel-alignment friendly); icon families share visual
+  weight and stroke density.
+
+### 6.2 Usage & extension
+
+- Views reference icons only via `icon(name)` / `icons.<name>` (`icons.ts` exports the
+  `IconName` type; the key names are the contract — no ad-hoc inline SVG).
+- File-card icons come from `ICON_BY_CATEGORY` (media-enhance.ts), following the same
+  spec as `icons.ts`.
+- Adding an icon: draw per §6.1 → register in `icons.ts` → run the chat-ui tests
+  (`grouped-render.test.ts` audits that unsafeSVG is used only for static icons).
+- Default icon sizes follow the `--icon-size-*` scale (16/20 dominate); never hardcode a
+  size inside the icon itself.
+
+## 7. Style organization
 
 - **The hub `chat-ui/ui/src/styles.css` only `@import`s; cascade order is load-bearing —
   never reorder casually**: design-tokens → tokens-ext → base → **primitives** →
@@ -323,7 +362,7 @@ The Switch is not in primitives: use the `<oc-toggle-switch>` component
 - Standalone pages (`setup/webbridge-enable-guide.html`, etc.) also `@import`
   shared/design-tokens.css and get the dual-channel themes for free.
 
-## 7. Layout conventions
+## 8. Layout conventions
 
 - The 44px titlebar is reserved by the shell (see §4.3); floating layers anchor to
   `--titlebar-h` (e.g. `top: calc(var(--titlebar-h) + var(--spacer-12))`).
@@ -333,7 +372,7 @@ The Switch is not in primitives: use the `<oc-toggle-switch>` component
 - Grid overflow guard: `grid-template-columns: minmax(0,1fr)` + `min-width: 0` on
   children.
 
-## 8. Accessibility
+## 9. Accessibility
 
 - **Unified focus ring**: global `:focus-visible { box-shadow: var(--focus-ring) }`
   (base.css); individual controls redeclare the same token. Do not write custom outline
@@ -348,7 +387,7 @@ The Switch is not in primitives: use the `<oc-toggle-switch>` component
   window stays draggable; every interactive element must pair with `no-drag` to stay
   keyboard/mouse reachable.
 
-## 9. Tooltip
+## 10. Tooltip
 
 - **No CSS `::after` pseudo-element tooltips** (always clipped inside `overflow`
   containers). Use the global `position: fixed` `.fixed-tooltip` element plus the

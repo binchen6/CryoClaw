@@ -129,9 +129,9 @@ export async function importOpenclawStateFromArchive(
       restoreError = toError(restoreErr);
     }
     if (restoreError) {
-      throw new Error(`${base}；自动还原也失败（${restoreError.message}），导入前的状态归档保留在 ${backupZip}，可在设置页导入该文件手动恢复`);
+      throw new Error(`${base}；自动还原也失败（${restoreError.message}），导入前的状态归档保留在 ${backupZip}（应急归档滚动保留最近 ${PRE_IMPORT_BACKUP_KEEP} 份），可在设置页导入该文件手动恢复`);
     }
-    throw new Error(`${base}；已从应急归档自动还原导入前的状态（归档保留在 ${backupZip}）`);
+    throw new Error(`${base}；已从应急归档自动还原导入前的状态（归档保留在 ${backupZip}，滚动保留最近 ${PRE_IMPORT_BACKUP_KEEP} 份）`);
   }
 }
 

@@ -1,5 +1,12 @@
 [
   {
+    "version": "2026.908.0",
+    "notes": {
+      "zh": "修复：Kimi 模型静默落入备用链——内置回环鉴权代理在本机环回地址上要求握手密钥，kimi-code 侧不携带该密钥时主模型 401 后静默切换 fallback；现已移除该代理特性，Kimi 通道直连\n品牌焕新：全新 CryoBlue 蓝青混色设计体系——为高效工作服务的沉稳蓝（活力而不抢眼），浅色一等 + 暗色独立调参双主题，应用图标、托盘图标、安装器界面同步换新\n图标体系：全部界面图标换为自绘 CryoIcons（24 网格、2px 描边、纯几何造型），移除第三方图标库依赖，包体更小\n官网重设计：浅色一等 + CryoBlue 混色，与应用同一套设计语言",
+      "en": "Fixed: Kimi models silently falling back — the built-in loopback auth proxy required a handshake secret on the loopback address, and when the kimi-code side did not carry it the primary model silently switched to fallback after a 401; the proxy feature has been removed and the Kimi channel now connects directly\nBrand refresh: the new CryoBlue blue-cyan blended design system — a steady work-oriented blue that stays lively without being loud, light-first plus an independently tuned dark theme, with app icons, tray icons and the installer UI refreshed to match\nIcon system: all UI icons replaced by the self-drawn CryoIcons set (24px grid, 2px stroke, pure geometry), dropping the third-party icon library for a smaller bundle\nWebsite redesigned: light-first with the CryoBlue blend, sharing the app's design language"
+    }
+  },
+  {
     "version": "2026.907.0",
     "notes": {
       "zh": "安装器界面焕新：安装/卸载向导换装应用同款品牌视觉（indigo 渐变侧图 + 页头横幅）\n新手引导新增「快速通道」：检测到本机已有的 API key 环境变量（OpenAI / Anthropic / Moonshot / Google / DeepSeek）可一键采用，自动真实验证并写入配置；密钥明文不离开主进程，界面仅显示掩码\n内核版本兜底自动升级：内核低于最低支持版本（2026.7.0）时启动后自动升级到策展稳定版 2026.8.2，右上角横幅实时显示进度，失败自动回滚\n迁移与可恢复性加固：内核自动回滚同步反向迁移配置；导入 .openclaw 归档前自动创建应急备份、失败自动还原；老版本迁移不再丢失更新渠道等既有设置；内核备份附带配置快照\n全新安装默认内核 2026.8.2；应用更新继续使用差异更新（只下载变化部分）",

@@ -113,10 +113,9 @@ export function saveKimiSearchConfig(
 const KIMI_EMBEDDING_MODEL = "bge_m3_embed";
 
 // 将 memorySearch 指向本地 auth proxy（代理注入最新 token，免密钥刷新）
-// proxySecret：回环鉴权路径段（见 kimi-auth-proxy.ts），为空时退化为无 secret 旧格式
 // 落位随内核版本：2026.8 起正确路径是根级 memory.search（agents.defaults.memorySearch
 // 会被 strict 校验拒绝），旧内核仍是 agents.defaults.memorySearch；版本不可读时按旧路径。
-export function ensureMemorySearchProxyConfig(config: any, proxyPort: number, proxySecret = ""): boolean {
+export function ensureMemorySearchProxyConfig(config: any, proxyPort: number): boolean {
   if (proxyPort <= 0) return false;
 
   const kernel = readKernelVersionParts();
@@ -125,7 +124,7 @@ export function ensureMemorySearchProxyConfig(config: any, proxyPort: number, pr
     ? (((config.memory ??= {}).search) ??= {})
     : (((config.agents ??= {}).defaults ??= {}).memorySearch ??= {});
 
-  const expectedBase = `http://127.0.0.1:${proxyPort}${proxySecret ? `/${proxySecret}` : ""}/coding/v1/`;
+  const expectedBase = `http://127.0.0.1:${proxyPort}/coding/v1/`;
 
   // 配置未变则跳过写入
   if (
@@ -149,28 +148,25 @@ export function ensureMemorySearchProxyConfig(config: any, proxyPort: number, pr
 
 // ── 指向本地代理的遗留 provider 自愈 ──
 
-// 历史遗留：旧版曾以 provider key "kimi" 写入指向本地 auth proxy 的 baseUrl
-// （http://127.0.0.1:<port>/coding，无 secret 路径段）。回环鉴权 secret 上线后
-// ensureProxyConfig 只同步 kimi-coding，遗留条目每次请求被代理 401 拒绝，
-// 主模型调用静默落入 fallback。这里把所有指向本地代理（127.0.0.1:*/[seg/]coding）
-// 的 provider 统一改写到当前端口 + secret。
-// 两道判别门防误伤用户自建的本地服务：apiKey 必须是应用占位符 "proxy-managed"
-// （遗留条目都是应用自己写的），且 secret 为空（代理未启动鉴权）时不写——
-// 此时写出的无 secret baseUrl 仍会被代理一律 401，纯属无效 churn。
+// 历史遗留：旧版 provider（如 "kimi"）曾指向本地 auth proxy，且回环鉴权版本（R39–R48）
+// 的 baseUrl 还带 path secret 段（http://127.0.0.1:<port>/<secret>/coding）。回环鉴权
+// 已于 R49 移除（secret 同步缺口曾致主模型静默 401 落入 fallback），这里把所有指向
+// 本地代理（127.0.0.1:*/[seg/]coding）的 provider 统一改写到当前端口、无 secret 段。
+// 判别门防误伤用户自建的本地服务：apiKey 必须是应用占位符 "proxy-managed"
+// （这些条目都是应用自己写的）。
 // apiKey 不动：代理会注入真实 token，客户端 apiKey 仅为占位。
 const LOCAL_PROXY_CODING_BASE_RE = /^http:\/\/127\.0\.0\.1:\d+\/(?:[^/]+\/)?coding\/?$/;
 
 export function healLegacyProxyProviders(
   config: any,
   proxyPort: number,
-  proxySecret = "",
   skipKey = "kimi-coding",
 ): boolean {
-  if (proxyPort <= 0 || !proxySecret) return false;
+  if (proxyPort <= 0) return false;
   const providers = config?.models?.providers;
   if (!providers || typeof providers !== "object") return false;
 
-  const expectedBase = `http://127.0.0.1:${proxyPort}/${proxySecret}/coding`;
+  const expectedBase = `http://127.0.0.1:${proxyPort}/coding`;
   let changed = false;
   for (const [key, provider] of Object.entries(providers)) {
     if (key === skipKey) continue;

@@ -82,7 +82,7 @@ nsis:
   # 安装/卸载向导图标（复用应用 ico，含 256x256 档）
   installerIcon: "assets/icon.ico"
   uninstallerIcon: "assets/icon.ico"
-  # 品牌位图（scripts/gen-installer-bitmaps.ps1 生成，indigo 渐变 + 图标）：
+  # 品牌位图（scripts/gen-installer-bitmaps.ps1 生成，沉稳蓝渐变 + 图标）：
   # Welcome/Finish 侧图 164x314；页头图 150x57（MUI 自动右对齐，卸载向导沿用侧图）
   installerSidebar: "assets/installer-welcome.bmp"
   installerHeader: "assets/installer-header.bmp"

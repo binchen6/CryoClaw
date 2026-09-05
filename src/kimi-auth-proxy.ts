@@ -4,9 +4,13 @@
  * 在 Main 进程内启动一个 127.0.0.1 HTTP 代理，按路径路由到 Kimi API 上游，
  * 每次请求注入内存中最新的 OAuth access_token，解决 embedded agent 持有过期
  * config 快照导致 401 的问题。
+ *
+ * 回环鉴权（path secret）已于 R49 移除：secret 写在 openclaw.json 的 baseUrl 里，
+ * 应用重启换 secret 后任何同步缺口都会让主模型静默 401 落入 fallback（R40 事故），
+ * 维护 16 条消费路径的成本远超"本机进程白嫖 token"这一低威胁场景的收益。
+ * 代理只监听 127.0.0.1，按路由表白名单转发到固定上游。
  */
 
-import * as crypto from "crypto";
 import * as http from "http";
 import * as https from "https";
 import * as net from "net";
@@ -18,32 +22,9 @@ let server: http.Server | null = null;
 let currentPort = -1;
 let currentAccessToken = "";
 let kimiSearchDedicatedKey = "";
-// 回环鉴权 secret：应用启动期生成一次，本会话内稳定（代理重启不复位），
-// 通过 config baseUrl 路径段（http://127.0.0.1:<port>/<secret>/coding...）分发给
-// 合法调用方（openclaw provider / memorySearch / kimi-search 插件 / 主进程 verify）。
-// 代理只监听 127.0.0.1，但本机任意进程都能连接；无路径鉴权时可借代理注入的
-// OAuth token 白嫖 Kimi API。secret 不落 sidecar，仅存在于内存与 openclaw.json。
-let proxySecret = "";
 
 // 上游基地址
 const UPSTREAM_HOST = "api.kimi.com";
-
-// ────────────────────────────── 回环鉴权（path secret） ──────────────────────────────
-
-// 生成 URL 安全的随机 secret（base64url，无需 percent-encoding）
-export function generateProxySecret(): string {
-  return crypto.randomBytes(24).toString("base64url");
-}
-
-// 校验并剥离 secret 路径段："/<secret>/coding/v1/x" → "/coding/v1/x"；
-// secret 为空（未启动）或不匹配时返回 null（调用方据此返回 401）
-export function extractSecuredPath(pathOnly: string, secret: string): string | null {
-  if (!secret) return null;
-  const prefix = `/${secret}`;
-  if (pathOnly === prefix) return "/";
-  if (!pathOnly.startsWith(`${prefix}/`)) return null;
-  return pathOnly.slice(prefix.length);
-}
 
 // ────────────────────────────── 路由表 ──────────────────────────────
 
@@ -87,15 +68,7 @@ function handleRequest(
   // 解析路径（去掉 query 部分用于路由匹配）
   const pathOnly = url.split("?")[0];
 
-  // 回环鉴权：无/错 secret 一律 401（在路由匹配之前，避免泄露路由表）
-  const securedPath = extractSecuredPath(pathOnly, proxySecret);
-  if (securedPath === null) {
-    clientRes.writeHead(401, { "Content-Type": "text/plain" });
-    clientRes.end("Unauthorized");
-    return;
-  }
-
-  const route = matchRoute(securedPath);
+  const route = matchRoute(pathOnly);
 
   if (!route) {
     clientRes.writeHead(404, { "Content-Type": "text/plain" });
@@ -119,7 +92,7 @@ function handleRequest(
   // 删除可能干扰上游的 hop-by-hop 头
   delete headers["connection"];
 
-  const upstreamPath = route.upstream(securedPath + (url.includes("?") ? url.slice(url.indexOf("?")) : ""));
+  const upstreamPath = route.upstream(pathOnly + (url.includes("?") ? url.slice(url.indexOf("?")) : ""));
 
   const proxyReq = https.request(
     {
@@ -232,9 +205,6 @@ export async function startAuthProxy(preferredPort?: number, excludePort?: numbe
 
   const srv = http.createServer(handleRequest);
 
-  // 会话级 secret：首次启动生成，代理重启沿用（config 中的 baseUrl 不变）
-  if (!proxySecret) proxySecret = generateProxySecret();
-
   const port = await tryListen(srv, preferredPort, excludePort);
   server = srv;
   currentPort = port;
@@ -275,9 +245,4 @@ export function setProxySearchDedicatedKey(key: string): void {
 // 获取当前代理端口（-1 表示未启动）
 export function getProxyPort(): number {
   return currentPort;
-}
-
-// 获取回环鉴权 secret（空串表示代理尚未启动过）
-export function getProxySecret(): string {
-  return proxySecret;
 }

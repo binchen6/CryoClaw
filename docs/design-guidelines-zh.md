@@ -1,11 +1,15 @@
-# CryoClaw 设计规范（2026.9 重写版）
+# CryoClaw 设计规范（2026.9 R2 品牌焕新版）
 
-CryoClaw 的设计语言 = **中性灰 + 单一 indigo 强调色**（Linear/Notion 式清爽现代风）。
-浅色是默认一等主题，暗色是独立调参的近黑中性主题，两者在 token 层各自定义，不是
-「浅色 + 暗色补丁」。本文档与代码现状对齐；事实来源是
-`shared/design-tokens.css`、`chat-ui/ui/src/styles/tokens-ext.css`、
-`chat-ui/ui/src/styles/primitives.css` 与强制契约
-`docs/ui-rewrite-2026.9-contract.md`，冲突时以代码与契约为准。
+CryoClaw 的设计语言 = **中性灰 + CryoBlue 蓝青混色强调色**（Linear/Notion 式清爽现代风）。
+品牌色为「为高效和工作服务的沉稳蓝」向青侧偏移的混色（自绘 CryoBlue 色阶，浅色主色
+`#1a6fd0`，辅色 cyan `#0891b2`）——冷静、可信、有活力但不喧闹，长时间工作不疲劳。
+品牌签名渐变（蓝→青 `#2a89dd → #06b6d4`）仅用于品牌时刻（logo / 官网 hero / 安装器），
+UI 内部只用纯色 accent。浅色是默认一等主题，暗色是独立调参的近黑中性
+主题，两者在 token 层各自定义，不是「浅色 + 暗色补丁」。本文档与代码现状对齐；事实
+来源是 `shared/design-tokens.css`、`chat-ui/ui/src/styles/tokens-ext.css`、
+`chat-ui/ui/src/styles/primitives.css`、`chat-ui/ui/src/ui/icons.ts`（CryoIcons
+自绘图标体系）与强制契约 `docs/archive/ui-rewrite-2026.9-contract.md`（已完成存档），
+冲突时以代码与契约为准。
 
 ## 1. 总则
 
@@ -32,7 +36,8 @@ CryoClaw 的设计语言 = **中性灰 + 单一 indigo 强调色**（Linear/Noti
    对话框 radius-16；`--radius-pill` / `--radius-full` 只保留给徽章、tag、chip
    等小型指示元素，按钮不再是胶囊。
 9. **组件无 Shadow DOM**（`createRenderRoot() { return this; }`），样式全走全局 CSS；
-   不新增 npm 依赖；图标用 `icons.ts` 现有图标，缺图标先报告。
+   不新增 npm 依赖；图标一律用 CryoIcons 自绘体系（`icons.ts`，规范见第 6 节），
+   缺图标按该节规范自绘补充，不引入第三方图标库。
 
 ## 2. Token 体系
 
@@ -67,15 +72,17 @@ token 分两层：**基础层 `shared/design-tokens.css`**（全局唯一事实�
 
 ### 2.2 色板
 
-- **brand indigo 色阶**：`--brand-50 … --brand-950`（`#eef2ff` … `#1e1b4b`），
-  浅色主色 **`--brand-600: #4f46e5`**。
+- **brand CryoBlue 自绘色阶**（蓝 × 青混色，非现成库色阶）：
+  `--brand-50 … --brand-950`（`#eef6fd` … `#0f2a4e`），
+  浅色主色 **`--brand-600: #1a6fd0`**（白底对比度 ≈4.6:1，过 AA），
+  基准色 `--brand-500: #2a89dd`。
 - **中性灰阶**（零色相，Notion 式纸感）：`--grey-50 … --grey-950`
   （`#fafafa` … `#0a0a0a`）。
 - 语义色：`--ok`（`#16a34a`）、`--destructive`（`#dc2626`）、`--warn`（`#d97706`）、
   `--info`（= brand），各配 `-muted` / `-subtle` 变体；暗色下语义色各自提亮
   （`#4ade80` / `#f87171` / `#fbbf24`）。
-- **辅助强调色 violet**：`--accent-2`（tokens-ext 定义，浅色 `#7c3aed`、
-  暗色 `#a78bfa`，配 `-muted`/`-subtle`），仅用于 worktree 徽标等第二强调场景，
+- **辅助强调色 cyan**：`--accent-2`（tokens-ext 定义，浅色 `#0891b2`、
+  暗色 `#22d3ee`，配 `-muted`/`-subtle`），仅用于 worktree 徽标等第二强调场景，
   不得取代主 accent。
 
 ### 2.3 主题变量（浅色默认 / 暗色独立调参）
@@ -91,7 +98,7 @@ token 分两层：**基础层 `shared/design-tokens.css`**（全局唯一事实�
 - 边框：`--border`、`--border-strong`、`--border-hover`、`--border-focus`；
   hairline 快捷 token `--hairline` / `--hairline-strong`（1px solid 边框色）——
   分隔一律优先 hairline，不用生硬粗线。
-- 强调：`--accent`（浅色 = brand-600 `#4f46e5`，暗色亮一档 = brand-400 `#818cf8`）、
+- 强调：`--accent`（浅色 = brand-600 `#1a6fd0`，暗色亮一档 = brand-400 `#4ba4e6`）、
   `--accent-hover`（brand-700 / brand-300）、`--accent-subtle`、`--accent-glow`
   （暗色 glow 更强，补暗场氛围）。
 - 遮罩/玻璃：`--overlay(-heavy)`、`--glass-xs/sm/md/lg`、`--glass-border`
@@ -134,12 +141,12 @@ token 分两层：**基础层 `shared/design-tokens.css`**（全局唯一事实�
 
 ## 3. 主题与配色使用
 
-- 强调色永远是 indigo `--accent`；violet `--accent-2` 只作第二强调；红/绿/黄只属于
+- 强调色永远是沉稳蓝 `--accent`；cyan `--accent-2` 只作第二强调；红/绿/黄只属于
   语义状态（error/ok/warn），不得当主题色。
 - 大面积留白 + hairline 细分隔线 + 微小明暗对比分区；hover 反馈 = 底色微调
   （`--bg-hover`）+ 边框加深（`--border-strong`）。区块间距 ≥ `--spacer-24`。
-- 旧「冰蓝（ice-blue）品牌色 `#0EA5E9`」与更早的「主题红 `#c0392b`」规范均已废弃，
-  不要再引用。
+- 旧「indigo 品牌色 `#6366f1`」「冰蓝（ice-blue）品牌色 `#0EA5E9`」与更早的
+  「主题红 `#c0392b`」规范均已废弃，不要再引用。
 - **主题适配红线（复述，硬性）**：视图 CSS 不写 `[data-theme=]` 覆盖块、不写
   `@media (prefers-color-scheme)` 块、不硬编码色值；主题差异全部由上述 token 承担。
 
@@ -271,7 +278,35 @@ hairline + radius-12 + `--shadow-lg`，`--text-sm` medium，z-index 10001，
 开关（Switch）不在 primitives：用 `<oc-toggle-switch>` 组件
 （`ui/components/toggle-switch.ts`，iOS 风格，滑块钮双主题恒为白色）。
 
-## 6. 样式组织
+## 6. 图标系统（CryoIcons 自绘体系）
+
+2026.9 R2 起应用图标**全部为本项目自绘**（`chat-ui/ui/src/ui/icons.ts` + 文件卡片
+图标 `chat-ui/ui/src/ui/chat/media-enhance.ts`），零第三方图标库依赖。
+
+### 6.1 绘制规范（硬性）
+
+- **画布**：`viewBox="0 0 24 24"`，内容安全区约 2.5–21.5。
+- **描边**：`stroke="currentColor"`、`stroke-width="2"`、`stroke-linecap="round"`、
+  `stroke-linejoin="round"`、`fill="none"`；颜色永远继承文字色，不上色。
+- **造型语言**：纯几何构造——直线、圆/圆弧、圆角矩形（rx 1.2–2）；
+  不用填充色块堆叠、不用渐变、不用投影。
+- **唯二填充例外**：`moreHorizontal` 三点（`fill="currentColor"` 小圆点）与
+  `pinActive` 置顶激活态（整形填充，作为「激活」的唯一视觉差异）。
+- **语义优先于象形复杂度**：宁可简洁几何（如 settings = 中心圆 + 8 辐齿），
+  不追求繁复写实；16–20px 显示尺寸下必须清晰可辨。
+- 坐标取 0.5 步进（像素对齐友好），同族图标共享视觉重心与笔画密度。
+
+### 6.2 使用与扩展
+
+- 视图一律经 `icon(name)` / `icons.<name>` 引用（`icons.ts` 导出 `IconName` 类型，
+  键名即契约，禁止内联临时 SVG）。
+- 文件卡片图标按扩展名类别取 `ICON_BY_CATEGORY`（media-enhance.ts），与
+  `icons.ts` 同一规范。
+- 新增图标：按 6.1 规范绘制 → 加入 `icons.ts` → 跑 chat-ui 测试
+  （`grouped-render.test.ts` 审计 unsafeSVG 仅限静态图标）。
+- 图标默认尺寸走 `--icon-size-*` 阶梯（16/20 为主），不在图标内写死尺寸。
+
+## 7. 样式组织
 
 - **hub `chat-ui/ui/src/styles.css` 只做 `@import`，层叠顺序敏感，禁止随意调序**：
   design-tokens → tokens-ext → base → **primitives** → **utilities** → **shell** →
@@ -290,7 +325,7 @@ hairline + radius-12 + `--shadow-lg`，`--text-sm` medium，z-index 10001，
 - 独立页面（`setup/webbridge-enable-guide.html` 等）同样 `@import`
   shared/design-tokens.css，双通道主题自动生效。
 
-## 7. 布局约定
+## 8. 布局约定
 
 - 标题栏 44px 由壳层统一占位（见 4.3）；浮层定位以 `--titlebar-h` 为锚
   （如 `top: calc(var(--titlebar-h) + var(--spacer-12))`）。
@@ -299,7 +334,7 @@ hairline + radius-12 + `--shadow-lg`，`--text-sm` medium，z-index 10001，
 - 窄窗（≤900px / ≤720px）有会话面板宽度 media query 适配（见 4.2）。
 - grid 容器防溢出：`grid-template-columns: minmax(0,1fr)` + 子项 `min-width: 0`。
 
-## 8. 可访问性
+## 9. 可访问性
 
 - **focus-ring 统一**：全局 `:focus-visible { box-shadow: var(--focus-ring) }`
   （base.css），控件各自重复声明同 token；不要写自定义 outline 样式，
@@ -313,7 +348,7 @@ hairline + radius-12 + `--shadow-lg`，`--text-sm` medium，z-index 10001，
 - 拖拽区分工：壳层大面积 `-webkit-app-region: drag` 保证窗口可拖动，所有可交互
   元素必须配 `no-drag`，保证键盘/鼠标可达。
 
-## 9. Tooltip
+## 10. Tooltip
 
 - **禁止 CSS `::after` 伪元素 tooltip**（`overflow` 容器内必被裁切）。统一用全局
   `position: fixed` 的 `.fixed-tooltip` 元素 + `data-tooltip="文案"` 属性；

@@ -89,6 +89,14 @@ test("step2：进入时检测、有结果渲染快速采用卡片、成功跳 st
   assert.match(s, /qs\.errors\[candidate\.envVar\]/, "失败应在卡片下方显示错误");
 });
 
+test("step2：adopt 成功路径复位进行中标记，进行中禁用「上一步」", () => {
+  const s = src("views/setup/setup-step2-provider.ts");
+  // 成功路径 early return 前复位 qs.adoptingEnvVar（防御未来重入/回退到本步）
+  assert.match(s, /result\.ok[\s\S]{0,120}?qs\.adoptingEnvVar = null;[\s\S]{0,80}?goToStep\(3\)/, "成功路径应先复位 adoptingEnvVar 再跳 step3");
+  // verify / adopt 进行中都禁用返回，保持一致
+  assert.match(s, /\?disabled=\$\{s\.verifying \|\| !!qs\.adoptingEnvVar\}/, "「上一步」应在 verify/adopt 进行中禁用");
+});
+
 test("i18n：setup.quickstart.* zh/en 双区齐备", () => {
   const keys = [
     "setup.quickstart.title",

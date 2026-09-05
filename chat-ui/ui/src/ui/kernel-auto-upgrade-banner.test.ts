@@ -9,8 +9,9 @@
 //   25s 延迟 unref、导入进行中放弃、cryoclaw/legacy-cryoclaw 两分支调用
 // - 渲染层：app.ts 全局订阅 onKernelUpdateProgress，仅 source==="auto" 更新横幅，
 //   done 态 setTimeout 自动清除，disconnectedCallback 清理订阅与计时器
-// - kernel-auto-upgrade-banner.ts：进度条 pct 驱动宽度 + msg + i18n 标题 +
-//   error 态关闭按钮；app-render.ts 挂载横幅
+// - kernel-auto-upgrade-banner.ts：进度条 pct 驱动宽度 + 正文按 step 码 i18n 映射
+//   （未知 step 回退主进程 msg，done 用 {version} 插值）+ i18n 标题 + error 态关闭按钮；
+//   app-render.ts 挂载横幅；tab-about.ts 手动路径复用同一映射
 // - 桥接：preload/window/ipc-bridge 的进度载荷带 source 字段
 // - i18n：kernelAutoUpgrade.* 键 zh/en 双区齐全
 import test from "node:test";
@@ -67,6 +68,21 @@ test("主进程 main.ts：自动升级调度的护栏与触发", () => {
   assert.equal(calls.length, 2, "启动序列两个分支各调用一次");
 });
 
+test("主进程 main.ts：自动升级失败退避（24h 内不再自动重试）", () => {
+  const s = mainSrc("main.ts");
+  assert.match(s, /isAutoKernelUpgradeBackoffActive\(\)[\s\S]*?log\.info/, "退避窗口内应 log.info 跳过");
+  assert.match(s, /recordAutoKernelUpgradeFailure\(getKernelUpdateState\(\)\.current\)/, "失败应持久化记录");
+  assert.match(s, /clearAutoKernelUpgradeBackoff\(\)/, "成功应清除退避记录");
+});
+
+test("主进程 main.ts：.openclaw 导入与内核升级双向互斥", () => {
+  const s = mainSrc("main.ts");
+  // 反向：kernel:update / kernel:rollback handler 拒绝导入进行中
+  assert.match(s, /isImportActive\(\)\) throw new Error\("\.openclaw 导入进行中/, "升级入口应拒绝导入进行中");
+  // 正向：导入入口（lifecycle assertImportAllowed）拒绝内核升级进行中
+  assert.match(s, /assertImportAllowed:[\s\S]{0,200}?getKernelUpdateState\(\)\.running/, "导入入口应拒绝内核升级进行中");
+});
+
 test("app.ts：订阅 onKernelUpdateProgress，仅 auto 更新横幅，断开时清理", () => {
   const s = src("app.ts");
   assert.match(s, /onKernelUpdateProgress\(/, "app.ts 应订阅 onKernelUpdateProgress");
@@ -83,11 +99,16 @@ test("app-render.ts：挂载内核自动升级横幅", () => {
   assert.match(s, /state\.dismissKernelAutoUpgrade\(\)/, "应接关闭回调");
 });
 
-test("kernel-auto-upgrade-banner.ts：进度条 + msg + i18n 标题 + error 关闭按钮", () => {
+test("kernel-auto-upgrade-banner.ts：进度条 + step 码 i18n 正文 + i18n 标题 + error 关闭按钮", () => {
   const s = src("views/kernel-auto-upgrade-banner.ts");
   assert.match(s, /if \(!progress\) return nothing/, "null 应不渲染");
   assert.match(s, /kernel-auto-banner__bar" style="width:\$\{pct\}%/, "进度条宽度应由 pct 驱动");
-  assert.match(s, /kernel-auto-banner__msg">\$\{progress\.msg\}/, "应渲染 msg 文本");
+  // 正文按 step 码映射 i18n 键，未知 step 回退主进程 msg
+  assert.match(s, /kernelUpdateStepMessage\(progress\)/, "正文应经 step 码 i18n 映射");
+  assert.match(s, /kernelAutoUpgrade\.step\.\$\{progress\.step\}/, "应按 step 码拼 i18n 键");
+  assert.match(s, /if \(translated === key\) return progress\.msg/, "未知 step 应回退主进程 msg");
+  assert.match(s, /replaceAll\("\{version\}", progress\.version\)/, "done 应用 {version} 占位插值");
+  assert.match(s, /kernelAutoUpgrade\.step\.doneRollback/, "回退完成应有独立文案键");
   assert.match(s, /t\("kernelAutoUpgrade\.title"\)/, "应有进行中标题");
   assert.match(s, /t\("kernelAutoUpgrade\.done"\)/, "应有完成标题");
   assert.match(s, /t\("kernelAutoUpgrade\.error"\)/, "应有失败标题");
@@ -95,10 +116,15 @@ test("kernel-auto-upgrade-banner.ts：进度条 + msg + i18n 标题 + error 关�
   assert.match(s, /kernel-auto-banner--error[\s\S]*?kernel-auto-banner__close/, "error 态应有警告样式 + 关闭按钮");
 });
 
-test("shell.css：横幅样式走 token（indigo 主色 / done 成功色 / error 警告色）", () => {
+test("tab-about.ts：手动升级进度正文同样走 step 码 i18n 映射", () => {
+  const s = src("views/settings/tab-about.ts");
+  assert.match(s, /kernelUpdateStepMessage\(s\.progress\)/, "tab-about 进度正文应复用 step 码映射");
+});
+
+test("shell.css：横幅样式走 token（品牌蓝主色 / done 成功色 / error 警告色）", () => {
   const s = readFileSync(new URL("../../../../src/styles/shell.css", import.meta.url), "utf8");
   assert.match(s, /\.kernel-auto-banner \{[\s\S]*?var\(--bg-elevated\)/, "横幅应为浮出卡片");
-  assert.match(s, /\.kernel-auto-banner__bar \{[\s\S]*?var\(--accent\)/, "进度条应为 indigo 主色");
+  assert.match(s, /\.kernel-auto-banner__bar \{[\s\S]*?var\(--accent\)/, "进度条应为品牌蓝主色");
   assert.match(s, /\.kernel-auto-banner--done[\s\S]*?var\(--ok\)/, "done 态应为成功色");
   assert.match(s, /\.kernel-auto-banner--error[\s\S]*?var\(--warn\)/, "error 态应为警告色");
 });
@@ -117,4 +143,48 @@ test("i18n：kernelAutoUpgrade.* 键 zh/en 双区齐全（全集一致性由 i18
     assert.ok(zh.includes(`"${key}"`), `zh 缺 ${key}`);
     assert.ok(en.includes(`"${key}"`), `en 缺 ${key}`);
   }
+  // step 码正文键：覆盖 kernel-updater.ts 编排步骤与 scripts/updater/kernel-update.mjs 进度步骤
+  const stepKeys = [
+    "gateway-stop",
+    "prepare",
+    "download",
+    "prune",
+    "carryover",
+    "patch",
+    "smoke",
+    "pack",
+    "backup",
+    "swap",
+    "cleanup",
+    "gateway-start",
+    "auto-rollback",
+    "done",
+    "doneRollback",
+    "error",
+  ];
+  for (const step of stepKeys) {
+    const key = `"kernelAutoUpgrade.step.${step}"`;
+    assert.ok(zh.includes(key), `zh 缺 ${key}`);
+    assert.ok(en.includes(key), `en 缺 ${key}`);
+  }
+  // 脚本侧实际发出的 step 必须全部被 i18n 键覆盖（防止新增步骤漏配）
+  const script = readFileSync(new URL("../../../../../../scripts/updater/kernel-update.mjs", import.meta.url), "utf8");
+  const scriptSteps = [...script.matchAll(/progress\("([a-z-]+)"/g)].map((m) => m[1]);
+  for (const step of new Set(scriptSteps)) {
+    assert.ok(zh.includes(`"kernelAutoUpgrade.step.${step}"`), `脚本 step ${step} 缺 zh i18n 键`);
+  }
+});
+
+test("主进程 kernel-updater.ts：done/error 终态载荷带 version/action（渲染层 i18n 插值）", () => {
+  const s = mainSrc("kernel-updater.ts");
+  assert.match(s, /version\?: string/, "KernelUpdateProgress 应有 version 字段");
+  assert.match(s, /action\?: "update" \| "rollback"/, "KernelUpdateProgress 应有 action 字段");
+  assert.match(s, /step: "done",[\s\S]*?version: done\.to,[\s\S]*?action: done\.action/, "done 终态应带 version/action");
+});
+
+test("桥接：preload / window / ipc-bridge 的进度载荷带 version/action 字段", () => {
+  assert.match(mainSrc("preload.ts"), /onKernelUpdateProgress: \(cb: \(payload: \{[^}]*version\?: string/, "preload 回调类型应带 version");
+  assert.match(mainSrc("window.ts"), /pushKernelUpdateProgress\(payload: \{[^}]*version\?: string/, "window 推送类型应带 version");
+  const bridge = src("data/ipc-bridge.ts");
+  assert.match(bridge, /interface KernelUpdateProgress \{[\s\S]*?version\?: string/, "ipc-bridge KernelUpdateProgress 应带 version");
 });

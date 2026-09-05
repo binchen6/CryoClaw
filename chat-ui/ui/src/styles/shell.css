@@ -262,7 +262,7 @@ cc-rail {
 
 .cc-rail__item--disconnected .cc-rail__badge {
   background: var(--destructive);
-  color: #ffffff;
+  color: var(--text-on-accent);
 }
 
 /* 圆点角标（设置：微信/更新提示） */
@@ -351,14 +351,15 @@ cc-rail {
 
 /* ============================================
    内核自动升级横幅（主内容区右上角浮出卡片）
-   indigo 主色；done 态成功色、error 态警告色 + 关闭按钮
+   沉稳蓝主色；done 态成功色、error 态警告色 + 关闭按钮
    ============================================ */
 
 .kernel-auto-banner {
   position: fixed;
   top: calc(var(--titlebar-h) + var(--spacer-8));
   right: var(--spacer-16);
-  z-index: 10000;
+  /* 低于模态遮罩（1000），避免压住模态弹窗；toast（10001）不受影响 */
+  z-index: 900;
   width: 320px;
   padding: var(--spacer-10) var(--spacer-12);
   border: var(--hairline);

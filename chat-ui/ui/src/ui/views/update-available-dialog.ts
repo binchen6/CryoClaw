@@ -3,6 +3,11 @@ import type { AppViewState } from "../app-view-state.ts";
 import { getLocale, t, tWithDetail } from "../i18n.ts";
 import { icons } from "../icons.ts";
 
+// 「立即更新」点击后到主进程推送 downloading 态之间的本地 in-flight 标志：
+// 期间禁用按钮防双击重复触发下载；状态迁移（downloading/downloaded/error）时复位，
+// error 态按钮恢复可点（重试）。
+let updateDownloadInFlight = false;
+
 // 「发现新版本」弹窗：启动自动检查发现新版本时弹出（暂缓期内主进程不检查，不会到这）。
 // 状态流转（同一弹窗内完成）：
 //   available   → 更新日志 + [立即更新] [暂缓 ▾]
@@ -20,6 +25,9 @@ export function renderUpdateAvailableDialog(state: AppViewState) {
   const downloading = us.status === "downloading";
   const downloaded = us.status === "downloaded";
   const failed = us.status === "error";
+  // 状态一旦离开 available 说明主进程已响应（成功转下载或失败转 error），复位 in-flight
+  if (us.status !== "available") updateDownloadInFlight = false;
+  const updateNowDisabled = updateDownloadInFlight && !failed;
 
   const fmtMB = (n: number) => (n / 1048576).toFixed(1);
   const progressLine = us.progress
@@ -87,7 +95,16 @@ export function renderUpdateAvailableDialog(state: AppViewState) {
         <div class="cc-dialog__foot">
           ${us.status === "available" || failed
             ? html`
-                <button class="btn primary" type="button" @click=${() => state.startUpdateDownload()}>
+                <button
+                  class="btn primary"
+                  type="button"
+                  ?disabled=${updateNowDisabled}
+                  @click=${() => {
+                    if (updateDownloadInFlight) return;
+                    updateDownloadInFlight = true;
+                    void state.startUpdateDownload();
+                  }}
+                >
                   ${failed ? t("appUpdate.retryDownload") : t("appUpdate.updateNow")}
                 </button>
                 <button class="btn" type="button" @click=${() => (state.updateSnoozeOpen = !state.updateSnoozeOpen)}>

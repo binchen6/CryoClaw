@@ -3,8 +3,10 @@
    所有 CSS 文件通过 @import 引用此文件
    修改此文件 = 全局生效
 
-   2026.9 重写（提案 A）：视觉语言从「冰蓝+冷灰蓝」切换为
-   「中性灰 + 单一 indigo 强调色」（Linear/Notion 式清爽现代风）。
+   2026.9 重写（提案 A）→ 2026.9 R2 品牌焕新 → R2b 混色升级：视觉语言定型为
+   「中性灰 + CryoBlue 蓝青混色强调色」——主色 brand-600 #1a6fd0（蓝向青偏移，
+   为高效与工作服务的沉稳蓝，活力但不抢眼），辅色 cyan（tokens-ext --accent-2），
+   品牌签名渐变 蓝→青 仅用于品牌时刻（Linear/Notion 式清爽现代风）。
    token 名称保持不变（下游零改名成本），值全面重调；
    浅色为默认一等主题，暗色为独立调参的近黑中性主题。
 
@@ -126,18 +128,19 @@
   --glass-blur-sm: 8px;
   --glass-blur-md: 16px;
 
-  /* 品牌色阶 —— indigo（单一强调色，Linear 式工程感） */
-  --brand-50: #eef2ff;
-  --brand-100: #e0e7ff;
-  --brand-200: #c7d2fe;
-  --brand-300: #a5b4fc;
-  --brand-400: #818cf8;
-  --brand-500: #6366f1;
-  --brand-600: #4f46e5;
-  --brand-700: #4338ca;
-  --brand-800: #3730a3;
-  --brand-900: #312e81;
-  --brand-950: #1e1b4b;
+  /* 品牌色阶 —— 沉稳蓝（单一强调色，为高效与工作服务） */
+  /* CryoBlue 自绘色阶：蓝 × 青混色（比纯蓝更活，低饱和耐看） */
+  --brand-50: #eef6fd;
+  --brand-100: #d8ebfb;
+  --brand-200: #b3daf6;
+  --brand-300: #85c2ee;
+  --brand-400: #4ba4e6;
+  --brand-500: #2a89dd;
+  --brand-600: #1a6fd0;
+  --brand-700: #1659b1;
+  --brand-800: #164a90;
+  --brand-900: #163e75;
+  --brand-950: #0f2a4e;
 
   /* 中性灰阶（零色相，Notion 式纸感） */
   --grey-50: #fafafa;
@@ -181,11 +184,11 @@
   --hairline: 1px solid var(--border);
   --hairline-strong: 1px solid var(--border-strong);
 
-  /* 强调色 —— indigo */
+  /* 强调色 —— 沉稳蓝 */
   --accent: var(--brand-600);
   --accent-hover: var(--brand-700);
-  --accent-subtle: rgba(79, 70, 229, 0.08);
-  --accent-glow: rgba(79, 70, 229, 0.16);
+  --accent-subtle: rgba(26, 111, 208, 0.08);
+  --accent-glow: rgba(26, 111, 208, 0.16);
 
   /* 语义色 */
   --ok: #16a34a;
@@ -248,8 +251,8 @@
   /* 暗色下 accent 亮一档保对比度 */
   --accent: var(--brand-400);
   --accent-hover: var(--brand-300);
-  --accent-subtle: rgba(129, 140, 248, 0.14);
-  --accent-glow: rgba(129, 140, 248, 0.28);
+  --accent-subtle: rgba(75, 164, 230, 0.14);
+  --accent-glow: rgba(75, 164, 230, 0.28);
 
   --ok: #4ade80;
   --ok-muted: rgba(74, 222, 128, 0.75);
@@ -308,8 +311,8 @@
 
     --accent: var(--brand-400);
     --accent-hover: var(--brand-300);
-    --accent-subtle: rgba(129, 140, 248, 0.14);
-    --accent-glow: rgba(129, 140, 248, 0.28);
+    --accent-subtle: rgba(75, 164, 230, 0.14);
+    --accent-glow: rgba(75, 164, 230, 0.28);
 
     --ok: #4ade80;
     --ok-muted: rgba(74, 222, 128, 0.75);

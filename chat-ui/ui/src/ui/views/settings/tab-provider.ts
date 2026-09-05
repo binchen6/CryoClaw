@@ -444,7 +444,6 @@ async function handleKeySave(prov: GroupedProvider, state: AppViewState) {
     // 真实 key 写 sidecar + 注入代理；config 只写占位符
     const sidecar = await ipc.settingsWriteKimiApiKey({ apiKey });
     const proxyPort = sidecar?.proxyPort ?? 0;
-    const proxySecret = sidecar?.proxySecret ?? "";
     if (proxyPort <= 0) {
       s.error = t("setup.error.connection");
       state.requestUpdate();
@@ -455,8 +454,8 @@ async function handleKeySave(prov: GroupedProvider, state: AppViewState) {
       const target = providers["kimi-coding"];
       if (!target) return;
       target.apiKey = "proxy-managed";
-      target.baseUrl = `http://127.0.0.1:${proxyPort}${proxySecret ? `/${proxySecret}` : ""}/coding`;
-      applyKimiCodeLinkage(draft, proxyPort, proxySecret);
+      target.baseUrl = `http://127.0.0.1:${proxyPort}/coding`;
+      applyKimiCodeLinkage(draft, proxyPort);
     });
     if (ok) s.keyEditing = null;
     return;
@@ -940,7 +939,6 @@ async function handleAddSave(state: AppViewState) {
       // 真实 key 写 sidecar + 注入代理；config 只写占位符
       const sidecar = await ipc.settingsWriteKimiApiKey({ apiKey });
       const proxyPort = sidecar?.proxyPort ?? 0;
-      const proxySecret = sidecar?.proxySecret ?? "";
       if (proxyPort <= 0) {
         s.error = t("setup.error.connection");
         return;
@@ -949,7 +947,7 @@ async function handleAddSave(state: AppViewState) {
         const providers = ((draft.models ??= {}) as any).providers ??= {};
         const prov = (providers["kimi-coding"] ??= { models: [] });
         prov.apiKey = "proxy-managed";
-        prov.baseUrl = `http://127.0.0.1:${proxyPort}${proxySecret ? `/${proxySecret}` : ""}/coding`;
+        prov.baseUrl = `http://127.0.0.1:${proxyPort}/coding`;
         prov.api = "anthropic-messages";
         if (!Array.isArray(prov.models)) prov.models = [];
         prov.models.push(entry);
@@ -957,7 +955,7 @@ async function handleAddSave(state: AppViewState) {
           (((draft.agents ??= {}) as any).defaults ??= {}).model ??= {};
           (draft.agents as any).defaults.model.primary = `kimi-coding/${modelId}`;
         }
-        applyKimiCodeLinkage(draft, proxyPort, proxySecret);
+        applyKimiCodeLinkage(draft, proxyPort);
       });
       if (ok) {
         s.pendingOAuthToken = null;

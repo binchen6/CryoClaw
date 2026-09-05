@@ -45,3 +45,26 @@ test("importOpenclawState 导入进行中重入被拒", async () => {
   releaseStop();
   await first;
 });
+
+// 入口护栏（与内核升级互斥）：assertImportAllowed 抛错即拒绝导入，
+// 不触碰任何导入步骤，importActive 不残留
+test("importOpenclawState 入口护栏抛错时拒绝导入", async () => {
+  const { createOpenclawStateImportLifecycle } = await import("./openclaw-state-import-lifecycle");
+  const calls: string[] = [];
+  const lifecycle = createOpenclawStateImportLifecycle({
+    assertImportAllowed: () => {
+      throw new Error("内核升级进行中，请稍后重试");
+    },
+    quiesceGateway: async () => { calls.push("quiesce"); },
+    validateArchive: async () => { calls.push("validate"); },
+    stopGateway: async () => { calls.push("stop"); },
+    importArchive: async () => { calls.push("import"); },
+    reconcileHostState: async () => { calls.push("reconcile"); },
+    syncImportedConfigState: async () => { calls.push("sync"); },
+    startGateway: async () => { calls.push("start"); },
+  });
+
+  await expect(lifecycle.importOpenclawState("/tmp/a.zip")).rejects.toThrow("内核升级进行中");
+  expect(calls).toEqual([]);
+  expect(lifecycle.isImportActive()).toBe(false);
+});

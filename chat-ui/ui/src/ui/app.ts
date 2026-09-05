@@ -533,7 +533,7 @@ export class OpenClawApp extends LitElement {
   private kernelAutoUpgradeDoneTimer: ReturnType<typeof setTimeout> | null = null;
   // 上一次 App 更新状态：仅在「进入」downloaded 态时弹 toast，避免同态重复推送重复打扰
   private appUpdatePrevStatus = "";
-  // 本会话内被用户关过弹窗的版本号：同版本不再自动弹（可从设置页/角标再打开）
+  // 本会话内被用户关过弹窗的版本号：同版本不再自动弹（可从设置-关于页「查看更新详情」再打开）
   private updateDialogDismissedFor: string | null = null;
 
   createRenderRoot() {
@@ -607,7 +607,7 @@ export class OpenClawApp extends LitElement {
     }
   }
 
-  // 点 X / overlay：本次会话内同版本不再自动弹（用户可从设置页或角标再次打开）
+  // 点 X / overlay：本次会话内同版本不再自动弹（用户可从设置-关于页「查看更新详情」再次打开）
   closeUpdateDialog() {
     this.showUpdateDialog = false;
     this.updateSnoozeOpen = false;
@@ -630,7 +630,7 @@ export class OpenClawApp extends LitElement {
       clearTimeout(this.kernelAutoUpgradeDoneTimer);
       this.kernelAutoUpgradeDoneTimer = null;
     }
-    this.kernelAutoUpgrade = { step: p.step, pct: p.pct, msg: p.msg, source: p.source };
+    this.kernelAutoUpgrade = { step: p.step, pct: p.pct, msg: p.msg, source: p.source, version: p.version, action: p.action };
     // done 终态：展示几秒后自动清除；error 态常驻，由用户点关闭（dismissKernelAutoUpgrade）
     if (p.step === "done") {
       this.kernelAutoUpgradeDoneTimer = setTimeout(() => {

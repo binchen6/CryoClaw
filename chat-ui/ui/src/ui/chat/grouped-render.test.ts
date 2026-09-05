@@ -38,7 +38,7 @@ function collectTemplates(value: unknown, acc: Collected): void {
   }
   if (typeof value === "object") {
     // DirectiveResult（unsafeHTML 等）：plain object + _$litDirective$ 类。
-    // unsafeSVG 只用于 icons.ts 的静态 lucide 图标（无用户输入，无 XSS 面），不计入统计。
+    // unsafeSVG 只用于 icons.ts 的静态自绘图标（CryoIcons，无用户输入，无 XSS 面），不计入统计。
     if ("_$litDirective$" in value) {
       const directiveClass = (value as { _$litDirective$?: { directiveName?: string } })._$litDirective$;
       if (directiveClass?.directiveName !== "unsafeSVG") {

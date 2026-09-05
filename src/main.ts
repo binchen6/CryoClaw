@@ -52,13 +52,14 @@ import { runQuitCleanup } from "./quit-cleanup";
 import { detectOwnership, migrateFromLegacy, readCryoclawConfig, writeCryoclawConfig, appendChannelUtm } from "./cryoclaw-config";
 import { startTokenRefresh, stopTokenRefresh, loadOAuthToken } from "./kimi-oauth";
 import { initKernelUpdater, getKernelUpdateState, checkKernelUpdate, runKernelUpdate, runKernelRollback, isKernelBelowMinSupported } from "./kernel-updater";
+import { isAutoKernelUpgradeBackoffActive, recordAutoKernelUpgradeFailure, clearAutoKernelUpgradeBackoff } from "./auto-kernel-upgrade-backoff";
 import { initAppUpdater, quitAndInstallAppUpdate } from "./app-updater";
 import { startGatewayControlServer, stopGatewayControlServer } from "./gateway-control-server";
 import { migrateOpenclawConfigForKernelUpgrade } from "./openclaw-config-migration";
 import { assertTrustedIpcSender } from "./ipc-sender-guard";
 import { isSafeOpenExt } from "./safe-open";
 import { evaluateFileReadTarget, FILE_READ_MAX_BYTES, mimeTypeForPath } from "./file-read-base64";
-import { startAuthProxy, stopAuthProxy, setProxyAccessToken, setProxySearchDedicatedKey, getProxyPort, getProxySecret } from "./kimi-auth-proxy";
+import { startAuthProxy, stopAuthProxy, setProxyAccessToken, setProxySearchDedicatedKey, getProxyPort } from "./kimi-auth-proxy";
 import { importOpenclawStateFromArchive, validateOpenclawStateArchive } from "./openclaw-state-archive";
 import { syncOpenClawStateAfterWrite } from "./openclaw-health-state";
 import { createOpenclawStateImportLifecycle } from "./openclaw-state-import-lifecycle";
@@ -533,6 +534,10 @@ function resolveOpenclawImportBackupDir(): string {
 }
 
 const openclawStateImportLifecycle = createOpenclawStateImportLifecycle({
+  // 与内核升级互斥（反向护栏在 kernel:update / kernel:rollback handler 与自动升级调度处）
+  assertImportAllowed: () => {
+    if (getKernelUpdateState().running) throw new Error("内核升级进行中，请稍后重试");
+  },
   quiesceGateway: async () => {
     cancelPendingGatewayRestart("settings:import-openclaw-state");
     await inflightGatewayOp;
@@ -545,7 +550,7 @@ const openclawStateImportLifecycle = createOpenclawStateImportLifecycle({
   startGateway: async () => {
     const running = await ensureGatewayRunning("settings:import-openclaw-state");
     if (!running) {
-      throw new Error(`.openclaw 已导入，但 Gateway 启动失败。请检查导入的配置；导入前的状态已备份到 ${resolveOpenclawImportBackupDir()} 下的应急归档，可从设置页导入该文件恢复。`);
+      throw new Error(`.openclaw 已导入，但 Gateway 启动失败。请检查导入的配置；导入前的状态已备份到 ${resolveOpenclawImportBackupDir()} 下的应急归档（滚动保留最近 2 份），可从设置页导入该文件恢复。`);
     }
   },
 });
@@ -570,26 +575,27 @@ function parseProxyPortFromConfig(): number {
   return 0;
 }
 
-// 确保 config 中 kimi-coding 指向代理（仅端口/secret 变化时写入）
+// 确保 config 中 kimi-coding 指向代理（仅端口变化时写入）
 function ensureProxyConfig(proxyPort: number): void {
   try {
     const config = readUserConfig();
     const provider = config?.models?.providers?.["kimi-coding"];
     if (!provider) return;
 
-    const proxyBase = `http://127.0.0.1:${proxyPort}/${getProxySecret()}`;
+    const proxyBase = `http://127.0.0.1:${proxyPort}`;
     const expectedBase = `${proxyBase}/coding`;
     // memorySearch embedding 也走同一个代理
-    const memorySearchChanged = ensureMemorySearchProxyConfig(config, proxyPort, getProxySecret());
+    const memorySearchChanged = ensureMemorySearchProxyConfig(config, proxyPort);
 
-    // 历史遗留的指向本地代理的 provider（如旧版 "kimi"，无/旧 secret 段）一并改写，
-    // 否则这些条目每次请求被代理 401，主模型静默落入 fallback。
+    // 历史遗留的指向本地代理的 provider（如旧版 "kimi"，或带回环鉴权 secret 段的
+    // 条目）一并改写到当前端口、无 secret 形态，否则这些条目每次请求被代理 401/404，
+    // 主模型静默落入 fallback。
     // 边界：本函数在 kimi-coding 缺失时直接 return，"只有遗留条目、无受管 kimi-coding"
     // 的配置不会被治愈——但那种情况下 ensureAuthProxy 根本不会启动代理，症状是显眼的
     // 连接失败而非静默 fallback，可接受。
-    const legacyHealed = healLegacyProxyProviders(config, proxyPort, getProxySecret());
+    const legacyHealed = healLegacyProxyProviders(config, proxyPort);
     if (legacyHealed) {
-      log.info(`[auth-proxy] healed legacy proxy-pointing provider(s) → 127.0.0.1:${proxyPort}/<secret>`);
+      log.info(`[auth-proxy] healed legacy proxy-pointing provider(s) → 127.0.0.1:${proxyPort}`);
     }
 
     // kimi-search 插件端点同步必须在 early-return 之前：setup 保存会显式删 entry.config，
@@ -622,7 +628,7 @@ function ensureProxyConfig(proxyPort: number): void {
     provider.apiKey = "proxy-managed";
 
     writeUserConfig(config);
-    log.info(`[auth-proxy] config updated: baseUrl → 127.0.0.1:${proxyPort}/<secret>`);
+    log.info(`[auth-proxy] config updated: baseUrl → 127.0.0.1:${proxyPort}`);
   } catch (err: any) {
     log.error(`[auth-proxy] ensureProxyConfig failed: ${err.message}`);
   }
@@ -1014,7 +1020,8 @@ function syncAppFocusState(trigger: string): void {
 
 // 内核版本低于最低支持版本（kernel-channel.json minSupported，判定见 kernel-updater.ts）
 // 时的启动后自动升级调度。护栏：仅打包环境生效；模块级布尔防重复调度；
-// 结果只记日志，绝不 throw、不弹窗（进度经 kernel:update-progress 推到渲染层全局横幅）。
+// 失败后 24h 退避（auto-kernel-upgrade-backoff.ts）；结果只记日志，绝不 throw、
+// 不弹窗（进度经 kernel:update-progress 推到渲染层全局横幅）。
 let autoKernelUpgradeScheduled = false;
 function scheduleAutoKernelUpgradeIfNeeded(): void {
   if (!app.isPackaged) return;
@@ -1027,14 +1034,25 @@ function scheduleAutoKernelUpgradeIfNeeded(): void {
       log.warn("[kernel-updater] 自动升级取消：.openclaw 导入进行中");
       return;
     }
+    // 失败退避：距上次自动升级失败不足 24h 跳过（手动升级不受影响）
+    if (isAutoKernelUpgradeBackoffActive()) {
+      log.info("[kernel-updater] 自动升级跳过：距上次失败不足 24h，等待退避窗口过后重试");
+      return;
+    }
     log.info("[kernel-updater] 内核版本低于最低支持版本，开始自动升级");
     runKernelUpdate(undefined, "auto")
       .then((r) => {
-        if (r.ok) log.info(`[kernel-updater] 自动升级完成: ${r.from} → ${r.to}`);
-        else log.warn(`[kernel-updater] 自动升级失败: ${r.error}`);
+        if (r.ok) {
+          log.info(`[kernel-updater] 自动升级完成: ${r.from} → ${r.to}`);
+          clearAutoKernelUpgradeBackoff();
+        } else {
+          log.warn(`[kernel-updater] 自动升级失败: ${r.error}`);
+          recordAutoKernelUpgradeFailure(getKernelUpdateState().current);
+        }
       })
       .catch((err: any) => {
         log.warn(`[kernel-updater] 自动升级异常: ${err?.message ?? err}`);
+        recordAutoKernelUpgradeFailure(getKernelUpdateState().current);
       });
   }, 25 * 1000);
   timer.unref?.();

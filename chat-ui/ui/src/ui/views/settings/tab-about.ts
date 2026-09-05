@@ -7,6 +7,7 @@ import { getLocale, t, tWithDetail } from "../../i18n.ts";
 import * as ipc from "../../data/ipc-bridge.ts";
 import { showConfirm } from "../confirm-dialog.ts";
 import { showToast } from "../../app-toast.ts";
+import { kernelUpdateStepMessage } from "../kernel-auto-upgrade-banner.ts";
 import type {
   AppUpdateState,
   KernelUpdateProgress,
@@ -133,6 +134,12 @@ async function handleKernelRollback(state: AppViewState) {
 
 // ── App 自动更新 ──
 
+// 「查看更新详情」：重开「发现新版本」弹窗（弹窗被关过后，设置-关于页是重开入口）
+function handleViewUpdateDetails(state: AppViewState) {
+  state.showUpdateDialog = true;
+  state.requestUpdate();
+}
+
 // 「查看更新日志」：拉全部条目（all=true，不触碰 lastShown 标记）重开 What's New 弹窗
 async function handleViewReleaseNotes(state: AppViewState) {
   try {
@@ -251,6 +258,9 @@ function renderAppUpdateCard(state: AppViewState) {
           ${us.status === "downloaded"
             ? html`<button class="oc-settings__btn oc-settings__btn--primary oc-settings__btn--compact" @click=${() => handleAppUpdateRestart(state)}>${t("settings.about.appUpdateRestart")}</button>`
             : ""}
+          ${us.status === "available" || us.status === "downloaded"
+            ? html`<button class="oc-settings__btn oc-settings__btn--compact" @click=${() => handleViewUpdateDetails(state)}>${t("settings.about.appUpdateViewDetails")}</button>`
+            : ""}
         </div>
         ${formatSnoozeUntil(us.snoozedUntil)
           ? html`<div class="oc-flex oc-gap-8 oc-mt-4" style="align-items:center">
@@ -313,7 +323,7 @@ function renderKernelCard(state: AppViewState) {
                 <div class="oc-settings-progress">
                   <div class="oc-settings-progress__bar" style="width:${s.progress.pct}%"></div>
                 </div>
-                <div class="oc-mt-4" style="color:var(--text-secondary)">${s.progress.pct}% · ${s.progress.msg}</div>
+                <div class="oc-mt-4" style="color:var(--text-secondary)">${s.progress.pct}% · ${kernelUpdateStepMessage(s.progress)}</div>
               </div>
             `
           : ""}

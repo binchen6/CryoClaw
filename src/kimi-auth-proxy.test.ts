@@ -2,64 +2,56 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import * as http from "http";
 import {
-  generateProxySecret,
-  extractSecuredPath,
   startAuthProxy,
   stopAuthProxy,
-  getProxySecret,
+  setProxyAccessToken,
+  getProxyPort,
 } from "./kimi-auth-proxy";
 
-test("generateProxySecret 生成 URL 安全的随机 secret", () => {
-  const a = generateProxySecret();
-  const b = generateProxySecret();
-  assert.notEqual(a, b, "两次生成应不同");
-  assert.ok(a.length >= 24, "secret 长度应足够");
-  assert.match(a, /^[A-Za-z0-9_-]+$/, "base64url 无需 percent-encoding");
-});
+// 不用全局 keepAlive agent：同端口快速重bind 时会复用已被 closeAllConnections
+// 掐掉的池化 socket，非幂等请求不复试直接 ECONNRESET
+const noKeepAlive = new http.Agent({ keepAlive: false });
 
-test("extractSecuredPath 校验并剥离 secret 路径段", () => {
-  const secret = "s3cr3t-xyz_123";
-  assert.equal(extractSecuredPath(`/${secret}/coding/v1/messages`, secret), "/coding/v1/messages");
-  assert.equal(extractSecuredPath(`/${secret}`, secret), "/");
-  // 无 secret / 错 secret / 部分匹配 一律拒绝
-  assert.equal(extractSecuredPath("/coding/v1/messages", secret), null);
-  assert.equal(extractSecuredPath("/wrong/coding/v1/messages", secret), null);
-  assert.equal(extractSecuredPath(`/${secret}x/coding`, secret), null, "前缀部分匹配不得放行");
-  // secret 为空（代理未启动）时拒绝一切
-  assert.equal(extractSecuredPath("/coding", ""), null);
-});
+function request(port: number, path: string, method = "GET"): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const req = http.request(
+      { hostname: "127.0.0.1", port, path, method, agent: noKeepAlive },
+      (res) => {
+        res.resume();
+        resolve(res.statusCode ?? 0);
+      },
+    );
+    req.on("error", reject);
+    req.end();
+  });
+}
 
-test("auth proxy 对无/错 secret 的请求返回 401", async (t) => {
+test("auth proxy 路由：/coding/* 放行，未知路径 404", async (t) => {
   const port = await startAuthProxy(0);
   t.after(() => stopAuthProxy());
-  const secret = getProxySecret();
-  assert.ok(secret, "startAuthProxy 应生成 secret");
+  setProxyAccessToken("test-token");
 
-  const request = (path: string): Promise<number> =>
-    new Promise((resolve, reject) => {
-      const req = http.request(
-        { hostname: "127.0.0.1", port, path, method: "GET" },
-        (res) => {
-          res.resume();
-          resolve(res.statusCode ?? 0);
-        },
-      );
-      req.on("error", reject);
-      req.end();
-    });
-
-  assert.equal(await request("/coding/v1/messages"), 401, "无 secret → 401");
-  assert.equal(await request("/wrong-secret/coding/v1/messages"), 401, "错 secret → 401");
-  // 带对 secret 但路径不在路由表 → 404（说明通过了鉴权进入路由层）
-  assert.equal(await request(`/${secret}/nope`), 404, "对 secret + 未知路径 → 404");
+  // 无回环鉴权：任意路径直接进路由层（R49 移除 path secret）
+  assert.equal(await request(port, "/nope"), 404, "未知路径 → 404");
+  assert.equal(await request(port, "/other/v1/messages"), 404, "非 /coding/ 前缀 → 404");
 });
 
-test("代理重启不复位 secret（同会话内 ensureProxyConfig 幂等）", async (t) => {
+test("auth proxy 无 token 时对 /coding 请求返回 401", async (t) => {
   const port = await startAuthProxy(0);
-  const first = getProxySecret();
+  t.after(() => stopAuthProxy());
+  setProxyAccessToken("");
+
+  const status = await request(port, "/coding/v1/messages", "POST");
+  assert.equal(status, 401, "无 access token → 401（代理自身 token 缺失，非回环鉴权）");
+});
+
+test("代理重启后端口重新分配且可再次启动", async (t) => {
+  const port = await startAuthProxy(0);
+  assert.ok(port > 0);
+  assert.equal(getProxyPort(), port);
   await stopAuthProxy();
+  assert.equal(getProxyPort(), -1);
   const port2 = await startAuthProxy(0);
   t.after(() => stopAuthProxy());
-  assert.equal(getProxySecret(), first, "重启后 secret 应保持不变");
-  assert.notEqual(port2, 0);
+  assert.ok(port2 > 0);
 });

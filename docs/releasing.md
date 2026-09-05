@@ -10,7 +10,7 @@
 
 ## Windows 发布步骤
 
-1. **版本 bump**：改 `package.json` 的 `version`（同时按需补 `release-notes.json` 对应版本条目）。
+1. **版本 bump**：改 `package.json` 的 `version`（**必须同步**在 `release-notes.json` 顶部补对应版本条目，zh/en 双份——应用内「更新日志」与 Release 说明都读它）。
 2. **本地打包**：
 
    ```bash
@@ -26,20 +26,22 @@
    - `CryoClaw-Setup-<version>-<arch>.exe` — NSIS 安装包
    - `CryoClaw-Setup-<version>-<arch>.exe.blockmap` — 差分下载元数据
    - `latest.yml` — 更新清单（版本号 + 文件 sha512）
-4. **发布**（首选）：
+4. **发布（gh CLI 草稿流，现行标准做法）**：
 
    ```bash
-   GH_TOKEN=ghp_xxx npx electron-builder --win --x64 --publish always
-   ```
-
-   electron-builder 会把 exe / blockmap / latest.yml 一并上传到 GitHub Release（默认草稿）。
-   备选（手动上传）：
-
-   ```bash
+   # ① 建草稿 Release（同批上传 exe + blockmap + latest.yml）
    gh release create v<version> out/win32-x64/CryoClaw-Setup-*.exe out/win32-x64/*.blockmap out/win32-x64/latest.yml --draft
+   # ② 核对资产：三个文件齐全、版本号与 package.json 一致
+   gh release view v<version> --json isDraft,assets
+   # ③ 草稿实测通过后转正并设为 latest
+   gh release edit v<version> --draft=false --latest
+   # ④ API 复核最终状态（isDraft=false、资产完整）
+   gh api repos/binchen6/CryoClaw/releases/tags/v<version> --jq '{draft:.draft, assets:[.assets[].name]}'
    ```
 
-5. **草稿实测再转正**（重要）：先把 Release 保持 draft，本地装**上一个正式版本**，启动后等 ~15s 自动检查（或设置 → 关于 → 检查更新），确认能发现并下载新版本；再把草稿转为正式 Release。
+   备选（一步直发，跳过草稿实测，不推荐）：`GH_TOKEN=ghp_xxx npx electron-builder --win --x64 --publish always` 会把 exe / blockmap / latest.yml 一并上传到 GitHub Release（默认草稿）。
+
+5. **草稿实测再转正**（重要）：Release 保持 draft 期间，本地装**上一个正式版本**，启动后等 ~15s 自动检查（或设置 → 关于 → 检查更新），确认能发现新版本并弹窗（v2026.906.0 起为弹窗决策模式，点「更新」才下载）；验证通过后再执行上面的 ③ 转正。
 
 ## 注意事项
 

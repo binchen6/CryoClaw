@@ -162,6 +162,10 @@ export interface KernelUpdateProgress {
   msg: string;
   /** 触发来源：auto = 启动后自动升级（全局横幅），manual = 设置页手动触发 */
   source?: "auto" | "manual";
+  /** done/error 终态附带的目标版本（i18n 插值用） */
+  version?: string;
+  /** done 终态附带动作：区分升级/回退文案 */
+  action?: "update" | "rollback";
 }
 
 // App 自动更新（electron-updater）状态；supported=false 表示 dev/未打包环境不支持
@@ -453,9 +457,9 @@ export function settingsVerifyKey(params: Record<string, unknown>): Promise<Veri
   return oc().settingsVerifyKey(params) as Promise<VerifyResult>;
 }
 
-/** Kimi Code 手动 key 写 sidecar + 注入 auth proxy；返回 { proxyPort, proxySecret } */
-export async function settingsWriteKimiApiKey(params: { apiKey: string }): Promise<{ proxyPort: number; proxySecret: string }> {
-  return unwrapData<{ proxyPort: number; proxySecret: string }>(await oc().settingsWriteKimiApiKey(params));
+/** Kimi Code 手动 key 写 sidecar + 注入 auth proxy；返回 { proxyPort } */
+export async function settingsWriteKimiApiKey(params: { apiKey: string }): Promise<{ proxyPort: number }> {
+  return unwrapData<{ proxyPort: number }>(await oc().settingsWriteKimiApiKey(params));
 }
 
 // ---------------------------------------------------------------------------
@@ -549,9 +553,9 @@ export async function settingsWriteKimiSearchKey(params: { apiKey: string }): Pr
   unwrapVoid(await oc().settingsWriteKimiSearchKey(params));
 }
 
-/** 确保 auth proxy 运行（memory embedding 依赖），返回 { proxyPort, proxySecret } */
-export async function settingsEnsureKimiProxy(): Promise<{ proxyPort: number; proxySecret: string }> {
-  return unwrapData<{ proxyPort: number; proxySecret: string }>(await oc().settingsEnsureKimiProxy());
+/** 确保 auth proxy 运行（memory embedding 依赖），返回 { proxyPort } */
+export async function settingsEnsureKimiProxy(): Promise<{ proxyPort: number }> {
+  return unwrapData<{ proxyPort: number }>(await oc().settingsEnsureKimiProxy());
 }
 
 // ---------------------------------------------------------------------------

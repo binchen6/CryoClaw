@@ -136,6 +136,19 @@ test("tab-about.ts：available 态「更新」按钮 + 暂缓状态行与恢复�
   assert.match(s, /snoozedUntil/, "应展示暂缓状态");
 });
 
+test("tab-about.ts：「查看更新详情」重开更新弹窗（弹窗关闭后的重开入口）", () => {
+  const s = src("views/settings/tab-about.ts");
+  assert.match(s, /settings\.about\.appUpdateViewDetails/, "应有「查看更新详情」按钮文案");
+  assert.match(s, /function handleViewUpdateDetails[\s\S]{0,200}?state\.showUpdateDialog = true/, "点击应重开 update-available-dialog");
+});
+
+test("update-available-dialog.ts：「立即更新」点击后到 downloading 推送之间禁用按钮（防双击）", () => {
+  const s = src("views/update-available-dialog.ts");
+  assert.match(s, /let updateDownloadInFlight = false/, "应有本地 in-flight 标志");
+  assert.match(s, /us\.status !== "available"\) updateDownloadInFlight = false/, "状态迁移时应复位 in-flight");
+  assert.match(s, /\?disabled=\$\{updateNowDisabled\}/, "按钮应随 in-flight 禁用");
+});
+
 test("i18n：更新弹窗 key 双区齐全（抽样；全集一致性由 i18n.test.ts 保证）", () => {
   const zh = src("i18n/zh.ts");
   const en = src("i18n/en.ts");

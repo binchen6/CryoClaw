@@ -58,11 +58,9 @@ async function handleSave(state: AppViewState) {
   try {
     // embedding 走本地 auth proxy：先确保 proxy 运行并拿到端口（主进程职责）
     let proxyPort = 0;
-    let proxySecret = "";
     if (s.embeddingEnabled) {
       const proxy = await ipc.settingsEnsureKimiProxy();
       proxyPort = proxy?.proxyPort ?? 0;
-      proxySecret = proxy?.proxySecret ?? "";
       if (proxyPort <= 0) {
         s.saving = false;
         s.error = t("settings.error.saveFailed");
@@ -75,7 +73,6 @@ async function handleSave(state: AppViewState) {
         sessionMemoryEnabled: s.sessionMemoryEnabled,
         embeddingEnabled: s.embeddingEnabled,
         proxyPort,
-        proxySecret,
       });
     });
     if (!outcome.ok) {

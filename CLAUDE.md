@@ -240,7 +240,7 @@ For comprehensive design guidelines, please refer to:
 - [Design Guidelines (English)](docs/design-guidelines-en.md)
 - [Design Guidelines (Chinese)](docs/design-guidelines-zh.md)
 
-1. **Theme is neutral gray + a single indigo accent, via design tokens.** Per the 2026.9 design spec, the accent is indigo (`--brand-500: #6366f1`) from `shared/design-tokens.css`, and the light theme is the first-class theme. Always style via design tokens and the `cc-*` component primitives (`chat-ui/ui/src/styles/primitives.css`) — never hardcode hex. See docs/design-guidelines-zh.md for the full spec and docs/ui-rewrite-2026.9-contract.md for the 2026.9 rewrite contract. Semantic status colors (error red, warning amber) are separate from the accent. (The old ice-blue `#0EA5E9` and "signature red `#c0392b`" rules are retired.)
+1. **Theme is neutral gray + a single steady blue accent, via design tokens.** Per the 2026.9 R2b design spec, the accent is CryoBlue, a calm work-oriented blue-cyan blend (`--brand-500: #2a89dd`, light-theme primary `--brand-600: #1a6fd0`, secondary cyan `--accent-2`) from `shared/design-tokens.css`, and the light theme is the first-class theme. Always style via design tokens and the `cc-*` component primitives (`chat-ui/ui/src/styles/primitives.css`) — never hardcode hex. See docs/design-guidelines-zh.md for the full spec and docs/archive/ui-rewrite-2026.9-contract.md for the 2026.9 rewrite contract. Semantic status colors (error red, warning amber) are separate from the accent. (The old indigo `#6366f1`, ice-blue `#0EA5E9` and "signature red `#c0392b`" rules are retired.)
 
 2. **No `text-transform: uppercase` on labels.** Labels should display as written — respect the original casing of brand names (Chrome, iMessage) and CJK text.
 

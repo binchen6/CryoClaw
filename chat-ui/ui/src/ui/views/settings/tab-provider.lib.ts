@@ -440,7 +440,7 @@ export function buildProviderConfigForAdd(
 }
 
 /** kimi-code 联动：启用 kimi-search 插件 + memory embedding 走代理 */
-export function applyKimiCodeLinkage(draft: Record<string, unknown>, proxyPort: number, proxySecret = ""): void {
+export function applyKimiCodeLinkage(draft: Record<string, unknown>, proxyPort: number): void {
   const d = draft as any;
   d.plugins ??= {};
   d.plugins.entries ??= {};
@@ -462,7 +462,7 @@ export function applyKimiCodeLinkage(draft: Record<string, unknown>, proxyPort: 
       enabled: true,
       provider: "openai",
       model: "bge_m3_embed",
-      remote: { baseUrl: `http://127.0.0.1:${proxyPort}${proxySecret ? `/${proxySecret}` : ""}/coding/v1/`, apiKey: "proxy-managed" },
+      remote: { baseUrl: `http://127.0.0.1:${proxyPort}/coding/v1/`, apiKey: "proxy-managed" },
     };
   }
 }

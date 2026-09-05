@@ -260,3 +260,24 @@ Things that are easy to get wrong or forget when working on CryoClaw.
     渲染层已组件化：流式气泡在 `<cc-chat-stream>`、历史在 `<cc-chat-history>`、
     侧边栏在 `<cc-sidebar>`（均无 shadow DOM，shouldUpdate 白名单门控），
     改对应区域先去组件文件找。
+
+74. **NSIS 品牌位图必须走 `electron-builder.yml` 的 nsis 选项，不要在 installer.nsh 里 `!define`。**
+    `nsis.installerSidebar` / `nsis.installerHeader` 会让 electron-builder 在命令行以 `-D`
+    注入 `MUI_WELCOMEFINISHPAGE_BITMAP` / `MUI_HEADERIMAGE` 同名宏；installer.nsh 里再
+    `!define` 会与命令行定义冲突，NSIS 编译直接失败（v2026.907.0 实测）。位图由
+    `scripts/gen-installer-bitmaps.ps1` 生成到 `assets/installer-welcome.bmp` /
+    `installer-header.bmp`，installer.nsh 头部注释已钉住该约定。
+75. **Windows 自带 PowerShell 5.1 按 GBK 解析无 BOM 的 UTF-8 脚本。** .ps1 内的中文
+    注释/字符串在中文系统上会被按系统 ANSI（GBK）解码成乱码，轻则文案错误重则语法
+    报错。所有 .ps1（如 `scripts/gen-installer-bitmaps.ps1`）必须以 **UTF-8 BOM** 保存；
+    新增 .ps1 时用编辑器确认编码，编辑器默认「无 BOM UTF-8」会踩坑。
+76. **openclaw npm `latest` dist-tag 不可信作内核更新目标。** latest 可能指向发行证据链
+    未完成的版本（2026.9.1 实例：GitHub release/ClawHub 发布链未齐即被 latest 指向）。
+    内核更新目标一律走策展渠道 `kernel-channel.json`（远程双源 raw.githubusercontent →
+    jsdelivr 镜像，构建期注入内置兜底），`kernel-update.mjs fetchStableVersion()` 绝不
+    回落 npm latest。推进 stable 需策展方确认发行证据链完整。
+77. **导入 .openclaw 归档会清空整个状态目录。** v2026.907.0 起
+    `settings:import-openclaw-state` 在清空前自动把当前状态导出为应急归档
+    （`%LOCALAPPDATA%\CryoClaw\import-backup`，滚动保留 2 份），解压中途失败会
+    best-effort 自动还原；备份失败则中止导入（不做无保护清空）。**更早版本无此保护**，
+    在旧版上导入前务必先手动导出备份。
