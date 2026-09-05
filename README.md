@@ -43,7 +43,7 @@ CryoClaw 是在 **[OneClaw](https://github.com/oneclaw/oneclaw)**（AGPL-3.0）�
 | 更新策略 | 应用自动更新（CDN） | 应用自动更新（GitHub Releases + blockmap 差分下载，设置页可手动检查）+ 内核升级/回退（差分 ASAR 换装）双通道 |
 | 设置架构 | 主进程自研读写 IPC | 全面切换内核 `config.get`/`config.patch`（乐观锁 + RFC7396 diff），退役 15+ 自研 IPC |
 | 流式渲染 | 逐帧全量 markdown | 逐帧纯文本流式 + 终态一次性排版（消除 O(n²) 卡顿），折叠区懒渲染 |
-| 存储体积 | — | gateway.asar 裁剪 279.6 → 226.8MB（非目标平台原生包/冗余类型声明/sourcemap/.pdb 调试符号） |
+| 存储体积 | — | gateway.asar 按需裁剪（剔除非目标平台原生包/冗余类型声明/sourcemap/.pdb 调试符号，幅度随内核版本浮动） |
 | 模型管理 | 基础列表 | provider 分组 + 拖拽排序 + 自定义分组 + fallback 链 + 搜索 + 能力徽标（思考/上下文窗口/图像）+ 密钥有效性探测 + 四处选择器联动 |
 | 思考强度 | 部分模型被误限为开/关二值 | 按模型能力开放全档位（Kimi K3：low/medium/high/xhigh/max），thinkingLevelMap 正确路由 |
 | CLI | `openclaw` PATH 注入 | 额外提供 gateway CLI 托管（127.0.0.1 控制面，`openclaw gateway restart/status` 不再报错） |
@@ -98,7 +98,7 @@ CryoClaw (Electron 43 + TypeScript 5.9)
   └── 打包链路        scripts/package-resources.js → electron-builder
 ```
 
-- **通信**：chat-ui 经 WebSocket RPC 与 gateway 内核通信（内核注册 237 个 RPC 方法）；渲染层 CSP 只允许连接 127.0.0.1。
+- **通信**：chat-ui 经 WebSocket RPC 与 gateway 内核通信（内核注册 326 个 RPC 方法（随内核升级增长））；渲染层 CSP 只允许连接 127.0.0.1。
 - **渲染**：markdown 引擎（marked + DOMPurify）支持 GFM 表格/任务列表，样式化的标题与斑马纹表格；代码块带语法高亮（highlight.js 按需加载 15 种常用语言）、语言标签与悬停复制按钮；LaTeX 公式（$$块级$$/$行内$）KaTeX 专业排版；历史消息 `MEDIA:<路径>` 标记渲染为本地图片（点击全屏预览）；LRU 缓存 + 流式旁路防污染，解析异常自动退化为纯文本。
 - **消息操作**：任意消息悬停「引用」一键插入 markdown 引用块到输入框；发送失败错误卡片带「重发」按钮，可反复重试。
 - **本地文件卡片**：历史消息中的 `MEDIA:<路径>` 标记——图片直接渲染预览，其他常见文件类型（文档/表格/压缩/音视频/代码等）渲染为文件卡片：点击打开、卡片内按钮在文件夹中显示，图标按扩展名区分。
@@ -137,7 +137,7 @@ A: 双通道：应用本体走 GitHub Releases 自动更新（启动后静默检
 
 **CryoClaw** is a fork-and-rebuild of [OneClaw](https://github.com/oneclaw/oneclaw) (AGPL-3.0): an efficient, easy-to-use, pure harness around the [OpenClaw](https://github.com/openclaw/openclaw) kernel. The whole project was iterated via **vibe coding** — multi-round collaborative sessions with Kimi K3 (Kimi Code, lead), DeepSeek v4 Flash (Codex) and Qwen3.8 Max (Qoder), with humans steering requirements and acceptance.
 
-Highlights over OneClaw: ice-blue TraeWork design system (light/dark, lucide-style icons), app auto-update via GitHub Releases with blockmap differential download plus a kernel-only upgrader (diff ASAR swap with rollback), settings fully migrated to kernel `config.get`/`config.patch`, streaming rendered as per-frame plain text (no more O(n²) jank), hardened markdown engine (GFM tables & task lists, code highlighting with language labels, KaTeX math, parse-failure fallback), message quote & error-resend actions, compaction checkpoint rewind/fork, a plugin management page with the ClawHub marketplace, gateway.asar trimmed from 279.6 to 226.8MB, model management with custom groups / drag-reorder / fallback chains / capability badges, per-model thinking levels done right (Kimi K3 low→max instead of a binary toggle), instant /new session reset, managed gateway CLI, ~0.6s startup (early window creation + V8 compile cache), one-click diagnostics bundle export (redacted), renderer crash self-healing, a 657-test regression baseline (0 fail), and a jscpd-tracked code-duplication rate of 1.06% (`npm run dupcheck`, 5% threshold).
+Highlights over OneClaw: ice-blue TraeWork design system (light/dark, lucide-style icons), app auto-update via GitHub Releases with blockmap differential download plus a kernel-only upgrader (diff ASAR swap with rollback), settings fully migrated to kernel `config.get`/`config.patch`, streaming rendered as per-frame plain text (no more O(n²) jank), hardened markdown engine (GFM tables & task lists, code highlighting with language labels, KaTeX math, parse-failure fallback), message quote & error-resend actions, compaction checkpoint rewind/fork, a plugin management page with the ClawHub marketplace, gateway.asar trimmed on demand (non-target native packages, redundant type declarations, sourcemaps, .pdb symbols removed), model management with custom groups / drag-reorder / fallback chains / capability badges, per-model thinking levels done right (Kimi K3 low→max instead of a binary toggle), instant /new session reset, managed gateway CLI, ~0.6s startup (early window creation + V8 compile cache), one-click diagnostics bundle export (redacted), renderer crash self-healing, a 902-test regression baseline (0 fail), and a jscpd-tracked code-duplication rate of 1.03% (`npm run dupcheck`, 5% threshold).
 
 Download from [Releases](https://github.com/binchen6/CryoClaw/releases/latest) (Windows x64 installer), or build from source with Node.js ≥ 22.12 (`npm install && npm run dev`).
 

@@ -88,8 +88,10 @@
 
 .panel__empty-title {
   margin: 0;
-  font-size: var(--heading-sm);
+  font-family: var(--font-display);
+  font-size: var(--heading-xl);
   font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-display);
   color: var(--text-strong);
 }
 

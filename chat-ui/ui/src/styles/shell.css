@@ -315,11 +315,12 @@ cc-rail {
 }
 
 /* ============================================
-   会话面板调宽手柄（右缘 6px 命中区）
+   会话面板调宽手柄（右缘 8px 命中区）
+   常态细发丝线可发现；hover/active 加宽至 4px + 主色辉光
    ============================================ */
 
 .cryoclaw-panel-resize {
-  width: 6px;
+  width: 8px;
   flex-shrink: 0;
   cursor: col-resize;
   position: relative;
@@ -331,16 +332,22 @@ cc-rail {
   position: absolute;
   top: 0;
   bottom: 0;
-  left: 2px;
+  left: 3px;
   width: 2px;
   border-radius: var(--radius-full);
-  background: transparent;
-  transition: background-color var(--duration-fast) var(--ease-standard);
+  background: var(--border);
+  transition:
+    width var(--duration-fast) var(--ease-standard),
+    background-color var(--duration-fast) var(--ease-standard),
+    box-shadow var(--duration-fast) var(--ease-standard);
 }
 
 .cryoclaw-panel-resize:hover::after,
 .cryoclaw-panel-resize:active::after {
+  left: 2px;
+  width: 4px;
   background-color: var(--accent);
+  box-shadow: 0 0 12px 2px var(--accent-glow);
 }
 
 @media (prefers-reduced-motion: reduce) {

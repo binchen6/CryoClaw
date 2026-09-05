@@ -26,7 +26,16 @@ const ENTRY = path.join(ASAR_PATH, "node_modules", "openclaw", "openclaw.mjs");
 const hasArtifacts = fs.existsSync(ASAR_PATH) && fs.existsSync(NODE_BIN);
 const maybe = hasArtifacts ? test : test.skip;
 
-const NODE_ENV = { ...process.env, ELECTRON_RUN_AS_NODE: "1" };
+// 宿主环境可能注入 OPENCLAW_CONFIG_PATH / OPENCLAW_HOME / CLAWDBOT_* 等变量
+//（例如 Kimi Work 运行时的 openclaw-shim 空配置），透传会让子进程越过
+// OPENCLAW_STATE_DIR 隔离读到宿主配置，必须把全家桶剥掉再显式指定状态目录。
+const NODE_ENV = (() => {
+  const env = { ...process.env, ELECTRON_RUN_AS_NODE: "1" };
+  for (const key of Object.keys(env)) {
+    if (/^(OPENCLAW|CLAWDBOT|CLAWD)_/i.test(key)) delete env[key];
+  }
+  return env;
+})();
 
 function killTree(child) {
   try {

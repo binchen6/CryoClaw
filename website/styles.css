@@ -427,27 +427,165 @@ strong { color: var(--text-strong); font-weight: var(--weight-semibold); }
 .reveal { opacity: 0; transform: translateY(28px); transition: opacity .8s var(--ease-out) var(--d, 0s), transform .8s var(--ease-out) var(--d, 0s); }
 .reveal.is-visible { opacity: 1; transform: translateY(0); }
 
-/* ══════════ 响应式 ══════════ */
-@media (max-width: 1080px) {
-  .bento { grid-template-columns: repeat(2, 1fr); grid-template-areas: "stream stream" "model update" "remote remote" "security design" "think plugin" "replay replay"; }
+/* ══════════ 响应式：平板 / 手机独立排版 ══════════
+   设计原则：平板保留信息密度（网格重组），手机另起排版逻辑
+   （对比表→卡片、步骤→时间线、CTA 全宽、mock 收起侧栏） */
+
+/* ── 平板（竖屏 iPad / 小笔电）：网格重组 ── */
+@media (max-width: 1080px) and (min-width: 701px) {
+  .nav { padding: var(--spacer-14) var(--spacer-28); gap: var(--spacer-16); }
+  .nav__links a { padding: var(--spacer-6) var(--spacer-10); }
+
+  .hero { padding: 140px var(--spacer-32) var(--spacer-56); min-height: 0; }
+  .hero__inner { gap: var(--spacer-48); }
+  .hero__title { font-size: clamp(40px, 4.6vw, 56px); }
+
+  .bento {
+    grid-template-columns: repeat(2, 1fr);
+    grid-template-areas:
+      "stream stream"
+      "model  update"
+      "remote remote"
+      "security design"
+      "think  plugin"
+      "replay replay";
+    gap: var(--spacer-16);
+  }
+
+  .stats { gap: var(--spacer-12); margin-top: var(--spacer-56); }
+
+  /* 步骤卡改横向排布：序号与文字同行，密度更接近桌面 */
+  .step { display: grid; grid-template-columns: auto 1fr; column-gap: var(--spacer-16); align-items: baseline; }
+  .step__num { margin-bottom: 0; grid-row: span 2; font-size: var(--heading-lg); }
+  .step h3 { margin-bottom: var(--spacer-6); }
+
+  .compare__row { grid-template-columns: 0.9fr 1.2fr 1.6fr; padding: var(--spacer-14) var(--spacer-20); }
+
+  .section { padding-left: var(--spacer-28); padding-right: var(--spacer-28); }
+  .section__head { margin-bottom: var(--spacer-48); }
 }
-@media (max-width: 960px) {
-  .hero__inner { grid-template-columns: 1fr; gap: var(--spacer-48); }
-  .hero__mock { max-width: 600px; margin: 0 auto; width: 100%; }
-  .mock { transform: none; }
-  .stats { grid-template-columns: repeat(2, 1fr); }
-  .steps { grid-template-columns: 1fr; max-width: 560px; margin: 0 auto; }
+
+/* ── 平板纵向 & 大手机：hero 上下堆叠 ── */
+@media (max-width: 960px) and (min-width: 701px) {
+  .hero__inner { grid-template-columns: 1fr; gap: var(--spacer-56); }
+  .hero__copy { text-align: center; max-width: 640px; margin: 0 auto; }
+  .hero__sub { margin-left: auto; margin-right: auto; }
+  .hero__cta, .hero__meta { justify-content: center; }
+  .hero__mock { max-width: 620px; margin: 0 auto; width: 100%; }
+  .mock { transform: none; } /* 触屏无 hover，取消默认倾斜 */
+  .stats { grid-template-columns: repeat(2, 1fr); max-width: 620px; }
   .section--features { padding-top: 104px; }
 }
+
+/* ── 手机：独立排版（不是桌面缩小版） ── */
 @media (max-width: 700px) {
-  .bento { grid-template-columns: 1fr; grid-template-areas: "stream" "model" "update" "design" "security" "remote" "think" "plugin" "replay"; }
+  /* 导航：只留品牌 + GitHub，progress 保留 */
+  .nav { padding: var(--spacer-12) var(--spacer-20); gap: var(--spacer-12); }
   .nav__links { display: none; }
-  .hero { padding-top: 116px; }
-  .section { padding-left: var(--spacer-20); padding-right: var(--spacer-20); }
-  .compare__row { grid-template-columns: 1fr; gap: var(--spacer-6); }
-  .mock__body { grid-template-columns: 1fr; }
+  .nav__tag { display: none; }
+  .nav__logo { width: 28px; height: 28px; }
+  .nav__name { font-size: var(--heading-sm); }
+  .nav__actions { margin-left: auto; }
+  .nav__actions .btn { padding: var(--spacer-6) var(--spacer-12); }
+
+  /* Hero：短屏优先，拿掉 100vh 撑高；标题两档收紧 */
+  .hero { min-height: 0; padding: 108px var(--spacer-20) var(--spacer-48); }
+  .hero__inner { grid-template-columns: 1fr; gap: var(--spacer-40); }
+  .hero__badge { margin-bottom: var(--spacer-20); font-size: var(--text-2xs); }
+  .hero__title { font-size: clamp(34px, 9.4vw, 44px); letter-spacing: var(--tracking-display); }
+  .hero__sub { font-size: var(--text-md); margin-bottom: var(--spacer-28); }
+  .hero__cta { flex-direction: column; align-items: stretch; gap: var(--spacer-10); }
+  .hero__cta .btn { width: 100%; }
+  .hero__meta { flex-wrap: wrap; gap: var(--spacer-6); font-size: var(--text-2xs); }
+
+  /* mock：收侧栏、降高度、隐藏次要装饰 */
+  .mock { transform: none; border-radius: var(--radius-18); }
+  .mock__body { grid-template-columns: 1fr; min-height: 320px; }
   .mock__side { display: none; }
-  .cta { padding: var(--spacer-56) var(--spacer-20); }
+  .mock__chat { padding: var(--spacer-14) var(--spacer-14) var(--spacer-12); }
+  .mock__msg { font-size: var(--text-xs); max-width: 94%; }
+  .mock__msg--ai { min-height: 96px; }
+  .mock__thinks { display: none; }
+
+  /* 统计条：2×2 紧凑卡 */
+  .stats { grid-template-columns: repeat(2, 1fr); gap: var(--spacer-10); margin-top: var(--spacer-40); }
+  .stat { padding: var(--spacer-16) var(--spacer-8); border-radius: var(--radius-16); }
+  .stat__num { font-size: var(--heading-lg); }
+  .stat__label { font-size: var(--text-2xs); }
+
+  /* section：收紧呼吸感 */
+  .section { padding-left: var(--spacer-20); padding-right: var(--spacer-20); }
+  .section__head { margin-bottom: var(--spacer-40); }
+  .section__title { margin: var(--spacer-12) 0 var(--spacer-14); }
+  .section__sub { font-size: var(--text-md); }
+  .section--features { padding-top: 88px; padding-bottom: 80px; }
+  .section--how { padding-top: 64px; padding-bottom: 80px; }
+  .section--compare { padding-top: 24px; padding-bottom: 80px; }
+  .section--providers { padding-top: 24px; padding-bottom: 64px; }
+  .section--cta { padding-top: 24px; padding-bottom: 96px; }
+
+  /* bento：单列 + 紧凑内边距 */
+  .bento {
+    grid-template-columns: 1fr;
+    grid-template-areas: "stream" "model" "update" "design" "security" "remote" "think" "plugin" "replay";
+    gap: var(--spacer-12);
+  }
+  .bento__card { padding: var(--spacer-20); border-radius: var(--radius-18); }
+  .bento__icon { width: 40px; height: 40px; margin-bottom: var(--spacer-12); }
+
+  /* 步骤：竖向时间线（序号圆点 + 连接线），区别于桌面三卡 */
+  .steps { grid-template-columns: 1fr; gap: 0; max-width: 480px; margin: 0 auto; }
+  .step {
+    display: grid; grid-template-columns: 40px 1fr; column-gap: var(--spacer-14);
+    padding: var(--spacer-20) 0; border: none; background: none; box-shadow: none;
+    -webkit-backdrop-filter: none; backdrop-filter: none; border-radius: 0;
+    position: relative;
+  }
+  .step:not(:last-child)::after {
+    content: ""; position: absolute; left: 19px; top: 56px; bottom: -4px;
+    width: 2px; background: linear-gradient(180deg, var(--accent-glow), var(--border));
+  }
+  .step__num {
+    grid-row: span 2; margin-bottom: 0;
+    width: 40px; height: 40px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: var(--text-sm); background: var(--accent-subtle);
+    -webkit-text-fill-color: var(--accent-strong); border: 1px solid var(--border-glow);
+  }
+  .step:hover { transform: none; box-shadow: none; }
+  .step:hover::before { opacity: 0; }
+
+  /* 对比表 → 卡片流：表头隐藏，每行独立成卡 */
+  .compare { border: none; background: none; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; display: flex; flex-direction: column; gap: var(--spacer-12); overflow: visible; }
+  .compare__row--head { display: none; }
+  .compare__row {
+    display: flex; flex-direction: column; gap: var(--spacer-6); align-items: stretch;
+    padding: var(--spacer-16) var(--spacer-18);
+    border: 1px solid var(--glass-border); border-radius: var(--radius-16);
+    background: var(--glass); box-shadow: var(--shadow-sm), var(--highlight-inset);
+  }
+  .compare__row > span:first-child { font-family: var(--font-meta); font-size: var(--text-2xs); letter-spacing: var(--tracking-caps); text-transform: uppercase; color: var(--text-muted); font-weight: var(--weight-bold); }
+  .compare__row > span:nth-child(2) { font-size: var(--text-sm); }
+  .compare__hl {
+    padding: var(--spacer-10) var(--spacer-12); border-radius: var(--radius-10);
+    background: var(--accent-subtle); border-left: 3px solid var(--accent);
+  }
+
+  /* 跑马灯：chip 缩小 */
+  .chip { padding: var(--spacer-8) var(--spacer-18); font-size: var(--text-sm); }
+
+  /* CTA：全宽按钮列 */
+  .cta { padding: var(--spacer-48) var(--spacer-20); border-radius: var(--radius-24); }
+  .cta h2 { font-size: var(--heading-xl); }
+  .cta__actions { flex-direction: column; align-items: stretch; }
+  .cta__actions .btn { width: 100%; }
+  .cta__meta { flex-wrap: wrap; gap: var(--spacer-6); }
+  .cta__logo { width: 60px; height: 60px; margin-bottom: var(--spacer-24); }
+
+  /* 页脚：居中堆叠 */
+  .footer { padding: var(--spacer-40) var(--spacer-20) var(--spacer-28); }
+  .footer__inner { flex-direction: column; text-align: center; }
+  .footer__links { justify-content: center; gap: var(--spacer-18); }
 }
 
 /* ══════════ 减弱动效偏好 ══════════ */
