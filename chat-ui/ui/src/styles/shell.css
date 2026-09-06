@@ -122,6 +122,15 @@
   cursor: default;
 }
 
+/* 会话导出按钮：贴右侧（titleBarOverlay 窗口控制在 contextbar padding 之外） */
+.cc-contextbar__export {
+  margin-left: auto;
+}
+.cc-contextbar__export:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
 /* ============================================
    cc-rail 图标轨（常驻，60px）
    ============================================ */

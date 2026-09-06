@@ -1,5 +1,12 @@
 [
   {
+    "version": "2026.909.5",
+    "notes": {
+      "zh": "会话导出：聊天页标题栏新增导出按钮——优先内核 transcripts.get（2026.9.2 能力），8.2 内核自动回退本地历史序列化；同时复制到剪贴板并下载 Markdown 文件\n插件矩阵：新增可自动化插件矩阵冒烟（69 扩展 manifest/版本/入口枚举 + 隔离启动抓取实际加载清单）\n内核取证：完成 2026.8.2→2026.9.2 全面对比（RPC +40/-0、chat delta 逐字节一致、扩展布局不变、Node engine 门槛、CLI 命令树差异）\n升级闸门：实测发现 2026.9.2 asar 形态硬阻断——渠道插件公开构件的 fs-safe 身份校验与 asar 虚拟文件系统不兼容（内核自带 telegram 同样失败），内核继续 pin 2026.8.2，修复方向已记录",
+      "en": "Transcript export: new export button in the chat titlebar - prefers the kernel transcripts.get (a 2026.9.2 capability) with automatic fallback to local history serialization on 8.2; copies to clipboard and downloads a Markdown file\nPlugin matrix: added an automatable plugin-matrix smoke (enumerates 69 extensions for manifest/version/entry and captures the actually-loaded plugin list from an isolated boot)\nKernel recon: completed the 2026.8.2 vs 2026.9.2 diff (RPC +40/-0, byte-identical chat delta, unchanged extension layout, Node engine gate, CLI tree drift)\nUpgrade gate: live testing found a hard 2026.9.2 asar blocker - the fs-safe identity verification for channel plugin public surfaces is incompatible with the asar virtual filesystem (the kernel-shipped telegram channel fails identically); the kernel stays pinned at 2026.8.2 and remediation directions are documented"
+    }
+  },
+  {
     "version": "2026.909.4",
     "notes": {
       "zh": "CLI：新增命令行全兼容冒烟脚本——70 个顶层命令矩阵自动生成、全部子命令 --help 通过、透传/退出码/stdout-stderr 分离/全局参前后/特殊字符与中文 cwd 逐项验证 13/13 通过\nCLI：实测命令矩阵差异（2026.9.2 新增 wiki，移除 browser/file-transfer/googlemeet/teamsmeetings/zoommeetings），为内核升级闸门提供情报\nCLI：gateway 依赖语义验证——cron 类命令未启动时报错清晰，sessions 列表支持本地 sqlite 离线直读，--version 完全离线\n界面：重连后命令目录改为强制刷新，内核升级换装后不再返回旧命令缓存\n说明：Ctrl+C 转发经控制台广播架构生效；wrapper 单测 13 项与 openclaw/openclaw-cn 共存检测保持全绿",

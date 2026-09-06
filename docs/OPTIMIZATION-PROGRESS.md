@@ -10,9 +10,9 @@
 面向国内生态（Kimi / Moonshot / 飞书 / 企微 / 微信 / 钉钉 / QQ）。
 
 **当前状态**：
-- 重设计工程 **R1–R54 完成**（R54 阶段一/二完整闭环：fallback replace 帧语义取证修复 + 22 场景 CDP 冒烟引擎；R53 流式 reducer 化 + 布局诊断体系；R52 openclaw 2026.8.2 Progress Card 深度适配；R51 UI 精修 + 官网响应式），最新发版 **v2026.909.3**。流式体验两期设计均落地（`docs/archive/specs/2026-08-28-stream-flow-and-sidebar-design.md`）。
+- 重设计工程 **R1–R55 完成**（R55 阶段三/四/五：CLI 全兼容冒烟 + 2026.9.2 取证与 asar 阻断闸门 + transcript 导出；R54 阶段一/二完整闭环；R53 流式 reducer 化 + 布局诊断体系；R52 Progress Card 适配），最新发版 **v2026.909.5**。流式体验两期设计均落地（`docs/archive/specs/2026-08-28-stream-flow-and-sidebar-design.md`）。
 - 内核 openclaw **2026.8.2**（版本 pin 在 package.json `cryoclaw.openclaw`；更新目标走 `kernel-channel.json` 策展渠道，minSupported 2026.7.0）；**Electron 43.4.0**（audit 0 漏洞）。
-- 测试基线 **971 pass / 0 fail / 4 skipped**（vitest 146 + node 157 + chat-ui 589 + scripts 79；2026-09-06 实测，0 fail 为硬指标；asar 冒烟的环境污染与 ANSI 色码匹配问题均已闭环）。
+- 测试基线 **976 pass / 0 fail / 4 skipped**（vitest 146 + node 157 + chat-ui 594 + scripts 79；2026-09-06 实测，0 fail 为硬指标；asar 冒烟的环境污染与 ANSI 色码匹配问题均已闭环）。
 - 重复率 **1.03%**（80 clones，阈值 5%，`npm run dupcheck` 防回退）；视图 id 收敛为 6（chat/setup/settings/workspace/tasks/extensions）。
 - 开源：GitHub `binchen6/CryoClaw`（AGPL-3.0-only，干净历史）；发版走本地 `dist:win` + `gh release`；CI `tests.yml` 每次 push/PR 全量回归。
 
@@ -438,7 +438,17 @@
 - **诊断库扩展**：`diagnoseDialogLayering` 纯函数——打开的 [role=dialog] 层级低于 `.cryoclaw-titlebar` 即报 `dialog-under-titlebar`（auto/NaN 按 0 参与）；collect 集成 + 单测 3 例。
 - **CDP 冒烟引擎场景化**（`scripts/layout-cdp-smoke.js` 重写）：①视图巡览——逐个点击全部 `.cc-rail__item`（对话/任务/工作空间/扩展/网页端/设置），chat 视图跑 4 断点、其余视图跑上下限宽度；②深浅主题 `documentElement.dataset.theme` 直切；③DPI deviceScaleFactor 1/1.25/1.5；④`Emulation.setEmulatedMedia` prefers-reduced-motion:reduce；⑤语言 `?lang=` 重载 + 裸 key 扫描。**22 场景 strict 模式全绿**（0 issue / 0 renderer 异常 / 0 裸 key / gateway 200）。修复：语言场景不能直接导航到 SPA 虚拟路径（`/chat`，磁盘上是 index.html），否则落错误页。
 - **覆盖边界（如实记录）**：键盘焦点顺序、滚动锁定、WebBridge 条件组件、人工注入超长内容未自动化——依赖后续专项；侧栏拖拽/折叠由既有 `sidebar-resize.test.ts` 单测覆盖。
-- **验证与交付**：全量 **971 pass / 0 fail / 4 skipped**（vitest 146 + node 157 + chat-ui 589 + scripts 79）；dupcheck 80 clones / 1.03%；`?lang=en` 重载场景同时验证英文排版无溢出。
+- **验证与交付**：全量 **976 pass / 0 fail / 4 skipped**（vitest 146 + node 157 + chat-ui 594 + scripts 79）；dupcheck 80 clones / 1.03%；`?lang=en` 重载场景同时验证英文排版无溢出。
+
+### R55 · 阶段三 CLI 全兼容 + 阶段四取证与双内核能力 + 阶段五闸门实测（完成，随 v2026.909.4/.909.5 发版）
+
+用户计划三/四/五阶段的可自动化交付与升级闸门执行。**闸门判定：2026.9.2 asar 硬阻断，内核 pin 维持 2026.8.2**。
+- **阶段三 CLI（v2026.909.4）**：新增 `scripts/cli-compat-smoke.js`——70 个顶层命令矩阵自动生成（7 个交互式命令保守跳过）、全部一级子命令 `--help` 通过；行为电池 13/13：透传/退出码可复现/stdout-stderr 分离/全局参前后/`%` 命令名逐字节往返/空格中文 cwd/gateway 语义（cron 依赖 gateway 报错清晰、sessions list 本地 sqlite 离线直读、--version 完全离线）/输出脱敏扫描。既有覆盖复核：13 个 wrapper 纯函数单测 + install-detector openclaw/openclaw-cn 冲突检测。UI 侧：commands.ts 本就是 commands.list RPC 驱动（无硬编码白名单）；**修复**重连后未 force 刷新命令目录（内核换装后 TTL 内返回旧目录）。Ctrl+C：控制台广播架构生效（wrapper 同步执行不脱离控制台）；合成 headless 测试无法忠实模拟（进程组限制），128s 自然退出无残留。
+- **阶段四取证（`docs/kernel-recon/2026.9.2-diff.md`）**：RPC 注册表 384→424（**+40/-0 纯增量**：transcripts.*、skills.library.*、plugins.controlUi.*、mentions.*、users.github/authConnect.*、update.runs.*、gateway.suspend.handoff 等）；`resolveBroadcastDelta` 两版**逐字节一致**（reducer 无需变更）；progressCard 契约不变；扩展目录布局两版一致；GPT-6 Astra 目录元数据（1.05M 窗口/tiered 计价，模型页动态自适应）；CLI 树 +wiki / -browser 等 5 个；**Node engine 门槛 ≥24.15.0**（系统 Node 24.14 被拒、Electron 43.4 自带 24.18.1 可跑）。
+- **阶段四落地**：整会话 transcript 导出（chat 标题栏新按钮）——优先 `transcripts.get`（9.2 canonical），8.2 回退本地历史序列化；复制 + .md 下载；5 个纯函数/特性探测测试。会话能力探测模式确立：新 RPC 可用即启用、不可用即回退。
+- **阶段五闸门实测（本轮最重要产出）**：`OPENCLAW_PACKAGE_SOURCE=2026.9.2` 打包成功（6 类补丁全命中、verifyOutput 通过含 wecom/weixin 镜像）；无渠道配置可正常 boot；**配置任意渠道即崩**——`applyLegacyDoctorMigrations → fs-safe openRootFileSync` 拒绝 `<channel>/doctor-contract-api.js`（path-mismatch）。判定实验：内核自带 telegram 同样失败 → **与注入机制无关，是 2026.9.2 fs-safe native realpath 身份校验与 asar 虚拟文件系统的通用不兼容**。两版 tarball 均只自带 telegram——国内渠道全靠 mirror 注入，此阻断不解决 2026.9.2 无法承载渠道。修复方向三选已记录（fs-safe asar 感知补丁 / unpacked 真实文件 / 跟进上游）。**按计划闸门规则：不跨越阻断项，pin 保持 2026.8.2，kernel-channel stable 不动。**
+- **阶段五插件矩阵（可自动化子集）**：`scripts/plugin-matrix-smoke.js`——v8 asar 69 扩展枚举（68 manifest ok，image-generation-core 双路径 fallback 属已知）、隔离 boot 加载 14 插件；关注清单（dingtalk/wecom/weixin/feishu/qqbot/kimi/moonshot/zai/qwen/deepseek/browser）覆盖形态记录。**用户验证项（不可自动化，如实记录）**：渠道真实收发、远程操作、OAuth、升级后业务回滚——需真实凭据与外部动作。
+- **验证与交付**：v2026.909.4/.909.5 两轮全流程（test/typecheck/dupcheck/build/dist/断言/静默安装/CDP 22 场景 strict 全绿/CLI 13/13/脱敏/push/release）。
 ## 📦 发版与实测经验（套路已验证多次）
 
 

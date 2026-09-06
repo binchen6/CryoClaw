@@ -935,6 +935,10 @@ export const zhDict: Record<string, string> = {
   "chat.openPathFailed": "无法打开该路径",
   "chat.historyTruncated": "仅显示最近 {n} 条消息（隐藏 {m} 条）。",
   "chat.compaction": "上下文压缩",
+  "chat.exportTranscript": "导出会话记录（复制并下载 Markdown）",
+  "chat.transcriptCopied": "会话记录已复制，下载已开始",
+  "chat.transcriptExported": "会话记录下载已开始（复制失败，可从文件获取）",
+  "chat.transcriptEmpty": "当前会话没有可导出的消息",
 
   // Share prompt
   "sharePrompt.title": "分享 CryoClaw 给朋友",

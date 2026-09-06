@@ -26,7 +26,9 @@ import {
 } from "./app-session-actions.ts";
 import { openExtensionsView, renderExtensionsView } from "./app-extensions.ts";
 import { openTasksView, renderTasksView } from "./app-tasks.ts";
-import { getToastAction, getToastMessage, hideToast } from "./app-toast.ts";
+import { getToastAction, getToastMessage, hideToast, showToast } from "./app-toast.ts";
+import { buildTranscriptFilename, buildTranscriptMarkdown, copyText, downloadMarkdownFile, tryFetchKernelTranscript } from "./chat/transcript-export.ts";
+import type { TranscriptMessage } from "./chat/transcript-export.ts";
 import { setCryoClawView } from "./app-view-switch.ts";
 import { loadSessions, patchSession } from "./controllers/sessions.ts";
 import { isActiveTask } from "./controllers/tasks.ts";
@@ -242,8 +244,42 @@ function renderContextBar(
       <span class="cc-contextbar__title">
         ${isChat ? (currentSessionLabel ?? t("sidebar.newChat")) : t(CRYOCLAW_VIEW_META[view].titleKey)}
       </span>
+      ${isChat
+        ? html`
+            <button
+              class="cc-contextbar__toggle cc-contextbar__export"
+              type="button"
+              ?disabled=${!state.sessionKey || (state.chatMessages?.length ?? 0) === 0}
+              @click=${() => {
+                void exportCurrentTranscript(state, currentSessionLabel);
+              }}
+              data-tooltip=${t("chat.exportTranscript")}
+              data-tooltip-pos="bottom"
+              aria-label=${t("chat.exportTranscript")}
+            >
+              ${icons.download}
+            </button>
+          `
+        : nothing}
     </div>
   `;
+}
+
+/** 整会话导出：优先内核 transcripts.get（≥2026.9.2），8.2 回退本地历史序列化；复制 + 下载。 */
+async function exportCurrentTranscript(state: AppViewState, sessionLabel: string | null): Promise<void> {
+  const key = state.sessionKey;
+  const messages = (state.chatMessages ?? []) as TranscriptMessage[];
+  if (!key || messages.length === 0) {
+    showToast(state, t("chat.transcriptEmpty"));
+    return;
+  }
+  let markdown = state.client ? await tryFetchKernelTranscript(state.client, key) : null;
+  if (!markdown) {
+    markdown = buildTranscriptMarkdown({ key, label: sessionLabel }, messages);
+  }
+  const copied = await copyText(markdown);
+  downloadMarkdownFile(buildTranscriptFilename(sessionLabel, key), markdown);
+  showToast(state, copied ? t("chat.transcriptCopied") : t("chat.transcriptExported"));
 }
 
 export function renderApp(state: AppViewState) {

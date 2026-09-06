@@ -867,6 +867,10 @@ export const enDict: Record<string, string> = {
   "chat.cancel": "Cancel",
   "chat.openPathFailed": "Unable to open this path",
   "chat.historyTruncated": "Showing last {n} messages ({m} hidden).",
+  "chat.exportTranscript": "Export transcript (copy and download Markdown)",
+  "chat.transcriptCopied": "Transcript copied and download started",
+  "chat.transcriptExported": "Transcript download started (clipboard copy failed)",
+  "chat.transcriptEmpty": "Nothing to export in this session",
   "chat.compaction": "Compaction",
 
   // Share prompt
