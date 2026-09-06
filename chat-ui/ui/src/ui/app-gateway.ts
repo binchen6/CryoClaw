@@ -404,8 +404,9 @@ export function connectGateway(host: GatewayHost) {
       void loadProgressCard(host as unknown as OpenClawApp);
       // worktree 徽标数据（sessions.list 行不带 worktree 字段，靠 ownerId 反推）
       void loadWorktrees(host as unknown as OpenClawApp);
-      // 预取 / 命令目录（供 compose 补全）
-      void loadCommands(host.client!);
+      // 预取 / 命令目录（供 compose 补全）。force：内核升级换装后 Gateway 重启会重新
+      // hello，这里必须强刷——否则 5 分钟 TTL 内持续返回旧内核的命令目录。
+      void loadCommands(host.client!, { force: true });
       // 加载执行权限模式（聊天页三态）
       void (host as unknown as OpenClawApp).loadExecMode();
       void refreshActiveTab(host as unknown as Parameters<typeof refreshActiveTab>[0]);

@@ -1,5 +1,12 @@
 [
   {
+    "version": "2026.909.4",
+    "notes": {
+      "zh": "CLI：新增命令行全兼容冒烟脚本——70 个顶层命令矩阵自动生成、全部子命令 --help 通过、透传/退出码/stdout-stderr 分离/全局参前后/特殊字符与中文 cwd 逐项验证 13/13 通过\nCLI：实测命令矩阵差异（2026.9.2 新增 wiki，移除 browser/file-transfer/googlemeet/teamsmeetings/zoommeetings），为内核升级闸门提供情报\nCLI：gateway 依赖语义验证——cron 类命令未启动时报错清晰，sessions 列表支持本地 sqlite 离线直读，--version 完全离线\n界面：重连后命令目录改为强制刷新，内核升级换装后不再返回旧命令缓存\n说明：Ctrl+C 转发经控制台广播架构生效；wrapper 单测 13 项与 openclaw/openclaw-cn 共存检测保持全绿",
+      "en": "CLI: added a full-compatibility smoke script - auto-generated matrix of 70 top-level commands, every subcommand --help passing, and 13/13 checks for passthrough, exit codes, stdout/stderr separation, global-flag ordering, special characters, and CJK working directories\nCLI: measured command-matrix drift against 2026.9.2 (adds wiki; removes browser, file-transfer, googlemeet, teamsmeetings, zoommeetings) as input for the kernel-upgrade gate\nCLI: verified gateway-dependency semantics - gateway-backed commands fail with clear errors while offline, sessions list reads the local sqlite store, and --version is fully offline\nUI: the slash-command catalog is force-refreshed on reconnect so a swapped kernel no longer serves stale commands\nNotes: Ctrl+C forwarding works via console broadcast; 13 wrapper unit tests and openclaw/openclaw-cn coexistence detection stay green"
+    }
+  },
+  {
     "version": "2026.909.3",
     "notes": {
       "zh": "流式：修复 provider 降级重生成时 replace 全文帧未剥离工具冻结前缀导致的文本重复；新增 2000 帧混合增量压力回归\n诊断：布局诊断新增弹窗层级不变量（对话框不得低于标题栏）与纯函数单测\n冒烟：CDP 布局冒烟升级为多场景引擎——视图巡览（6 个 rail 视图）× 断点宽度 × 深浅主题 × DPI 100/125/150% × prefers-reduced-motion × 中英文重载，22 个场景结构化报告\n修复语言场景导航到 SPA 虚拟路径导致错误页的问题（还原真实 index.html 入口）",
