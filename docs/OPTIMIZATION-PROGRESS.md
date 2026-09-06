@@ -10,9 +10,9 @@
 面向国内生态（Kimi / Moonshot / 飞书 / 企微 / 微信 / 钉钉 / QQ）。
 
 **当前状态**：
-- 重设计工程 **R1–R53 完成**（R53 流式 reducer 化（deltaText/replace 消费 + 终态 flush + orphan 会话隔离）+ 布局诊断体系（layout-diagnostics + CDP 冒烟脚本）；R52 openclaw 2026.8.2 Progress Card 深度适配；R51 UI 精修 + 官网响应式），最新发版 **v2026.909.2**。流式体验两期设计均落地（`docs/archive/specs/2026-08-28-stream-flow-and-sidebar-design.md`）。
+- 重设计工程 **R1–R54 完成**（R54 阶段一/二完整闭环：fallback replace 帧语义取证修复 + 22 场景 CDP 冒烟引擎；R53 流式 reducer 化 + 布局诊断体系；R52 openclaw 2026.8.2 Progress Card 深度适配；R51 UI 精修 + 官网响应式），最新发版 **v2026.909.3**。流式体验两期设计均落地（`docs/archive/specs/2026-08-28-stream-flow-and-sidebar-design.md`）。
 - 内核 openclaw **2026.8.2**（版本 pin 在 package.json `cryoclaw.openclaw`；更新目标走 `kernel-channel.json` 策展渠道，minSupported 2026.7.0）；**Electron 43.4.0**（audit 0 漏洞）。
-- 测试基线 **966 pass / 0 fail / 4 skipped**（vitest 146 + node 157 + chat-ui 584 + scripts 79；2026-09-06 实测，0 fail 为硬指标；asar 冒烟的环境污染与 ANSI 色码匹配问题均已闭环）。
+- 测试基线 **971 pass / 0 fail / 4 skipped**（vitest 146 + node 157 + chat-ui 589 + scripts 79；2026-09-06 实测，0 fail 为硬指标；asar 冒烟的环境污染与 ANSI 色码匹配问题均已闭环）。
 - 重复率 **1.03%**（80 clones，阈值 5%，`npm run dupcheck` 防回退）；视图 id 收敛为 6（chat/setup/settings/workspace/tasks/extensions）。
 - 开源：GitHub `binchen6/CryoClaw`（AGPL-3.0-only，干净历史）；发版走本地 `dist:win` + `gh release`；CI `tests.yml` 每次 push/PR 全量回归。
 
@@ -429,6 +429,16 @@
 - **验证与交付**：全量 **966 pass / 0 fail / 4 skipped**（vitest 146 + node 157 + chat-ui 584（+typecheck）+ scripts 79；2026-09-06 实测）；dupcheck 1.03%（80 clones，阈值 5%）；产物断言全过（app.asar 顶层白名单 8 项、版本/发行说明 2026.909.2、installer 275,472,185 bytes 与 latest.yml sha512 一致）；静默安装 `/S` 后安装版 version=2026.909.2、gateway HTTP 200。diff 脱敏扫描未发现凭据/个人路径。
 - **新坑记录**：`asar ef <archive> <file>` 会把文件解到 **cwd**——曾静默覆盖仓库 package.json（git 恢复 + 改用临时目录 cwd 重做断言）；手动验证 gateway 必须显式 `OPENCLAW_STATE_DIR`（漏设会读写共享 Temp\openclaw 真实渠道状态，本机实测误连 weixin/feishu 渠道后立即 taskkill，未发消息）。
 - **遗留与下一步**：390px 手机宽度布局为理论值（窗口 minWidth 800 不可达），待未来响应式需求再评估；阶段一验收项「高频工具调用长流实测」与阶段三 CLI 全兼容、阶段四 2026.9.2 适配按计划顺序推进。
+
+### R54 · 阶段一收尾（fallback replace 帧）+ 阶段二诊断全量场景化（完成，随 v2026.909.3 发版）
+
+用户计划第一、二阶段完整闭环。内核取证驱动的一个真修复 + 冒烟引擎场景化。
+- **内核取证（replace 帧语义）**：解包 openclaw@2026.8.2 `server-chat-*.js` 的 `resolveBroadcastDelta`——首帧/文本倒退帧（provider 降级重生成、thinking 重写）发 `{ deltaText: 全文, replace: true }`，append 帧的 deltaText 是后缀。**据此修复真 bug**：reducer 的 deltaText+replace 分支此前直接整段采用全文，未剥离 frozenPrefix——工具调用后发生 replace 会把工具前文本在气泡里重复显示；现在 replace 帧与 legacy 快照同语义剥离前缀，append 帧永不剥离（本就是后缀）。新增 5 个 reducer 测试（fallback rewind、replace 剥前缀、append 不剥、**2000 帧混合压力**：500 append → 工具冻结 → 300 append → fallback replace → 1200 append，逐帧精确断言零丢失零重复）。
+- **provider fallback 链路确认**：lifecycle `fallback`/`fallback_cleared` toast 已有（app-tool-stream），文本侧由 replace 帧承载——两个子系统语义闭环。
+- **诊断库扩展**：`diagnoseDialogLayering` 纯函数——打开的 [role=dialog] 层级低于 `.cryoclaw-titlebar` 即报 `dialog-under-titlebar`（auto/NaN 按 0 参与）；collect 集成 + 单测 3 例。
+- **CDP 冒烟引擎场景化**（`scripts/layout-cdp-smoke.js` 重写）：①视图巡览——逐个点击全部 `.cc-rail__item`（对话/任务/工作空间/扩展/网页端/设置），chat 视图跑 4 断点、其余视图跑上下限宽度；②深浅主题 `documentElement.dataset.theme` 直切；③DPI deviceScaleFactor 1/1.25/1.5；④`Emulation.setEmulatedMedia` prefers-reduced-motion:reduce；⑤语言 `?lang=` 重载 + 裸 key 扫描。**22 场景 strict 模式全绿**（0 issue / 0 renderer 异常 / 0 裸 key / gateway 200）。修复：语言场景不能直接导航到 SPA 虚拟路径（`/chat`，磁盘上是 index.html），否则落错误页。
+- **覆盖边界（如实记录）**：键盘焦点顺序、滚动锁定、WebBridge 条件组件、人工注入超长内容未自动化——依赖后续专项；侧栏拖拽/折叠由既有 `sidebar-resize.test.ts` 单测覆盖。
+- **验证与交付**：全量 **971 pass / 0 fail / 4 skipped**（vitest 146 + node 157 + chat-ui 589 + scripts 79）；dupcheck 80 clones / 1.03%；`?lang=en` 重载场景同时验证英文排版无溢出。
 ## 📦 发版与实测经验（套路已验证多次）
 
 

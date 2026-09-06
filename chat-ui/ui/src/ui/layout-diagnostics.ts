@@ -1,7 +1,8 @@
 export type LayoutDiagnosticCode =
   | "horizontal-overflow"
   | "viewport-overflow"
-  | "interactive-obscured";
+  | "interactive-obscured"
+  | "dialog-under-titlebar";
 
 export type LayoutDiagnosticIssue = {
   code: LayoutDiagnosticCode;
@@ -40,6 +41,26 @@ export function diagnoseLayoutRect(
       code: "viewport-overflow",
       target: "rect",
       detail: "rect " + Math.round(rect.left) + "," + Math.round(rect.top) + "-" + Math.round(rect.right) + "," + Math.round(rect.bottom) + " exceeds " + viewport.width + "x" + viewport.height,
+    }];
+  }
+  return [];
+}
+
+/**
+ * 纯函数：打开的对话框/弹窗必须完整盖住标题栏（标题栏是常驻最高层之一）。
+ * dialog 层级低于标题栏意味着弹窗会被标题栏穿透遮挡。auto/NaN 视为 0 参与比较。
+ */
+export function diagnoseDialogLayering(
+  dialogZIndex: number | null | undefined,
+  titlebarZIndex: number | null | undefined,
+): LayoutDiagnosticIssue[] {
+  const dialogZ = Number.isFinite(dialogZIndex as number) ? (dialogZIndex as number) : 0;
+  const titlebarZ = Number.isFinite(titlebarZIndex as number) ? (titlebarZIndex as number) : 0;
+  if (dialogZ < titlebarZ) {
+    return [{
+      code: "dialog-under-titlebar",
+      target: "[role=dialog]",
+      detail: "dialog z-index " + dialogZ + " < titlebar z-index " + titlebarZ,
     }];
   }
   return [];
@@ -119,6 +140,17 @@ export function collectLayoutDiagnostics(
       if (hit && hit !== element && !element.contains(hit)) {
         issues.push({ code: "interactive-obscured", target, detail: "center hit " + layoutTargetLabel(hit) });
       }
+    }
+  }
+
+  // 弹窗/对话框层级不变量：打开的 dialog 必须盖住常驻标题栏
+  const titlebar = resolvedDoc.querySelector(".cryoclaw-titlebar");
+  for (const dialog of resolvedDoc.querySelectorAll("[role=dialog], .oc-modal-dialog")) {
+    if (!isVisible(dialog)) continue;
+    const dialogZ = Number(getComputedStyle(dialog).zIndex || 0);
+    const titlebarZ = titlebar ? Number(getComputedStyle(titlebar).zIndex || 0) : 0;
+    for (const issue of diagnoseDialogLayering(dialogZ, titlebarZ)) {
+      issues.push({ ...issue, target: layoutTargetLabel(dialog) });
     }
   }
   return { viewport: resolvedViewport, issues, checked: seen.size, generatedAt: Date.now() };

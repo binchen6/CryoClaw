@@ -1,5 +1,12 @@
 [
   {
+    "version": "2026.909.3",
+    "notes": {
+      "zh": "流式：修复 provider 降级重生成时 replace 全文帧未剥离工具冻结前缀导致的文本重复；新增 2000 帧混合增量压力回归\n诊断：布局诊断新增弹窗层级不变量（对话框不得低于标题栏）与纯函数单测\n冒烟：CDP 布局冒烟升级为多场景引擎——视图巡览（6 个 rail 视图）× 断点宽度 × 深浅主题 × DPI 100/125/150% × prefers-reduced-motion × 中英文重载，22 个场景结构化报告\n修复语言场景导航到 SPA 虚拟路径导致错误页的问题（还原真实 index.html 入口）",
+      "en": "Streaming: replace frames carrying the full text after a provider-fallback regeneration now strip the frozen tool prefix, fixing duplicated pre-tool text; added a 2000-frame mixed-delta stress regression\nDiagnostics: layout diagnostics gained a dialog-layering invariant (dialogs must layer at or above the titlebar) with pure-function unit tests\nSmoke: the CDP layout smoke is now a multi-scenario engine — view tour (6 rail views) x breakpoint widths x light/dark themes x DPI 100/125/150% x prefers-reduced-motion x zh/en reloads, 22 structured scenario reports\nFixed the language scenario navigating to the SPA virtual path and landing on an error page (restore the real index.html entry)"
+    }
+  },
+  {
     "version": "2026.909.2",
     "notes": {
       "zh": "流式：正式消费内核协议 deltaText / replace 增量，旧版全文快照保留为兼容回退；终态前强制提交挂起的渲染文本，error 终态不再丢失已显示的部分回答\n恢复：断线 orphan run 快照改为按会话隔离，切换会话后外来 run 的帧不再被误收养\n诊断：新增布局诊断能力（横向溢出、视口溢出、可交互元素遮挡结构化报告），供 CDP 冒烟与后续排版回归使用\n工程：修复 asar 冒烟测试在内核彩色输出下 ready 匹配失败的既有缺陷，scripts 测试恢复全绿",

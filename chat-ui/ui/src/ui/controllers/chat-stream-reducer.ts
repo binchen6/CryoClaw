@@ -22,16 +22,34 @@ export type ChatStreamDeltaResult = {
  * expose a cumulative message snapshot, so the snapshot path remains as a
  * compatibility fallback. A snapshot that moves backwards is rejected unless
  * the gateway explicitly marks it as a replacement.
+ *
+ * Kernel contract (server-chat resolveBroadcastDelta, 2026.8.2):
+ * - append frame: deltaText is the suffix grown since the last broadcast.
+ * - first frame / rewind frame (provider fallback regeneration, thinking
+ *   rewrite): deltaText carries the FULL run text and is marked replace:true.
+ * Because full-text frames include the tool-frozen prefix, replace frames
+ * strip frozenPrefix exactly like the legacy snapshot path; append frames
+ * never strip (they are already post-prefix suffixes).
  */
 export function reduceChatStreamDelta(input: ChatStreamDeltaInput): ChatStreamDeltaResult | null {
   const current = input.currentText ?? "";
   if (typeof input.deltaText === "string") {
-    const text = input.replace ? input.deltaText : current + input.deltaText;
+    if (input.replace) {
+      const prefix = input.frozenPrefix ?? "";
+      const text =
+        prefix && input.deltaText.startsWith(prefix) ? input.deltaText.slice(prefix.length) : input.deltaText;
+      return {
+        text,
+        accepted: true,
+        source: "deltaText",
+        replaced: true,
+      };
+    }
     return {
-      text,
+      text: current + input.deltaText,
       accepted: true,
       source: "deltaText",
-      replaced: input.replace === true,
+      replaced: false,
     };
   }
 
