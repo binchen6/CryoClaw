@@ -230,7 +230,7 @@ function stripExe(name: string): string {
  */
 async function getWinRunningState(
   target: BrowserTarget,
-  exec: ProcessExecutor,
+  runProc: ProcessExecutor,
 ): Promise<BrowserRunningState> {
   const procName = stripExe(target.processNameWin);
   const ps =
@@ -238,7 +238,7 @@ async function getWinRunningState(
     `if (-not $p) { 'not-running' } ` +
     `elseif (@($p | ? { $_.MainWindowHandle -ne 0 }).Count) { 'foreground' } ` +
     `else { 'background-only' }`;
-  const r = await exec("powershell", ["-NoProfile", "-Command", ps]);
+  const r = await runProc("powershell", ["-NoProfile", "-Command", ps]);
   if (r.code !== 0) return "not-running";
   const out = r.stdout.trim();
   if (out === "foreground" || out === "background-only" || out === "not-running") {
@@ -251,13 +251,13 @@ export async function getBrowserRunningState(
   target: BrowserTarget,
   deps: ProcessDetectorDeps = {},
 ): Promise<BrowserRunningState> {
-  const exec = deps.exec ?? DEFAULT_PROCESS_EXEC;
+  const runProc = deps.exec ?? DEFAULT_PROCESS_EXEC;
   const platform = deps.platform ?? process.platform;
   try {
     if (platform === "win32") {
-      return await getWinRunningState(target, exec);
+      return await getWinRunningState(target, runProc);
     }
-    const r = await exec("pgrep", ["-f", target.processNameMac]);
+    const r = await runProc("pgrep", ["-f", target.processNameMac]);
     if (r.code === 0 && r.stdout.trim().length > 0) return "foreground";
     return "not-running";
   } catch {
@@ -275,11 +275,11 @@ export async function isBrowserProcessRunning(
   target: BrowserTarget,
   deps: ProcessDetectorDeps = {},
 ): Promise<boolean> {
-  const exec = deps.exec ?? DEFAULT_PROCESS_EXEC;
+  const runProc = deps.exec ?? DEFAULT_PROCESS_EXEC;
   const platform = deps.platform ?? process.platform;
   try {
     if (platform === "win32") {
-      const r = await exec("tasklist", [
+      const r = await runProc("tasklist", [
         "/FI",
         `IMAGENAME eq ${target.processNameWin}`,
         "/FO",
@@ -291,7 +291,7 @@ export async function isBrowserProcessRunning(
         r.stdout.toLowerCase().includes(target.processNameWin.toLowerCase())
       );
     }
-    const r = await exec("pgrep", ["-f", target.processNameMac]);
+    const r = await runProc("pgrep", ["-f", target.processNameMac]);
     return r.code === 0 && r.stdout.trim().length > 0;
   } catch {
     return false;
@@ -309,9 +309,9 @@ export async function killBackgroundProcesses(
 ): Promise<{ killed: boolean; error?: string }> {
   const platform = deps.platform ?? process.platform;
   if (platform !== "win32") return { killed: false };
-  const exec = deps.exec ?? DEFAULT_PROCESS_EXEC;
+  const runProc = deps.exec ?? DEFAULT_PROCESS_EXEC;
   try {
-    const r = await exec("taskkill", ["/F", "/T", "/IM", target.processNameWin]);
+    const r = await runProc("taskkill", ["/F", "/T", "/IM", target.processNameWin]);
     if (r.code === 0) return { killed: true };
     return { killed: false, error: r.stdout || `taskkill exit code ${r.code}` };
   } catch (err: any) {
@@ -435,27 +435,27 @@ function escapeRegex(s: string): string {
 }
 
 async function runRegQuery(
-  exec: RegExecutor,
+  runProc: RegExecutor,
   keyPath: string,
   valueName: string,
 ): Promise<string | null> {
-  const result = await exec(["query", keyPath, "/v", valueName]);
+  const result = await runProc(["query", keyPath, "/v", valueName]);
   if (result.code !== 0) return null;
   // reg query 输出形如 "    update_url    REG_SZ    https://..."
-  const match = new RegExp(
-    `\\s${escapeRegex(valueName)}\\s+REG_SZ\\s+(.+?)\\s*$`,
-    "m",
-  ).exec(result.stdout);
+  // String.match（非全局正则）与 RegExp.exec 返回同构匹配数组
+  const match = result.stdout.match(
+    new RegExp(`\\s${escapeRegex(valueName)}\\s+REG_SZ\\s+(.+?)\\s*$`, "m"),
+  );
   return match ? match[1].trim() : null;
 }
 
 async function runRegAdd(
-  exec: RegExecutor,
+  runProc: RegExecutor,
   keyPath: string,
   valueName: string,
   data: string,
 ): Promise<void> {
-  const result = await exec([
+  const result = await runProc([
     "add",
     keyPath,
     "/v",
@@ -474,10 +474,10 @@ async function runRegAdd(
 }
 
 async function runRegDelete(
-  exec: RegExecutor,
+  runProc: RegExecutor,
   keyPath: string,
 ): Promise<void> {
-  const result = await exec(["delete", keyPath, "/f"]);
+  const result = await runProc(["delete", keyPath, "/f"]);
   if (result.code !== 0) {
     throw new Error(
       `reg delete ${keyPath} failed (code ${result.code}): ${result.stderr.trim()}`,
@@ -494,11 +494,11 @@ export async function isExtensionConfigured(
 ): Promise<boolean> {
   const platform = options.platform ?? process.platform;
   if (platform === "win32") {
-    const exec = options.exec ?? defaultRegExecutor;
+    const runProc = options.exec ?? defaultRegExecutor;
     const keyPath = windowsExtKeyPath(target, spec.extId);
     const [pathVal, versionVal] = await Promise.all([
-      runRegQuery(exec, keyPath, "path"),
-      runRegQuery(exec, keyPath, "version"),
+      runRegQuery(runProc, keyPath, "path"),
+      runRegQuery(runProc, keyPath, "version"),
     ]);
     return pathVal === spec.crxPath && versionVal === spec.crxVersion;
   }
@@ -515,12 +515,12 @@ export async function installExtension(
     return "browser-not-installed";
   }
   if (platform === "win32") {
-    const exec = options.exec ?? defaultRegExecutor;
+    const runProc = options.exec ?? defaultRegExecutor;
     const keyPath = windowsExtKeyPath(target, spec.extId);
     const [pathVal, versionVal, oldUpdateUrl] = await Promise.all([
-      runRegQuery(exec, keyPath, "path"),
-      runRegQuery(exec, keyPath, "version"),
-      runRegQuery(exec, keyPath, "update_url"),
+      runRegQuery(runProc, keyPath, "path"),
+      runRegQuery(runProc, keyPath, "version"),
+      runRegQuery(runProc, keyPath, "update_url"),
     ]);
     if (pathVal === spec.crxPath && versionVal === spec.crxVersion) {
       return "skipped";
@@ -530,10 +530,10 @@ export async function installExtension(
     const hadAny =
       pathVal !== null || versionVal !== null || oldUpdateUrl !== null;
     if (hadAny) {
-      await runRegDelete(exec, keyPath).catch(() => undefined);
+      await runRegDelete(runProc, keyPath).catch(() => undefined);
     }
-    await runRegAdd(exec, keyPath, "path", spec.crxPath);
-    await runRegAdd(exec, keyPath, "version", spec.crxVersion);
+    await runRegAdd(runProc, keyPath, "path", spec.crxPath);
+    await runRegAdd(runProc, keyPath, "version", spec.crxVersion);
     return hadAny ? "updated" : "installed";
   }
   // macOS
@@ -571,18 +571,18 @@ export async function uninstallExtension(
     return "browser-not-installed";
   }
   if (platform === "win32") {
-    const exec = options.exec ?? defaultRegExecutor;
+    const runProc = options.exec ?? defaultRegExecutor;
     const keyPath = windowsExtKeyPath(target, extId);
     // 新版用 path/version，老版用 update_url。任何一个存在就算"装着"，整体删 subkey 是幂等的。
     const [pathVal, versionVal, updateUrl] = await Promise.all([
-      runRegQuery(exec, keyPath, "path"),
-      runRegQuery(exec, keyPath, "version"),
-      runRegQuery(exec, keyPath, "update_url"),
+      runRegQuery(runProc, keyPath, "path"),
+      runRegQuery(runProc, keyPath, "version"),
+      runRegQuery(runProc, keyPath, "update_url"),
     ]);
     if (pathVal === null && versionVal === null && updateUrl === null) {
       return "not-installed";
     }
-    await runRegDelete(exec, keyPath);
+    await runRegDelete(runProc, keyPath);
     return "removed";
   }
   // macOS

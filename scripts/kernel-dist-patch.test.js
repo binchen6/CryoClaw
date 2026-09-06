@@ -237,7 +237,7 @@ test("asar 补丁命中 ≥2026.6 世代全部现存 marker（含 2026.8.2 形�
   const peerLink = fs.readFileSync(path.join(distDir, "plugin-peer-link-CijC8-mZ.js"), "utf-8");
   assert.match(peerLink, /params\.hostRoot && params\.hostRoot\.includes\('\.asar'\)/);
   const identity = fs.readFileSync(path.join(distDir, "file-identity-CaVBmM56.js"), "utf-8");
-  assert.match(identity, /Number\(left\.dev\) === 1 && Number\(right\.dev\) === 1/);
+  assert.match(identity, /Number\(left\.dev\) === 1 \|\| Number\(right\.dev\) === 1/);
   // 幂等：二次运行返回 0，内容不变
   assert.equal(kdp.patchAsarBoundaryCheck(gatewayDir), 0);
 });
@@ -316,4 +316,189 @@ test("asar-bypass openRootFileSync/openRootFile：rootRealPath 兜底 rootPath",
   assert.equal(openedAsync.ok, true);
   assert.equal(openedAsync.rootRealPath, rootPath);
   fs.closeSync(openedAsync.fd);
+});
+
+// ─── openclaw ≥2026.9.2 形态：@openclaw/fs-safe 独立包 ───
+// R56：v9 把边界校验函数迁到 node_modules/@openclaw/fs-safe/dist/*.js，
+// 旧扫描只看 openclaw dist chunk 时全部漏打（仅 peer-link 命中），
+// 渠道插件公开构件身份校验恒失败。补丁必须扫进 fs-safe 包。
+
+const FS_SAFE_ROOT_FILE = [
+  'import fs from "node:fs";',
+  'import { openPinnedFileSync } from "./pinned-open.js";',
+  "export function openRootFileSync(params) {",
+  "    const ioFs = params.ioFs ?? fs;",
+  "    return finalizeRootFileOpen({ resolved: resolveRoot(params), ioFs });",
+  "}",
+  "export async function openRootFile(params) {",
+  "    const ioFs = params.ioFs ?? fs;",
+  "    return finalizeRootFileOpen({ resolved: await resolveRoot(params), ioFs });",
+  "}",
+  "",
+].join("\n");
+
+const FS_SAFE_PINNED_OPEN = [
+  'import fs from "node:fs";',
+  "export function openPinnedFileSync(params) {",
+  "    const ioFs = params.ioFs ?? fs;",
+  "    let fd = null;",
+  "    try {",
+  "        const realPath = params.resolvedPath ?? ioFs.realpathSync(params.filePath);",
+  "        const preOpenStat = inspectFileIdentitySync(() => {",
+  '            const stat = ioFs.lstatSync(realPath, { bigint: true });',
+  "            return stat;",
+  "        });",
+  "        fd = ioFs.openSync(realPath, openReadFlags);",
+  "        const openedStat = ioFs.fstatSync(fd);",
+  "        inspectFileIdentitySync(() => {",
+  '            const stat = ioFs.lstatSync(realPath, { bigint: true });',
+  "            return stat;",
+  "        }, preOpenStat);",
+  "        const opened = { ok: true, path: realPath, fd, stat: openedStat };",
+  "        fd = null;",
+  "        return opened;",
+  "    }",
+  "    finally {",
+  "        if (fd !== null) ioFs.closeSync(fd);",
+  "    }",
+  "}",
+  "",
+].join("\n");
+
+const FS_SAFE_REGULAR_FILE = [
+  'import fsSync from "node:fs";',
+  'import fs from "node:fs/promises";',
+  "function regularFileTooLargeError(filePath, maxBytes) {",
+  '    return new Error(`too large: ${filePath}`);',
+  "}",
+  "export function readRegularFileSync(params) {",
+  "    const before = inspectFileIdentitySync(() => fsSync.lstatSync(params.filePath, { bigint: true }));",
+  "    return readOpened({ fd: fsSync.openSync(params.filePath), preOpenStat: before });",
+  "}",
+  "export async function readRegularFile(params) {",
+  "    const before = await inspectFileIdentity(async () => fsSync.lstatSync(params.filePath, { bigint: true }));",
+  "    return readOpened({ fd: await fs.open(params.filePath), preOpenStat: before });",
+  "}",
+  "",
+].join("\n");
+
+const FS_SAFE_FILE_IDENTITY = [
+  "export function sameFileIdentity(left, right, platform = process.platform) {",
+  "    return left.dev === right.dev && left.ino === right.ino;",
+  "}",
+  "",
+].join("\n");
+
+function makeGatewayV9(t) {
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "cryoclaw-asar-patch-v9-"));
+  t.after(() => fs.rmSync(tmpRoot, { recursive: true, force: true }));
+  const gatewayDir = path.join(tmpRoot, "gateway");
+  const openclawDist = path.join(gatewayDir, "node_modules", "openclaw", "dist");
+  const fsSafeDist = path.join(gatewayDir, "node_modules", "@openclaw", "fs-safe", "dist");
+  fs.mkdirSync(openclawDist, { recursive: true });
+  fs.mkdirSync(fsSafeDist, { recursive: true });
+  fs.writeFileSync(path.join(openclawDist, "entry.js"), "module.exports = {};\n");
+  fs.writeFileSync(path.join(fsSafeDist, "root-file.js"), FS_SAFE_ROOT_FILE);
+  fs.writeFileSync(path.join(fsSafeDist, "pinned-open.js"), FS_SAFE_PINNED_OPEN);
+  fs.writeFileSync(path.join(fsSafeDist, "regular-file.js"), FS_SAFE_REGULAR_FILE);
+  fs.writeFileSync(path.join(fsSafeDist, "file-identity.js"), FS_SAFE_FILE_IDENTITY);
+  return { gatewayDir, fsSafeDist };
+}
+
+test("v9 形态：fs-safe 包内 root-file/pinned-open/regular-file/file-identity 全部命中", (t) => {
+  const { gatewayDir, fsSafeDist } = makeGatewayV9(t);
+  const patched = kdp.patchAsarBoundaryCheck(gatewayDir);
+  assert.equal(patched, 4, "fs-safe 四个文件都应被补丁");
+
+  const rootFile = fs.readFileSync(path.join(fsSafeDist, "root-file.js"), "utf-8");
+  assert.match(rootFile, /\/\* asar-bypass \*\/ if \(params\.absolutePath && params\.absolutePath\.includes\('\.asar'\)\)/);
+  assert.match(rootFile, /\/\* asar-bypass-async \*\//);
+
+  const pinnedOpen = fs.readFileSync(path.join(fsSafeDist, "pinned-open.js"), "utf-8");
+  assert.match(pinnedOpen, /\/\* asar-bypass \*\/ if \(params\.filePath && params\.filePath\.includes\('\.asar'\)\)/);
+
+  const regularFile = fs.readFileSync(path.join(fsSafeDist, "regular-file.js"), "utf-8");
+  assert.match(regularFile, /\/\* asar-bypass \*\/ if \(typeof params\.filePath === 'string' && params\.filePath\.includes\('\.asar'\)\)/);
+  assert.match(regularFile, /\/\* asar-bypass-async \*\//);
+  assert.match(regularFile, /fsSync\.statSync\(params\.filePath\)/);
+  assert.match(regularFile, /await fs\.stat\(params\.filePath\)/);
+
+  const identity = fs.readFileSync(path.join(fsSafeDist, "file-identity.js"), "utf-8");
+  assert.match(identity, /Number\(left\.dev\) === 1 \|\| Number\(right\.dev\) === 1/);
+
+  // 幂等
+  assert.equal(kdp.patchAsarBoundaryCheck(gatewayDir), 0);
+  // 覆盖断言通过
+  kdp.assertAsarBoundaryCoverage(gatewayDir);
+});
+
+test("v9 形态：pinned-open 身份观测映射只包住 lstat，opened.path 保持 asar 路径", (t) => {
+  const { gatewayDir, fsSafeDist } = makeGatewayV9(t);
+  kdp.patchAsarBoundaryCheck(gatewayDir);
+  assert.equal(kdp.patchFsSafeAsarUnpacked(gatewayDir), 1);
+
+  const src = fs.readFileSync(path.join(fsSafeDist, "pinned-open.js"), "utf-8");
+  // 两次身份观测 lstat 的参数被映射（preOpen + 读前复核）
+  const mapped = src.match(/ioFs\.lstatSync\(\/\* cryoclaw-asar-identity \*\/ asarIdentityPath\(ioFs, realPath\)/g) || [];
+  assert.equal(mapped.length, 2, "两次 bigint lstat 都应映射");
+  // openSync 与返回值保持 asar 虚拟路径（模块解析依赖 asar 内 node_modules）
+  assert.match(src, /fd = ioFs\.openSync\(realPath, openReadFlags\)/);
+  assert.match(src, /const opened = \{ ok: true, path: realPath, fd, stat: openedStat \}/);
+  // helper 存在且幂等
+  assert.match(src, /function asarIdentityPath\(ioFs, p\) \{/);
+  const once = src;
+  assert.equal(kdp.patchFsSafeAsarUnpacked(gatewayDir), 1);
+  assert.equal(fs.readFileSync(path.join(fsSafeDist, "pinned-open.js"), "utf-8"), once);
+});
+
+test("v9 形态：R56 早期错误补丁形态被还原后重打（realPath 整体重映射 → lstat 映射）", (t) => {
+  const { gatewayDir, fsSafeDist } = makeGatewayV9(t);
+  const pinnedOpenPath = path.join(fsSafeDist, "pinned-open.js");
+  // 手工构造旧版补丁产物：realPath 被 let + 整体重映射
+  const legacyPatched = FS_SAFE_PINNED_OPEN.replace(
+    "const realPath = params.resolvedPath ?? ioFs.realpathSync(params.filePath);",
+    [
+      "let realPath = params.resolvedPath ?? ioFs.realpathSync(params.filePath);",
+      "\t\t/* cryoclaw-asar-unpacked */ realPath = mapAsarUnpackedPath(ioFs, realPath);",
+    ].join("\n")
+  ) + [
+    "",
+    "/* cryoclaw-asar-unpacked */",
+    "function mapAsarUnpackedPath(ioFs, p) {",
+    "\tif (!p || p.indexOf('.asar') === -1) return p;",
+    "\treturn p;",
+    "}",
+    "",
+  ].join("\n");
+  fs.writeFileSync(pinnedOpenPath, legacyPatched);
+
+  assert.equal(kdp.patchFsSafeAsarUnpacked(gatewayDir), 1);
+  const src = fs.readFileSync(pinnedOpenPath, "utf-8");
+  assert.ok(!src.includes("let realPath"), "旧版 let realPath 重映射必须被还原");
+  assert.ok(!src.includes("mapAsarUnpackedPath"), "旧版 helper 必须被移除");
+  assert.match(src, /const realPath = params\.resolvedPath \?\? ioFs\.realpathSync\(params\.filePath\);/);
+  assert.match(src, /asarIdentityPath\(ioFs, realPath\)/);
+});
+
+test("assertAsarBoundaryCoverage：v9 形态 root-file 未补丁时抛错（R56 回归闸）", (t) => {
+  const { gatewayDir } = makeGatewayV9(t);
+  assert.throws(() => kdp.assertAsarBoundaryCoverage(gatewayDir), /root-file\.js 缺少 asar 快速通道补丁/);
+  kdp.patchAsarBoundaryCheck(gatewayDir);
+  kdp.assertAsarBoundaryCoverage(gatewayDir);
+});
+
+test("assertAsarBoundaryCoverage：v8 形态（无 fs-safe 包）走 chunk marker 检查", (t) => {
+  const { gatewayDir } = makeGatewayDist(t, {
+    "root-file-DJGGfXq8.js": "function openRootFileSync(params) {\n\treturn resolveRootFilePathGeneric(params);\n}",
+  });
+  assert.throws(() => kdp.assertAsarBoundaryCoverage(gatewayDir), /未命中任何模块/);
+  kdp.patchAsarBoundaryCheck(gatewayDir);
+  kdp.assertAsarBoundaryCoverage(gatewayDir);
+});
+
+test("patchFsSafeAsarUnpacked：无 fs-safe 包（v8 内核）返回 0", (t) => {
+  const { gatewayDir } = makeGatewayDist(t, {
+    "root-file-DJGGfXq8.js": "function openRootFileSync(params) {\n\treturn resolveRootFilePathGeneric(params);\n}",
+  });
+  assert.equal(kdp.patchFsSafeAsarUnpacked(gatewayDir), 0);
 });

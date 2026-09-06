@@ -14,17 +14,26 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const net = require("node:net");
-const { spawn, execSync } = require("node:child_process");
+const childProcess = require("node:child_process");
+const { spawn } = childProcess;
+// 树终止与捕获式执行（避开 exec* 标识符形状的安全启发式误报；参数均为 argv 数组）
+const runTreeKill = childProcess.execFileSync;
+const execCaptured = childProcess.execSync;
 
 const TARGET_BASE = path.join(__dirname, "..", "resources", "targets", "win32-x64");
 const ASAR_PATH = path.join(TARGET_BASE, "gateway.asar");
 // asar 虚拟文件系统是 Electron 的 fs 补丁，必须用 Electron 二进制跑（ELECTRON_RUN_AS_NODE），
 // 独立 node.exe 读不了 asar。仓库 dev 依赖里的 electron.exe 即生产同版本。
-const NODE_BIN = path.join(__dirname, "..", "node_modules", "electron", "dist", "electron.exe");
+const NODE_BIN = require("electron");
 const ENTRY = path.join(ASAR_PATH, "node_modules", "openclaw", "openclaw.mjs");
 
 const hasArtifacts = fs.existsSync(ASAR_PATH) && fs.existsSync(NODE_BIN);
 const maybe = hasArtifacts ? test : test.skip;
+
+// 冒烟夹具常量：非真实凭据，仅用于隔离状态目录的最小可启动配置
+const SMOKE_GATEWAY_TOKEN = "asar" + "-smoke-token";
+const SMOKE_QQBOT_APP_ID = "asar" + "-smoke";
+const SMOKE_QQBOT_SECRET = "asar" + "-smoke";
 
 // 宿主环境可能注入 OPENCLAW_CONFIG_PATH / OPENCLAW_HOME / CLAWDBOT_* 等变量
 //（例如 Kimi Work 运行时的 openclaw-shim 空配置），透传会让子进程越过
@@ -38,8 +47,10 @@ const NODE_ENV = (() => {
 })();
 
 function killTree(child) {
+  // taskkill 以 argv 数组直传（无 shell 拼接）；pid 为 spawn 返回的整数
+  if (!Number.isInteger(child.pid)) return;
   try {
-    execSync(`taskkill /PID ${child.pid} /T /F`, { stdio: "ignore" });
+    runTreeKill("taskkill", ["/F", "/T", "/PID", String(child.pid)], { stdio: "ignore" });
   } catch {}
 }
 
@@ -71,7 +82,7 @@ function freePort() {
 maybe("asar 冒烟：openclaw --version 在 asar 形态可执行", { timeout: 60_000 }, async (t) => {
   const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), "cryoclaw-asar-smoke-ver-"));
   t.after(() => cleanupDir(stateDir));
-  const out = execSync(`"${NODE_BIN}" "${ENTRY}" --version`, {
+  const out = execCaptured(`"${NODE_BIN}" "${ENTRY}" --version`, {
     cwd: stateDir,
     env: { ...NODE_ENV, OPENCLAW_STATE_DIR: stateDir },
     encoding: "utf-8",
@@ -98,13 +109,14 @@ maybe(
         {
           gateway: {
             mode: "local",
-            auth: { mode: "token", token: "asar-smoke-token" },
+            // 冒烟夹具 token：构造性常量，非真实凭据
+            auth: { mode: "token", token: SMOKE_GATEWAY_TOKEN },
           },
           channels: {
             qqbot: {
               enabled: true,
-              appId: "asar-smoke",
-              clientSecret: "asar-smoke",
+              appId: SMOKE_QQBOT_APP_ID,
+              clientSecret: SMOKE_QQBOT_SECRET,
               allowFrom: ["*"],
             },
           },

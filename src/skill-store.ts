@@ -360,6 +360,9 @@ function listInstalledSkills(): string[] {
   try {
     return fs.readdirSync(base).filter((name) => {
       const dir = path.join(base, name);
+      // 边界守卫：条目必须仍在技能根目录内
+      const rel = path.relative(base, dir);
+      if (rel.startsWith("..") || path.isAbsolute(rel)) return false;
       return fs.statSync(dir).isDirectory() && fs.existsSync(path.join(dir, "SKILL.md"));
     });
   } catch {

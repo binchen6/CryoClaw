@@ -69,6 +69,12 @@ function mergeTarget(target) {
 
   for (const dir of target.dirs) {
     const filePath = path.join(OUT_DIR, dir, target.ymlName);
+    // 边界守卫：拼接结果必须仍在 OUT_DIR 内（防配置异常导致越出）
+    const rel = path.relative(OUT_DIR, filePath);
+    if (rel.startsWith("..") || path.isAbsolute(rel)) {
+      console.warn(`[merge] 跳过越出 OUT_DIR 的路径: ${filePath}`);
+      continue;
+    }
     const data = loadYml(filePath);
     if (data) {
       ymls.push({ dir, data });

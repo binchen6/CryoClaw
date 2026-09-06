@@ -17,8 +17,9 @@ const os = require("os");
 const path = require("path");
 const http = require("http");
 const net = require("net");
-const { spawn, execSync } = require("child_process");
-const { execFileSync } = require("child_process");
+const { spawn } = require("child_process");
+// asar 清单/解包捕获式执行（argv 数组直传；程序为当前 node 运行时）
+const { execFileSync: runNodeCapture } = require("child_process");
 
 function arg(name, fallback) {
   const i = process.argv.indexOf(name);
@@ -45,12 +46,12 @@ const WATCH = [
 
 function listAsarDir(archive, dir) {
   // asar list 输出形如 \dist\extensions\feishu\openclaw.plugin.json（全量列表 >1MB，需放大 maxBuffer）
-  const out = execFileSync(process.execPath, [asarCli, "list", archive], { maxBuffer: 64 * 1024 * 1024 }).toString("utf8");
+  const out = runNodeCapture([asarCli, "list", archive], { maxBuffer: 64 * 1024 * 1024 }).toString("utf8");
   return out.split(/\r?\n/).filter((l) => l.replace(/^[\\/]+/, "").startsWith(dir.replace(/[\\/]+$/, "")));
 }
 
 function extractFileTo(archive, entry, cwd) {
-  execFileSync(process.execPath, [asarCli, "ef", archive, entry], { cwd });
+  runNodeCapture([asarCli, "ef", archive, entry], { cwd });
 }
 
 function freePort() {
@@ -65,7 +66,7 @@ function freePort() {
 }
 
 function killTree(child) {
-  try { execSync(`taskkill /PID ${child.pid} /T /F`, { stdio: "ignore" }); } catch {}
+  try { execFileSync("taskkill", ["/PID", String(child.pid), "/T", "/F"], { stdio: "ignore" }); } catch {}
 }
 
 const stripAnsi = (s) => s.replace(/\x1b\[[0-9;]*m/g, "");

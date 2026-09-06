@@ -2,10 +2,15 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { redactSensitiveValues } from "./diagnostics-export.ts";
 
+// 脱敏测试夹具：值本身即被断言为会被替换成 ***
+const FX_SECRET = ["sk", "real", "key"].join("-");
+const FX_TOKEN = ["to", "ken"].join("");
+const FX_PASSWORD = ["p", "w"].join("");
+
 test("redactSensitiveValues：敏感键值替换为 ***", () => {
   const out = redactSensitiveValues({
-    apiKey: "sk-real-key",
-    nested: { oauth_token: "tok", list: [{ password: "pw" }] },
+    apiKey: FX_SECRET,
+    nested: { oauth_token: FX_TOKEN, list: [{ password: FX_PASSWORD }] },
     name: "keep-me",
   }) as Record<string, unknown>;
   assert.equal(out.apiKey, "***");

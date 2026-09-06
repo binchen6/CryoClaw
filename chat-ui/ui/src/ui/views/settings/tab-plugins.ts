@@ -139,15 +139,20 @@ async function uninstallPlugin(state: AppViewState, plugin: InstalledPluginView)
   }
 }
 
+// 市场搜索请求令牌：连续搜索时丢弃迟到响应（与 app-skills 的 storeRequestToken 同模式）
+let marketSearchToken = 0;
+
 async function searchMarket(state: AppViewState) {
   if (!window.cryoclaw?.pluginStoreSearch) return;
   const q = s.query.trim();
   if (!q) return;
+  const token = ++marketSearchToken;
   s.searching = true;
   s.error = null;
   state.requestUpdate();
   try {
     const result = await window.cryoclaw.pluginStoreSearch({ q, limit: 20 });
+    if (token !== marketSearchToken) return;
     if (result?.success && Array.isArray(result.data)) {
       s.marketResults = sortMarketPlugins(
         result.data.map(mapMarketPlugin).filter((p: MarketPluginView | null): p is MarketPluginView => p !== null),
@@ -157,10 +162,13 @@ async function searchMarket(state: AppViewState) {
       s.error = result?.message ?? t("settings.plugins.searchFailed");
     }
   } catch {
+    if (token !== marketSearchToken) return;
     s.error = t("settings.plugins.searchFailed");
   } finally {
-    s.searching = false;
-    state.requestUpdate();
+    if (token === marketSearchToken) {
+      s.searching = false;
+      state.requestUpdate();
+    }
   }
 }
 

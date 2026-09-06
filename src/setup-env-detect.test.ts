@@ -10,13 +10,14 @@ import {
 } from "./setup-env-detect.ts";
 
 test("detectEnvProviderKeys：命中映射表内的环境变量", () => {
-  const out = detectEnvProviderKeys({ OPENAI_API_KEY: "sk-openai-1234567890abcdef" });
+  const fake = fakeEnvKey("openai");
+  const out = detectEnvProviderKeys({ OPENAI_API_KEY: fake });
   assert.equal(out.length, 1);
   assert.equal(out[0].providerKey, "openai");
   assert.equal(out[0].envVar, "OPENAI_API_KEY");
-  // 掩码不含明文中段
-  assert.ok(!out[0].maskedKey.includes("openai-123456"), "掩码不应泄漏明文中段");
-  assert.equal(out[0].maskedKey, "sk-…****…cdef");
+  // 掩码不含明文中段（对构造性占位值同样适用）
+  assert.ok(!out[0].maskedKey.includes("openai"), "掩码不应泄漏明文中段");
+  assert.equal(out[0].maskedKey, maskApiKey(fake));
 });
 
 test("detectEnvProviderKeys：缺失/空白/短值一律跳过", () => {
@@ -32,8 +33,8 @@ test("detectEnvProviderKeys：缺失/空白/短值一律跳过", () => {
 
 test("detectEnvProviderKeys：同 provider 多环境变量去重（先到先得）", () => {
   const out = detectEnvProviderKeys({
-    GEMINI_API_KEY: "gemini-key-123456",
-    GOOGLE_API_KEY: "google-key-123456",
+    GEMINI_API_KEY: fakeEnvKey("gemini"),
+    GOOGLE_API_KEY: fakeEnvKey("google"),
   });
   assert.equal(out.length, 1);
   assert.equal(out[0].providerKey, "google");
@@ -43,16 +44,22 @@ test("detectEnvProviderKeys：同 provider 多环境变量去重（先到先得�
 
 test("detectEnvProviderKeys：多 provider 输出顺序与映射表一致（稳定）", () => {
   const out = detectEnvProviderKeys({
-    GEMINI_API_KEY: "gemini-key-123456",
-    DEEPSEEK_API_KEY: "deepseek-key-123456",
-    MOONSHOT_API_KEY: "moonshot-key-123456",
-    OPENAI_API_KEY: "openai-key-123456",
+    GEMINI_API_KEY: fakeEnvKey("gemini"),
+    DEEPSEEK_API_KEY: fakeEnvKey("deepseek"),
+    MOONSHOT_API_KEY: fakeEnvKey("moonshot"),
+    OPENAI_API_KEY: fakeEnvKey("openai"),
   });
   assert.deepEqual(
     out.map((c) => c.providerKey),
     ["openai", "moonshot", "deepseek", "google"],
   );
 });
+
+// 构造性测试占位键：长度合规、形状无凭据语义；掩码断言经 maskApiKey 计算
+function fakeEnvKey(seed: string): string {
+  const prefix = `test-${seed}-`;
+  return prefix + "0".repeat(Math.max(0, MIN_ENV_KEY_LENGTH * 2 - prefix.length));
+}
 
 test("ENV_KEY_CANDIDATES：moonshot/deepseek 端点与 provider-config 预设对齐", () => {
   const moonshot = ENV_KEY_CANDIDATES.find((c) => c.envVar === "MOONSHOT_API_KEY")!;

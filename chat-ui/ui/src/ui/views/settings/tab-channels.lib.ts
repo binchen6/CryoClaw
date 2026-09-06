@@ -6,6 +6,7 @@
  * 约定：extract* 从 config.get 脱敏快照派生 UI 视图模型；apply* 在 patchConfig 的
  * draft 上就位变更（REDACTED 哨兵由内核写侧自动还原，原样保留即可）。
  */
+import { AUTH_PROXY_API_KEY_SENTINEL } from "../setup/setup-constants.ts";
 
 /* ── 基础工具 ── */
 
@@ -600,7 +601,7 @@ export function applyMemorySave(draft: Record<string, unknown>, params: MemorySa
       ms.provider = "openai";
       ms.model = KIMI_EMBEDDING_MODEL;
       remote.baseUrl = `http://127.0.0.1:${proxyPort}/coding/v1/`;
-      remote.apiKey = "proxy-managed";
+      remote.apiKey = AUTH_PROXY_API_KEY_SENTINEL;
     }
   } else if (params.embeddingEnabled === false && isRecord(defaults.memorySearch)) {
     const ms = defaults.memorySearch as Record<string, unknown>;

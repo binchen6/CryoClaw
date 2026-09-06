@@ -120,22 +120,42 @@ function injectWindowsHideAll(source) {
 //     真实 ino，sameFileIdentity 校验恒失败，导致 asar 内 package.json 读取静默为 null。
 //   file-identity-*.js（sameFileIdentity）：asar 中每次 stat 的 ino 是递增计数器、
 //     dev 恒为 1，路径 stat 两两比对（如 public-surface-loader 的二次校验）也会误判。
+//   openclaw ≥2026.9.2：上述函数全部迁出 openclaw dist chunk，落到独立 npm 包
+//     @openclaw/fs-safe/dist/*.js（root-file.js / pinned-open.js / regular-file.js /
+//     file-identity.js），openclaw chunk 经 "@openclaw/fs-safe/advanced" import。
+//     因此扫描范围扩展到 fs-safe 包目录；v9 的 readRegularFileSync/readRegularFile
+//     改为内联 inspectFileIdentitySync 三次观测（verifyStableReadTarget 已不存在），
+//     需按函数头注入 asar 快速通道。
 //
-// 返回补丁的文件数；0 表示上游结构不匹配（调用方应视为失败）。
+// 返回补丁的文件数；0 表示上游结构不匹配（调用方应结合 assertAsarBoundaryCoverage 判断）。
 
 function patchAsarBoundaryCheck(gatewayDir) {
   const distDir = path.join(gatewayDir, "node_modules", "openclaw", "dist");
   if (!fs.existsSync(distDir)) return 0;
 
-  // 扫描 dist 根下所有 .js chunk，按函数标记注入（hash 文件名随版本变化）
-  const candidateFiles = fs.readdirSync(distDir).filter((f) => f.endsWith(".js"));
+  // 扫描 dist 根下所有 .js chunk，按函数标记注入（hash 文件名随版本变化）。
+  // openclaw ≥2026.9.2 起边界校验函数住在 @openclaw/fs-safe 包里，需一并扫描
+  // （只扫该包 dist 根一层——fs-safe 的源码形态是散文件，不是 chunk）。
+  const candidateFiles = [];
+  for (const fileName of fs.readdirSync(distDir)) {
+    if (fileName.endsWith(".js")) {
+      candidateFiles.push({ filePath: path.join(distDir, fileName), root: "openclaw" });
+    }
+  }
+  const fsSafeDist = path.join(gatewayDir, "node_modules", "@openclaw", "fs-safe", "dist");
+  if (fs.existsSync(fsSafeDist)) {
+    for (const fileName of fs.readdirSync(fsSafeDist)) {
+      if (fileName.endsWith(".js")) {
+        candidateFiles.push({ filePath: path.join(fsSafeDist, fileName), root: "fs-safe" });
+      }
+    }
+  }
   if (candidateFiles.length === 0) {
     return 0;
   }
 
   let patched = 0;
-  for (const fileName of candidateFiles) {
-    const filePath = path.join(distDir, fileName);
+  for (const { filePath, root } of candidateFiles) {
     const source = fs.readFileSync(filePath, "utf-8");
 
     // 已打过补丁（幂等）。不能只认 `/* asar-bypass */`：verified/async 变体出现在
@@ -272,15 +292,16 @@ function patchAsarBoundaryCheck(gatewayDir) {
 
     // 补丁 7: sameFileIdentity — @openclaw/fs-safe 的 file-identity-*.js。
     // Electron asar 中每次 stat/lstat 调用的 ino 是递增计数器（每次调用都不同），
-    // 但 dev 恒为 1（真实 NTFS 的 dev 是大数）。凡 dev 均为 1 的两个 stat 必同来自
-    // asar 虚拟文件系统，视为同一文件——ino 在 asar 中无任何可比性。
+    // 但 dev 恒为 1（真实 NTFS 的 dev 是大数）。任一侧 dev===1 即为 asar 伪 stat，
+    // ino 无任何可比性，直接判同一文件——覆盖伪/伪（两次路径 stat）与伪/真
+    // （快速通道返回的伪 stat vs fstat 真身份）两种组合。
     // 该函数被十余个 chunk 共用（public-surface-loader / pinned-open / regular-file /
     // write-queue 等），一处补丁覆盖全部路径 stat 两两比对场景。
     const fileIdentityMarker = "function sameFileIdentity(left, right, platform = process.platform) {";
     if (result.includes(fileIdentityMarker)) {
       const fileIdentityBypass = [
         "function sameFileIdentity(left, right, platform = process.platform) {",
-        "\t/* asar-bypass */ if (Number(left.dev) === 1 && Number(right.dev) === 1) return true;",
+        "\t/* asar-bypass */ if (Number(left.dev) === 1 || Number(right.dev) === 1) return true;",
       ].join("\n");
       result = result.replace(fileIdentityMarker, fileIdentityBypass);
     }
@@ -321,6 +342,39 @@ function patchAsarBoundaryCheck(gatewayDir) {
       result = result.replace(peerRepairMarker, peerRepairBypass);
     }
 
+    // 补丁 11/12: readRegularFileSync / readRegularFile — @openclaw/fs-safe 的
+    // regular-file.js（openclaw ≥2026.9.2 形态）。v9 起内联 inspectFileIdentitySync
+    // 三次观测（open 前 lstat、open 后 fstat、读前 lstat），asar 虚拟路径上
+    // 伪/真身份恒不一致 → path-mismatch → asar 内 package.json 经 tryReadJsonSync
+    // 静默读为 null，插件 openclaw.extensions 被忽略。asar 路径直接 stat+read，
+    // 保留 maxBytes 语义。仅限 fs-safe 包（依赖该文件的 fsSync/fs/错误助手变量名）。
+    if (root === "fs-safe") {
+      const readRegularSyncMarker = "function readRegularFileSync(params) {";
+      if (result.includes(readRegularSyncMarker)) {
+        const readRegularSyncBypass = [
+          "function readRegularFileSync(params) {",
+          "\t/* asar-bypass */ if (typeof params.filePath === 'string' && params.filePath.includes('.asar')) {",
+          "\t\tconst stat = fsSync.statSync(params.filePath);",
+          "\t\tif (params.maxBytes !== undefined && stat.size > params.maxBytes) throw regularFileTooLargeError(params.filePath, params.maxBytes);",
+          "\t\treturn fsSync.readFileSync(params.filePath);",
+          "\t}",
+        ].join("\n");
+        result = result.replace(readRegularSyncMarker, readRegularSyncBypass);
+      }
+      const readRegularAsyncMarker = "async function readRegularFile(params) {";
+      if (result.includes(readRegularAsyncMarker)) {
+        const readRegularAsyncBypass = [
+          "async function readRegularFile(params) {",
+          "\t/* asar-bypass-async */ if (typeof params.filePath === 'string' && params.filePath.includes('.asar')) {",
+          "\t\tconst stat = await fs.stat(params.filePath);",
+          "\t\tif (params.maxBytes !== undefined && stat.size > params.maxBytes) throw regularFileTooLargeError(params.filePath, params.maxBytes);",
+          "\t\treturn await fs.readFile(params.filePath);",
+          "\t}",
+        ].join("\n");
+        result = result.replace(readRegularAsyncMarker, readRegularAsyncBypass);
+      }
+    }
+
     if (result !== source) {
       fs.writeFileSync(filePath, result, "utf-8");
       patched++;
@@ -330,19 +384,46 @@ function patchAsarBoundaryCheck(gatewayDir) {
   return patched;
 }
 
-// 检查 openclaw dist 根下是否已存在任一 asar-bypass marker。
+// 检查 openclaw dist 根与 @openclaw/fs-safe dist 根下是否已存在任一 asar-bypass marker。
 // 调用方（package-resources.js）用它区分 patchAsarBoundaryCheck 返回 0 的两种含义：
 // 已补丁（幂等跳过）vs marker 未命中（上游结构变化，必须中止）。
 function hasAsarBoundaryPatchMarker(gatewayDir) {
-  const distDir = path.join(gatewayDir, "node_modules", "openclaw", "dist");
-  if (!fs.existsSync(distDir)) return false;
+  const scanRoots = [
+    path.join(gatewayDir, "node_modules", "openclaw", "dist"),
+    path.join(gatewayDir, "node_modules", "@openclaw", "fs-safe", "dist"),
+  ];
   const markers = ["/* asar-bypass */", "/* asar-bypass-verified */", "/* asar-bypass-async */"];
-  for (const fileName of fs.readdirSync(distDir)) {
-    if (!fileName.endsWith(".js")) continue;
-    const source = fs.readFileSync(path.join(distDir, fileName), "utf-8");
-    if (markers.some((m) => source.includes(m))) return true;
+  for (const dir of scanRoots) {
+    if (!fs.existsSync(dir)) continue;
+    for (const fileName of fs.readdirSync(dir)) {
+      if (!fileName.endsWith(".js")) continue;
+      const source = fs.readFileSync(path.join(dir, fileName), "utf-8");
+      if (markers.some((m) => source.includes(m))) return true;
+    }
   }
   return false;
+}
+
+// 内核形态感知的补丁覆盖断言（R19：验证终点必须是产物/树内内容断言）。
+// R56 事故：v9 内核把边界校验函数迁到 @openclaw/fs-safe 包，旧扫描只看 openclaw
+// dist chunk → 补丁计数 >0（仅 peer-link 命中）但关键快速通道全部漏打，渠道插件
+// 全崩。这里按形态强制校验关键文件确已带补丁：
+//   v9（fs-safe root-file.js 存在）：root-file.js 必须含 asar-bypass。
+//   v8（无 fs-safe 包）：任一 openclaw dist chunk 含 asar-bypass（原逻辑）。
+// 未覆盖时抛 Error，调用方中止打包/升级。
+function assertAsarBoundaryCoverage(gatewayDir) {
+  const fsSafeRootFile = path.join(
+    gatewayDir, "node_modules", "@openclaw", "fs-safe", "dist", "root-file.js"
+  );
+  if (fs.existsSync(fsSafeRootFile)) {
+    const source = fs.readFileSync(fsSafeRootFile, "utf-8");
+    if (source.includes("/* asar-bypass */")) return;
+    throw new Error(
+      "@openclaw/fs-safe/dist/root-file.js 缺少 asar 快速通道补丁（上游结构变化？），中止"
+    );
+  }
+  if (hasAsarBoundaryPatchMarker(gatewayDir)) return;
+  throw new Error("ASAR 边界校验补丁未命中任何模块（openclaw 上游结构变化？）");
 }
 
 // ─── kimi 插件思考档位补丁 ───
@@ -441,6 +522,70 @@ function patchKimiThinkingProfile(gatewayDir) {
   return 1;
 }
 
+// ─── fs-safe pinned-open asar 身份观测映射补丁（openclaw ≥2026.9.2）───
+//
+// 背景：2026.9.2 起内核用 vendored @openclaw/fs-safe 校验插件公开构件
+// （openRootFileSync → openPinnedFileSync）：open 前后各做一次 lstat(bigint)
+// 加 open 后一次 fstat(bigint)，要求 dev/ino 完全一致（win32 下 0 视为
+// unknown，重试两次后仍不一致即抛 path-mismatch）。
+//
+// Electron 的 asar fs 集成对「unpacked 文件的 asar 虚拟路径」返回伪造身份
+// （实测 dev=1, ino=1，见 R56 探针），而 openSync/fstatSync 走真实文件返回
+// 真实身份——三次观测必然不一致。
+//
+// 补丁策略：pinned-open.js 中两次 lstatSync(realPath, {bigint:true}) 身份观测的
+// 参数映射到 .asar.unpacked 真实路径（存在时），使观测全部落在真实文件上、
+// 与 fstat 一致；openSync 与返回值 opened.path 仍用 asar 虚拟路径——下游
+// ESM 模块解析（openclaw/plugin-sdk/*）依赖 asar 内 node_modules 上下文，
+// 返回真实路径会让解析脱离归档（R56 后续事故：Cannot find module
+// 'openclaw/plugin-sdk/runtime-doctor'）。配合打包侧 dist/extensions 整目录
+// unpackDir（package-resources.js packGatewayAsar）。
+//
+// 幂等：含 /* cryoclaw-asar-identity */ marker 则跳过；源码形态变化返回 0。
+// 兼容清理：R56 早期版本曾整体重映射 realPath（破坏 opened.path 语义），
+// 先还原旧形态再打新补丁。
+function patchFsSafeAsarUnpacked(gatewayDir) {
+  const pinnedOpen = path.join(gatewayDir, "node_modules", "@openclaw", "fs-safe", "dist", "pinned-open.js");
+  if (!fs.existsSync(pinnedOpen)) return 0;
+  let source = fs.readFileSync(pinnedOpen, "utf-8");
+  if (source.includes("/* cryoclaw-asar-identity */")) return 1;
+
+  // 还原 R56 早期版本的错误补丁形态（realPath 整体重映射 + 旧 helper）
+  const origDecl = "const realPath = params.resolvedPath ?? ioFs.realpathSync(params.filePath);";
+  const legacyDecl = [
+    "let realPath = params.resolvedPath ?? ioFs.realpathSync(params.filePath);",
+    "\t\t/* cryoclaw-asar-unpacked */ realPath = mapAsarUnpackedPath(ioFs, realPath);",
+  ].join("\n");
+  source = source.replace(legacyDecl, origDecl);
+  source = source.replace(
+    /\n\/\* cryoclaw-asar-unpacked \*\/\nfunction mapAsarUnpackedPath[\s\S]*?\n\}\n/,
+    "\n"
+  );
+
+  // 两次 lstatSync(realPath, { bigint: true }) 是身份观测点（preOpen + 读前复核）；
+  // rejectPathSymlink 的 lstatSync(params.filePath) 不做身份比对，不动。
+  const statMarker = "ioFs.lstatSync(realPath, { bigint: true })";
+  if (!source.includes(origDecl) || !source.includes(statMarker)) return 0;
+  const patchedStat =
+    "ioFs.lstatSync(/* cryoclaw-asar-identity */ asarIdentityPath(ioFs, realPath), { bigint: true })";
+
+  // helper 追加到文件尾（模块顶层函数声明，openPinnedFileSync 内调用可正常解析）
+  const helper = [
+    "",
+    "/* cryoclaw-asar-identity */",
+    "function asarIdentityPath(ioFs, p) {",
+    "\tif (!p || p.indexOf('.asar') === -1) return p;",
+    "\tconst idx = p.indexOf('.asar');",
+    "\tconst candidate = p.slice(0, idx) + '.asar.unpacked' + p.slice(idx + 5);",
+    "\ttry { ioFs.statSync(candidate); return candidate; } catch { return p; }",
+    "}",
+    "",
+  ].join("\n");
+
+  fs.writeFileSync(pinnedOpen, source.split(statMarker).join(patchedStat) + helper, "utf-8");
+  return 1;
+}
+
 module.exports = {
   patchWindowsOpenclawArtifacts,
   patchWindowsHideGlobal,
@@ -448,5 +593,7 @@ module.exports = {
   collectJsFilesRecursive,
   patchAsarBoundaryCheck,
   hasAsarBoundaryPatchMarker,
+  assertAsarBoundaryCoverage,
   patchKimiThinkingProfile,
+  patchFsSafeAsarUnpacked,
 };

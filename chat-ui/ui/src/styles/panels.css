@@ -139,7 +139,7 @@
 .chat-new-messages {
   align-self: center;
   /* 负下边距悬浮在消息流底部上方，不占文档流高度，出现/消失不再推动 compose */
-  margin: 0 auto -40px;
+  margin: 0 auto -52px;
   transform: translateY(-8px);
   position: relative;
   z-index: 10;

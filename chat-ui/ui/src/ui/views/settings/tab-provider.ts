@@ -35,6 +35,7 @@ import {
   groupProvidersFromConfig, readFallbacks, reorderIds, applyIdOrder,
   resolveAddTarget as resolveAddTargetFor, buildModelEntry, applyKimiCodeLinkage,
   formatContextWindow, applyCapabilityOverrides, deriveOverridesFromEntry,
+  AUTH_PROXY_API_KEY_SENTINEL,
   type AddSelection,
   type ProviderGroup, type GroupedProvider, type ProviderModelEntry, type ProviderGroupId,
 } from "./tab-provider.lib.ts";
@@ -453,7 +454,7 @@ async function handleKeySave(prov: GroupedProvider, state: AppViewState) {
       const providers = (draft.models as any)?.providers ?? {};
       const target = providers["kimi-coding"];
       if (!target) return;
-      target.apiKey = "proxy-managed";
+      target.apiKey = AUTH_PROXY_API_KEY_SENTINEL;
       target.baseUrl = `http://127.0.0.1:${proxyPort}/coding`;
       applyKimiCodeLinkage(draft, proxyPort);
     });
@@ -946,7 +947,7 @@ async function handleAddSave(state: AppViewState) {
       const ok = await runPatch(state, draft => {
         const providers = ((draft.models ??= {}) as any).providers ??= {};
         const prov = (providers["kimi-coding"] ??= { models: [] });
-        prov.apiKey = "proxy-managed";
+        prov.apiKey = AUTH_PROXY_API_KEY_SENTINEL;
         prov.baseUrl = `http://127.0.0.1:${proxyPort}/coding`;
         prov.api = "anthropic-messages";
         if (!Array.isArray(prov.models)) prov.models = [];

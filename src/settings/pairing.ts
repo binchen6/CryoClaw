@@ -931,6 +931,9 @@ function writeFeishuAliasStore(store: FeishuAliasStore): void {
   const dir = path.join(resolveUserStateDir(), "credentials");
   fs.mkdirSync(dir, { recursive: true });
   const filePath = path.join(dir, FEISHU_ALIAS_STORE_FILE);
+  // 边界守卫：写入路径必须仍在 credentials 目录内
+  const rel = path.relative(dir, filePath);
+  if (rel.startsWith("..") || path.isAbsolute(rel)) return;
   fs.writeFileSync(filePath, JSON.stringify(store, null, 2), "utf-8");
 }
 

@@ -127,7 +127,11 @@ const LEGACY_CLI_PREFERENCE_FILE = "cli-preferences.json";
 
 // 从旧版 sidecar 文件迁移 CLI 偏好到 cryoclaw.config.json
 function migrateLegacyCliPreference(): boolean | undefined {
-  const legacyPath = path.join(resolveUserStateDir(), LEGACY_CLI_PREFERENCE_FILE);
+  const stateDir = resolveUserStateDir();
+  const legacyPath = path.join(stateDir, LEGACY_CLI_PREFERENCE_FILE);
+  // 边界守卫：拼接结果必须仍在状态目录内
+  const rel = path.relative(stateDir, legacyPath);
+  if (rel.startsWith("..") || path.isAbsolute(rel)) return undefined;
   if (!fs.existsSync(legacyPath)) return undefined;
 
   try {

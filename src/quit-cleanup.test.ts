@@ -8,6 +8,9 @@ import { runQuitCleanup } from "./quit-cleanup";
 
 function mk(root: string, name: string, mtimeMs?: number): string {
   const dir = path.join(root, name);
+  // 边界守卫：夹具目录必须仍在 root 内
+  const rel = path.relative(root, dir);
+  if (rel.startsWith("..") || path.isAbsolute(rel)) throw new Error(`夹具路径越界: ${name}`);
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, "probe.txt"), "x");
   if (mtimeMs != null) {

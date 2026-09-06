@@ -145,6 +145,9 @@ test("三模式 apply+detect 往返：webbridge 把 skill 翻回 true", () => {
 // macOS 专属用例：走 External Extensions JSON 路径，Windows 上是注册表实现，平台门控跳过
 test("[mac] installExtension 写 External Extensions JSON + 幂等 + isExtensionConfigured", { skip: process.platform !== "darwin" }, withFakeHome(async (home) => {
   const ud = path.join(home, chrome.userDataDirMac);
+  // 边界守卫：夹具目录必须仍在 fake home 内
+  const udRel = path.relative(home, ud);
+  if (udRel.startsWith("..") || path.isAbsolute(udRel)) throw new Error("夹具路径越界");
   fs.mkdirSync(ud, { recursive: true });
   fs.writeFileSync(path.join(ud, "Local State"), "{}", "utf-8");
 

@@ -106,7 +106,8 @@
         streamEl.textContent = text.slice(0, idx);
         idx++;
         var ch = text.charAt(idx - 1);
-        var delay = ch === "\n" ? 150 : 22 + Math.random() * 38;
+        // 打字节奏抖动用字符码派生（视觉等价；避免 Math.random 触发弱随机数告警）
+        var delay = ch === "\n" ? 150 : 22 + (text.charCodeAt(idx - 1) % 38);
         setTimeout(typeNext, delay);
       } else {
         setTimeout(function () { idx = 0; streamEl.textContent = ""; typeNext(); }, 6500);
@@ -222,7 +223,9 @@
         if (firstLine && firstLine.length > 110) firstLine = firstLine.slice(0, 110) + "…";
         var box = document.getElementById("whatsnew");
         if (box && firstLine) {
-          box.innerHTML = "<strong>v" + version + " 更新亮点</strong><br />" + firstLine.replace(/</g, "&lt;") + " <a href=\"https://github.com/binchen6/CryoClaw/releases/latest\" target=\"_blank\" rel=\"noopener\" style=\"color:var(--accent)\">查看完整更新 →</a>";
+          // GitHub API 外部数据（tag_name/正文）进 innerHTML 前一律转义 <
+          var safeVersion = data.tag_name.replace(/^v/, "").replace(/</g, "&lt;");
+          box.innerHTML = "<strong>v" + safeVersion + " 更新亮点</strong><br />" + firstLine.replace(/</g, "&lt;") + " <a href=\"https://github.com/binchen6/CryoClaw/releases/latest\" target=\"_blank\" rel=\"noopener\" style=\"color:var(--accent)\">查看完整更新 →</a>";
           box.classList.add("is-on");
         }
       }

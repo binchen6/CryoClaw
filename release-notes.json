@@ -1,5 +1,12 @@
 [
   {
+    "version": "2026.909.6",
+    "notes": {
+      "zh": "内核升级：openclaw 2026.8.2 → 2026.9.2。修复 asar 形态硬阻断——2026.9.2 把边界校验函数迁入独立 @openclaw/fs-safe 包导致旧补丁全部漏打；补丁扫描现已覆盖 fs-safe 包（root-file/pinned-open/regular-file/file-identity 四处 asar 快速通道），身份观测映射只作用于 lstat 且返回路径保持 asar 虚拟路径（模块解析不再脱离归档），并新增形态感知覆盖断言与产物级断言防止再次静默漏打\n安装体积：gateway.asar 减约 10MB——移除 tree-sitter C 源码（prebuilds/wasm 保留）；asar.unpacked 移除非目标平台 fs-safe native 目录；修复打包器不清理上一次构建 .unpacked 残留的问题（陈旧文件曾随安装器分发）\n修复：设置页「导出」.openclaw 数据包恒失败——状态目录内的符号链接/junction（内核 peer 链接、plugin-skills 缓存等，实测 26 个）现按机器相关运行时产物跳过而不是让整包导出失败\n界面：历史更新日志最多显示 15 条，弹窗不再随版本累积无限变长",
+      "en": "Kernel upgrade: openclaw 2026.8.2 -> 2026.9.2. Fixes the hard asar blocker - 2026.9.2 moved the boundary-verification functions into the standalone @openclaw/fs-safe package so every legacy patch silently missed; patch scanning now covers the fs-safe package (asar fast paths in root-file, pinned-open, regular-file, and file-identity), the identity-observation mapping only wraps the lstat probes while returned paths stay asar-virtual (module resolution no longer escapes the archive), plus shape-aware coverage assertions and artifact-level assertions to prevent another silent miss\nInstall size: gateway.asar shrinks by ~10MB - tree-sitter C sources removed (prebuilds/wasm kept); non-target-platform fs-safe native dirs dropped from asar.unpacked; fixed the packer not clearing the previous build's .unpacked residue (stale files used to ship with the installer)\nFix: exporting the .openclaw data bundle from Settings always failed - symlinks/junctions inside the state dir (kernel peer links, plugin-skills caches; 26 in the wild) are now skipped as machine-specific runtime artifacts instead of failing the whole export\nUI: the changelog dialog now shows at most 15 entries so it no longer grows unbounded with versions"
+    }
+  },
+  {
     "version": "2026.909.5",
     "notes": {
       "zh": "会话导出：聊天页标题栏新增导出按钮——优先内核 transcripts.get（2026.9.2 能力），8.2 内核自动回退本地历史序列化；同时复制到剪贴板并下载 Markdown 文件\n插件矩阵：新增可自动化插件矩阵冒烟（69 扩展 manifest/版本/入口枚举 + 隔离启动抓取实际加载清单）\n内核取证：完成 2026.8.2→2026.9.2 全面对比（RPC +40/-0、chat delta 逐字节一致、扩展布局不变、Node engine 门槛、CLI 命令树差异）\n升级闸门：实测发现 2026.9.2 asar 形态硬阻断——渠道插件公开构件的 fs-safe 身份校验与 asar 虚拟文件系统不兼容（内核自带 telegram 同样失败），内核继续 pin 2026.8.2，修复方向已记录",

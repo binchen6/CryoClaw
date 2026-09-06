@@ -3,7 +3,7 @@
  *
  * 状态机纯逻辑在 app-updater-state.ts；本模块只做 Electron 事件接线：
  *   - 仅 app.isPackaged 时启用（dev 模式 supported=false，IPC 返回 { supported: false } 语义）
- *   - 启动后 ~15s 自动检查一次（仅此一次，无周期复查；失败只记 warn 不打扰用户）；
+ *   - 启动后 ~15s 自动检查一次；此后每 12h 周期静默复查（长开场景不重启也能发现新版本）；
  *     用户设过「暂缓」且未到期时跳过自动检查（见 update-snooze.ts），手动检查不受影响
  *   - autoDownload=false：发现新版本只弹窗提示（更新日志 + 更新/暂缓），
  *     用户点「更新」后才经 downloadAppUpdate() 下载
@@ -30,8 +30,11 @@ import { clearSnooze, isUpdateSnoozed, readSnooze, writeSnooze, SnoozeUntil } fr
 
 export type { AppUpdateState } from "./app-updater-state";
 
-// 启动后延迟 15s 自动检查（避免与 gateway/窗口启动争资源）；无周期复查，仅此一次
+// 启动后延迟 15s 自动检查（避免与 gateway/窗口启动争资源）
 const STARTUP_CHECK_DELAY_MS = 15 * 1000;
+// 长开桌面场景的周期复查间隔（12h）：不重启也能发现新版本
+const PERIODIC_CHECK_INTERVAL_MS = 12 * 60 * 60 * 1000;
+let periodicTimer: NodeJS.Timeout | null = null;
 
 type Deps = {
   /** 状态变化时推送渲染层（window 不存在时由调用方自行忽略） */
@@ -242,4 +245,19 @@ export function initAppUpdater(deps: Deps): void {
     checkAppUpdate();
   }, STARTUP_CHECK_DELAY_MS);
   startupTimer.unref?.();
+
+  // 长开桌面场景的周期复查：每 12h 静默检查一次，确保不重启也能发现新版本。
+  // 活跃流程（checking/downloading/downloaded）不打断；暂缓期内跳过。
+  periodicTimer = setInterval(() => {
+    if (state.status === "checking" || state.status === "downloading" || state.status === "downloaded") {
+      return;
+    }
+    if (isUpdateSnoozed()) {
+      log.info("[app-updater] 更新提示暂缓中，跳过周期自动检查");
+      return;
+    }
+    log.info("[app-updater] 周期自动检查更新（12h）");
+    checkAppUpdate();
+  }, PERIODIC_CHECK_INTERVAL_MS);
+  periodicTimer.unref?.();
 }

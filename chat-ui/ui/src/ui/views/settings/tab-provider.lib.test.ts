@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { REDACTED_SENTINEL } from "../../controllers/config.ts";
 import {
   applyCapabilityOverrides,
   applyIdOrder,
@@ -7,6 +8,7 @@ import {
   readFallbacks,
   reorderIds,
   resolveGroupId,
+  AUTH_PROXY_API_KEY_SENTINEL,
 } from "./tab-provider.lib.ts";
 
 const CONFIG = {
@@ -14,16 +16,16 @@ const CONFIG = {
   models: {
     providers: {
       deepseek: {
-        apiKey: "__OPENCLAW_REDACTED__",
+        apiKey: REDACTED_SENTINEL,
         models: [{ id: "deepseek-v4-pro", name: "V4 Pro", input: ["text"] }],
       },
       "kimi-coding": {
-        apiKey: "proxy-managed",
+        apiKey: AUTH_PROXY_API_KEY_SENTINEL,
         baseUrl: "http://127.0.0.1:9090/coding",
         models: [{ id: "kimi-for-coding", name: "Kimi for Coding", input: ["text", "image"] }],
       },
       moonshot: {
-        apiKey: "__OPENCLAW_REDACTED__",
+        apiKey: REDACTED_SENTINEL,
         models: [
           { id: "kimi-k2.6", name: "K2.6", input: ["text", "image"] },
           { id: "kimi-k2.5", name: "kimi-k2.5", input: ["text"] },
@@ -34,7 +36,7 @@ const CONFIG = {
         api: "openai-completions",
         models: [{ id: "m1" }],
       },
-      openai: { apiKey: "__OPENCLAW_REDACTED__", models: [{ id: "gpt-5.4", name: "GPT" }] },
+      openai: { apiKey: REDACTED_SENTINEL, models: [{ id: "gpt-5.4", name: "GPT" }] },
     },
   },
 };

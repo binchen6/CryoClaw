@@ -42,7 +42,7 @@ import {
   restoreLastKnownGoodConfigSnapshot,
 } from "./config-backup";
 import { readUserConfig, writeUserConfig } from "./provider-config";
-import { resolveKimiSearchApiKey, readKimiApiKey, readKimiSearchDedicatedApiKey, writeKimiApiKey, ensureMemorySearchProxyConfig, healLegacyProxyProviders } from "./kimi-config";
+import { resolveKimiSearchApiKey, readKimiApiKey, readKimiSearchDedicatedApiKey, writeKimiApiKey, ensureMemorySearchProxyConfig, healLegacyProxyProviders, AUTH_PROXY_API_KEY_SENTINEL } from "./kimi-config";
 import { reconcileCliOnAppLaunch } from "./cli-integration";
 import { reconcileExtensionsOnAppLaunch } from "./extension-mirror";
 import { migrateLegacyFeishuPluginEntry } from "./feishu-config";
@@ -357,7 +357,7 @@ function syncKimiSearchEnv(): void {
     } else if (getProxyPort() > 0) {
       // 代理模式：插件初始化需要 env var 存在，设占位符让插件通过检查
       // 实际请求走 proxy baseUrl，由代理注入真实 token
-      gateway.setExtraEnv({ KIMI_PLUGIN_API_KEY: "proxy-managed" });
+      gateway.setExtraEnv({ KIMI_PLUGIN_API_KEY: AUTH_PROXY_API_KEY_SENTINEL });
     } else {
       gateway.setExtraEnv({ KIMI_PLUGIN_API_KEY: "" });
     }
@@ -617,15 +617,15 @@ function ensureProxyConfig(proxyPort: number): void {
       }
     }
 
-    if (provider.baseUrl === expectedBase && provider.apiKey === "proxy-managed" && !memorySearchChanged && !searchChanged && !legacyHealed) return;
+    if (provider.baseUrl === expectedBase && provider.apiKey === AUTH_PROXY_API_KEY_SENTINEL && !memorySearchChanged && !searchChanged && !legacyHealed) return;
 
     // 首次迁移：真实 apiKey 存入 sidecar（非 OAuth 用户 + 有效 key）
-    if (provider.apiKey && provider.apiKey !== "proxy-managed" && !loadOAuthToken()) {
+    if (provider.apiKey && provider.apiKey !== AUTH_PROXY_API_KEY_SENTINEL && !loadOAuthToken()) {
       writeKimiApiKey(provider.apiKey);
     }
 
     provider.baseUrl = expectedBase;
-    provider.apiKey = "proxy-managed";
+    provider.apiKey = AUTH_PROXY_API_KEY_SENTINEL;
 
     writeUserConfig(config);
     log.info(`[auth-proxy] config updated: baseUrl → 127.0.0.1:${proxyPort}`);
@@ -796,11 +796,9 @@ ipcMain.handle("clipboard:read-file-paths", (event) => {
       const buf = clipboard.readBuffer("NSFilenamesPboardType");
       if (!buf?.length) return [];
       const xml = buf.toString("utf-8");
+      // 简单解析 <string>...</string> 标签提取路径（String.matchAll 等价于逐次 re.exec 迭代）
       const paths: string[] = [];
-      // 简单解析 <string>...</string> 标签提取路径
-      const re = /<string>(.*?)<\/string>/g;
-      let m: RegExpExecArray | null;
-      while ((m = re.exec(xml)) !== null) {
+      for (const m of xml.matchAll(/<string>(.*?)<\/string>/g)) {
         if (m[1] && !m[1].includes("<")) paths.push(m[1]);
       }
       return paths;
@@ -876,9 +874,12 @@ ipcMain.handle("app:get-release-notes", (event, opts?: { all?: boolean }) => {
     const currentVersion = app.getVersion();
 
     if (showAll) {
+      // 历史更新日志最多展示 15 条（最新在前），避免弹窗随版本累积无限变长
+      const MAX_RELEASE_NOTE_ENTRIES = 15;
       const entries = allEntries
         .filter((entry) => entry?.version && compareVersions(entry.version, currentVersion) <= 0)
-        .sort((a, b) => compareVersions(b.version, a.version));
+        .sort((a, b) => compareVersions(b.version, a.version))
+        .slice(0, MAX_RELEASE_NOTE_ENTRIES);
       return { currentVersion, entries, locale: app.getLocale() };
     }
 

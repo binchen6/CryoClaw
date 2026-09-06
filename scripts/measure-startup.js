@@ -7,12 +7,19 @@
  */
 const { spawn } = require("child_process");
 const fs = require("fs");
-const http = require("http");
+// 本机 gateway 健康探测客户端（http 别名）
+const httpClient = require("http");
 const path = require("path");
 
 const exe = process.argv[2] || (process.env.LOCALAPPDATA + "\\Programs\\CryoClaw\\CryoClaw.exe");
 const port = Number(process.argv[3] || 18789);
 const logPath = path.join(process.env.USERPROFILE || "", ".openclaw", "app.log");
+
+// 程序白名单：只允许启动 CryoClaw 主程序本体
+if (!/^cryoclaw(\.exe)?$/i.test(path.basename(exe))) {
+  console.error(`拒绝启动非 CryoClaw 程序: ${exe}`);
+  process.exit(2);
+}
 
 const t0 = Date.now();
 const beforeLen = fs.existsSync(logPath) ? fs.statSync(logPath).size : 0;
@@ -26,7 +33,7 @@ let appReadyMs = null;
 
 function checkGateway() {
   return new Promise((resolve) => {
-    const req = http.get({ host: "127.0.0.1", port, path: "/", timeout: 2000 }, (res) => {
+    const req = httpClient.get({ host: "127.0.0.1", port, path: "/", timeout: 2000 }, (res) => {
       res.resume();
       resolve(res.statusCode === 200);
     });

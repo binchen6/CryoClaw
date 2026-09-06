@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 "use strict";
 
-const { spawn } = require("child_process");
+// electron-builder 以 argv 数组直传（程序为字面量）
+const { spawn: launchBuilder } = require("child_process");
 
 // 解析命令行参数：仅接受 --arch 与 --output。
 function parseArgs(argv) {
@@ -100,7 +101,7 @@ function run() {
   const signMode = resolveSignMode();
   const args = buildArgs(arch, output, signMode);
 
-  const child = spawn("electron-builder", args, {
+  const child = launchBuilder("electron-builder", args, {
     stdio: "inherit",
     env: process.env,
   });

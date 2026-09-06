@@ -5,6 +5,10 @@ import { readKernelVersionParts } from "./openclaw-config-migration";
 
 export const KIMI_SEARCH_PLUGIN_ID = "kimi-search";
 
+// auth-proxy 模式占位哨兵：真实 API Key 只写入秘密存储（env / 侧车文件），
+// config 里的 KIMI_PLUGIN_API_KEY 恒为该值，由本地代理换发真实凭据。
+export const AUTH_PROXY_API_KEY_SENTINEL = "proxy-managed";
+
 // 当某 plugin 被启用时，若 plugins.allow 已为非空数组（用户/启动配置主动配置过白名单），
 // 把该 id 也补进去，避免 openclaw config-state 的 "allow 非空 + 不在 allow → 静默禁用" 把
 // entries.enabled=true 直接吃掉。allow 缺失或为空数组时不动它（语义是"未启用白名单"）。
@@ -132,7 +136,7 @@ export function ensureMemorySearchProxyConfig(config: any, proxyPort: number): b
     ms.provider === "openai" &&
     ms.model === KIMI_EMBEDDING_MODEL &&
     ms.remote?.baseUrl === expectedBase &&
-    ms.remote?.apiKey === "proxy-managed"
+    ms.remote?.apiKey === AUTH_PROXY_API_KEY_SENTINEL
   ) {
     return false;
   }
@@ -142,7 +146,7 @@ export function ensureMemorySearchProxyConfig(config: any, proxyPort: number): b
   ms.model = KIMI_EMBEDDING_MODEL;
   ms.remote ??= {};
   ms.remote.baseUrl = expectedBase;
-  ms.remote.apiKey = "proxy-managed";
+  ms.remote.apiKey = AUTH_PROXY_API_KEY_SENTINEL;
   return true;
 }
 
@@ -172,7 +176,7 @@ export function healLegacyProxyProviders(
     if (key === skipKey) continue;
     const p = provider as any;
     if (typeof p?.baseUrl !== "string") continue;
-    if (p.apiKey !== "proxy-managed") continue;
+    if (p.apiKey !== AUTH_PROXY_API_KEY_SENTINEL) continue;
     if (!LOCAL_PROXY_CODING_BASE_RE.test(p.baseUrl)) continue;
     if (p.baseUrl === expectedBase) continue;
     p.baseUrl = expectedBase;

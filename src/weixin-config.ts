@@ -1,6 +1,7 @@
 import * as fs from "fs";
 import * as https from "https";
 import * as path from "path";
+import { createRequire } from "node:module";
 import { resolveGatewayPackageDir, resolveUserExtensionsDir, resolveUserStateDir } from "./constants";
 
 export const WEIXIN_PLUGIN_ID = "openclaw-weixin";
@@ -88,13 +89,29 @@ function httpsGet(url: string, headers?: Record<string, string>, timeoutMs = 35_
 
 // 将文本编码为 QR 码 BMP data URL（用于 Settings UI 展示）。
 function generateQrDataUrl(text: string): string {
-  // 复用 gateway node_modules 中 qrcode-terminal 的 QR 编码器
-  // qrcode-terminal 在 gateway/node_modules/ 下，与 openclaw 同级
-  const qrVendorDir = path.join(resolveGatewayPackageDir(), "..", "qrcode-terminal", "vendor", "QRCode");
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const QRCode = require(path.join(qrVendorDir, "index.js"));
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const QRErrorCorrectLevel = require(path.join(qrVendorDir, "QRErrorCorrectLevel.js"));
+  // 复用 gateway 内置的 qrcode-terminal：字面量子路径说明符 + 按内核布局逐个
+  // 候选基准解析（v8 位于 gateway/node_modules 顶层；v9 随 dingtalk-connector
+  // 嵌套在其 node_modules 下）。无动态路径拼接。
+  const bases = [
+    path.join(resolveGatewayPackageDir(), "package.json"),
+    path.join(resolveGatewayPackageDir(), "dist", "extensions", "dingtalk-connector", "package.json"),
+  ];
+  let QRCode: any;
+  let QRErrorCorrectLevel: any;
+  let lastError: unknown = null;
+  for (const base of bases) {
+    try {
+      const gatewayRequire = createRequire(base);
+      QRCode = gatewayRequire("qrcode-terminal/vendor/QRCode");
+      QRErrorCorrectLevel = gatewayRequire("qrcode-terminal/vendor/QRCode/QRErrorCorrectLevel");
+      break;
+    } catch (err) {
+      lastError = err;
+    }
+  }
+  if (!QRCode || !QRErrorCorrectLevel) {
+    throw new Error(`qrcode-terminal vendor 未找到，无法生成微信登录二维码: ${String(lastError)}`);
+  }
 
   const qr = new QRCode(-1, QRErrorCorrectLevel.M);
   qr.addData(text);

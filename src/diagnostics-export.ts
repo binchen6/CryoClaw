@@ -60,8 +60,11 @@ async function readLogEntries(logsDir: string): Promise<Record<string, Uint8Arra
   }
   for (const name of files) {
     if (total >= MAX_LOG_BYTES_TOTAL) break;
+    // 边界守卫：只读取日志目录自身的条目（防拼接越出）
+    const full = path.join(logsDir, name);
+    const rel = path.relative(logsDir, full);
+    if (rel.startsWith("..") || path.isAbsolute(rel)) continue;
     try {
-      const full = path.join(logsDir, name);
       const buf = await fs.promises.readFile(full);
       const budget = Math.min(MAX_LOG_BYTES_PER_FILE, MAX_LOG_BYTES_TOTAL - total);
       const slice = buf.length > budget ? buf.subarray(buf.length - budget) : buf;

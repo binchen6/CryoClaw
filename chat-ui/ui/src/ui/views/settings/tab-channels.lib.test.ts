@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { buildMergePatch } from "../../controllers/config.ts";
+import { buildMergePatch, REDACTED_SENTINEL } from "../../controllers/config.ts";
+import { AUTH_PROXY_API_KEY_SENTINEL } from "../setup/setup-constants.ts";
 import {
   applyAdvancedSave,
   applyDingtalkSave,
@@ -311,7 +312,7 @@ function testWeixinSave() {
 function testKimiSearchExtract() {
   const config = {
     plugins: { entries: { "kimi-search": { enabled: true, config: { search: { baseUrl: "http://127.0.0.1:8080/search" } } } } },
-    models: { providers: { "kimi-coding": { apiKey: "__OPENCLAW_REDACTED__" } } },
+    models: { providers: { "kimi-coding": { apiKey: REDACTED_SENTINEL } } },
   };
   const view = extractKimiSearchView(config as any);
   assert.equal(view.enabled, true);
@@ -351,7 +352,7 @@ function testMemoryExtract() {
   const config = {
     hooks: { internal: { entries: { "session-memory": { enabled: false } } } },
     agents: { defaults: { memorySearch: { enabled: true, provider: "openai", model: "bge_m3_embed" } } },
-    models: { providers: { "kimi-coding": { apiKey: "proxy-managed" } } },
+    models: { providers: { "kimi-coding": { apiKey: AUTH_PROXY_API_KEY_SENTINEL } } },
   };
   const view = extractMemoryView(config as any);
   assert.equal(view.sessionMemoryEnabled, false);
@@ -370,7 +371,7 @@ function testMemorySaveEmbeddingOn() {
     enabled: true,
     provider: "openai",
     model: "bge_m3_embed",
-    remote: { baseUrl: "http://127.0.0.1:9090/coding/v1/", apiKey: "proxy-managed" },
+    remote: { baseUrl: "http://127.0.0.1:9090/coding/v1/", apiKey: AUTH_PROXY_API_KEY_SENTINEL },
   });
   assert.equal((draft.hooks as any).internal.entries["session-memory"].enabled, true);
 }

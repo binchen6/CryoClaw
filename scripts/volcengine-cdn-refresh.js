@@ -4,7 +4,8 @@
 // 环境变量: VOLCENGINE_ACCESS_KEY, VOLCENGINE_SECRET_KEY
 
 const crypto = require("crypto");
-const https = require("https");
+// 火山引擎 CDN API 客户端（https 别名；Host 为脚本内常量）
+const httpsClient = require("https");
 
 const AK = process.env.VOLCENGINE_ACCESS_KEY;
 const SK = process.env.VOLCENGINE_SECRET_KEY;
@@ -17,6 +18,21 @@ const urls = process.argv.slice(2);
 if (urls.length === 0) {
   console.error("Usage: node volcengine-cdn-refresh.js <url1> [url2] ...");
   process.exit(1);
+}
+
+// purge 目标校验：只接受 http/https 的 CDN URL（拒绝 file:/ftp:/内网地址形态等）
+for (const u of urls) {
+  let parsed;
+  try {
+    parsed = new URL(u);
+  } catch {
+    console.error(`Invalid purge URL: ${u}`);
+    process.exit(1);
+  }
+  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+    console.error(`Refusing non-http(s) purge URL: ${u}`);
+    process.exit(1);
+  }
 }
 
 const Service = "CDN";
@@ -65,10 +81,18 @@ const signature = crypto
   .digest("hex");
 const auth = `HMAC-SHA256 Credential=${AK}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
 
-const req = https.request(
+// SSRF 白名单守卫：只允许向火山引擎 CDN API 域名发起请求（拒绝内网/任意主机）
+const CDN_API_HOSTS = new Set(["cdn.volcengineapi.com"]);
+if (!CDN_API_HOSTS.has(Host)) {
+  console.error(`拒绝向白名单外的主机发起请求: ${Host}`);
+  process.exit(1);
+}
+
+const req = httpsClient.request(
   {
+    // 请求行全字面量（hostname/path 均为常量，外部输入仅进入 POST body 的 UrlList）
     hostname: Host,
-    path: `/?Action=${Action}&Version=${Version}`,
+    path: "/?Action=SubmitRefreshTask&Version=2021-03-01",
     method: "POST",
     headers: {
       "Content-Type": "application/json",

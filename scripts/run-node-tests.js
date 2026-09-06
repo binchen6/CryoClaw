@@ -18,6 +18,7 @@ const VITEST_FILES = new Set([
   "startup-ownership",
   "openclaw-state-archive",
   "openclaw-state-import-lifecycle",
+  "analytics",
 ]);
 
 const root = resolve(__dirname, "..");

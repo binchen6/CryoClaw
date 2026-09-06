@@ -6,8 +6,10 @@ import { getPath } from "../../controllers/config.ts";
 import { getCachedGatewayModelEntries } from "../../controllers/models.ts";
 import {
   PROVIDERS, CUSTOM_PRESETS, MOONSHOT_SUB_PLATFORMS, SUB_PLATFORM_URLS,
-  deriveCustomConfigKey,
+  deriveCustomConfigKey, AUTH_PROXY_API_KEY_SENTINEL,
 } from "../setup/setup-constants.ts";
+
+export { AUTH_PROXY_API_KEY_SENTINEL };
 
 export type ProviderGroupId = "moonshot" | "anthropic" | "openai" | "google" | "custom";
 
@@ -170,7 +172,7 @@ export function groupProvidersFromConfig(config: Record<string, unknown> | null 
       baseUrl: typeof provRaw.baseUrl === "string" ? provRaw.baseUrl : "",
       api: typeof provRaw.api === "string" ? provRaw.api : "",
       hasApiKey: apiKey.length > 0,
-      proxyManaged: apiKey === "proxy-managed",
+      proxyManaged: apiKey === AUTH_PROXY_API_KEY_SENTINEL,
       models,
     });
     groups.set(groupId, list);
@@ -462,7 +464,7 @@ export function applyKimiCodeLinkage(draft: Record<string, unknown>, proxyPort: 
       enabled: true,
       provider: "openai",
       model: "bge_m3_embed",
-      remote: { baseUrl: `http://127.0.0.1:${proxyPort}/coding/v1/`, apiKey: "proxy-managed" },
+      remote: { baseUrl: `http://127.0.0.1:${proxyPort}/coding/v1/`, apiKey: AUTH_PROXY_API_KEY_SENTINEL },
     };
   }
 }

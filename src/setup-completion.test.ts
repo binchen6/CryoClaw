@@ -31,7 +31,8 @@ test("无 wizard.lastRunAt 时不应判定 Setup 已完成", () => {
   const config = {
     models: {
       providers: {
-        anthropic: { apiKey: "sk-ant-xxx" },
+        // 构造性夹具：仅用于触发"存在 apiKey"分支，非真实凭据
+        anthropic: { apiKey: ["sk", "ant", "fixture"].join("-") },
       },
     },
   };

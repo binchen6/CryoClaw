@@ -51,6 +51,9 @@ test("isBundleFresh 对不含 banner 标记的旧 bundle 判过期", (t) => {
   const pluginDir = makePluginDir(t);
   const entry = path.join(pluginDir, "index.js");
   const bundle = path.join(pluginDir, BUNDLE_REL);
+  // 边界守卫：bundle 路径必须仍在插件目录内
+  const rel = path.relative(pluginDir, bundle);
+  if (rel.startsWith("..") || path.isAbsolute(rel)) throw new Error("夹具路径越界");
   fs.mkdirSync(path.dirname(bundle), { recursive: true });
   fs.writeFileSync(entry, "export default 1;\n");
 

@@ -282,9 +282,16 @@ async function rebundlePluginDistChunks(pluginDirInput, opts = {}) {
   const label = opts.label || path.basename(pluginDir);
   const packages = opts.packages || ["ws"];
   const distDir = path.join(pluginDir, opts.distDir || "dist");
+  // 边界守卫：distDir 必须仍在插件目录内（opts.distDir 来自调用方）
+  const distRel = path.relative(pluginDir, distDir);
+  if (distRel.startsWith("..") || path.isAbsolute(distRel)) {
+    return { action: "missing", pluginDir, rebundled: [] };
+  }
   if (!fs.existsSync(distDir)) return { action: "missing", pluginDir, rebundled: [] };
 
   const hits = fs.readdirSync(distDir)
+    // 边界守卫：目录条目名不允许包含路径分隔符（理论上 readdir 不会产生，防御性过滤）
+    .filter((f) => !f.includes("/") && !f.includes("\\"))
     .filter((f) => /\.m?js$/u.test(f) && f !== path.basename(BUNDLE_REL))
     .filter((f) => {
       const src = fs.readFileSync(path.join(distDir, f), "utf-8");

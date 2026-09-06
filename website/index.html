@@ -3,6 +3,9 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<!-- CSP：脚本仅同源（app.js 无内联处理器）；style 需 unsafe-inline（页面与 app.js 大量内联 style 属性）；
+     外连仅 GitHub API；img 允许 https 远程与 data 图标 -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data:; connect-src 'self' https://api.github.com; font-src 'self'; base-uri 'self'; form-action 'none'" />
 <title>CryoClaw — 高效·易用·纯净的 OpenClaw 桌面客户端</title>
 <meta name="description" content="CryoClaw 是基于 openclaw 内核的高效、易用、纯净 harness。一分钟装好，即刻开聊。零配置、零依赖的 OpenClaw 桌面客户端，不需要 Node.js，不需要 npm。" />
 <link rel="icon" type="image/png" href="assets/icon.png" />

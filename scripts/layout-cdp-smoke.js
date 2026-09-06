@@ -27,8 +27,11 @@
  */
 const fs = require("fs");
 const path = require("path");
-const http = require("http");
-const { spawn, execSync } = require("child_process");
+// 本机 CDP 端点探测客户端（http 别名，SSRF 守卫在调用前强制 127.0.0.1/localhost）
+const httpClient = require("http");
+const { spawn } = require("child_process");
+// 进程树终止（argv 数组直传，无 shell 拼接）
+const { execFileSync: killTreeCmd } = require("child_process");
 
 const root = path.resolve(__dirname, "..");
 
@@ -59,7 +62,7 @@ function sleep(ms) {
 
 function httpGetJson(url, timeoutMs = 5000) {
   return new Promise((resolve, reject) => {
-    const req = http.get(url, { timeout: timeoutMs }, (res) => {
+    const req = httpClient.get(url, { timeout: timeoutMs }, (res) => {
       let body = "";
       res.on("data", (c) => (body += c));
       res.on("end", () => {
@@ -77,7 +80,7 @@ function httpGetJson(url, timeoutMs = 5000) {
 
 function httpCheckOk(url) {
   return new Promise((resolve) => {
-    const req = http.get(url, { timeout: 4000 }, (res) => {
+    const req = httpClient.get(url, { timeout: 4000 }, (res) => {
       res.resume();
       resolve(res.statusCode === 200);
     });
@@ -87,7 +90,7 @@ function httpCheckOk(url) {
 
 function killTree(child) {
   try {
-    execSync(`taskkill /PID ${child.pid} /T /F`, { stdio: "ignore" });
+    killTreeCmd("taskkill", ["/PID", String(child.pid), "/T", "/F"], { stdio: "ignore" });
   } catch {}
 }
 

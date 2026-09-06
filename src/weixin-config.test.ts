@@ -83,6 +83,9 @@ test("ensureWeixinPluginReady 应先执行 reconcile 再检查微信插件目录
   await ensureWeixinPluginReady(async () => {
     reconciled = true;
     const pluginDir = path.join(stateDir, "extensions", WEIXIN_PLUGIN_ID);
+    // 边界守卫：夹具插件目录必须仍在状态目录内
+    const rel = path.relative(stateDir, pluginDir);
+    if (rel.startsWith("..") || path.isAbsolute(rel)) throw new Error("夹具路径越界");
     fs.mkdirSync(path.join(pluginDir, "dist"), { recursive: true });
     fs.writeFileSync(path.join(pluginDir, "openclaw.plugin.json"), "{}\n", "utf-8");
     fs.writeFileSync(path.join(pluginDir, "dist", "index.js"), "module.exports = {};\n", "utf-8");

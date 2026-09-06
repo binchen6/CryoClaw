@@ -17,7 +17,7 @@ import {
 } from "./setup-constants.ts";
 import { getCachedGatewayModels, loadGatewayModels, catalogModelSupportsImage } from "../../controllers/models.ts";
 import {
-  resolveAddTarget, buildModelEntry, buildProviderConfigForAdd,
+  resolveAddTarget, buildModelEntry, buildProviderConfigForAdd, AUTH_PROXY_API_KEY_SENTINEL,
 } from "../settings/tab-provider.lib.ts";
 
 const s = {
@@ -232,7 +232,7 @@ async function saveProviderFragment(apiKey: string, modelID: string, supportsIma
   if (isKimiCode) {
     const sidecar = await ipc.settingsWriteKimiApiKey({ apiKey });
     const proxyPort = sidecar?.proxyPort ?? 0;
-    effectiveApiKey = "proxy-managed";
+    effectiveApiKey = AUTH_PROXY_API_KEY_SENTINEL;
     effectiveTarget = { ...target, baseUrl: `http://127.0.0.1:${proxyPort}/coding` };
   }
   const providerConfig = buildProviderConfigForAdd(effectiveTarget, effectiveApiKey, entry);

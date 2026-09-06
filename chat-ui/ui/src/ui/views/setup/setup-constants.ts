@@ -22,6 +22,10 @@ export interface CustomPresetDef {
 
 export const CUSTOM_MODEL_SENTINEL = "__custom__";
 
+// auth-proxy 模式占位哨兵（与 src/kimi-config.ts 的 AUTH_PROXY_API_KEY_SENTINEL 同值）：
+// 真实 API Key 只写入秘密存储，config 里恒为该值，由本地代理换发真实凭据。
+export const AUTH_PROXY_API_KEY_SENTINEL = "proxy-managed";
+
 /** Kimi Code 代理模式固定模型（auth proxy 只透传 coding 端点的唯一模型） */
 export const KIMI_CODE_FIXED_MODEL = "kimi-for-coding";
 

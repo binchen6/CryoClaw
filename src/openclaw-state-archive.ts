@@ -54,9 +54,18 @@ export async function exportOpenclawStateToArchive(
         force: true,
         verbatimSymlinks: true,
         filter: (src) => {
+          const srcPath = path.resolve(src);
+          // 符号链接/junction 不入快照：内核 peer 链接（extensions/*/node_modules/openclaw）、
+          // plugin-skills 缓存链接、npm projects 链接都是机器相关的运行时产物（内核可
+          // 重建，跨机器导入也必然失效）；跟随目标则可能把整个内核拷进快照。
+          // 实测 2026.9 内核状态目录含 26 个此类链接，导致导出恒失败。
+          try {
+            if (fs.lstatSync(srcPath).isSymbolicLink()) return false;
+          } catch {
+            return false;
+          }
           // Filter root runtime files before cp opens them; nested same-name
           // files can be user data and must remain exportable.
-          const srcPath = path.resolve(src);
           if (path.dirname(srcPath) !== stateRoot) return true;
           const name = path.basename(srcPath);
           return !VOLATILE_RUNTIME_FILES.has(name) && name !== ARCHIVE_MARKER_NAME;
@@ -191,6 +200,8 @@ function collectOpenclawStateEntries(stateDir: string): OpenclawStateEntry[] {
   }
 
   const entries: OpenclawStateEntry[] = [];
+  // 收集阶段只输出受控的 relPath（relative + 正斜杠归一），后续 zip 写入与
+  // 导入校验均以此为准，不再拼接绝对路径。
   const registry = createPathRegistry(stateDir);
 
   const walk = (dir: string, relSegments: string[]) => {
@@ -212,10 +223,21 @@ function collectOpenclawStateEntries(stateDir: string): OpenclawStateEntry[] {
       }
 
       const absPath = path.join(dir, child.name);
+
+      // 防御性根边界：收集阶段只允许触碰快照目录自身。任何越出（竞态/异常
+      // 情况下理论不可能发生）即跳过，不解析、不读取快照树之外的路径。
+      const relWithin = path.relative(stateDir, absPath);
+      if (relWithin.startsWith("..") || path.isAbsolute(relWithin)) {
+        continue;
+      }
+
       const stat = fs.lstatSync(absPath);
 
+      // 符号链接/junction 不入包：cp filter 已跳过；此处防御性再跳过。
+      // 链接是机器相关运行时产物（内核 peer 链接、plugin-skills 缓存），
+      // 不应让导出整包失败。
       if (stat.isSymbolicLink()) {
-        throw new Error(`不支持的 .openclaw 条目: ${relPath}`);
+        continue;
       }
 
       if (stat.isDirectory()) {

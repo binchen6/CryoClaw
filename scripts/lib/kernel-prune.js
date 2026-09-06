@@ -29,6 +29,15 @@ const KOFFI_PLATFORM_MAP = {
   "win32-arm64": "win32_arm64",
 };
 
+// fs-safe native 平台目录保留映射（@openclaw/fs-safe/dist/native/ 与
+// openclaw/dist/native/ 双份；win32-arm64 无专属目录，x64 模拟运行）
+const FS_SAFE_NATIVE_KEEP_MAP = {
+  "win32-x64": "win32-x64-msvc",
+  "win32-arm64": "win32-x64-msvc",
+  "darwin-x64": "darwin-x64",
+  "darwin-arm64": "darwin-arm64",
+};
+
 // 与 package-resources.js 保持一致的原生平台包前缀
 const NATIVE_NAME_PREFIX = [
   "sharp-",
@@ -258,6 +267,39 @@ module.exports = function createKernelPrune(fs) {
         if (keepLlama) return;
         removeDirTracked(path.join(nmDir, "node-llama-cpp"), stats);
         removeDirTracked(path.join(nmDir, "@node-llama-cpp"), stats);
+      },
+
+      // fs-safe native 非本机平台目录（@openclaw/fs-safe/dist/native/ 与
+      // openclaw/dist/native/ 双份，各 7 平台目录仅 1 个本机有用，合计约 20-40MB）
+      function pruneFsSafeNative(stats) {
+        const keepDir = FS_SAFE_NATIVE_KEEP_MAP[`${platform}-${arch}`];
+        if (!keepDir) return;
+        for (const rel of [
+          path.join("@openclaw", "fs-safe", "dist", "native"),
+          path.join("openclaw", "dist", "native"),
+        ]) {
+          const nativeRoot = path.join(nmDir, rel);
+          let entries;
+          try {
+            entries = fs.readdirSync(nativeRoot, { withFileTypes: true });
+          } catch {
+            continue;
+          }
+          for (const entry of entries) {
+            if (entry.isDirectory() && entry.name !== keepDir) {
+              removeDirTracked(path.join(nativeRoot, entry.name), stats);
+            }
+          }
+        }
+      },
+
+      // tree-sitter-* 的 C 源码目录（parser.c 约 9.5MB 仅构建期需要；
+      // 运行时用 prebuilds/*.node 与 .wasm，均保留）
+      function pruneTreeSitterSources(stats) {
+        for (const pkg of collectTopLevelPackages(nmDir)) {
+          if (!/^tree-sitter(-|$)/.test(pkg.name)) continue;
+          removeDirTracked(path.join(pkg.dir, "src"), stats);
+        }
       },
 
       // 通用垃圾文件/目录递归清理。

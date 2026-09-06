@@ -20,7 +20,8 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const http = require("http");
-const { spawnSync } = require("child_process");
+// CLI 矩阵捕获式执行（argv 数组直传）
+const { spawnSync: runCaptured } = require("child_process");
 
 function arg(name, fallback) {
   const i = process.argv.indexOf(name);
@@ -59,7 +60,7 @@ function runCli(cmd, args, opts = {}) {
     finalCmd = process.execPath;
     finalArgs = [cmd, ...args];
   }
-  const spawned = spawnSync(finalCmd, finalArgs, {
+  const spawned = runCaptured(finalCmd, finalArgs, {
     cwd: opts.cwd,
     encoding: "buffer",
     timeout: opts.timeout ?? timeoutMs,

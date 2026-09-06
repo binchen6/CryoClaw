@@ -54,6 +54,9 @@ async function makeImportZip(files: Record<string, string>): Promise<string> {
   const srcDir = fs.mkdtempSync(path.join(tmpDir, "src-"));
   for (const [rel, content] of Object.entries(files)) {
     const abs = path.join(srcDir, rel);
+    // 边界守卫：夹具路径不得越出源目录
+    const relCheck = path.relative(srcDir, abs);
+    if (relCheck.startsWith("..") || path.isAbsolute(relCheck)) throw new Error(`夹具路径越界: ${rel}`);
     fs.mkdirSync(path.dirname(abs), { recursive: true });
     fs.writeFileSync(abs, content);
   }
@@ -137,4 +140,39 @@ test("自动还原也失败时错误文案指向应急归档位置", async () =>
   expect(err!.message).toContain("自动还原也失败");
   expect(err!.message).toContain("state-pre-import-");
   expect(err!.message).toContain("手动恢复");
+});
+
+// ─── 导出：符号链接/junction 不入包（导出不再因链接失败） ───
+// 实测 2026.9 内核在 .openclaw 里创建 26 个链接（extensions/*/node_modules/openclaw
+// peer 链接、plugin-skills 缓存、npm projects），旧实现遇到链接直接抛
+// "不支持的 .openclaw 条目"，导出功能恒失败。
+test("导出跳过符号链接/junction 而不是失败，归档不含链接条目", async () => {
+  const { exportOpenclawStateToArchive } = await loadArchive();
+  const kernelDir = path.join(tmpDir, "kernel-pkg");
+  fs.mkdirSync(path.join(kernelDir, "dist"), { recursive: true });
+  fs.writeFileSync(path.join(kernelDir, "package.json"), "{}");
+
+  // 模拟内核 peer 链接与 plugin-skills 缓存链接
+  const peerLink = path.join(stateDir, "extensions", "demo", "node_modules", "openclaw");
+  fs.mkdirSync(path.dirname(peerLink), { recursive: true });
+  fs.symlinkSync(kernelDir, peerLink, process.platform === "win32" ? "junction" : "dir");
+
+  const skillLink = path.join(stateDir, "plugin-skills", "demo-skill");
+  fs.mkdirSync(path.dirname(skillLink), { recursive: true });
+  fs.symlinkSync(path.join(stateDir, "skills-src"), skillLink, process.platform === "win32" ? "junction" : "dir");
+
+  fs.writeFileSync(path.join(stateDir, "real-data.txt"), "keep me");
+
+  const zipPath = path.join(tmpDir, "export-links.zip");
+  await expect(exportOpenclawStateToArchive(stateDir, zipPath)).resolves.toBeUndefined();
+
+  // 归档内容断言：真实文件在、链接不在
+  const { readArchive } = await import("./openclaw-state-archive-zip");
+  const archive = await readArchive(zipPath, stateDir, undefined, new Set());
+  expect(archive.entryNames).toContain("real-data.txt");
+  expect(archive.entryNames).toContain("openclaw.json");
+  // 链接条目（及其目标内容）不入包；父目录本身可作为空目录条目存在
+  expect(archive.entryNames.some((n) => n.includes("node_modules/openclaw"))).toBe(false);
+  expect(archive.entryNames.some((n) => n.startsWith("plugin-skills/demo-skill"))).toBe(false);
+  expect(archive.entryNames.some((n) => n.includes("package.json") && n.includes("kernel-pkg"))).toBe(false);
 });

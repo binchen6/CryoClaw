@@ -449,6 +449,16 @@
 - **阶段五闸门实测（本轮最重要产出）**：`OPENCLAW_PACKAGE_SOURCE=2026.9.2` 打包成功（6 类补丁全命中、verifyOutput 通过含 wecom/weixin 镜像）；无渠道配置可正常 boot；**配置任意渠道即崩**——`applyLegacyDoctorMigrations → fs-safe openRootFileSync` 拒绝 `<channel>/doctor-contract-api.js`（path-mismatch）。判定实验：内核自带 telegram 同样失败 → **与注入机制无关，是 2026.9.2 fs-safe native realpath 身份校验与 asar 虚拟文件系统的通用不兼容**。两版 tarball 均只自带 telegram——国内渠道全靠 mirror 注入，此阻断不解决 2026.9.2 无法承载渠道。修复方向三选已记录（fs-safe asar 感知补丁 / unpacked 真实文件 / 跟进上游）。**按计划闸门规则：不跨越阻断项，pin 保持 2026.8.2，kernel-channel stable 不动。**
 - **阶段五插件矩阵（可自动化子集）**：`scripts/plugin-matrix-smoke.js`——v8 asar 69 扩展枚举（68 manifest ok，image-generation-core 双路径 fallback 属已知）、隔离 boot 加载 14 插件；关注清单（dingtalk/wecom/weixin/feishu/qqbot/kimi/moonshot/zai/qwen/deepseek/browser）覆盖形态记录。**用户验证项（不可自动化，如实记录）**：渠道真实收发、远程操作、OAuth、升级后业务回滚——需真实凭据与外部动作。
 - **验证与交付**：v2026.909.4/.909.5 两轮全流程（test/typecheck/dupcheck/build/dist/断言/静默安装/CDP 22 场景 strict 全绿/CLI 13/13/脱敏/push/release）。
+
+### R56 · 内核 2026.9.2 升级落地（asar 硬阻断解决）+ 存储裁剪 + 导出修复（完成，随 v2026.909.6 发版）
+
+用户闲时任务批次：完成 2026.9.2 升级收尾、内存/存储分析落地与功能修复。
+- **asar 硬阻断根因闭环（比 R55 记录更深一层）**：2026.9.2 把边界校验函数从 openclaw dist chunk 迁入**独立 npm 包 `@openclaw/fs-safe/dist/*.js`**（openclaw chunk 经 `@openclaw/fs-safe/advanced` import），旧 `patchAsarBoundaryCheck` 只扫 openclaw dist 根 → 快速通道全部漏打而**补丁计数仍 >0**（仅 peer-link 命中），闸门形同虚设。修复四层：① 扫描范围扩展到 fs-safe 包（openRootFileSync/openRootFile 快速通道、sameFileIdentity 任一侧 dev===1 放行、readRegularFileSync/readRegularFile 快速通道——v9 内联三次观测、旧 verifyStableReadTarget marker 已失效、openPinnedFileSync 兜底）；② `patchFsSafeAsarUnpacked` 改为**只映射两次 lstat 身份观测参数**（asarIdentityPath），openSync 与 `opened.path` 保持 asar 虚拟路径——R56 中继事故：早期版本整体重映射 realPath 导致下游 `openclaw/plugin-sdk/runtime-doctor` ESM 解析脱离 asar 内 node_modules；③ 打包侧 unpackDir 双目录（asar 库 unpack 按 minimatch 整文件名，目录级必须 unpackDir）；④ `assertAsarBoundaryCoverage` 形态感知断言（v9 验 root-file.js / v8 验 chunk marker）+ verifyAsarContents 产物级断言——**补丁计数 >0 从此不是充分条件**。
+- **验证链**：kernel-dist-patch 17 项单测（新增 v9 形态 6 项）；v9 asar 重建 253.4MB；双冒烟（--version + qqbot 渠道 gateway run ready——即 R55 复现链的反向验证）；产物内标记断言（root-file/pinned-open/regular-file/file-identity 四文件全命中）。
+- **存储裁剪落地（双侧对齐）**：`pruneFsSafeNativePlatforms`（@openclaw/fs-safe/dist/native/ 与 openclaw/dist/native/ 双份 × 7 平台仅留本机，win32-arm64 回退 win32-x64-msvc）+ `pruneTreeSitterSources`（parser.c 9.5MB，prebuilds/wasm 保留）进 package-resources 与 kernel-prune 两处；gateway.asar 263.2→253.4MB；kernel-prune 15 项单测。**新发现打包 bug**：`createPackageWithOptions` 不清理目标 .unpacked 的陈旧文件（上轮裁掉的非目标平台 native 目录曾随安装器原样分发）——packGatewayAsar 打包前先 rmDir .unpacked。claude.exe 322MB 保留（Claude Code attach 必需）；typescript/lib 19MB 暂不动（疑 jiti/插件链依赖，未取证不裁）。
+- **导出配置修复（任务5）**：`.openclaw` 数据包导出恒失败——真实状态目录含 26 个符号链接/junction（内核 peer 链接 `extensions/*/node_modules/openclaw`、plugin-skills 缓存、npm projects），`collectOpenclawStateEntries` 遇链接抛「不支持的 .openclaw 条目」。修复：cp filter 跳过链接（跟随目标会把整个内核拷进快照）+ Dirent 防御性跳过；链接是机器相关运行时产物，跨机导入也必然失效。含 junction 的回归测试。
+- **更新日志 15 条上限（任务7）**：`app:get-release-notes` all=true 分支 slice(0,15)。
+- **验证与交付**：全量 **986 pass / 0 fail**（vitest 147 + node 157 + chat-ui 594 + scripts 88）；README 基线同步；kernel pin `2026.9.2` 入 package.json；v2026.909.6。
 ## 📦 发版与实测经验（套路已验证多次）
 
 

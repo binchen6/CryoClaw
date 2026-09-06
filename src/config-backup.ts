@@ -100,6 +100,9 @@ export function recordSetupBaselineConfigSnapshot(): void {
   const stateDir = resolveUserStateDir();
   fs.mkdirSync(stateDir, { recursive: true });
   const baselinePath = path.join(stateDir, SETUP_BASELINE_FILE);
+  // 边界守卫：拼接结果必须仍在状态目录内
+  const rel = path.relative(stateDir, baselinePath);
+  if (rel.startsWith("..") || path.isAbsolute(rel)) return;
   if (fs.existsSync(baselinePath)) return;
 
   fs.writeFileSync(baselinePath, raw, "utf-8");

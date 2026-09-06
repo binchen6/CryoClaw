@@ -227,3 +227,72 @@ test("裁剪幂等：重复执行结果一致", (t) => {
   assert.equal(second.removedDirs, 0);
   assert.equal(second.removedFiles, 0);
 });
+
+// ─── fs-safe native 平台目录 + tree-sitter C 源码（与打包期口径一致） ───
+
+test("fs-safe native 仅保留目标平台目录（@openclaw/fs-safe 与 openclaw 双份）", (t) => {
+  const { gatewayDir, nmDir } = makeGateway(t);
+  const platforms = [
+    "darwin-arm64", "darwin-x64", "linux-arm64-gnu", "linux-arm64-musl",
+    "linux-x64-gnu", "linux-x64-musl", "win32-x64-msvc",
+  ];
+  for (const root of [
+    path.join(nmDir, "@openclaw", "fs-safe", "dist", "native"),
+    path.join(nmDir, "openclaw", "dist", "native"),
+  ]) {
+    for (const plat of platforms) {
+      touch(path.join(root, plat, "fs-safe-native.node"));
+    }
+  }
+
+  const stats = createKernelPrune(fs).pruneGatewayTree(gatewayDir, { platform: "win32", arch: "x64" });
+
+  for (const root of [
+    path.join(nmDir, "@openclaw", "fs-safe", "dist", "native"),
+    path.join(nmDir, "openclaw", "dist", "native"),
+  ]) {
+    assert.equal(fs.existsSync(path.join(root, "win32-x64-msvc")), true, `${root} 本机目录保留`);
+    for (const plat of platforms.filter((p) => p !== "win32-x64-msvc")) {
+      assert.equal(fs.existsSync(path.join(root, plat)), false, `${plat} 应被删除`);
+    }
+  }
+  assert.ok(stats.removedDirs >= 12);
+});
+
+test("fs-safe native：darwin-arm64 保留 darwin-arm64，win32-arm64 回退 win32-x64-msvc", (t) => {
+  {
+    const { gatewayDir, nmDir } = makeGateway(t);
+    const root = path.join(nmDir, "@openclaw", "fs-safe", "dist", "native");
+    touch(path.join(root, "darwin-arm64", "fs-safe-native.node"));
+    touch(path.join(root, "darwin-x64", "fs-safe-native.node"));
+    createKernelPrune(fs).pruneGatewayTree(gatewayDir, { platform: "darwin", arch: "arm64" });
+    assert.equal(fs.existsSync(path.join(root, "darwin-arm64")), true);
+    assert.equal(fs.existsSync(path.join(root, "darwin-x64")), false);
+  }
+  {
+    const { gatewayDir, nmDir } = makeGateway(t);
+    const root = path.join(nmDir, "@openclaw", "fs-safe", "dist", "native");
+    touch(path.join(root, "win32-x64-msvc", "fs-safe-native.node"));
+    touch(path.join(root, "linux-x64-gnu", "fs-safe-native.node"));
+    createKernelPrune(fs).pruneGatewayTree(gatewayDir, { platform: "win32", arch: "arm64" });
+    assert.equal(fs.existsSync(path.join(root, "win32-x64-msvc")), true, "win32-arm64 走 x64 模拟");
+    assert.equal(fs.existsSync(path.join(root, "linux-x64-gnu")), false);
+  }
+});
+
+test("tree-sitter C 源码目录被移除，prebuilds/wasm 保留", (t) => {
+  const { gatewayDir, nmDir } = makeGateway(t);
+  const tsDir = path.join(nmDir, "tree-sitter-bash");
+  touch(path.join(tsDir, "src", "parser.c"));
+  touch(path.join(tsDir, "prebuilds", "win32-x64", "tree-sitter-bash.node"));
+  touch(path.join(tsDir, "tree-sitter-bash.wasm"));
+  // 同名前缀但不是 tree-sitter 家族的包不受影响
+  touch(path.join(nmDir, "tree-sitterish", "src", "keep.c"));
+
+  createKernelPrune(fs).pruneGatewayTree(gatewayDir, { platform: "win32", arch: "x64" });
+
+  assert.equal(fs.existsSync(path.join(tsDir, "src")), false, "C 源码目录应被删除");
+  assert.equal(fs.existsSync(path.join(tsDir, "prebuilds", "win32-x64")), true, "prebuilds 保留");
+  assert.equal(fs.existsSync(path.join(tsDir, "tree-sitter-bash.wasm")), true, "wasm 保留");
+  assert.equal(fs.existsSync(path.join(nmDir, "tree-sitterish", "src", "keep.c")), true);
+});
