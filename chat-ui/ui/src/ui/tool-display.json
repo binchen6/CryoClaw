@@ -9,25 +9,29 @@
       "icon": "file-text",
       "title": "Read",
       "label": "read",
-      "detailKeys": ["path"]
+      "detailKeys": ["path"],
+      "langFrom": ["path"]
     },
     "write": {
       "icon": "file-plus",
       "title": "Write",
       "label": "write",
-      "detailKeys": ["path"]
+      "detailKeys": ["path"],
+      "langFrom": ["path"]
     },
     "edit": {
       "icon": "file-edit",
       "title": "Edit",
       "label": "edit",
-      "detailKeys": ["path"]
+      "detailKeys": ["path"],
+      "langFrom": ["path"]
     },
     "apply_patch": {
       "icon": "file-edit",
       "title": "Apply Patch",
       "label": "apply_patch",
-      "detailKeys": ["path"]
+      "detailKeys": ["path"],
+      "langFrom": ["path"]
     },
     "exec": {
       "icon": "terminal",

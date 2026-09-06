@@ -52,6 +52,10 @@ import {
   type FallbackNotice,
 } from "./app-tool-stream.ts";
 import type { PlanStreamState } from "./plan-stream.ts";
+import {
+  emptyProgressCardState,
+  type ProgressCardState,
+} from "./controllers/progress-card.ts";
 import { resolveInjectedAssistantIdentity } from "./assistant-identity.ts";
 import { loadAssistantIdentity as loadAssistantIdentityInternal } from "./controllers/assistant-identity.ts";
 import { getConfigSnapshot, deriveConfiguredModels, patchConfig } from "./controllers/config.ts";
@@ -183,6 +187,7 @@ export class OpenClawApp extends LitElement {
     chatStreamStartedAt: { state: true },
     chatRunId: { state: true },
     planState: { state: true },
+    progressCard: { state: true },
     compactionStatus: { state: true },
     fallbackNotice: { state: true },
     compactionCheckpoints: { state: true },
@@ -352,6 +357,8 @@ export class OpenClawApp extends LitElement {
   chatRunId: string | null = null;
   // 计划悬浮面板状态（update_plan 工具事件驱动，独立于 toolStream，跨 turn 保留）
   planState: PlanStreamState | null = null;
+  // Progress Card（内核 progressCard.get/put + progressCard.changed，每会话一卡）
+  progressCard: ProgressCardState = emptyProgressCardState(this.sessionKey);
   compactionStatus: CompactionStatus | null = null;
   // 模型 fallback 提示（lifecycle 事件驱动，5s 自动消失；chat 终态清理）
   fallbackNotice: FallbackNotice | null = null;

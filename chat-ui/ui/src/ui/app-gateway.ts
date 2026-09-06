@@ -36,6 +36,11 @@ import { loadSessions } from "./controllers/sessions.ts";
 import { applySessionsChangedPatch } from "./controllers/sessions-patch.ts";
 import { loadWorktrees } from "./controllers/worktrees.ts";
 import { applyTaskEvent, loadTasks } from "./controllers/tasks.ts";
+import {
+  handleProgressCardChanged,
+  loadProgressCard,
+  type ProgressCardChangedPayload,
+} from "./controllers/progress-card.ts";
 import { loadCommands } from "./controllers/commands.ts";
 import type { TaskSummary } from "./types.ts";
 import { GatewayBrowserClient } from "./gateway.ts";
@@ -395,6 +400,8 @@ export function connectGateway(host: GatewayHost) {
       void loadChannels(host as unknown as OpenClawApp, false);
       void loadSessionsAndReconcile(host);
       void loadTasks(host as unknown as OpenClawApp);
+      // Progress Card：重连后重拉当前会话卡片（断连窗口内的 changed 事件已丢失）
+      void loadProgressCard(host as unknown as OpenClawApp);
       // worktree 徽标数据（sessions.list 行不带 worktree 字段，靠 ownerId 反推）
       void loadWorktrees(host as unknown as OpenClawApp);
       // 预取 / 命令目录（供 compose 补全）
@@ -615,6 +622,15 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
     } else {
       void loadSessions(app as any);
     }
+    return;
+  }
+
+  // Progress Card（v2026.8.2）：changed 只带 {sessionKey, revision}，
+  // 按当前会话过滤后失效重拉；revision 与本地一致时跳过（事件回声）
+  if (evt.event === "progressCard.changed") {
+    const app = host as unknown as OpenClawApp;
+    handleProgressCardChanged(app, evt.payload as ProgressCardChangedPayload | undefined);
+    app.requestUpdate?.();
     return;
   }
 

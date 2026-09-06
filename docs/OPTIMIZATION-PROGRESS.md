@@ -409,6 +409,14 @@
 - **测试**：全量 **903 pass / 0 fail / 4 skipped**（vitest 146 + node 157 + chat-ui 521 + scripts 79；2026-09-05 实测）；chat-ui build 通过。三宽度（1440/834/390）无头截图验证横向溢出均 0px，手机时间线/卡片流、平板堆叠排版逐项看图确认。
 - **双仓同步**：博客版（`blog/public/CryoClaw/`）整拷 styles.css + 定向 patch stats 三处（保留 `<base href>`、加速下载双按钮、`/api/cryoclaw-dl` 等部署差异），起临时静态服务器复验三宽度溢出 0px；两仓 commit + push，Cloudflare Pages 自动部署。
 
+### R52 · openclaw 2026.8.2 对话内核深度适配（完成，随 v2026.909.1 发版）
+
+用户要求：研究内置 openclaw 2026.8.2 内核并完成流式文本、工具调用输出、工具结果展现、对话体验与 Progress Card 深度适配；Progress Card 替代旧 `update_plan` 面板，并按审查、debug/冒烟、去敏、发布的固定流程交付。
+- **内核取证与边界**：新增 `docs/kernel-recon/2026.8.2-chat-capabilities.md`，记录 `progressCard.get` / `progressCard.put` / `progressCard.changed` 及 markdown、steps、revision、清空条件等已验证契约；不修改 bundled gateway.asar 或 openclaw 内核。
+- **Progress Card 替代与兼容**：新增会话级 Progress Card controller/view，支持 revision 去重、changed 失效重拉、重连拉取、切换会话竞态保护、步骤状态与折叠偏好。有效新卡优先隐藏 legacy `update_plan` 面板；旧内核或历史会话无卡时保留原面板回退。
+- **并发与失败韧性**：刷新脏标记改为每 host 隔离；dismiss 在补拉 revision 前就上锁，并以 session/token 防止旧请求污染新会话；用户只看到本地化、非敏感的同步失败提示。
+- **流式工具体验**：工具输入 delta 与终态结果展示增强，包括错误优先摘要、exit-code / diff ± 统计、复制输出、基于文件路径的 fenced-code 语言推导，以及对应中英文文案与样式。
+- **验证与交付**：2026-09-06 全量 `npm test` 通过（Vitest 146、chat UI 578、scripts 79 均无失败；平台跳过项按既有配置）；`npm run build` 通过，仅保留既有 `controllers/chat.ts` 动态导入提示；`npm run dupcheck` 为 80 clones / 715 duplicated lines / 1.04%（阈值 5%）；`git diff --check` 通过且 diff 去敏扫描未发现凭据。`node scripts/dist-win.js` 生成 x64 三件套，`latest.yml` 为 v2026.909.1、sha512 与 275,470,641-byte installer 一致；隔离 profile 下 `win-unpacked` 启动 18 秒正常并已停止。安装程序未签名（本机未配置 CSC_LINK/CSC_KEY_PASSWORD），发布说明保留该限制。
 ## 📦 发版与实测经验（套路已验证多次）
 
 

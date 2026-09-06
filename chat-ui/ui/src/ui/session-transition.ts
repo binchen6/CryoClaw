@@ -1,4 +1,5 @@
 import type { ChatState } from "./controllers/chat.ts";
+import { resetProgressCardForSession, type ProgressCardHost } from "./controllers/progress-card.ts";
 import { clearReconnectOrphanRun } from "./stream-recovery.ts";
 import type { UiSettings } from "./storage.ts";
 
@@ -7,6 +8,8 @@ export type SessionTransitionHost = ChatState & {
   chatAvatarUrl: string | null;
   // 计划面板状态（可选：测试替身不实现也无妨，切换会话时直接清空）
   planState?: { sessionKey?: string } | null;
+  // Progress Card 状态（可选：测试替身不实现也无妨；切换会话时重建并重新拉取）
+  progressCard?: unknown;
   // 压缩/降级提示胶囊按会话隔离：切走即清（含自动消失定时器）
   compactionStatus?: unknown | null;
   compactionClearTimer?: number | null;
@@ -78,6 +81,9 @@ export function applySessionKeyTransition(
   host.chatAvatarUrl = null;
   // 计划面板按会话隔离：切走即清（渲染层也按 sessionKey 匹配兜底）
   host.planState = null;
+  // Progress Card 同属会话级状态：重建为新会话锚点，随后随历史一起重拉
+  // （resetProgressCardForSession 内部会在已连接时发起 progressCard.get）
+  resetProgressCardForSession(host as unknown as ProgressCardHost, trimmed);
   // 压缩/降级提示同属会话级瞬态：清掉并取消自动消失定时器，防跨会话残留
   if (host.compactionClearTimer != null && typeof window !== "undefined") {
     window.clearTimeout(host.compactionClearTimer);

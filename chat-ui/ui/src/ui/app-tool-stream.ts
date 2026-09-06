@@ -1,6 +1,11 @@
 import { truncateText } from "./format.ts";
 import { debugLog } from "./debug.ts";
 import { handlePlanToolEvent, UPDATE_PLAN_TOOL_NAME, type PlanStreamHost } from "./plan-stream.ts";
+import {
+  countUnifiedDiffStat,
+  parseDiffStat,
+  type ToolDiffStat,
+} from "./chat/tool-helpers.ts";
 
 const TOOL_STREAM_LIMIT = 50;
 // 被 trimToolStream 淘汰的 leadingSegment 段数上限：不设限的话超长 run
@@ -33,6 +38,15 @@ export type ToolStreamEntry = {
   output?: string;
   // result 阶段从 data.isError 捕获（宽容解析：仅 true 算失败）
   isError?: boolean;
+  // R52 T4：diff 行数统计。input_delta 阶段为实时值（内核 250ms 节流上报），
+  // result 阶段被 details.diff 解析出的最终统计替换；details 无 diff 时清除
+  // （对齐 control-ui liveDiffStat 生命周期：result 到达即清实时徽标）。
+  diffStat?: ToolDiffStat;
+  // R52 T4：result 阶段的内核错误摘要（data.toolErrorSummary，内核侧
+  // TOOL_ERROR_MAX_CHARS=400 截断），失败卡优先展示它而非裸输出开头。
+  toolErrorSummary?: string;
+  // R52 T4：exec 类工具退出码（data.result.exitCode，宽容解析整数）。
+  exitCode?: number;
   startedAt: number;
   updatedAt: number;
   // 该 tool 之前冻结下来的 assistant 文本（若有）。只会设一次，就在 entry 创建那一刻。
@@ -137,6 +151,8 @@ function buildToolCallMessage(entry: ToolStreamEntry): Record<string, unknown> {
         id: entry.toolCallId,
         name: entry.name,
         arguments: entry.args ?? {},
+        // R52 T4：实时/最终 diff 统计随 call 内容块进渲染层（extractToolCards 读 item.diffStat）
+        ...(entry.diffStat ? { diffStat: { ...entry.diffStat } } : {}),
       },
     ],
     timestamp: entry.startedAt,
@@ -156,7 +172,55 @@ function buildToolResultMessage(entry: ToolStreamEntry): Record<string, unknown>
     timestamp: entry.updatedAt,
     // 失败标记随消息进渲染层（extractToolCards 读消息级 isError → ToolCard.error）
     ...(entry.isError === true ? { isError: true } : {}),
+    // R52 T4：result 卡需要工具名/参数来做语言推断（sidebar 代码围栏）与 detail 展示；
+    // toolArgs 是引用透传（同一对象），无额外拷贝开销。
+    toolName: entry.name,
+    ...(entry.args !== undefined ? { toolArgs: entry.args } : {}),
+    ...(entry.toolErrorSummary ? { toolErrorSummary: entry.toolErrorSummary } : {}),
+    ...(entry.exitCode !== undefined ? { exitCode: entry.exitCode } : {}),
+    ...(entry.diffStat ? { diffStat: { ...entry.diffStat } } : {}),
   };
+}
+
+// ── R52 T4：result 阶段附加字段的宽容解析 ──
+
+function asNonEmptyString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value : undefined;
+}
+
+function asInteger(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isInteger(value) ? value : undefined;
+}
+
+// exec 退出码：内核挂在 result 对象上（control-ui 消费端 h(r.result).exitCode 确证），
+// 兜底再看 data 顶层。
+function extractExitCode(data: Record<string, unknown>): number | undefined {
+  const result = data.result;
+  if (result && typeof result === "object") {
+    const fromResult = asInteger((result as Record<string, unknown>).exitCode);
+    if (fromResult !== undefined) {
+      return fromResult;
+    }
+  }
+  return asInteger(data.exitCode);
+}
+
+// 最终 diff 统计：优先 details 里的数值型 stat（宽容探测），
+// 否则解析 details.diff 统一 diff 文本计数（control-ui 的最终统计来源）。
+function extractResultDiffStat(result: unknown): ToolDiffStat | undefined {
+  if (!result || typeof result !== "object") {
+    return undefined;
+  }
+  const details = (result as Record<string, unknown>).details;
+  if (!details || typeof details !== "object") {
+    return undefined;
+  }
+  const record = details as Record<string, unknown>;
+  const numeric = parseDiffStat(record.diffStat) ?? parseDiffStat(record.stat);
+  if (numeric) {
+    return numeric;
+  }
+  return countUnifiedDiffStat(record.diff);
 }
 
 function trimToolStream(host: ToolStreamHost) {
@@ -461,6 +525,12 @@ export function handleAgentEvent(host: ToolStreamHost, payload?: AgentEventPaylo
         : undefined;
   // 内核 result 阶段带 isError: boolean（execute.runtime 契约），宽容解析：仅严格 true 计失败
   const isError = phase === "result" && data.isError === true ? true : undefined;
+  // R52 T4：input_delta 实时 diff（data.diff:{added,removed}，内核 250ms 节流）；
+  // result 阶段用 details 里的最终统计替换（details 无 diff 则清除实时徽标）。
+  const liveDiffStat = phase === "input_delta" ? parseDiffStat(data.diff) : undefined;
+  const finalDiffStat = phase === "result" ? extractResultDiffStat(data.result) : undefined;
+  const toolErrorSummary = phase === "result" ? asNonEmptyString(data.toolErrorSummary) : undefined;
+  const exitCode = phase === "result" ? extractExitCode(data) : undefined;
 
   const now = Date.now();
   let entry = host.toolStreamById.get(toolCallId);
@@ -494,6 +564,9 @@ export function handleAgentEvent(host: ToolStreamHost, payload?: AgentEventPaylo
       args,
       output: output || undefined,
       isError,
+      diffStat: phase === "input_delta" ? liveDiffStat : finalDiffStat,
+      toolErrorSummary,
+      exitCode,
       startedAt: typeof payload.ts === "number" ? payload.ts : now,
       updatedAt: now,
       leadingSegment: leading,
@@ -515,6 +588,20 @@ export function handleAgentEvent(host: ToolStreamHost, payload?: AgentEventPaylo
     }
     if (isError !== undefined) {
       entry.isError = isError;
+    }
+    // R52 T4：input_delta 刷新实时 diff 徽标；result 用最终统计替换
+    // （details 无 diff 时置 undefined，实时徽标随终态消失，与 control-ui 一致）。
+    if (phase === "input_delta" && liveDiffStat) {
+      entry.diffStat = liveDiffStat;
+    }
+    if (phase === "result") {
+      entry.diffStat = finalDiffStat;
+      if (toolErrorSummary) {
+        entry.toolErrorSummary = toolErrorSummary;
+      }
+      if (exitCode !== undefined) {
+        entry.exitCode = exitCode;
+      }
     }
     entry.updatedAt = now;
     // 名称/参数变更要反映到 call 消息，但保留其 timestamp（start 时钉住）。

@@ -2,7 +2,7 @@
    styles/panel.css — 全页面板统一骨架（任务/定时任务/技能/工作区）
    只定义骨架排版类：各视图把骨架类叠加在既有专有类上（class="ts-layout panel"），
    专有类继续负责布局宽度/滚动细节，本文件不重写任何视图内部结构。
-   2026.9 重写：全部走 design tokens（--heading-*/--text-*/--spacer-*/--hairline），
+   2026.9 重写：全部走 design tokens（heading、text、spacer、hairline），
    零硬编码数值/色值；页头 heading-md semibold、工具行右对齐、空态居中 muted。
    ========================================================================== */
 

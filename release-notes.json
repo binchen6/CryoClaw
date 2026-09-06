@@ -1,5 +1,12 @@
 [
   {
+    "version": "2026.909.1",
+    "notes": {
+      "zh": "内核适配：对齐 openclaw 2026.8.2 Progress Card 协议；新进度卡优先替代旧 update_plan 面板，同时为旧内核与历史会话保留回退显示\n对话：完善流式工具输入与终态结果卡片，错误摘要、退出码、diff 统计、复制输出和代码语言识别更清晰\n体验：Progress Card 支持步骤状态、当前进度、折叠记忆、会话切换与重连刷新；并加固并发刷新、清除乐观锁与失败提示\n工程：补齐 Progress Card 与工具结果展示回归测试，并移除本轮 CSS 注释和动态导入构建告警",
+      "en": "Kernel adaptation: aligned with the openclaw 2026.8.2 Progress Card protocol. The new card takes priority over the legacy update_plan panel, while older kernels and historical sessions retain a fallback\nChat: improved streamed tool input and terminal result cards with clearer error summaries, exit codes, diff statistics, copy output, and code-language detection\nExperience: Progress Card now supports step state, current progress, persisted collapse, session-switch and reconnect refresh, plus hardened refresh concurrency, optimistic dismissal, and failure feedback\nEngineering: added Progress Card and tool-result regression coverage and removed this round's CSS-comment and dynamic-import build warnings"
+    }
+  },
+  {
     "version": "2026.909.0",
     "notes": {
       "zh": "界面：技能商店与技能页的头像色板收敛为 CryoBlue 蓝青同族色系，告别杂色，与应用整体设计语言一致\n界面：会话面板分隔条加宽命中区并常驻可见细线，悬停/拖拽时显示加粗辉光指示条，调整布局更好找、更跟手\n界面：全屏空状态页标题统一提升到展示字号阶梯（任务管理等页面），视觉层级更清晰\n工程：修复网关冒烟测试在注入了 OPENCLAW_CONFIG_PATH 等环境变量的宿主机上误报失败（子进程环境隔离加固）",

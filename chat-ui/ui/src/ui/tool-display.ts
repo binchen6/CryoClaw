@@ -11,6 +11,8 @@ type ToolDisplaySpec = {
   title?: string;
   label?: string;
   detailKeys?: string[];
+  // R52 T4：声明式语言推断键——从 args 的哪个字段取文件路径来做代码语言推断
+  langFrom?: string[];
   actions?: Record<string, ToolDisplayActionSpec>;
 };
 
@@ -225,4 +227,77 @@ function shortenHomeInString(input: string): string {
     return input;
   }
   return input.replace(/\/Users\/[^/]+/g, "~").replace(/\/home\/[^/]+/g, "~");
+}
+
+// ── R52 T4：工具输出语言推断 ──
+// read/write/edit/apply_patch 类工具的输出（尤其 read 的文件内容）在 sidebar
+// 里按代码围栏渲染；语言从 args 里的文件路径扩展名推断。映射目标与
+// chat/code-block-enhance.ts 的 LANG_LOADERS（已注册的 hljs 语言）保持一致，
+// 未注册的扩展名返回 undefined（纯文本围栏或直接渲染）。
+
+// json 未声明 langFrom 时的兜底：文件改写/读取类工具默认从 path 推断
+const FILE_TOOL_LANG_FALLBACK_KEYS = ["path"];
+const FILE_TOOL_NAMES = new Set(["read", "write", "edit", "apply_patch", "attach"]);
+
+const EXT_LANGUAGE_MAP: Record<string, string> = {
+  js: "javascript",
+  mjs: "javascript",
+  cjs: "javascript",
+  jsx: "javascript",
+  ts: "typescript",
+  mts: "typescript",
+  cts: "typescript",
+  tsx: "typescript",
+  py: "python",
+  json: "json",
+  sh: "bash",
+  bash: "bash",
+  zsh: "bash",
+  css: "css",
+  html: "html",
+  htm: "html",
+  xml: "xml",
+  svg: "xml",
+  sql: "sql",
+  java: "java",
+  go: "go",
+  rs: "rust",
+  yml: "yaml",
+  yaml: "yaml",
+  ps1: "powershell",
+};
+
+export function inferLanguageFromPath(path: string): string | undefined {
+  const cleaned = (path.trim().split(/[?#]/)[0] ?? "").trim();
+  if (!cleaned) {
+    return undefined;
+  }
+  const base = cleaned.split(/[\\/]/).pop() ?? "";
+  const dot = base.lastIndexOf(".");
+  // 无扩展名 / 点号文件（.gitignore）/ 结尾点：不推断
+  if (dot <= 0 || dot === base.length - 1) {
+    return undefined;
+  }
+  return EXT_LANGUAGE_MAP[base.slice(dot + 1).toLowerCase()];
+}
+
+export function resolveToolLanguage(name?: string, args?: unknown): string | undefined {
+  const key = normalizeToolName(name).toLowerCase();
+  const spec = TOOL_MAP[key];
+  const langKeys =
+    spec?.langFrom ?? (FILE_TOOL_NAMES.has(key) ? FILE_TOOL_LANG_FALLBACK_KEYS : undefined);
+  if (!langKeys || langKeys.length === 0) {
+    return undefined;
+  }
+  for (const langKey of langKeys) {
+    const value = lookupValueByPath(args, langKey);
+    if (typeof value !== "string") {
+      continue;
+    }
+    const lang = inferLanguageFromPath(value);
+    if (lang) {
+      return lang;
+    }
+  }
+  return undefined;
 }

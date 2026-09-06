@@ -1,6 +1,7 @@
 import { ref } from "lit/directives/ref.js";
 import { enhanceMath } from "./math-enhance.ts";
 import { enhanceMedia } from "./media-enhance.ts";
+import { t } from "../i18n.ts";
 
 /**
  * 代码块增强（阅读/操作体验，R10）：
@@ -10,13 +11,12 @@ import { enhanceMedia } from "./media-enhance.ts";
  * hljs 走动态 import，不拖累首屏；高亮产物为 hljs 生成的转义 token span，
  * 文本源自已被 DOMPurify 净化的 code.textContent。
  * 用法：<div class="chat-text" ${chatTextEnhanceRef}>…unsafeHTML…</div>
+ * R52 T4 起同一 ref 也挂载在工具输出 sidebar（.sidebar-markdown）上，
+ * 文案走 i18n（chat.codeCopy/chat.codeCopied/chat.codeCopyFailed）。
  */
 
 const COPIED_FOR_MS = 1500;
 const ERROR_FOR_MS = 2000;
-const COPY_TITLE = "复制代码";
-const COPIED_TITLE = "已复制";
-const ERROR_TITLE = "复制失败";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 
@@ -77,8 +77,8 @@ function buildCodeCopyButton(pre: HTMLPreElement): HTMLButtonElement {
   const btn = document.createElement("button");
   btn.type = "button";
   btn.className = "chat-code-copy";
-  btn.title = COPY_TITLE;
-  btn.setAttribute("aria-label", COPY_TITLE);
+  btn.title = t("chat.codeCopy");
+  btn.setAttribute("aria-label", t("chat.codeCopy"));
   setIcon(btn, "copy");
 
   btn.addEventListener("click", async () => {
@@ -93,25 +93,25 @@ function buildCodeCopyButton(pre: HTMLPreElement): HTMLButtonElement {
     delete btn.dataset.busy;
     if (ok) {
       btn.dataset.copied = "1";
-      btn.title = COPIED_TITLE;
+      btn.title = t("chat.codeCopied");
       setIcon(btn, "check");
       window.setTimeout(() => {
         if (!btn.isConnected) {
           return;
         }
         delete btn.dataset.copied;
-        btn.title = COPY_TITLE;
+        btn.title = t("chat.codeCopy");
         setIcon(btn, "copy");
       }, COPIED_FOR_MS);
     } else {
       btn.dataset.error = "1";
-      btn.title = ERROR_TITLE;
+      btn.title = t("chat.codeCopyFailed");
       window.setTimeout(() => {
         if (!btn.isConnected) {
           return;
         }
         delete btn.dataset.error;
-        btn.title = COPY_TITLE;
+        btn.title = t("chat.codeCopy");
       }, ERROR_FOR_MS);
     }
   });

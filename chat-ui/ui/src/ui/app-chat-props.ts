@@ -19,6 +19,7 @@ import { loadCompactionCheckpoints } from "./controllers/session-compaction.ts";
 import { listEligibleSkills } from "./controllers/skills.ts";
 import { openWorkspaceView } from "./app-workspace.ts";
 import { dismissPlan } from "./plan-stream.ts";
+import { dismissProgressCard } from "./controllers/progress-card.ts";
 import type { ChatProps } from "./views/chat.ts";
 
 export function buildChatProps(state: AppViewState): ChatProps {
@@ -48,6 +49,16 @@ export function buildChatProps(state: AppViewState): ChatProps {
     fallbackNotice: state.fallbackNotice,
     plan: state.planState,
     onDismissPlan: () => dismissPlan(state),
+    // Progress Card：折叠偏好持久化在 UiSettings（chatProgressCardCollapsed）；
+    // dismiss 走 progressCard.put + expectedRevision 乐观锁（细节见 controllers/progress-card.ts）
+    progressCard: state.progressCard,
+    progressCardCollapsed: state.settings.chatProgressCardCollapsed,
+    onToggleProgressCardCollapse: () =>
+      state.applySettings({
+        ...state.settings,
+        chatProgressCardCollapsed: !state.settings.chatProgressCardCollapsed,
+      }),
+    onDismissProgressCard: () => void dismissProgressCard(state),
     assistantAvatarUrl: state.chatAvatarUrl ?? resolveAssistantAvatarUrl(state) ?? null,
     messages: state.chatMessages,
     visibleHistoryCount: state.chatVisibleMessageCount,

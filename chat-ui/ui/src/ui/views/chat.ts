@@ -36,6 +36,8 @@ import { appendQuoteToDraft } from "../chat/quote-text.ts";
 import { isFailedSubagentStatus, selectSubagentCards, type SubagentCard } from "../chat/subagent-status.ts";
 import { renderPlanPanel } from "./plan-panel.ts";
 import type { PlanStreamState } from "../plan-stream.ts";
+import { renderProgressCard } from "./progress-card.ts";
+import type { ProgressCardState } from "../controllers/progress-card.ts";
 import type { FallbackNotice } from "../app-tool-stream.ts";
 
 export { computeStopButtonVisible };
@@ -67,6 +69,11 @@ export type ChatProps = {
   // 计划悬浮面板（update_plan 工具事件驱动，独立于 toolStream）
   plan?: PlanStreamState | null;
   onDismissPlan?: () => void;
+  // Progress Card（内核 progressCard.* 每会话一卡，compose 上方浮卡）
+  progressCard?: ProgressCardState | null;
+  progressCardCollapsed?: boolean;
+  onToggleProgressCardCollapse?: () => void;
+  onDismissProgressCard?: () => void;
   messages: unknown[];
   visibleHistoryCount: number;
   toolMessages: unknown[];
@@ -879,6 +886,9 @@ function ensureChatShortcuts(props: ChatProps) {
 }
 
 export function renderChat(props: ChatProps) {
+  const hasProgressCardForSession =
+    props.progressCard?.sessionKey === props.sessionKey &&
+    props.progressCard.card?.sessionKey === props.sessionKey;
   ensureChatShortcuts(props);
   if (props.sessionKey !== lastSessionKey) {
     lastSessionKey = props.sessionKey;
@@ -1196,9 +1206,22 @@ export function renderChat(props: ChatProps) {
       ${renderCompactionIndicator(props.compactionStatus)}
       ${renderFallbackNotice(props.fallbackNotice)}
 
-      ${renderPlanPanel(props.plan ?? null, {
+      ${
+        !hasProgressCardForSession
+          ? renderPlanPanel(props.plan ?? null, {
+              sessionKey: props.sessionKey,
+              onDismiss: props.onDismissPlan,
+            })
+          : nothing
+      }
+
+      ${renderProgressCard(props.progressCard ?? null, {
         sessionKey: props.sessionKey,
-        onDismiss: props.onDismissPlan,
+        collapsed: props.progressCardCollapsed ?? false,
+        runActive: props.runActive ?? false,
+        dismissing: props.progressCard?.dismissing,
+        onToggleCollapse: props.onToggleProgressCardCollapse,
+        onDismiss: props.onDismissProgressCard,
       })}
 
       ${

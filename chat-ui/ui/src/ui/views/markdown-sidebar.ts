@@ -3,6 +3,7 @@ import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { icons } from "../icons.ts";
 import { t } from "../i18n.ts";
 import { toSanitizedMarkdownHtml } from "../markdown.ts";
+import { chatTextEnhanceRef } from "../chat/code-block-enhance.ts";
 
 export type MarkdownSidebarProps = {
   content: string | null;
@@ -30,7 +31,11 @@ export function renderMarkdownSidebar(props: MarkdownSidebarProps) {
               </button>
             `
             : props.content
-              ? html`<div class="sidebar-markdown">${unsafeHTML(toSanitizedMarkdownHtml(props.content))}</div>`
+              // R52 T4：sidebar 挂载与正文 .chat-text 相同的 DOM 层代码增强
+              // （hljs 高亮 + 复制按钮 + 语言标签）。ref 回调在 lit 每次 commit
+              // 后触发，增强本身幂等（dataset 标记防重复挂载），懒渲染/details
+              // 场景下内容注入即被增强。
+              ? html`<div class="sidebar-markdown" ${chatTextEnhanceRef}>${unsafeHTML(toSanitizedMarkdownHtml(props.content))}</div>`
               : html`
                   <div class="muted">${t("markdownSidebar.noContent")}</div>
                 `

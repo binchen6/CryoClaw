@@ -13,6 +13,7 @@ export type UiSettings = {
   theme: ThemeMode;
   chatFocusMode: boolean;
   chatShowThinking: boolean;
+  chatProgressCardCollapsed: boolean; // Progress Card 折叠态（compose 上方浮卡，跨会话共用偏好）
   splitRatio: number; // Sidebar split ratio (0.4 to 0.7, default 0.6)
   navCollapsed: boolean; // Collapsible sidebar state
   navGroupsCollapsed: Record<string, boolean>; // Which nav groups are collapsed
@@ -74,6 +75,7 @@ export function parseUiSettings(raw: string | null, locationLike: LocationLike):
     theme: "light",
     chatFocusMode: false,
     chatShowThinking: true,
+    chatProgressCardCollapsed: false,
     splitRatio: 0.6,
     navCollapsed: false,
     navGroupsCollapsed: {},
@@ -112,6 +114,10 @@ export function parseUiSettings(raw: string | null, locationLike: LocationLike):
         typeof parsed.chatShowThinking === "boolean"
           ? parsed.chatShowThinking
           : defaults.chatShowThinking,
+      chatProgressCardCollapsed:
+        typeof parsed.chatProgressCardCollapsed === "boolean"
+          ? parsed.chatProgressCardCollapsed
+          : defaults.chatProgressCardCollapsed,
       splitRatio:
         typeof parsed.splitRatio === "number" &&
         parsed.splitRatio >= 0.4 &&

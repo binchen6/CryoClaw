@@ -4,7 +4,7 @@
    - 消息流居中阅读列 var(--chat-column)；助手消息扁平无卡片（正文直排 +
      meta 行小字 muted）；用户消息克制气泡（--accent-subtle 底 + radius-12 +
      列内右对齐）；
-   - 颜色全部走主题自适应 token（--glass-*/--bg-*/--hairline），
+   - 颜色全部走主题自适应 token（glass、background、hairline），
      旧 :root[data-theme=light] 覆盖块与硬编码 rgba 已全部移除；
    - compose 相关规则统一归 compose.css（单卡片输入区）；panels.css 的
      第二遍定义（chat-thread/chat-bubble/chat-text/chat-tool-card/阅读指示器）
@@ -2169,5 +2169,286 @@ img.chat-avatar {
 
   .chat-hero__chips {
     margin-top: var(--spacer-24);
+  }
+}
+
+/* ==========================================================================
+   .chat-progress-card — Progress Card（内核 progressCard.get/put + changed 事件）
+   R52 T3 新增。挂载：views/chat.ts compose 上方文档流（与审批弹条/目标横幅同区）。
+   折叠态：单行头（状态点 + 标题 + {done}/{total} 计数 + 当前步骤 + 展开箭头）；
+   展开态：markdown 体 + steps 有序列表（in_progress=spinner / completed=✓ / pending=时钟）。
+   完成态（--done）：状态点与边框转 ok 色。全部 token 化，无硬编码 hex。
+   ========================================================================== */
+
+.chat-progress-card {
+  margin-bottom: var(--spacer-10);
+  border: var(--hairline);
+  border-radius: var(--radius-12);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-sm);
+  font-family: var(--font-body);
+  animation: fade-in var(--duration-normal) var(--ease-out);
+}
+
+.chat-progress-card--done {
+  border-color: color-mix(in srgb, var(--ok) 35%, transparent);
+}
+
+/* 头部：整行可点击折叠/展开；dismiss 按钮独立于其右（按钮右对齐契约） */
+.chat-progress-card__header {
+  display: flex;
+  align-items: center;
+  gap: var(--spacer-6);
+  padding: var(--spacer-6) var(--spacer-10);
+}
+
+.chat-progress-card__toggle {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacer-8);
+  padding: var(--spacer-2) 0;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-sm);
+  line-height: 1.3;
+  text-align: left;
+  cursor: pointer;
+  border-radius: var(--radius-6);
+}
+
+.chat-progress-card__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-full);
+  flex-shrink: 0;
+  background: var(--text-muted);
+}
+
+.chat-progress-card__dot--active {
+  background: var(--info);
+  animation: chat-progress-card-pulse 1.2s ease-in-out infinite;
+}
+
+.chat-progress-card__dot--done {
+  background: var(--ok);
+}
+
+.chat-progress-card__title {
+  font-weight: var(--weight-semibold);
+  flex-shrink: 0;
+}
+
+.chat-progress-card__count {
+  font-family: var(--font-meta);
+  font-size: var(--font-size-meta);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+.chat-progress-card__current {
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.chat-progress-card__paused {
+  color: var(--text-muted);
+  font-size: var(--font-size-meta);
+  flex-shrink: 0;
+}
+
+.chat-progress-card__chevron {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.chat-progress-card__chevron svg {
+  width: 14px;
+  height: 14px;
+}
+
+.chat-progress-card__dismiss {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-6);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.chat-progress-card__dismiss:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.chat-progress-card__dismiss:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.chat-progress-card__dismiss svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* 展开体：高度受限，避免长计划把消息流挤没（同审批面板 max-height 策略） */
+.chat-progress-card__error {
+  margin: 0;
+  padding: 0 var(--spacer-12) var(--spacer-8);
+  color: var(--text-muted);
+  font-family: var(--font-meta);
+  font-size: var(--font-size-meta);
+}
+.chat-progress-card__body {
+  max-height: 40vh;
+  overflow-y: auto;
+  padding: 0 var(--spacer-10) var(--spacer-10);
+}
+
+.chat-progress-card__markdown {
+  font-size: var(--text-sm);
+  color: var(--text);
+  line-height: 1.5;
+  margin-bottom: var(--spacer-8);
+  word-break: break-word;
+}
+
+.chat-progress-card__markdown > :first-child {
+  margin-top: 0;
+}
+
+.chat-progress-card__markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.chat-progress-card__steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacer-4);
+}
+
+.chat-progress-card__step {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacer-8);
+  font-size: var(--text-sm);
+  line-height: 1.45;
+  color: var(--text);
+}
+
+.chat-progress-card__step-icon {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+}
+
+.chat-progress-card__step-icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+.chat-progress-card__step-icon--completed {
+  color: var(--ok);
+}
+
+.chat-progress-card__step--completed .chat-progress-card__step-text {
+  color: var(--text-muted);
+  text-decoration: line-through;
+  text-decoration-color: var(--border-strong);
+}
+
+.chat-progress-card__step-icon--active {
+  color: var(--accent);
+}
+
+.chat-progress-card__step--in_progress .chat-progress-card__step-text {
+  font-weight: var(--weight-semibold);
+}
+
+.chat-progress-card__step-text {
+  min-width: 0;
+  word-break: break-word;
+}
+
+.chat-progress-card__step-paused {
+  color: var(--text-muted);
+  font-size: var(--font-size-meta);
+  font-weight: normal;
+  flex-shrink: 0;
+  align-self: center;
+}
+
+/* in_progress 步骤 spinner（复用 tool-card spinner 的 token 形态） */
+.chat-progress-card__spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--border-strong);
+  border-top-color: var(--accent);
+  border-radius: var(--radius-full);
+  animation: chat-progress-card-spin .8s linear infinite;
+}
+
+@keyframes chat-progress-card-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes chat-progress-card-pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: .35;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-progress-card,
+  .chat-progress-card__spinner,
+  .chat-progress-card__dot--active {
+    animation: none;
+  }
+}
+
+/* 窄窗：头部允许折行，当前步骤摘要让位（胶囊内省略号已够） */
+@media (max-width: 768px) {
+  .chat-progress-card__header {
+    padding: var(--spacer-6) var(--spacer-8);
+  }
+
+  .chat-progress-card__error {
+  margin: 0;
+  padding: 0 var(--spacer-12) var(--spacer-8);
+  color: var(--text-muted);
+  font-family: var(--font-meta);
+  font-size: var(--font-size-meta);
+}
+.chat-progress-card__body {
+    max-height: 32vh;
+    padding: 0 var(--spacer-8) var(--spacer-8);
   }
 }

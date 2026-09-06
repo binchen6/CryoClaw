@@ -250,3 +250,194 @@
 .global-toast__action:hover {
   background: var(--accent-subtle);
 }
+
+/* ==========================================================================
+   R52 T4 工具调用结果展现升级
+   - 工具卡 header 右侧元信息区（diff 徽标 / 退出码徽标 / 复制输出按钮）；
+     工具卡本体样式在 chat.css，本区仅追加新增元件（并行改动规避）。
+   - sidebar 代码增强：chat-code-copy / chat-code-lang 原作用域是 .chat-text
+     （chat.css），这里为 .sidebar-markdown 补齐同款定位与悬停显现。
+   全部走设计 token（--ok/--danger/--bg-elevated/--hairline 等），无硬编码 hex。
+   ========================================================================== */
+
+/* 工具卡 header 右侧元信息容器：与标题两端分布（header 本身是 space-between） */
+.chat-tool-card__meta {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacer-8);
+  flex-shrink: 0;
+}
+
+/* diff 徽标：+added 绿（--ok）/ −removed 红（--danger），mono 小号 */
+.chat-tool-card__diff {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacer-6);
+  font-family: var(--font-meta);
+  font-size: var(--font-size-meta);
+  line-height: 1;
+  user-select: none;
+}
+
+.chat-tool-card__diff-added {
+  color: var(--ok);
+}
+
+.chat-tool-card__diff-removed {
+  color: var(--danger);
+}
+
+/* exec 退出码徽标：0=subtle 弱显示，非 0=danger 语义色 */
+.chat-tool-card__exit {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--spacer-2) var(--spacer-8);
+  font-family: var(--font-meta);
+  font-size: var(--font-size-meta);
+  line-height: 1.4;
+  border-radius: var(--radius-6);
+  border: var(--hairline);
+  background: var(--bg-muted);
+  color: var(--text-muted);
+  user-select: none;
+}
+
+.chat-tool-card__exit--failed {
+  border-color: color-mix(in srgb, var(--danger) 35%, transparent);
+  background: var(--danger-subtle);
+  color: var(--danger);
+}
+
+/* 工具卡「复制输出」图标按钮：默认弱显示，卡片悬停/聚焦显现；
+   复制成功/失败经 dataset 态切换图标（copy→check）与语义色 */
+.chat-tool-card__copy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: var(--hairline);
+  border-radius: var(--radius-6);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out),
+    background var(--duration-fast) var(--ease-out);
+}
+
+.chat-tool-card:hover .chat-tool-card__copy,
+.chat-tool-card__copy:focus-visible,
+.chat-tool-card__copy[data-copied="1"],
+.chat-tool-card__copy[data-error="1"] {
+  opacity: 1;
+}
+
+.chat-tool-card__copy:hover {
+  color: var(--text);
+  background: var(--bg-muted);
+}
+
+.chat-tool-card__copy[data-copied="1"] {
+  color: var(--ok);
+}
+
+.chat-tool-card__copy[data-error="1"] {
+  color: var(--danger);
+}
+
+.chat-tool-card__copy-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.chat-tool-card__copy-icon svg {
+  width: 12px;
+  height: 12px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 2px;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* 图标态切换：默认显示 copy，copied 态显示 check */
+.chat-tool-card__copy-icon--done {
+  display: none;
+}
+
+.chat-tool-card__copy[data-copied="1"] .chat-tool-card__copy-icon--idle {
+  display: none;
+}
+
+.chat-tool-card__copy[data-copied="1"] .chat-tool-card__copy-icon--done {
+  display: inline-flex;
+}
+
+/* ── sidebar 代码增强（与 .chat-text 同款，作用域 .sidebar-markdown） ── */
+
+.sidebar-markdown pre {
+  position: relative;
+}
+
+.sidebar-markdown .chat-code-copy {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: var(--hairline);
+  border-radius: var(--radius-8);
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
+}
+
+.sidebar-markdown pre:hover .chat-code-copy,
+.sidebar-markdown .chat-code-copy:focus-visible,
+.sidebar-markdown .chat-code-copy[data-copied="1"],
+.sidebar-markdown .chat-code-copy[data-error="1"] {
+  opacity: 1;
+}
+
+.sidebar-markdown .chat-code-copy:hover {
+  color: var(--text);
+}
+
+.sidebar-markdown .chat-code-copy[data-copied="1"] {
+  color: var(--ok);
+}
+
+.sidebar-markdown .chat-code-copy[data-error="1"] {
+  color: var(--danger);
+}
+
+/* 语言标签：左上角 mono 弱显示，有标签时顶部留白防遮挡 */
+.sidebar-markdown .chat-code-lang {
+  position: absolute;
+  top: 5px;
+  left: 12px;
+  font-family: var(--font-meta);
+  font-size: var(--text-2xs);
+  line-height: 1;
+  letter-spacing: var(--tracking-wide);
+  text-transform: lowercase;
+  color: var(--text-muted);
+  opacity: 0.8;
+  user-select: none;
+  pointer-events: none;
+}
+
+.sidebar-markdown pre:has(.chat-code-lang) {
+  padding-top: 22px;
+}

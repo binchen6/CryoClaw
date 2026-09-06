@@ -52,5 +52,10 @@ export type ToolCard = {
   error?: string;
   // 流式进行中的 call（有 call 无 result，app-tool-stream 在 callMessage 上标 pending）
   pending?: boolean;
+  // R52 T4：diff 行数统计（运行中=input_delta 实时值，终态=details.diff 解析的最终值）
+  diffStat?: { added: number; removed: number };
+  // R52 T4：内核 result 阶段的错误摘要（≤400 字符）与 exec 退出码
+  errorSummary?: string;
+  exitCode?: number;
   [key: string]: unknown;
 };
