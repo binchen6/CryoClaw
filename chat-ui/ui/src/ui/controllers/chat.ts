@@ -7,6 +7,7 @@ import { generateUUID } from "../uuid.ts";
 import { readFileBase64 } from "../data/ipc-bridge.ts";
 import { t } from "../i18n.ts";
 import { showToastGlobal } from "../app-toast.ts";
+import { reduceChatStreamDelta } from "./chat-stream-reducer.ts";
 
 // delivery-mirror 是 gateway 将外发消息镜像写回 transcript 的副本。
 // 当 agent 已在 transcript 中写过同文本的 assistant 消息时，mirror 条目是冗余的，
@@ -65,8 +66,8 @@ export type ChatEventPayload = {
   state: "delta" | "final" | "aborted" | "error";
   message?: unknown;
   errorMessage?: string;
-  // openclaw 协议 v4（≥2026.5.12）新增字段：explicit deltaText/replace 流式帧与终态元信息。
-  // 当前渲染仍走 message 累计全量文本，这些字段仅为类型完整性声明。
+  // OpenClaw protocol v4 fields. deltaText is preferred when present; message
+  // remains the compatibility snapshot for older gateways.
   deltaText?: string;
   replace?: boolean;
   stopReason?: string;
@@ -119,13 +120,29 @@ function scheduleChatStreamFlush(state: ChatState) {
   });
 }
 
-// run 结束时要连同挂起的 stream 帧一起清理，避免旧文本回写脏状态。
-// 导出供 app-gateway onHello 断连清态复用（统一清理入口，防双份逻辑漂移）。
-export function resetChatStreamState(state: ChatState) {
+// The pending RAF value is part of the visible stream and must be committed
+// before a terminal/reset path clears the run. This closes the last-frame loss
+// window when final/error/aborted arrives in the same frame as a delta.
+export function flushPendingChatStream(state: ChatState): string {
   if (state.chatStreamFrame !== null) {
     cancelAnimationFrame(state.chatStreamFrame);
     state.chatStreamFrame = null;
   }
+  if (state.chatPendingStreamText !== null) {
+    state.chatStream = state.chatPendingStreamText;
+    state.chatPendingStreamText = null;
+  }
+  return state.chatStream ?? "";
+}
+
+export function getActiveChatStreamText(state: ChatState): string {
+  return state.chatPendingStreamText ?? state.chatStream ?? "";
+}
+
+// run 结束时要连同挂起的 stream 帧一起清理，避免旧文本回写脏状态。
+// 导出供 app-gateway onHello 断连清态复用（统一清理入口，防双份逻辑漂移）。
+export function resetChatStreamState(state: ChatState) {
+  flushPendingChatStream(state);
   state.chatPendingStreamText = null;
   state.chatStream = null;
   state.chatRunId = null;
@@ -532,7 +549,7 @@ export function handleChatEvent(state: ChatState, payload?: ChatEventPayload) {
     // R30 重连续跑恢复：断连重连后 onHello 清空了本地 run 态，但内核侧 run 可能
     // 仍在跑。断连前快照为 orphan 的 runId，其 delta（全量累计文本，天然可续）
     // 重新收养为当前 run——流式续显、Stop 恢复可用；非 orphan 的一律按僵尸丢弃。
-    if (payload.state === "delta" && payload.runId === liveOrphanRunId()) {
+    if (payload.state === "delta" && payload.runId === liveOrphanRunId(state.sessionKey)) {
       state.chatRunId = payload.runId;
       state.chatStreamStartedAt = Date.now();
       state.chatLastActivityAt = Date.now();
@@ -541,13 +558,13 @@ export function handleChatEvent(state: ChatState, payload?: ChatEventPayload) {
       debugLog("lifecycle", "orphan run adopted after reconnect", { runId: payload.runId });
       // 收养即恢复链路接管：清 orphan 快照，重连探测（scheduleReconnectOrphanProbe）
       // 的 liveOrphanRunId() 检查随之停摆，不再发冗余静默历史拉取
-      clearReconnectOrphanRun(payload.runId);
+      clearReconnectOrphanRun(payload.runId, state.sessionKey);
       // 收养后继续走下方 delta 处理
     } else if (payload.state === "delta" || payload.state === "error") {
       return null;
     } else {
       // 终态透传；若是 orphan 的终态，快照随之失效
-      clearReconnectOrphanRun(payload.runId);
+      clearReconnectOrphanRun(payload.runId, state.sessionKey);
       return payload.state;
     }
   }
@@ -562,58 +579,49 @@ export function handleChatEvent(state: ChatState, payload?: ChatEventPayload) {
   }
 
   if (payload.state === "delta") {
-    // gateway 把整轮的 assistant 文本累积进同一个 text block，每帧 delta 给的是"截至现在的全部文本"。
-    // 工具调用走另一条 agent 流，content 里没有 tool_use；所以需要靠 frozenPrefix 把已被
-    // app-tool-stream 冻成 leadingSegment 的前缀切掉，剩下的才是当前正在打字的"新段"。
-    const fullText = extractText(payload.message);
-    if (typeof fullText === "string") {
-      const prefix = state.chatStreamFrozenPrefix;
-      let next = fullText;
-      if (prefix && fullText.startsWith(prefix)) {
-        next = fullText.slice(prefix.length);
-      } else if (prefix) {
-        // gateway 极少会"改写"已经吐出的文本，但若发生（例如 thinking-tag 重写），保守降级为原文，
-        // 让用户至少看得到，渲染重复也比文本丢失好。
-        next = fullText;
-        debugLog("stream", "delta full-text 不再以 frozenPrefix 开头，降级直显", {
-          fullLen: fullText.length,
-          prefixLen: prefix.length,
-        });
-      }
-      const current = state.chatPendingStreamText ?? state.chatStream ?? "";
-      if (!current || next.length >= current.length) {
-        state.chatPendingStreamText = next;
-        state.chatLastActivityAt = Date.now();
-        scheduleChatStreamFlush(state);
-        debugLog("stream", "delta accept", {
-          fullLen: fullText.length,
-          prefixLen: prefix.length,
-          nextLen: next.length,
-        });
-      } else {
-        debugLog("stream", "delta drop (out-of-order)", {
-          fullLen: fullText.length,
-          nextLen: next.length,
-          currentLen: current.length,
-        });
-      }
+    const current = state.chatPendingStreamText ?? state.chatStream ?? "";
+    const reduced = reduceChatStreamDelta({
+      currentText: current,
+      deltaText: payload.deltaText,
+      replace: payload.replace,
+      message: payload.message,
+      frozenPrefix: state.chatStreamFrozenPrefix,
+    });
+    if (reduced?.accepted) {
+      state.chatPendingStreamText = reduced.text;
+      state.chatLastActivityAt = Date.now();
+      scheduleChatStreamFlush(state);
+      debugLog("stream", "delta accept", {
+        source: reduced.source,
+        replaced: reduced.replaced,
+        currentLen: current.length,
+        nextLen: reduced.text.length,
+      });
+    } else if (reduced) {
+      debugLog("stream", "delta drop (out-of-order snapshot)", {
+        currentLen: current.length,
+        nextLen: reduced.text.length,
+      });
     }
   } else if (payload.state === "final") {
     debugLog("lifecycle", "chat:final → reset stream state", { runId: payload.runId });
-    clearReconnectOrphanRun(payload.runId);
+    clearReconnectOrphanRun(payload.runId, state.sessionKey);
     resetChatStreamState(state);
   } else if (payload.state === "aborted") {
     debugLog("lifecycle", "chat:aborted → reset stream state", { runId: payload.runId });
-    clearReconnectOrphanRun(payload.runId);
+    clearReconnectOrphanRun(payload.runId, state.sessionKey);
     resetChatStreamState(state);
   } else if (payload.state === "error") {
     debugLog("lifecycle", "chat:error → reset stream state", {
       runId: payload.runId,
       err: payload.errorMessage,
     });
-    clearReconnectOrphanRun(payload.runId);
+    clearReconnectOrphanRun(payload.runId, state.sessionKey);
+    const partialText = getActiveChatStreamText(state).trim();
     resetChatStreamState(state);
     const error = payload.errorMessage ?? "chat error";
+    // Preserve text already shown before the error card. A failed run may not
+    // persist its last delta, so dropping it here loses visible content.
     // R17：run 级失败也提供重发入口——从本地消息流恢复最后一条 user 消息文本
     const lastUser = [...state.chatMessages].reverse().find(
       (m) => (m as Record<string, unknown>).role === "user",
@@ -622,16 +630,23 @@ export function handleChatEvent(state: ChatState, payload?: ChatEventPayload) {
     // 不写 lastError：仅在消息流内注入 cryoclawError 卡片，避免与顶部 callout 双显示。
     // 同步在消息流内注入合成错误消息（cryoclawError → grouped-render 着色卡片），
     // 与 sendChatMessage 失败路径同一形态，对齐 control-ui 的行内错误卡片。
-    state.chatMessages = [
-      ...state.chatMessages,
-      {
+    const terminalMessages: unknown[] = [];
+    if (partialText) {
+      terminalMessages.push({
         role: "assistant",
-        content: [{ type: "text", text: "Error: " + error }],
+        content: [{ type: "text", text: partialText }],
         timestamp: Date.now(),
-        cryoclawError: true,
-        ...(resendText ? { resendText } : {}),
-      },
-    ];
+        cryoclawPartial: true,
+      });
+    }
+    terminalMessages.push({
+      role: "assistant",
+      content: [{ type: "text", text: "Error: " + error }],
+      timestamp: Date.now(),
+      cryoclawError: true,
+      ...(resendText ? { resendText } : {}),
+    });
+    state.chatMessages = [...state.chatMessages, ...terminalMessages];
     state.chatVisibleMessageCount = state.chatMessages.length;
   }
   return payload.state;

@@ -112,7 +112,7 @@ test("app-gateway.ts：探测回调先检查 liveOrphanRunId，为空不拉历�
   // 探测必须静默跳过，不得再发起无谓的历史拉取。
   assert.match(
     s,
-    /if \(!liveOrphanRunId\(\)\) \{[\s\S]*?return;[\s\S]*?\}[\s\S]*?void loadChatHistory\(host as unknown as OpenClawApp, \{ mergeIfStale: true, silent: true \}\);/,
+    /if \(!liveOrphanRunId\(host.sessionKey\)\) \{[\s\S]*?return;[\s\S]*?\}[\s\S]*?void loadChatHistory\(host as unknown as OpenClawApp, \{ mergeIfStale: true, silent: true \}\);/,
     "探测回调应先查 liveOrphanRunId()，为空直接 return；非空才走 loadChatHistory(..., { mergeIfStale: true, silent: true })",
   );
 });
@@ -151,7 +151,7 @@ test("app-gateway.ts：onGap 分支不得调度 scheduleReconnectOrphanProbe（�
 test("controllers/chat.ts：orphan 收养分支调用 clearReconnectOrphanRun（收养即停探测）", () => {
   const s = src("controllers/chat.ts");
   const start = s.indexOf(
-    'if (payload.state === "delta" && payload.runId === liveOrphanRunId())',
+    'if (payload.state === "delta" && payload.runId === liveOrphanRunId(state.sessionKey))',
   );
   assert.notEqual(start, -1, "chat.ts 缺少 orphan 收养分支");
   const end = s.indexOf("} else if", start);
@@ -166,7 +166,7 @@ test("controllers/chat.ts：orphan 收养分支调用 clearReconnectOrphanRun（
   // 命中 liveOrphanRunId() 发起冗余静默历史拉取。
   assert.match(
     adoptBranch,
-    /clearReconnectOrphanRun\(payload\.runId\);/,
+    /clearReconnectOrphanRun\(payload\.runId, state\.sessionKey\);/,
     "收养分支应调用 clearReconnectOrphanRun(payload.runId)，收养即停重连探测",
   );
 });

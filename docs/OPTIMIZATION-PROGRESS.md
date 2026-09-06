@@ -10,10 +10,10 @@
 面向国内生态（Kimi / Moonshot / 飞书 / 企微 / 微信 / 钉钉 / QQ）。
 
 **当前状态**：
-- 重设计工程 **R1–R51 完成**（R51 落地 UI 精修建议 + 官网响应式平板/手机独立排版 + stats 口径修正 326 RPC；R50 确立 CryoBlue 蓝青混色设计规范 + CryoIcons 自绘图标 + 官网重设计；R49 移除 kimi-auth-proxy 回环鉴权），最新发版 **v2026.908.0**。流式体验两期设计均落地（`docs/archive/specs/2026-08-28-stream-flow-and-sidebar-design.md`）。
+- 重设计工程 **R1–R53 完成**（R53 流式 reducer 化（deltaText/replace 消费 + 终态 flush + orphan 会话隔离）+ 布局诊断体系（layout-diagnostics + CDP 冒烟脚本）；R52 openclaw 2026.8.2 Progress Card 深度适配；R51 UI 精修 + 官网响应式），最新发版 **v2026.909.2**。流式体验两期设计均落地（`docs/archive/specs/2026-08-28-stream-flow-and-sidebar-design.md`）。
 - 内核 openclaw **2026.8.2**（版本 pin 在 package.json `cryoclaw.openclaw`；更新目标走 `kernel-channel.json` 策展渠道，minSupported 2026.7.0）；**Electron 43.4.0**（audit 0 漏洞）。
-- 测试基线 **903 pass / 0 fail / 4 skipped**（vitest 146 + node 157 + chat-ui 521 + scripts 79；2026-09-05 实测，0 fail 为硬指标；R51 已闭环 asar 冒烟的环境污染问题——宿主 `OPENCLAW_CONFIG_PATH` 穿透隔离，测试已加固剔除）。
-- 重复率 **1.15%**（78 clones，阈值 5%，`npm run dupcheck` 防回退）；视图 id 收敛为 6（chat/setup/settings/workspace/tasks/extensions）。
+- 测试基线 **966 pass / 0 fail / 4 skipped**（vitest 146 + node 157 + chat-ui 584 + scripts 79；2026-09-06 实测，0 fail 为硬指标；asar 冒烟的环境污染与 ANSI 色码匹配问题均已闭环）。
+- 重复率 **1.03%**（80 clones，阈值 5%，`npm run dupcheck` 防回退）；视图 id 收敛为 6（chat/setup/settings/workspace/tasks/extensions）。
 - 开源：GitHub `binchen6/CryoClaw`（AGPL-3.0-only，干净历史）；发版走本地 `dist:win` + `gh release`；CI `tests.yml` 每次 push/PR 全量回归。
 
 **常用命令**：
@@ -417,6 +417,18 @@
 - **并发与失败韧性**：刷新脏标记改为每 host 隔离；dismiss 在补拉 revision 前就上锁，并以 session/token 防止旧请求污染新会话；用户只看到本地化、非敏感的同步失败提示。
 - **流式工具体验**：工具输入 delta 与终态结果展示增强，包括错误优先摘要、exit-code / diff ± 统计、复制输出、基于文件路径的 fenced-code 语言推导，以及对应中英文文案与样式。
 - **验证与交付**：2026-09-06 全量 `npm test` 通过（Vitest 146、chat UI 578、scripts 79 均无失败；平台跳过项按既有配置）；`npm run build` 通过，仅保留既有 `controllers/chat.ts` 动态导入提示；`npm run dupcheck` 为 80 clones / 715 duplicated lines / 1.04%（阈值 5%）；`git diff --check` 通过且 diff 去敏扫描未发现凭据。`node scripts/dist-win.js` 生成 x64 三件套，`latest.yml` 为 v2026.909.1、sha512 与 275,470,641-byte installer 一致；隔离 profile 下 `win-unpacked` 启动 18 秒正常并已停止。安装程序未签名（本机未配置 CSC_LINK/CSC_KEY_PASSWORD），发布说明保留该限制。
+
+### R53 · 流式输出收敛修复 + 布局诊断体系 + asar 冒烟既有缺陷闭环（完成，随 v2026.909.2 发版）
+
+用户计划（`~/Desktop/计划.md`）分阶段推进的第一、二阶段起步交付：流式不丢不重、UI 排版自动化诊断、每阶段固定审查/冒烟/发版流程。
+- **流式 reducer（阶段一核心）**：新增 `chat-stream-reducer.ts` 纯函数——正式消费协议 v4 `deltaText`/`replace`（append 或整段替换），旧版累计 `message` 快照保留为兼容回退（含 frozenPrefix 工具前缀剥离；非 replace 的回退快照出现倒退即拒绝，替代旧 `next.length >= current.length` 单一判据）。终态前 `flushPendingChatStream` 强制提交挂起的 RAF 文本（final/error/aborted 与 delta 同帧到达时不再丢尾）；error 终态保留已显示的部分回答（`cryoclawPartial` 合成消息 + 行内错误卡），不再只留一张 Error 卡。
+- **orphan 会话隔离**：`stream-recovery.ts` 的重连 orphan 快照从全局单值改为 `sessionKey → {runId, markedAt}` Map——快速切会话后，会话 A 的迟到帧不会被会话 B 收养（新增回归测试）。app-gateway 重连/gap 路径全部传 `host.sessionKey`。
+- **布局诊断（阶段二基建）**：新增 `layout-diagnostics.ts`（viewport 溢出 / 横向溢出 / 可交互元素遮挡三类结构化检查，纯函数 `diagnoseLayoutRect` / `diagnoseHorizontalOverflow` 可单测）+ `main.ts` 安装 `window.__ocLayoutDiagnostics.run()`；报告仅含布局元数据（脱敏）。折叠面板规则：clientWidth < 120 的容器（窄屏被挤压的 pane）不上报横向溢出，页面级溢出由 viewport 检查兜底。
+- **CDP 冒烟脚本固化**：新增 `scripts/layout-cdp-smoke.js`——启动产物 → CDP 多断点（默认 1440/1024/834/800，800=WINDOW_MIN_WIDTH 下限，390px 产品不可达）→ 逐断点跑诊断 hook → 裸 i18n key 扫描（排除文件扩展名形态如 app.xml）→ renderer 异常计数；`--strict-layout` 时布局 issue 也置失败。win-unpacked 与静默安装版均 4 断点 0 issue / 0 异常 / 0 裸 key，console error 仅 CSP meta 警告与 gateway 启动期 WS 重试（良性）。
+- **asar 冒烟既有缺陷闭环**：gateway 实测 ~14s ready 但测试超时——根因是 `OPENCLAW_DEBUG=1` 下内核对管道输出也带 ANSI 色码，`includes("[gateway] ready")` 永不匹配；测试改为剥码匹配 + 外层超时 360s 对齐内部 3 轮 ×110s（外层先炸会吞掉带 stdout/stderr 尾部的诊断断言）。scripts 套件恢复 79/79。
+- **验证与交付**：全量 **966 pass / 0 fail / 4 skipped**（vitest 146 + node 157 + chat-ui 584（+typecheck）+ scripts 79；2026-09-06 实测）；dupcheck 1.03%（80 clones，阈值 5%）；产物断言全过（app.asar 顶层白名单 8 项、版本/发行说明 2026.909.2、installer 275,472,185 bytes 与 latest.yml sha512 一致）；静默安装 `/S` 后安装版 version=2026.909.2、gateway HTTP 200。diff 脱敏扫描未发现凭据/个人路径。
+- **新坑记录**：`asar ef <archive> <file>` 会把文件解到 **cwd**——曾静默覆盖仓库 package.json（git 恢复 + 改用临时目录 cwd 重做断言）；手动验证 gateway 必须显式 `OPENCLAW_STATE_DIR`（漏设会读写共享 Temp\openclaw 真实渠道状态，本机实测误连 weixin/feishu 渠道后立即 taskkill，未发消息）。
+- **遗留与下一步**：390px 手机宽度布局为理论值（窗口 minWidth 800 不可达），待未来响应式需求再评估；阶段一验收项「高频工具调用长流实测」与阶段三 CLI 全兼容、阶段四 2026.9.2 适配按计划顺序推进。
 ## 📦 发版与实测经验（套路已验证多次）
 
 

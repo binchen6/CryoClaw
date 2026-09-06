@@ -286,7 +286,7 @@ function scheduleReconnectOrphanProbe(host: GatewayHost) {
   ORPHAN_PROBE_DELAYS_MS.forEach((delay) => {
     const timer = setTimeout(() => {
       orphanProbeTimers = orphanProbeTimers.filter((x) => x !== timer);
-      if (!liveOrphanRunId()) {
+      if (!liveOrphanRunId(host.sessionKey)) {
         return; // orphan 已被收养/清除/过期——恢复链路已接管，无需再探测。
       }
       void loadChatHistory(host as unknown as OpenClawApp, { mergeIfStale: true, silent: true });
@@ -374,7 +374,7 @@ export function connectGateway(host: GatewayHost) {
       if (previousClient) {
         // R30：断连前的在途 run 快照为 orphan——内核侧 run 可能仍在跑，
         // 重连后同 runId 的 delta（全量累计文本）会被收养续显（见 handleChatEvent）
-        markReconnectOrphanRun(host.chatRunId);
+        markReconnectOrphanRun(host.chatRunId, host.sessionKey);
       }
       // 统一走 resetChatStreamState 清理入口（R30：替代字段直赋，防双份清理逻辑漂移）
       resetChatStreamState(host as unknown as Parameters<typeof resetChatStreamState>[0]);
@@ -453,7 +453,7 @@ export function connectGateway(host: GatewayHost) {
         // R30 软恢复：gap 耗尽不再只显示文案。丢的若是 final/aborted 帧，本地 run 态
         // 会永久挂起——socket 未断（事件仍在流、请求可用），清态 + 重拉历史对齐内核真实状态。
         // 清态前快照 orphan：run 内核侧仍在跑时后续 delta 可被收养续显（对齐重连路径）
-        markReconnectOrphanRun(host.chatRunId);
+        markReconnectOrphanRun(host.chatRunId, host.sessionKey);
         resetChatStreamState(host as unknown as Parameters<typeof resetChatStreamState>[0]);
         resetToolStream(host as unknown as Parameters<typeof resetToolStream>[0]);
         void loadChatHistory(host as unknown as OpenClawApp, { mergeIfStale: true });

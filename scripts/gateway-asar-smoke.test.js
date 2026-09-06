@@ -82,7 +82,8 @@ maybe("asar 冒烟：openclaw --version 在 asar 形态可执行", { timeout: 60
 
 maybe(
   "asar 冒烟：gateway run 起得来（doctor-contract 加载链不崩 paths[0]）",
-  { timeout: 150_000 },
+  // 外层必须 ≥ 内部 3 轮 × 110s：让正常断言（含 stdout/stderr 尾部诊断）先于外层超时触发
+  { timeout: 360_000 },
   async (t) => {
     const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), "cryoclaw-asar-smoke-"));
     t.after(() => cleanupDir(stateDir));
@@ -125,9 +126,12 @@ maybe(
         t.after(() => killTree(child));
         let stdout = "";
         let stderr = "";
+        // OPENCLAW_DEBUG=1 时内核对管道输出也带 ANSI 颜色码（ready 行实际是
+        // `[gateway]\x1b[39m \x1b[32mready`），必须剥码后再匹配裸文本。
+        const stripAnsi = (s) => s.replace(/\x1b\[[0-9;]*m/g, "");
         child.stdout.on("data", (c) => {
           stdout += c.toString("utf-8");
-          if (stdout.includes("[gateway] ready")) resolve({ kind: "ready", stdout, stderr });
+          if (stripAnsi(stdout).includes("[gateway] ready")) resolve({ kind: "ready", stdout, stderr });
         });
         child.stderr.on("data", (c) => (stderr += c.toString("utf-8")));
         const timer = setTimeout(() => {

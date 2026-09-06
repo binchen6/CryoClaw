@@ -1,5 +1,12 @@
 [
   {
+    "version": "2026.909.2",
+    "notes": {
+      "zh": "流式：正式消费内核协议 deltaText / replace 增量，旧版全文快照保留为兼容回退；终态前强制提交挂起的渲染文本，error 终态不再丢失已显示的部分回答\n恢复：断线 orphan run 快照改为按会话隔离，切换会话后外来 run 的帧不再被误收养\n诊断：新增布局诊断能力（横向溢出、视口溢出、可交互元素遮挡结构化报告），供 CDP 冒烟与后续排版回归使用\n工程：修复 asar 冒烟测试在内核彩色输出下 ready 匹配失败的既有缺陷，scripts 测试恢复全绿",
+      "en": "Streaming: natively consume the kernel protocol deltaText / replace frames while keeping full-text snapshots as a legacy fallback; pending rendered text is committed before terminal states, so partial answers are no longer lost on errors\nRecovery: reconnect orphan-run snapshots are now scoped per session, so frames from a foreign run can no longer be adopted after a session switch\nDiagnostics: added structured layout diagnostics (horizontal overflow, viewport overflow, interactive-element occlusion) exposed for CDP smoke tests and future layout regressions\nEngineering: fixed the asar smoke test to match the ready line under the kernel colorized output, restoring a fully green scripts suite"
+    }
+  },
+  {
     "version": "2026.909.1",
     "notes": {
       "zh": "内核适配：对齐 openclaw 2026.8.2 Progress Card 协议；新进度卡优先替代旧 update_plan 面板，同时为旧内核与历史会话保留回退显示\n对话：完善流式工具输入与终态结果卡片，错误摘要、退出码、diff 统计、复制输出和代码语言识别更清晰\n体验：Progress Card 支持步骤状态、当前进度、折叠记忆、会话切换与重连刷新；并加固并发刷新、清除乐观锁与失败提示\n工程：补齐 Progress Card 与工具结果展示回归测试，并移除本轮 CSS 注释和动态导入构建告警",

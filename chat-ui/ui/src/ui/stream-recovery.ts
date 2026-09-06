@@ -16,33 +16,73 @@
 
 // orphan 快照有效期：超过后不再收养（内核侧 run 大概率已终结/帧已永久丢失）
 const ORPHAN_RUN_TTL_MS = 120_000;
+const DEFAULT_ORPHAN_SESSION = "__default__";
 
-let orphanRunId: string | null = null;
-let orphanMarkedAt = 0;
+type OrphanRunSnapshot = {
+  runId: string;
+  markedAt: number;
+};
+
+// Keep orphan snapshots session-scoped. A single global run id could let a late
+// frame from session A be adopted by session B after a fast session switch.
+const orphanRuns = new Map<string, OrphanRunSnapshot>();
+
+function resolveOrphanArgs(
+  sessionKeyOrNow?: string | number,
+  now = Date.now(),
+): { sessionKey: string; now: number } {
+  if (typeof sessionKeyOrNow === "number") {
+    return { sessionKey: DEFAULT_ORPHAN_SESSION, now: sessionKeyOrNow };
+  }
+  return {
+    sessionKey: sessionKeyOrNow?.trim() || DEFAULT_ORPHAN_SESSION,
+    now,
+  };
+}
 
 /** 断连清态前快照在途 runId（仅重连路径调用） */
-export function markReconnectOrphanRun(runId: string | null | undefined, now = Date.now()) {
+export function markReconnectOrphanRun(
+  runId: string | null | undefined,
+  sessionKeyOrNow?: string | number,
+  now = Date.now(),
+) {
+  const args = resolveOrphanArgs(sessionKeyOrNow, now);
   const trimmed = runId?.trim();
-  orphanRunId = trimmed || null;
-  orphanMarkedAt = now;
+  if (!trimmed) {
+    orphanRuns.delete(args.sessionKey);
+    return;
+  }
+  orphanRuns.set(args.sessionKey, { runId: trimmed, markedAt: args.now });
 }
 
 /** 当前可收养的 orphan runId（过期自动清除） */
-export function liveOrphanRunId(now = Date.now()): string | null {
-  if (!orphanRunId) {
+export function liveOrphanRunId(sessionKeyOrNow?: string | number, now = Date.now()): string | null {
+  const args = resolveOrphanArgs(sessionKeyOrNow, now);
+  const snapshot = orphanRuns.get(args.sessionKey);
+  if (!snapshot) {
     return null;
   }
-  if (now - orphanMarkedAt > ORPHAN_RUN_TTL_MS) {
-    orphanRunId = null;
+  if (args.now - snapshot.markedAt > ORPHAN_RUN_TTL_MS) {
+    orphanRuns.delete(args.sessionKey);
     return null;
   }
-  return orphanRunId;
+  return snapshot.runId;
 }
 
 /** run 终结 / 用户发起新 run / 切换会话时清除 orphan 快照 */
-export function clearReconnectOrphanRun(runId?: string) {
-  if (runId === undefined || orphanRunId === runId) {
-    orphanRunId = null;
+export function clearReconnectOrphanRun(runId?: string, sessionKey?: string) {
+  if (sessionKey !== undefined) {
+    const key = sessionKey.trim() || DEFAULT_ORPHAN_SESSION;
+    const current = orphanRuns.get(key);
+    if (runId === undefined || current?.runId === runId) {
+      orphanRuns.delete(key);
+    }
+    return;
+  }
+  for (const [key, current] of orphanRuns) {
+    if (runId === undefined || current.runId === runId) {
+      orphanRuns.delete(key);
+    }
   }
 }
 

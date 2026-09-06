@@ -1,9 +1,13 @@
 import "./styles.css";
 import { t } from "./ui/i18n";
+import { installLayoutDiagnosticsHook } from "./ui/layout-diagnostics.ts";
 import "./ui/app.ts";
 
 // 渲染进程启动时同步页面标题，避免文档标题与原生窗口标题不一致。
 document.title = t("app.windowTitle");
+
+// Available to CDP smoke tests and local debugging; reports contain layout metadata only.
+installLayoutDiagnosticsHook();
 
 // 全局 fixed tooltip（不受 overflow 裁切，与 Settings 同一方案）
 (function initFixedTooltip() {

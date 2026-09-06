@@ -372,7 +372,7 @@ async function testSendFailureAfterSessionSwitchDoesNotTouchNewSession() {
 async function testOrphanDeltaAdoptedAfterReconnect() {
   const raf = new FakeRaf();
   installBrowserGlobals(raf);
-  markReconnectOrphanRun("run-orphan");
+  markReconnectOrphanRun("run-orphan", "session-1");
   const state = makeState({ chatRunId: null, chatStream: null });
 
   const result = handleChatEvent(state, {
@@ -393,7 +393,7 @@ async function testOrphanDeltaAdoptedAfterReconnect() {
 async function testNonOrphanDeltaStillDropped() {
   const raf = new FakeRaf();
   installBrowserGlobals(raf);
-  markReconnectOrphanRun("run-orphan");
+  markReconnectOrphanRun("run-orphan", "session-1");
   const state = makeState({ chatRunId: null, chatStream: null });
 
   const result = handleChatEvent(state, {
@@ -414,7 +414,7 @@ async function testNonOrphanDeltaStillDropped() {
 async function testOrphanExpiredNotAdopted() {
   const raf = new FakeRaf();
   installBrowserGlobals(raf);
-  markReconnectOrphanRun("run-orphan", Date.now() - 200_000);
+  markReconnectOrphanRun("run-orphan", "session-1", Date.now() - 200_000);
   const state = makeState({ chatRunId: null, chatStream: null });
 
   const result = handleChatEvent(state, {
@@ -433,7 +433,7 @@ async function testOrphanExpiredNotAdopted() {
 // R30：orphan 的终态帧透传（触发历史刷新）并清除快照。
 async function testOrphanFinalPassesAndClearsSnapshot() {
   installBrowserGlobals(new FakeRaf());
-  markReconnectOrphanRun("run-orphan");
+  markReconnectOrphanRun("run-orphan", "session-1");
   const state = makeState({ chatRunId: null });
 
   const result = handleChatEvent(state, {
@@ -962,11 +962,63 @@ async function testSilentProbeDoesNotToggleChatLoading() {
   assert.equal(state2.chatLoading, false, "非 silent 加载完成后应回 false");
 }
 
+async function testTerminalErrorPreservesVisiblePartialText() {
+  const raf = new FakeRaf();
+  installBrowserGlobals(raf);
+  const state = makeState();
+
+  handleChatEvent(state, {
+    runId: "run-1",
+    sessionKey: "session-1",
+    state: "delta",
+    deltaText: "partial answer",
+  });
+  // The error arrives before the scheduled RAF callback executes.
+  handleChatEvent(state, {
+    runId: "run-1",
+    sessionKey: "session-1",
+    state: "error",
+    errorMessage: "provider failed",
+  });
+
+  assert.equal(state.chatStream, null, "terminal should clear the live bubble");
+  assert.equal(state.chatPendingStreamText, null, "terminal should clear pending state");
+  assert.equal(state.chatMessages.length, 2, "partial text and error should both remain visible");
+  assert.equal(
+    (state.chatMessages[0] as any).content[0].text,
+    "partial answer",
+    "the pending delta must be committed before error reset",
+  );
+  assert.equal((state.chatMessages[1] as any).cryoclawError, true);
+}
+
+async function testOrphanRunsAreSessionScoped() {
+  const raf = new FakeRaf();
+  installBrowserGlobals(raf);
+  markReconnectOrphanRun("run-a", "session-a", 1000);
+  const state = makeState({ sessionKey: "session-b", chatRunId: null, chatStream: null });
+
+  const result = handleChatEvent(state, {
+    runId: "run-a",
+    sessionKey: "session-b",
+    state: "delta",
+    deltaText: "must not be adopted",
+  });
+  raf.runAll();
+
+  assert.equal(result, null, "an orphan from another session must be ignored");
+  assert.equal(state.chatRunId, null);
+  assert.equal(state.chatStream, null);
+  clearReconnectOrphanRun();
+}
+
 async function main() {
   await testChatStreamIsRafThrottled();
   await testLoadChatHistoryBatchesInitialRender();
   await testDeltaAfterToolUseShowsOnlyTrailingText();
   await testRunErrorInjectsInlineErrorMessage();
+  await testTerminalErrorPreservesVisiblePartialText();
+  await testOrphanRunsAreSessionScoped();
   await testForeignDeltaDroppedWhenNoActiveRun();
   await testForeignErrorDoesNotInjectCardWhenNoActiveRun();
   await testForeignFinalPassesThroughWhenNoActiveRun();
