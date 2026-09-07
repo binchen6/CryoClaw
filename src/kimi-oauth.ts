@@ -213,6 +213,14 @@ export async function refreshOAuthToken(token: OAuthToken): Promise<OAuthToken> 
     throw new Error("Refresh token 已失效，请重新登录");
   }
 
+  // invalid_grant 走 400（非 401/403）：refresh token 已被服务端作废。
+  // 此前不清理 token 文件，getOAuthStatus 恒报 loggedIn，UI 一直显示
+  // 「登录成功」而用量接口 401 静默失败（R58a 修复）。
+  if (status === 400 && (data as { error?: string })?.error === "invalid_grant") {
+    deleteOAuthToken();
+    throw new Error("登录已过期，请重新登录");
+  }
+
   if (status < 200 || status >= 300) {
     throw new Error(`Token 刷新失败 (${status})`);
   }

@@ -601,7 +601,7 @@ export const zhDict: Record<string, string> = {
   "settings.provider.usage.minuteUsage": "{n} 分钟用量",
   // R58：在线模型同步（提供商 /models 端点）
   "settings.provider.syncModels": "从提供商获取模型列表",
-  "settings.provider.syncLoading": "正在从提供商获取模型列表…",
+  "settings.provider.syncModelsShort": "同步模型",  "settings.provider.syncLoading": "正在从提供商获取模型列表…",
   "settings.provider.syncFailed": "获取模型列表失败",
   "settings.provider.syncRetry": "重试",
   "settings.provider.syncEmpty": "提供商未返回任何模型（接口可能不支持模型列表）",
@@ -615,7 +615,9 @@ export const zhDict: Record<string, string> = {
   "settings.provider.modelsEmptyHint": "暂无目录模型，可点击右侧按钮从提供商获取，或手动输入模型 ID",
   // R58：用量/余额查询（moonshot/deepseek/zai 等）
   "settings.provider.usage.query": "查询用量 / 余额",
-  "settings.provider.usage.unsupported": "该提供商暂不支持用量查询",
+  "settings.provider.usage.queryShort": "查用量",
+  "settings.provider.usage.retry": "重试",
+  "settings.provider.usage.kimiUnavailable": "会员用量暂未获取（网络或登录状态问题）",  "settings.provider.usage.unsupported": "该提供商暂不支持用量查询",
   "settings.provider.usage.failed": "用量查询失败",
   "settings.provider.usage.balance": "余额",
   "settings.provider.usage.totalBalance": "总额",

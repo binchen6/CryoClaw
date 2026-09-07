@@ -1062,7 +1062,14 @@ async function loadUsage(state: AppViewState) {
   state.requestUpdate();
   try {
     const result = await ipc.kimiGetUsage();
-    if (result?.data) s.usageData = result.data;
+    if (result?.data) {
+      s.usageData = result.data;
+    } else if ((result as any)?.authExpired) {
+      // OAuth 会话已过期（refresh token 失效，token 文件已被主进程清理）：
+      // 清 loggedIn 让 UI 回到「登录」态引导重新登录，而不是假的「登录成功」
+      s.oauthLoggedIn = false;
+      s.usageData = null;
+    }
   } catch {
     // 刷新失败保留既有数据
   } finally {
@@ -1310,8 +1317,17 @@ export function renderTabProvider(state: AppViewState) {
 function renderOrgManager(state: AppViewState) {
   const modelCountOf = (groupId: string) =>
     Object.values(s.org.assignments).filter(g => g === groupId).length;
+  // 折叠收纳（R58a）：管理区默认收起，只留一行标题 + 分组数徽标，
+  // 避免把模型列表推到首屏之外；拖拽指派仍从各模型卡片入口操作。
   return html`
-    <div class="oc-provider-org">
+    <details class="oc-provider-org">
+      <summary class="oc-provider-org__summary">
+        <svg class="oc-provider-group__chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+        <span>${t("settings.provider.customGroups.title")}</span>
+        ${s.org.groups.length > 0 ? html`<span class="cc-tag">${s.org.groups.length}</span>` : nothing}
+        <span class="oc-provider-org__summary-hint">${t("settings.provider.customGroups.desc")}</span>
+      </summary>
+      <div class="oc-provider-org__body">
       <div class="oc-provider-org__header">
         <h3 class="oc-settings__section-subtitle">${t("settings.provider.customGroups.title")}</h3>
         <p class="oc-settings__hint">${t("settings.provider.customGroups.desc")}</p>
@@ -1367,7 +1383,8 @@ function renderOrgManager(state: AppViewState) {
           })}
         </div>
       `}
-    </div>
+      </div>
+    </details>
   `;
 }
 
@@ -1509,25 +1526,27 @@ function renderProvider(prov: GroupedProvider, group: ProviderGroup, state: AppV
           </span>
           <span class="oc-provider-block__actions">
             ${canSyncModels ? html`
-              <button class="oc-provider-list-item__action-btn ${s.syncOpenFor === prov.providerKey ? "is-active" : ""}"
-                data-tooltip=${t("settings.provider.syncModels")}
+              <button class="oc-provider-block__pill-btn ${s.syncOpenFor === prov.providerKey ? "is-active" : ""}"
                 ?disabled=${s.syncFetching.has(prov.providerKey)}
                 @click=${() => toggleSyncPanel(prov, state)}>
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   ${s.syncFetching.has(prov.providerKey)
                     ? html`<path d="M21 12a9 9 0 1 1-6.2-8.56"/>`
                     : html`<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>`}
                 </svg>
+                ${t("settings.provider.syncModelsShort")}
               </button>
             ` : nothing}
             ${supportsUsage ? html`
-              <button class="oc-provider-list-item__action-btn"
-                data-tooltip=${t("settings.provider.usage.query")}
+              <button class="oc-provider-block__pill-btn"
                 ?disabled=${s.usageLoadingFor === prov.providerKey}
                 @click=${() => handleFetchUsage(prov, state)}>
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/><path d="M3 21v-5h5"/>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  ${s.usageLoadingFor === prov.providerKey
+                    ? html`<path d="M21 12a9 9 0 1 1-6.2-8.56"/>`
+                    : html`<path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/><path d="M3 21v-5h5"/>`}
                 </svg>
+                ${t("settings.provider.usage.queryShort")}
               </button>
             ` : nothing}
             <button class="oc-provider-list-item__action-btn" data-tooltip=${t("settings.provider.addModelToGroup")}
@@ -1811,6 +1830,13 @@ function renderKimiCodingExtras(prov: GroupedProvider, state: AppViewState) {
         </div>
       `}
       ${s.oauthLoggedIn ? renderUsagePanel(state) : nothing}
+      ${s.oauthLoggedIn && !s.usageData && !s.usageLoading ? html`
+        <div class="oc-provider-kimi-oauth-row">
+          <span class="oc-provider-sync-hint">${t("settings.provider.usage.kimiUnavailable")}</span>
+          <button class="oc-settings__btn oc-settings__btn--secondary" ?disabled=${s.usageLoading}
+            @click=${() => loadUsage(state)}>${t("settings.provider.usage.retry")}</button>
+        </div>
+      ` : nothing}
     </div>
   `;
 }

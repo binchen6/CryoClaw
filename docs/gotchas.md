@@ -320,3 +320,4 @@ Things that are easy to get wrong or forget when working on CryoClaw.
 84. **Windows 下内核会回写吃掉 openclaw.json 里 agents.defaults.workspace 的反斜杠。** dev-isolated 写入 C:Users... 后内核某次持久化把 U、D 等未知转义吞成 'C:UsersbinchenDesktop...'，workspace root 解析与 set-root 全链路报废。规避：workspace 用正斜杠写（Windows API 全兼容）；生产配置默认不设该键（用内核默认 ~/.openclaw/workspace），不受影响。
 85. **CDP WebSocket 连接赋值 onopen 前可能已 open（经典竞态）。** new WebSocket(url) 立即开始连接，慢一步赋 onopen 永不触发。守卫：先查 readyState === OPEN，或 setTimeout 兜底 resolve。
 86. **git pathspec magic 可绕过相对路径校验。** sanitizeGitRelPaths 只拒绝对对路径/.. 时，' : (glob)** ' 这类 pathspec 能让 clean -f / restore --worktree 指向全仓库（实测 git clean 会删光全部未跟踪文件）。凡 destructive 的 git 子命令，路径参数必须连 ':' 一起拒绝。**（R58 已修）**
+87. **Kimi OAuth 的 refresh token 作废走 400 invalid_grant（不是 401/403）。** 按 401/403 清 token 的分支永远不命中，本地 token 永不过期清理，UI 恒显「登录成功」但用量接口 401 静默失败。凡 OAuth 刷新错误处理必须同时匹配 body 里的 error=invalid_grant（HTTP 400）。**（R58a 已修）**

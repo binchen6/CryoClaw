@@ -522,3 +522,11 @@
 - **独立审查**：7 项发现（P2×2 + P3×5）全部修复；pathspec magic、kimi 陈旧 proxy 端口、同步错误跨 provider 串显、worktree 分支列表无序号守卫、untracked 行按钮文案错置既有键、unmerged 行丢弃必败、同步可复活并发删除的 provider 裸块。
 - **验证**：全量测试 0 fail（178 node + 596 chat + 158 vitest + 77 scripts）+ dev 实例 CDP 功能冒烟 17 项断言 PASS（含 DeepSeek 官方余额接口实时返回、在线模型同步、git/worktree/任务全视图、0 裸 i18n key、0 renderer 异常）。
 
+
+### R58a · 用户反馈修复批次：用量入口可发现性 + Kimi 过期会话自愈 + Progress Card 对齐（完成，随 v2026.909.9 发版）
+
+- **用量/同步入口**：provider 块头的 13px 纯图标按钮（同步/查用量）几乎不可发现（用户三家提供商都没找到）→ 改为带文字胶囊按钮（`oc-provider-block__pill-btn`：同步模型 / 查用量），装机实拍验证。
+- **Kimi 额度消失根因**：OAuth refresh token 被服务端作废时 auth.kimi.com 返回 400 invalid_grant（非 401/403），旧 `refreshOAuthToken` 不清理本地 token → getOAuthStatus 恒 loggedIn → UI 永显「登录成功」而用量接口 401 静默失败。修复：invalid_grant 同样 deleteOAuthToken（启动自动刷新链路即自愈）；`kimi:get-usage` 返回 authExpired 标记，渲染层清 loggedIn 引导重新登录；登录有效但拉取失败时显示可重试提示行（不再静默）。
+- **Progress Card 对齐**（用户反馈的三项）：宽度收窄 `max-width: var(--chat-column)` 居中——与输入卡像素级对齐（实测 x/w 完全一致，此前撑满整行）；输入框下移 + 底部间距收紧（card padding-bottom 20→8 + compose 10→6，合计 30→14px）。
+- **模型设置排版**：自定义分组管理区改 `<details>` 折叠（一行标题 + 分组数徽标），模型列表回到首屏。
+- **验证**：全量测试 0 fail；安装 909.9 实拍 DOM 断言（三家 provider pill 按钮齐、org 折叠、0 裸 key）+ 进度卡/输入卡几何对齐断言 + 布局冒烟 22 场景 PASS。

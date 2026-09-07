@@ -139,8 +139,12 @@ export function registerVerifyIpc(): void {
               headers: { Authorization: `Bearer ${apiKey}` },
               signal: AbortSignal.timeout(15000),
             });
-          } catch {
-            // 刷新失败，返回原始 401
+          } catch (refreshErr) {
+            // 刷新失败（invalid_grant 已删 token）：标记登录过期，UI 引导重新登录
+            if (!loadOAuthToken()) {
+              return { success: false, authExpired: true, message: refreshErr instanceof Error ? refreshErr.message : String(refreshErr) };
+            }
+            // token 仍在（网络抖动等）：返回原始 401
           }
         }
       }

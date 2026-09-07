@@ -564,7 +564,7 @@ export const enDict: Record<string, string> = {
   "settings.provider.usage.minuteUsage": "{n}m usage",
   // R58: live model sync (provider /models endpoints)
   "settings.provider.syncModels": "Fetch models from provider",
-  "settings.provider.syncLoading": "Fetching models from provider…",
+  "settings.provider.syncModelsShort": "Sync models",  "settings.provider.syncLoading": "Fetching models from provider…",
   "settings.provider.syncFailed": "Failed to fetch model list",
   "settings.provider.syncRetry": "Retry",
   "settings.provider.syncEmpty": "Provider returned no models (endpoint may not support model listing)",
@@ -578,7 +578,9 @@ export const enDict: Record<string, string> = {
   "settings.provider.modelsEmptyHint": "No catalog models yet; fetch from provider or enter a model ID manually",
   // R58: usage / balance query (moonshot/deepseek/zai etc.)
   "settings.provider.usage.query": "Query usage / balance",
-  "settings.provider.usage.unsupported": "Usage query is not supported for this provider yet",
+  "settings.provider.usage.queryShort": "Usage",
+  "settings.provider.usage.retry": "Retry",
+  "settings.provider.usage.kimiUnavailable": "Membership usage not fetched yet (network or login state issue)",  "settings.provider.usage.unsupported": "Usage query is not supported for this provider yet",
   "settings.provider.usage.failed": "Usage query failed",
   "settings.provider.usage.balance": "Balance",
   "settings.provider.usage.totalBalance": "Total",

@@ -1,5 +1,12 @@
 [
   {
+    "version": "2026.909.9",
+    "notes": {
+      "zh": "修复（用户反馈）：三家提供商的「查询用量 / 余额」与「同步模型」入口此前是 13px 纯图标按钮几乎不可发现，现改为 provider 块头的带文字胶囊按钮（同步模型 / 查用量），一眼可见\n修复（用户反馈）：Kimi 会员额度卡片消失——OAuth refresh token 被服务端作废（invalid_grant 走 400）时旧逻辑不清理本地 token，界面恒显「登录成功」但用量接口 401 静默失败；现自动清理失效会话并引导重新登录，登录有效但用量拉取失败时显示可重试的提示行（本次失效因登录已过期数日，重新登录后额度即恢复）\n对话页（用户反馈）：Progress Card 进度卡宽度收窄并与输入框对齐（同 760px 居中列，此前会撑满整行）；输入框位置下移、与窗口底部间距收紧（底部留白 30px→14px）\n模型设置排版：自定义分组管理区默认折叠为一行标题+分组数徽标，不再把模型列表推到首屏之外；展开即可管理",
+      "en": "Fix (user feedback): the usage/balance query and model-sync actions were 13px icon-only buttons that were practically invisible; they are now labeled pill buttons (Sync models / Usage) in the provider block header.\nFix (user feedback): Kimi membership usage cards disappeared - when the OAuth refresh token was revoked server-side (invalid_grant arrives as HTTP 400), the old logic never cleared the local token, so the UI kept showing Logged in while the usage API silently failed with 401; now the stale session is auto-cleared with a re-login prompt, and a retryable hint row appears when usage cannot be fetched while logged in (this outage was an expired login - re-login restores the cards).\nChat (user feedback): Progress Card narrowed and aligned with the compose input (same 760px centered column, previously full-width); input box moved lower with reduced bottom gap (30px to 14px).\nProvider settings layout: the custom-groups manager now collapses to a single title row with a count badge, keeping the model list above the fold."
+    }
+  },
+  {
     "version": "2026.909.8",
     "notes": {
       "zh": "模型设置（R52）：新增「从提供商获取模型列表」——提供商块头一键拉取线上 /models 实时清单（OpenAI/Anthropic/Google/Moonshot/智谱/火山/通义/DeepSeek/MiniMax/自定义端点全适配，Kimi 走本地代理），在线同步面板勾选即可批量添加新模型；添加模型面板新增「从提供商获取」按钮（目录+在线合并去重）\n用量/余额查询：DeepSeek（官方 /user/balance）、Moonshot（官方 /users/me/balance）、智谱 GLM Coding Plan（配额百分比+重置倒计时）一键查询，余额/配额卡片就地渲染；其余提供商提示暂不支持\nGit 面板增强：分支列表与一键切换、最近 30 条提交历史（首屏即加载）、推送/拉取（未设 upstream 自动设 origin；禁用交互凭据防卡死）、丢弃未暂存改动、删除未跟踪文件（均二次危险确认）\nWorktrees：新增手动「新建 Worktree」（名称 + 基线分支下拉，内核 worktrees.create/branches RPC，可与 Git 面板联动）\n删除守卫：会话或其 worktree 有进行中（queued/running）任务时，侧边栏删除项禁用 + 删除链路拦截，防止误删运行中的任务\n任务列表排版优化：时间并入 meta 行、进行中任务左侧 accent 强调条、操作列右对齐垂直居中、密度收紧\n安全加固：git 文件路径参数拒绝 pathspec magic（如 :(glob)** 可绕过路径校验清空全仓库未跟踪文件）\n死代码清理：56 个零引用 i18n 键、17 个无消费方导出（含 40 行从未接线的浏览器扩展卸载逻辑）\n修复：Git 面板嵌入模式（工作区页）此前不渲染推送/拉取按钮；内核目录缺失时 dev 冒烟环境网关无法启动的问题已记录于 gotchas",

@@ -30,8 +30,8 @@
   gap: var(--spacer-12);
   margin-top: auto;
   align-items: center;
-  /* 底部留白收紧（spacer-20→spacer-10）：输入框贴近视口底缘 */
-  padding: var(--spacer-12) var(--spacer-24) var(--spacer-10);
+  /* R58a：底部留白再收紧（spacer-10→spacer-6），输入卡下沉贴近视口底缘 */
+  padding: var(--spacer-12) var(--spacer-24) var(--spacer-6);
   background: linear-gradient(to bottom, transparent, var(--bg) 35%);
   z-index: 10;
 }

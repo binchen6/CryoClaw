@@ -20,6 +20,8 @@
   background: transparent;
   box-shadow: none;
   animation: none;
+  /* R58a：底部留白收紧（20→8）——输入卡贴近视口底缘，阅读区多让一行 */
+  padding-bottom: var(--spacer-8);
 }
 
 .chat {
@@ -2182,6 +2184,12 @@ img.chat-avatar {
 
 .chat-progress-card {
   margin-bottom: var(--spacer-10);
+  /* R58a：与 compose 输入卡同宽对齐（--chat-column 760px 居中列），
+     此前无宽度约束会撑满整个线程容器，视觉上远宽于输入框 */
+  width: 100%;
+  max-width: var(--chat-column);
+  margin-left: auto;
+  margin-right: auto;
   border: var(--hairline);
   border-radius: var(--radius-12);
   background: var(--bg-elevated);

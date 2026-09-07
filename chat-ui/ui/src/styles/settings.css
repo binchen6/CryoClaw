@@ -1933,3 +1933,89 @@
   font-size: var(--text-xs);
   color: var(--text-muted);
 }
+
+/* ── R58a：provider 块头带文字操作按钮（同步/查用量）+ 自定义分组折叠 ── */
+
+.oc-provider-block__pill-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacer-4);
+  height: 24px;
+  padding: 0 var(--spacer-8);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--bg-input);
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: var(--text-xs);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard),
+    background var(--duration-fast) var(--ease-standard);
+}
+
+.oc-provider-block__pill-btn:hover:not(:disabled) {
+  color: var(--text-strong);
+  border-color: var(--border-focus);
+}
+
+.oc-provider-block__pill-btn.is-active {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-subtle);
+}
+
+.oc-provider-block__pill-btn:disabled {
+  cursor: progress;
+  opacity: 0.7;
+}
+
+.oc-provider-block__pill-btn svg {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+}
+
+/* 自定义分组管理区：折叠收纳（details/summary），首屏只占一行 */
+.oc-provider-org__summary {
+  display: flex;
+  align-items: center;
+  gap: var(--spacer-8);
+  padding: var(--spacer-6) 0;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--text-strong);
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+
+.oc-provider-org__summary::-webkit-details-marker {
+  display: none;
+}
+
+.oc-provider-org[open] > .oc-provider-org__summary .oc-provider-group__chevron {
+  transform: rotate(180deg);
+}
+
+.oc-provider-org__summary .oc-provider-group__chevron {
+  transition: transform var(--duration-fast) var(--ease-standard);
+  color: var(--text-muted);
+}
+
+.oc-provider-org__summary-hint {
+  font-size: var(--text-xs);
+  font-weight: var(--weight-regular);
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.oc-provider-org__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacer-10);
+  padding: var(--spacer-8) 0 var(--spacer-4);
+}
