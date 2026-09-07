@@ -517,6 +517,28 @@ export function jsonRequest(
   url: string,
   opts: { method?: string; headers?: Record<string, string>; body?: string }
 ): Promise<void> {
+  return rawJsonRequest(url, opts).then(() => undefined);
+}
+
+// jsonRequest 的带响应体版本（拉取模型列表 / 用量查询等需要解析 JSON 响应的场景）。
+// 错误语义与 jsonRequest 完全一致（401/403 归一为「API Key 无效」，其余带上游 message）。
+export function jsonRequestBody<T = unknown>(
+  url: string,
+  opts: { method?: string; headers?: Record<string, string>; body?: string }
+): Promise<T> {
+  return rawJsonRequest(url, opts).then(body => {
+    try {
+      return JSON.parse(body) as T;
+    } catch {
+      throw new Error(`响应解析失败: ${String(body).slice(0, 200)}`);
+    }
+  });
+}
+
+function rawJsonRequest(
+  url: string,
+  opts: { method?: string; headers?: Record<string, string>; body?: string }
+): Promise<string> {
   return new Promise((resolve, reject) => {
     const mod = url.startsWith("https") ? https : http;
     const urlObj = new URL(url);
@@ -536,7 +558,7 @@ export function jsonRequest(
         res.on("end", () => {
           const code = res.statusCode ?? 0;
           if (code >= 200 && code < 300) {
-            resolve();
+            resolve(body);
           } else if (code === 401 || code === 403) {
             const err: Error & { status?: number } = new Error(`API Key 无效 (${code})`);
             err.status = code;

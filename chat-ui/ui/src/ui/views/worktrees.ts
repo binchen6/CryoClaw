@@ -11,6 +11,8 @@ import { t } from "../i18n.ts";
 import {
   isLiveWorktree,
   isRestorableWorktree,
+  isValidWorktreeName,
+  type WorktreeBranch,
   type WorktreeRecord,
 } from "../controllers/worktrees.ts";
 
@@ -19,10 +21,22 @@ export type WorktreesProps = {
   error: string | null;
   worktrees: WorktreeRecord[];
   busyIds: ReadonlySet<string>;
+  /** R58：owner 会话有活跃任务的 worktree id 集合（删除按钮禁用） */
+  blockedIds: ReadonlySet<string>;
   gcBusy: boolean;
   connected: boolean;
   // null = 未探测（无 bridge 的浏览器 dev）；false 时展示降级提示
   gitAvailable: boolean | null;
+  // ── R58 新建面板 ──
+  createOpen: boolean;
+  createName: string;
+  createBaseRef: string;
+  createRepoRoot: string;
+  createRepoOptions: string[];
+  createBranches: WorktreeBranch[] | null;
+  createBranchesLoading: boolean;
+  creating: boolean;
+  createError: string | null;
   onRefresh: () => void;
   onGc: () => void;
   onRemove: (id: string) => void;
@@ -31,6 +45,11 @@ export type WorktreesProps = {
   onOpenChat: (sessionKey: string) => void;
   /** 工作区页 compact 卡片行点击 → 切换仓库上下文（worktree→git 联动） */
   onSelectRepo?: (path: string) => void;
+  onToggleCreate: () => void;
+  onCreateNameChange: (value: string) => void;
+  onCreateBaseRefChange: (value: string) => void;
+  onCreateRepoChange: (value: string) => void;
+  onCreateSubmit: () => void;
 };
 
 function ownerLabel(ownerKind: string): string {
@@ -48,7 +67,9 @@ function renderWorktreeCard(props: WorktreesProps, w: WorktreeRecord, compact: b
   const live = isLiveWorktree(w);
   const restorable = isRestorableWorktree(w);
   const busy = props.busyIds.has(w.id);
+  const blocked = props.blockedIds.has(w.id);
   const timestamp = live ? w.lastActiveAt : (w.removedAt ?? w.lastActiveAt);
+  const removeTitle = blocked ? t("worktrees.removeBlockedByTask") : t("worktrees.remove");
 
   if (compact) {
     return html`
@@ -107,8 +128,8 @@ function renderWorktreeCard(props: WorktreesProps, w: WorktreeRecord, compact: b
             ? html`<button
                 class="btn btn--sm danger wt-card__icon-btn"
                 type="button"
-                title=${t("worktrees.remove")}
-                ?disabled=${busy || !props.connected}
+                title=${removeTitle}
+                ?disabled=${busy || blocked || !props.connected}
                 @click=${(e: Event) => {
                   e.stopPropagation();
                   props.onRemove(w.id);
@@ -170,7 +191,8 @@ function renderWorktreeCard(props: WorktreesProps, w: WorktreeRecord, compact: b
           ? html`<button
               class="btn danger btn--sm"
               type="button"
-              ?disabled=${busy || !props.connected}
+              title=${removeTitle}
+              ?disabled=${busy || blocked || !props.connected}
               @click=${() => props.onRemove(w.id)}
             >
               ${busy ? icons.loader : nothing}
@@ -182,12 +204,85 @@ function renderWorktreeCard(props: WorktreesProps, w: WorktreeRecord, compact: b
   `;
 }
 
+// 新建 worktree 面板：名称（内核规范 ^[a-z0-9][a-z0-9-]{0,63}$）+ 基线分支（懒拉）
+function renderCreatePanel(props: WorktreesProps) {
+  if (!props.createOpen) return nothing;
+  const nameOk = !props.createName || isValidWorktreeName(props.createName);
+  const canSubmit = isValidWorktreeName(props.createName) && props.createRepoRoot && !props.creating;
+  const localBranches = (props.createBranches ?? []).filter((b) => b.kind === "local");
+  return html`
+    <div class="wt-create">
+      <div class="wt-create__title">${t("worktrees.createTitle")}</div>
+      ${props.createRepoOptions.length > 1
+        ? html`<label class="wt-create__field">
+            <span class="wt-create__label">${t("worktrees.createRepo")}</span>
+            <select
+              class="ts-select wt-create__select"
+              .value=${props.createRepoRoot}
+              @change=${(e: Event) => props.onCreateRepoChange((e.target as HTMLSelectElement).value)}
+            >
+              ${props.createRepoOptions.map(
+                (r) => html`<option value=${r} ?selected=${r === props.createRepoRoot}>${r}</option>`,
+              )}
+            </select>
+          </label>`
+        : nothing}
+      <div class="wt-create__row">
+        <label class="wt-create__field wt-create__field--grow">
+          <span class="wt-create__label">${t("worktrees.createName")}</span>
+          <input
+            class="wt-create__input"
+            type="text"
+            .value=${props.createName}
+            placeholder=${t("worktrees.createNamePlaceholder")}
+            @input=${(e: Event) => props.onCreateNameChange((e.target as HTMLInputElement).value)}
+          />
+        </label>
+        <label class="wt-create__field wt-create__field--grow">
+          <span class="wt-create__label">${t("worktrees.createBase")}</span>
+          ${props.createBranchesLoading
+            ? html`<div class="wt-create__hint">${icons.loader} ${t("git.branchLoading")}</div>`
+            : html`<select
+                class="ts-select wt-create__select"
+                .value=${props.createBaseRef}
+                @change=${(e: Event) => props.onCreateBaseRefChange((e.target as HTMLSelectElement).value)}
+              >
+                <option value="">${t("worktrees.createBaseDefault")}</option>
+                ${localBranches.map(
+                  (b) => html`<option value=${b.name} ?selected=${b.name === props.createBaseRef}>${b.name}</option>`,
+                )}
+              </select>`}
+        </label>
+      </div>
+      ${!nameOk
+        ? html`<div class="callout danger">${t("worktrees.createNameInvalid")}</div>`
+        : nothing}
+      ${props.createError ? html`<div class="callout danger">${props.createError}</div>` : nothing}
+      <div class="wt-create__actions">
+        <button class="btn btn--sm" type="button" @click=${props.onToggleCreate}>${t("settings.cancel")}</button>
+        <button class="btn primary btn--sm" type="button" ?disabled=${!canSubmit} @click=${props.onCreateSubmit}>
+          ${props.creating ? icons.loader : nothing}
+          ${props.creating ? t("worktrees.creating") : t("worktrees.createSubmit")}
+        </button>
+      </div>
+      <p class="wt-create__hint">${t("worktrees.createHint")}</p>
+    </div>
+  `;
+}
+
 export function renderWorktrees(props: WorktreesProps, opts?: { compact?: boolean }) {
   const compact = opts?.compact === true;
   return html`
     <div class="wt-layout ${compact ? "wt-layout--compact" : ""} panel">
       ${compact
         ? html`<div class="wt-compact-toolbar">
+            <button class="btn btn--sm" type="button"
+              ?disabled=${!props.connected || props.gitAvailable === false}
+              title=${t("worktrees.createTitle")}
+              @click=${props.onToggleCreate}>
+              ${icons.gitBranch}
+              ${t("worktrees.create")}
+            </button>
             <button class="btn btn--sm" type="button" ?disabled=${props.gcBusy || !props.connected}
               @click=${props.onGc}>
               ${props.gcBusy ? icons.loader : icons.trash}
@@ -209,6 +304,15 @@ export function renderWorktrees(props: WorktreesProps, opts?: { compact?: boolea
                 <button
                   class="btn"
                   type="button"
+                  ?disabled=${!props.connected || props.gitAvailable === false}
+                  @click=${props.onToggleCreate}
+                >
+                  ${icons.gitBranch}
+                  ${t("worktrees.create")}
+                </button>
+                <button
+                  class="btn"
+                  type="button"
                   ?disabled=${props.gcBusy || !props.connected}
                   @click=${props.onGc}
                 >
@@ -226,6 +330,8 @@ export function renderWorktrees(props: WorktreesProps, opts?: { compact?: boolea
                 </button>
               </div>
             </div>`}
+
+      ${renderCreatePanel(props)}
 
       ${props.gitAvailable === false
         ? html`<div class="callout danger">${t("worktrees.gitUnavailable")}</div>`

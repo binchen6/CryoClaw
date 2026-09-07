@@ -2,6 +2,7 @@
  * Settings IPC 薄入口：只做聚合注册。
  * 各域实现见 src/settings/ 目录：
  *   verify.ts     凭据验证 / Kimi key & proxy / 分享文案 / 会员用量
+ *   models.ts     在线模型列表拉取 / 各提供商用量查询
  *   channels.ts   渠道运行态 / 微信插件启用守卫
  *   weixin.ts     微信扫码登录 / 账号清除
  *   pairing.ts    飞书 & 企业微信 pairing（sidecar store 属主进程职责）
@@ -13,6 +14,7 @@
  */
 import type { SettingsIpcOptions } from "./settings/types";
 import { registerVerifyIpc } from "./settings/verify";
+import { registerModelsIpc } from "./settings/models";
 import { registerChannelsIpc } from "./settings/channels";
 import { registerWeixinIpc } from "./settings/weixin";
 import { registerPairingIpc } from "./settings/pairing";
@@ -27,6 +29,7 @@ export type { SettingsIpcOptions } from "./settings/types";
 // 注册 Settings 相关 IPC
 export function registerSettingsIpc(opts: SettingsIpcOptions): void {
   registerVerifyIpc();
+  registerModelsIpc();
   registerChannelsIpc();
   registerWeixinIpc(opts);
   registerPairingIpc(opts);

@@ -151,7 +151,9 @@ function renderTaskRow(props: TasksProps, task: TaskSummary) {
     <div class="ts-row ${active ? "ts-row--active" : ""}">
       <span class="ts-dot ${statusDotClass(status)}" title=${statusLabel(status)}></span>
       <div class="ts-row__main">
-        <div class="ts-row__title" title=${title}>${title}</div>
+        <div class="ts-row__title-line">
+          <span class="ts-row__title" title=${title}>${title}</span>
+        </div>
         <div class="ts-row__meta">
           <span class="ts-row__meta-item ts-status ${statusTextClass(status)}">${statusLabel(status)}</span>
           <span class="ts-row__meta-item">${runtimeLabel(task.runtime)}</span>
@@ -160,42 +162,40 @@ function renderTaskRow(props: TasksProps, task: TaskSummary) {
           ${source
             ? html`<span class="ts-row__meta-item" title=${source}>${t("tasks.cronSource").replace("{name}", source)}</span>`
             : nothing}
+          <span class="ts-row__meta-item ts-row__time-inline" title=${timestamp}>${timestamp}</span>
         </div>
         ${detail ? html`<div class="ts-row__detail">${detail}</div>` : nothing}
       </div>
-      <div class="ts-row__side">
-        <span class="ts-row__time" title=${timestamp}>${timestamp}</span>
-        <div class="ts-row__actions">
-          ${sessionKey
-            ? html`<button
-                class="btn btn--sm"
-                type="button"
-                @click=${() => props.onOpenChat(sessionKey)}
+      <div class="ts-row__actions">
+        ${sessionKey
+          ? html`<button
+              class="btn btn--sm"
+              type="button"
+              @click=${() => props.onOpenChat(sessionKey)}
               >
-                ${t("tasks.openSession")}
+              ${t("tasks.openSession")}
               </button>`
-            : nothing}
-          ${task.runtime === "cron"
-            ? html`<button
-                class="btn btn--sm"
-                type="button"
-                @click=${() => props.onOpenCronTab()}
+          : nothing}
+        ${task.runtime === "cron"
+          ? html`<button
+              class="btn btn--sm"
+              type="button"
+              @click=${() => props.onOpenCronTab()}
               >
-                ${t("tasks.viewCronJob")}
+              ${t("tasks.viewCronJob")}
               </button>`
-            : nothing}
-          ${active
-            ? html`<button
-                class="btn danger btn--sm"
-                type="button"
-                ?disabled=${cancelling || !props.connected}
-                @click=${() => props.onCancel(task.id)}
+          : nothing}
+        ${active
+          ? html`<button
+              class="btn danger btn--sm"
+              type="button"
+              ?disabled=${cancelling || !props.connected}
+              @click=${() => props.onCancel(task.id)}
               >
-                ${cancelling ? icons.loader : nothing}
-                ${cancelling ? t("tasks.cancelling") : t("tasks.cancel")}
+              ${cancelling ? icons.loader : nothing}
+              ${cancelling ? t("tasks.cancelling") : t("tasks.cancel")}
               </button>`
-            : nothing}
-        </div>
+          : nothing}
       </div>
     </div>
   `;

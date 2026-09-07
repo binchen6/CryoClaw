@@ -48,6 +48,12 @@ contextBridge.exposeInMainWorld("cryoclaw", {
   // Settings 相关
   settingsVerifyKey: (params: Record<string, unknown>) =>
     ipcRenderer.invoke("settings:verify-key", params),
+  // R58：从提供商 /models 端点拉实时模型列表（凭据在主进程解析）
+  settingsFetchProviderModels: (params: Record<string, unknown>) =>
+    ipcRenderer.invoke("settings:fetch-provider-models", params),
+  // R58：订阅套餐用量 / 账户余额查询（moonshot/deepseek/zai 等官方或社区端点）
+  settingsGetProviderUsage: (params: Record<string, unknown>) =>
+    ipcRenderer.invoke("settings:get-provider-usage", params),
   // Kimi Code 手动 key 写 sidecar + 注入 auth proxy（config 只写 proxy-managed 占位符）
   settingsWriteKimiApiKey: (params: Record<string, unknown>) =>
     ipcRenderer.invoke("settings:write-kimi-api-key", params),
@@ -178,6 +184,15 @@ contextBridge.exposeInMainWorld("cryoclaw", {
   gitStage: (cwd: string, paths: string[]) => ipcRenderer.invoke("git:stage", cwd, paths),
   gitUnstage: (cwd: string, paths: string[]) => ipcRenderer.invoke("git:unstage", cwd, paths),
   gitCommit: (cwd: string, message: string) => ipcRenderer.invoke("git:commit", cwd, message),
+  // R58 git 面板增强：分支列表/切换、提交历史、push/pull、丢弃改动、清理未跟踪
+  gitBranchList: (cwd: string) => ipcRenderer.invoke("git:branch-list", cwd),
+  gitCheckout: (cwd: string, branch: string) => ipcRenderer.invoke("git:checkout", cwd, branch),
+  gitLog: (cwd: string, limit?: number) => ipcRenderer.invoke("git:log", cwd, limit),
+  gitPush: (cwd: string, opts?: { remote?: string; branch?: string; setUpstream?: boolean }) =>
+    ipcRenderer.invoke("git:push", cwd, opts),
+  gitPull: (cwd: string) => ipcRenderer.invoke("git:pull", cwd),
+  gitDiscard: (cwd: string, paths: string[]) => ipcRenderer.invoke("git:discard", cwd, paths),
+  gitClean: (cwd: string, paths: string[]) => ipcRenderer.invoke("git:clean", cwd, paths),
 
   onSettingsNavigate: (cb: (payload: { tab: string; notice: string }) => void) => {
     const handler = (_e: Electron.IpcRendererEvent, payload: { tab: string; notice: string }) => cb(payload);

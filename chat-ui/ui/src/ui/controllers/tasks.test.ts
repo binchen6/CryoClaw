@@ -1,8 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  activeTaskSessionKeys,
   applyTaskEvent,
   filterTasksByStatus,
+  findActiveTaskForSession,
   isActiveTask,
   sortTasks,
   taskDurationMs,
@@ -163,4 +165,30 @@ test("taskDurationMs：缺 startedAt / 时长非正返回 null", () => {
     endedAt: "1970-01-01T00:00:02.500Z",
   });
   assert.equal(taskDurationMs(t), 1500);
+});
+
+// ── R58：删除守卫（会话关联活跃任务） ──────────────────────────────
+
+test("findActiveTaskForSession：childSessionKey / sessionKey 任一命中且任务活跃才算关联", () => {
+  const runningChild = task("a", { status: "running", childSessionKey: "agent:main:s1", sessionKey: "agent:main:s0" });
+  const queuedOwn = task("b", { status: "queued", sessionKey: "agent:main:s2" });
+  const doneChild = task("c", { status: "completed", childSessionKey: "agent:main:s1" });
+  const list = [runningChild, queuedOwn, doneChild];
+
+  assert.equal(findActiveTaskForSession(list, "agent:main:s1")?.id, "a", "child 会话命中 running 任务");
+  assert.equal(findActiveTaskForSession(list, "agent:main:s0")?.id, "a", "发起会话命中同一 running 任务");
+  assert.equal(findActiveTaskForSession(list, "agent:main:s2")?.id, "b", "queued 同样算活跃");
+  assert.equal(findActiveTaskForSession(list, "agent:main:s9"), null, "无关联会话返回 null");
+  assert.equal(findActiveTaskForSession([], "agent:main:s1"), null);
+  assert.equal(findActiveTaskForSession(list, ""), null, "空 key 返回 null");
+});
+
+test("activeTaskSessionKeys：收集全部活跃任务的会话 key（大小写不敏感命中由查询侧保证）", () => {
+  const keys = activeTaskSessionKeys([
+    task("a", { status: "running", childSessionKey: "s-child", sessionKey: "s-own" }),
+    task("b", { status: "completed", childSessionKey: "s-done" }),
+    task("c", { status: "cancelled", sessionKey: "s-cancelled" }),
+    task("d", { status: "queued", sessionKey: "s-own" }),
+  ]);
+  assert.deepEqual([...keys].sort(), ["s-child", "s-own"]);
 });

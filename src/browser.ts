@@ -561,37 +561,6 @@ function atomicWriteFile(targetPath: string, data: string): void {
   fs.renameSync(tmpPath, targetPath);
 }
 
-export async function uninstallExtension(
-  target: BrowserTarget,
-  extId: string,
-  options: CommonOptions = {},
-): Promise<UninstallResult> {
-  const platform = options.platform ?? process.platform;
-  if (!options.skipUserDataCheck && !isBrowserInstalled(target)) {
-    return "browser-not-installed";
-  }
-  if (platform === "win32") {
-    const runProc = options.exec ?? defaultRegExecutor;
-    const keyPath = windowsExtKeyPath(target, extId);
-    // 新版用 path/version，老版用 update_url。任何一个存在就算"装着"，整体删 subkey 是幂等的。
-    const [pathVal, versionVal, updateUrl] = await Promise.all([
-      runRegQuery(runProc, keyPath, "path"),
-      runRegQuery(runProc, keyPath, "version"),
-      runRegQuery(runProc, keyPath, "update_url"),
-    ]);
-    if (pathVal === null && versionVal === null && updateUrl === null) {
-      return "not-installed";
-    }
-    await runRegDelete(runProc, keyPath);
-    return "removed";
-  }
-  // macOS
-  const p = macExternalExtensionsPath(target, extId);
-  if (!fs.existsSync(p)) return "not-installed";
-  fs.unlinkSync(p);
-  return "removed";
-}
-
 // ---------- Batch API（给 setup-ipc / settings-ipc 用） ----------
 
 export interface BrowserInstallSummary {

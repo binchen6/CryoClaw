@@ -410,6 +410,9 @@ export function sanitizeGitRelPaths(paths: unknown): string[] | null {
   for (const p of paths) {
     if (typeof p !== "string" || !p || p.includes("\0")) return null;
     if (/^([a-zA-Z]:[\\/]|[\\/])/.test(p)) return null; // 绝对路径（Windows 盘符 / POSIX / UNC 根）
+    // `:` 是 git pathspec magic 前缀（如 ":(glob)**" 会让 clean/restore 指向全仓库）；
+    // 正常仓库相对路径不含 `:`（Windows 文件名非法、POSIX 极罕见），破坏性操作从严拒绝
+    if (p.includes(":")) return null;
     const norm = p.replace(/\\/g, "/");
     const segments = norm.split("/");
     if (segments.includes("..")) return null;
@@ -424,4 +427,84 @@ export function normalizeCommitMessage(message: unknown): string | null {
   const trimmed = message.trim();
   if (!trimmed || trimmed.length > 10_000) return null;
   return trimmed;
+}
+
+// ── 分支 / 提交历史（R58 git 面板增强） ─────────────────────────────
+
+/**
+ * 校验分支 / 远端名入参（checkout/push/pull 的 ref 类参数）。
+ * execFile 数组传参无 shell 注入面；这里防的是 git 选项注入（首字符 '-'）与
+ * ref 语法炸弹（`..` 区间、`@{` upspec、`:` refspec、glob 字符、空白）。
+ * 合法返回 trim 后文本；非法返回 null。
+ */
+export function sanitizeGitRefName(ref: unknown): string | null {
+  if (typeof ref !== "string") return null;
+  const trimmed = ref.trim();
+  if (!trimmed || trimmed.length > 200) return null;
+  if (trimmed.startsWith("-")) return null;
+  if (trimmed.startsWith("/")) return null;
+  if (/\s/.test(trimmed)) return null;
+  if (trimmed.includes("..") || trimmed.includes("@{") || trimmed.includes(":")) return null;
+  if (/[*?[\]\~^]/.test(trimmed)) return null;
+  if (trimmed.endsWith("/") || trimmed.endsWith(".lock")) return null;
+  return trimmed;
+}
+
+export interface GitLogCommit {
+  hash: string;
+  author: string;
+  email: string;
+  /** Unix 秒时间戳 */
+  timestamp: number;
+  subject: string;
+}
+
+const GIT_LOG_FIELD_SEP = "\u001f";
+
+/** 解析 `git log --pretty=format:%H␟%an␟%ae␟%at␟%s` 输出（字段 ␟ 分隔、记录 \n 分隔） */
+export function parseGitLog(stdout: string, limit = 200): GitLogCommit[] {
+  const commits: GitLogCommit[] = [];
+  for (const line of stdout.split("\n")) {
+    if (!line.trim()) continue;
+    const parts = line.split(GIT_LOG_FIELD_SEP);
+    if (parts.length < 5) continue;
+    const [hash, author, email, ts, subject] = parts;
+    const timestamp = Number.parseInt(ts, 10);
+    if (!hash || !author) continue;
+    commits.push({
+      hash,
+      author,
+      email,
+      timestamp: Number.isFinite(timestamp) ? timestamp : 0,
+      subject: subject ?? "",
+    });
+    if (commits.length >= limit) break;
+  }
+  return commits;
+}
+
+export interface GitBranchRow {
+  name: string;
+  current: boolean;
+  upstream: string;
+}
+
+/**
+ * 解析 `git for-each-ref refs/heads --format=%(HEAD)␟%(refname:short)␟%(upstream:short)`。
+ * current 由 %(HEAD) 的 `*` 标记判定。
+ */
+export function parseGitBranchList(stdout: string, limit = 500): GitBranchRow[] {
+  const rows: GitBranchRow[] = [];
+  for (const line of stdout.split("\n")) {
+    if (!line.trim()) continue;
+    const parts = line.split(GIT_LOG_FIELD_SEP);
+    if (parts.length < 2) continue;
+    const marker = parts[0]?.trim() ?? "";
+    const name = parts[1]?.trim() ?? "";
+    if (!name) continue;
+    rows.push({ name, current: marker.startsWith("*"), upstream: (parts[2] ?? "").trim() });
+    if (rows.length >= limit) break;
+  }
+  rows.sort((a, b) => (a.current === b.current ? a.name.localeCompare(b.name) : a.current ? -1 : 1));
+  return rows;
 }

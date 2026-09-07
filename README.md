@@ -80,7 +80,7 @@ npm run dist:win     # 打包 Windows x64 安装包 → out/win32-x64/
 
 ### 🤖 支持的 AI 提供商
 
-Anthropic (Claude) / OpenAI (GPT / Codex) / Google (Gemini) / Moonshot（Kimi）/ DeepSeek / GLM / Qwen / 小米 MiMo / Ollama 本地模型 / 自定义 OpenAI / Anthropic 兼容接口。支持主模型 + fallback 备用链，自动降级时界面有提示；思考强度按各模型能力开放档位（Kimi K3 支持 low/medium/high/xhigh/max）。
+Anthropic (Claude) / OpenAI (GPT / Codex) / Google (Gemini) / Moonshot（Kimi）/ DeepSeek / GLM / Qwen / 小米 MiMo / Ollama 本地模型 / 自定义 OpenAI / Anthropic 兼容接口。支持主模型 + fallback 备用链，自动降级时界面有提示；思考强度按各模型能力开放档位（Kimi K3 支持 low/medium/high/xhigh/max）。模型列表可一键从提供商线上接口同步；DeepSeek / Moonshot / GLM Coding Plan 支持余额与套餐用量查询。
 
 ### 💬 多渠道集成
 

@@ -173,19 +173,24 @@ test("app-render.ts：sidebar 收到 worktree props（gitAvailable + 新建入�
   assert.match(s, /onNewWorktreeChat: \(\) => void createNewWorktreeSession\(state\)/, "缺少新建入口 prop");
 });
 
-test("views/worktrees.ts：compact 变体保留 GC/恢复/删除/打开能力", () => {
+test("views/worktrees.ts：compact 变体保留新建/GC/恢复/删除/打开能力", () => {
   const s = src("views/worktrees.ts");
   assert.match(s, /opts\?: \{ compact\?: boolean \}/, "缺 compact 选项");
-  assert.match(s, /wt-compact-toolbar[\s\S]{0,300}props\.onGc/, "compact 工具行内应有 GC 入口");
+  // R58 起 compact 工具行新增「新建 Worktree」入口（GC 仍在，窗口放宽到 600 字符）
+  assert.match(s, /wt-compact-toolbar[\s\S]{0,600}props\.onGc/, "compact 工具行内应有 GC 入口");
+  assert.match(s, /wt-compact-toolbar[\s\S]{0,400}props\.onToggleCreate/, "compact 工具行内应有新建入口");
   assert.match(s, /props\.onRestore/, "compact 态仍应有恢复入口");
 });
 
-test("views/git.ts：embedded 变体隐藏仓库选择、保留三分组/提交", () => {
+test("views/git.ts：embedded 变体隐藏仓库选择、保留三分组/提交/推拉", () => {
   const s = src("views/git.ts");
   assert.match(s, /showRepoSelect/, "缺 embedded 选项");
   assert.match(s, /groupGitEntries\(props\.status\.entries\)/, "三分组应保留");
   assert.match(s, /"git\.commitTitle"/, "提交框应保留");
-  assert.match(s, /gitp-toolbar[\s\S]{0,200}props\.onRefresh/, "embedded 工具行内应有刷新入口");
+  // R58：embedded 工具行与独立 header 共用 renderGitActions（pull/push/refresh 都在其中）
+  assert.match(s, /gitp-toolbar[\s\S]{0,120}renderGitActions\(props\)/, "embedded 工具行应挂载共享操作组");
+  assert.match(s, /function renderGitActions[\s\S]{0,1600}props\.onRefresh/, "共享操作组应含刷新入口");
+  assert.match(s, /function renderGitActions[\s\S]{0,800}props\.onPush/, "共享操作组应含推送入口");
 });
 
 test("views/worktrees.ts：compact 卡片仓库切换仅对活跃 worktree 生效", () => {

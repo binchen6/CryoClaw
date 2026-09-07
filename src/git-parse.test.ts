@@ -6,8 +6,11 @@ import {
   isStagedEntry,
   isUnstagedEntry,
   normalizeCommitMessage,
+  parseGitBranchList,
+  parseGitLog,
   parsePorcelainV2Status,
   parseUnifiedDiff,
+  sanitizeGitRefName,
   sanitizeGitRelPaths,
   unquoteGitPath,
   type GitStatusEntry,
@@ -319,4 +322,68 @@ test("isStagedEntry/isUnstagedEntry：untracked 与 ignored 不进 staged/unstag
   const ignored: GitStatusEntry = { kind: "ignored", index: "!", worktree: "!", path: "y" };
   assert.ok(!isStagedEntry(untracked) && !isUnstagedEntry(untracked));
   assert.ok(!isStagedEntry(ignored) && !isUnstagedEntry(ignored));
+});
+
+// ── R58：分支 / 提交历史解析 + ref 名校验 ──────────────────────────
+
+test("sanitizeGitRefName：拒绝选项注入与 ref 语法炸弹", () => {
+  assert.equal(sanitizeGitRefName("main"), "main");
+  assert.equal(sanitizeGitRefName(" feature/x-1 "), "feature/x-1");
+  assert.equal(sanitizeGitRefName("origin"), "origin");
+  // 选项注入（首字符 -）与路径形态
+  assert.equal(sanitizeGitRefName("--exec=x"), null);
+  assert.equal(sanitizeGitRefName("/etc/passwd"), null);
+  // 空白 / 区间 / upspec / refspec / glob / 祖先语法
+  assert.equal(sanitizeGitRefName("my branch"), null);
+  assert.equal(sanitizeGitRefName("main..dev"), null);
+  assert.equal(sanitizeGitRefName("@{u}"), null);
+  assert.equal(sanitizeGitRefName("a:b"), null);
+  assert.equal(sanitizeGitRefName("releases/*"), null);
+  assert.equal(sanitizeGitRefName("foo~1"), null);
+  assert.equal(sanitizeGitRefName("a^2"), null);
+  // 尾缀限制与长度上限
+  assert.equal(sanitizeGitRefName("feature/"), null);
+  assert.equal(sanitizeGitRefName("x.lock"), null);
+  assert.equal(sanitizeGitRefName("x".repeat(201)), null);
+  assert.equal(sanitizeGitRefName(""), null);
+  assert.equal(sanitizeGitRefName(42), null);
+});
+
+test("parseGitLog：␟ 字段分隔、坏行跳过、limit 截断、非法时间戳归 0", () => {
+  const SEP = "\u001f";
+  const out = parseGitLog(
+    [
+      `abc123${SEP}Alice${SEP}a@x.com${SEP}1700000001${SEP}feat: one`,
+      `def456${SEP}Bob${SEP}b@x.com${SEP}bad-ts${SEP}fix: two`,
+      "",
+      "not-a-record",
+    ].join("\n"),
+    10,
+  );
+  assert.equal(out.length, 2);
+  assert.deepEqual(out[0], { hash: "abc123", author: "Alice", email: "a@x.com", timestamp: 1700000001, subject: "feat: one" });
+  assert.equal(out[1].timestamp, 0, "非法时间戳归 0 而非 NaN");
+  const many = Array.from({ length: 10 }, (_, i) => `h${i}${SEP}A${SEP}e${SEP}${i}${SEP}s${i}`).join("\n");
+  assert.equal(parseGitLog(many, 3).length, 3);
+});
+
+test("parseGitBranchList：*(HEAD) 标记当前分支，当前分支排最前", () => {
+  const SEP = "\u001f";
+  const out = parseGitBranchList(
+    [` ${SEP}dev${SEP}origin/dev`, `*${SEP}main${SEP}origin/main`, ` ${SEP}abc${SEP}`].join("\n"),
+  );
+  assert.deepEqual(
+    out.map((b) => b.name),
+    ["main", "abc", "dev"],
+  );
+  assert.ok(out[0].current);
+  assert.equal(out[0].upstream, "origin/main");
+  assert.ok(!out[2].current);
+});
+
+// R58 安全加固：`:` 是 pathspec magic 前缀（clean/restore 是破坏性操作，从严拒绝）
+test("sanitizeGitRelPaths：拒绝 pathspec magic（含 : 的路径）", () => {
+  assert.equal(sanitizeGitRelPaths([":(glob)**"]), null);
+  assert.equal(sanitizeGitRelPaths([":(top)"]), null);
+  assert.equal(sanitizeGitRelPaths(["ok.txt", ":magic"]), null);
 });

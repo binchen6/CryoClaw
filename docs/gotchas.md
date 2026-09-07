@@ -315,3 +315,8 @@ Things that are easy to get wrong or forget when working on CryoClaw.
     pszText 必须指向目标进程内内存——直接传本进程指针返回乱码（实测整列 "h"）。
     要程序化取证 NSIS 日志需 VirtualAllocEx/WriteProcessMemory，或改用带 LogSet 的
     NSIS 编译器构建（electron-builder 默认不带）。
+
+83. **dev 冒烟时 gateway 散文件被 asar 打包清掉后，dev 模式网关三连重试即静默失败。** CRYOCLAW_GATEWAY_ASAR=1 的 package:resources 产出只有 gateway.asar；dev 主进程走 !isPackaged 分支强制读 gateway/ 散文件，缺目录时 spawn 秒退且 gateway.log 只有 config warnings。恢复：CRYOCLAW_GATEWAY_ASAR=0 npm run package:resources 重装散文件。
+84. **Windows 下内核会回写吃掉 openclaw.json 里 agents.defaults.workspace 的反斜杠。** dev-isolated 写入 C:Users... 后内核某次持久化把 U、D 等未知转义吞成 'C:UsersbinchenDesktop...'，workspace root 解析与 set-root 全链路报废。规避：workspace 用正斜杠写（Windows API 全兼容）；生产配置默认不设该键（用内核默认 ~/.openclaw/workspace），不受影响。
+85. **CDP WebSocket 连接赋值 onopen 前可能已 open（经典竞态）。** new WebSocket(url) 立即开始连接，慢一步赋 onopen 永不触发。守卫：先查 readyState === OPEN，或 setTimeout 兜底 resolve。
+86. **git pathspec magic 可绕过相对路径校验。** sanitizeGitRelPaths 只拒绝对对路径/.. 时，' : (glob)** ' 这类 pathspec 能让 clean -f / restore --worktree 指向全仓库（实测 git clean 会删光全部未跟踪文件）。凡 destructive 的 git 子命令，路径参数必须连 ':' 一起拒绝。**（R58 已修）**

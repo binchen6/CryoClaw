@@ -51,6 +51,39 @@ export function isActiveTask(task: TaskSummary): boolean {
 }
 
 /**
+ * 会话关联的活跃任务（R58 删除守卫）：task 的 childSessionKey（子会话）或
+ * sessionKey（发起会话）任一命中即视为关联。返回第一个活跃任务，无则 null。
+ */
+export function findActiveTaskForSession(
+  tasks: readonly TaskSummary[],
+  sessionKey: string,
+): TaskSummary | null {
+  const key = sessionKey.trim();
+  if (!key) return null;
+  const lower = key.toLowerCase();
+  for (const task of tasks) {
+    if (!isActiveTask(task)) continue;
+    const child = (task.childSessionKey ?? "").trim().toLowerCase();
+    const own = (task.sessionKey ?? "").trim().toLowerCase();
+    if (child === lower || own === lower) return task;
+  }
+  return null;
+}
+
+/** 活跃任务关联的会话 key 集合（侧边栏删除项禁用标记用） */
+export function activeTaskSessionKeys(tasks: readonly TaskSummary[]): Set<string> {
+  const out = new Set<string>();
+  for (const task of tasks) {
+    if (!isActiveTask(task)) continue;
+    const child = (task.childSessionKey ?? "").trim();
+    const own = (task.sessionKey ?? "").trim();
+    if (child) out.add(child);
+    if (own) out.add(own);
+  }
+  return out;
+}
+
+/**
  * 任务耗时（ms）：startedAt → endedAt；进行中的任务用当前时间；
  * 终态缺 endedAt 时退化用 updatedAt。无法确定（缺 startedAt / 时长非正）返回 null。
  */

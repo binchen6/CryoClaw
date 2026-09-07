@@ -124,6 +124,8 @@ export type SessionPanelProps = {
   onNewChat: () => void;
   onRenameSession: (key: string, newLabel: string) => void;
   onDeleteSession: (key: string) => void;
+  /** R58：有 queued/running 任务的会话 key 集合（这些会话的删除项禁用） */
+  activeTaskSessions: ReadonlySet<string>;
   onTogglePin: (key: string, pinned: boolean) => void;
   onToggleUnread: (key: string, unread: boolean) => void;
   onSetArchived: (key: string, archived: boolean) => void;
@@ -140,6 +142,7 @@ const DATA_FIELDS = [
   "sessionSearch",
   "showArchived",
   "gitAvailable",
+  "activeTaskSessions",
 ] as const;
 
 // 双击会话名触发内联重命名：创建 input 替换 span，Enter 保存，Escape 取消。
@@ -351,6 +354,8 @@ function renderSessionItem(
                         <span>${t("sidebar.archiveSession")}</span>
                       </button>
                       <button class="cc-panel__session-menu-item cc-panel__session-menu-item--danger" type="button" role="menuitem"
+                        ?disabled=${props.activeTaskSessions.has(s.key)}
+                        title=${props.activeTaskSessions.has(s.key) ? t("sidebar.deleteBlockedByTask") : ""}
                         @click=${() => { closeSessionMenu(host.bump); props.onDeleteSession(s.key); }}>
                         <span class="cc-panel__session-menu-icon">${icons.trash}</span>
                         <span>${t("sidebar.delete")}</span>
@@ -365,6 +370,8 @@ function renderSessionItem(
                     <span>${t("sidebar.restoreSession")}</span>
                   </button>
                   <button class="cc-panel__session-menu-item cc-panel__session-menu-item--danger" type="button" role="menuitem"
+                    ?disabled=${props.activeTaskSessions.has(s.key)}
+                    title=${props.activeTaskSessions.has(s.key) ? t("sidebar.deleteBlockedByTask") : ""}
                     @click=${() => { closeSessionMenu(host.bump); props.onDeleteSession(s.key); }}>
                     <span class="cc-panel__session-menu-icon">${icons.trash}</span>
                     <span>${t("sidebar.delete")}</span>

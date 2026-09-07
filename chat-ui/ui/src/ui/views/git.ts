@@ -1,5 +1,6 @@
 /**
- * Git 面板视图（P4，文件级 v1）—— staged/unstaged/untracked 分组 + 单栏 diff + 提交框。
+ * Git 面板视图（P4 文件级 + R58 分支/历史/推拉）—— staged/unstaged/untracked 分组 +
+ * 单栏 diff + 提交框 + 分支切换面板 + 提交历史 + push/pull + 丢弃/清理。
  * 范式同 views/worktrees.ts：纯渲染 + props 回调；样式 gitp-*（misc.css，全 token）。
  */
 import { html, nothing } from "lit";
@@ -7,9 +8,12 @@ import {
   gitFileKey,
   groupGitEntries,
   type DiffFile,
+  type GitBranchRow,
+  type GitLogCommit,
   type GitRepoOption,
   type GitStatusEntry,
 } from "../controllers/git.ts";
+import { formatRelativeTimestamp } from "../format.ts";
 import { icons } from "../icons.ts";
 import { t, tWithDetail } from "../i18n.ts";
 
@@ -32,6 +36,14 @@ export type GitPanelProps = {
   busyPaths: ReadonlySet<string>;
   commitMessage: string;
   committing: boolean;
+  // ── R58 ──
+  branches: GitBranchRow[] | null;
+  branchesLoading: boolean;
+  branchPanelOpen: boolean;
+  checkingOutBranch: string | null;
+  log: GitLogCommit[] | null;
+  logLoading: boolean;
+  networkBusy: "push" | "pull" | null;
   onRepoChange: (path: string) => void;
   onRefresh: () => void;
   onSelectFile: (side: "cached" | "worktree", path: string) => void;
@@ -39,6 +51,12 @@ export type GitPanelProps = {
   onUnstage: (paths: string[]) => void;
   onCommitMessageChange: (value: string) => void;
   onCommit: () => void;
+  onToggleBranchPanel: () => void;
+  onCheckoutBranch: (branch: string) => void;
+  onPush: () => void;
+  onPull: () => void;
+  onDiscard: (paths: string[]) => void;
+  onClean: (paths: string[]) => void;
 };
 
 // 状态字母着色类：M 修改 / A 新增 / D 删除 / R 重命名 / U 冲突 / ? 未跟踪
@@ -129,6 +147,36 @@ function renderFileRow(
         <span class="gitp-file__path" title=${entry.origPath ? `${entry.origPath} → ${entry.path}` : entry.path}>
           ${entry.origPath ? html`${entry.origPath} → ${entry.path}` : entry.path}
         </span>
+        ${group === "unstaged" && entry.kind !== "unmerged"
+          ? html`<button
+              class="btn danger btn--sm gitp-file__action"
+              type="button"
+              ?disabled=${busy}
+              title=${t("git.discard")}
+              @click=${(e: Event) => {
+                e.stopPropagation();
+                props.onDiscard([entry.path]);
+              }}
+            >
+              ${busy ? icons.loader : nothing}
+              ${t("git.discard")}
+            </button>`
+          : nothing}
+        ${group === "untracked"
+          ? html`<button
+              class="btn danger btn--sm gitp-file__action"
+              type="button"
+              ?disabled=${busy}
+              title=${t("git.removeFile")}
+              @click=${(e: Event) => {
+                e.stopPropagation();
+                props.onClean([entry.path]);
+              }}
+            >
+              ${busy ? icons.loader : nothing}
+              ${t("git.removeFile")}
+            </button>`
+          : nothing}
         <button
           class="btn btn--sm gitp-file__action"
           type="button"
@@ -205,6 +253,107 @@ function renderCommitBox(props: GitPanelProps, stagedCount: number) {
   `;
 }
 
+// 分支切换面板：本地分支列表 + 当前分支高亮 + 行内切换按钮
+function renderBranchPanel(props: GitPanelProps) {
+  if (!props.branchPanelOpen) return nothing;
+  if (props.branchesLoading) {
+    return html`<div class="gitp-branch-panel"><div class="gitp-branch-empty">${icons.loader} ${t("git.branchLoading")}</div></div>`;
+  }
+  const branches = props.branches ?? [];
+  return html`
+    <div class="gitp-branch-panel">
+      ${branches.length === 0
+        ? html`<div class="gitp-branch-empty">${t("git.branchEmpty")}</div>`
+        : branches.map(
+            (b) => html`
+              <div class="gitp-branch-item ${b.current ? "is-current" : ""}">
+                <span class="gitp-branch-name" title=${b.name}>
+                  ${b.current ? html`<span class="gitp-branch-current-dot"></span>` : nothing}
+                  ${b.name}
+                </span>
+                ${b.upstream
+                  ? html`<span class="gitp-branch-upstream" title=${b.upstream}>${b.upstream}</span>`
+                  : nothing}
+                ${b.current
+                  ? html`<span class="chip chip-ok">${t("git.branchCurrent")}</span>`
+                  : html`<button
+                      class="btn btn--sm"
+                      type="button"
+                      ?disabled=${props.checkingOutBranch !== null}
+                      @click=${() => props.onCheckoutBranch(b.name)}
+                    >
+                      ${props.checkingOutBranch === b.name ? icons.loader : nothing}
+                      ${t("git.checkout")}
+                    </button>`}
+              </div>
+            `,
+          )}
+    </div>
+  `;
+}
+
+// 提交历史：hash 短串 + subject + author + 相对时间
+function renderHistory(props: GitPanelProps) {
+  if (props.logLoading && !props.log) {
+    return html`<section class="gitp-history"><h3 class="gitp-group__title">${t("git.history")}</h3><div class="gitp-branch-empty">${icons.loader}</div></section>`;
+  }
+  const commits = props.log ?? [];
+  if (commits.length === 0) return nothing;
+  return html`
+    <section class="gitp-history">
+      <h3 class="gitp-group__title">${t("git.history")} <span class="gitp-group__count">${commits.length}</span></h3>
+      <div class="gitp-history__list">
+        ${commits.map(
+          (c) => html`
+            <div class="gitp-history__row">
+              <code class="gitp-history__hash" title=${c.hash}>${c.hash.slice(0, 7)}</code>
+              <span class="gitp-history__subject" title=${c.subject}>${c.subject}</span>
+              <span class="gitp-history__meta" title=${c.author}>${c.author}</span>
+              <span class="gitp-history__meta">${formatRelativeTimestamp(c.timestamp * 1000)}</span>
+            </div>
+          `,
+        )}
+      </div>
+    </section>
+  `;
+}
+
+// 网络操作 + 刷新按钮组（embedded 工具行与独立 header 共用；R58）
+function renderGitActions(props: GitPanelProps) {
+  return html`
+    <button
+      class="btn btn--sm"
+      type="button"
+      ?disabled=${props.networkBusy !== null || !props.repoPath || props.repoState !== "ok"}
+      title=${t("git.pullTitle")}
+      @click=${props.onPull}
+    >
+      ${props.networkBusy === "pull" ? icons.loader : icons.arrowDown}
+      ${t("git.pull")}
+    </button>
+    <button
+      class="btn btn--sm"
+      type="button"
+      ?disabled=${props.networkBusy !== null || !props.repoPath || props.repoState !== "ok"
+        || !props.status?.branch?.head || props.status.branch.head === "(detached)"}
+      title=${t("git.pushTitle")}
+      @click=${props.onPush}
+    >
+      ${props.networkBusy === "push" ? icons.loader : icons.arrowUp}
+      ${t("git.push")}
+    </button>
+    <button
+      class="btn btn--sm"
+      type="button"
+      ?disabled=${props.loading || !props.repoPath}
+      @click=${props.onRefresh}
+    >
+      ${props.loading ? icons.loader : icons.refreshCw}
+      ${t("git.refresh")}
+    </button>
+  `;
+}
+
 export function renderGitPanel(props: GitPanelProps, opts?: { showRepoSelect?: boolean }) {
   const groups = props.status ? groupGitEntries(props.status.entries) : null;
   const branch = props.status?.branch ?? null;
@@ -215,15 +364,7 @@ export function renderGitPanel(props: GitPanelProps, opts?: { showRepoSelect?: b
     <div class="gitp-layout panel">
       ${opts?.showRepoSelect === false
         ? html`<div class="gitp-toolbar">
-            <button
-              class="btn"
-              type="button"
-              ?disabled=${props.loading || !props.repoPath}
-              @click=${props.onRefresh}
-            >
-              ${props.loading ? icons.loader : icons.refreshCw}
-              ${t("git.refresh")}
-            </button>
+            ${renderGitActions(props)}
           </div>`
         : html`<div class="gitp-header panel__header">
             <div>
@@ -244,15 +385,7 @@ export function renderGitPanel(props: GitPanelProps, opts?: { showRepoSelect?: b
                     )}
                   </select>`
                 : nothing}
-              <button
-                class="btn"
-                type="button"
-                ?disabled=${props.loading || !props.repoPath}
-                @click=${props.onRefresh}
-              >
-                ${props.loading ? icons.loader : icons.refreshCw}
-                ${t("git.refresh")}
-              </button>
+              ${renderGitActions(props)}
             </div>
           </div>`}
 
@@ -279,15 +412,25 @@ export function renderGitPanel(props: GitPanelProps, opts?: { showRepoSelect?: b
         : nothing}
 
       ${props.repoState === "ok" && branch
-        ? html`<div class="chip-row gitp-branch-row">
-            <span class="chip">${icons.gitBranch} ${branch.head ?? t("git.branchUnknown")}</span>
-            ${branch.upstream
-              ? html`<span class="chip">${branch.upstream}
-                  ${branch.ahead > 0 || branch.behind > 0
-                    ? html` ↑${branch.ahead} ↓${branch.behind}`
-                    : nothing}</span>`
-              : nothing}
-          </div>`
+        ? html`<div class="chip-row gitp-branch-row-line">
+            <button
+              class="chip gitp-branch-toggle ${props.branchPanelOpen ? "is-open" : ""}"
+              type="button"
+              title=${t("git.switchBranch")}
+              @click=${props.onToggleBranchPanel}
+            >
+              ${icons.gitBranch} ${branch.head ?? t("git.branchUnknown")}
+              ${branch.upstream
+                ? html`<span class="gitp-branch-upstream-badge">
+                    ${branch.upstream}
+                    ${branch.ahead > 0 || branch.behind > 0
+                      ? html` ↑${branch.ahead} ↓${branch.behind}`
+                      : nothing}
+                  </span>`
+                : nothing}
+            </button>
+          </div>
+          ${renderBranchPanel(props)}`
         : nothing}
 
       ${props.loading && !props.status
@@ -304,6 +447,7 @@ export function renderGitPanel(props: GitPanelProps, opts?: { showRepoSelect?: b
       ${groups ? renderGroup(props, "unstaged", groups.unstaged) : nothing}
       ${groups ? renderGroup(props, "untracked", groups.untracked) : nothing}
       ${groups ? renderCommitBox(props, groups.staged.length) : nothing}
+      ${renderHistory(props)}
     </div>
   `;
 }

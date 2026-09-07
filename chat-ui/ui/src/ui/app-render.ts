@@ -31,7 +31,8 @@ import { buildTranscriptFilename, buildTranscriptMarkdown, copyText, downloadMar
 import type { TranscriptMessage } from "./chat/transcript-export.ts";
 import { setCryoClawView } from "./app-view-switch.ts";
 import { loadSessions, patchSession } from "./controllers/sessions.ts";
-import { isActiveTask } from "./controllers/tasks.ts";
+import { activeTaskSessionKeys, isActiveTask } from "./controllers/tasks.ts";
+import type { TaskSummary } from "./types.ts";
 import { t } from "./i18n.ts";
 import { icons } from "./icons.ts";
 import { resolveMainSessionKey } from "./session-visibility.ts";
@@ -296,6 +297,17 @@ async function exportCurrentTranscript(state: AppViewState, sessionLabel: string
   showToast(state, copied ? t("chat.transcriptCopied") : t("chat.transcriptExported"));
 }
 
+// 活跃任务会话集合（R58 删除守卫）：按 tasks 数组引用记忆化，
+// 会话面板 shouldUpdate 按引用比较该字段，引用稳定时跳过重渲染。
+let activeTaskMemoSrc: readonly TaskSummary[] | null = null;
+let activeTaskMemoSet = new Set<string>();
+function activeTaskSessionsOf(tasks: readonly TaskSummary[]): Set<string> {  if (activeTaskMemoSrc !== tasks) {
+    activeTaskMemoSrc = tasks;
+    activeTaskMemoSet = activeTaskSessionKeys(tasks);
+  }
+  return activeTaskMemoSet;
+}
+
 export function renderApp(state: AppViewState) {
   ensureFileDropBridge(state);
   updateFileDropState(state);
@@ -372,6 +384,8 @@ export function renderApp(state: AppViewState) {
               onDeleteSession: (key: string) => {
                 void deleteSessionFromSidebar(state, key);
               },
+              // R58：有 queued/running 任务的会话禁止删除（按 tasks 引用记忆化，避免每帧新 Set）
+              activeTaskSessions: activeTaskSessionsOf(state.tasks ?? []),
               onTogglePin: (key: string, pinned: boolean) => {
                 void patchSession(state as unknown as Parameters<typeof patchSession>[0], key, { pinned });
               },

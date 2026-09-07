@@ -162,9 +162,11 @@
 
 .ts-row {
   display: flex;
-  align-items: center;
-  gap: var(--spacer-12);
-  padding: var(--spacer-12) var(--spacer-16);
+  align-items: flex-start;
+  gap: var(--spacer-10);
+  padding: var(--spacer-10) var(--spacer-14);
+  /* 活动行左侧 2px accent 强调条（与 accent-subtle 底同语义） */
+  border-left: 2px solid transparent;
 }
 
 .ts-row + .ts-row {
@@ -173,6 +175,7 @@
 
 .ts-row--active {
   background: var(--accent-subtle);
+  border-left-color: var(--accent);
 }
 
 /* 状态点：running=accent 脉动 / queued=warn / completed=ok / failed·timed_out=destructive / 其余 muted */
@@ -180,6 +183,8 @@
   width: 8px;
   height: 8px;
   flex-shrink: 0;
+  /* 对齐首行标题基线（行内容 top 对齐后补偿半行高） */
+  margin-top: 6px;
   border-radius: var(--radius-pill);
 }
 
@@ -216,6 +221,13 @@
   display: flex;
   flex-direction: column;
   gap: var(--spacer-4);
+}
+
+.ts-row__title-line {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacer-8);
 }
 
 .ts-row__title {
@@ -280,18 +292,9 @@
   word-break: break-word;
 }
 
-.ts-row__side {
-  display: flex;
-  align-items: center;
-  gap: var(--spacer-12);
-  flex-shrink: 0;
-}
-
-.ts-row__time {
-  font-family: var(--font-meta);
-  font-size: var(--font-size-meta);
-  color: var(--text-muted);
-  white-space: nowrap;
+/* R58：时间并入 meta 行（.ts-row__time-inline）；actions 独占右缘、垂直居中 */
+.ts-row__time-inline {
+  color: var(--text-faint);
 }
 
 .ts-row__actions {
@@ -299,6 +302,7 @@
   align-items: center;
   gap: var(--spacer-6);
   flex-shrink: 0;
+  align-self: center;
 }
 
 .ts-empty {
@@ -309,7 +313,7 @@
   .ts-row {
     flex-wrap: wrap;
   }
-  .ts-row__side {
+  .ts-row__actions {
     width: 100%;
     justify-content: flex-end;
   }
@@ -789,4 +793,253 @@
   white-space: pre-wrap;
   word-break: break-all;
   opacity: 0.85;
+}
+
+/* ── R58：分支切换面板 + 提交历史 ─────────────────────────────── */
+
+/* 分支 chip 行改为可点击 toggle（点击展开分支面板） */
+.gitp-branch-row-line {
+  display: flex;
+  gap: var(--spacer-8);
+  flex-wrap: wrap;
+}
+
+.gitp-branch-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacer-6);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: var(--text-xs);
+}
+
+.gitp-branch-toggle.is-open {
+  border-color: var(--border-focus);
+  color: var(--text-strong);
+}
+
+.gitp-branch-toggle svg {
+  width: 12px;
+  height: 12px;
+  stroke: currentColor;
+  fill: none;
+  vertical-align: -2px;
+}
+
+.gitp-branch-upstream-badge {
+  color: var(--text-muted);
+  font-family: var(--font-meta);
+  font-size: var(--font-size-meta);
+}
+
+/* 分支面板：卡片容器 + hairline 行分隔（同 gitp-group__list 语言） */
+.gitp-branch-panel {
+  display: flex;
+  flex-direction: column;
+  background: var(--card);
+  border: var(--hairline);
+  border-radius: var(--radius-12);
+  overflow: hidden;
+}
+
+.gitp-branch-item {
+  display: flex;
+  align-items: center;
+  gap: var(--spacer-8);
+  padding: var(--spacer-8) var(--spacer-12);
+}
+
+.gitp-branch-item + .gitp-branch-item {
+  border-top: var(--hairline);
+}
+
+.gitp-branch-item.is-current {
+  background: var(--accent-subtle);
+}
+
+.gitp-branch-name {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacer-6);
+  flex: 1;
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: var(--text-xs);
+  color: var(--text-strong);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gitp-branch-current-dot {
+  width: 6px;
+  height: 6px;
+  flex-shrink: 0;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+}
+
+.gitp-branch-upstream {
+  flex-shrink: 0;
+  font-family: var(--font-meta);
+  font-size: var(--font-size-meta);
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 200px;
+}
+
+.gitp-branch-empty {
+  padding: var(--spacer-12);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: var(--spacer-8);
+}
+
+/* 提交历史：卡片容器 + mono hash + subject 省略 */
+.gitp-history {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacer-8);
+}
+
+.gitp-history__list {
+  display: flex;
+  flex-direction: column;
+  background: var(--card);
+  border: var(--hairline);
+  border-radius: var(--radius-12);
+  overflow: hidden;
+}
+
+.gitp-history__row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacer-10);
+  padding: var(--spacer-6) var(--spacer-12);
+  min-width: 0;
+}
+
+.gitp-history__row + .gitp-history__row {
+  border-top: var(--hairline);
+}
+
+.gitp-history__hash {
+  flex-shrink: 0;
+  font-family: var(--mono);
+  font-size: var(--text-2xs);
+  color: var(--accent);
+  background: var(--accent-subtle);
+  border-radius: var(--radius-6);
+  padding: var(--spacer-2) var(--spacer-4);
+}
+
+.gitp-history__subject {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--text-sm);
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gitp-history__meta {
+  flex-shrink: 0;
+  font-family: var(--font-meta);
+  font-size: var(--font-size-meta);
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 160px;
+}
+
+@media (max-width: 720px) {
+  .gitp-history__meta {
+    display: none;
+  }
+}
+
+/* ── R58：worktree 手动创建面板 ──────────────────────────────── */
+
+.wt-create {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacer-10);
+  padding: var(--spacer-14) var(--spacer-16);
+  background: var(--card);
+  border: var(--hairline);
+  border-radius: var(--radius-12);
+}
+
+.wt-create__title {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--text-strong);
+}
+
+.wt-create__row {
+  display: flex;
+  gap: var(--spacer-12);
+  flex-wrap: wrap;
+}
+
+.wt-create__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacer-4);
+  min-width: 0;
+}
+
+.wt-create__field--grow {
+  flex: 1;
+  min-width: 180px;
+}
+
+.wt-create__label {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.wt-create__input {
+  height: 32px;
+  padding: 0 var(--spacer-10);
+  font-size: var(--text-sm);
+  font-family: var(--mono);
+  color: var(--text);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-8);
+  outline: none;
+  transition: border-color var(--duration-fast) var(--ease-standard),
+    box-shadow var(--duration-fast) var(--ease-standard);
+}
+
+.wt-create__input:focus,
+.wt-create__select:focus {
+  border-color: var(--border-focus);
+  box-shadow: var(--focus-ring);
+}
+
+.wt-create__select {
+  width: 100%;
+}
+
+.wt-create__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--spacer-8);
+}
+
+.wt-create__hint {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: var(--spacer-6);
 }

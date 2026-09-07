@@ -272,6 +272,8 @@ interface CryoClawBridgeExtended {
       // Settings: Provider
       settingsVerifyKey?: (params: Record<string, unknown>) => Promise<any>;
       settingsWriteKimiApiKey?: (params: Record<string, unknown>) => Promise<any>;
+      settingsFetchProviderModels?: (params: Record<string, unknown>) => Promise<any>;
+      settingsGetProviderUsage?: (params: Record<string, unknown>) => Promise<any>;
       // Settings: Channels — 运行态 + pairing（R4 后 openclaw.json 读写走 config.patch）
       settingsGetChannelRuntimeState?: () => Promise<any>;
       settingsListFeishuPairing?: () => Promise<any>;
@@ -460,6 +462,43 @@ export function settingsVerifyKey(params: Record<string, unknown>): Promise<Veri
 /** Kimi Code 手动 key 写 sidecar + 注入 auth proxy；返回 { proxyPort } */
 export async function settingsWriteKimiApiKey(params: { apiKey: string }): Promise<{ proxyPort: number }> {
   return unwrapData<{ proxyPort: number }>(await oc().settingsWriteKimiApiKey(params));
+}
+
+/** 提供商在线模型（/models 端点实时拉取） */
+export interface LiveProviderModel {
+  id: string;
+  name?: string;
+}
+
+/** 提供商用量/余额（主进程归一化；unsupported 由调用方判定） */
+export type ProviderUsageInfo =
+  | { supported: false }
+  | {
+      supported: true;
+      kind: "balance";
+      available?: string;
+      total?: string;
+      granted?: string;
+      toppedUp?: string;
+      currency?: string;
+      sufficient?: boolean;
+    }
+  | {
+      supported: true;
+      kind: "progress";
+      pct?: number;
+      plan?: string;
+      resetSeconds?: number;
+    };
+
+/** 从提供商 /models 端点拉实时模型列表（params 与 verify-key 同构 + providerKey） */
+export function settingsFetchProviderModels(params: Record<string, unknown>): Promise<{ success: boolean; data?: { models: LiveProviderModel[] }; message?: string }> {
+  return oc().settingsFetchProviderModels(params);
+}
+
+/** 查询提供商订阅用量 / 余额；unsupported=true 表示该提供商暂无受支持的查询端点 */
+export function settingsGetProviderUsage(providerKey: string): Promise<{ success: boolean; data?: ProviderUsageInfo; message?: string; unsupported?: boolean }> {
+  return oc().settingsGetProviderUsage({ providerKey });
 }
 
 // ---------------------------------------------------------------------------

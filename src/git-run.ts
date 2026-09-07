@@ -12,12 +12,18 @@ export type GitRunner = (
 ) => void;
 
 const realRunner =
-  (cwd: string, timeoutMs: number, maxBuffer: number): GitRunner =>
+  (cwd: string, timeoutMs: number, maxBuffer: number, env?: Record<string, string>): GitRunner =>
   (args, callback) => {
     execFile(
       "git",
       args,
-      { cwd, timeout: timeoutMs, windowsHide: true, maxBuffer },
+      {
+        cwd,
+        timeout: timeoutMs,
+        windowsHide: true,
+        maxBuffer,
+        ...(env ? { env: { ...process.env, ...env } } : undefined),
+      },
       (err, stdout, stderr) => callback(err, String(stdout), String(stderr)),
     );
   };
@@ -28,8 +34,9 @@ export function runGit(
   timeoutMs: number,
   maxBuffer: number,
   runner?: GitRunner,
+  env?: Record<string, string>,
 ): Promise<GitRunResult> {
-  const run = runner ?? realRunner(cwd, timeoutMs, maxBuffer);
+  const run = runner ?? realRunner(cwd, timeoutMs, maxBuffer, env);
   return new Promise((resolve, reject) => {
     run(args, (err, stdout, stderr) => {
       if (err && err.killed) {

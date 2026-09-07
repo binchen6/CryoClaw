@@ -508,3 +508,17 @@
 - **阶段 20**：update_plan 计划面板；工具卡三态；错误卡片化。
 - **阶段 21**：队列行内编辑/「立即发送」（直发走 preserveRunState）；fallback 提示；confirm-dialog 替换 9 处原生 confirm。
 - **阶段 22（打包安全）**：electron-builder 平台级 files **覆盖**而非合并全局（曾致 571M asar 含 .env.build）；修复后 asar 4.1M；plugin.approval 入队修复。
+### R58 · 模型设置在线能力 + Git/Worktree 完善 + 任务删除守卫 + 死代码清理（完成，随 v2026.909.8 发版）
+
+用户闲时任务批次：模型设置在线化、git/worktree 功能补全、任务卡片精修与删除守卫、死代码清理，按固定流程交付（审查→冒烟→发版→去敏→push→发行版）。
+- **在线模型列表**：新模块 `src/provider-live.ts` + IPC `settings:fetch-provider-models` ——按 api 形态构造 /models URL（openai 兼容直接拼、anthropic 按 base 是否含 /vN 补段、google key 进 query+pageSize=1000+generateContent 过滤、kimi-coding 始终用当前活跃 proxy 端口防陈旧端口）；UI 侧 provider 块头「同步模型」按钮 + 勾选批量添加面板 + 添加面板「从提供商获取」（目录与在线合并去重；手动 custom 以 providerKey 为 storage key 保证读写一致）。
+- **用量/余额查询**：IPC `settings:get-provider-usage` ——DeepSeek `/user/balance`（官方）、Moonshot `/users/me/balance`（官方）、智谱 GLM Coding Plan `/api/monitor/usage/quota/limit`（社区验证端点，best-effort，0-1 百分比自动换算）；主进程归一化 balance/progress 两种形态，渲染层按 provider 隔离错误信息。凭据只在主进程读取（config 快照是脱敏的）。
+- **Git 面板**：新增 git:branch-list/checkout/log/push/pull/discard/clean 七通道（execFile 数组传参 + GIT_TERMINAL_PROMPT=0 + sanitizeGitRefName 拒选项注入与 ref 语法炸弹）；UI 加分支切换面板、最近 30 条提交历史、推拉按钮（detached HEAD/空仓库前置拦截）、丢弃/删除（危险确认）。修复两个自查缺陷：嵌入模式（工作区页）推拉按钮此前不可达（唯一挂载点是 showRepoSelect:false）→ 抽 renderGitActions 共用；首屏不加载提交历史 → initGitPanel 补拉。
+- **Worktree 手动创建**：内核取证确认 worktrees.create {repoRoot,name?,baseRef?} 与 worktrees.branches RPC 存在且无需 admin scope（workspace 内仓库）→ 管理视图新增创建面板（名称校验 ^[a-z0-9][a-z0-9-]{0,63}$ + 基线分支下拉，repoRoot 候选=既有 worktree 仓库根优先）。
+- **任务删除守卫**：findActiveTaskForSession/activeTaskSessionKeys（childSessionKey/sessionKey 双命中）；侧边栏删除项按 activeTaskSessions 数据字段禁用（Lit shouldUpdate 需数据字段而非回调，app-render 按 tasks 引用记忆化保引用稳定）；deleteSessionFromSidebar 与 worktree 删除双拦截。
+- **任务列表排版**：时间并入 meta 行、活动行 2px accent 左条、状态点对齐标题基线、actions 独占右缘垂直居中、密度收紧。
+- **死代码清理**（全仓库扫描 1424 导出 + 865 i18n 字面量交叉引用）：删 56 个零引用 i18n 键（zh/en 成对）、17 个无消费方导出（DEFAULT_BIND/窗口重试孤儿常量/渠道 Status 类型存根 ×10/40 行未接线的 uninstallExtension 等）；en.ts 插件区块 4 空格缩进归一。
+- **安全加固**：sanitizeGitRelPaths 拒绝含 `:` 路径——pathspec magic（`:(glob)**`）可绕过相对路径校验让 clean/restore 指向全仓库（审查代理实测复现）。
+- **独立审查**：7 项发现（P2×2 + P3×5）全部修复；pathspec magic、kimi 陈旧 proxy 端口、同步错误跨 provider 串显、worktree 分支列表无序号守卫、untracked 行按钮文案错置既有键、unmerged 行丢弃必败、同步可复活并发删除的 provider 裸块。
+- **验证**：全量测试 0 fail（178 node + 596 chat + 158 vitest + 77 scripts）+ dev 实例 CDP 功能冒烟 17 项断言 PASS（含 DeepSeek 官方余额接口实时返回、在线模型同步、git/worktree/任务全视图、0 裸 i18n key、0 renderer 异常）。
+

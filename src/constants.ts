@@ -9,8 +9,6 @@ import { readCryoclawConfig } from "./cryoclaw-config";
 // ── 网络端口 ──
 
 export const DEFAULT_PORT = 18789;
-export const DEFAULT_BIND = "loopback";
-
 // 从用户配置/环境变量解析 Gateway 端口（与 openclaw 内部逻辑一致）
 export function resolveGatewayPort(): number {
   const envRaw = process.env.OPENCLAW_GATEWAY_PORT?.trim();
@@ -46,11 +44,6 @@ export const CRASH_COOLDOWN_MS = 5_000;
 // 实际端口由主进程写入 cryoclaw.config.json 的 gatewayControl.port 供 CLI 脚本读取
 export const GATEWAY_CONTROL_BASE_PORT = 17893;
 export const GATEWAY_CONTROL_MAX_PORT_ATTEMPTS = 10;
-
-// ── 窗口加载重试 ──
-
-export const WINDOW_LOAD_MAX_RETRIES = 20;
-export const WINDOW_LOAD_RETRY_INTERVAL_MS = 1_500;
 
 // ── 窗口尺寸 ──
 // 默认尺寸不再固定：首次启动按主屏工作区 80% 计算（src/window-bounds.ts），

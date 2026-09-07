@@ -59,7 +59,9 @@ export type SettingsAction =
   | "save_channel"
   | "save_kimi"
   | "save_kimi_search"
-  | "save_advanced";
+  | "save_advanced"
+  | "fetch_provider_models"
+  | "get_provider_usage";
 
 interface TrackActionResultOptions {
   success: boolean;

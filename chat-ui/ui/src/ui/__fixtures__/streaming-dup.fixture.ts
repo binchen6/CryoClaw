@@ -138,4 +138,3 @@ turn3.push(chatFinal(RUN3, "首段"));
 export const TURN1: FixtureEntry[] = turn1;
 export const TURN2: FixtureEntry[] = turn2;
 export const TURN3: FixtureEntry[] = turn3;
-export const ALL_TURNS: FixtureEntry[][] = [turn1, turn2, turn3];

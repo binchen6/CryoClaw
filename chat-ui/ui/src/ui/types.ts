@@ -11,32 +11,6 @@
 
 export type LogLevel = "trace" | "debug" | "info" | "warn" | "error" | "fatal";
 
-export type LogEntry = {
-  raw: string;
-  level?: LogLevel | null;
-  msg?: string;
-  message?: string;
-  time?: string | null;
-  ts?: number;
-  subsystem?: string | null;
-  meta?: Record<string, unknown>;
-  [key: string]: unknown;
-};
-
-// ---------------------------------------------------------------------------
-// Presence
-// ---------------------------------------------------------------------------
-
-export type PresenceEntry = {
-  id?: string;
-  host?: string;
-  ip?: string;
-  mode?: string;
-  version?: string;
-  ts?: number;
-  [key: string]: unknown;
-};
-
 // ---------------------------------------------------------------------------
 // Sessions
 // ---------------------------------------------------------------------------
@@ -208,67 +182,6 @@ export type ChannelsStatusSnapshot = {
   channelLabels?: Record<string, string>;
   channelMeta?: ChannelUiMetaEntry[];
   channelAccounts?: Record<string, ChannelAccountSnapshot[]>;
-  [key: string]: unknown;
-};
-
-export type WhatsAppStatus = {
-  configured?: boolean;
-  linked?: boolean;
-  running?: boolean;
-  connected?: boolean;
-  lastConnectedAt?: number;
-  lastMessageAt?: number;
-  authAgeMs?: number;
-  [key: string]: unknown;
-};
-
-export type TelegramStatus = {
-  configured?: boolean;
-  running?: boolean;
-  connected?: boolean;
-  lastStartAt?: number;
-  [key: string]: unknown;
-};
-
-export type DiscordStatus = {
-  configured?: boolean;
-  running?: boolean;
-  lastStartAt?: number;
-  [key: string]: unknown;
-};
-
-export type GoogleChatStatus = {
-  configured?: boolean;
-  running?: boolean;
-  credential?: string;
-  [key: string]: unknown;
-};
-
-export type SlackStatus = {
-  configured?: boolean;
-  running?: boolean;
-  lastStartAt?: number;
-  [key: string]: unknown;
-};
-
-export type SignalStatus = {
-  configured?: boolean;
-  running?: boolean;
-  baseUrl?: string;
-  [key: string]: unknown;
-};
-
-export type IMessageStatus = {
-  configured?: boolean;
-  running?: boolean;
-  lastStartAt?: number;
-  [key: string]: unknown;
-};
-
-export type NostrStatus = {
-  configured?: boolean;
-  running?: boolean;
-  connected?: boolean;
   [key: string]: unknown;
 };
 

@@ -266,6 +266,13 @@ export class OpenClawApp extends LitElement {
     gitDiffTruncated: { state: true },
     gitCommitMessage: { state: true },
     gitCommitting: { state: true },
+    gitBranches: { state: true },
+    gitBranchesLoading: { state: true },
+    gitBranchPanelOpen: { state: true },
+    gitCheckingOutBranch: { state: true },
+    gitLog: { state: true },
+    gitLogLoading: { state: true },
+    gitNetworkBusy: { state: true },
     execMode: { state: true },
     skillsLoading: { state: true },
     skillsReport: { state: true },
@@ -460,6 +467,14 @@ export class OpenClawApp extends LitElement {
   gitDiffTruncated = false;
   gitCommitMessage = "";
   gitCommitting = false;
+  // R58：分支面板 / 提交历史 / push/pull
+  gitBranches: import("./controllers/git.js").GitBranchRow[] | null = null;
+  gitBranchesLoading = false;
+  gitBranchPanelOpen = false;
+  gitCheckingOutBranch: string | null = null;
+  gitLog: import("./controllers/git.js").GitLogCommit[] | null = null;
+  gitLogLoading = false;
+  gitNetworkBusy: "push" | "pull" | null = null;
 
   // 执行权限模式（官方 tools.exec.mode 合法值：deny / allowlist / ask / auto / full；
   // 三态 UI 用其中 ask / auto / full——"approve-all" 不是内核合法值，写入会触发

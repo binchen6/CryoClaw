@@ -167,3 +167,66 @@ export async function gcWorktrees(state: WorktreesState): Promise<WorktreesGcRes
     state.worktreesGcBusy = false;
   }
 }
+
+/* ── R58：手动创建 worktree（内核 worktrees.create / worktrees.branches） ── */
+
+export type WorktreeBranch = {
+  name: string;
+  kind: "local" | "remote";
+};
+
+export type WorktreeBranchesResult = {
+  branches: WorktreeBranch[];
+  defaultBranch?: string;
+  headBranch?: string;
+};
+
+export type CreateWorktreeResult = {
+  worktree?: WorktreeRecord;
+};
+
+/** 仓库分支列表（worktrees.branches RPC；repoRoot 必须在 agent workspace 内） */
+export async function listWorktreeBranches(
+  state: WorktreesState,
+  repoRoot: string,
+): Promise<WorktreeBranchesResult | null> {
+  if (!state.client || !state.connected || !repoRoot) return null;
+  const res = await state.client.request<WorktreeBranchesResult>("worktrees.branches", {
+    repoRoot,
+    includeRepositoryStatus: false,
+  });
+  return res ?? null;
+}
+
+/** 手动创建 worktree（ownerKind=manual）；name 须匹配 ^[a-z0-9][a-z0-9-]{0,63}$ */
+export async function createWorktree(
+  state: WorktreesState,
+  params: { repoRoot: string; name?: string; baseRef?: string },
+): Promise<CreateWorktreeResult | null> {
+  if (!state.client || !state.connected) return null;
+  const res = await state.client.request<CreateWorktreeResult>("worktrees.create", params);
+  await loadWorktrees(state);
+  return res ?? null;
+}
+
+/** worktree 创建 name 校验（与内核 WorktreeNameSchema 同规则） */
+export function isValidWorktreeName(name: string): boolean {
+  return /^[a-z0-9][a-z0-9-]{0,63}$/.test(name);
+}
+
+/** 创建表单的 repoRoot 候选：既有 worktree 的仓库根优先（已验证是 git 仓库），
+ * 无 worktree 时回落到 agent workspace 根。 */
+export function resolveWorktreeRepoRootCandidates(
+  worktrees: WorktreeRecord[],
+  workspaceRoot: string | null,
+): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const w of worktrees) {
+    if (!isLiveWorktree(w) || !w.repoRoot || seen.has(w.repoRoot)) continue;
+    seen.add(w.repoRoot);
+    out.push(w.repoRoot);
+  }
+  if (workspaceRoot && !seen.has(workspaceRoot)) out.push(workspaceRoot);
+  return out;
+}

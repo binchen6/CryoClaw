@@ -45,7 +45,7 @@ import {
   type ModelOrgState,
 } from "./model-org.lib.ts";
 import { renderModelOptionsGrouped } from "../../components/model-options.ts";
-import { deriveUsageView, type UsageLabels } from "./tab-provider-usage.lib.ts";
+import { deriveUsageView, formatResetText, type UsageLabels } from "./tab-provider-usage.lib.ts";
 
 /** 编辑器可选思考档位（off/on 为基础开关、adaptive 为 provider 专有，不暴露） */
 const EDITABLE_THINKING_LEVELS = ["minimal", "low", "medium", "high", "xhigh", "max"] as const;
@@ -146,6 +146,25 @@ function createProviderState() {
     assignMenuFor: null as string | null,
     // 模型过滤
     filterQuery: "",
+    // R58：在线模型同步（provider 块级）
+    syncOpenFor: null as string | null,
+    /** 正在拉取的 provider key 集合（允许多 provider 并行拉取，切换面板互不阻塞） */
+    syncFetching: new Set<string>(),
+    /** 拉取失败信息（按 providerKey 隔离，避免跨 provider 串显） */
+    syncErrors: {} as Record<string, string>,
+    /** providerKey → 在线模型列表（含拉取时间；添加面板下拉共用） */
+    liveModels: {} as Record<string, { models: Array<{ id: string; name?: string }>; at: number }>,
+    /** 同步面板勾选集（要添加的在线模型 id） */
+    syncChecked: new Set<string>(),
+    // R58：添加面板手动拉取
+    addFetchBusy: false,
+    addFetchedFor: "" as string,
+    addFetchError: null as string | null,
+    // R58：用量/余额查询（非 kimi-coding 提供商）
+    usageByProvider: {} as Record<string, { info: import("../../data/ipc-bridge.ts").ProviderUsageInfo; at: number }>,
+    usageLoadingFor: null as string | null,
+    /** 用量查询失败信息（按 providerKey 隔离，避免跨 provider 串显） */
+    usageErrors: {} as Record<string, string>,
   };
 }
 
@@ -176,14 +195,13 @@ function resolveAddTarget() {
   return resolveAddTargetFor(currentAddSelection());
 }
 
-/** 添加流程的模型下拉选项（动态目录；kimi-code 兜底固定模型；手动 custom 无目录） */
+/** 添加流程的模型下拉选项（动态目录 + R58 在线拉取合并；kimi-code 兜底固定模型；手动 custom 用拉取结果） */
 function getAddModelOptions(): string[] {
   const target = resolveAddTarget();
-  if (!target?.catalogProvider) return [];
-  const catalog = getCachedGatewayModels()?.[target.catalogProvider];
-  if (catalog?.length) return catalog;
-  if (target.catalogProvider === "kimi-coding") return [KIMI_CODE_FIXED_MODEL];
-  return [];
+  if (!target) return [];
+  if (target.catalogProvider) return mergeAddModelOptions(target.catalogProvider);
+  // 手动 custom 无目录：仅显示在线拉取成功的列表（storage key = providerKey）
+  return (s.liveModels[target.providerKey]?.models ?? []).map(m => m.id);
 }
 
 function getAddModelId(): string {
@@ -666,11 +684,9 @@ function catalogProviderForKey(providerKey: string): string | null {
 
 function getGroupAddModelOptions(providerKey: string): string[] {
   const cp = catalogProviderForKey(providerKey);
-  if (!cp) return [];
-  const catalog = getCachedGatewayModels()?.[cp];
-  if (catalog?.length) return catalog;
-  if (cp === "kimi-coding") return [KIMI_CODE_FIXED_MODEL];
-  return [];
+  if (cp) return mergeAddModelOptions(cp);
+  // gateway 目录没有的 provider（手动 custom-xxx）：显示在线拉取结果
+  return (s.liveModels[providerKey]?.models ?? []).map(m => m.id);
 }
 
 function emptyCapsDraft(): CapsDraft {
@@ -843,6 +859,7 @@ function onAddProviderChange(provider: string, state: AppViewState) {
   s.addCustomModelId = "";
   s.addShowCustomModelInput = false;
   s.addBaseUrl = "";
+  s.addFetchError = null;
   s.error = null;
   if (provider === "moonshot") s.addSubPlatform = "kimi-code";
   const options = getAddModelOptions();
@@ -1050,6 +1067,181 @@ async function loadUsage(state: AppViewState) {
     // 刷新失败保留既有数据
   } finally {
     s.usageLoading = false;
+    state.requestUpdate();
+  }
+}
+
+/* ── R58：在线模型同步 / 用量查询 ── */
+
+/** 是否支持在线拉取模型列表（全部走 /models 端点；kimi-coding 走本地代理） */
+function providerSupportsLiveModels(prov: GroupedProvider): boolean {
+  // google 走 key-in-query 也可拉，但目录已完整；自定义 provider 同样支持（显式 baseUrl）
+  return prov.baseUrl.startsWith("http");
+}
+
+/** 用量查询支持的 providerKey（与主进程 provider-live.ts 的分发保持一致） */
+function providerSupportsUsage(providerKey: string): boolean {
+  return providerKey === "moonshot" || providerKey === "deepseek" ||
+    providerKey === "zai-cn" || providerKey === "zai-cn-coding" || providerKey === "zai-global";
+}
+
+async function fetchLiveModels(state: AppViewState, providerKey: string) {
+  if (s.syncFetching.has(providerKey)) return;
+  s.syncFetching.add(providerKey);
+  delete s.syncErrors[providerKey];
+  state.requestUpdate();
+  try {
+    const res = await ipc.settingsFetchProviderModels({ providerKey });
+    if (res?.success && res.data?.models) {
+      s.liveModels[providerKey] = { models: res.data.models, at: Date.now() };
+    } else {
+      s.syncErrors[providerKey] = res?.message ?? t("settings.provider.syncFailed");
+    }
+  } catch (err: any) {
+    s.syncErrors[providerKey] = err?.message ?? String(err);
+  } finally {
+    s.syncFetching.delete(providerKey);
+    state.requestUpdate();
+  }
+}
+
+/** 打开/关闭 provider 的模型同步面板（打开即拉取最新列表） */
+function toggleSyncPanel(prov: GroupedProvider, state: AppViewState) {
+  if (s.syncOpenFor === prov.providerKey) {
+    s.syncOpenFor = null;
+    state.requestUpdate();
+    return;
+  }
+  s.syncOpenFor = prov.providerKey;
+  // 默认勾选所有未配置的模型
+  const configured = new Set(prov.models.map(m => m.id));
+  const cached = s.liveModels[prov.providerKey]?.models;
+  s.syncChecked = new Set((cached ?? []).filter(m => !configured.has(m.id)).map(m => m.id));
+  state.requestUpdate();
+  void fetchLiveModels(state, prov.providerKey).then(() => {
+    if (s.syncOpenFor !== prov.providerKey) return;
+    const list = s.liveModels[prov.providerKey]?.models ?? [];
+    s.syncChecked = new Set(list.filter(m => !configured.has(m.id)).map(m => m.id));
+    state.requestUpdate();
+  });
+}
+
+/** 同步面板「添加所选」：批量把勾选的在线模型写入 config */
+async function handleSyncAddSelected(prov: GroupedProvider, state: AppViewState) {
+  const ids = [...s.syncChecked];
+  if (ids.length === 0 || s.busy) return;
+  const list = s.liveModels[prov.providerKey]?.models ?? [];
+  const catalogProvider = catalogProviderForKey(prov.providerKey);
+  const ok = await runPatch(state, draft => {
+    const providers = ((draft.models ??= {}) as any).providers ??= {};
+    const target = providers[prov.providerKey];
+    // provider 已被并发删除时不复活裸块（缺 apiKey/baseUrl 的残缺条目会被内核落盘）
+    if (!target || !Array.isArray(target.models)) return;
+    const existing = new Set(target.models.map((m: any) => (typeof m === "string" ? m : m?.id)));
+    for (const id of ids) {
+      if (existing.has(id)) continue;
+      const live = list.find(m => m.id === id);
+      const entry = buildModelEntry(catalogProvider, id, live?.name || "", catalogModelSupportsImage(catalogProvider ?? prov.providerKey, id) ?? false);
+      target.models.push(entry);
+    }
+  }, { replacePaths: [`models.providers.${prov.providerKey}.models`] });
+  if (ok) {
+    s.syncOpenFor = null;
+    s.syncChecked = new Set();
+    state.requestUpdate();
+  }
+}
+
+/** 添加面板手动拉取：用当前表单参数（可能尚未保存 config）请求 /models */
+async function handleAddFetchModels(state: AppViewState) {
+  if (s.addFetchBusy) return;
+  const isKimiCode = isKimiCodeAdd();
+  const params: Record<string, unknown> = {
+    provider: s.addProvider,
+    subPlatform: s.addProvider === "moonshot" ? s.addSubPlatform : "",
+    customPreset: s.addCustomPreset,
+    apiKey: s.addApiKey.trim(),
+  };
+  if (s.addProvider === "custom" && !s.addCustomPreset) {
+    params.baseURL = s.addBaseUrl.trim();
+    params.apiType = s.addApiType;
+    if (!params.baseURL) {
+      s.addFetchError = t("setup.error.noBaseUrl");
+      state.requestUpdate();
+      return;
+    }
+  }
+  if (!isKimiCode && !params.apiKey && !s.addCustomPreset && s.addProvider !== "custom") {
+    s.addFetchError = t("setup.error.noKey");
+    state.requestUpdate();
+    return;
+  }
+  // kimi-code 已 OAuth 登录时，代理已有 token，允许不带 key 拉取
+  s.addFetchBusy = true;
+  s.addFetchError = null;
+  state.requestUpdate();
+  try {
+    const res = await ipc.settingsFetchProviderModels(params);
+    if (res?.success && res.data?.models) {
+      // storage key：kimi-code → kimi-coding；custom 预设 → 预设 providerKey；
+      // 手动 custom → resolveAddTarget 的 providerKey（与 getAddModelOptions 的读取端一致）
+      const target = resolveAddTarget();
+      const key = isKimiCode
+        ? "kimi-coding"
+        : target?.providerKey ?? s.addProvider;
+      s.liveModels[key] = { models: res.data.models, at: Date.now() };
+      s.addFetchedFor = key;
+      // 未选中或选中项不在新列表时，默认选第一个
+      const options = isKimiCode
+        ? mergeAddModelOptions("kimi-coding")
+        : getAddModelOptions();
+      if (!options.includes(s.addModelId) && options.length) {
+        s.addModelId = options[0];
+        s.addShowCustomModelInput = false;
+      }
+    } else {
+      s.addFetchError = res?.message ?? t("settings.provider.syncFailed");
+    }
+  } catch (err: any) {
+    s.addFetchError = err?.message ?? String(err);
+  } finally {
+    s.addFetchBusy = false;
+    state.requestUpdate();
+  }
+}
+
+/** 目录 + 在线拉取结果的合并选项（目录在前，在线新增按字母序追加） */
+function mergeAddModelOptions(catalogProvider: string | null): string[] {
+  const base = catalogProvider
+    ? (getCachedGatewayModels()?.[catalogProvider] ?? (catalogProvider === "kimi-coding" ? [KIMI_CODE_FIXED_MODEL] : []))
+    : [];
+  const live = s.liveModels[catalogProvider ?? ""]?.models ?? [];
+  const merged = [...base];
+  for (const m of live) {
+    if (!merged.includes(m.id)) merged.push(m.id);
+  }
+  return merged;
+}
+
+/** 用量/余额查询（moonshot/deepseek/zai 等；kimi-coding 走既有 OAuth 面板） */
+async function handleFetchUsage(prov: GroupedProvider, state: AppViewState) {
+  if (s.usageLoadingFor) return;
+  s.usageLoadingFor = prov.providerKey;
+  delete s.usageErrors[prov.providerKey];
+  state.requestUpdate();
+  try {
+    const res = await ipc.settingsGetProviderUsage(prov.providerKey);
+    if (res?.success && res.data?.supported) {
+      s.usageByProvider[prov.providerKey] = { info: res.data, at: Date.now() };
+    } else if ((res as any)?.unsupported) {
+      s.usageErrors[prov.providerKey] = t("settings.provider.usage.unsupported");
+    } else {
+      s.usageErrors[prov.providerKey] = res?.message ?? t("settings.provider.usage.failed");
+    }
+  } catch (err: any) {
+    s.usageErrors[prov.providerKey] = err?.message ?? String(err);
+  } finally {
+    s.usageLoadingFor = null;
     state.requestUpdate();
   }
 }
@@ -1305,6 +1497,8 @@ function renderProvider(prov: GroupedProvider, group: ProviderGroup, state: AppV
   const showSubHeader = group.providers.length > 1 || group.groupId === "custom" || isKimiCoding;
   const visibleModels = prov.models.filter(m => modelMatchesFilter(m, prov));
   if (visibleModels.length === 0) return nothing;
+  const canSyncModels = providerSupportsLiveModels(prov) && !filterActive();
+  const supportsUsage = providerSupportsUsage(prov.providerKey);
   return html`
     <div class="oc-provider-block">
       ${showSubHeader ? html`
@@ -1314,6 +1508,28 @@ function renderProvider(prov: GroupedProvider, group: ProviderGroup, state: AppV
             ${prov.hasApiKey ? t("settings.provider.keySet") : t("settings.provider.keyMissing")}
           </span>
           <span class="oc-provider-block__actions">
+            ${canSyncModels ? html`
+              <button class="oc-provider-list-item__action-btn ${s.syncOpenFor === prov.providerKey ? "is-active" : ""}"
+                data-tooltip=${t("settings.provider.syncModels")}
+                ?disabled=${s.syncFetching.has(prov.providerKey)}
+                @click=${() => toggleSyncPanel(prov, state)}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  ${s.syncFetching.has(prov.providerKey)
+                    ? html`<path d="M21 12a9 9 0 1 1-6.2-8.56"/>`
+                    : html`<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>`}
+                </svg>
+              </button>
+            ` : nothing}
+            ${supportsUsage ? html`
+              <button class="oc-provider-list-item__action-btn"
+                data-tooltip=${t("settings.provider.usage.query")}
+                ?disabled=${s.usageLoadingFor === prov.providerKey}
+                @click=${() => handleFetchUsage(prov, state)}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/><path d="M3 21v-5h5"/>
+                </svg>
+              </button>
+            ` : nothing}
             <button class="oc-provider-list-item__action-btn" data-tooltip=${t("settings.provider.addModelToGroup")}
               @click=${() => startAddToGroup(prov, state)}>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -1330,6 +1546,12 @@ function renderProvider(prov: GroupedProvider, group: ProviderGroup, state: AppV
             </button>
           </span>
         </div>
+      ` : nothing}
+
+      ${s.syncOpenFor === prov.providerKey ? renderSyncPanel(prov, state) : nothing}
+      ${s.usageByProvider[prov.providerKey] ? renderProviderUsage(prov) : nothing}
+      ${s.usageErrors[prov.providerKey] && supportsUsage ? html`
+        <div class="oc-provider-usage-msg">${s.usageErrors[prov.providerKey]}</div>
       ` : nothing}
 
       ${isKimiCoding ? renderKimiCodingExtras(prov, state) : nothing}
@@ -1437,6 +1659,134 @@ function renderModelCard(prov: GroupedProvider, entry: ProviderModelEntry, state
   `;
 }
 
+/* ── R58：在线模型同步面板 / 用量卡片 ── */
+
+/** 过滤中（同步面板与已过滤列表的批量添加语义冲突，先隐藏入口） */
+function filterActive(): boolean {
+  return s.filterQuery.trim() !== "";
+}
+
+function renderSyncPanel(prov: GroupedProvider, state: AppViewState) {
+  const live = s.liveModels[prov.providerKey];
+  const fetching = s.syncFetching.has(prov.providerKey);
+  const error = s.syncErrors[prov.providerKey];
+  if (fetching && !live) {
+    return html`
+      <div class="oc-provider-sync-panel">
+        <span class="oc-provider-spinner"></span>
+        <span class="oc-provider-sync-hint">${t("settings.provider.syncLoading")}</span>
+      </div>
+    `;
+  }
+  if (error) {
+    return html`
+      <div class="oc-provider-sync-panel">
+        <span class="oc-provider-sync-hint oc-provider-sync-hint--error">${error}</span>
+        <button class="oc-settings__btn oc-settings__btn--secondary" @click=${() => fetchLiveModels(state, prov.providerKey)}>
+          ${t("settings.provider.syncRetry")}
+        </button>
+      </div>
+    `;
+  }
+  const models = live?.models ?? [];
+  const configured = new Set(prov.models.map(m => m.id));
+  const fresh = models.filter(m => !configured.has(m.id));
+  if (models.length === 0) {
+    return html`
+      <div class="oc-provider-sync-panel">
+        <span class="oc-provider-sync-hint">${t("settings.provider.syncEmpty")}</span>
+      </div>
+    `;
+  }
+  if (fresh.length === 0) {
+    return html`
+      <div class="oc-provider-sync-panel">
+        <span class="oc-provider-sync-hint">${t("settings.provider.syncUpToDate").replace("{count}", String(models.length))}</span>
+      </div>
+    `;
+  }
+  const allChecked = fresh.every(m => s.syncChecked.has(m.id));
+  return html`
+    <div class="oc-provider-sync-panel">
+      <div class="oc-provider-sync-toolbar">
+        <span class="oc-provider-sync-hint">${t("settings.provider.syncFound").replace("{count}", String(fresh.length))}</span>
+        <span class="oc-provider-sync-actions">
+          <button class="oc-settings__btn oc-settings__btn--secondary" ?disabled=${s.busy}
+            @click=${() => {
+              s.syncChecked = allChecked ? new Set() : new Set(fresh.map(m => m.id));
+              state.requestUpdate();
+            }}>${allChecked ? t("settings.provider.syncUnselectAll") : t("settings.provider.syncSelectAll")}</button>
+          <button class="oc-settings__btn oc-settings__btn--primary" ?disabled=${s.busy || s.syncChecked.size === 0}
+            @click=${() => handleSyncAddSelected(prov, state)}>
+            ${s.busy ? "..." : t("settings.provider.syncAddSelected").replace("{count}", String(s.syncChecked.size))}
+          </button>
+        </span>
+      </div>
+      <div class="oc-provider-sync-list">
+        ${fresh.map(m => html`
+          <label class="oc-provider-sync-item">
+            <input type="checkbox" .checked=${s.syncChecked.has(m.id)}
+              @change=${(e: Event) => {
+                const checked = (e.target as HTMLInputElement).checked;
+                if (checked) s.syncChecked.add(m.id);
+                else s.syncChecked.delete(m.id);
+                state.requestUpdate();
+              }} />
+            <span class="oc-provider-sync-item__id" title=${m.id}>${m.id}</span>
+            ${m.name && m.name !== m.id ? html`<span class="oc-provider-sync-item__name">${m.name}</span>` : nothing}
+            ${configured.has(m.id) ? html`<span class="cc-tag">${t("settings.provider.syncAlreadyAdded")}</span>` : nothing}
+          </label>
+        `)}
+      </div>
+    </div>
+  `;
+}
+
+/** 余额/配额卡片渲染（moonshot/deepseek 余额型 + zai 配额进度型） */
+function renderProviderUsage(prov: GroupedProvider) {
+  const entry = s.usageByProvider[prov.providerKey];
+  if (!entry) return nothing;
+  const info = entry.info;
+  if (info.supported !== true) return nothing;
+  if (info.kind === "balance") {
+    const currency = info.currency === "CNY" ? "¥" : info.currency ? `${info.currency} ` : "";
+    const parts: string[] = [];
+    if (info.available !== undefined) parts.push(`${t("settings.provider.usage.balance")}: ${currency}${info.available}`);
+    if (info.total !== undefined && info.total !== info.available) {
+      parts.push(`${t("settings.provider.usage.totalBalance")} ${currency}${info.total}`);
+    }
+    if (info.granted !== undefined && info.granted !== "0") {
+      parts.push(`${t("settings.provider.usage.granted")} ${currency}${info.granted}`);
+    }
+    if (info.toppedUp !== undefined && info.toppedUp !== "0") {
+      parts.push(`${t("settings.provider.usage.toppedUp")} ${currency}${info.toppedUp}`);
+    }
+    if (info.sufficient === false) parts.push(t("settings.provider.usage.insufficient"));
+    return html`
+      <div class="oc-provider-usage-row">
+        <span class="oc-provider-usage-row__text">${parts.join(" · ")}</span>
+        <span class="oc-provider-usage-row__at">${formatUsageAt(entry.at)}</span>
+      </div>
+    `;
+  }
+  // progress（zai 配额）
+  const pct = info.pct;
+  return html`
+    <div class="oc-provider-usage-row">
+      ${info.plan ? html`<span class="cc-tag">${info.plan}</span>` : nothing}
+      <div class="oc-provider-usage-bar"><div class="oc-provider-usage-bar-fill" style="width:${pct ?? 0}%"></div></div>
+      <span class="oc-provider-usage-row__text">${pct !== undefined ? `${pct}%` : ""}${info.resetSeconds ? ` · ${formatResetText(info.resetSeconds, getLocale() === "zh" ? "zh" : "en")}` : ""}</span>
+      <span class="oc-provider-usage-row__at">${formatUsageAt(entry.at)}</span>
+    </div>
+  `;
+}
+
+function formatUsageAt(at: number): string {
+  const s = Math.max(0, Math.round((Date.now() - at) / 1000));
+  if (s < 60) return t("settings.provider.usage.justNow");
+  return t("settings.provider.usage.minutesAgo").replace("{n}", String(Math.floor(s / 60)));
+}
+
 /* ── kimi-coding 附加区（OAuth + 用量） ── */
 
 function renderKimiCodingExtras(prov: GroupedProvider, state: AppViewState) {
@@ -1518,34 +1868,59 @@ function renderUsagePanel(state: AppViewState) {
 }
 
 // ── add panel 共享表单块（renderGroupAddPanel / renderAddPanel 复用） ──
-// 模型下拉（动态目录 + 自定义哨兵项）；可选钩子给分组追加场景补 caps 初始化。
+// 模型下拉（动态目录 + 在线拉取合并 + 自定义哨兵项）；可选钩子给分组追加场景补 caps 初始化。
 function renderAddModelSelect(
   options: string[],
   state: AppViewState,
-  hooks?: { onSentinel?: () => void; onCatalogPick?: (modelId: string) => void },
+  hooks?: {
+    onSentinel?: () => void;
+    onCatalogPick?: (modelId: string) => void;
+    /** R58 手动拉取按钮（providerKey 缺省 = 完整添加流程参数路径） */
+    onFetch?: () => void;
+    fetchBusy?: boolean;
+    fetchError?: string | null;
+  },
 ) {
-  if (options.length === 0) return nothing;
+  if (options.length === 0 && !hooks?.onFetch) return nothing;
   return html`
     <div class="oc-settings__form-group">
       <label class="oc-settings__label">${t("setup.provider.model")}</label>
-      <select class="oc-settings__select" .value=${s.addModelId}
-        @change=${(e: Event) => {
-          const v = (e.target as HTMLSelectElement).value;
-          if (v === CUSTOM_MODEL_SENTINEL) {
-            s.addShowCustomModelInput = true;
-            s.addModelId = v;
-            hooks?.onSentinel?.();
-          } else {
-            s.addShowCustomModelInput = false;
-            s.addModelId = v;
-            s.addCustomModelId = "";
-            hooks?.onCatalogPick?.(v);
-          }
-          state.requestUpdate();
-        }}>
-        ${options.map(m => html`<option value=${m} ?selected=${s.addModelId === m}>${m}</option>`)}
-        <option value=${CUSTOM_MODEL_SENTINEL}>${t("setup.provider.customModelOption")}</option>
-      </select>
+      <div class="oc-provider-model-select-row">
+        ${options.length > 0 ? html`
+          <select class="oc-settings__select" .value=${s.addModelId}
+            @change=${(e: Event) => {
+              const v = (e.target as HTMLSelectElement).value;
+              if (v === CUSTOM_MODEL_SENTINEL) {
+                s.addShowCustomModelInput = true;
+                s.addModelId = v;
+                hooks?.onSentinel?.();
+              } else {
+                s.addShowCustomModelInput = false;
+                s.addModelId = v;
+                s.addCustomModelId = "";
+                hooks?.onCatalogPick?.(v);
+              }
+              state.requestUpdate();
+            }}>
+            ${options.map(m => html`<option value=${m} ?selected=${s.addModelId === m}>${m}</option>`)}
+            <option value=${CUSTOM_MODEL_SENTINEL}>${t("setup.provider.customModelOption")}</option>
+          </select>
+        ` : html`<span class="oc-provider-dynamic-hint">${t("settings.provider.modelsEmptyHint")}</span>`}
+        ${hooks?.onFetch ? html`
+          <button class="oc-settings__btn oc-settings__btn--secondary oc-provider-fetch-btn" type="button"
+            ?disabled=${hooks.fetchBusy}
+            title=${t("settings.provider.fetchFromProvider")}
+            @click=${hooks.onFetch}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              ${hooks.fetchBusy
+                ? html`<path d="M21 12a9 9 0 1 1-6.2-8.56"/>`
+                : html`<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>`}
+            </svg>
+            ${t("settings.provider.fetchFromProvider")}
+          </button>
+        ` : nothing}
+      </div>
+      ${hooks?.fetchError ? html`<span class="oc-provider-dynamic-hint oc-provider-sync-hint--error">${hooks.fetchError}</span>` : nothing}
       <span class="oc-provider-dynamic-hint">${t("settings.provider.modelsDynamicHint")}</span>
     </div>
   `;
@@ -1574,6 +1949,33 @@ function renderAddAliasInput(state: AppViewState) {
   `;
 }
 
+/** 分组追加面板的手动拉取（provider 已配置，主进程读真实凭据） */
+async function handleGroupAddFetchModels(state: AppViewState, providerKey: string) {
+  if (s.addFetchBusy) return;
+  s.addFetchBusy = true;
+  s.addFetchError = null;
+  state.requestUpdate();
+  try {
+    const res = await ipc.settingsFetchProviderModels({ providerKey });
+    if (res?.success && res.data?.models) {
+      s.liveModels[providerKey] = { models: res.data.models, at: Date.now() };
+      s.addFetchedFor = providerKey;
+      const options = mergeAddModelOptions(catalogProviderForKey(providerKey));
+      if (!options.includes(s.addModelId) && options.length) {
+        s.addModelId = options[0];
+        s.addShowCustomModelInput = false;
+      }
+    } else {
+      s.addFetchError = res?.message ?? t("settings.provider.syncFailed");
+    }
+  } catch (err: any) {
+    s.addFetchError = err?.message ?? String(err);
+  } finally {
+    s.addFetchBusy = false;
+    state.requestUpdate();
+  }
+}
+
 /** 分组追加面板：复用目标 provider 的 baseUrl/api/apiKey，仅选模型 + 别名 + 能力覆盖 */
 function renderGroupAddPanel(state: AppViewState) {
   const providerKey = s.addToProviderKey!;
@@ -1590,6 +1992,9 @@ function renderGroupAddPanel(state: AppViewState) {
       ${renderAddModelSelect(options, state, {
         onSentinel: () => { s.addCaps = emptyCapsDraft(); },
         onCatalogPick: (v) => initAddCapsFromCatalog(providerKey, v),
+        onFetch: () => { void handleGroupAddFetchModels(state, providerKey); },
+        fetchBusy: s.addFetchBusy,
+        fetchError: s.addFetchedFor === providerKey ? s.addFetchError : null,
       })}
 
       ${renderAddCustomModelInput(state, options.length === 0)}
@@ -1731,8 +2136,12 @@ function renderAddPanel(state: AppViewState) {
         </div>
       `}
 
-      <!-- 3. 选择模型（动态目录） -->
-      ${renderAddModelSelect(options, state)}
+      <!-- 3. 选择模型（动态目录 + 在线拉取） -->
+      ${renderAddModelSelect(options, state, {
+        onFetch: () => { void handleAddFetchModels(state); },
+        fetchBusy: s.addFetchBusy,
+        fetchError: s.addFetchError,
+      })}
 
       ${renderAddCustomModelInput(state, options.length === 0)}
 

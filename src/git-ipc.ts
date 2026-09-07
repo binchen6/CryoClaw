@@ -18,16 +18,23 @@ import { runGit, type GitRunResult } from "./git-run";
 import {
   isNotARepoError,
   normalizeCommitMessage,
+  parseGitBranchList,
+  parseGitLog,
   parsePorcelainV2Status,
   parseUnifiedDiff,
+  sanitizeGitRefName,
   sanitizeGitRelPaths,
 } from "./git-parse";
 import * as log from "./logger";
 
 const GIT_TIMEOUT_MS = 15_000;
 const GIT_COMMIT_TIMEOUT_MS = 30_000;
+// push/pull 走网络，超时放宽到 2 分钟
+const GIT_NETWORK_TIMEOUT_MS = 120_000;
 const GIT_MAX_BUFFER = 8 * 1024 * 1024;
 const STDERR_PREVIEW = 4_000;
+// push/pull 禁止交互式凭据提示（会挂死 execFile）；缺凭据时 git 直接报错到 stderr
+const GIT_NO_PROMPT_ENV = { GIT_TERMINAL_PROMPT: "0" } as Record<string, string>;
 
 type Guarded =
   | { ok: true; dir: string }
@@ -167,6 +174,132 @@ export function registerGitIpc(): void {
       return { success: true };
     } catch (err) {
       return gitCatchResp("git:commit", err);
+    }
+  });
+
+  // ── R58 git 面板增强 ──────────────────────────────────────────────
+
+  // 分支列表：本地分支 + 当前分支标记（checkout 面板数据源）
+  ipcMain.handle("git:branch-list", async (event, cwd: unknown) => {
+    const g = await guardGitOp(event, "git:branch-list", cwd);
+    if (!g.ok) return g.resp;
+    try {
+      const res = await runGit(
+        g.dir,
+        ["for-each-ref", "refs/heads", `--format=%(HEAD)\u001f%(refname:short)\u001f%(upstream:short)`],
+        GIT_TIMEOUT_MS,
+        GIT_MAX_BUFFER,
+      );
+      if (res.code !== 0) return gitFailure(res);
+      return { success: true, data: { branches: parseGitBranchList(res.stdout) } };
+    } catch (err) {
+      return gitCatchResp("git:branch-list", err);
+    }
+  });
+
+  // 切换分支：分支名经 sanitizeGitRefName 校验（防选项注入 / ref 语法炸弹）
+  ipcMain.handle("git:checkout", async (event, cwd: unknown, branch: unknown) => {
+    const g = await guardGitOp(event, "git:checkout", cwd);
+    if (!g.ok) return g.resp;
+    const name = sanitizeGitRefName(branch);
+    if (!name) return { success: false, error: "invalid-branch" };
+    try {
+      const res = await runGit(g.dir, ["checkout", name], GIT_COMMIT_TIMEOUT_MS, GIT_MAX_BUFFER);
+      if (res.code !== 0) return gitFailure(res);
+      return { success: true };
+    } catch (err) {
+      return gitCatchResp("git:checkout", err);
+    }
+  });
+
+  // 提交历史：最近 N 条（hash/author/timestamp/subject，解析在 git-parse.ts）
+  ipcMain.handle("git:log", async (event, cwd: unknown, limit: unknown) => {
+    const g = await guardGitOp(event, "git:log", cwd);
+    if (!g.ok) return g.resp;
+    const n = typeof limit === "number" && Number.isInteger(limit) ? Math.min(Math.max(limit, 1), 200) : 30;
+    try {
+      const res = await runGit(
+        g.dir,
+        ["log", `-n${n}`, "--no-color", "--date=unix", `--pretty=format:%H\u001f%an\u001f%ae\u001f%at\u001f%s`],
+        GIT_TIMEOUT_MS,
+        GIT_MAX_BUFFER,
+      );
+      if (res.code !== 0 && !res.truncated) return gitFailure(res);
+      return { success: true, data: { commits: parseGitLog(res.stdout), truncated: res.truncated } };
+    } catch (err) {
+      return gitCatchResp("git:log", err);
+    }
+  });
+
+  // 推送：默认推当前分支；未设 upstream 时可选 set-upstream（remote/branch 均经 ref 校验）。
+  // GIT_TERMINAL_PROMPT=0 禁止交互提示（凭据缺失直接失败而非挂死）。
+  ipcMain.handle("git:push", async (event, cwd: unknown, opts: unknown) => {
+    const g = await guardGitOp(event, "git:push", cwd);
+    if (!g.ok) return g.resp;
+    const o = (opts ?? {}) as { remote?: unknown; branch?: unknown; setUpstream?: unknown };
+    const args = ["push"];
+    if (o.setUpstream === true) {
+      const remote = sanitizeGitRefName(o.remote) ?? "origin";
+      const branch = sanitizeGitRefName(o.branch);
+      if (!branch) return { success: false, error: "invalid-branch" };
+      args.push("--set-upstream", remote, branch);
+    }
+    try {
+      const res = await runGit(g.dir, args, GIT_NETWORK_TIMEOUT_MS, GIT_MAX_BUFFER, undefined, GIT_NO_PROMPT_ENV);
+      if (res.code !== 0) return gitFailure(res);
+      return { success: true, data: { stdout: res.stdout.slice(0, STDERR_PREVIEW) } };
+    } catch (err) {
+      return gitCatchResp("git:push", err);
+    }
+  });
+
+  // 拉取：--no-edit 防止 merge 打开编辑器；冲突时 git 以非零退出并透传 stderr
+  ipcMain.handle("git:pull", async (event, cwd: unknown) => {
+    const g = await guardGitOp(event, "git:pull", cwd);
+    if (!g.ok) return g.resp;
+    try {
+      const res = await runGit(
+        g.dir,
+        ["pull", "--no-edit"],
+        GIT_NETWORK_TIMEOUT_MS,
+        GIT_MAX_BUFFER,
+        undefined,
+        GIT_NO_PROMPT_ENV,
+      );
+      if (res.code !== 0) return gitFailure(res);
+      return { success: true, data: { stdout: res.stdout.slice(0, STDERR_PREVIEW) } };
+    } catch (err) {
+      return gitCatchResp("git:pull", err);
+    }
+  });
+
+  // 丢弃已跟踪文件的未暂存改动（git restore --worktree）；不碰 staged 区
+  ipcMain.handle("git:discard", async (event, cwd: unknown, rawPaths: unknown) => {
+    const g = await guardGitOp(event, "git:discard", cwd);
+    if (!g.ok) return g.resp;
+    const paths = sanitizeGitRelPaths(rawPaths);
+    if (!paths) return { success: false, error: "denied" };
+    try {
+      const res = await runGit(g.dir, ["restore", "--worktree", "--", ...paths], GIT_TIMEOUT_MS, GIT_MAX_BUFFER);
+      if (res.code !== 0) return gitFailure(res);
+      return { success: true };
+    } catch (err) {
+      return gitCatchResp("git:discard", err);
+    }
+  });
+
+  // 删除未跟踪文件（git clean -f --）；渲染层必须先做危险确认
+  ipcMain.handle("git:clean", async (event, cwd: unknown, rawPaths: unknown) => {
+    const g = await guardGitOp(event, "git:clean", cwd);
+    if (!g.ok) return g.resp;
+    const paths = sanitizeGitRelPaths(rawPaths);
+    if (!paths) return { success: false, error: "denied" };
+    try {
+      const res = await runGit(g.dir, ["clean", "-f", "--", ...paths], GIT_TIMEOUT_MS, GIT_MAX_BUFFER);
+      if (res.code !== 0) return gitFailure(res);
+      return { success: true };
+    } catch (err) {
+      return gitCatchResp("git:clean", err);
     }
   });
 }
