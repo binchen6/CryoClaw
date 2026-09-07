@@ -35,7 +35,7 @@ const MERGE_TARGETS = [
 ];
 
 // 需要收集到 release/ 的文件扩展名
-const COLLECT_EXTENSIONS = [".dmg", ".zip", ".exe", ".yml"];
+const COLLECT_EXTENSIONS = [".dmg", ".zip", ".exe", ".blockmap", ".yml"];
 
 // 读取并解析 yml
 function loadYml(filePath) {

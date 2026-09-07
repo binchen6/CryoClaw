@@ -72,7 +72,7 @@ export async function exportOpenclawStateToArchive(
         },
       });
     }
-    const entries = collectOpenclawStateEntries(snapshotDir);
+    const entries = await collectOpenclawStateEntries(snapshotDir);
 
     fs.mkdirSync(path.dirname(targetZipPath), { recursive: true });
     const fd = fs.openSync(targetZipPath, "w");
@@ -84,7 +84,8 @@ export async function exportOpenclawStateToArchive(
   } catch (err) {
     throw toError(err);
   } finally {
-    fs.rmSync(snapshotRoot, { recursive: true, force: true });
+    // 异步清理：数百 MB 快照目录的 rmSync 同样会冻结主进程（与上方 cp 的理由一致）
+    await fs.promises.rm(snapshotRoot, { recursive: true, force: true, maxRetries: 3 }).catch(() => {});
   }
 }
 
@@ -191,10 +192,12 @@ function clearStateDirForImport(stateDir: string): void {
   }
 }
 
-function collectOpenclawStateEntries(stateDir: string): OpenclawStateEntry[] {
+// 异步遍历快照树（readdir/lstat 均 promises 版）：.openclaw 大目录下同步
+// 全树 walk 会把主进程事件循环冻住数秒（导出期间所有 IPC 停摆）。
+async function collectOpenclawStateEntries(stateDir: string): Promise<OpenclawStateEntry[]> {
   if (!fs.existsSync(stateDir)) return [];
 
-  const rootStat = fs.lstatSync(stateDir);
+  const rootStat = await fs.promises.lstat(stateDir);
   if (!rootStat.isDirectory()) {
     throw new Error(`.openclaw 不是目录: ${stateDir}`);
   }
@@ -204,11 +207,10 @@ function collectOpenclawStateEntries(stateDir: string): OpenclawStateEntry[] {
   // 导入校验均以此为准，不再拼接绝对路径。
   const registry = createPathRegistry(stateDir);
 
-  const walk = (dir: string, relSegments: string[]) => {
+  const walk = async (dir: string, relSegments: string[]) => {
     // Stable traversal makes archive contents deterministic for tests and
     // avoids platform-specific readdir ordering.
-    const children = fs
-      .readdirSync(dir, { withFileTypes: true })
+    const children = (await fs.promises.readdir(dir, { withFileTypes: true }))
       .sort((a, b) => a.name.localeCompare(b.name));
 
     for (const child of children) {
@@ -231,7 +233,7 @@ function collectOpenclawStateEntries(stateDir: string): OpenclawStateEntry[] {
         continue;
       }
 
-      const stat = fs.lstatSync(absPath);
+      const stat = await fs.promises.lstat(absPath);
 
       // 符号链接/junction 不入包：cp filter 已跳过；此处防御性再跳过。
       // 链接是机器相关运行时产物（内核 peer 链接、plugin-skills 缓存），
@@ -244,7 +246,7 @@ function collectOpenclawStateEntries(stateDir: string): OpenclawStateEntry[] {
         const dirRelPath = `${relPath}/`;
         validatePortablePath(dirRelPath, "dir", registry);
         entries.push({ absPath, relPath: dirRelPath, kind: "dir", mode: stat.mode, mtime: stat.mtime });
-        walk(absPath, childSegments);
+        await walk(absPath, childSegments);
         continue;
       }
 
@@ -258,7 +260,7 @@ function collectOpenclawStateEntries(stateDir: string): OpenclawStateEntry[] {
     }
   };
 
-  walk(stateDir, []);
+  await walk(stateDir, []);
   return entries;
 }
 

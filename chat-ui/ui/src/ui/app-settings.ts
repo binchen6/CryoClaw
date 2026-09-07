@@ -9,6 +9,7 @@ import {
   type Tab,
 } from "./navigation.ts";
 import { saveSettings, type UiSettings } from "./storage.ts";
+import { applySessionKeyTransition } from "./session-transition.ts";
 import { startThemeTransition, type ThemeTransitionContext } from "./theme-transition.ts";
 import { resolveTheme, type ResolvedTheme, type ThemeMode } from "./theme.ts";
 import { isInjectableViewId } from "./views/registry.ts";
@@ -286,13 +287,13 @@ export function onPopState(host: SettingsHost) {
 
   const url = new URL(window.location.href);
   const session = url.searchParams.get("session")?.trim();
-  if (session) {
-    host.sessionKey = session;
-    applySettings(host, {
-      ...host.settings,
-      sessionKey: session,
-      lastActiveSessionKey: session,
-    });
+  if (session && session !== host.sessionKey) {
+    // 走统一会话切换守卫（草稿快照/流状态重置/applySettings/历史重拉），
+    // 不能直接裸写 sessionKey——否则旧会话消息流与新 key 错配、流式 delta 被 runId 过滤层丢弃
+    applySessionKeyTransition(
+      host as unknown as Parameters<typeof applySessionKeyTransition>[0],
+      session,
+    );
   }
 
   setTabFromRoute(host, resolved);

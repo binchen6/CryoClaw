@@ -79,6 +79,11 @@ win:
 nsis:
   oneClick: false
   perMachine: false
+  # 安装器语言只编译 English + 简体中文（其他系统语言回退 English）：
+  # 精简语言表 + 卸载组件页文案可用 LangString 双语化（scripts/installer.nsh）
+  installerLanguages:
+    - en_US
+    - zh_CN
   # 安装/卸载向导图标（复用应用 ico，含 256x256 档）
   installerIcon: "assets/icon.ico"
   uninstallerIcon: "assets/icon.ico"

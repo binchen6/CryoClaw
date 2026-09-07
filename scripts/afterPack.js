@@ -277,6 +277,13 @@ function replaceNodeBinary(platform, targetBase, productName) {
       console.log(`[afterPack] 已删除 runtime/node.exe (${sizeMB} MB)`);
     }
 
+    // node.cmd 代理：npm 生命周期脚本（如 openclaw preinstall 的裸 `node` 版本校验）
+    // 按 PATH 解析 `node`；用户机器常无系统 Node。kernel-update.mjs 已把 runtime/
+    // 前置到 PATH，无此代理时运行期内核升级在无 Node 机器上必然失败。
+    const nodeCmdPath = path.join(runtimeDir, "node.cmd");
+    fs.writeFileSync(nodeCmdPath, buildWindowsNodeProxyScript(productName), "utf-8");
+    console.log(`[afterPack] 已写入 node.cmd 代理 (Electron Helper + ELECTRON_RUN_AS_NODE)`);
+
     const npmCmdPath = path.join(runtimeDir, "npm.cmd");
     if (fs.existsSync(npmCmdPath)) {
       const npmScript = buildWindowsElectronProxyScript(productName, "%~dp0node_modules\\npm\\bin\\npm-cli.js");
@@ -291,6 +298,23 @@ function replaceNodeBinary(platform, targetBase, productName) {
       console.log(`[afterPack] 已重写 npx.cmd`);
     }
   }
+}
+
+// 裸 node 语义代理：无 cli 入口，参数原样透传给以 node 模式运行的 Electron Helper
+function buildWindowsNodeProxyScript(productName) {
+  const mainExe = `%~dp0..\\..\\..\\${productName}.exe`;
+  const helperExe = `%~dp0..\\..\\..\\${productName} Helper.exe`;
+  return [
+    "@echo off",
+    'set "ELECTRON_RUN_AS_NODE=1"',
+    `set "APP_EXE=${mainExe}"`,
+    `set "APP_HELPER=${helperExe}"`,
+    'if exist "%APP_HELPER%" (',
+    '  "%APP_HELPER%" %*',
+    ") else (",
+    '  "%APP_EXE%" %*',
+    ")",
+  ].join("\r\n") + "\r\n";
 }
 
 function buildWindowsElectronProxyScript(productName, cliEntryPath) {

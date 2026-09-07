@@ -27,6 +27,7 @@ import {
   reduceAppUpdateState,
 } from "./app-updater-state";
 import { clearSnooze, isUpdateSnoozed, readSnooze, writeSnooze, SnoozeUntil } from "./update-snooze";
+import { fetchReleaseNotesFromGitHub } from "./app-update-release-notes";
 
 export type { AppUpdateState } from "./app-updater-state";
 
@@ -210,7 +211,18 @@ export function initAppUpdater(deps: Deps): void {
   });
   autoUpdater.on("update-available", (info) => {
     log.info(`[app-updater] 发现新版本 ${info.version}`);
-    publish({ type: "available", version: info.version, releaseNotes: readReleaseNotesForVersion(info.version) });
+    // 本地 release-notes.json 是当前安装版内置的，查不到新版本条目；
+    // 先用本地结果（同版本重装等场景命中），缺失时异步拉 GitHub Release 正文补齐
+    const localNotes = readReleaseNotesForVersion(info.version);
+    publish({ type: "available", version: info.version, releaseNotes: localNotes });
+    if (!localNotes) {
+      void fetchReleaseNotesFromGitHub(info.version).then((notes) => {
+        // 仅当仍停留在该版本的 available 态才补发（避免覆盖 downloading/downloaded）
+        if (notes && state.status === "available" && state.version === info.version) {
+          publish({ type: "available", version: info.version, releaseNotes: notes });
+        }
+      });
+    }
   });
   autoUpdater.on("update-not-available", (info) => {
     log.info(`[app-updater] 已是最新版本 ${info.version}`);

@@ -101,6 +101,20 @@ function openSettingsView(state: AppViewState, tabHint: string | null = null) {
 const PANEL_WIDTH_MIN = 220;
 const PANEL_WIDTH_MAX = 420;
 
+// 微信渠道引导角标的已读标记：localStorage 只在打开设置时写入一次，
+// 渲染热路径（每帧流式更新都过 renderApp）不应反复同步 getItem——模块级缓存。
+let weixinBadgeSeenCache: boolean | null = null;
+function weixinBadgeUnseen(): boolean {
+  if (weixinBadgeSeenCache === null) {
+    weixinBadgeSeenCache = localStorage.getItem("cryoclaw:weixin-badge-seen") === "1";
+  }
+  return !weixinBadgeSeenCache;
+}
+function weixinBadgeMarkSeen(): void {
+  localStorage.setItem("cryoclaw:weixin-badge-seen", "1");
+  weixinBadgeSeenCache = true;
+}
+
 function clampPanelWidth(w: number): number {
   return Math.min(PANEL_WIDTH_MAX, Math.max(PANEL_WIDTH_MIN, Math.round(w)));
 }
@@ -313,7 +327,7 @@ export function renderApp(state: AppViewState) {
               onWebbridgeRepairClick: () => {
                 void state.onWebbridgeRepairClick();
               },
-              settingsBadge: !localStorage.getItem("cryoclaw:weixin-badge-seen"),
+              settingsBadge: weixinBadgeUnseen(),
               // App 更新角标：有待装/下载中更新时常驻，状态复位后消失
               settingsUpdateBadge: state.appUpdateBadge,
               onOpenChat: () => setCryoClawView(state, "chat"),
@@ -321,7 +335,7 @@ export function renderApp(state: AppViewState) {
               onOpenWorkspace: () => openWorkspaceView(state),
               onOpenExtensions: () => openExtensionsView(state),
               onOpenSettings: () => {
-                localStorage.setItem("cryoclaw:weixin-badge-seen", "1");
+                weixinBadgeMarkSeen();
                 openSettingsView(state, null);
               },
               onOpenWebUI: () => void handleOpenWebUI(state),

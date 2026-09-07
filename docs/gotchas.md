@@ -281,3 +281,37 @@ Things that are easy to get wrong or forget when working on CryoClaw.
     （`%LOCALAPPDATA%\CryoClaw\import-backup`，滚动保留 2 份），解压中途失败会
     best-effort 自动还原；备份失败则中止导入（不做无保护清空）。**更早版本无此保护**，
     在旧版上导入前务必先手动导出备份。
+78. **NSIS 自定义文案/section 名走 customHeader 里的 LangString，且不要加 BUILD_UNINSTALLER 门控。**
+    `customHeader` 宏在 installer 与 uninstaller 两个编译 pass 都会展开（electron-builder
+    两遍编译：pass 1 产出内嵌卸载器，pass 2 链接），而 un.* section 只在 pass 1 编译——
+    LangString 必须两个 pass 都有定义才能被卸载器引用。`$(un.xxx)` 引用时 NSIS 无跨语言
+    自动回退：`installerLanguages` 收敛为 en_US+zh_CN 后，其他系统语言由 MUI 落到首个
+    语言（English）而非空串（v2026.909.7 实装）。MUI 文案覆盖用 `MUI_WELCOMEPAGE_TITLE`
+    等 define（插入页面前），不要 redefine LangString。
+79. **taskkill 退出码 128 = 没有匹配进程。** 安装器杀进程后的固定 `Sleep 2000` 应以
+    退出码条件化（三次 taskkill 全 128 即跳过）；0=成功、1=部分失败/拒绝访问（仍需等待）。
+    taskkill /IM 不加 /T（quitAndInstall 会把安装器 spawn 为 CryoClaw.exe 子进程，树杀
+    会自杀，见 #20/#53 既有实录）。
+80. **打包产物 runtime/ 无 node.exe（afterPack 删除），npm 生命周期脚本里的裸 `node`
+    必须有 node.cmd 代理兜底。** cmd.exe 按 PATH 顺序 × PATHEXT 解析 `node`，runtime/
+    前置 PATH 时 node.cmd 命中；漏写该代理则 openclaw preinstall 的 Node 版本校验在
+    无系统 Node 的用户机上直接拒装——运行期内核升级死功能（dev 环境因 targets 里
+    node.exe 仍在而不可复现，v2026.909.7 修复）。
+81. **electron-builder 26.7.0「更新模式卸载」在本项目产物上稳定失败（exit 2）——已用
+    customRemoveFiles + customUnInstallCheck 双宏绕过。** 现象：旧版卸载器以
+    `--updated` 运行时，atomicRMDir 逐项 rename 到 `%TEMP%\ns*.tmp\old-install` 报
+    `Can't rename $INSTDIR` → Abort(exit 2) → 新安装器 uninstallOldVersion 重试 5 轮
+    （每轮 ~4 分钟）→ handleUninstallResult 的 `uninstallFailed` MessageBox **无 /SD
+    旗标，静默安装器会永远卡在弹窗上**（GUI 模式用户看到 "Failed to uninstall old
+    application files"）。v2026.909.6 全旧代码同样复现，非本仓库回归。**取证边界**：
+    Node/PowerShell/NSIS mini 三种进程外复刻 rename 全部成功，失败只发生在真实卸载器
+    进程内，具体被锁文件未能取证（跨进程 LVM_GETITEMTEXT 读 NSIS 详情列表返回乱码，
+    需 VirtualAllocEx 才可靠）。**修复**（installer.nsh）：① `customRemoveFiles` 整体
+    接管文件移除——直接 RMDir /r（更新场景旧文件本就要丢弃，无需 rename 暂存语义）；
+    ② `customUnInstallCheck` 接管旧卸载器失败分支——RMDir /r 兜底清场后放行安装
+    （残留被解包覆盖），弹窗永不出现。909.6→909.7 升级仍会经历旧卸载器的 5 轮慢重试
+    （一次性代价），909.7 起的卸载器走 ① 快速路径。
+82. **NSIS 卸载器的详情列表（SysListView32）跨进程读不了。** LVM_GETITEMTEXT 的
+    pszText 必须指向目标进程内内存——直接传本进程指针返回乱码（实测整列 "h"）。
+    要程序化取证 NSIS 日志需 VirtualAllocEx/WriteProcessMemory，或改用带 LogSet 的
+    NSIS 编译器构建（electron-builder 默认不带）。

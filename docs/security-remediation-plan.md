@@ -103,3 +103,21 @@ website 静态站审查（第六轮新增证据）：
 - 安装包：`out/win32-x64/CryoClaw-Setup-2026.909.6-x64.exe`（latest.yml sha512/size 一致）
 - 已验证：19/19 产物断言（版本/pin/补丁标记/裁剪生效/白名单）、双冒烟（--version + qqbot 渠道 gateway ready）、静默安装 + 真实状态目录 gateway HTTP 200（5s）、全量测试 986 pass / 0 fail
 - 代码改动已全部暂存于工作树（62 文件，+1757/−725），门禁放行后按既定 commit message 提交
+
+## R57 增补（2026-09-07，闲时全面审查轮，随 v2026.909.7）
+
+三路只读代理审查（主进程安全 / chat-ui 质量 / 构建更新脚本）共 29 findings
+（0 critical / 1 high / 9 medium / 19 low），逐项人工甄别后同轮落地：
+
+- **已修**（详见 OPTIMIZATION-PROGRESS R57）：主窗口导航边界（will-navigate 目录内 +
+  setWindowOpenHandler deny）、webbridge https→http 降级拒绝、内核 tag / 技能 slug
+  参数注入校验、svg 出清 shell-open 白名单、端口占用者强杀镜像名校验、导出遍历异步化、
+  chat-ui 弹层监听泄漏/发送竞位/popState 守卫/头像 origin、更新弹窗版本说明拉取、
+  node.cmd 代理（high）、Node 发行包 SHASUMS256 校验、kernel-update 锁/原子写/崩溃残留自愈。
+- **明确 defer**（威胁模型不成比例或有前置依赖，清单见 OPTIMIZATION-PROGRESS watch list）：
+  webbridge pinned 哈希（需发布链哈希清单）、kimi 凭据 DPAPI 托管（格式迁移）、
+  镜像 registry 完整性交叉校验、KDP windowsHide 补丁锚定重写、IPC 按来源细粒度授权（架构性）。
+- **审查确认干净（未重复立项）**：全部 ~90 个 ipcMain handler 均过 assertTrustedIpcSender；
+  zip 导入 zip-slip/symlink/长度/CRC 拦截完备；git/workspace 通道 realpath 复核；
+  无 shell:true / eval；token 日志全脱敏；chat-ui 11 处 JSON.parse 全有 try/catch；
+  WS 重连退避无紧循环；i18n zh/en 键集合逐键一致。

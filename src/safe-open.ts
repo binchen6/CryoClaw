@@ -6,8 +6,8 @@
 // 安全面：shell.openPath 会用系统默认程序打开任意文件，可执行文件会被直接运行。
 // 仅允许明确的"安全打开"扩展名（文档/图片/媒体），拒绝可执行文件与其他未明确允许的类型。
 export const SAFE_OPEN_EXTS = new Set([
-  // 图片
-  "png", "jpg", "jpeg", "gif", "webp", "bmp", "svg", "ico", "tiff",
+  // 图片（svg 除外：浏览器以 file:// 打开 svg 会执行内嵌脚本，存在本地读文件风险）
+  "png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "tiff",
   // 文档
   "pdf", "txt", "md", "markdown", "json", "csv", "tsv", "log",
   "doc", "docx", "xls", "xlsx", "ppt", "pptx", "odt", "ods", "odp", "rtf",

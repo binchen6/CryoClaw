@@ -104,6 +104,16 @@ export class WindowManager {
       event.preventDefault();
       this.win?.setTitle(title);
     });
+    // 导航硬边界：窗口只承载本地 Chat UI，任何远程地址**或目录外 file:// 地址**一律拒绝，
+    // 防止被污染的渲染层把主窗口/子窗口带去远程内容或借 file:// 跨源读取本地文件
+    const chatUiDirUrl = pathToFileURL(path.dirname(resolveChatUiPath()) + path.sep).href;
+    this.win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+    this.win.webContents.on("will-navigate", (event, url) => {
+      if (!url.startsWith(chatUiDirUrl)) {
+        event.preventDefault();
+        log.warn(`已拦截主窗口导航到 Chat UI 目录外地址: ${url.slice(0, 80)}`);
+      }
+    });
     // 用户调整后的窗口尺寸持久化（节流 500ms；最大化/最小化态不写，
     // 恢复时取的是常态 bounds）
     const scheduleBoundsPersist = () => {

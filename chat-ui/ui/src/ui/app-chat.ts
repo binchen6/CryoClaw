@@ -8,6 +8,7 @@ import { resetToolStream } from "./app-tool-stream.ts";
 import { abortChatRun, loadChatHistory, sendChatMessage } from "./controllers/chat.ts";
 import { loadSessions, patchSession } from "./controllers/sessions.ts";
 import { normalizeBasePath } from "./navigation.ts";
+import { managedMediaHttpOrigin } from "./chat/managed-media.ts";
 import { pendingSessionLabels, pendingSessionResets } from "./session-pending.ts";
 import { generateUUID } from "./uuid.ts";
 
@@ -435,7 +436,10 @@ export async function refreshChatAvatar(host: ChatHost) {
   if (host.chatAvatarAgentId !== agentId) {
     host.chatAvatarUrl = null;
   }
-  const url = buildAvatarMetaUrl(host.basePath, agentId);
+  // file:// 加载形态下相对 URL 会落到本地文件系统而恒失败：拼上网关 HTTP origin
+  // （与托管图片同一配置源；未配置时回退相对路径，保持 dev 同源行为）
+  const origin = managedMediaHttpOrigin() ?? "";
+  const url = `${origin}${buildAvatarMetaUrl(host.basePath, agentId)}`;
   // 竞态守卫：fetch 期间会话可能已切换，落地前再比对一次当前 agentId
   const isStale = () => resolveAgentIdForSession(host) !== agentId;
   try {

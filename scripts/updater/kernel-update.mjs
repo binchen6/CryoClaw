@@ -314,7 +314,16 @@ function acquireLock() {
     if (alive) fail("已有内核升级任务在进行中");
     xfs.rmSync(LOCK_FILE, { force: true }); //  stale lock，清理
   }
-  xfs.writeFileSync(LOCK_FILE, String(process.pid), "utf-8");
+  // "wx" 独占创建：existsSync→writeFileSync 之间存在 TOCTOU 窗口，两个并发
+  // 更新器可能同时通过检查并交错换装；EEXIST 即对手方抢先落锁
+  try {
+    const fd = xfs.openSync(LOCK_FILE, "wx");
+    xfs.writeSync(fd, String(process.pid), "utf-8");
+    xfs.closeSync(fd);
+  } catch (e) {
+    if (e && e.code === "EEXIST") fail("已有内核升级任务在进行中");
+    throw e;
+  }
 }
 
 function releaseLock() {
@@ -329,7 +338,17 @@ function writeState(patch) {
   try {
     prev = JSON.parse(xfs.readFileSync(STATE_FILE, "utf-8"));
   } catch {}
-  xfs.writeFileSync(STATE_FILE, JSON.stringify({ ...prev, ...patch, at: new Date().toISOString() }, null, 2), "utf-8");
+  // 临时文件 + rename 原子写：崩溃半写的 state.json 会丢 previous/backupDir
+  // 历史（下次读虽自愈为 {}，但事后排查与回滚提示会失真）
+  const payload = JSON.stringify({ ...prev, ...patch, at: new Date().toISOString() }, null, 2);
+  const tmp = `${STATE_FILE}.tmp-${process.pid}`;
+  xfs.writeFileSync(tmp, payload, "utf-8");
+  try {
+    xfs.renameSync(tmp, STATE_FILE);
+  } catch (e) {
+    xfs.rmSync(tmp, { force: true });
+    throw e;
+  }
 }
 
 // 安全面：内核版本号格式校验。openclaw 采用日历版本号，形如 2026.7.1-2 / 2026.7.1-rc.3。
@@ -695,21 +714,98 @@ async function cmdCheck() {
 
 // ── 入口 ──
 
+// ── 换装残留自愈 ──
+// 崩溃/断电可能落在 rename 序列中间：gateway.asar 被挪去 .old-<ts> 而 .new-<ts>
+// 尚未进位（此时 asar 缺失、.new 完整——copyFileSync 完成后才会开始 rename）；
+// 或换装成功但清理未跑完（asar 健康 + .old-/.new- 残留，每份 100-200MB）。
+// 必须在持有锁时调用（并发更新器换装中途的临时物是合法存在的，不能误删）。
+function listTsResidue(prefix) {
+  const parent = xfs.dirname(prefix);
+  const stem = xfs.basename(prefix);
+  let names;
+  try {
+    names = xfs.readdirSync(parent);
+  } catch {
+    return [];
+  }
+  return names
+    .filter((n) => n.startsWith(stem))
+    .sort()
+    .map((n) => xfs.join(parent, n));
+}
+
+function reconcileSwapDebris(log) {
+  // ① asar 缺失但 .new-* 已完整落盘 → roll forward（取最新一份）
+  if (!xfs.existsSync(ASAR_PATH)) {
+    const staged = listTsResidue(`${ASAR_PATH}.new-`);
+    if (staged.length > 0) {
+      const candidate = staged[staged.length - 1];
+      // 完整性下限启发式：asar 正品 >100MB；rename 窗口里的 .new 一定是 copy 完成的
+      if (xfs.statSync(candidate).size > 100 * 1024 * 1024) {
+        xfs.renameSync(candidate, ASAR_PATH);
+        log(`已将崩溃残留的 ${xfs.basename(candidate)} 进位为 gateway.asar`);
+      }
+    }
+    // asar 缺失且 .old-* 存在（roll forward 不可能时）→ 还原旧版，保住可启动
+    if (!xfs.existsSync(ASAR_PATH)) {
+      const olds = listTsResidue(`${ASAR_PATH}.old-`);
+      if (olds.length > 0) {
+        xfs.renameSync(olds[olds.length - 1], ASAR_PATH);
+        log(`已将崩溃残留的 ${xfs.basename(olds[olds.length - 1])} 还原为 gateway.asar（旧版）`);
+      }
+    }
+    // unpacked 同理：缺失时优先 .new-，兜底 .old-
+    if (!xfs.existsSync(ASAR_UNPACKED_DIR)) {
+      for (const prefix of [`${ASAR_UNPACKED_DIR}.new-`, `${ASAR_UNPACKED_DIR}.old-`]) {
+        const cand = listTsResidue(prefix);
+        if (cand.length > 0) {
+          xfs.renameSync(cand[cand.length - 1], ASAR_UNPACKED_DIR);
+          log(`已恢复 gateway.asar.unpacked（来自 ${xfs.basename(cand[cand.length - 1])}）`);
+          break;
+        }
+      }
+    }
+  }
+  // ② 正式物健康时清掉全部换装临时残留（成功路径的正常收尾本会删它们）
+  for (const prefix of [
+    `${ASAR_PATH}.new-`,
+    `${ASAR_PATH}.old-`,
+    `${ASAR_UNPACKED_DIR}.new-`,
+    `${ASAR_UNPACKED_DIR}.old-`,
+  ]) {
+    for (const p of listTsResidue(prefix)) {
+      try {
+        if (xfs.statSync(p).isDirectory()) rmRecursive(p);
+        else xfs.rmSync(p, { force: true });
+        log(`已清理换装残留 ${xfs.basename(p)}`);
+      } catch {}
+    }
+  }
+}
+
 async function main() {
   const args = process.argv.slice(2);
   if (args[0] === "update") args.shift(); // CLI wrapper 透传
 
-  if (!xfs.existsSync(ASAR_PATH)) {
-    fail(`找不到 gateway.asar: ${ASAR_PATH}`);
-  }
-
   if (args.includes("--check")) {
+    // 无锁态的尽力自愈（有并发更新在跑时跳过——其临时物是合法的）
+    if (!xfs.existsSync(LOCK_FILE)) {
+      try {
+        reconcileSwapDebris((m) => console.log(`[kernel-update] ${m}`));
+      } catch (e) {
+        console.log(`[kernel-update] 残留自愈跳过: ${e.message || e}`);
+      }
+    }
     await cmdCheck();
     return;
   }
 
   acquireLock();
   try {
+    reconcileSwapDebris((m) => console.log(`[kernel-update] ${m}`));
+    if (!xfs.existsSync(ASAR_PATH)) {
+      fail(`找不到 gateway.asar: ${ASAR_PATH}`);
+    }
     if (args.includes("--rollback")) {
       await cmdRollback();
       return;

@@ -10,10 +10,10 @@
 面向国内生态（Kimi / Moonshot / 飞书 / 企微 / 微信 / 钉钉 / QQ）。
 
 **当前状态**：
-- 重设计工程 **R1–R55 完成**（R55 阶段三/四/五：CLI 全兼容冒烟 + 2026.9.2 取证与 asar 阻断闸门 + transcript 导出；R54 阶段一/二完整闭环；R53 流式 reducer 化 + 布局诊断体系；R52 Progress Card 适配），最新发版 **v2026.909.5**。流式体验两期设计均落地（`docs/archive/specs/2026-08-28-stream-flow-and-sidebar-design.md`）。
-- 内核 openclaw **2026.8.2**（版本 pin 在 package.json `cryoclaw.openclaw`；更新目标走 `kernel-channel.json` 策展渠道，minSupported 2026.7.0）；**Electron 43.4.0**（audit 0 漏洞）。
-- 测试基线 **976 pass / 0 fail / 4 skipped**（vitest 146 + node 157 + chat-ui 594 + scripts 79；2026-09-06 实测，0 fail 为硬指标；asar 冒烟的环境污染与 ANSI 色码匹配问题均已闭环）。
-- 重复率 **1.03%**（80 clones，阈值 5%，`npm run dupcheck` 防回退）；视图 id 收敛为 6（chat/setup/settings/workspace/tasks/extensions）。
+- 重设计工程 **R1–R57 完成**（R57：三路全面代码审查修复 + 安装器 UI 重构 + 更新链路健壮性；R56：内核 2026.9.2 升级落地 + asar 硬阻断解决；R55：CLI 全兼容 + 2026.9.2 取证；R52–R54：流式 reducer 化 + 布局诊断 + Progress Card，详见工程记录），最新发版 **v2026.909.7**。
+- 内核 openclaw **2026.9.2**（版本 pin 在 package.json `cryoclaw.openclaw`；更新目标走 `kernel-channel.json` 策展渠道，minSupported 2026.7.0）；**Electron 43.4.0**（audit 0 漏洞）。
+- 测试基线 **992 pass / 0 fail / 4 skipped**（vitest 158 + node 163 + chat-ui 594 + scripts 77；2026-09-07 实测，0 fail 为硬指标）。
+- 重复率 **1.03%**（81 clones，阈值 5%，`npm run dupcheck` 防回退）；视图 id 收敛为 6（chat/setup/settings/workspace/tasks/extensions）。
 - 开源：GitHub `binchen6/CryoClaw`（AGPL-3.0-only，干净历史）；发版走本地 `dist:win` + `gh release`；CI `tests.yml` 每次 push/PR 全量回归。
 
 **常用命令**：
@@ -73,7 +73,7 @@
 
 ## ✅ 测试体系（勿重复搭建）
 
-- 基线 **524 pass / 0 fail / 4 skipped**（vitest 94 + node 74 + chat-ui 304 + scripts 52；0 fail 硬指标）。
+- 基线 **992 pass / 0 fail / 4 skipped**（vitest 158 + node 163 + chat-ui 594 + scripts 77；0 fail 硬指标）。
 - 基础设施：`tsconfig.test.json`（outDir `.test-dist/`）、`vitest.config.ts`（vitest include 列表）、`scripts/run-node-tests.js`（编译前清空 .test-dist，排除 vitest 文件）、npm scripts `test` / `test:unit(:vitest|:node)` / `test:scripts` / `test:typecheck`。
 - **chat-ui 用真 typecheck**（阶段 13 起接入；旧 `--noCheck` 假检查曾掩盖 303 个类型错误）。
 - `i18n.test.ts` 源码审计：zh/en 键集合一致、无重复键、分区语言正确。
@@ -389,66 +389,27 @@
 
 ### R50 · CryoBlue 设计规范确立 + CryoIcons 自绘图标 + 官网重设计（完成）
 
-用户要求：确立完整设计规范（理念/字体/色彩/排版/全套自设计图标），品牌色固定为「为高效和工作服务的沉稳蓝」并可做混色（更活力、不抢眼、耐看、有辅色和色阶），精修全部页面，重设计官网，走审查-测试-发版-去敏-push-发行版固定流程。
-- **CryoBlue 混色体系**：musepool 参照检索（cyan-blue 主色 + 同族 tint + 蓝青渐变品牌时刻模式）后定案——自绘 brand 色阶（`#eef6fd…#0f2a4e`），浅色主色 brand-600 `#1a6fd0`（蓝向青偏移，白底对比度 ≈4.6:1 过 AA），基准 brand-500 `#2a89dd`；辅色 cyan（`--accent-2` 浅色 `#0891b2` / 暗色 `#22d3ee`）仅作第二强调；品牌签名渐变 蓝→青（`#2a89dd→#06b6d4` / 暗色 `#85c2ee→#22d3ee`）只用于 logo / 官网 hero / 安装器等品牌时刻，UI 内部只用纯色 accent。token 名称零改名，值全量迁移。
-- **CryoIcons 自绘图标**：`icons.ts` 49 个图标全部手写 SVG（24 网格、2px 描边、round cap/join、currentColor、纯几何；唯二填充例外 = moreHorizontal 圆点 + pinActive 激活态），media-enhance 文件卡片图标同步自绘；**移除 lucide 依赖**（vendor-misc 分包瘦身），135 条 path 经语法校验，chat-ui 521 测试全绿（含 grouped-render 的 unsafeSVG 审计）。
-- **品牌资产换新**：`generate-icons.js`（冰晶主图标/托盘/ICO/ICNS）与 `gen-installer-bitmaps.ps1`（安装器位图）换 CryoBlue 并重跑；红色吉祥物（favicon + cc-rail 品牌标）换蓝（渐变 #4ba4e6→#1a6fd0）。
-- **规范文档**：`design-guidelines-zh/en.md` 更新总则/色板/配色章节并新增第 6 节「图标系统（CryoIcons）」绘制与扩展规范；CLAUDE.md 规则 1、README badge（color=1a6fd0）同步。
-- **官网重设计**：浅色一等（纸白中性底）+ CryoBlue，`website/design-tokens.css` 主题块整段重写（浅色默认 + 暗色独立调参 + OS 偏好兜底）；styles.css 去硬编码（orb 混合模式/透明度 token 化，修复 `var(--accent-gl)` 拼写 bug 导致 orb--1 隐形）；文案更新（CryoBlue 设计体系卡、对比行、演示流文本、版本徽章、统计 902 用例）。Electron 无头截图验证五个屏位渲染通过。
-- **测试**：全量 902 pass / 0 fail / 4 skipped（2026-09-05）；dupcheck 1.03%（阈值 5%）；shell.css 残留 `#ffffff` 改 `--text-on-accent`。
+- 2026.9 R2b 规范：中性灰 + CryoBlue（brand-600 #1a6fd0）混色强调、浅色一等主题、CryoIcons 24 网格自绘图标全套替换、官网品牌化重设计、移除 kimi 回环鉴权。规范全文 `docs/design-guidelines-zh/en.md`。
 
-### R51 · UI 精修建议落地 + 官网响应式（平板/手机独立排版）+ stats 口径修正（完成）
+### R51 · UI 精修落地 + 官网响应式 + stats 口径修正（完成）
 
-用户要求：落地 R50 审查中提出的其余 UI 建议，官网适配手机端与平板端（单独设计排版）。
-- **建议① skill 头像色板收敛**：`skill-store-view.ts` 的 `SKILL_AVATAR_COLORS` 从 Flat UI 多色板（含 #c0392b 红）换成 CryoBlue 同族 10 色（蓝青交错，白字对比均 ≥3:1）；app-skills.ts 共用此函数，单点全覆盖。
-- **建议③ 拖拽指示条**：`.cryoclaw-panel-resize` 命中区 6px→8px，常态显示 hairline 细线（原透明不可发现），hover/active 指示条 2px→4px + `accent-glow` 辉光。
-- **建议④ 空态字号阶梯**：`.panel__empty-title` 从 --heading-sm(16px) 升至 `var(--heading-xl)`(24px) + font-display + tracking-display（cron-manage 等全屏空态共用；窄侧栏 `.cc-panel__empty` 故意不动）。
-- **建议② 官网 stats 口径修正**：解包当前 gateway.asar 实测 `method-scopes-*.js` 注册表得 **326 个 RPC 方法**（旧 237 为内核升级前数据）；「53MB 存储裁剪 / 226.8MB」随内核升级过时（当前 asar 312MB），第 4 个 stat 改为 **49 枚 CryoIcons 自绘图标**，对比表「存储体积」行改「图标体系」行；README 同步（657-test→902、1.06%→1.03%、去掉死数字体积表述）。
-- **官网响应式独立排版**：平板 701–1080px——nav 压缩、hero 收紧、960 以下 hero 上下堆叠居中 + mock 取消倾斜 + stats 2×2、bento 双列重组、步骤横向卡（序号左文字右）、compare 列宽收紧；手机 ≤700px 另起排版——nav 只留品牌+GitHub、hero 去 100vh 撑高 + CTA 全宽纵向、mock 收侧栏、stats 2×2 紧凑卡、**步骤改竖向时间线**（圆点序号 + 连接线）、**对比表转卡片流**（表头隐藏、每行成卡、CryoClaw 列 accent 左边条 + 底色）、CTA 全宽按钮列、页脚居中堆叠。
-- **冒烟测试环境隔离加固（顺带）**：`gateway-asar-smoke.test.js` 子进程环境剔除宿主注入的 `OPENCLAW_*/CLAWDBOT_*` 全家桶——Kimi Work 运行时会注入 `OPENCLAW_CONFIG_PATH` 指向 daimon shim 空配置，穿透 `OPENCLAW_STATE_DIR` 隔离导致 gateway 误报「missing gateway.mode」（退出码 78）。根因定位链：守卫逻辑取证（`snapshot.valid=false` 时回退 `cfg` 丢 gateway.mode）→ 字段二分排除 qqbot → env 审计发现 `OPENCLAW_CONFIG_PATH` 污染。**此前基线备注的「asar 冒烟 1 fail 既有环境问题」由此闭环**，scripts 测试 78→79。
-- **测试**：全量 **903 pass / 0 fail / 4 skipped**（vitest 146 + node 157 + chat-ui 521 + scripts 79；2026-09-05 实测）；chat-ui build 通过。三宽度（1440/834/390）无头截图验证横向溢出均 0px，手机时间线/卡片流、平板堆叠排版逐项看图确认。
-- **双仓同步**：博客版（`blog/public/CryoClaw/`）整拷 styles.css + 定向 patch stats 三处（保留 `<base href>`、加速下载双按钮、`/api/cryoclaw-dl` 等部署差异），起临时静态服务器复验三宽度溢出 0px；两仓 commit + push，Cloudflare Pages 自动部署。
+- 官网平板/手机独立排版、发布 stats 口径修正；博客双仓同步部署链（blog/public 整拷 styles.css + 定向 patch）。
 
 ### R52 · openclaw 2026.8.2 对话内核深度适配（完成，随 v2026.909.1 发版）
 
-用户要求：研究内置 openclaw 2026.8.2 内核并完成流式文本、工具调用输出、工具结果展现、对话体验与 Progress Card 深度适配；Progress Card 替代旧 `update_plan` 面板，并按审查、debug/冒烟、去敏、发布的固定流程交付。
-- **内核取证与边界**：新增 `docs/kernel-recon/2026.8.2-chat-capabilities.md`，记录 `progressCard.get` / `progressCard.put` / `progressCard.changed` 及 markdown、steps、revision、清空条件等已验证契约；不修改 bundled gateway.asar 或 openclaw 内核。
-- **Progress Card 替代与兼容**：新增会话级 Progress Card controller/view，支持 revision 去重、changed 失效重拉、重连拉取、切换会话竞态保护、步骤状态与折叠偏好。有效新卡优先隐藏 legacy `update_plan` 面板；旧内核或历史会话无卡时保留原面板回退。
-- **并发与失败韧性**：刷新脏标记改为每 host 隔离；dismiss 在补拉 revision 前就上锁，并以 session/token 防止旧请求污染新会话；用户只看到本地化、非敏感的同步失败提示。
-- **流式工具体验**：工具输入 delta 与终态结果展示增强，包括错误优先摘要、exit-code / diff ± 统计、复制输出、基于文件路径的 fenced-code 语言推导，以及对应中英文文案与样式。
-- **验证与交付**：2026-09-06 全量 `npm test` 通过（Vitest 146、chat UI 578、scripts 79 均无失败；平台跳过项按既有配置）；`npm run build` 通过，仅保留既有 `controllers/chat.ts` 动态导入提示；`npm run dupcheck` 为 80 clones / 715 duplicated lines / 1.04%（阈值 5%）；`git diff --check` 通过且 diff 去敏扫描未发现凭据。`node scripts/dist-win.js` 生成 x64 三件套，`latest.yml` 为 v2026.909.1、sha512 与 275,470,641-byte installer 一致；隔离 profile 下 `win-unpacked` 启动 18 秒正常并已停止。安装程序未签名（本机未配置 CSC_LINK/CSC_KEY_PASSWORD），发布说明保留该限制。
+- 内核取证 `docs/kernel-recon/2026.8.2-chat-capabilities.md`（progressCard.get/put/changed 契约）；Progress Card 替代旧 update_plan 面板（revision 去重、changed 失效重拉、切会话竞态保护、无卡回退 legacy 面板）；工具输入 delta 与终态展示增强（错误优先摘要、exit-code/diff ± 统计、fenced 语言推导）。验证：全量测试 0 fail + dupcheck 1.04% + dist 产物 sha512 断言 + win-unpacked 启动 18s 正常。
 
 ### R53 · 流式输出收敛修复 + 布局诊断体系 + asar 冒烟既有缺陷闭环（完成，随 v2026.909.2 发版）
 
-用户计划（`~/Desktop/计划.md`）分阶段推进的第一、二阶段起步交付：流式不丢不重、UI 排版自动化诊断、每阶段固定审查/冒烟/发版流程。
-- **流式 reducer（阶段一核心）**：新增 `chat-stream-reducer.ts` 纯函数——正式消费协议 v4 `deltaText`/`replace`（append 或整段替换），旧版累计 `message` 快照保留为兼容回退（含 frozenPrefix 工具前缀剥离；非 replace 的回退快照出现倒退即拒绝，替代旧 `next.length >= current.length` 单一判据）。终态前 `flushPendingChatStream` 强制提交挂起的 RAF 文本（final/error/aborted 与 delta 同帧到达时不再丢尾）；error 终态保留已显示的部分回答（`cryoclawPartial` 合成消息 + 行内错误卡），不再只留一张 Error 卡。
-- **orphan 会话隔离**：`stream-recovery.ts` 的重连 orphan 快照从全局单值改为 `sessionKey → {runId, markedAt}` Map——快速切会话后，会话 A 的迟到帧不会被会话 B 收养（新增回归测试）。app-gateway 重连/gap 路径全部传 `host.sessionKey`。
-- **布局诊断（阶段二基建）**：新增 `layout-diagnostics.ts`（viewport 溢出 / 横向溢出 / 可交互元素遮挡三类结构化检查，纯函数 `diagnoseLayoutRect` / `diagnoseHorizontalOverflow` 可单测）+ `main.ts` 安装 `window.__ocLayoutDiagnostics.run()`；报告仅含布局元数据（脱敏）。折叠面板规则：clientWidth < 120 的容器（窄屏被挤压的 pane）不上报横向溢出，页面级溢出由 viewport 检查兜底。
-- **CDP 冒烟脚本固化**：新增 `scripts/layout-cdp-smoke.js`——启动产物 → CDP 多断点（默认 1440/1024/834/800，800=WINDOW_MIN_WIDTH 下限，390px 产品不可达）→ 逐断点跑诊断 hook → 裸 i18n key 扫描（排除文件扩展名形态如 app.xml）→ renderer 异常计数；`--strict-layout` 时布局 issue 也置失败。win-unpacked 与静默安装版均 4 断点 0 issue / 0 异常 / 0 裸 key，console error 仅 CSP meta 警告与 gateway 启动期 WS 重试（良性）。
-- **asar 冒烟既有缺陷闭环**：gateway 实测 ~14s ready 但测试超时——根因是 `OPENCLAW_DEBUG=1` 下内核对管道输出也带 ANSI 色码，`includes("[gateway] ready")` 永不匹配；测试改为剥码匹配 + 外层超时 360s 对齐内部 3 轮 ×110s（外层先炸会吞掉带 stdout/stderr 尾部的诊断断言）。scripts 套件恢复 79/79。
-- **验证与交付**：全量 **966 pass / 0 fail / 4 skipped**（vitest 146 + node 157 + chat-ui 584（+typecheck）+ scripts 79；2026-09-06 实测）；dupcheck 1.03%（80 clones，阈值 5%）；产物断言全过（app.asar 顶层白名单 8 项、版本/发行说明 2026.909.2、installer 275,472,185 bytes 与 latest.yml sha512 一致）；静默安装 `/S` 后安装版 version=2026.909.2、gateway HTTP 200。diff 脱敏扫描未发现凭据/个人路径。
-- **新坑记录**：`asar ef <archive> <file>` 会把文件解到 **cwd**——曾静默覆盖仓库 package.json（git 恢复 + 改用临时目录 cwd 重做断言）；手动验证 gateway 必须显式 `OPENCLAW_STATE_DIR`（漏设会读写共享 Temp\openclaw 真实渠道状态，本机实测误连 weixin/feishu 渠道后立即 taskkill，未发消息）。
-- **遗留与下一步**：390px 手机宽度布局为理论值（窗口 minWidth 800 不可达），待未来响应式需求再评估；阶段一验收项「高频工具调用长流实测」与阶段三 CLI 全兼容、阶段四 2026.9.2 适配按计划顺序推进。
+- `chat-stream-reducer.ts` 纯函数消费协议 v4 deltaText/replace（append 或整段替换，旧版累计快照兼容回退）；终态前 flushPendingChatStream 防丢尾、error 终态保留部分回答；orphan 会话隔离改 sessionKey Map（迟到帧不跨会话收养）；`layout-diagnostics.ts` 三类结构化布局检查 + `scripts/layout-cdp-smoke.js` CDP 多断点冒烟固化；asar 冒烟 ANSI 色码剥离修复（OPENCLAW_DEBUG 下 includes 永不匹配）。
 
 ### R54 · 阶段一收尾（fallback replace 帧）+ 阶段二诊断全量场景化（完成，随 v2026.909.3 发版）
 
-用户计划第一、二阶段完整闭环。内核取证驱动的一个真修复 + 冒烟引擎场景化。
-- **内核取证（replace 帧语义）**：解包 openclaw@2026.8.2 `server-chat-*.js` 的 `resolveBroadcastDelta`——首帧/文本倒退帧（provider 降级重生成、thinking 重写）发 `{ deltaText: 全文, replace: true }`，append 帧的 deltaText 是后缀。**据此修复真 bug**：reducer 的 deltaText+replace 分支此前直接整段采用全文，未剥离 frozenPrefix——工具调用后发生 replace 会把工具前文本在气泡里重复显示；现在 replace 帧与 legacy 快照同语义剥离前缀，append 帧永不剥离（本就是后缀）。新增 5 个 reducer 测试（fallback rewind、replace 剥前缀、append 不剥、**2000 帧混合压力**：500 append → 工具冻结 → 300 append → fallback replace → 1200 append，逐帧精确断言零丢失零重复）。
-- **provider fallback 链路确认**：lifecycle `fallback`/`fallback_cleared` toast 已有（app-tool-stream），文本侧由 replace 帧承载——两个子系统语义闭环。
-- **诊断库扩展**：`diagnoseDialogLayering` 纯函数——打开的 [role=dialog] 层级低于 `.cryoclaw-titlebar` 即报 `dialog-under-titlebar`（auto/NaN 按 0 参与）；collect 集成 + 单测 3 例。
-- **CDP 冒烟引擎场景化**（`scripts/layout-cdp-smoke.js` 重写）：①视图巡览——逐个点击全部 `.cc-rail__item`（对话/任务/工作空间/扩展/网页端/设置），chat 视图跑 4 断点、其余视图跑上下限宽度；②深浅主题 `documentElement.dataset.theme` 直切；③DPI deviceScaleFactor 1/1.25/1.5；④`Emulation.setEmulatedMedia` prefers-reduced-motion:reduce；⑤语言 `?lang=` 重载 + 裸 key 扫描。**22 场景 strict 模式全绿**（0 issue / 0 renderer 异常 / 0 裸 key / gateway 200）。修复：语言场景不能直接导航到 SPA 虚拟路径（`/chat`，磁盘上是 index.html），否则落错误页。
-- **覆盖边界（如实记录）**：键盘焦点顺序、滚动锁定、WebBridge 条件组件、人工注入超长内容未自动化——依赖后续专项；侧栏拖拽/折叠由既有 `sidebar-resize.test.ts` 单测覆盖。
-- **验证与交付**：全量 **976 pass / 0 fail / 4 skipped**（vitest 146 + node 157 + chat-ui 594 + scripts 79）；dupcheck 80 clones / 1.03%；`?lang=en` 重载场景同时验证英文排版无溢出。
+- 内核取证 replace 帧语义（provider 降级重生成发全文 replace）→ 修复 reducer replace 分支未剥离 frozenPrefix 的真 bug（+5 测试含 2000 帧混合压力）；诊断库补 dialog 层级检查；CDP 冒烟引擎场景化重写：全视图巡览 + 深浅主题 + DPI 三档 + reduced-motion + 双语重载，22 场景 strict 全绿。
 
 ### R55 · 阶段三 CLI 全兼容 + 阶段四取证与双内核能力 + 阶段五闸门实测（完成，随 v2026.909.4/.909.5 发版）
 
-用户计划三/四/五阶段的可自动化交付与升级闸门执行。**闸门判定：2026.9.2 asar 硬阻断，内核 pin 维持 2026.8.2**。
-- **阶段三 CLI（v2026.909.4）**：新增 `scripts/cli-compat-smoke.js`——70 个顶层命令矩阵自动生成（7 个交互式命令保守跳过）、全部一级子命令 `--help` 通过；行为电池 13/13：透传/退出码可复现/stdout-stderr 分离/全局参前后/`%` 命令名逐字节往返/空格中文 cwd/gateway 语义（cron 依赖 gateway 报错清晰、sessions list 本地 sqlite 离线直读、--version 完全离线）/输出脱敏扫描。既有覆盖复核：13 个 wrapper 纯函数单测 + install-detector openclaw/openclaw-cn 冲突检测。UI 侧：commands.ts 本就是 commands.list RPC 驱动（无硬编码白名单）；**修复**重连后未 force 刷新命令目录（内核换装后 TTL 内返回旧目录）。Ctrl+C：控制台广播架构生效（wrapper 同步执行不脱离控制台）；合成 headless 测试无法忠实模拟（进程组限制），128s 自然退出无残留。
-- **阶段四取证（`docs/kernel-recon/2026.9.2-diff.md`）**：RPC 注册表 384→424（**+40/-0 纯增量**：transcripts.*、skills.library.*、plugins.controlUi.*、mentions.*、users.github/authConnect.*、update.runs.*、gateway.suspend.handoff 等）；`resolveBroadcastDelta` 两版**逐字节一致**（reducer 无需变更）；progressCard 契约不变；扩展目录布局两版一致；GPT-6 Astra 目录元数据（1.05M 窗口/tiered 计价，模型页动态自适应）；CLI 树 +wiki / -browser 等 5 个；**Node engine 门槛 ≥24.15.0**（系统 Node 24.14 被拒、Electron 43.4 自带 24.18.1 可跑）。
-- **阶段四落地**：整会话 transcript 导出（chat 标题栏新按钮）——优先 `transcripts.get`（9.2 canonical），8.2 回退本地历史序列化；复制 + .md 下载；5 个纯函数/特性探测测试。会话能力探测模式确立：新 RPC 可用即启用、不可用即回退。
-- **阶段五闸门实测（本轮最重要产出）**：`OPENCLAW_PACKAGE_SOURCE=2026.9.2` 打包成功（6 类补丁全命中、verifyOutput 通过含 wecom/weixin 镜像）；无渠道配置可正常 boot；**配置任意渠道即崩**——`applyLegacyDoctorMigrations → fs-safe openRootFileSync` 拒绝 `<channel>/doctor-contract-api.js`（path-mismatch）。判定实验：内核自带 telegram 同样失败 → **与注入机制无关，是 2026.9.2 fs-safe native realpath 身份校验与 asar 虚拟文件系统的通用不兼容**。两版 tarball 均只自带 telegram——国内渠道全靠 mirror 注入，此阻断不解决 2026.9.2 无法承载渠道。修复方向三选已记录（fs-safe asar 感知补丁 / unpacked 真实文件 / 跟进上游）。**按计划闸门规则：不跨越阻断项，pin 保持 2026.8.2，kernel-channel stable 不动。**
-- **阶段五插件矩阵（可自动化子集）**：`scripts/plugin-matrix-smoke.js`——v8 asar 69 扩展枚举（68 manifest ok，image-generation-core 双路径 fallback 属已知）、隔离 boot 加载 14 插件；关注清单（dingtalk/wecom/weixin/feishu/qqbot/kimi/moonshot/zai/qwen/deepseek/browser）覆盖形态记录。**用户验证项（不可自动化，如实记录）**：渠道真实收发、远程操作、OAuth、升级后业务回滚——需真实凭据与外部动作。
-- **验证与交付**：v2026.909.4/.909.5 两轮全流程（test/typecheck/dupcheck/build/dist/断言/静默安装/CDP 22 场景 strict 全绿/CLI 13/13/脱敏/push/release）。
+- `scripts/cli-compat-smoke.js` 70 命令矩阵 + 13 项行为电池全绿；修复重连后命令目录 TTL 不刷新。2026.9.2 取证（`docs/kernel-recon/2026.9.2-diff.md`：RPC 384→424 纯增量、resolveBroadcastDelta 逐字节一致、Node engine ≥24.15）；transcripts.get 优先 + 8.2 回退的会话导出。阶段五闸门：2026.9.2 打包成功但配置任意渠道即崩（fs-safe native realpath 身份校验 × asar 通用不兼容，与注入无关）→ 按闸门规则 pin 维持 8.2（R56 解决）。插件矩阵冒烟 69 扩展枚举 + 14 插件隔离 boot。
 
 ### R56 · 内核 2026.9.2 升级落地（asar 硬阻断解决）+ 存储裁剪 + 导出修复（完成，随 v2026.909.6 发版）
 
@@ -458,7 +419,19 @@
 - **存储裁剪落地（双侧对齐）**：`pruneFsSafeNativePlatforms`（@openclaw/fs-safe/dist/native/ 与 openclaw/dist/native/ 双份 × 7 平台仅留本机，win32-arm64 回退 win32-x64-msvc）+ `pruneTreeSitterSources`（parser.c 9.5MB，prebuilds/wasm 保留）进 package-resources 与 kernel-prune 两处；gateway.asar 263.2→253.4MB；kernel-prune 15 项单测。**新发现打包 bug**：`createPackageWithOptions` 不清理目标 .unpacked 的陈旧文件（上轮裁掉的非目标平台 native 目录曾随安装器原样分发）——packGatewayAsar 打包前先 rmDir .unpacked。claude.exe 322MB 保留（Claude Code attach 必需）；typescript/lib 19MB 暂不动（疑 jiti/插件链依赖，未取证不裁）。
 - **导出配置修复（任务5）**：`.openclaw` 数据包导出恒失败——真实状态目录含 26 个符号链接/junction（内核 peer 链接 `extensions/*/node_modules/openclaw`、plugin-skills 缓存、npm projects），`collectOpenclawStateEntries` 遇链接抛「不支持的 .openclaw 条目」。修复：cp filter 跳过链接（跟随目标会把整个内核拷进快照）+ Dirent 防御性跳过；链接是机器相关运行时产物，跨机导入也必然失效。含 junction 的回归测试。
 - **更新日志 15 条上限（任务7）**：`app:get-release-notes` all=true 分支 slice(0,15)。
-- **验证与交付**：全量 **986 pass / 0 fail**（vitest 147 + node 157 + chat-ui 594 + scripts 88）；README 基线同步；kernel pin `2026.9.2` 入 package.json；v2026.909.6。
+- **验证与交付**：全量 0 fail（vitest 147 + node 157 + chat-ui 594 + scripts 77——R57 于干净 HEAD 复测修正口径）；README 基线同步；kernel pin `2026.9.2` 入 package.json；v2026.909.6。
+### R57 · 三路全面代码审查修复 + 安装器 UI 重构 + 更新链路健壮性（完成，随 v2026.909.7 发版）
+
+用户闲时任务批次：全面人工审查（bug/安全/效率）+ 安装器 UI 重构与安装更新流程优化 + 文档精简，按固定流程交付。
+- **三路只读审查（主进程安全 / chat-ui 质量 / 构建更新脚本）**：0 critical / 1 high / 9 medium / 19 low，逐项甄别后落地 20+ 修复，其余记录 watch list（威胁模型不成比例或需发布链配合的 defer）。
+- **主进程修复**：主窗口 will-navigate 限 Chat UI 目录内 + setWindowOpenHandler deny（此前无导航边界，子窗口继承 preload）；webbridge 下载拒绝 https→http 降级重定向；内核 tag 白名单（防 --tag 注入 --rollback 等开关）+ 卸载技能 resolved slug 复验；safe-open 白名单移除 svg（浏览器 file:// 打开 svg 执行内嵌脚本）；端口占用者强杀前 tasklist 校验镜像名（防误杀恰好占用 18789 的无关服务）；.openclaw 导出的全树 walk/rm 改 promises 版（数百 MB 目录的同步遍历曾冻结主进程数秒）。
+- **chat-ui 修复**：思考档位/回放点弹层开关循环累积泄漏 document 监听（模块级单例 closer，切会话同步关闭）；发送流程 chatSending 先占位再进附件读取 await 窗口（队列「立即发送」曾在该窗口以 preserveRunState:false 踩坏在途 run）；popState 会话切换走 applySessionKeyTransition 统一守卫；头像 meta 拉取拼网关 HTTP origin（file:// 下相对 URL 恒失败）；renderApp 热路径 localStorage 读取改模块级缓存；managed-media origin 变化自动失效缓存；死代码链 chatManualRefreshInFlight/onRefresh 清除。
+- **更新链路修复（含 1 项 high）**：**afterPack 补写 runtime/node.cmd 代理**——打包产物删 node.exe 后 npm 生命周期脚本的裸 `node`（openclaw preinstall 版本校验）在无系统 Node 的用户机上必然失败，运行期内核升级实为死功能；更新弹窗新版本说明改从 GitHub Release 正文拉取（本地 release-notes.json 不可能含未安装版本的条目，此前恒空）。
+- **构建/更新脚本加固**：Node 发行包下载加 SHASUMS256.txt 内容校验（官方+镜像同源文件名，拿到校验值不匹配即硬失败，获取不到降级警告）；merge-release-yml 收集清单补 .blockmap（差分更新元数据此前永不进 release 目录）；execNpmSync 允许空格（checkout 路径含空格曾是硬 die）；officecli 校验随 pin 条件化；kernel-update：锁改 "wx" 独占创建（TOCTOU）、state.json 临时文件+rename 原子写、**换装崩溃残留自愈**（asar 缺失时 .new- 进位/.old- 还原，健康态清残留，锁保护防误删并发方临时物）。
+- **安装器 UI 重构**（v2 位图之上）：欢迎/完成页品牌标题带版本号、卸载向导品牌标题（侧图 electron-builder 自动继承）、底部 BrandingText 替换 Nullsoft 默认、完成页更新日志链接；**installerLanguages 精简 en_US+zh_CN**（其他语言回退英文）；卸载清理选项（CLI/WebBridge 缓存/用户数据）改 LangString 双语（此前英文系统硬显中文）；杀进程等待条件化——taskkill 退出码全 128（无进程）时跳过固定 2s（全新安装提速）。审查代理对照 app-builder-lib 模板逐条核验 NSIS 语法（un.* LangString 双 pass、StdUtils 四参宏、寄存器占用）均正确。
+- **安装器更新链路硬 bug（发版冒烟拦截，本轮最重要产出）**：静默更新 909.6→909.7 / 同版重装稳定失败——旧卸载器 `--updated` 模式下 electron-builder 26.7.0 atomicRMDir 逐项 rename 报 `Can't rename $INSTDIR` → exit 2 → 新安装器 5 轮重试（每轮 ~4 分钟）→ `uninstallFailed` MessageBox **无 /SD，静默链路永卡弹窗**（用户可见 "Failed to uninstall old application files"）。909.6 全旧代码对照复现 = 上游缺陷非本仓回归；Node/PowerShell/NSIS-mini 三重进程外复刻 rename 全过，失败仅在真实卸载器进程内（被锁文件未能定位，跨进程 LVM_GETITEMTEXT 乱码，取证边界如实记录）。修复双宏：`customRemoveFiles` 整体接管移除（RMDir /r 直删，更新场景无需暂存/还原语义）+ `customUnInstallCheck` 接管旧卸载器失败分支（兜底清场放行安装，弹窗永不出现）。909.6→909.7 升级一次性经历旧卸载器慢重试后成功，909.7 起快速路径。详见 gotcha #81/#82。
+- **验证与交付**：全量 **992 pass / 0 fail / 4 skipped**（vitest 158 + node 163 + chat-ui 594 + scripts 77）；dupcheck 1.03%（81 clones）；README 基线同步；文档精简（R52–R55 压缩、测试基线口径修正）。v2026.909.7。
+
 ## 📦 发版与实测经验（套路已验证多次）
 
 
@@ -493,6 +466,13 @@
 - 会话管理 `includeDerivedTitles` 每行多一次 8KB 文件读——会话量极大时注意内核默认 limit。
 - 主会话 chat.history 滞后：根因已定位（`SESSION_STORE_SNAPSHOT_CACHE` 无 TTL），待上游修复；UI 侧 `mergeIfStale` 兜底。
 - ⚠️ 用户行动项：v2026.809 前历史安装包曾含 `.env.build`（已作废的 kimi-claw REFRESH 凭证）——若曾上传分发需轮换。
+
+**R57 审查 defer 项（已评估、收益/风险比不划算或有前置依赖）**：
+- webbridge 下载 pinned SHA-256（需发布链产出哈希清单，本轮已先落 https 降级拒绝）；kimi 凭据 Windows 侧 safeStorage/DPAPI 托管（涉文件格式迁移）。
+- kernel-update 镜像源（npmmirror）packument 完整性 vs 官方 registry 交叉校验（需设计降级策略）；kernel-dist-patch injectWindowsHideAll 从正则启发式改函数标记锚定（补丁是实测过的，重写风险>收益）。
+- runtime/.npmrc 只在 cwd 命中时生效——内核运行时若以 runtime 外目录为 cwd 起 npm 会绕过镜像配置（构建期 execNpmSync 已显式传 registry，仅运行时路径受影响，观察中）。
+- vendorOfficialPlugin 无增量 stamp、7 插件串行 vendor（构建提速候选）；downloadFileWithFallback 失败分支 safeUnlink 可能删并行构建方刚 rename 完的缓存（.partial-<pid> 已保证写安全，仅多余重下）。
+- before-quit 异步清理不 await 可能孤儿 gateway（settings/backup.ts 注释在案；改 preventDefault+异步收尾涉退出语义，需专项）。
 
 **候选功能/加固（取证过、未做，按需立项）**：
 - webbridge 二进制下载 SHA256 校验（需发布链产出哈希清单，R25 候选）。

@@ -22,7 +22,17 @@ export type ManagedMediaConfig = {
 let config: ManagedMediaConfig | null = null;
 
 export function configureManagedMedia(cfg: ManagedMediaConfig | null) {
+  // origin 变化（换网关/换端口重连）：旧 origin 的 blob URL 缓存全部失效，
+  // 就地清空防串台（等价 resetManagedMedia，但不需要外部调用方记得调）
+  if (config && cfg && config.httpOrigin !== cfg.httpOrigin) {
+    resetManagedMedia();
+  }
   config = cfg;
+}
+
+/** 网关 HTTP origin（未配置/已断连时为 null）——头像 meta 等网关 HTTP 拉取共用 */
+export function managedMediaHttpOrigin(): string | null {
+  return config?.httpOrigin ?? null;
 }
 
 /** 网关 WS URL → HTTP origin */

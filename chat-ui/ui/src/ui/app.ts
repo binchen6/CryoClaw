@@ -205,7 +205,6 @@ export class OpenClawApp extends LitElement {
     thinkingLevel: { state: true },
     thinkingLevels: { state: true },
     isBinaryThinking: { state: true },
-    chatManualRefreshInFlight: { state: true },
     sidebarOpen: { state: true },
     sidebarContent: { state: true },
     sidebarError: { state: true },
@@ -383,7 +382,6 @@ export class OpenClawApp extends LitElement {
   isBinaryThinking: boolean = false;
   // 会话列表刷新后按活动会话行的内核 thinkingLevels 重算档位（controllers/sessions.ts 回调）
   onSessionsLoaded = () => this.updateThinkingCapabilities();
-  chatManualRefreshInFlight = false;
   // Sidebar state for tool output viewing
   sidebarOpen = false;
   sidebarContent: string | null = null;

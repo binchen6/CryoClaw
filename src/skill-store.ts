@@ -345,6 +345,10 @@ async function uninstallSkill(slug: string): Promise<{ success: boolean; message
   if (!check.ok) return { success: false, message: check.error };
   try {
     const resolved = resolveInstalledSlug(slug);
+    // resolve 可能返回 workspace/skills/ 下 agent 可写的目录名（反查 SKILL.md），
+    // 该名字未经白名单校验——复核一次，防止 "--flag" 形态目录注入 clawhub 参数
+    const resolvedCheck = validateSkillSlug(resolved);
+    if (!resolvedCheck.ok) return { success: false, message: resolvedCheck.error };
     debugLog(`uninstall: "${slug}" → resolved="${resolved}"`);
     await execClawhub(["uninstall", "--yes", resolved]);
     return { success: true };

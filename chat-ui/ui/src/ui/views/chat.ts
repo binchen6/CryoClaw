@@ -154,7 +154,6 @@ export type ChatProps = {
   showNewMessages?: boolean;
   onScrollToBottom?: () => void;
   // Event handlers
-  onRefresh: () => void;
   onDraftChange: (next: string) => void;
   onSend: () => void;
   onAbort?: () => void;
@@ -189,6 +188,33 @@ let queueEditingId: string | null = null;
 // 否则监听会残留到下一次外部点击才被清掉（并持有过期 props 闭包）。
 let plusMenuOutsideCloser: ((ev: MouseEvent) => void) | null = null;
 
+// 思考档位 / 回放点 popover 的「点击外部关闭」监听（模块级单例）。
+// toggle 按钮本身 stopPropagation，document 点击永远看不到按钮点击——
+// 若关闭分支不显式注销，每次 开→关→开 循环都会永久泄漏一个持有过期
+// popover/el 闭包的 document 监听器。
+let thinkingPopoverCloser: ((ev: MouseEvent) => void) | null = null;
+let rewindPopoverCloser: ((ev: MouseEvent) => void) | null = null;
+
+function closeThinkingPopover() {
+  for (const el of document.querySelectorAll(".chat-compose__thinking-popover--open")) {
+    el.classList.remove("chat-compose__thinking-popover--open");
+  }
+  if (thinkingPopoverCloser) {
+    document.removeEventListener("click", thinkingPopoverCloser);
+    thinkingPopoverCloser = null;
+  }
+}
+
+function closeRewindPopover() {
+  for (const el of document.querySelectorAll(".chat-compose__rewind-popover--open")) {
+    el.classList.remove("chat-compose__rewind-popover--open");
+  }
+  if (rewindPopoverCloser) {
+    document.removeEventListener("click", rewindPopoverCloser);
+    rewindPopoverCloser = null;
+  }
+}
+
 // 最近一次渲染的 sessionKey：切换会话时用于重置上面的模块级瞬态
 // （加号菜单 / 技能选择器 / 目标表单），避免展开状态残留到新会话。
 let lastSessionKey: string | null = null;
@@ -210,7 +236,8 @@ function openPlusMenu(props: { onRequestUpdate?: () => void }) {
     if (!plusMenuOpen || plusMenuOutsideCloser) return;
     plusMenuOutsideCloser = (ev: MouseEvent) => {
       const root = document.querySelector(".chat-plus");
-      if (root && !root.contains(ev.target as Node)) {
+      // root 为 null = chat 视图已卸载（切到设置/任务等），同样要关闭并注销
+      if (!root || !root.contains(ev.target as Node)) {
         closePlusMenu(props);
       }
     };
@@ -893,6 +920,8 @@ export function renderChat(props: ChatProps) {
   if (props.sessionKey !== lastSessionKey) {
     lastSessionKey = props.sessionKey;
     closePlusMenu(props);
+    closeThinkingPopover();
+    closeRewindPopover();
     goalFormOpen = false;
     goalDraft = "";
     queueEditingId = null;
@@ -1330,19 +1359,18 @@ export function renderChat(props: ChatProps) {
                         const el = (e.currentTarget as HTMLElement).closest(".chat-compose__thinking") as HTMLElement;
                         const popover = el?.querySelector(".chat-compose__thinking-popover") as HTMLElement | null;
                         if (!popover) return;
-                        const isOpen = popover.classList.contains("chat-compose__thinking-popover--open");
-                        if (isOpen) {
-                          popover.classList.remove("chat-compose__thinking-popover--open");
+                        if (popover.classList.contains("chat-compose__thinking-popover--open")) {
+                          closeThinkingPopover();
                         } else {
+                          closeThinkingPopover(); // 清掉上一轮可能残留的监听
                           popover.classList.add("chat-compose__thinking-popover--open");
-                          const close = (ev: MouseEvent) => {
-                            if (!el.contains(ev.target as Node)) {
-                              popover.classList.remove("chat-compose__thinking-popover--open");
-                              document.removeEventListener("click", close);
-                            }
+                          const container = el;
+                          thinkingPopoverCloser = (ev: MouseEvent) => {
+                            if (!container.contains(ev.target as Node)) closeThinkingPopover();
                           };
+                          const closer = thinkingPopoverCloser;
                           requestAnimationFrame(() => {
-                            document.addEventListener("click", close);
+                            if (thinkingPopoverCloser === closer) document.addEventListener("click", closer);
                           });
                         }
                       }}
@@ -1408,21 +1436,20 @@ export function renderChat(props: ChatProps) {
                   const el = (e.currentTarget as HTMLElement).closest(".chat-compose__rewind") as HTMLElement;
                   const popover = el.querySelector(".chat-compose__rewind-popover") as HTMLElement | null;
                   if (!popover) return;
-                  const isOpen = popover.classList.contains("chat-compose__rewind-popover--open");
-                  if (isOpen) {
-                    popover.classList.remove("chat-compose__rewind-popover--open");
+                  if (popover.classList.contains("chat-compose__rewind-popover--open")) {
+                    closeRewindPopover();
                   } else {
+                    closeRewindPopover(); // 清掉上一轮可能残留的监听
                     popover.classList.add("chat-compose__rewind-popover--open");
                     // 打开时拉取最新回放点列表
                     props.onOpenCompactionCheckpoints?.();
-                    const close = (ev: MouseEvent) => {
-                      if (!el.contains(ev.target as Node)) {
-                        popover.classList.remove("chat-compose__rewind-popover--open");
-                        document.removeEventListener("click", close);
-                      }
+                    const container = el;
+                    rewindPopoverCloser = (ev: MouseEvent) => {
+                      if (!container.contains(ev.target as Node)) closeRewindPopover();
                     };
+                    const closer = rewindPopoverCloser;
                     requestAnimationFrame(() => {
-                      document.addEventListener("click", close);
+                      if (rewindPopoverCloser === closer) document.addEventListener("click", closer);
                     });
                   }
                 }}

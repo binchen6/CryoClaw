@@ -304,7 +304,14 @@ async function orchestrate(args: string[], source: "auto" | "manual" = "manual")
   }
 }
 
+// 内核版本 tag 白名单（v2026.9.2 / 2026.9.2 形态）；渲染层传入的 tag 直达 updater argv，
+// 拒绝以 "-" 开头的值以免被解释成 --rollback/--force 之类开关
+const KERNEL_TAG_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+
 export async function runKernelUpdate(tag?: string, source: "auto" | "manual" = "manual"): Promise<KernelUpdateResult> {
+  if (tag !== undefined && !KERNEL_TAG_RE.test(tag)) {
+    return { ok: false, error: `无效的内核版本号: ${tag}` };
+  }
   return orchestrate(tag ? ["--tag", tag] : [], source);
 }
 

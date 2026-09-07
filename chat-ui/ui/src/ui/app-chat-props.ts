@@ -74,13 +74,6 @@ export function buildChatProps(state: AppViewState): ChatProps {
     canSend: state.connected,
     error: state.lastError,
     sessions: state.sessionsResult,
-    onRefresh: () => {
-      state.resetToolStream();
-      return Promise.all([
-        loadChatHistory(state as unknown as Parameters<typeof loadChatHistory>[0]),
-        refreshChatAvatar(state as unknown as Parameters<typeof refreshChatAvatar>[0]),
-      ]).then(() => undefined);
-    },
     onChatScroll: (event) => state.handleChatScroll(event),
     onDraftChange: (next) => (state.chatMessage = next),
     configuredModels: state.configuredModels,

@@ -396,7 +396,7 @@ export class GatewayProcess {
     // 优雅停止超时，按 PID 强杀占用端口的进程
     diagLog("WARN: 等待端口释放超时，尝试强杀占用进程");
     const pid = await getPortPid(this.port);
-    if (pid > 0) {
+    if (pid > 0 && (await isPlausiblyOwnGateway(pid))) {
       await killProcess(pid);
       for (let i = 0; i < 10; i++) {
         await sleep(500);
@@ -407,6 +407,9 @@ export class GatewayProcess {
           return;
         }
       }
+    } else if (pid > 0) {
+      // 端口被无关进程占用（HTTP 200 可能来自任何本地服务）：绝不能 taskkill 误杀
+      diagLog(`WARN: 端口 ${this.port} 被 pid=${pid} 占用但镜像不像本应用 gateway，不强杀`);
     }
     diagLog("WARN: 强杀后端口仍被占用，继续尝试启动");
   }
@@ -538,10 +541,28 @@ function isProcessAlive(pid: number): boolean {
   }
 }
 
+// 端口占用者强杀前的身份校验：Windows 上镜像名必须是本应用 gateway 的可能形态
+// （Electron 复用二进制 / CLI 二进制 / 系统 node），防止误杀恰好占了端口的无关服务。
+// 非 Windows 一律放行（ps 取名跨发行版不稳定，且 SIGKILL 不带 /T 树杀副作用）。
+async function isPlausiblyOwnGateway(pid: number): Promise<boolean> {
+  if (!IS_WIN) return true;
+  try {
+    const { stdout } = await execFileAsync(
+      "tasklist",
+      ["/FI", `PID eq ${pid}`, "/FO", "CSV", "/NH"],
+      { timeout: 5000, windowsHide: true },
+    );
+    const image = stdout.split(",")[0]?.replace(/^"|"$/g, "")?.toLowerCase() ?? "";
+    return /(?:cryoclaw|electron|node)/.test(image);
+  } catch {
+    // tasklist 失败（权限等）：宁可放行强杀，保持既有自愈行为
+    return true;
+  }
+}
+
 // 强制终止外部进程（Windows 用 taskkill，POSIX 用 SIGKILL）。
 // 异步：taskkill 最长可等待 5s，同步版会冻结主进程事件循环。调用方均需 await。
-async function killProcess(pid: number): Promise<void> {
-  try {
+async function killProcess(pid: number): Promise<void> {  try {
     if (IS_WIN) {
       await execFileAsync("taskkill", ["/PID", String(pid), "/F", "/T"], {
         timeout: 5000,

@@ -62,7 +62,9 @@ function resolveBundledNpmCli() {
 function execNpmSync(args, opts = {}) {
   const argv = [resolveBundledNpmCli()];
   for (const arg of args) {
-    if (typeof arg !== "string" || !/^[\w.@/\\\-:=~]+$/.test(arg)) {
+    // 允许空格：execFileSync argv 直传不经 shell，空格不会裂成新参数；
+    // --pack-destination/--prefix 等路径值参数在 checkout 路径含空格时必须放行
+    if (typeof arg !== "string" || !/^[\w.@/\\\-:=~ ]+$/.test(arg)) {
       die(`npm 参数含不受支持字符，拒绝执行: ${arg}`);
     }
     argv.push(arg);
@@ -412,6 +414,7 @@ async function downloadAndExtractNode(version, platform, arch, runtimeDir) {
   } else {
     log(`正在下载 ${filename} ...`);
     await downloadFileWithFallback(downloadUrls, cachedFile);
+    await verifyNodeArchiveShasum(version, filename, cachedFile);
     log(`下载完成: ${filename}`);
   }
 
@@ -426,12 +429,47 @@ async function downloadAndExtractNode(version, platform, arch, runtimeDir) {
     safeUnlink(cachedFile);
     log(`重新下载 ${filename} ...`);
     await downloadFileWithFallback(downloadUrls, cachedFile);
+    await verifyNodeArchiveShasum(version, filename, cachedFile);
     log(`重新下载完成: ${filename}`);
     extractNodeRuntimeArchive(cachedFile, runtimeDir, version, platform, arch);
   }
 
   // 写入版本戳
   fs.writeFileSync(stampFile, stampValue);
+}
+
+// Node 发行包内容校验：下载同目录官方 SHASUMS256.txt，比对 sha256。
+// 镜像与官方源共用同一 SHASUMS 文件名；获取失败时降级为警告（截断/损坏仍会被
+// EOCD 检查与解压失败兜住），但「拿到了校验值却不匹配」必须硬失败。
+async function verifyNodeArchiveShasum(version, filename, archivePath) {
+  const shasumUrls = [
+    `https://nodejs.org/dist/v${version}/SHASUMS256.txt`,
+    `https://npmmirror.com/mirrors/node/v${version}/SHASUMS256.txt`,
+  ];
+  let text = null;
+  for (const u of shasumUrls) {
+    try {
+      text = (await httpGet(u)).toString("utf8");
+      break;
+    } catch {}
+  }
+  if (!text) {
+    log(`WARN: 无法获取 SHASUMS256.txt（v${version}），跳过内容校验`);
+    return;
+  }
+  const line = text.split(/\r?\n/).find((l) => l.endsWith(` ${filename}`));
+  const expected = line ? line.slice(0, line.length - filename.length - 1).trim() : null;
+  if (!expected || !/^[0-9a-f]{64}$/i.test(expected)) {
+    log(`WARN: SHASUMS256.txt 中没有 ${filename} 的条目，跳过内容校验`);
+    return;
+  }
+  const { createHash } = require("crypto");
+  const actual = createHash("sha256").update(fs.readFileSync(archivePath)).digest("hex");
+  if (actual.toLowerCase() !== expected.toLowerCase()) {
+    safeUnlink(archivePath);
+    die(`Node 发行包 sha256 校验失败: ${filename}\n  expected ${expected}\n  actual   ${actual}`);
+  }
+  log(`sha256 校验通过: ${filename}`);
 }
 
 // 清理目标目录并解压 Node.js 运行时压缩包
@@ -2862,6 +2900,16 @@ function verifyOutput(targetPaths, opts) {
   const platform = opts.platform;
   const nodeExe = platform === "darwin" ? "node" : "node.exe";
   const targetRel = path.relative(ROOT, targetPaths.targetBase);
+  // OfficeCLI 只有 pin 了版本才会下载（downloadOfficeCli 未 pin 即跳过）；
+  // 未 pin 时 verify 不能反过来硬性要求它存在
+  const officecliPinned = (() => {
+    try {
+      return Boolean(JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8")).cryoclaw?.officecli);
+    } catch {
+      return false;
+    }
+  })();
+  const officecliRel = path.join(targetRel, "officecli", platform === "win32" ? "officecli.exe" : "officecli");
 
   // macOS npm 在 vendor/npm/，Windows npm 在 node_modules/npm/
   const npmDir = platform === "darwin"
@@ -2876,7 +2924,7 @@ function verifyOutput(targetPaths, opts) {
       path.join(targetRel, "gateway.asar"),
       path.join(targetRel, "build-config.json"),
       path.join(targetRel, "app-icon.png"),
-      path.join(targetRel, "officecli", platform === "darwin" ? "officecli" : "officecli.exe"),
+      ...(officecliPinned ? [officecliRel] : []),
     ];
 
     // External channel plugins 不进 gateway.asar，需要单独校验 mirror 输出。
@@ -2910,7 +2958,7 @@ function verifyOutput(targetPaths, opts) {
     path.join(targetRel, "gateway", "node_modules", "clawhub", "bin", "clawdhub.js"),
     path.join(targetRel, "build-config.json"),
     path.join(targetRel, "app-icon.png"),
-    path.join(targetRel, "officecli", platform === "win32" ? "officecli.exe" : "officecli"),
+    ...(officecliPinned ? [officecliRel] : []),
   ];
 
   // Windows arm64 交叉编译时含 native addon 的插件可能注入失败，校验时降级为 warning

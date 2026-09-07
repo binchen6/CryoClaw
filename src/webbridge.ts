@@ -102,7 +102,13 @@ function guardRedirectAndStatus(
   const status = res.statusCode ?? 0;
   if (status >= 300 && status < 400 && res.headers.location) {
     if (ctx.bumpRedirect()) {
-      ctx.follow(new URL(res.headers.location, url).toString());
+      const next = new URL(res.headers.location, url).toString();
+      // 只允许 https 目标：防止 https→http 降级把可执行文件下载拖回明文通道
+      if (new URL(url).protocol === "https:" && new URL(next).protocol !== "https:") {
+        ctx.fail(new Error(`拒绝降级到非 https 下载地址: ${next}`));
+      } else {
+        ctx.follow(next);
+      }
     } else {
       ctx.fail(new Error(`Too many redirects (>${MAX_REDIRECTS})`));
     }

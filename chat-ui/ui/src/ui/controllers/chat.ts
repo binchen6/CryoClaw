@@ -322,6 +322,9 @@ export async function sendChatMessage(
   if (!state.client || !state.connected) {
     return null;
   }
+  // 先占住 busy 位再进入附件读取 await 窗口：期间队列「立即发送」等并发路径
+  // 会经 isChatBusy() 判断（否则可能以 preserveRunState:false 直发并覆盖本轮流式状态）
+  state.chatSending = true;
   // 分离图片附件和文件路径附件
   const imageAttachments = attachments?.filter((a) => a.dataUrl) ?? [];
   const fileAttachments = attachments?.filter((a) => a.filePath && !a.dataUrl) ?? [];
@@ -381,6 +384,7 @@ export async function sendChatMessage(
 
   const hasAttachments = hasImages || hasFiles;
   if (!msg && !hasAttachments) {
+    state.chatSending = false;
     return null;
   }
 
