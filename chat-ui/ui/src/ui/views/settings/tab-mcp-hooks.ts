@@ -460,52 +460,50 @@ function renderMappingRow(state: AppViewState, m: HookMappingDraft) {
   `;
 }
 
-function renderHooksSection(state: AppViewState) {
+function renderHooksHeading(state: AppViewState) {
   const h = s.hooks;
   if (!h) return nothing;
   return html`
-    <div class="oc-settings__section">
-      <h2 class="oc-settings__section-title">${t("settings.mcpHooks.hooksTitle")}</h2>
-      <p class="oc-settings__hint">${t("settings.mcpHooks.hooksDesc")}</p>
+    <h2 class="oc-settings__section-title">${t("settings.mcpHooks.hooksTitle")}</h2>
+    <p class="oc-settings__hint">${t("settings.mcpHooks.hooksDesc")}</p>
 
-      <oc-toggle-switch .label=${t("settings.mcpHooks.hooksEnable")} .checked=${h.enabled}
-        @change=${(e: CustomEvent) => { h.enabled = e.detail.checked; state.requestUpdate(); }}
-      ></oc-toggle-switch>
+    <oc-toggle-switch .label=${t("settings.mcpHooks.hooksEnable")} .checked=${h.enabled}
+      @change=${(e: CustomEvent) => { h.enabled = e.detail.checked; state.requestUpdate(); }}
+    ></oc-toggle-switch>
 
-      <div class="oc-settings__form-group">
-        <label class="oc-settings__label">${t("settings.mcpHooks.hooksPath")}</label>
-        <input class="oc-settings__input" .value=${h.path} placeholder="/webhook"
-          @input=${(e: Event) => { h.path = (e.target as HTMLInputElement).value; state.requestUpdate(); }} />
-      </div>
-      <div class="oc-settings__form-group">
-        <label class="oc-settings__label">${t("settings.mcpHooks.hooksToken")}</label>
-        <oc-password-input .value=${h.token}
-          @input=${(e: CustomEvent) => { h.token = e.detail.value; state.requestUpdate(); }}
-        ></oc-password-input>
-        <div class="oc-settings__field-hint">${t("settings.mcpHooks.hooksTokenHint")}</div>
-      </div>
-      <div class="oc-settings__form-group">
-        <label class="oc-settings__label">${t("settings.mcpHooks.hooksDefaultSession")}</label>
-        <input class="oc-settings__input" .value=${h.defaultSessionKey} placeholder="agent:main:main"
-          @input=${(e: Event) => { h.defaultSessionKey = (e.target as HTMLInputElement).value; state.requestUpdate(); }} />
-      </div>
+    <div class="oc-settings__form-group">
+      <label class="oc-settings__label">${t("settings.mcpHooks.hooksPath")}</label>
+      <input class="oc-settings__input" .value=${h.path} placeholder="/webhook"
+        @input=${(e: Event) => { h.path = (e.target as HTMLInputElement).value; state.requestUpdate(); }} />
+    </div>
+    <div class="oc-settings__form-group">
+      <label class="oc-settings__label">${t("settings.mcpHooks.hooksToken")}</label>
+      <oc-password-input .value=${h.token}
+        @input=${(e: CustomEvent) => { h.token = e.detail.value; state.requestUpdate(); }}
+      ></oc-password-input>
+      <div class="oc-settings__field-hint">${t("settings.mcpHooks.hooksTokenHint")}</div>
+    </div>
+    <div class="oc-settings__form-group">
+      <label class="oc-settings__label">${t("settings.mcpHooks.hooksDefaultSession")}</label>
+      <input class="oc-settings__input" .value=${h.defaultSessionKey} placeholder="agent:main:main"
+        @input=${(e: Event) => { h.defaultSessionKey = (e.target as HTMLInputElement).value; state.requestUpdate(); }} />
+    </div>
 
-      <div class="oc-settings__card">
-        <div class="oc-settings__card-title oc-mcp__mappings-head">
-          <span>${t("settings.mcpHooks.mappingsTitle")}</span>
-          <button class="oc-settings__btn oc-settings__btn--secondary oc-settings__btn--compact"
-            @click=${() => { h.mappings.push(newMappingDraft()); state.requestUpdate(); }}
-          >${t("settings.mcpHooks.addMapping")}</button>
-        </div>
-        ${h.mappings.length === 0
-          ? html`<div class="oc-mcp__empty">${t("settings.mcpHooks.mappingsEmpty")}</div>`
-          : nothing}
-        ${repeat(
-          h.mappings,
-          (m) => m.id,
-          (m) => renderMappingRow(state, m),
-        )}
+    <div class="oc-settings__card">
+      <div class="oc-settings__card-title oc-mcp__mappings-head">
+        <span>${t("settings.mcpHooks.mappingsTitle")}</span>
+        <button class="oc-settings__btn oc-settings__btn--secondary oc-settings__btn--compact"
+          @click=${() => { h.mappings.push(newMappingDraft()); state.requestUpdate(); }}
+        >${t("settings.mcpHooks.addMapping")}</button>
       </div>
+      ${h.mappings.length === 0
+        ? html`<div class="oc-mcp__empty">${t("settings.mcpHooks.mappingsEmpty")}</div>`
+        : nothing}
+      ${repeat(
+        h.mappings,
+        (m) => m.id,
+        (m) => renderMappingRow(state, m),
+      )}
     </div>
   `;
 }
@@ -516,6 +514,9 @@ export function renderTabMcpHooks(state: AppViewState) {
   void init(state);
   const showForm = s.serverDraft !== null;
 
+  // 单一根 section（与其他 tab 一致）：.oc-settings__section 的 flex:1 在多个
+  // 平级 section 时会按 basis-0 平分高度，内容溢出盒外与相邻 section 重叠
+  //（R63 QA：点击"添加服务器"后全页重叠）。
   return html`
     <div class="oc-settings__section">
       <h2 class="oc-settings__section-title">${t("settings.mcpHooks.pageTitle")}</h2>
@@ -541,13 +542,11 @@ export function renderTabMcpHooks(state: AppViewState) {
 
       <oc-message-box .message=${s.successMsg ?? ""} .type=${"success"} .visible=${!!s.successMsg}></oc-message-box>
       ${s.hint && !showForm ? html`<div class="oc-settings__field-hint">${s.hint}</div>` : nothing}
-    </div>
 
-    ${renderHooksSection(state)}
+      ${renderHooksHeading(state)}
 
-    <oc-message-box .message=${s.error ?? ""} .type=${"error"} .visible=${!!s.error && !showForm}></oc-message-box>
+      <oc-message-box .message=${s.error ?? ""} .type=${"error"} .visible=${!!s.error && !showForm}></oc-message-box>
 
-    <div class="oc-settings__section">
       <div class="oc-settings__btn-row">
         <button class="oc-settings__btn" ?disabled=${s.loading || !state.connected}
           @click=${() => refresh(state)}>${t("settings.mcpHooks.reload")}</button>

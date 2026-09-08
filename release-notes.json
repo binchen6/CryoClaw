@@ -1,5 +1,12 @@
 [
   {
+    "version": "2026.909.16",
+    "notes": {
+      "zh": "修复（用户反馈）：设置页「MCP 与钩子」点击「添加服务器」后全页排版重叠——根因是设置页内容列的区块样式在多个平级区块时按 flex basis-0 平分高度，打开表单后内容溢出区块与下方 Webhook 配置视觉叠压；该页现收敛为与其他设置页一致的单区块结构，并加防御样式让任何多区块写法都不再收缩到内容以下（800/834/1024/1440px 宽度全矩阵验证 0 重叠）\n应用内更新改为真静默换装：此前「重启以更新」会弹出 NSIS 安装器窗口要求用户点击完成；现在安装器带 /S 全程零 UI，装完自动拉起新版，弹窗类提示均带静默默认值不会隐形阻塞",
+      "en": "Fix (user feedback): the settings \"MCP & Hooks\" page fully overlapped after clicking \"Add Server\" - the settings content column splits height evenly among sibling sections on a zero flex basis, so the opened form overflowed onto the webhook block below; the page now uses the single-section structure shared by every other settings page, plus a defensive style so any multi-section layout never shrinks below content again (verified 0 overlaps across 800/834/1024/1440px widths).\nIn-app updates are now truly silent: \"Restart to update\" previously popped the NSIS installer wizard that required clicks to finish; the installer now runs with /S (zero UI), auto-launches the new version when done, and any message boxes carry silent defaults so nothing can block invisibly."
+    }
+  },
+  {
     "version": "2026.909.15",
     "notes": {
       "zh": "消息刷新与内核对齐的及时性优化：①历史滞后补拉退避从 800/1600/2400ms 扩展为 600/1500/3000/6000ms——首档提前 200ms 开始收敛，尾档覆盖内核慢持久化长尾窗口（旧档 2.4s 耗尽后「问了没答」场景无人收敛）；②长任务运行中若 45 秒无流式输出（模型长思考/长工具执行），提前静默对齐一次内核已落盘内容（子代理产出等），不再等 180 秒看门狗",

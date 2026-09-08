@@ -10,9 +10,9 @@
 面向国内生态（Kimi / Moonshot / 飞书 / 企微 / 微信 / 钉钉 / QQ）。
 
 **当前状态**：
-- 重设计工程 **R1–R62 完成**（R62：回底按钮修复 + 消息对齐及时性；R61：内核问答卡片；R60：设置页 MCP & Hooks + 四路全库审查；R59：在途 run 输出恢复；R58b/R58a/R58：对齐/用量/在线模型，详见工程记录），最新发版 **v2026.909.15**。
+- 重设计工程 **R1–R63 完成**（R63：MCP 页重叠修复 + 真静默更新换装；R62：回底按钮修复 + 消息对齐及时性；R61：内核问答卡片；R60：设置页 MCP & Hooks + 四路全库审查；R59：在途 run 输出恢复；R58b/R58a/R58：对齐/用量/在线模型，详见工程记录），最新发版 **v2026.909.16**。
 - 内核 openclaw **2026.9.2**（版本 pin 在 package.json `cryoclaw.openclaw`；更新目标走 `kernel-channel.json` 策展渠道，minSupported 2026.7.0）；**Electron 43.4.0**（audit 0 漏洞）。
-- 测试基线 **1034 pass / 0 fail / 4 skipped**（vitest 159 + node 180 + chat-ui 618 + scripts 77；2026-09-09 实测，0 fail 为硬指标）。
+- 测试基线 **1046 pass / 0 fail / 4 skipped**（vitest 159 + node 180 + chat-ui 630 + scripts 77；2026-09-09 实测，0 fail 为硬指标）。
 - 重复率 **1.18%**（94 clones，阈值 5%，`npm run dupcheck` 防回退）；视图 id 收敛为 6（chat/setup/settings/workspace/tasks/extensions）。
 - 开源：GitHub `binchen6/CryoClaw`（AGPL-3.0-only，干净历史）；发版走本地 `dist:win` + `gh release`；CI `tests.yml` 每次 push/PR 全量回归。
 
@@ -571,3 +571,9 @@
 - **回底按钮展示修复**（v2026.909.14，用户反馈）：CDP 几何取证发现按钮悬浮在 compose 顶缘上（重叠 12px 遮挡输入区上沿）——旧 margin 0 auto -52px 让 compose 上滑到按钮之下。修复 margin -44px auto -8px（总负占位不变、compose 位置不变），按钮悬于消息流内部底缘（实测 btnOverCompose:false、与消息列/compose 同中心 x）。CSS 契约钉进 layout-fix.test.ts。
 - **消息对齐及时性**（v2026.909.15）：①滞后补拉退避 800/1600/2400 → 600/1500/3000/6000ms——首档提前 200ms，尾档 6s 覆盖内核慢持久化长尾（旧预算 2.4s 耗尽后「问了没答」无人收敛）；②活跃 run 45s 无流式活动（长思考/长工具）时提前做 silent mergeIfStale 预对齐（内核已落盘的子代理产出等及时并入历史），不等 180s 看门狗；对齐不改 run 态，看门狗判定不受影响。
 - **验证**：全量测试 0 fail（chat-ui 630）；退避/预算用例同步扩档（预算耗尽 4 档共 5 次调用 + 会话切换预算复位）。
+
+### R63 · MCP 页重叠修复 + 真静默更新换装（完成，随 v2026.909.16 发版）
+
+- **MCP 页重叠修复**（用户反馈，QA 实拍 11/22.png）：设置页「MCP 与钩子」点「添加服务器」后表单与 Webhook 区块全页叠压。CDP 取证根因：`.oc-settings__section { flex:1 }`（basis-0）在 3 个平级 section 时平分容器高度，表单内容溢出 section 盒外与下方区块视觉重叠（关闭表单时也有 ~10-25px 的轻微叠压，只是肉眼难察）。修复双保险：① tab-mcp-hooks 收敛为与其他 tab 同构的单根 section（间距由 section 自身 gap 统一承载）；② 防御样式 `.oc-settings-content > .oc-settings__section { flex: 1 0 auto }`——任何未来多 section 写法不再收缩到内容以下（ext-layout 内 section 依赖 basis-0 做内部滚动，该路径不受影响）。同步去掉 `.oc-mcp__form` 的 margin-top（新结构下 24+12 不均匀间距）。坑记 gotcha #92。
+- **真静默更新换装**（用户反馈）：`quitAndInstallAppUpdate` 此前 spawn 安装器不带 `/S`（v2026.906.0 起故意非静默"可观察进度"），用户必须点完 NSIS 向导。改为 `["/S", "--updated", "--force-run"]`：零 UI 全程；模板取证 installSection.nsh ONE_CLICK+isForceRun → doStartApp 装完自动拉起新版；appRunning/appCannotBeClosed 弹窗均带 /SD 旗标（静默默认动作，不隐形阻塞）；回退路径 `quitAndInstall(false,true)` 同步改 `(true,true)`。
+- **验证**：全量 **1046 pass / 0 fail**（vitest 159 + node 180 + chat-ui 630 + scripts 77）；修复后安装包 CDP 全矩阵回归——表单关闭/打开 × 800/834/1024/1440px 跨组件叶子元素重叠全部 0（修复前 1440px 下 16 对、800px 下 19 对）；卡片级重叠 0；表单视觉重排确认正常；silent-install E2E 静默装 2026.909.16 通过；layout-cdp-smoke 24 场景 0 issue/0 异常/0 裸 key；新增 `scripts/settings-cdp-smoke.js`（设置页全 14 tab 巡览 + MCP 表单展开复测的跨组件重叠/异常/裸 key 冒烟，纳入发版固定一步）首跑全绿。

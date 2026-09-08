@@ -102,6 +102,14 @@
   flex-shrink: 0;
 }
 
+/* 设置内容列里的 section 以内容为下限：flex:1 的 basis-0 会在多个平级
+   section 时平分容器高度，内容溢出盒外、与相邻 section 视觉重叠
+   （R63 QA：MCP 与钩子页点"添加服务器"后全页重叠）。
+   单 section 页填充行为不变；ext-layout 内的 section 走内部滚动，不受影响。 */
+.oc-settings-content > .oc-settings__section {
+  flex: 1 0 auto;
+}
+
 /* 视图标题（页内 h2）：20px semibold */
 .oc-settings__section-title {
   font-size: var(--heading-lg);
@@ -2095,10 +2103,6 @@
   align-items: center;
   gap: var(--spacer-8);
   flex-shrink: 0;
-}
-
-.oc-mcp__form {
-  margin-top: var(--spacer-12);
 }
 
 .oc-mcp__mappings-head {

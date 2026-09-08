@@ -7,8 +7,8 @@
  *     用户设过「暂缓」且未到期时跳过自动检查（见 update-snooze.ts），手动检查不受影响
  *   - autoDownload=false：发现新版本只弹窗提示（更新日志 + 更新/暂缓），
  *     用户点「更新」后才经 downloadAppUpdate() 下载
- *   - 安装不静默：quitAndInstall 拉起带进度条的 NSIS 安装器窗口（无 /S），
- *     autoInstallOnAppQuit=false
+ *   - 静默安装：换装 spawn 安装器带 /S（无任何安装器 UI，装完 --force-run
+ *     自动拉起新版），autoInstallOnAppQuit=false
  *   - 每次状态变化经 deps.push 推送 webContents.send("app:update-state", snapshot)
  *
  * IPC handlers 注册在 settings/about.ts（app-update:* 通道）。
@@ -158,13 +158,15 @@ export function quitAndInstallAppUpdate(): void {
   // 实测发现 electron-updater 内部 spawn 的 NSIS 安装器在真实 app 上下文中
   // 会于 ~37s 后静默死亡（uninstall/copy 阶段之前），而手动 spawn
   // （detached + stdio:ignore + unref）同参数同 exe 换装全部成功。
-  // 非静默（无 /S）：安装器窗口带进度条，用户可观察换装进度（v2026.906.0 起），
-  // --force-run 装完自启新版。
+  // /S 真静默（R63：此前无 /S 会弹安装器向导要求用户点击）：
+  // customInit 杀进程、customInstallMode 复用安装模式在 /S 下照常执行，
+  // --force-run 装完自动拉起新版（installSection.nsh：ONE_CLICK + isForceRun），
+  // 全程零 UI；appRunning/appCannotBeClosed 弹窗均带 /SD 旗标，静默不阻塞。
   const installerPath = getPendingInstallerPath();
   if (installerPath) {
-    log.info(`[app-updater] 启动安装器: ${installerPath}`);
+    log.info(`[app-updater] 启动静默安装器: ${installerPath}`);
     try {
-      const child = spawn(installerPath, ["--updated", "--force-run"], {
+      const child = spawn(installerPath, ["/S", "--updated", "--force-run"], {
         detached: true,
         stdio: "ignore",
       });
@@ -179,8 +181,8 @@ export function quitAndInstallAppUpdate(): void {
     log.warn("[app-updater] 未找到 pending 安装器，回退 quitAndInstall");
   }
   beforeQuitAndInstall?.();
-  // isSilent=false：NSIS 安装器窗口带进度条；forceRunAfter=true 装完自动拉起新版
-  autoUpdater.quitAndInstall(false, true);
+  // isSilent=true：静默换装（无安装器窗口）；forceRunAfter=true 装完自动拉起新版
+  autoUpdater.quitAndInstall(true, true);
 }
 
 export function initAppUpdater(deps: Deps): void {

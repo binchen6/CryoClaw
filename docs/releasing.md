@@ -35,6 +35,13 @@
    ```
 
    脚本自动杀残留进程 → Node spawn 原样传参真静默安装（等待退出）→ 读安装位 app.asar 校验版本一致。
+
+   3.6. **CDP 冒烟（发版固定两步）**：
+   ```bash
+   node scripts/layout-cdp-smoke.js --port 9227      # 主视图 rail 巡览 × 宽度/主题/DPI/动效/语言
+   node scripts/settings-cdp-smoke.js --port 9229    # 设置页全 tab 巡览 + MCP 表单展开（跨组件重叠/异常/裸 key）
+   ```
+   两者任一非零退出码都不得发版（重叠/异常/裸 key 是硬门槛）。
 5. **发布（gh CLI 草稿流，现行标准做法）**：
 
    ```bash

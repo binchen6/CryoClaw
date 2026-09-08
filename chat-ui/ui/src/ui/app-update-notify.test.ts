@@ -79,11 +79,14 @@ test("主进程 app-updater.ts：autoDownload=false + 启动检查受暂缓门�
   assert.match(s, /snoozeAppUpdate[\s\S]*?writeSnooze/, "snoozeAppUpdate 应持久化暂缓");
 });
 
-test("主进程 app-updater.ts：换装非静默（无 /S，安装器带进度条）", () => {
+test("主进程 app-updater.ts：换装真静默（/S 零 UI，装完 --force-run 自动拉起）", () => {
   const s = mainSrc("app-updater.ts");
-  assert.match(s, /spawn\(installerPath, \["--updated", "--force-run"\]/, "spawn 安装器不应带 /S");
-  assert.match(s, /quitAndInstall\(false, true\)/, "回退路径应 isSilent=false");
-  assert.doesNotMatch(s, /\["--updated", "\/S"/, "不应再出现静默换装参数");
+  // R63：此前无 /S 会弹 NSIS 向导要求用户点击完成；现全程零 UI。
+  // --force-run 是装完自动拉起新版的关键（installSection.nsh：ONE_CLICK + isForceRun → doStartApp），
+  // 顺序无语义约束，但参数三件套缺一不可（gotcha #91 同族：静默开关被吃即回退交互向导）。
+  assert.match(s, /spawn\(installerPath, \["\/S", "--updated", "--force-run"\]/, "spawn 安装器应带 /S 真静默");
+  assert.match(s, /quitAndInstall\(true, true\)/, "回退路径应 isSilent=true");
+  assert.doesNotMatch(s, /spawn\(installerPath, \["--updated"/, "不应再出现非静默 spawn 形态");
 });
 
 test("主进程 about.ts：download/snooze/clear-snooze 通道均校验 sender", () => {
