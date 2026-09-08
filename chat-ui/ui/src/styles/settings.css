@@ -2019,3 +2019,121 @@
   gap: var(--spacer-10);
   padding: var(--spacer-8) 0 var(--spacer-4);
 }
+
+/* ── MCP & Hooks（R60）：服务器行 / 徽标 / 规则卡 ─────────────────────────── */
+.oc-mcp__list {
+  display: flex;
+  flex-direction: column;
+}
+
+.oc-mcp__row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacer-16);
+  padding: var(--spacer-10) 0;
+  border-bottom: var(--hairline);
+}
+
+.oc-mcp__row:last-child { border-bottom: none; }
+
+.oc-mcp__row-main {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacer-2);
+}
+
+.oc-mcp__row-head {
+  display: flex;
+  align-items: center;
+  gap: var(--spacer-8);
+}
+
+.oc-mcp__name {
+  font-weight: var(--weight-medium);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.oc-mcp__badge {
+  flex-shrink: 0;
+  font-size: var(--text-xs);
+  padding: 1px var(--spacer-8);
+  border-radius: var(--radius-full);
+  border: var(--hairline);
+}
+
+.oc-mcp__badge--on {
+  color: var(--ok);
+  border-color: color-mix(in srgb, var(--ok) 35%, transparent);
+}
+
+.oc-mcp__badge--off {
+  color: var(--text-muted);
+}
+
+.oc-mcp__transport {
+  flex-shrink: 0;
+  font-family: var(--font-meta);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.oc-mcp__detail {
+  font-family: var(--font-meta);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.oc-mcp__row-side {
+  display: flex;
+  align-items: center;
+  gap: var(--spacer-8);
+  flex-shrink: 0;
+}
+
+.oc-mcp__form {
+  margin-top: var(--spacer-12);
+}
+
+.oc-mcp__mappings-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacer-8);
+}
+
+.oc-mcp__empty {
+  padding: var(--spacer-12) 0;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.oc-mcp__mapping {
+  padding: var(--spacer-10) 0;
+  border-bottom: var(--hairline);
+}
+
+.oc-mcp__mapping:last-child { border-bottom: none; }
+
+.oc-mcp__mapping-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 140px) minmax(0, 1fr);
+  gap: var(--spacer-8) var(--spacer-12);
+  align-items: center;
+}
+
+.oc-mcp__mapping-grid .oc-settings__label {
+  margin: 0;
+}
+
+@media (max-width: 720px) {
+  .oc-mcp__mapping-grid {
+    grid-template-columns: 1fr;
+  }
+}
