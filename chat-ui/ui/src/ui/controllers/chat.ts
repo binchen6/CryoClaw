@@ -154,12 +154,13 @@ export function resetChatStreamState(state: ChatState) {
 
 // R30：mergeIfStale 保留本地（内核快照滞后）后的延迟二次拉取。
 // 此前保留后无任何重试——若本轮回复恰好撞上内核持久化窗口，用户会看到
-// 「问了没答」且要等下轮 final/手动刷新才恢复。保留时按 800/1600/2400ms
-// 退避补拉（对齐 scheduleTerminalSessionsRefresh 的持久化窗口），
-// 替换成功或会话切换即停止。同一时刻只保留一个挂起重试。
+// 「问了没答」且要等下轮 final/手动刷新才恢复。保留时按 600/1500/3000/6000ms
+// 退避补拉（R62 及时性调优：首档 600ms 更快收敛，尾档 6000ms 覆盖内核慢持久化
+// 窗口——旧档 2.4s 耗尽后长尾场景无人收敛），替换成功或会话切换即停止。
+// 同一时刻只保留一个挂起重试。
 // 补拉刻意非 silent（R41 终审记录）：滞后意味着用户可见数据不全，给用户加载反馈合理；
 // 静默探测（看门狗/重连 orphan）命中滞后时也会派生本链的非 silent 补拉，属有界预期行为。
-const STALE_RETRY_DELAYS_MS = [800, 1600, 2400];
+const STALE_RETRY_DELAYS_MS = [600, 1500, 3000, 6000];
 let staleRetryTimer: ReturnType<typeof setTimeout> | null = null;
 let staleRetryKey: string | null = null;
 let staleRetryAttempt = 0;

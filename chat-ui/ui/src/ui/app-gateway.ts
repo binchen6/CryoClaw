@@ -240,8 +240,21 @@ async function loadSessionsAndReconcile(host: GatewayHost) {
 // 拉历史对齐内核真实状态：历史里出现 run 开始后落盘的 assistant 回复 → run 实际
 // 已结束（终态帧丢失），清本地挂起态；否则（run 仍在跑/历史滞后）保持等下轮 tick。
 const STREAM_IDLE_TIMEOUT_MS = 180_000;
+// R62 及时性预对齐：run 活跃但 45s 无流式活动（模型长思考/长工具执行）时，
+// 内核侧可能已有中间产物落盘（子代理产出、早前轮次补写）——提前做一次静默
+// mergeIfStale 对齐，不必等 180s 看门狗。对齐不改 run 态（mergeIfStale 保留
+// 本地短读），看门狗判定不受影响。
+const RUN_IDLE_ALIGN_MS = 45_000;
 
 function checkStalledStream(host: GatewayHost) {
+  // 预对齐：有活跃 run、距最后流式活动 45s、且本 tick 尚未对齐过 → 静默拉一次
+  const idleFor = host.chatRunId && host.chatLastActivityAt != null
+    ? Date.now() - host.chatLastActivityAt
+    : null;
+  if (idleFor != null && idleFor >= RUN_IDLE_ALIGN_MS) {
+    // mergeIfStale：内核快照滞后（短读）时保留本地，无倒退风险
+    void loadChatHistory(host as unknown as OpenClawApp, { mergeIfStale: true, silent: true });
+  }
   if (
     !isStreamStalled({
       chatRunId: host.chatRunId,

@@ -1,5 +1,12 @@
 [
   {
+    "version": "2026.909.15",
+    "notes": {
+      "zh": "消息刷新与内核对齐的及时性优化：①历史滞后补拉退避从 800/1600/2400ms 扩展为 600/1500/3000/6000ms——首档提前 200ms 开始收敛，尾档覆盖内核慢持久化长尾窗口（旧档 2.4s 耗尽后「问了没答」场景无人收敛）；②长任务运行中若 45 秒无流式输出（模型长思考/长工具执行），提前静默对齐一次内核已落盘内容（子代理产出等），不再等 180 秒看门狗",
+      "en": "Timeliness tuning for chat-history alignment with the kernel: (1) the stale-read retry backoff extends from 800/1600/2400ms to 600/1500/3000/6000ms - the first retry starts 200ms earlier and the last tier now covers slow kernel persistence windows (previously the 2.4s budget could run out with no one converging a pending answer); (2) during a long-running turn with no streaming activity for 45s (long model thinking / tool execution), a silent history alignment now runs early instead of waiting for the 180s watchdog."
+    }
+  },
+  {
     "version": "2026.909.14",
     "notes": {
       "zh": "修复（用户反馈）：对话页「回到最新消息」按钮展示错位——按钮此前悬浮在输入框顶缘上（与其重叠约 12px），遮挡输入区上沿；现改为悬浮于消息流内部底缘（最后一条消息上方），与输入框相切不再遮挡，出现/消失不推动输入框位置的特性保持",

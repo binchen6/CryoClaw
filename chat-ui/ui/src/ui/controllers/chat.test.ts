@@ -478,25 +478,30 @@ async function testStaleRetryBackoffAndCancelOnReplace() {
     assert.equal(calls, 1);
     assert.equal(state.chatMessages.length, 5, "首次短读应保留本地");
 
-    mock.timers.tick(800);
+    mock.timers.tick(600);
     await flush();
-    assert.equal(calls, 2, "800ms 后应补拉一次");
+    assert.equal(calls, 2, "600ms 后应补拉一次");
     assert.equal(state.chatMessages.length, 5, "仍短读仍保留");
 
-    serveShort = true; // 保持短读，验证第三次退避
-    mock.timers.tick(1600);
+    serveShort = true; // 保持短读，验证后续退避
+    mock.timers.tick(1500);
     await flush();
-    assert.equal(calls, 3, "1600ms 后应第二次补拉");
+    assert.equal(calls, 3, "1500ms 后应第二次补拉");
+
+    serveShort = true;
+    mock.timers.tick(3000);
+    await flush();
+    assert.equal(calls, 4, "3000ms 后应第三次补拉");
 
     serveShort = false; // 下一次补拉返回完整历史 → 替换成功 → 退避链取消
-    mock.timers.tick(2400);
+    mock.timers.tick(6000);
     await flush();
-    assert.equal(calls, 4);
+    assert.equal(calls, 5);
     assert.equal(state.chatMessages.length, 6, "完整历史应替换本地");
 
     mock.timers.tick(10_000);
     await flush();
-    assert.equal(calls, 4, "替换成功后不得再补拉");
+    assert.equal(calls, 5, "替换成功后不得再补拉");
   } finally {
     mock.timers.reset();
     cancelStaleHistoryRetryForTests();
@@ -522,7 +527,7 @@ async function testStaleRetryAbortedOnSessionSwitch() {
     assert.equal(calls, 1);
 
     state.sessionKey = "session-2";
-    mock.timers.tick(800);
+    mock.timers.tick(600);
     await new Promise((r) => setImmediate(r));
     assert.equal(calls, 1, "会话切走后补拉不应发出");
   } finally {
@@ -532,7 +537,7 @@ async function testStaleRetryAbortedOnSessionSwitch() {
 }
 
 // R41：补拉预算 per-session 化——会话 A 挂起重试期间切到会话 B 触发滞后保留时，
-// A 消耗过的档位不应由 B 继承，B 应从首档 800ms 重新开始（而非 1600）。
+// A 消耗过的档位不应由 B 继承，B 应从首档 600ms 重新开始（而非 1500）。
 async function testStaleRetryBudgetResetsOnTargetSessionSwitch() {
   installBrowserGlobals(new FakeRaf());
   mock.timers.enable({ apis: ["setTimeout"] });
@@ -555,7 +560,7 @@ async function testStaleRetryBudgetResetsOnTargetSessionSwitch() {
     const stateA = makeState({ client, sessionKey: "session-A", chatMessages: [...local] });
     await loadChatHistory(stateA, { mergeIfStale: true });
     assert.equal(calls, 1);
-    mock.timers.tick(800);
+    mock.timers.tick(600);
     await flush();
     assert.equal(calls, 2, "A 的 800ms 补拉应发出");
 
@@ -565,7 +570,7 @@ async function testStaleRetryBudgetResetsOnTargetSessionSwitch() {
     assert.equal(calls, 3);
 
     // 3) B 的补拉应仍是首档 800ms；若继承 A 的计数，800ms 内不会有补拉（排成 1600）
-    mock.timers.tick(800);
+    mock.timers.tick(600);
     await flush();
     assert.equal(calls, 4, "切到 B 后补拉预算应复位，800ms 首档即补拉");
   } finally {
@@ -594,30 +599,33 @@ async function testStaleRetryBudgetExhaustedRecoversOnSessionSwitch() {
       }
     };
 
-    // 1) A 上连续 3 次滞后保留耗尽预算：首读 + 800/1600/2400 三档补拉全短读 → 共 4 次调用
+    // 1) A 上连续 4 次滞后保留耗尽预算：首读 + 600/1500/3000/6000 四档补拉全短读 → 共 5 次调用
     const stateA = makeState({ client, sessionKey: "session-A", chatMessages: [...local] });
     await loadChatHistory(stateA, { mergeIfStale: true });
     assert.equal(calls, 1);
-    mock.timers.tick(800);
+    mock.timers.tick(600);
     await flush();
     assert.equal(calls, 2);
-    mock.timers.tick(1600);
+    mock.timers.tick(1500);
     await flush();
     assert.equal(calls, 3);
-    mock.timers.tick(2400);
+    mock.timers.tick(3000);
     await flush();
-    assert.equal(calls, 4, "预算耗尽前共应补拉 3 次");
+    assert.equal(calls, 4);
+    mock.timers.tick(6000);
+    await flush();
+    assert.equal(calls, 5, "预算耗尽前共应补拉 4 次");
     mock.timers.tick(10_000);
     await flush();
-    assert.equal(calls, 4, "A 预算耗尽后不得再补拉");
+    assert.equal(calls, 5, "A 预算耗尽后不得再补拉");
 
-    // 2) 切到 B 触发滞后保留：不得继承 A 的耗尽态静默放弃，800ms 后应补拉
+    // 2) 切到 B 触发滞后保留：不得继承 A 的耗尽态静默放弃，600ms 后应补拉
     const stateB = makeState({ client, sessionKey: "session-B", chatMessages: [...local] });
     await loadChatHistory(stateB, { mergeIfStale: true });
-    assert.equal(calls, 5);
-    mock.timers.tick(800);
+    assert.equal(calls, 6);
+    mock.timers.tick(600);
     await flush();
-    assert.equal(calls, 6, "预算耗尽后切会话应重新补拉，而非静默放弃");
+    assert.equal(calls, 7, "预算耗尽后切会话应重新补拉，而非静默放弃");
   } finally {
     mock.timers.reset();
     cancelStaleHistoryRetryForTests();
