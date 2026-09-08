@@ -10,7 +10,7 @@
 面向国内生态（Kimi / Moonshot / 飞书 / 企微 / 微信 / 钉钉 / QQ）。
 
 **当前状态**：
-- 重设计工程 **R1–R60 完成**（R60：设置页 MCP & Hooks tab + 四路全库审查修复批次；R59：在途 run 输出恢复 + 刷新兜底；R58b：子代理卡对齐；R58a：用户反馈修复批次；R58：在线模型 + Git/Worktree + 删除守卫；R56/R57：内核 2026.9.2 升级 + 三路审查，详见工程记录），最新发版 **v2026.909.12**。
+- 重设计工程 **R1–R62 完成**（R62：回底按钮修复 + 消息对齐及时性；R61：内核问答卡片；R60：设置页 MCP & Hooks + 四路全库审查；R59：在途 run 输出恢复；R58b/R58a/R58：对齐/用量/在线模型，详见工程记录），最新发版 **v2026.909.15**。
 - 内核 openclaw **2026.9.2**（版本 pin 在 package.json `cryoclaw.openclaw`；更新目标走 `kernel-channel.json` 策展渠道，minSupported 2026.7.0）；**Electron 43.4.0**（audit 0 漏洞）。
 - 测试基线 **1034 pass / 0 fail / 4 skipped**（vitest 159 + node 180 + chat-ui 618 + scripts 77；2026-09-09 实测，0 fail 为硬指标）。
 - 重复率 **1.18%**（94 clones，阈值 5%，`npm run dupcheck` 防回退）；视图 id 收敛为 6（chat/setup/settings/workspace/tasks/extensions）。
@@ -558,3 +558,16 @@
 
 - **第二轮独立审查（review-agent，针对 MCP/Hooks 新代码）修复**：P0——mappings 走 replacePaths 整体替换时内核为字面整体赋值，条目内显式 null 不再走 RFC7396 删键而被 strict HookMappingSchema 拒绝（"expected string, received null"），条目空字段改省略键（hooks 顶层 path/token/defaultSessionKey 逐键合并路径不受影响，null 删键保留）；P2——saveServer/deleteServer 改单条目 upsert/removeMcpServerInDraft（陈旧本地集合全量替换会在 baseHash 冲突重试时静默删除并发新增的服务器）、agent+persistent 无会话锚点保存前 validateHooks 拦截提示（不再静默省略 sessionMode 让用户选择丢失）；P3——删除正在编辑的条目时同步关闭表单（防 Save 复活已删条目）、配置加载失败不再同时显示「尚未配置」空态、saveHooks 对表单状态做 structuredClone 快照（防在途输入被并入补丁）。lib 测试增至 23 项（含省略键形态与 validateHooks 用例）。
 - **安装版验证**：静默安装 2026.909.12 后同套 CDP 冒烟 11 项全过（含确认弹窗删除链路；网关日志确证 config.patch changedPaths=mcp.servers.<name> + hot reload applied）。
+
+
+### R61 · 内核问答卡片适配（完成，随 v2026.909.13 发版）
+
+- **能力取证**（gateway asar 实读）：RPC question.list/get/resolve（operator.questions scope，2026.7+）；WS 事件 question.requested/resolved；QuestionRecord 形态 {id,status,questions[1..3]{questionId(^[a-z][a-z0-9_]*$),header,question,options[1..4],multiSelect?,isOther?,isSecret?,secretStore?},sessionKey?,runId?,createdAtMs,expiresAtMs}；resolve 参数 cancel / answers{[qid]:[label]} / secret 统一 ["stored"]+allowedHosts；control-ui 消费形态 gatewayQuestionPrompts。
+- **实现**：纯逻辑 chat/question-cards.ts（归一校验对齐内核 strict 语义、pending 会话过滤+过期、事件 upsert/落终态、list 对齐「服务端终态覆盖一切、服务端 pending 不覆盖本地终态」、resolve 参数构造，10 测）；app-gateway 接线事件+onHello list 对齐+tick 过期清理；渲染 views/question-card.ts 挂线程尾部（历史→流式→子代理卡→问答卡），样式与进度卡同 --chat-column 居中列；tappable（单问题非多选非 secret）选项直答、secret 提交占位、多选/复合提示走输入框、Skip=cancel；本地即时落终态（resolved 事件幂等收敛）。
+- **验证**：dev + 安装 .13 双轮 CDP 冒烟 10 项全过（注入模拟问题→卡片渲染/会话过滤→点选项断言 resolve RPC 参数→跳过断言 cancel→0 裸 key/0 异常）。
+
+### R62 · 回底按钮修复 + 消息对齐及时性（完成，随 v2026.909.14/.15 发版）
+
+- **回底按钮展示修复**（v2026.909.14，用户反馈）：CDP 几何取证发现按钮悬浮在 compose 顶缘上（重叠 12px 遮挡输入区上沿）——旧 margin 0 auto -52px 让 compose 上滑到按钮之下。修复 margin -44px auto -8px（总负占位不变、compose 位置不变），按钮悬于消息流内部底缘（实测 btnOverCompose:false、与消息列/compose 同中心 x）。CSS 契约钉进 layout-fix.test.ts。
+- **消息对齐及时性**（v2026.909.15）：①滞后补拉退避 800/1600/2400 → 600/1500/3000/6000ms——首档提前 200ms，尾档 6s 覆盖内核慢持久化长尾（旧预算 2.4s 耗尽后「问了没答」无人收敛）；②活跃 run 45s 无流式活动（长思考/长工具）时提前做 silent mergeIfStale 预对齐（内核已落盘的子代理产出等及时并入历史），不等 180s 看门狗；对齐不改 run 态，看门狗判定不受影响。
+- **验证**：全量测试 0 fail（chat-ui 630）；退避/预算用例同步扩档（预算耗尽 4 档共 5 次调用 + 会话切换预算复位）。
