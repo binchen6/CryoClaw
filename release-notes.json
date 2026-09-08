@@ -1,5 +1,12 @@
 [
   {
+    "version": "2026.909.10",
+    "notes": {
+      "zh": "修复（用户反馈）：子代理等待状态卡此前没有与历史消息列对齐——卡片容器无宽度约束会撑满整个对话线程，视觉上远宽于上下的消息；现与消息组/进度卡共用同一 760px 居中阅读列，卡片本体同步去掉了 520px 限宽、补齐描边投影与工具卡一致的视觉节奏",
+      "en": "Fix (user feedback): subagent waiting cards were not aligned with the message column - the card container had no width constraint and stretched across the whole chat thread; it now shares the same 760px centered reading column as message groups and the progress card, and the card itself drops the 520px cap with matched border/shadow rhythm."
+    }
+  },
+  {
     "version": "2026.909.9",
     "notes": {
       "zh": "修复（用户反馈）：三家提供商的「查询用量 / 余额」与「同步模型」入口此前是 13px 纯图标按钮几乎不可发现，现改为 provider 块头的带文字胶囊按钮（同步模型 / 查用量），一眼可见\n修复（用户反馈）：Kimi 会员额度卡片消失——OAuth refresh token 被服务端作废（invalid_grant 走 400）时旧逻辑不清理本地 token，界面恒显「登录成功」但用量接口 401 静默失败；现自动清理失效会话并引导重新登录，登录有效但用量拉取失败时显示可重试的提示行（本次失效因登录已过期数日，重新登录后额度即恢复）\n对话页（用户反馈）：Progress Card 进度卡宽度收窄并与输入框对齐（同 760px 居中列，此前会撑满整行）；输入框位置下移、与窗口底部间距收紧（底部留白 30px→14px）\n模型设置排版：自定义分组管理区默认折叠为一行标题+分组数徽标，不再把模型列表推到首屏之外；展开即可管理",

@@ -42,3 +42,19 @@ test("design-tokens：--ext-column / --chat-column 阅读列宽 token 存在", (
   assert.match(dt, /--ext-column:\s*\d+px/, "缺扩展视图内容列宽 token");
   assert.match(dt, /--chat-column:\s*\d+px/, "缺聊天阅读列宽 token");
 });
+
+// R58b：线程尾部内联卡（子代理等待卡）必须与历史消息共用 --chat-column 居中列，
+// 否则卡片撑满整个 .chat-thread 容器，视觉上与上下消息未对齐（同 R58a progress-card 回归）
+test("chat.css：子代理等待卡容器走居中阅读列（--chat-column）", () => {
+  const chat = css("chat.css");
+  const container = chat.match(/\.chat-subagent-cards\s*\{[^}]*\}/)?.[0] ?? "";
+  assert.ok(container, "缺 .chat-subagent-cards 规则");
+  assert.match(container, /max-width:\s*var\(--chat-column\)/, "容器应限宽 --chat-column");
+  assert.match(container, /margin[^;]*\bauto\b/, "容器应水平居中（margin auto）");
+  assert.match(container, /width:\s*100%/, "容器应占满列宽");
+
+  const card = chat.match(/\.chat-subagent-card\s*\{[^}]*\}/)?.[0] ?? "";
+  assert.ok(card, "缺 .chat-subagent-card 规则");
+  assert.doesNotMatch(card, /max-width/, "卡片不应自带限宽（与 tool 卡一致撑满阅读列）");
+});
+

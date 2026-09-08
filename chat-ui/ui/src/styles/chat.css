@@ -464,30 +464,36 @@
   object-fit: contain;
 }
 
-/* 子代理等待状态卡（R23，主 run 等待子代理期间的进度反馈） */
+/* 子代理等待状态卡（R23，主 run 等待子代理期间的进度反馈）
+   居中阅读列约束（R58b）：与 .chat-group / .chat-progress-card 同一 --chat-column
+   居中列——此前无宽度约束会撑满整个线程容器，卡片远宽于上下消息列，视觉未对齐 */
 .chat-subagent-cards {
   display: flex;
   flex-direction: column;
   gap: var(--spacer-8);
-  margin: var(--spacer-8) 0;
+  width: 100%;
+  max-width: var(--chat-column);
+  margin: var(--spacer-8) auto var(--spacer-16);
 }
 
 .chat-subagent-card {
   display: flex;
   align-items: flex-start;
   gap: var(--spacer-10);
-  max-width: min(520px, 100%);
+  /* R58b：去掉 520px 限宽，与 .chat-tool-card 同样撑满阅读列（视觉节奏一致） */
+  width: 100%;
   padding: var(--spacer-10) var(--spacer-12);
   border: var(--hairline);
   border-radius: var(--radius-12);
   background: var(--bg-elevated);
+  box-shadow: var(--shadow-xs);
 }
 
 .chat-subagent-card__pulse {
   flex-shrink: 0;
   width: 8px;
   height: 8px;
-  margin-top: 6px;
+  margin-top: var(--spacer-6);
   border-radius: var(--radius-full);
   background: var(--text-muted);
 }
