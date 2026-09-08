@@ -71,3 +71,4 @@ chat-ui/ui/.test-dist/
 .jscpd-report/
 .mimosa/
 .release-notes-*.md
+.dev-state-pkg/
