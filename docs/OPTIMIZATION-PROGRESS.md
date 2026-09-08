@@ -10,7 +10,7 @@
 面向国内生态（Kimi / Moonshot / 飞书 / 企微 / 微信 / 钉钉 / QQ）。
 
 **当前状态**：
-- 重设计工程 **R1–R57 完成**（R57：三路全面代码审查修复 + 安装器 UI 重构 + 更新链路健壮性；R56：内核 2026.9.2 升级落地 + asar 硬阻断解决；R55：CLI 全兼容 + 2026.9.2 取证；R52–R54：流式 reducer 化 + 布局诊断 + Progress Card，详见工程记录），最新发版 **v2026.909.7**。
+- 重设计工程 **R1–R59 完成**（R59：在途 run 输出恢复 + 刷新兜底；R58b：子代理卡对齐；R58a：用户反馈修复批次；R58：在线模型 + Git/Worktree + 删除守卫；R56/R57：内核 2026.9.2 升级 + 三路审查，详见工程记录），最新发版 **v2026.909.11**。
 - 内核 openclaw **2026.9.2**（版本 pin 在 package.json `cryoclaw.openclaw`；更新目标走 `kernel-channel.json` 策展渠道，minSupported 2026.7.0）；**Electron 43.4.0**（audit 0 漏洞）。
 - 测试基线 **992 pass / 0 fail / 4 skipped**（vitest 158 + node 163 + chat-ui 594 + scripts 77；2026-09-07 实测，0 fail 为硬指标）。
 - 重复率 **1.03%**（81 clones，阈值 5%，`npm run dupcheck` 防回退）；视图 id 收敛为 6（chat/setup/settings/workspace/tasks/extensions）。
