@@ -530,3 +530,11 @@
 - **Progress Card 对齐**（用户反馈的三项）：宽度收窄 `max-width: var(--chat-column)` 居中——与输入卡像素级对齐（实测 x/w 完全一致，此前撑满整行）；输入框下移 + 底部间距收紧（card padding-bottom 20→8 + compose 10→6，合计 30→14px）。
 - **模型设置排版**：自定义分组管理区改 `<details>` 折叠（一行标题 + 分组数徽标），模型列表回到首屏。
 - **验证**：全量测试 0 fail；安装 909.9 实拍 DOM 断言（三家 provider pill 按钮齐、org 折叠、0 裸 key）+ 进度卡/输入卡几何对齐断言 + 布局冒烟 22 场景 PASS。
+
+
+### R58b · 子代理等待卡对齐（完成，随 v2026.909.10 发版）
+
+- **问题**（用户反馈）：子代理等待状态卡与历史消息列未对齐——`.chat-subagent-cards` 容器无宽度约束撑满整个 `.chat-thread`，卡片另有 520px 限宽，视觉上远宽/窄于上下消息列。
+- **修复**：容器走 `width:100% + max-width:var(--chat-column) + margin auto` 居中阅读列（与 `.chat-group`/`.chat-progress-card`(R58a) 同一契约）；卡片本体去 520px 限宽撑满列（与 `.chat-tool-card` 节奏一致）+ 补 `--shadow-xs` + pulse 偏移 token 化；`layout-fix.test.ts` 钉住契约回归。
+- **验证**：全量测试 0 fail（597 chat-ui）；dev 实例 CDP 注入实测（容器/参照组 max-width 均 760px、内容盒对称居中 211/211px、左右缘与消息组 ≤1px、0 裸 key、0 renderer 异常）；安装 909.10 静默装 + 网关 200 + 附加冒烟同断言 PASS；应用内检查更新读到 feed `latest version: 2026.909.10` 更新链路端到端 PASS。
+- **冒烟基建**：`.cache` 冒烟脚本改随机 CDP/网关端口 + 启动前 taskkill 清残留 + HTTP 探测加 timeout 销毁（防半开连接挂死 6 分钟全局超时；Windows 经典滚动条 ~15px 需按内容盒算居中断言）。
