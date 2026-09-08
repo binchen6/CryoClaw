@@ -58,3 +58,14 @@ test("chat.css：子代理等待卡容器走居中阅读列（--chat-column）",
   assert.doesNotMatch(card, /max-width/, "卡片不应自带限宽（与 tool 卡一致撑满阅读列）");
 });
 
+// R61b：回底按钮悬浮于消息流内部底缘（上负 margin 提入 thread），不得压在 compose 顶缘上
+// （旧 margin: 0 auto -52px 实测按钮与 compose 顶重叠 12px 遮挡输入区上沿）
+test("panels.css：回底按钮悬浮于消息流内部底缘（不遮挡 compose）", () => {
+  const panels = css("panels.css");
+  const btn = panels.match(/\.chat-new-messages\s*\{[^}]*\}/)?.[0] ?? "";
+  assert.ok(btn, "缺 .chat-new-messages 规则");
+  assert.match(btn, /margin:\s*-44px\s+auto\s+-8px/, "上 -44px 提入 thread、下 -8px 消占位（总负占位不变）");
+  assert.match(btn, /align-self:\s*center/, "保持水平居中");
+  assert.match(btn, /z-index:\s*10/, "悬浮层高于消息内容");
+});
+

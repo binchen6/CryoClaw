@@ -135,11 +135,14 @@
   resize: vertical;
 }
 
-/* ── 「新消息」回底按钮（悬浮在消息流底部上方） ── */
+/* ── 「新消息」回底按钮（悬浮在消息流内部底缘，不遮挡 compose） ── */
 .chat-new-messages {
   align-self: center;
-  /* 负下边距悬浮在消息流底部上方，不占文档流高度，出现/消失不再推动 compose */
-  margin: 0 auto -52px;
+  /* 双负 margin：上 -44px 把按钮提进消息流内部底缘（thread 底缘上方悬浮），
+     下 -8px 消掉残余占位——总负占位 -52px 与旧版一致（compose 位置不变），
+     但按钮不再压在 compose 顶缘上（此前重叠 12px 遮挡输入区上沿，实测取证）。
+     出现/消失不推动 compose 的特性保留 */
+  margin: -44px auto -8px;
   transform: translateY(-8px);
   position: relative;
   z-index: 10;

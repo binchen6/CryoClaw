@@ -1,5 +1,12 @@
 [
   {
+    "version": "2026.909.14",
+    "notes": {
+      "zh": "修复（用户反馈）：对话页「回到最新消息」按钮展示错位——按钮此前悬浮在输入框顶缘上（与其重叠约 12px），遮挡输入区上沿；现改为悬浮于消息流内部底缘（最后一条消息上方），与输入框相切不再遮挡，出现/消失不推动输入框位置的特性保持",
+      "en": "Fix (user feedback): the jump-to-latest button in the chat page was misplaced - it floated over the top edge of the compose input (overlapping ~12px) and covered the upper part of the input area; it now hovers just above the last message inside the message flow, tangent to (never covering) the compose box, while keeping the no-layout-shift appear/disappear behavior."
+    }
+  },
+  {
     "version": "2026.909.13",
     "notes": {
       "zh": "对话页新增问答卡片（内核 ask_user 能力适配）：代理需要你决策时（如「要修改哪个文件？」），对话流内直接弹出问题卡——选项按钮一键回答、超时倒计时、跳过自动取消；敏感信息类问题（secret）提交脱敏占位不落明文；多选/复合问题提示在输入框回复。卡片样式与进度卡同一居中列语言，切会话自动过滤、断连重连经 question.list 自动对齐",
