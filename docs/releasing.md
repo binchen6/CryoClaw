@@ -26,7 +26,16 @@
    - `CryoClaw-Setup-<version>-<arch>.exe` — NSIS 安装包
    - `CryoClaw-Setup-<version>-<arch>.exe.blockmap` — 差分下载元数据
    - `latest.yml` — 更新清单（版本号 + 文件 sha512）
-4. **发布（gh CLI 草稿流，现行标准做法）**：
+3.5. **静默安装 E2E（必须走脚本，勿在 shell 直接传 `/S`）**：Git Bash 的 MSYS 路径转换会吃掉 `/S`，
+   NSIS 收不到静默开关就弹出交互向导（gotcha #91——此前每次「静默验证」实际都是人工点完的）。用：
+
+   ```bash
+   node scripts/silent-install.js out/win32-x64/CryoClaw-Setup-<version>-x64.exe <version>
+   # 或 npm run install:silent -- <installer> <version>
+   ```
+
+   脚本自动杀残留进程 → Node spawn 原样传参真静默安装（等待退出）→ 读安装位 app.asar 校验版本一致。
+5. **发布（gh CLI 草稿流，现行标准做法）**：
 
    ```bash
    # ① 建草稿 Release（同批上传 exe + blockmap + latest.yml）
@@ -41,7 +50,7 @@
 
    备选（一步直发，跳过草稿实测，不推荐）：`GH_TOKEN=ghp_xxx npx electron-builder --win --x64 --publish always` 会把 exe / blockmap / latest.yml 一并上传到 GitHub Release（默认草稿）。
 
-5. **草稿实测再转正**（重要）：Release 保持 draft 期间，本地装**上一个正式版本**，启动后等 ~15s 自动检查（或设置 → 关于 → 检查更新），确认能发现新版本并弹窗（v2026.906.0 起为弹窗决策模式，点「更新」才下载）；验证通过后再执行上面的 ③ 转正。
+6. **草稿实测再转正**（重要）：Release 保持 draft 期间，本地装**上一个正式版本**，启动后等 ~15s 自动检查（或设置 → 关于 → 检查更新），确认能发现新版本并弹窗（v2026.906.0 起为弹窗决策模式，点「更新」才下载）；验证通过后再执行上面的 ③ 转正。
 
 ## 注意事项
 

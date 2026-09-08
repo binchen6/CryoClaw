@@ -178,7 +178,7 @@ Open-sourced at `binchen6/CryoClaw` (AGPL-3.0-only); push is allowed (`origin` =
 
 1. Bump `package.json` version (calendar `YYYY.MMDD.N`) + add a top entry to `release-notes.json` (zh + en).
 2. `npm run dist:win` → `out/win32-x64/CryoClaw-Setup-<v>-x64.exe`.
-3. Silent install E2E: `taskkill /F /IM CryoClaw.exe /T` first, then run the installer with `/S`
+3. Silent install E2E: `node scripts/silent-install.js out/win32-x64/CryoClaw-Setup-<v>-x64.exe <v>` (never pass /S directly from Git Bash — MSYS path rewriting swallows it and the wizard pops up, gotcha #91)
    (must run outside the IDE sandbox — sandbox denies it), confirm
    `%LOCALAPPDATA%\Programs\CryoClaw\CryoClaw.exe` timestamp updated.
 4. Launch the app, verify gateway `GET http://127.0.0.1:18789/` returns 200.

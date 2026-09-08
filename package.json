@@ -30,7 +30,8 @@
     "icons:generate": "node scripts/generate-icons.js",
     "icons:optimize": "node scripts/optimize-svg.js",
     "dupcheck": "jscpd",
-    "clean": "rm -rf dist resources/runtime resources/gateway resources/targets out"
+    "clean": "rm -rf dist resources/runtime resources/gateway resources/targets out",
+    "install:silent": "node scripts/silent-install.js"
   },
   "dependencies": {
     "electron-updater": "^6.8.9",
