@@ -1,13 +1,13 @@
 {
   "name": "cryoclaw",
-  "version": "2026.909.16",
+  "version": "2026.909.17",
   "private": true,
   "description": "CryoClaw desktop app — cross-platform Electron shell for openclaw",
   "main": "dist/main.js",
   "scripts": {
     "build:chat": "cd chat-ui/ui && npm install --prefer-offline && npx vite build",
     "build": "npm run build:chat && tsc -p tsconfig.json",
-    "predev": "npm install && npm run package:resources && npm run build",
+    "predev": "npm install && node scripts/run-with-env.js node scripts/package-resources.js --no-asar && npm run build",
     "dev": "electron .",
     "dev:isolated": "node scripts/dev-isolated.js",
     "package:resources": "node scripts/run-with-env.js node scripts/package-resources.js",
@@ -57,6 +57,7 @@
   },
   "cryoclaw": {
     "openclaw": "2026.9.2",
+    "node": "22.23.2",
     "dingtalkConnector": "0.8.25",
     "weixin": "2.4.8",
     "wecom": "2026.8.17",

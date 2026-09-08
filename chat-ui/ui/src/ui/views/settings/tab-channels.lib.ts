@@ -97,10 +97,6 @@ export function looksLikeFeishuGroupId(value: string): boolean {
   return /^oc_[A-Za-z0-9]/.test(value);
 }
 
-export function looksLikeFeishuUserId(value: string): boolean {
-  return /^ou_[A-Za-z0-9]/.test(value);
-}
-
 function legacyFeishuPluginEnabled(config: Record<string, unknown>): boolean | undefined {
   const entry = isRecord(config.plugins) && isRecord(config.plugins.entries)
     ? (config.plugins.entries as Record<string, unknown>)[FEISHU_CHANNEL_ID]

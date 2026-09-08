@@ -12,7 +12,8 @@
       - style-src 'self' 'unsafe-inline'：Lit 组件经 Shadow DOM 注入 <style>，需 unsafe-inline。
       - img-src：base64 头像/截图、blob: URL、同源、https 链接（部分 chat avatar 远程图）。
       - connect-src：仅允许本机 gateway（ws/wss/http/https on 127.0.0.1）。外部 API 全走 IPC（已校验协议）。
-      - object/frame/frame-ancestors：禁止被嵌入与嵌入他人，防 clickjacking。
+      - object/frame-src：禁止嵌入他人（frame-ancestors 经 <meta> 交付会被浏览器忽略并告警，
+        R64 移除；Electron 壳不嵌入远程内容，被他人嵌入不可达）。
       - form-action 'self'：表单只回发到同源（gateway 端点）。
     -->
     <meta http-equiv="Content-Security-Policy" content="
@@ -26,7 +27,6 @@
       frame-src 'none';
       base-uri 'none';
       form-action 'self';
-      frame-ancestors 'none';
     ">
     <script type="module" src="./src/main.ts"></script>
   </head>

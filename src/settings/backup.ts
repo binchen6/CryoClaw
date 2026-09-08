@@ -177,6 +177,16 @@ export function registerBackupIpc(opts: SettingsIpcOptions): void {
   ipcMain.handle("settings:reset-config-and-relaunch", async (event) => {
     if (!assertTrustedIpcSender(event, "settings:reset-config-and-relaunch")) throw new Error("IPC sender not trusted");
     try {
+      // 先停 gateway（R64 审查 P2）：持有 openclaw.json 的内核进程活着时删配置，
+      // 其 config observer 在退出前任何一次写回都会重建配置文件，恢复出厂静默失效
+      // 或落入半重置状态（配置回来了但归属标记已删）。
+      if (opts.stopGateway) {
+        try {
+          await opts.stopGateway();
+        } catch {
+          // 停不住也继续删：残留 gateway 由 app.quit 的 before-quit 链兜底清理
+        }
+      }
       const configPath = resolveUserConfigPath();
       if (fs.existsSync(configPath)) {
         fs.unlinkSync(configPath);

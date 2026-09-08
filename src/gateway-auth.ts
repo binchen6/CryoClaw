@@ -88,7 +88,16 @@ export function resolveGatewayAuthToken(opts: ResolveTokenOptions = {}): string 
     try {
       // 自动补全 token 前先备份旧配置，保证每次变更都可回退。
       backupCurrentUserConfig();
-      fs.writeFileSync(configPath, JSON.stringify(config, null, 2), "utf-8");
+      // 原子写（.tmp + rename，R64 审查 P2）：模式对齐 writeUserConfig/writeConfigRaw，
+      // 直写崩溃窗口会留下截断的 openclaw.json 触发恢复流程
+      const tmpPath = `${configPath}.tmp`;
+      try {
+        fs.writeFileSync(tmpPath, JSON.stringify(config, null, 2), "utf-8");
+        fs.renameSync(tmpPath, configPath);
+      } catch (renameErr) {
+        try { fs.rmSync(tmpPath, { force: true }); } catch {}
+        throw renameErr;
+      }
       syncOpenClawStateAfterWrite(configPath);
     } catch (err: any) {
       // 持久化失败时本会话靠环境变量保持一致，但每次启动都会轮换新 token 且无法诊断，

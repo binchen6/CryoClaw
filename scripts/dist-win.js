@@ -127,8 +127,11 @@ const outDir = path.join(root, "out", target);
 const setups = fs.existsSync(outDir)
   ? fs.readdirSync(outDir).filter((f) => /^CryoClaw-Setup-.*\.exe$/i.test(f))
   : [];
+// 缺失核心产物直接失败（R64 审查 P2）：此前只 warn + exit 0，electron-builder
+// 意外成功但产物缺失/输出目录配错时发版流程（尤其自动化）不会拦截——"假绿"。
 if (setups.length === 0) {
-  console.warn(`\n[dist-win] ⚠ 未找到安装包产物 out/${target}/CryoClaw-Setup-*.exe`);
+  console.error(`\n[dist-win] ✗ 未找到安装包产物 out/${target}/CryoClaw-Setup-*.exe，视为构建失败`);
+  process.exitCode = 1;
 }
 for (const name of setups) {
   const exePath = path.join(outDir, name);
@@ -152,11 +155,17 @@ for (const name of setups) {
   }
   // 差分更新（electron-updater）依赖同批的 blockmap 与 latest.yml
   if (!fs.existsSync(`${exePath}.blockmap`)) {
-    console.warn(`[dist-win] ⚠ 缺少 ${name}.blockmap，差分增量更新将退化为全量下载`);
+    console.error(`[dist-win] ✗ 缺少 ${name}.blockmap（差分更新元数据），视为构建失败`);
+    process.exitCode = 1;
   }
 }
 if (!fs.existsSync(path.join(outDir, "latest.yml"))) {
-  console.warn(`[dist-win] ⚠ 缺少 out/${target}/latest.yml，electron-updater 将无法检查更新`);
+  console.error(`[dist-win] ✗ 缺少 out/${target}/latest.yml（更新清单），视为构建失败`);
+  process.exitCode = 1;
 }
 
+if (process.exitCode) {
+  console.error("[dist-win] 产物校验失败（见上）");
+  process.exit(process.exitCode);
+}
 console.log(`[dist-win] 完成: out/${target}/CryoClaw-Setup-*`);

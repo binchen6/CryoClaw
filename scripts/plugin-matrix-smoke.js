@@ -19,7 +19,7 @@ const http = require("http");
 const net = require("net");
 const { spawn } = require("child_process");
 // asar 清单/解包捕获式执行（argv 数组直传；程序为当前 node 运行时）
-const { execFileSync: runNodeCapture } = require("child_process");
+const { execFileSync } = require("child_process");
 
 function arg(name, fallback) {
   const i = process.argv.indexOf(name);
@@ -27,7 +27,9 @@ function arg(name, fallback) {
 }
 
 const root = path.resolve(__dirname, "..");
-const asarPath = arg("--asar", path.join(root, "resources", "targets", "win32-x64", "gateway.asar"));
+// 绝对化（R64 修复连带）：extractFileTo 以临时目录为 cwd 执行 asar CLI，
+// 相对 archive 路径在临时 cwd 下解析失败（ENOENT）
+const asarPath = path.resolve(arg("--asar", path.join(root, "resources", "targets", "win32-x64", "gateway.asar")));
 const outPath = arg("--out", path.join(os.tmpdir(), "plugin-matrix.json"));
 const nodeBin = path.join(root, "node_modules", "electron", "dist", "electron.exe");
 const asarCli = path.join(root, "node_modules", "@electron", "asar", "bin", "asar.mjs");
@@ -43,6 +45,12 @@ const WATCH = [
   "feishu", "qqbot", "kimi", "kimi-search", "moonshot", "zai", "qwen",
   "deepseek", "browser", "memory-core", "device-pair",
 ];
+
+// execFileSync 第一参数必须是可执行文件路径（R64 审查 P2）：asar CLI 是 .mjs，
+// 由当前 node 运行时携带执行。
+function runNodeCapture(cliArgs, opts) {
+  return execFileSync(process.execPath, cliArgs, opts);
+}
 
 function listAsarDir(archive, dir) {
   // asar list 输出形如 \dist\extensions\feishu\openclaw.plugin.json（全量列表 >1MB，需放大 maxBuffer）

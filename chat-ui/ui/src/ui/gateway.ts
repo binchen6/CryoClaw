@@ -156,7 +156,9 @@ export class GatewayBrowserClient {
       if (!this.isActiveSocket(ws, generation)) {
         return;
       }
-      console.error("[gateway] websocket error", ev);
+      // warn 而非 error（R64）：error 事件总是伴随其后的 close 事件（已有 warn 日志
+      // 与重连调度），网关冷启动的首次连接失败会以此打出成串 error 级噪音。
+      console.warn("[gateway] websocket error", ev);
     });
   }
 

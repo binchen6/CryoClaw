@@ -146,8 +146,11 @@
 ; ============================================================
 
 !macro customInstall
-  ; 设置 INST_DIR 环境变量供 PowerShell 脚本读取安装目录
-  nsExec::ExecToLog 'powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$$env:INST_DIR=\"$INSTDIR\"; & \"$INSTDIR\resources\create-cli-binary.ps1\""'
+  ; 生成 CLI 专用二进制（SUBSYSTEM:CONSOLE）：复制主 exe 并补丁 PE header。
+  ; -File 直跑（R64 审查 P3）：脚本自定位安装目录（$PSScriptRoot 上级），
+  ; 旧版把 $INSTDIR 内插进 -Command 双引号串，自选安装目录含 $、反引号等
+  ; PS 元字符时会被展开/转义导致 CLI 生成失败。
+  nsExec::ExecToLog 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$INSTDIR\resources\create-cli-binary.ps1"'
   ; 检查退出码：CLI 二进制生成失败不阻断安装，但写醒目日志便于排查
   Pop $0
   ${if} $0 != 0

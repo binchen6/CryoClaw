@@ -39,6 +39,10 @@ function syncUrlWithSessionKey(sessionKey: string, replace: boolean) {
 // 切回时恢复；此前直接清空导致切会话丢草稿。恢复后即删除条目（一次性）。
 type SessionDraftSnapshot = { draft: string; attachments: ChatState["chatAttachments"] };
 const sessionDraftSnapshots = new Map<string, SessionDraftSnapshot>();
+// 快照条目上限（R64 审查 P3）：图片附件是整段 base64 dataUrl（单个可数 MB），
+// 无上限的 Map 在跨大量会话粘贴图片时会线性累积驻留内存；超限逐出最旧条目
+//（Map 迭代序 = 插入序，首个 key 即最旧）。
+const SESSION_DRAFT_SNAPSHOT_MAX = 20;
 
 // 会话被删除时同步清理其草稿快照（app-session-actions.ts deleteSessionFromSidebar 调用）
 export function clearSessionDraftSnapshot(sessionKey: string) {
@@ -56,10 +60,16 @@ export function applySessionKeyTransition(
   }
   // 先存当前会话的草稿/附件快照（空草稿不留条目，防 Map 无限增长）
   if (host.chatMessage || host.chatAttachments.length > 0) {
+    sessionDraftSnapshots.delete(host.sessionKey); // 重新插入以刷新 Map 迭代序（LRU 语义）
     sessionDraftSnapshots.set(host.sessionKey, {
       draft: host.chatMessage,
       attachments: host.chatAttachments,
     });
+    while (sessionDraftSnapshots.size > SESSION_DRAFT_SNAPSHOT_MAX) {
+      const oldest = sessionDraftSnapshots.keys().next().value;
+      if (oldest === undefined) break;
+      sessionDraftSnapshots.delete(oldest);
+    }
   } else {
     sessionDraftSnapshots.delete(host.sessionKey);
   }
@@ -74,6 +84,10 @@ export function applySessionKeyTransition(
   host.chatPendingStreamText = null;
   host.chatStreamFrozenPrefix = "";
   host.chatVisibleMessageCount = 0;
+  // 加载态随会话重置（R64 审查 P3）：断连交错下旧请求的 finally 以
+  // sessionKey 守卫跳过清位，若不在此重置，新会话线程区会一直显示「加载中」
+  // 直到重连；已连接时随后的 loadChatHistory 会立即重新置位。
+  host.chatLoading = false;
   host.chatStreamStartedAt = null;
   host.chatLastActivityAt = null;
   host.chatRunId = null;

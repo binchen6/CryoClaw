@@ -545,6 +545,9 @@ function requestGatewayRestart(source: string): void {
       log.error(`Gateway 重启失败(${source}): ${err}`);
     });
   }, 800);
+  // unref（R64 审查 P2）：防抖窗内退出应用时，该定时器不得成为事件循环的
+  // 存活理由，也不得在退出序列中 spawn 孤儿 gateway（before-quit 另做取消）。
+  restartTimer.unref?.();
 }
 
 // 导入 .openclaw 前的应急归档目录（必须在状态目录之外）：
@@ -802,13 +805,18 @@ ipcMain.handle("app:reveal-path", (event, filePath: string) => {
 // 文件选择对话框 — 返回文件绝对路径数组
 ipcMain.handle("dialog:select-files", async (event, options?: { filters?: Electron.FileFilter[] }) => {
   if (!assertTrustedIpcSender(event, "dialog:select-files")) throw new Error("IPC sender not trusted");
-  const win = BrowserWindow.getFocusedWindow();
-  const result = await dialog.showOpenDialog(win ?? {
-    // fallback: 无聚焦窗口时仍可弹出
-  } as any, {
-    properties: ["openFile", "multiSelections"],
-    filters: options?.filters,
-  });
+  // 以 sender 定位宿主窗口（R64 审查 P3）：getFocusedWindow 在应用失焦/焦点在
+  // DevTools 时返回 null，旧实现传 {} as any 会让原生参数转换抛错、选择永远打不开
+  const win = BrowserWindow.fromWebContents(event.sender);
+  const result = win
+    ? await dialog.showOpenDialog(win, {
+        properties: ["openFile", "multiSelections"],
+        filters: options?.filters,
+      })
+    : await dialog.showOpenDialog({
+        properties: ["openFile", "multiSelections"],
+        filters: options?.filters,
+      });
   if (result.canceled) {
     return [];
   }
@@ -990,6 +998,7 @@ registerSettingsIpc({
   requestGatewayRestart: () => requestGatewayRestart("settings:kimi-search"),
   getGatewayToken: () => gateway.getToken(),
   importOpenclawState: (filePath) => openclawStateImportLifecycle.importOpenclawState(filePath),
+  stopGateway: () => gateway.stop({ waitForStarting: true }),
 });
 registerSkillStoreIpc();
 registerPluginStoreIpc();
@@ -1001,6 +1010,7 @@ void detectGitCached();
 // ── 退出 ──
 
 async function quit(): Promise<void> {
+  cancelPendingGatewayRestart("app-quit");
   stopTokenRefresh();
   await stopAuthProxy();
   await stopGatewayControlServer();
@@ -1338,6 +1348,9 @@ app.on("window-all-closed", () => {
 // ── 退出前清理 ──
 
 app.on("before-quit", () => {
+  // 取消待执行的 gateway 重启防抖（R64 审查 P2）：退出序列中触发 restart
+  // 会在 Windows 上留下占端口/锁文件的孤儿 gateway 子进程
+  cancelPendingGatewayRestart("app-quit");
   // 先放行窗口关闭，避免 close handler 拦截 WM_CLOSE 导致 NSIS 安装器报"无法关闭"
   windowManager.prepareForAppQuit();
   windowManager.destroy();

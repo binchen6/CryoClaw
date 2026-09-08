@@ -373,6 +373,10 @@ export async function sendChatMessage(
   if (!state.client || !state.connected) {
     return null;
   }
+  // 会话归属快照（R64 审查 P1）：必须在首个 await（下方附件读取循环，单文件可达
+  // 16MB、数百毫秒窗口）之前取。窗口内用户切换会话后，若无快照守卫：chat.send 会
+  // 发进新会话、乐观气泡 append 进新会话消息流、run 态覆写新会话的流式状态。
+  const requestSessionKey = state.sessionKey;
   // 先占住 busy 位再进入附件读取 await 窗口：期间队列「立即发送」等并发路径
   // 会经 isChatBusy() 判断（否则可能以 preserveRunState:false 直发并覆盖本轮流式状态）
   state.chatSending = true;
@@ -440,11 +444,10 @@ export async function sendChatMessage(
   }
 
   const now = Date.now();
-  // 会话归属守卫（对齐 loadChatHistory 的 requestSessionKey 模式）：
-  // chat.send 在途期间用户可能已切换会话，迟到的失败回调若不带守卫，
-  // 会把旧会话的错误卡片（含 resendText，重发会把旧文本发进新会话）注入
-  // 新会话的消息流，并清掉新会话正在进行的 run 状态。
-  const requestSessionKey = state.sessionKey;
+  // 附件读取在途期间已切换会话：消息仍发往原会话（requestSessionKey），但本地
+  // echo/run 态不写入——当前视图是新会话，写旧会话内容会污染其消息流与流式状态；
+  // 切回原会话时由 loadChatHistory 从服务端刷新重建视图。
+  const sessionChangedDuringRead = state.sessionKey !== requestSessionKey;
 
   // 构建用户消息内容块（用于本地 UI 显示）
   const contentBlocks: Array<{ type: string; text?: string; source?: unknown }> = [];
@@ -469,14 +472,16 @@ export async function sendChatMessage(
     timestamp: now,
     ...(hasFiles && echoMediaPaths.length > 0 ? { MediaPaths: [...echoMediaPaths], MediaTypes: [...echoMediaTypes] } : {}),
   };
-  state.chatMessages = [...state.chatMessages, echoMessage];
-  state.chatVisibleMessageCount = state.chatMessages.length;
-  cancelChatHistoryHydration(state);
+  if (!sessionChangedDuringRead) {
+    state.chatMessages = [...state.chatMessages, echoMessage];
+    state.chatVisibleMessageCount = state.chatMessages.length;
+    cancelChatHistoryHydration(state);
+  }
 
   state.chatSending = true;
   state.lastError = null;
   const runId = generateUUID();
-  if (!opts?.preserveRunState) {
+  if (!opts?.preserveRunState && !sessionChangedDuringRead) {
     // 用户发起新 run：此前的重连 orphan 快照作废（防旧 run 的迟到帧被误收养进新 run）
     clearReconnectOrphanRun();
     state.chatRunId = runId;
@@ -506,7 +511,7 @@ export async function sendChatMessage(
 
   try {
     await state.client.request("chat.send", {
-      sessionKey: state.sessionKey,
+      sessionKey: requestSessionKey,
       message: msg,
       deliver: false,
       idempotencyKey: runId,

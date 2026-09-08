@@ -67,7 +67,7 @@ export function buildChatProps(state: AppViewState): ChatProps {
     // R23：子代理等待状态卡数据源（tasks 数组引用稳定，供 buildChatItems memo 比较）
     tasks: state.tasks,
     runActive: Boolean(state.chatRunId),
-    // R61：问答卡片数据源 + resolve 回调（本地即时落终态，resolved 事件到达时幂等）
+    // R61：问答卡片数据源 + resolve 回调
     questionPrompts: state.questionPrompts,
     onResolveQuestion: (id, answers) => {
       const client = state.client;
@@ -75,15 +75,26 @@ export function buildChatProps(state: AppViewState): ChatProps {
       const prompt = state.questionPrompts.find((p) => p.id === id);
       if (!prompt || prompt.status !== "pending") return;
       const params = buildResolveParams(prompt, answers);
+      // 终态只在请求成功后落（R64 审查 P2）：失败时卡片保持 pending——若乐观
+      // 落终态，渲染层按 pending 过滤后卡片消失而内核 run 仍在等答案，只能等
+      // 重连后的 question.list 对账才恢复。在途标记防重复提交。
+      if (state.questionResolvingIds.includes(id)) return;
+      state.questionResolvingIds = [...state.questionResolvingIds, id];
       void client
         .request("question.resolve", params)
+        .then(() => {
+          state.questionResolvingIds = state.questionResolvingIds.filter((x) => x !== id);
+          state.questionPrompts = applyQuestionResolution(state.questionPrompts, {
+            id,
+            status: answers === null ? "cancelled" : "answered",
+          });
+          state.requestUpdate();
+        })
         .catch(() => {
           // 失败静默：卡片保持 pending，resolved 事件 / list 对齐会收敛真实状态
+          state.questionResolvingIds = state.questionResolvingIds.filter((x) => x !== id);
+          state.requestUpdate();
         });
-      state.questionPrompts = applyQuestionResolution(state.questionPrompts, {
-        id,
-        status: answers === null ? "cancelled" : "answered",
-      });
     },
     stream: state.chatStream,
     streamStartedAt: state.chatStreamStartedAt,

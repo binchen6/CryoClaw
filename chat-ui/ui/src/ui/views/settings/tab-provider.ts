@@ -426,12 +426,25 @@ function startKeyEdit(prov: GroupedProvider, state: AppViewState) {
 }
 
 async function handleKeySave(prov: GroupedProvider, state: AppViewState) {
+  // verify 是真实 HTTP 探测（可达数秒），入口即占 busy 防重复点击（R64 审查 P3）
+  if (s.busy) return;
   const apiKey = s.keyDraft.trim();
   if (!apiKey) {
     s.keyEditing = null;
     state.requestUpdate();
     return;
   }
+  s.busy = true;
+  state.requestUpdate();
+  try {
+    await handleKeySaveInner(prov, state, apiKey);
+  } finally {
+    s.busy = false;
+    state.requestUpdate();
+  }
+}
+
+async function handleKeySaveInner(prov: GroupedProvider, state: AppViewState, apiKey: string) {
   const isKimiCoding = prov.providerKey === "kimi-coding";
   // verify 参数映射回 UI provider/preset（verifyProvider 只识别五大 UI provider）
   const presetKey = Object.keys(CUSTOM_PRESETS).find(k => CUSTOM_PRESETS[k].providerKey === prov.providerKey);

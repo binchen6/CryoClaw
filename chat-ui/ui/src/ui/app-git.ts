@@ -112,14 +112,20 @@ export function renderGitView(state: AppViewState, opts?: { showRepoSelect?: boo
     },
     onPush: () => {
       void pushGitChanges(state).then((ok) => {
+        const noBranch = !ok && state.gitErrorDetail === "no-branch";
         showToast(
           state,
           ok
             ? t("git.pushed")
-            : state.gitErrorDetail === "no-branch"
+            : noBranch
               ? t("git.pushNoBranch")
               : tWithDetail("git.pushFailed", state.gitErrorDetail),
         );
+        if (noBranch) {
+          // 哨兵用后即清（R64 审查 P2）：防常驻 danger callout 渲染出「no-branch」
+          state.gitErrorKind = null;
+          state.gitErrorDetail = null;
+        }
       });
     },
     onPull: () => {

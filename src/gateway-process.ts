@@ -194,20 +194,30 @@ export class GatewayProcess {
     }
 
     // 清理升级残留的 lockfile（旧 gateway 可能是半死状态：进程活但 HTTP 不响应）
-    await this.cleanStaleLockfile();
+    // 预启动步骤整体 try/catch（R64 审查 P1）：磁盘满/杀软锁文件等真实故障会让
+    // 这些步骤抛错，若不复位状态，start()（"starting" 守卫）与 stop()（!proc 早退）
+    // 双双空转，状态机永久卡死在 "starting"，只能重启 App 自愈。
+    try {
+      await this.cleanStaleLockfile();
 
-    // 卸载 OpenClaw 系统守护进程 + 清理 tmpdir 锁文件，防止杀进程后被自动重启
-    await uninstallGatewayDaemon();
+      // 卸载 OpenClaw 系统守护进程 + 清理 tmpdir 锁文件，防止杀进程后被自动重启
+      await uninstallGatewayDaemon();
 
-    // 启动前探测端口，若有旧 gateway 则自动停止
-    const portBusy = await this.probeHealth();
-    if (portBusy) {
-      diagLog(`WARN: 端口 ${this.port} 已有服务响应，尝试自动停止旧 gateway`);
-      await this.stopExistingGateway(nodeBin, entry, cwd);
+      // 启动前探测端口，若有旧 gateway 则自动停止
+      const portBusy = await this.probeHealth();
+      if (portBusy) {
+        diagLog(`WARN: 端口 ${this.port} 已有服务响应，尝试自动停止旧 gateway`);
+        await this.stopExistingGateway(nodeBin, entry, cwd);
+      }
+
+      // 确保 clawhub CLI wrapper 就绪
+      ensureClawhubWrapper(nodeBin);
+    } catch (err) {
+      diagLog(`FATAL: 预启动步骤失败: ${err instanceof Error ? err.message : String(err)}`);
+      this.proc = null;
+      this.setState("stopped");
+      throw err;
     }
-
-    // 确保 clawhub CLI wrapper 就绪
-    ensureClawhubWrapper(nodeBin);
 
     // 组装 PATH：用户 bin 目录 + 内嵌 runtime + officecli 优先
     const userBinDir = resolveUserBinDir();
@@ -330,6 +340,13 @@ export class GatewayProcess {
       if (this.state === "starting") {
         diagLog("WARN: waitForStarting 超时，start 仍未落定，继续执行 stop");
       }
+    }
+    // 防御（R64 审查 P1）：start() 在预启动步骤抛错后已复位 stopped，但历史上
+    // 可能残留 "starting" + 无 proc 的半死态——此处强制复位，保证 stop 可作恢复手段。
+    if (this.state === "starting" && !this.proc) {
+      diagLog("stop(): 检测到无子进程的 starting 半死态，强制复位 stopped");
+      this.setState("stopped");
+      return;
     }
     if (!this.proc || this.state === "stopped") return;
 
@@ -591,13 +608,16 @@ function ensureClawhubWrapper(nodeBin: string): void {
   const workdir = path.join(resolveUserStateDir(), "workspace");
 
   if (IS_WIN) {
+    // % 双写转义（R64 审查 P3）：set "KEY=VALUE" 上下文里 %VAR% 会被展开吞掉，
+    // 与 cli-integration.ts escapeForCmdSetValue 同一规则（安装/用户目录含 % 时防失效）
+    const esc = (v: string) => v.replace(/%/g, "%%").replace(/"/g, '""');
     const wrapper = [
       "@echo off",
       "REM CryoClaw clawhub CLI - auto-generated, do not edit",
       "setlocal",
-      `set "APP_NODE=${nodeBin.replace(/"/g, '""')}"`,
-      `set "APP_ENTRY=${clawhubEntry.replace(/"/g, '""')}"`,
-      `set "APP_WORKDIR=${workdir.replace(/"/g, '""')}"`,
+      `set "APP_NODE=${esc(nodeBin)}"`,
+      `set "APP_ENTRY=${esc(clawhubEntry)}"`,
+      `set "APP_WORKDIR=${esc(workdir)}"`,
       'set "ELECTRON_RUN_AS_NODE=1"',
       '"%APP_NODE%" "%APP_ENTRY%" --workdir "%APP_WORKDIR%" %*',
       "exit /b %errorlevel%",

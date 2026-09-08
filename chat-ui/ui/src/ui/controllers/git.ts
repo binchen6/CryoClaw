@@ -532,7 +532,9 @@ async function runGitNetworkOp(
 export async function pushGitChanges(state: GitPanelState): Promise<boolean> {
   const branch = state.gitStatus?.branch?.head ?? "";
   // detached HEAD / 空仓库：git-parse 约定 head 为 "(detached)" 或 null，
-  // 此时无有效 refspec 可推，前置拦截并给出可读错误（而非透传 git 原始报错）
+  // 此时无有效 refspec 可推，前置拦截。哨兵 "no-branch" 只供调用方（app-git
+  // onPush）选 toast 文案，用后即清——不清理会被常驻 danger callout 原样渲染成
+  // 「操作失败: no-branch」（R64 审查 P2）。
   if (!branch || branch === "(detached)") {
     state.gitErrorKind = "generic";
     state.gitErrorDetail = "no-branch";

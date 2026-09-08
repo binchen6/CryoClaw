@@ -475,11 +475,12 @@ export function connectGateway(host: GatewayHost) {
       host.connected = false;
       // R41：新断连作废上轮重连的挂起探测（下一轮 onHello 会重新调度）
       cancelReconnectOrphanProbe();
-      // 断开连接时注销 tick handler 并停止客户端定时器
+      // 断开连接时注销 tick handler 并停止客户端定时器（与 onHello 注册对称）
       unregisterTickHandler("cron");
       unregisterTickHandler("sessions");
       unregisterTickHandler("tasks");
       unregisterTickHandler("stream-watchdog");
+      unregisterTickHandler("question-expiry");
       stopTicker();
       // Code 1012 = Service Restart (expected during config saves, don't show as error)
       if (code !== 1012) {

@@ -464,9 +464,12 @@ async function listChannelPairingRequests(
 }
 
 // 从 params 提取并校验配对码（approve / reject 共用）：空则返回 null。
+// 拒绝 `-` 前缀（R64 审查 P3）：code 直达 openclaw CLI argv，与 skill-store/
+// plugin-store 的选项注入防护保持一致。
 function extractPairingCode(params: Record<string, unknown>): string | null {
   const code = typeof params?.code === "string" ? params.code.trim() : "";
-  return code || null;
+  if (!code || code.startsWith("-")) return null;
+  return code;
 }
 
 // 统一执行渠道 pairing approve，避免每个渠道重复拼 CLI 参数。

@@ -62,10 +62,12 @@ function resolveBundledNpmCli() {
 function execNpmSync(args, opts = {}) {
   const argv = [resolveBundledNpmCli()];
   for (const arg of args) {
-    // 允许空格：execFileSync argv 直传不经 shell，空格不会裂成新参数；
-    // --pack-destination/--prefix 等路径值参数在 checkout 路径含空格时必须放行
-    if (typeof arg !== "string" || !/^[\w.@/\\\-:=~ ]+$/.test(arg)) {
-      die(`npm 参数含不受支持字符，拒绝执行: ${arg}`);
+    // execFileSync argv 直传不经 shell：空格/括号/加号等 Windows 合法路径字符
+    // 均安全（"code (1)"、"Program Files (x86)" 等 checkout 路径曾因旧白名单
+    // 不含 () 直接构建失败，R64 审查 P1）。只拒绝真正危险的元字符：控制字符、
+    // 引号、换行——它们无法经 argv 注入新参数，但可能破坏下游日志/回显。
+    if (typeof arg !== "string" || /[\x00-\x1f\x7f"'`\n\r]/.test(arg)) {
+      die(`npm 参数含控制字符/引号，拒绝执行: ${arg}`);
     }
     argv.push(arg);
   }
@@ -119,6 +121,10 @@ function parseArgs() {
       opts.arch = args[++i];
     } else if (args[i] === "--asar") {
       opts.asar = true;
+    } else if (args[i] === "--no-asar") {
+      // 显式覆盖 .env.build 的 CRYOCLAW_GATEWAY_ASAR=1（dev 场景散文件必需，
+      // 且 env 前缀写法在 Windows npm（cmd.exe）不可用，走旗标跨平台）
+      opts.asar = false;
     }
   }
 
@@ -336,55 +342,8 @@ function assertZipHasCentralDirectory(zipPath) {
 }
 
 // ─── Step 1: 下载 Node.js 22 发行包 ───
-
-// 获取 Node.js 22.x 最新版本号（带 24h 缓存）
-async function getLatestNode22Version() {
-  const cacheDir = path.join(ROOT, ".cache", "node");
-  const cachePath = path.join(cacheDir, "versions.json");
-  ensureDir(cacheDir);
-
-  // 检查缓存是否有效（24小时）
-  if (fs.existsSync(cachePath)) {
-    const stat = fs.statSync(cachePath);
-    const ageMs = Date.now() - stat.mtimeMs;
-    const ONE_DAY = 24 * 60 * 60 * 1000;
-    if (ageMs < ONE_DAY) {
-      try {
-        const versions = JSON.parse(fs.readFileSync(cachePath, "utf-8"));
-        log("使用缓存的 Node.js 版本列表");
-        return pickV22(versions);
-      } catch {
-        // 缓存损坏：删除后走网络重取
-        log("缓存的 Node.js 版本列表已损坏，删除后重新获取");
-        safeUnlink(cachePath);
-      }
-    }
-  }
-
-  log("正在获取 Node.js 版本列表...");
-  const buf = await httpGet("https://nodejs.org/dist/index.json");
-  let versions;
-  try {
-    versions = JSON.parse(buf.toString());
-  } catch (err) {
-    die(`Node.js 版本列表响应不是合法 JSON: ${err.message}`);
-  }
-  // 校验通过后才落缓存（原子写，防并行构建读到半截 JSON）
-  writeFileAtomicSync(cachePath, buf);
-  return pickV22(versions);
-}
-
-// 从版本列表中取 v22.x 最新版
-function pickV22(versions) {
-  const v22 = versions.find((v) => v.version && v.version.startsWith("v22."));
-  if (!v22) die("未找到 Node.js v22.x 版本");
-  const version = v22.version.slice(1); // 去掉前缀 "v"
-  // 版本串来自网络 JSON，随后进入下载文件名与 tar/解压 argv——严格白名单校验
-  if (!/^\d+\.\d+\.\d+$/.test(version)) {
-    die(`Node.js 版本号形态异常（应为 x.y.z）: ${version}`);
-  }
-  return version;
-}
+// （R64 起 Node 运行时版本钉定在 package.json cryoclaw.node，不再运行时取
+//  "最新 22.x"——升级 Node 走显式改 pin，同法于 cryoclaw.openclaw。）
 
 // 下载并解压 Node.js 运行时到目标目录
 async function downloadAndExtractNode(version, platform, arch, runtimeDir) {
@@ -410,7 +369,11 @@ async function downloadAndExtractNode(version, platform, arch, runtimeDir) {
 
   // 下载（如果缓存中没有）
   if (fs.existsSync(cachedFile)) {
+    // 缓存命中也要复验（R64 审查 P2）：首次下载时若 SHASUMS 恰好不可得，损坏/
+    // 被替换的包会永久免检进产物（EOCD 只能挡截断，挡不住等长替换）。哈希随包
+    // 缓存（.sha256 旁路文件），离线也能复核；无旁路记录时现场拉 SHASUMS。
     log(`使用缓存: ${filename}`);
+    await verifyNodeArchiveShasum(version, filename, cachedFile);
   } else {
     log(`正在下载 ${filename} ...`);
     await downloadFileWithFallback(downloadUrls, cachedFile);
@@ -438,37 +401,45 @@ async function downloadAndExtractNode(version, platform, arch, runtimeDir) {
   fs.writeFileSync(stampFile, stampValue);
 }
 
-// Node 发行包内容校验：下载同目录官方 SHASUMS256.txt，比对 sha256。
-// 镜像与官方源共用同一 SHASUMS 文件名；获取失败时降级为警告（截断/损坏仍会被
-// EOCD 检查与解压失败兜住），但「拿到了校验值却不匹配」必须硬失败。
+// Node 发行包内容校验：优先用随包缓存的哈希旁路文件（.sha256，首次校验通过时
+// 落盘），否则下载同目录官方 SHASUMS256.txt 现算比对。镜像与官方源共用同一
+// SHASUMS 文件名。能下到发行包却拿不到校验值属异常（同 host 双双失败），
+// 硬失败（R64 审查 P2：旧逻辑软失败会让损坏包在缓存路径永久免检）；
+// 「拿到了校验值却不匹配」同样硬失败并删缓存。
 async function verifyNodeArchiveShasum(version, filename, archivePath) {
-  const shasumUrls = [
-    `https://nodejs.org/dist/v${version}/SHASUMS256.txt`,
-    `https://npmmirror.com/mirrors/node/v${version}/SHASUMS256.txt`,
-  ];
-  let text = null;
-  for (const u of shasumUrls) {
-    try {
-      text = (await httpGet(u)).toString("utf8");
-      break;
-    } catch {}
-  }
-  if (!text) {
-    log(`WARN: 无法获取 SHASUMS256.txt（v${version}），跳过内容校验`);
-    return;
-  }
-  const line = text.split(/\r?\n/).find((l) => l.endsWith(` ${filename}`));
-  const expected = line ? line.slice(0, line.length - filename.length - 1).trim() : null;
-  if (!expected || !/^[0-9a-f]{64}$/i.test(expected)) {
-    log(`WARN: SHASUMS256.txt 中没有 ${filename} 的条目，跳过内容校验`);
-    return;
+  const hashFile = `${archivePath}.sha256`;
+  const recorded = fs.existsSync(hashFile) ? fs.readFileSync(hashFile, "utf8").trim() : "";
+  let expected = /^[0-9a-f]{64}$/i.test(recorded) ? recorded : null;
+  if (!expected) {
+    const shasumUrls = [
+      `https://nodejs.org/dist/v${version}/SHASUMS256.txt`,
+      `https://npmmirror.com/mirrors/node/v${version}/SHASUMS256.txt`,
+    ];
+    let text = null;
+    for (const u of shasumUrls) {
+      try {
+        text = (await httpGet(u)).toString("utf8");
+        break;
+      } catch {}
+    }
+    if (!text) {
+      die(`无法获取 SHASUMS256.txt（v${version}），拒绝跳过 Node 发行包内容校验`);
+    }
+    const line = text.split(/\r?\n/).find((l) => l.endsWith(` ${filename}`));
+    expected = line ? line.slice(0, line.length - filename.length - 1).trim() : null;
+    if (!expected || !/^[0-9a-f]{64}$/i.test(expected)) {
+      die(`SHASUMS256.txt 中没有 ${filename} 的条目，拒绝跳过内容校验`);
+    }
   }
   const { createHash } = require("crypto");
   const actual = createHash("sha256").update(fs.readFileSync(archivePath)).digest("hex");
   if (actual.toLowerCase() !== expected.toLowerCase()) {
     safeUnlink(archivePath);
+    safeUnlink(hashFile);
     die(`Node 发行包 sha256 校验失败: ${filename}\n  expected ${expected}\n  actual   ${actual}`);
   }
+  // 校验通过后落盘哈希旁路文件，供后续缓存命中离线复核
+  writeFileAtomicSync(hashFile, Buffer.from(actual, "utf8"));
   log(`sha256 校验通过: ${filename}`);
 }
 
@@ -3129,6 +3100,13 @@ function verifyOutput(targetPaths, opts) {
     die("关键文件缺失，打包失败");
   }
 
+  // 散文件模式必须无陈旧 gateway.asar（R64 审查 P1）：afterPack 以其存在与否
+  // 判定注入模式，残留会让发行包携带旧内核且常规校验全绿。
+  const strayAsar = path.join(targetPaths.targetBase, "gateway.asar");
+  if (!opts.asar && fs.existsSync(strayAsar)) {
+    die(`散文件模式下发现陈旧 gateway.asar（${strayAsar}），afterPack 会误判为 asar 模式——请清理后重打包`);
+  }
+
   log("所有关键文件验证通过");
 }
 
@@ -3257,8 +3235,21 @@ async function main() {
 
   // Step 1: 下载 Node.js 22 运行时
   log("Step 1: 下载 Node.js 22 运行时");
-  const nodeVersion = await getLatestNode22Version();
-  log(`最新 Node.js 22.x 版本: v${nodeVersion}`);
+  // 版本钉定（R64 审查 P2）：与 cryoclaw.openclaw 同法钉在 package.json
+  // cryoclaw.node——"每次取最新 22.x"会让同一次发版的产物随网络时间漂移，
+  // 官方一发坏补丁版即同时打崩全部构建；升级走显式改 pin。
+  let nodeVersion;
+  try {
+    const pinned = require(path.join(ROOT, "package.json")).cryoclaw?.node;
+    if (typeof pinned === "string" && /^\d+\.\d+\.\d+$/.test(pinned)) {
+      nodeVersion = pinned;
+    } else {
+      throw new Error(`pin 形态异常: ${String(pinned)}`);
+    }
+  } catch (err) {
+    die(`package.json cryoclaw.node 钉定缺失或非法（${err.message}）——请显式钉定 Node 运行时版本后重试`);
+  }
+  log(`Node.js 运行时（钉定）: v${nodeVersion}`);
   await downloadAndExtractNode(nodeVersion, opts.platform, opts.arch, targetPaths.runtimeDir);
 
   // Step 1.5: 写入 .npmrc
@@ -3310,6 +3301,16 @@ async function main() {
     log("Step 6: Gateway ASAR 打包");
     await packGatewayAsar(targetPaths.gatewayDir, targetPaths.targetBase, opts.platform, opts.arch);
   } else {
+    // 反向切换清理（R64 审查 P1）：上次构建若开了 asar，targetBase 会遗留
+    // gateway.asar(+.unpacked)；afterPack 以 existsSync(gateway.asar) 判定注入
+    // 模式，陈旧 asar 会压过本次新装的散文件树——发行包静默携带旧内核且全链路绿灯。
+    const staleAsar = path.join(targetPaths.targetBase, "gateway.asar");
+    const staleUnpacked = `${staleAsar}.unpacked`;
+    if (fs.existsSync(staleAsar) || fs.existsSync(staleUnpacked)) {
+      if (fs.existsSync(staleAsar)) fs.rmSync(staleAsar, { force: true });
+      if (fs.existsSync(staleUnpacked)) rmDir(staleUnpacked);
+      log("已清理上一次 asar 构建遗留的 gateway.asar(+.unpacked)（本次为散文件模式）");
+    }
     log("Step 6: 跳过 ASAR 打包（未指定 --asar）");
   }
 

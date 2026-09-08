@@ -185,7 +185,8 @@ async function main() {
   check("--version 走 stdout 而非 stderr", ver.stdout.trim().length > 0 && ver.stderr.trim().length === 0);
 
   // wrapper 与入口直跑一致性（wrapper 不得改变输出）
-  const nodeBin = null; // ASAR 形态入口必须用 CLI.exe，直跑一致性比较留给散文件形态
+  // （ASAR 形态入口必须用 CLI.exe，直跑一致性比较留给散文件形态——R64 清理
+  //  曾以 const nodeBin = null 遮蔽外层同名变量的死占位）
   const ver2 = runCli(wrapper, ["--version", "--no-color"]);
   check("重复调用输出稳定（无状态残留）", ver2.status === 0 && ver2.stdout.trim() === ver.stdout.trim());
 

@@ -405,6 +405,8 @@ export class OpenClawApp extends LitElement {
   // R61：内核问答卡片（ask_user）——question.requested/resolved 事件驱动，
   // question.list 对齐；渲染层按当前会话过滤 pending 项出卡
   questionPrompts: QuestionPrompt[] = [];
+  // R64：resolve 请求在途的卡片 id（防重复提交；成功/失败后移除）
+  questionResolvingIds: string[] = [];
 
   applySessionKey = this.settings.lastActiveSessionKey;
 

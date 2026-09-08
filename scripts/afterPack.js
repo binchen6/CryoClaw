@@ -208,9 +208,12 @@ function writeCliBinaryPatchScript(appOutDir, productName) {
   fs.mkdirSync(resourcesDir, { recursive: true });
 
   // PowerShell 脚本：复制主 exe → CLI exe，补丁 PE SUBSYSTEM 从 GUI(2) 到 CONSOLE(3)
+  // 自定位安装目录（R64：脚本位于 <INSTDIR>\resources\ 下，取 $PSScriptRoot 上级；
+  // 旧版经 NSIS -Command 内插 $env:INST_DIR，安装目录含 $/`/" 等 PS 元字符时被展开）
   const ps1 = [
-    "$src = Join-Path $env:INST_DIR '@@EXE@@'",
-    "$dst = Join-Path $env:INST_DIR '@@CLI@@'",
+    "$instDir = Split-Path -Parent $PSScriptRoot",
+    "$src = Join-Path $instDir '@@EXE@@'",
+    "$dst = Join-Path $instDir '@@CLI@@'",
     "Copy-Item $src $dst -Force",
     "$f = [System.IO.File]::Open($dst, 'Open', 'ReadWrite')",
     "try {",

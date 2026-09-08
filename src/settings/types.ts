@@ -7,4 +7,6 @@ export interface SettingsIpcOptions {
   importOpenclawState: (filePath: string) => Promise<void>;
   requestGatewayRestart?: () => void;
   getGatewayToken?: () => string;
+  /** 停止 gateway（恢复出厂等删配置场景必须先停，防内核 config observer 写回复活） */
+  stopGateway?: () => Promise<void>;
 }

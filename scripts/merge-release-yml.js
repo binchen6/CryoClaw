@@ -34,8 +34,8 @@ const MERGE_TARGETS = [
   },
 ];
 
-// 需要收集到 release/ 的文件扩展名
-const COLLECT_EXTENSIONS = [".dmg", ".zip", ".exe", ".blockmap", ".yml"];
+// 需要收集到 release/ 的文件扩展名（.yml 已合并为单份，不逐架构收集）
+const COLLECT_EXTENSIONS = [".dmg", ".zip", ".exe", ".blockmap"];
 
 // 读取并解析 yml
 function loadYml(filePath) {
@@ -122,9 +122,8 @@ function collectArtifacts() {
 
       for (const file of fs.readdirSync(dirPath)) {
         const ext = path.extname(file).toLowerCase();
-        // 只收集安装包，不收集子目录的 yml（已合并）和 blockmap
+        // 只收集安装包产物；子目录的 yml 已合并为单份 latest*.yml（由 main 写出）
         if (!COLLECT_EXTENSIONS.includes(ext)) continue;
-        if (file.endsWith(".yml")) continue;
 
         const src = path.join(dirPath, file);
         // 覆盖语义：同版本重建时 exe 内嵌时间戳会变，旧产物与本批合并的 latest.yml
@@ -143,6 +142,14 @@ function collectArtifacts() {
 
 function main() {
   fs.mkdirSync(RELEASE_DIR, { recursive: true });
+
+  // 清空上一次的 release/ 产物（R64 审查 P2）：追加式复制会把旧 exe/blockmap
+  // 混进本批上传集合，其 sha512 与本批合并版 latest.yml 不一致，electron-updater
+  // 下载即校验失败或装错版本。必须在写合并 yml 之前清理（顺序敏感）。
+  for (const file of fs.readdirSync(RELEASE_DIR)) {
+    const p = path.join(RELEASE_DIR, file);
+    if (fs.statSync(p).isFile()) fs.rmSync(p, { force: true });
+  }
 
   // 合并各平台 yml
   for (const target of MERGE_TARGETS) {
