@@ -2,6 +2,7 @@ import { LitElement } from "lit";
 import { customElement } from "lit/decorators.js";
 import type { AppViewState } from "./app-view-state.ts";
 import type { ExecApprovalRequest } from "./controllers/exec-approval.ts";
+import type { QuestionPrompt } from "./chat/question-cards.ts";
 import type { SkillMessage } from "./controllers/skills.ts";
 import type { SessionCompactionCheckpoint } from "./controllers/session-compaction.ts";
 import type { NavigatePayload as IpcNavigatePayload, AppUpdateState, KernelUpdateProgress } from "./data/ipc-bridge.ts";
@@ -400,6 +401,10 @@ export class OpenClawApp extends LitElement {
   execApprovalError: string | null = null;
   pendingGatewayUrl: string | null = null;
   showRestartGatewayDialog = false;
+
+  // R61：内核问答卡片（ask_user）——question.requested/resolved 事件驱动，
+  // question.list 对齐；渲染层按当前会话过滤 pending 项出卡
+  questionPrompts: QuestionPrompt[] = [];
 
   applySessionKey = this.settings.lastActiveSessionKey;
 

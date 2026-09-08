@@ -34,6 +34,8 @@ import { KNOWN_THINKING_LEVELS } from "../chat/thinking-levels.ts";
 import { resolveActiveToolName } from "../chat/tool-summary.ts";
 import { appendQuoteToDraft } from "../chat/quote-text.ts";
 import { isFailedSubagentStatus, selectSubagentCards, type SubagentCard } from "../chat/subagent-status.ts";
+import { selectPendingQuestions, type QuestionPrompt } from "../chat/question-cards.ts";
+import { renderQuestionCards } from "./question-card.ts";
 import { renderPlanPanel } from "./plan-panel.ts";
 import type { PlanStreamState } from "../plan-stream.ts";
 import { renderProgressCard } from "./progress-card.ts";
@@ -80,6 +82,9 @@ export type ChatProps = {
   // R23：任务列表与主 run 活跃标记（子代理等待状态卡投影用，引用稳定供 memo 比较）
   tasks?: unknown[];
   runActive?: boolean;
+  // R61：内核问答卡片（ask_user）——pending 问题按当前会话过滤后出卡；resolve 回调
+  questionPrompts?: QuestionPrompt[];
+  onResolveQuestion?: (id: string, answers: Record<string, string[]> | null) => void;
   stream: string | null;
   streamStartedAt: number | null;
   assistantAvatarUrl?: string | null;
@@ -1080,6 +1085,15 @@ export function renderChat(props: ChatProps) {
           : nothing
       }
       ${subagentCards.length > 0 ? renderSubagentCards(subagentCards) : nothing}
+      ${
+        // R61 问答卡片：pending 问题（当前会话过滤）出卡，位于子代理卡之后、compose 之前
+        (() => {
+          const prompts = selectPendingQuestions(props.questionPrompts, props.sessionKey);
+          return prompts.length > 0
+            ? renderQuestionCards(prompts, props.onResolveQuestion)
+            : nothing;
+        })()
+      }
     </div>
   `;
 

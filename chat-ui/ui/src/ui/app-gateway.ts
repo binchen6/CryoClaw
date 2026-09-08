@@ -19,6 +19,14 @@ import { loadAgents } from "./controllers/agents.ts";
 import { loadAssistantIdentity } from "./controllers/assistant-identity.ts";
 import { loadChannels } from "./controllers/channels.ts";
 import { loadChatHistory, resetChatStreamState } from "./controllers/chat.ts";
+import {
+  applyQuestionResolution,
+  normalizeQuestionRecord,
+  normalizeQuestionResolution,
+  pruneExpiredQuestions,
+  reconcileQuestionsFromList,
+  upsertQuestion,
+} from "./chat/question-cards.ts";
 import { consumePendingSessionReset } from "./session-pending.ts";
 import { handleChatEvent, type ChatEventPayload } from "./controllers/chat.ts";
 import {
@@ -295,6 +303,24 @@ function scheduleReconnectOrphanProbe(host: GatewayHost) {
   });
 }
 
+// R61 问答卡片：question.list 全量对齐（重连/首次连接调用；失败静默——下轮 tick 过期
+// 清理与后续 requested/resolved 事件仍会驱动状态收敛）
+async function reconcileQuestionPrompts(host: GatewayHost): Promise<void> {
+  const app = host as unknown as OpenClawApp;
+  if (!host.client || !host.connected) return;
+  try {
+    const res = await host.client.request<{ questions?: unknown[] }>("question.list", {});
+    const records = Array.isArray(res?.questions) ? res.questions : [];
+    const normalized = records
+      .map((r) => normalizeQuestionRecord(r))
+      .filter((r): r is NonNullable<typeof r> => r !== null);
+    app.questionPrompts = reconcileQuestionsFromList(app.questionPrompts, normalized);
+    app.requestUpdate?.();
+  } catch {
+    // 内核 <2026.7 无此 RPC 或暂时不可达：静默降级（事件驱动路径不受影响）
+  }
+}
+
 // gap 重连状态：最多重试 3 次，指数退避 (1s, 2s, 4s)
 const GAP_RECONNECT_MAX = 3;
 let gapReconnectCount = 0;
@@ -400,6 +426,8 @@ export function connectGateway(host: GatewayHost) {
       void loadChannels(host as unknown as OpenClawApp, false);
       void loadSessionsAndReconcile(host);
       void loadTasks(host as unknown as OpenClawApp);
+      // R61 问答卡片：重连后 question.list 全量对齐（断连窗口内的 resolved 事件已丢）
+      void reconcileQuestionPrompts(host);
       // Progress Card：重连后重拉当前会话卡片（断连窗口内的 changed 事件已丢失）
       void loadProgressCard(host as unknown as OpenClawApp);
       // worktree 徽标数据（sessions.list 行不带 worktree 字段，靠 ownerId 反推）
@@ -415,6 +443,15 @@ export function connectGateway(host: GatewayHost) {
       registerTickHandler("sessions", () => loadSessionsAndReconcile(host));
       registerTickHandler("tasks", () => loadTasks(host as unknown as OpenClawApp));
       registerTickHandler("stream-watchdog", () => checkStalledStream(host));
+      registerTickHandler("question-expiry", () => {
+        // R61：pending 问题过期本地标记（等待 resolved/list 事件收敛），有变化才触发重渲染
+        const app = host as unknown as OpenClawApp;
+        const next = pruneExpiredQuestions(app.questionPrompts);
+        if (next !== app.questionPrompts) {
+          app.questionPrompts = next;
+          app.requestUpdate?.();
+        }
+      });
       startTicker();
     },
     onClose: ({ code, reason }) => {
@@ -631,6 +668,27 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
   if (evt.event === "progressCard.changed") {
     const app = host as unknown as OpenClawApp;
     handleProgressCardChanged(app, evt.payload as ProgressCardChangedPayload | undefined);
+    app.requestUpdate?.();
+    return;
+  }
+
+  // R61 问答卡片：question.requested 入列（无效记录丢弃），question.resolved 落终态
+  if (evt.event === "question.requested") {
+    const app = host as unknown as OpenClawApp;
+    const record = normalizeQuestionRecord(evt.payload);
+    if (record) {
+      app.questionPrompts = upsertQuestion(app.questionPrompts, record);
+    }
+    app.requestUpdate?.();
+    return;
+  }
+
+  if (evt.event === "question.resolved") {
+    const app = host as unknown as OpenClawApp;
+    const resolution = normalizeQuestionResolution(evt.payload);
+    if (resolution) {
+      app.questionPrompts = applyQuestionResolution(app.questionPrompts, resolution);
+    }
     app.requestUpdate?.();
     return;
   }

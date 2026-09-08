@@ -2466,3 +2466,133 @@ img.chat-avatar {
     padding: 0 var(--spacer-8) var(--spacer-8);
   }
 }
+
+/* ==========================================================================
+   .chat-question-card — 问答卡片（R61，内核 ask_user / question.* RPC）
+   挂载：views/chat.ts 线程尾部（历史 → 流式 → 子代理卡 → 问答卡）。
+   样式与 Progress Card / 子代理卡同语言：--chat-column 居中列 + elevated 卡面。
+   ========================================================================== */
+
+.chat-question-cards {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacer-8);
+  /* 与消息组/子代理卡/进度卡同一居中阅读列（R58b 契约） */
+  width: 100%;
+  max-width: var(--chat-column);
+  margin: var(--spacer-8) auto var(--spacer-16);
+}
+
+.chat-question-card {
+  border: var(--hairline);
+  border-radius: var(--radius-12);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-sm);
+  padding: var(--spacer-12) var(--spacer-16);
+  animation: fade-in var(--duration-normal) var(--ease-out);
+}
+
+.chat-question-card__head {
+  display: flex;
+  align-items: center;
+  gap: var(--spacer-8);
+  margin-bottom: var(--spacer-8);
+}
+
+.chat-question-card__badge {
+  flex-shrink: 0;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+  color: var(--accent);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  border-radius: var(--radius-full);
+  padding: 1px var(--spacer-8);
+}
+
+.chat-question-card__title {
+  font-weight: var(--weight-medium);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-question-card__timer {
+  flex-shrink: 0;
+  margin-left: auto;
+  font-family: var(--font-meta);
+  font-size: var(--font-size-meta);
+  color: var(--text-muted);
+}
+
+.chat-question-card__text {
+  font-size: var(--font-size-body);
+  line-height: 1.5;
+  margin-bottom: var(--spacer-10);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.chat-question-card__options {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacer-8);
+}
+
+.chat-question-card__option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: var(--spacer-10) var(--spacer-12);
+  border: var(--hairline);
+  border-radius: var(--radius-8);
+  background: var(--bg-secondary);
+  color: var(--text-strong);
+  font-size: var(--font-size-body);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--duration-fast) var(--ease-out),
+    background var(--duration-fast) var(--ease-out);
+}
+
+.chat-question-card__option:hover {
+  border-color: var(--accent);
+  background: var(--accent-subtle);
+}
+
+.chat-question-card__option-label {
+  font-weight: var(--weight-medium);
+}
+
+.chat-question-card__option-desc {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.chat-question-card__hint {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.chat-question-card__actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: var(--spacer-10);
+}
+
+.chat-question-card__skip {
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  padding: var(--spacer-4) var(--spacer-8);
+  border-radius: var(--radius-8);
+  transition: color var(--duration-fast) var(--ease-out),
+    background var(--duration-fast) var(--ease-out);
+}
+
+.chat-question-card__skip:hover {
+  color: var(--accent);
+  background: var(--accent-subtle);
+}

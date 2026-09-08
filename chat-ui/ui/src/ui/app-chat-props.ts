@@ -14,6 +14,7 @@ import {
   resolveAssistantAvatarUrl,
 } from "./app-session-actions.ts";
 import { loadChatHistory } from "./controllers/chat.ts";
+import { applyQuestionResolution, buildResolveParams } from "./chat/question-cards.ts";
 import { getCachedCommands } from "./controllers/commands.ts";
 import { loadCompactionCheckpoints } from "./controllers/session-compaction.ts";
 import { listEligibleSkills } from "./controllers/skills.ts";
@@ -66,6 +67,24 @@ export function buildChatProps(state: AppViewState): ChatProps {
     // R23：子代理等待状态卡数据源（tasks 数组引用稳定，供 buildChatItems memo 比较）
     tasks: state.tasks,
     runActive: Boolean(state.chatRunId),
+    // R61：问答卡片数据源 + resolve 回调（本地即时落终态，resolved 事件到达时幂等）
+    questionPrompts: state.questionPrompts,
+    onResolveQuestion: (id, answers) => {
+      const client = state.client;
+      if (!client) return;
+      const prompt = state.questionPrompts.find((p) => p.id === id);
+      if (!prompt || prompt.status !== "pending") return;
+      const params = buildResolveParams(prompt, answers);
+      void client
+        .request("question.resolve", params)
+        .catch(() => {
+          // 失败静默：卡片保持 pending，resolved 事件 / list 对齐会收敛真实状态
+        });
+      state.questionPrompts = applyQuestionResolution(state.questionPrompts, {
+        id,
+        status: answers === null ? "cancelled" : "answered",
+      });
+    },
     stream: state.chatStream,
     streamStartedAt: state.chatStreamStartedAt,
     draft: state.chatMessage,
