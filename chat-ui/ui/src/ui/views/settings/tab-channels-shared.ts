@@ -104,9 +104,17 @@ export async function runChannelToggle(
   st.hint = null;
   if (!checked) {
     // Disable -> save immediately
+    // try/finally：save 内的 verify IPC 可能 reject（sender guard / 代理启动失败），
+    // 不能让 st.saving 永久卡 true（保存按钮永久禁用、开关卡中间态）
     st.saving = true; state.requestUpdate();
-    const ok = await opts.save(false);
-    st.saving = false;
+    let ok = false;
+    try {
+      ok = await opts.save(false);
+    } catch (e) {
+      st.error = tWithDetail("settings.error.saveFailed", e instanceof Error ? e.message : String(e));
+    } finally {
+      st.saving = false;
+    }
     if (!ok) st.enabled = prevEnabled;
     state.requestUpdate();
     return;
@@ -115,8 +123,14 @@ export async function runChannelToggle(
   if (!opts.saveOnEnable) return;
   if (opts.enableGate && !opts.enableGate()) return;
   st.saving = true; state.requestUpdate();
-  const ok = await opts.save(true);
-  st.saving = false;
+  let ok = false;
+  try {
+    ok = await opts.save(true);
+  } catch (e) {
+    st.error = tWithDetail("settings.error.saveFailed", e instanceof Error ? e.message : String(e));
+  } finally {
+    st.saving = false;
+  }
   if (!ok) st.enabled = prevEnabled;
   state.requestUpdate();
   if (ok) opts.onEnabledSaved?.();
@@ -130,8 +144,14 @@ export async function runChannelSave(
   onSaved?: () => void,
 ): Promise<void> {
   st.saving = true; st.error = null; st.successMsg = null; st.hint = null; state.requestUpdate();
-  const ok = await save();
-  st.saving = false;
+  let ok = false;
+  try {
+    ok = await save();
+  } catch (e) {
+    st.error = tWithDetail("settings.error.saveFailed", e instanceof Error ? e.message : String(e));
+  } finally {
+    st.saving = false;
+  }
   state.requestUpdate();
   if (ok) onSaved?.();
 }

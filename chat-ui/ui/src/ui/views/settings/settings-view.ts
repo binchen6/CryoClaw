@@ -19,6 +19,7 @@ import { renderTabEnvInfo, resetEnvInfoTab } from "./tab-info.ts";
 import { renderTabProvider, resetProviderTab } from "./tab-provider.ts";
 import { renderTabSessionUsage, resetSessionUsageTab } from "./tab-session-usage.ts";
 import { renderTabApprovals, resetApprovalsTab } from "./tab-approvals.ts";
+import { renderTabMcpHooks, resetMcpHooksTab } from "./tab-mcp-hooks.ts";
 import { resetPluginsView } from "./tab-plugins.ts";
 
 /* ── module-level state ── */
@@ -98,6 +99,7 @@ function renderActiveTab(state: AppViewState) {
     case "appearance": return renderTabAppearance(state);
     case "advanced": return renderTabAdvanced(state);
     case "session-usage": return renderTabSessionUsage(state);
+    case "mcp-hooks": return renderTabMcpHooks(state);
     case "approvals": return renderTabApprovals(state);
     case "backup": return renderTabBackup(state, s.notice);
     case "about": return renderTabAbout(state);
@@ -118,6 +120,7 @@ export function invalidateAllSettings() {
   resetEnvInfoTab();
   resetSessionUsageTab();
   resetApprovalsTab();
+  resetMcpHooksTab();
   resetPluginsView();
   cleanupChannelsTab();
   cleanupBackupTab();
@@ -140,6 +143,7 @@ export function cleanupSettingsView() {
   resetEnvInfoTab();
   resetSessionUsageTab();
   resetApprovalsTab();
+  resetMcpHooksTab();
   cleanupChannelsTab();
   cleanupBackupTab();
   cleanupAboutTab();

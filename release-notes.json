@@ -1,5 +1,12 @@
 [
   {
+    "version": "2026.909.12",
+    "notes": {
+      "zh": "设置页新增「MCP 与钩子」tab：可视化管理内核的 MCP 服务器（mcp.servers）——stdio / SSE / streamable-http 三种传输形态的添加、编辑、启停、删除，env/headers 多行编辑，编辑时自动保留超时/OAuth/工具过滤等本界面不涉及的高级字段；同时管理 Webhook 钩子（hooks）——开关、监听路径、访问令牌、默认会话与匹配规则（agent/wake 动作、隔离/持久会话、消息模板），保存即经内核 config.patch 写入 openclaw.json 并按需热应用",
+      "en": "Settings gains an MCP & Hooks tab: visually manage the kernel's MCP servers (mcp.servers) - add/edit/enable/delete across stdio, SSE and streamable-http transports, multi-line env/headers editing, and advanced fields (timeouts/OAuth/tool filters) are preserved on edit; webhook hooks (hooks) are manageable too - toggle, listen path, access token, default session and match rules (agent/wake actions, isolated/persistent sessions, message templates). Saving goes through the kernel config.patch into openclaw.json with hot-apply when possible."
+    }
+  },
+  {
     "version": "2026.909.11",
     "notes": {
       "zh": "修复（用户反馈）：切换会话或刷新对话窗口后，正在执行的任务消息输出不再恢复——本地 run 状态在这些路径被清空后，内核仍在跑的 run 的增量帧被当作其他客户端的广播丢弃；现在利用内核 chat.history 响应附带的在途 run 快照（runId + 全量累计文本）重建流式状态，切回会话/刷新/断连重连后流式输出与停止按钮自动恢复续显\n修复（连带发现）：窗口刷新（Ctrl+R）会命中界面改写出的虚拟地址（/chat 等）导致整页空白——主帧加载失败时自动回退真实入口页重载，并保留当前会话参数",

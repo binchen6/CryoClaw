@@ -11,7 +11,7 @@
  */
 import { html, nothing } from "lit";
 import type { AppViewState } from "../../app-view-state.ts";
-import { t, getLocale } from "../../i18n.ts";
+import { t, tWithDetail, getLocale } from "../../i18n.ts";
 import * as ipc from "../../data/ipc-bridge.ts";
 import { runKimiOAuthLogin } from "../../data/kimi-oauth-flow.ts";
 import "../../components/toggle-switch.ts";
@@ -780,8 +780,12 @@ async function handleAddToGroupSave(state: AppViewState) {
       s.addCaps ? buildOverridesFromCaps(s.addCaps, true) : undefined,
     );
     const hasPrimary = !!(snap?.config?.agents as any)?.defaults?.model?.primary;
+    // 进入时 provider 是否已存在：patchConfig 在 baseHash 冲突时会用新快照重放 mutator，
+    // 若期间 provider 被并发删除，重放不得复活缺 apiKey/baseUrl 的裸块（对齐 handleSyncAddSelected）
+    const existedBefore = existingProv != null;
     const ok = await runPatch(state, draft => {
       const providers = ((draft.models ??= {}) as any).providers ??= {};
+      if (existedBefore && !providers[providerKey]) return; // 并发删除守卫
       const prov = (providers[providerKey] ??= { models: [] });
       if (!Array.isArray(prov.models)) prov.models = [];
       prov.models.push(entry);
@@ -1582,7 +1586,14 @@ function renderProvider(prov: GroupedProvider, group: ProviderGroup, state: AppV
           ></oc-password-input>
           <div class="oc-settings__btn-row">
             <button class="oc-settings__btn oc-settings__btn--secondary" @click=${() => { s.keyEditing = null; state.requestUpdate(); }}>${t("settings.cancel")}</button>
-            <button class="oc-settings__btn oc-settings__btn--primary" ?disabled=${s.busy} @click=${() => handleKeySave(prov, state)}>${t("settings.save")}</button>
+            <button class="oc-settings__btn oc-settings__btn--primary" ?disabled=${s.busy} @click=${() => {
+              // catch：verify IPC reject（sender guard / kimi 代理启动失败）时给出可见错误，
+              // 而不是静默 unhandled rejection
+              handleKeySave(prov, state).catch(e => {
+                s.error = tWithDetail("settings.error.saveFailed", e instanceof Error ? e.message : String(e));
+                state.requestUpdate();
+              });
+            }}>${t("settings.save")}</button>
           </div>
         </div>
       ` : nothing}

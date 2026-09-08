@@ -30,6 +30,7 @@ export const SETTINGS_TABS: SettingsTab[] = [
   { id: "memory", labelKey: "settings.nav.memory", group: "models" },
   { id: "voice", labelKey: "settings.nav.voice", group: "models" },
   { id: "session-usage", labelKey: "settings.nav.sessionUsage", group: "models" },
+  { id: "mcp-hooks", labelKey: "settings.nav.mcpHooks", group: "models" },
   { id: "appearance", labelKey: "settings.nav.appearance", group: "system" },
   { id: "advanced", labelKey: "settings.nav.advanced", group: "system" },
   { id: "approvals", labelKey: "settings.nav.approvals", group: "system" },
@@ -53,6 +54,8 @@ const TAB_ICONS: Record<string, TemplateResult> = {
   voice: icon(svg`<path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/>`),
   advanced: icon(svg`<line x1="21" x2="14" y1="4" y2="4"/><line x1="10" x2="3" y1="4" y2="4"/><line x1="21" x2="12" y1="12" y2="12"/><line x1="8" x2="3" y1="12" y2="12"/><line x1="21" x2="16" y1="20" y2="20"/><line x1="12" x2="3" y1="20" y2="20"/><line x1="14" x2="14" y1="2" y2="6"/><line x1="8" x2="8" y1="10" y2="14"/><line x1="16" x2="16" y1="18" y2="22"/>`),
   "session-usage": icon(svg`<path d="M3 3v18h18"/><path d="M7 16V8"/><path d="M12 16v-5"/><path d="M17 16v-3"/>`),
+  // MCP：方块插头（plug 形态，与 provider 芯片图标区分）
+  "mcp-hooks": icon(svg`<path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z"/>`),
   approvals: icon(svg`<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/>`),
   backup: icon(svg`<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/>`),
   about: icon(svg`<circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>`),
