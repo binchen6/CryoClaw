@@ -538,3 +538,10 @@
 - **修复**：容器走 `width:100% + max-width:var(--chat-column) + margin auto` 居中阅读列（与 `.chat-group`/`.chat-progress-card`(R58a) 同一契约）；卡片本体去 520px 限宽撑满列（与 `.chat-tool-card` 节奏一致）+ 补 `--shadow-xs` + pulse 偏移 token 化；`layout-fix.test.ts` 钉住契约回归。
 - **验证**：全量测试 0 fail（597 chat-ui）；dev 实例 CDP 注入实测（容器/参照组 max-width 均 760px、内容盒对称居中 211/211px、左右缘与消息组 ≤1px、0 裸 key、0 renderer 异常）；安装 909.10 静默装 + 网关 200 + 附加冒烟同断言 PASS；应用内检查更新读到 feed `latest version: 2026.909.10` 更新链路端到端 PASS。
 - **冒烟基建**：`.cache` 冒烟脚本改随机 CDP/网关端口 + 启动前 taskkill 清残留 + HTTP 探测加 timeout 销毁（防半开连接挂死 6 分钟全局超时；Windows 经典滚动条 ~15px 需按内容盒算居中断言）。
+
+### R59 · 在途 run 输出恢复（完成，随 v2026.909.11 发版）
+
+- **问题**（用户反馈）：切换会话或刷新对话窗口后，正在执行的任务消息输出不恢复。根因：`applySessionKeyTransition`/`onHello`/页面重载都清空本地 run 态，此后内核仍在跑的 run 的 delta 被 `handleChatEvent` 的僵尸帧过滤（「无本地活跃 run + 带 runId」按别家 run 丢弃）永久吞掉；orphan 收养只在断连重连路径标记。
+- **修复 A（收养）**：内核 `chat.history`/`chat.startup` 响应附带 `inFlightRun` 快照（`{runId, text: 全量累计, startedAt?}`，gateway asar 实读确证 2026.8.2/2026.9.2 同构；来自实时 abort-controller 表，与消息列表持久化快照无关）——`loadChatHistory` 在会话守卫后、滞后读保留分支前收养（`adoptInFlightRunFromHistory`）：重建 runId/流式文本/startedAt/活动锚点；本地已有活跃 run 不覆盖；空文本收养为 busy 态（气泡降级思考指示）。切回会话、窗口刷新、断连重连三路径全覆盖；重连路径同时强化了 R30 orphan 机制。
+- **修复 B（刷新兜底）**：排查中发现 Ctrl+R/窗口刷新会请求 UI pushState 改写的虚拟路径（/chat 等）→ 主帧 ERR_FILE_NOT_FOUND 白屏。`window.ts` did-fail-load 主帧分支回退真实入口 URL（沿用首载 gatewayUrl/token + 保留 ?session；5s 防抖 + 入口自身失败排除防循环），判定逻辑抽纯函数 `src/virtual-path-reload.ts`（6 项单测）。
+- **验证**：全量测试 0 fail（新增 chat controller 收养 5 测 + 虚拟路径 6 测）；dev 实例端到端冒烟（真实 chat.send → 流式中 Page.reload → 断言流式态 30s 内恢复）PASS；安装 .11 同场景冒烟（剥离渠道插件的独立状态目录规避 asar 形态插件路径差异）PASS；0 裸 key、0 renderer 异常。
