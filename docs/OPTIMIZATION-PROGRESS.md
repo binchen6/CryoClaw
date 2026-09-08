@@ -10,10 +10,10 @@
 面向国内生态（Kimi / Moonshot / 飞书 / 企微 / 微信 / 钉钉 / QQ）。
 
 **当前状态**：
-- 重设计工程 **R1–R59 完成**（R59：在途 run 输出恢复 + 刷新兜底；R58b：子代理卡对齐；R58a：用户反馈修复批次；R58：在线模型 + Git/Worktree + 删除守卫；R56/R57：内核 2026.9.2 升级 + 三路审查，详见工程记录），最新发版 **v2026.909.11**。
+- 重设计工程 **R1–R60 完成**（R60：设置页 MCP & Hooks tab + 四路全库审查修复批次；R59：在途 run 输出恢复 + 刷新兜底；R58b：子代理卡对齐；R58a：用户反馈修复批次；R58：在线模型 + Git/Worktree + 删除守卫；R56/R57：内核 2026.9.2 升级 + 三路审查，详见工程记录），最新发版 **v2026.909.12**。
 - 内核 openclaw **2026.9.2**（版本 pin 在 package.json `cryoclaw.openclaw`；更新目标走 `kernel-channel.json` 策展渠道，minSupported 2026.7.0）；**Electron 43.4.0**（audit 0 漏洞）。
-- 测试基线 **992 pass / 0 fail / 4 skipped**（vitest 158 + node 163 + chat-ui 594 + scripts 77；2026-09-07 实测，0 fail 为硬指标）。
-- 重复率 **1.03%**（81 clones，阈值 5%，`npm run dupcheck` 防回退）；视图 id 收敛为 6（chat/setup/settings/workspace/tasks/extensions）。
+- 测试基线 **1034 pass / 0 fail / 4 skipped**（vitest 159 + node 180 + chat-ui 618 + scripts 77；2026-09-09 实测，0 fail 为硬指标）。
+- 重复率 **1.18%**（94 clones，阈值 5%，`npm run dupcheck` 防回退）；视图 id 收敛为 6（chat/setup/settings/workspace/tasks/extensions）。
 - 开源：GitHub `binchen6/CryoClaw`（AGPL-3.0-only，干净历史）；发版走本地 `dist:win` + `gh release`；CI `tests.yml` 每次 push/PR 全量回归。
 
 **常用命令**：
@@ -38,7 +38,7 @@
 | `CLAUDE.md` / `AGENTS.md`（symlink） | 项目硬规范 |
 | `docs/architecture.md` | 架构分层说明 |
 | `docs/ipc-api.md` | 主进程 IPC 通道清单 |
-| `docs/gotchas.md` | 77 条已验证坑（改代码前搜一遍） |
+| `docs/gotchas.md` | 90 条已验证坑（改代码前搜一遍） |
 | `docs/design-guidelines-zh/en.md` | 2026.9 R2b 设计规范（中性灰 + CryoBlue 混色 token + CryoIcons 图标规范） |
 
 ## 🗺 关键路径地图（改动前必读）
@@ -59,7 +59,7 @@
 | 样式 hub | `chat-ui/ui/src/styles.css` | **只做 @import，层叠顺序敏感**：design-tokens → tokens-ext → base → **primitives** → **utilities** → chat/components/panels/sidebar/skills/compose/workspace/cron/misc/panel/plan →（末尾）settings → setup |
 | 设计 token | `shared/design-tokens.css` + `styles/tokens-ext.css` | 中性灰 + CryoBlue 混色；兼容别名 --accent/--bg |
 | 契约组件 | `styles/primitives.css` | cc-btn/cc-input/cc-card/cc-dialog/cc-tag/cc-menu/cc-alert/cc-skeleton/cc-table/cc-tabs/cc-chip |
-| 进度/坑 | `docs/OPTIMIZATION-PROGRESS.md` + `docs/gotchas.md` | 本文件 + 73 条已验证坑（gotchas 为准） |
+| 进度/坑 | `docs/OPTIMIZATION-PROGRESS.md` + `docs/gotchas.md` | 本文件 + 90 条已验证坑（gotchas 为准） |
 
 ## ⚙️ 运行机制既有事实（勿重复调查）
 
@@ -73,7 +73,7 @@
 
 ## ✅ 测试体系（勿重复搭建）
 
-- 基线 **992 pass / 0 fail / 4 skipped**（vitest 158 + node 163 + chat-ui 594 + scripts 77；0 fail 硬指标）。
+- 基线 **1034 pass / 0 fail / 4 skipped**（vitest 159 + node 180 + chat-ui 618 + scripts 77；0 fail 硬指标）。
 - 基础设施：`tsconfig.test.json`（outDir `.test-dist/`）、`vitest.config.ts`（vitest include 列表）、`scripts/run-node-tests.js`（编译前清空 .test-dist，排除 vitest 文件）、npm scripts `test` / `test:unit(:vitest|:node)` / `test:scripts` / `test:typecheck`。
 - **chat-ui 用真 typecheck**（阶段 13 起接入；旧 `--noCheck` 假检查曾掩盖 303 个类型错误）。
 - `i18n.test.ts` 源码审计：zh/en 键集合一致、无重复键、分区语言正确。
@@ -545,3 +545,16 @@
 - **修复 A（收养）**：内核 `chat.history`/`chat.startup` 响应附带 `inFlightRun` 快照（`{runId, text: 全量累计, startedAt?}`，gateway asar 实读确证 2026.8.2/2026.9.2 同构；来自实时 abort-controller 表，与消息列表持久化快照无关）——`loadChatHistory` 在会话守卫后、滞后读保留分支前收养（`adoptInFlightRunFromHistory`）：重建 runId/流式文本/startedAt/活动锚点；本地已有活跃 run 不覆盖；空文本收养为 busy 态（气泡降级思考指示）。切回会话、窗口刷新、断连重连三路径全覆盖；重连路径同时强化了 R30 orphan 机制。
 - **修复 B（刷新兜底）**：排查中发现 Ctrl+R/窗口刷新会请求 UI pushState 改写的虚拟路径（/chat 等）→ 主帧 ERR_FILE_NOT_FOUND 白屏。`window.ts` did-fail-load 主帧分支回退真实入口 URL（沿用首载 gatewayUrl/token + 保留 ?session；5s 防抖 + 入口自身失败排除防循环），判定逻辑抽纯函数 `src/virtual-path-reload.ts`（6 项单测）。
 - **验证**：全量测试 0 fail（新增 chat controller 收养 5 测 + 虚拟路径 6 测）；dev 实例端到端冒烟（真实 chat.send → 流式中 Page.reload → 断言流式态 30s 内恢复）PASS；安装 .11 同场景冒烟（剥离渠道插件的独立状态目录规避 asar 形态插件路径差异）PASS；0 裸 key、0 renderer 异常。
+
+### R60 · 设置页「MCP 与钩子」+ 四路全库审查修复批次（完成，随 v2026.909.12 发版）
+
+- **功能：设置页 MCP & Hooks tab**（`tab-mcp-hooks.ts` + 可单测纯逻辑 `tab-mcp-hooks.lib.ts` + 13 项 lib 测试）：管理 `mcp.servers`（stdio/sse/streamable-http 三形态；表单独占字段显式产出、enabled 恒显式写、RFC7396 删键置 null；编辑经 preserve 合并保留 timeouts/oauth/toolFilter 等高级字段但**剥离表单独占键**——防切换 transport 残留对侧 url/headers）与 `hooks` 段（开关/path/token/defaultSessionKey/mappings；token 透传 REDACTED 哨兵内核自还原；mappings 走 `replacePaths: ["hooks.mappings"]` 整体替换；agent+persistent 无会话锚点不落 sessionMode 规避内核 superRefine）。守卫：新增重名拒绝（防静默覆盖既有配置）、删除走 `showConfirm` danger 红色确认（项目惯例）、无 id mapping 兜底命名带碰撞避让（防内核按 id 就地合并丢条目）。
+- **审查方法**：3 个并行审查代理（主进程 src/ 全量、chat-ui 全量、scripts 全量）+ 人工复核 R60 新代码；0 P0，共 3+2+3 个 P1 与 5+4+8 个 P2，本阶段修复全部 P1 与高价值 P2（19 项）。
+- **主进程修复**：① `did-fail-load` 两处日志剥离 query（token 不落盘），诊断包导出对日志内容跑 `token=` 正则兜底脱敏（logger 新增 `sanitizeUrlForLog`）；② 内核升级 stopGateway 静默化（cancelPendingGatewayRestart + await inflightGatewayOp）+ requestGatewayStart/Restart 及防抖回调加 `getKernelUpdateState().running` 检查 + CLI `/gateway/restart` 入口补导入/升级互斥（防换装中途 spawn 半换装内核）；③ `ensureGatewayRunning` 重试链 try/catch（单次写盘异常不再打断 3 次重试与 whenReady 链）；④ `writeUserConfig` 原子写（.tmp+rename，对齐 config-backup 同款）；⑤ kimi-code 验证后恢复代理 token 为当前生效凭据（settings/setup 两入口，防失败验证永久劫持流量 401）；⑥ webbridge `home()` 平台优先序对齐 constants（Win USERPROFILE 优先，skill 路径延迟求值）；⑦ 插件可用性迁移把安装包 extensions-mirror 视为可解析（状态目录被清不再永久禁用渠道插件）。
+- **chat-ui 修复**：渠道面板 runChannelSave/runChannelToggle try/finally（verify IPC reject 不再卡死保存按钮）+ provider 密钥保存 catch 回显；Setup 向导 kimi-code proxyPort≤0 中止（不落盘 :0 坏配置不误报成功）；`/` 命令补全浮层渲染前按 draft 防御校验 + 切会话重置（发送/切换后不再残留）；工作区面包屑按 `[/\\]` 切分（Windows 显根目录名）；config.patch 错误文案 i18n 化（7 键 zh/en）；handleAddToGroupSave 并发删除守卫移入 mutator（existedBefore 判定，不复活裸 provider 块）。
+- **scripts 修复**：① 扩展白名单裁剪指到活路径 `dist/extensions/`（旧路径保留兼容）——此前指旧 `extensions/` 从未生效、68 个上游扩展全部进包；allowlist 基线固化为当前分发集合（今日包内容零变化，门禁恢复：升级新增扩展会被裁掉强制人工审阅）；② kimi-search tgz sha256 钉定（下载与缓存两路都校验，URL 覆盖时跳过并 WARN）；③ dist-all-parallel 先串行 `npm run build` 再并行打包段（四路并发 build 践踏共享产物目录的竞态）；④ 插件安装临时目录 try/finally 清理（installNpmPackagePluginInto/installTgzPluginDeps；assertPluginDir die→throw 使 bundlePlugin 既有清理不再是死代码）；⑤ kernel-update `npmRun` Windows 直执 npm-cli.js（ELECTRON_RUN_AS_NODE，`cmd.exe /c npm.cmd` 在含括号安装路径下断裂）。
+- **连带发现并修复（冒烟暴露）**：kernel-update.mjs 换装残留自愈 `xfs.dirname/basename/join` 是 path 模块 API 误挂在 fs 上——**自愈逻辑从写下起就 100% 抛错从未生效**（gotcha #90）；dev 冒烟前须按 gotcha #89 从 gateway.asar 恢复散装树。
+- **验证**：全量 **1034 pass / 0 fail / 4 skipped**（vitest 159 + node 180 + chat-ui 618 + scripts 77）；dupcheck 1.18%（94 clones）；dev 实例 CDP 冒烟（导航→tab 渲染→添加服务器填表保存→条目断言→删除确认弹窗→删键生效→0 裸 key/0 renderer 异常）PASS。
+
+- **第二轮独立审查（review-agent，针对 MCP/Hooks 新代码）修复**：P0——mappings 走 replacePaths 整体替换时内核为字面整体赋值，条目内显式 null 不再走 RFC7396 删键而被 strict HookMappingSchema 拒绝（"expected string, received null"），条目空字段改省略键（hooks 顶层 path/token/defaultSessionKey 逐键合并路径不受影响，null 删键保留）；P2——saveServer/deleteServer 改单条目 upsert/removeMcpServerInDraft（陈旧本地集合全量替换会在 baseHash 冲突重试时静默删除并发新增的服务器）、agent+persistent 无会话锚点保存前 validateHooks 拦截提示（不再静默省略 sessionMode 让用户选择丢失）；P3——删除正在编辑的条目时同步关闭表单（防 Save 复活已删条目）、配置加载失败不再同时显示「尚未配置」空态、saveHooks 对表单状态做 structuredClone 快照（防在途输入被并入补丁）。lib 测试增至 23 项（含省略键形态与 validateHooks 用例）。
+- **安装版验证**：静默安装 2026.909.12 后同套 CDP 冒烟 11 项全过（含确认弹窗删除链路；网关日志确证 config.patch changedPaths=mcp.servers.<name> + hot reload applied）。
