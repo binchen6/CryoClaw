@@ -588,3 +588,5 @@
 - **杂项**：CSP meta 移除 frame-ancestors（meta 交付被浏览器忽略并告警；Electron 壳无被嵌入面）；网关冷启动 ws error 日志 error→warn（error 事件总伴随 close 的 warn，成串噪音）。
 - **新增固定流程**：`scripts/ui-screenshot-qa.js`——主视图 × 宽度 × 主题 + 设置页全 tab + 英文语言的系统化截图（out/ui-qa/<ts>/）+ 每场景跨组件重叠检测 + 异常/裸 key 硬门槛，与 layout-cdp-smoke / settings-cdp-smoke 并列进 releasing.md。
 - **验证**：全量 1046 pass / 0 fail（vitest 159 + node 180 + chat-ui 630 + scripts 77）；发版管线：silent-install E2E + 三 CDP 冒烟全绿（详见 R64 发版记录）。
+- **验证补记**：UI 截图 QA 31 张 0 重叠/0 异常/0 裸 key（en rail「中文残留」为视觉模型误报，CDP 确证 ?lang=en 全英文）。
+- **应用内静默换装实证（.16→.17，R63 修复的首个真实生效路径）**：装回 .16 → 应用内「更新→重启安装」→ app.log 确证「启动静默安装器」（新 /S 代码路径）→ 300s 窗口轮询 0 可见安装器窗口 → 安装位 .16→.17 完成换装；--force-run 自动拉起在参数向量级测试（.15→.16）已实证（换装完成即 4 进程自动运行）。用户投诉的「更新要手点安装器向导」双路验证修复。E2E 脚本教训：更新日志模态会挡住更新弹窗，自动化须先关「知道了」；弹窗按钮定位须精确匹配（宽松正则会点错按钮误报安装未触发）。
