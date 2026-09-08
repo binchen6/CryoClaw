@@ -730,8 +730,8 @@ async function cmdCheck() {
 // 或换装成功但清理未跑完（asar 健康 + .old-/.new- 残留，每份 100-200MB）。
 // 必须在持有锁时调用（并发更新器换装中途的临时物是合法存在的，不能误删）。
 function listTsResidue(prefix) {
-  const parent = xfs.dirname(prefix);
-  const stem = xfs.basename(prefix);
+  const parent = path.dirname(prefix);
+  const stem = path.basename(prefix);
   let names;
   try {
     names = xfs.readdirSync(parent);
@@ -741,7 +741,7 @@ function listTsResidue(prefix) {
   return names
     .filter((n) => n.startsWith(stem))
     .sort()
-    .map((n) => xfs.join(parent, n));
+    .map((n) => path.join(parent, n));
 }
 
 function reconcileSwapDebris(log) {
@@ -753,7 +753,7 @@ function reconcileSwapDebris(log) {
       // 完整性下限启发式：asar 正品 >100MB；rename 窗口里的 .new 一定是 copy 完成的
       if (xfs.statSync(candidate).size > 100 * 1024 * 1024) {
         xfs.renameSync(candidate, ASAR_PATH);
-        log(`已将崩溃残留的 ${xfs.basename(candidate)} 进位为 gateway.asar`);
+        log(`已将崩溃残留的 ${path.basename(candidate)} 进位为 gateway.asar`);
       }
     }
     // asar 缺失且 .old-* 存在（roll forward 不可能时）→ 还原旧版，保住可启动
@@ -761,7 +761,7 @@ function reconcileSwapDebris(log) {
       const olds = listTsResidue(`${ASAR_PATH}.old-`);
       if (olds.length > 0) {
         xfs.renameSync(olds[olds.length - 1], ASAR_PATH);
-        log(`已将崩溃残留的 ${xfs.basename(olds[olds.length - 1])} 还原为 gateway.asar（旧版）`);
+        log(`已将崩溃残留的 ${path.basename(olds[olds.length - 1])} 还原为 gateway.asar（旧版）`);
       }
     }
     // unpacked 同理：缺失时优先 .new-，兜底 .old-
@@ -770,7 +770,7 @@ function reconcileSwapDebris(log) {
         const cand = listTsResidue(prefix);
         if (cand.length > 0) {
           xfs.renameSync(cand[cand.length - 1], ASAR_UNPACKED_DIR);
-          log(`已恢复 gateway.asar.unpacked（来自 ${xfs.basename(cand[cand.length - 1])}）`);
+          log(`已恢复 gateway.asar.unpacked（来自 ${path.basename(cand[cand.length - 1])}）`);
           break;
         }
       }
@@ -787,7 +787,7 @@ function reconcileSwapDebris(log) {
       try {
         if (xfs.statSync(p).isDirectory()) rmRecursive(p);
         else xfs.rmSync(p, { force: true });
-        log(`已清理换装残留 ${xfs.basename(p)}`);
+        log(`已清理换装残留 ${path.basename(p)}`);
       } catch {}
     }
   }
