@@ -1,5 +1,12 @@
 [
   {
+    "version": "2026.909.11",
+    "notes": {
+      "zh": "修复（用户反馈）：切换会话或刷新对话窗口后，正在执行的任务消息输出不再恢复——本地 run 状态在这些路径被清空后，内核仍在跑的 run 的增量帧被当作其他客户端的广播丢弃；现在利用内核 chat.history 响应附带的在途 run 快照（runId + 全量累计文本）重建流式状态，切回会话/刷新/断连重连后流式输出与停止按钮自动恢复续显\n修复（连带发现）：窗口刷新（Ctrl+R）会命中界面改写出的虚拟地址（/chat 等）导致整页空白——主帧加载失败时自动回退真实入口页重载，并保留当前会话参数",
+      "en": "Fix (user feedback): after switching sessions or refreshing the chat window, an in-progress task's message output never resumed - once local run state was cleared on those paths, deltas from the still-running kernel run were dropped as another client's broadcast; the chat.history response now carries an in-flight run snapshot (runId + full accumulated text) that rebuilds the streaming state, so output and the Stop button resume automatically after switching back, refreshing, or reconnecting.\nFix (found along the way): refreshing the window (Ctrl+R) hit the UI's rewritten virtual address (/chat) and produced a blank page - main-frame load failures now fall back to the real entry page with the current session preserved."
+    }
+  },
+  {
     "version": "2026.909.10",
     "notes": {
       "zh": "修复（用户反馈）：子代理等待状态卡此前没有与历史消息列对齐——卡片容器无宽度约束会撑满整个对话线程，视觉上远宽于上下的消息；现与消息组/进度卡共用同一 760px 居中阅读列，卡片本体同步去掉了 520px 限宽、补齐描边投影与工具卡一致的视觉节奏",

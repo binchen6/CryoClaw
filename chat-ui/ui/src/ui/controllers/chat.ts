@@ -210,6 +210,48 @@ function scheduleStaleHistoryRetry(state: ChatState, sessionKey: string) {
   }, delay);
 }
 
+// R59：内核 chat.history / chat.startup 响应附带在途 run 快照（同 handler，字段取证见
+// docs/kernel-recon/2026.8.2-chat-capabilities.md A.4 + gateway asar 实读）：
+// { runId, text: 全量累计流式文本, startedAt?, sessionAbortable? }——run 不在途时缺省。
+type InFlightRunSnapshot = {
+  runId?: unknown;
+  text?: unknown;
+  startedAt?: unknown;
+};
+
+/**
+ * 会话切换回来 / 窗口刷新 / 重连后的在途 run 恢复（用户反馈 R59）。
+ *
+ * 这些路径都会清掉本地 run 态（applySessionKeyTransition / onHello），此后内核仍在
+ * 跑的 run 的 delta 因「无本地活跃 run」被当作别家 run（sub-agent/其他客户端/迟到帧）
+ * 丢弃（handleChatEvent 的僵尸帧过滤），任务消息输出与 Stop 按钮都不再恢复。
+ * 内核快照带 runId + 全量累计文本，借此重建流式状态：后续 delta 与 chatRunId 匹配
+ * 自然续显；本地已有活跃 run 时不覆盖（快照只用于恢复丢失的 run 态）。
+ */
+function adoptInFlightRunFromHistory(
+  state: ChatState,
+  snapshot: InFlightRunSnapshot | null | undefined,
+): boolean {
+  if (!snapshot || typeof snapshot !== "object") {
+    return false;
+  }
+  const runId = typeof snapshot.runId === "string" ? snapshot.runId.trim() : "";
+  if (!runId || state.chatRunId) {
+    return false;
+  }
+  state.chatRunId = runId;
+  // 空文本 → 流式气泡降级为思考/工具阶段指示（cc-chat-stream 语义），同样标志 run 活跃
+  state.chatStream = typeof snapshot.text === "string" ? snapshot.text : "";
+  state.chatStreamFrozenPrefix = "";
+  state.chatStreamStartedAt =
+    typeof snapshot.startedAt === "number" && Number.isFinite(snapshot.startedAt)
+      ? snapshot.startedAt
+      : Date.now();
+  state.chatLastActivityAt = Date.now();
+  debugLog("lifecycle", "in-flight run adopted from chat.history", { runId });
+  return true;
+}
+
 export async function loadChatHistory(
   state: ChatState,
   opts?: { mergeIfStale?: boolean; silent?: boolean },
@@ -227,7 +269,11 @@ export async function loadChatHistory(
   }
   state.lastError = null;
   try {
-    const res = await state.client.request<{ messages?: Array<unknown>; thinkingLevel?: string }>(
+    const res = await state.client.request<{
+      messages?: Array<unknown>;
+      thinkingLevel?: string;
+      inFlightRun?: InFlightRunSnapshot;
+    }>(
       "chat.history",
       {
         sessionKey: requestSessionKey,
@@ -237,6 +283,10 @@ export async function loadChatHistory(
     if (state.sessionKey !== requestSessionKey) {
       return;
     }
+    // 在途 run 收养放在会话守卫之后、滞后读保留分支之前：inFlightRun 来自内核侧
+    // 实时 abort-controller 表（与消息列表的持久化快照无关），即便消息列表命中滞后
+    // 读走「保留本地」分支，run 态恢复也应生效（重连 mergeIfStale 路径同样受益）。
+    adoptInFlightRunFromHistory(state, res.inFlightRun);
     const raw = Array.isArray(res.messages) ? res.messages : [];
     // R12：终态刷新可能命中内核 chat.history 的滞后读（主会话实测，拉取结果落后一个回合），
     // 此时若拉取条数少于本地视图（刚结束回合的消息尚未进入快照），保留本地消息列表，

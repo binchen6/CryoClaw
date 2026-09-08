@@ -13,6 +13,7 @@ import {
   resolveDevBranchTag,
 } from "./constants";
 import { persistBounds, resolveInitialBounds } from "./window-bounds";
+import { resolveVirtualPathReload } from "./virtual-path-reload";
 
 interface ShowOptions {
   port: number;
@@ -52,6 +53,12 @@ export class WindowManager {
   private crashRecoveryTimestamps: number[] = [];
   private memoryMonitorTimer: NodeJS.Timeout | null = null;
   private boundsPersistTimer: NodeJS.Timeout | null = null;
+  // R59 刷新兜底：最近一次成功加载的 Chat UI 入口 URL（含 gatewayUrl/token query），
+  // 虚拟路径刷新失败时回退重载用；失败 URL 的 ?session 会附加保留当前会话
+  private lastChatUiEntryUrl: string | null = null;
+  // 防兜底循环：兜底重载 5s 内不重复触发（兜底目标 index.html 本身失败时由
+  // pathname 判断排除，此守卫仅挡异常抖动）
+  private virtualPathRecoveryAt = 0;
   inSetupView = false;
   /** True from initial setup launch until setup:complete succeeds. Unlike
    *  inSetupView (tracks which view is currently displayed), this flag
@@ -176,6 +183,7 @@ export class WindowManager {
         return;
       }
       log.error(`WebContents 主帧加载失败: code=${code} description=${description} url=${url}`);
+      this.recoverVirtualPathReload(code, url);
     });
     this.win.webContents.on("did-finish-load", () => {
       log.info("WebContents 加载完成");
@@ -235,6 +243,7 @@ export class WindowManager {
       }
     })();
     log.info(`准备加载 Chat UI: ${chatUiEntryUrlForLog}`);
+    this.lastChatUiEntryUrl = chatUiEntryUrl;
     // ready-to-show：等渲染进程完成首帧绘制再显示，避免白屏闪烁；
     // 若该事件未触发（异常路径）由 showOnce 兜底。
     let shown = false;
@@ -258,6 +267,24 @@ export class WindowManager {
       this.win.webContents.openDevTools();
     }
     log.info("主窗口显示");
+  }
+
+  // R59 刷新兜底：虚拟路径（/chat 等，pushState 改写）被刷新请求为真实文件时主帧
+  // ERR_FILE_NOT_FOUND、渲染层变空白错误页，会话与在途 run 输出全丢。这里回退到
+  // 真实入口 index.html 重载（判定逻辑在 virtual-path-reload.ts，纯函数有单测）；
+  // 渲染层重连后 loadChatHistory 借内核 inFlightRun 快照恢复在途 run 流式态。
+  private recoverVirtualPathReload(code: number, failedUrl: string): void {
+    const win = this.win;
+    if (!win || win.isDestroyed()) return;
+    const { recover, recoveryUrl } = resolveVirtualPathReload(code, failedUrl, this.lastChatUiEntryUrl);
+    if (!recover || !recoveryUrl) return;
+    const now = Date.now();
+    if (now - this.virtualPathRecoveryAt < 5_000) return;
+    this.virtualPathRecoveryAt = now;
+    log.warn(`虚拟路径刷新失败，回退真实入口重载: ${failedUrl.split(/[?#]/, 1)[0]}`);
+    void win.loadURL(recoveryUrl).catch((err) => {
+      log.error(`刷新兜底重载失败: ${err}`);
+    });
   }
 
   // 渲染进程软内存监控（R20）：每 60s 采样 app.getAppMetrics()，渲染进程工作集

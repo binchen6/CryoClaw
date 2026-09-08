@@ -1012,6 +1012,136 @@ async function testOrphanRunsAreSessionScoped() {
   clearReconnectOrphanRun();
 }
 
+// R59：内核 chat.history 响应的 inFlightRun 快照收养（会话切换回来/窗口刷新/重连后
+// 本地 run 态已被清空，内核侧 run 仍在跑的场景）。
+async function testInFlightRunAdoptedOnFreshLoad() {
+  const raf = new FakeRaf();
+  installBrowserGlobals(raf);
+  const state = makeState({
+    chatRunId: null,
+    chatStream: null,
+    chatStreamStartedAt: null,
+    chatLastActivityAt: null,
+    client: {
+      request: async () => ({
+        messages: [{ role: "user", content: [{ type: "text", text: "q" }] }],
+        inFlightRun: { runId: "run-ghost", text: "partial answer", startedAt: 12345 },
+      }),
+    },
+  });
+
+  await loadChatHistory(state);
+
+  assert.equal(state.chatRunId, "run-ghost", "在途 run 应被收养为当前 run");
+  assert.equal(state.chatStream, "partial answer", "快照全量文本应重建流式气泡");
+  assert.equal(state.chatStreamStartedAt, 12345, "startedAt 应采用内核 run 起始时间");
+  assert.equal(state.chatStreamFrozenPrefix, "", "收养后 frozenPrefix 必须清零");
+  assert.ok(state.chatLastActivityAt != null, "收养应刷新流式活动锚点（看门狗用）");
+
+  // 收养后同 runId 的 delta 应被接受续显（不再按别家 run 丢弃）
+  const result = handleChatEvent(state, {
+    runId: "run-ghost",
+    sessionKey: "session-1",
+    state: "delta",
+    deltaText: "!",
+    message: { role: "assistant", content: [{ type: "text", text: "partial answer!" }] },
+  });
+  raf.runAll();
+  assert.equal(result, "delta", "同 runId delta 不应被僵尸帧过滤丢弃");
+  assert.equal(state.chatStream, "partial answer!", "delta 应在快照文本基础上续写");
+}
+
+async function testInFlightRunEmptyTextAdoptedAsActivityIndicator() {
+  const raf = new FakeRaf();
+  installBrowserGlobals(raf);
+  const state = makeState({
+    chatRunId: null,
+    chatStream: null,
+    chatStreamStartedAt: null,
+    client: {
+      request: async () => ({
+        messages: [],
+        inFlightRun: { runId: "run-quiet", text: "" },
+      }),
+    },
+  });
+
+  await loadChatHistory(state);
+
+  assert.equal(state.chatRunId, "run-quiet", "空文本 run 也应收养（busy/Stop 语义）");
+  assert.equal(state.chatStream, "", "空文本流 → 流式气泡降级为思考/阶段指示");
+}
+
+async function testInFlightRunNotAdoptedWhenLocalRunActive() {
+  const raf = new FakeRaf();
+  installBrowserGlobals(raf);
+  const state = makeState({
+    chatRunId: "run-local",
+    chatStream: "local stream",
+    chatStreamStartedAt: 777,
+    client: {
+      request: async () => ({
+        messages: [],
+        inFlightRun: { runId: "run-other", text: "other text", startedAt: 999 },
+      }),
+    },
+  });
+
+  await loadChatHistory(state);
+
+  assert.equal(state.chatRunId, "run-local", "本地活跃 run 不被快照覆盖");
+  assert.equal(state.chatStream, "local stream", "本轮流式文本保持原样");
+  assert.equal(state.chatStreamStartedAt, 777, "startedAt 保持本轮流起始");
+}
+
+async function testInFlightRunAdoptedEvenOnStaleReadRetention() {
+  const raf = new FakeRaf();
+  installBrowserGlobals(raf);
+  // 滞后读保留分支：raw 比本地短 → 保留本地消息列表；inFlightRun 仍应生效（重连路径）
+  const localMessages = [
+    { role: "user", content: [{ type: "text", text: "m1" }] },
+    { role: "assistant", content: [{ type: "text", text: "m2" }] },
+  ];
+  const state = makeState({
+    chatRunId: null,
+    chatStream: null,
+    chatMessages: localMessages,
+    chatVisibleMessageCount: 2,
+    client: {
+      request: async () => ({
+        messages: [localMessages[0]],
+        inFlightRun: { runId: "run-late", text: "streaming", startedAt: 42 },
+      }),
+    },
+  });
+
+  await loadChatHistory(state, { mergeIfStale: true });
+
+  assert.equal(state.chatMessages.length, 2, "滞后读应保留本地消息列表");
+  assert.equal(state.chatRunId, "run-late", "滞后读保留分支下快照收养仍应生效");
+  assert.equal(state.chatStream, "streaming");
+}
+
+async function testInFlightRunAbsentKeepsClearedState() {
+  const raf = new FakeRaf();
+  installBrowserGlobals(raf);
+  const state = makeState({
+    chatRunId: null,
+    chatStream: null,
+    chatStreamStartedAt: null,
+    client: {
+      request: async () => ({
+        messages: [{ role: "user", content: [{ type: "text", text: "q" }] }],
+      }),
+    },
+  });
+
+  await loadChatHistory(state);
+
+  assert.equal(state.chatRunId, null, "无在途 run（快照缺省）时不得伪造 run 态");
+  assert.equal(state.chatStream, null, "无在途 run 时流式态保持空");
+}
+
 async function main() {
   await testChatStreamIsRafThrottled();
   await testLoadChatHistoryBatchesInitialRender();
@@ -1044,6 +1174,11 @@ async function main() {
   await testReplaceWithoutMergeStillHydratesFromTwenty();
   await testMergeIfStaleFallsBackToHydrationWhenPartiallyVisible();
   await testSilentProbeDoesNotToggleChatLoading();
+  await testInFlightRunAdoptedOnFreshLoad();
+  await testInFlightRunEmptyTextAdoptedAsActivityIndicator();
+  await testInFlightRunNotAdoptedWhenLocalRunActive();
+  await testInFlightRunAdoptedEvenOnStaleReadRetention();
+  await testInFlightRunAbsentKeepsClearedState();
   cancelStaleHistoryRetryForTests();
   console.log("chat controller tests passed");
 }
