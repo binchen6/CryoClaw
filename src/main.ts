@@ -101,8 +101,9 @@ function attachRendererDebugHandlers(label: string, webContents: Electron.WebCon
     if (!isMainFrame) {
       return;
     }
+    // 脱敏：入口 URL 的 query 携带 gateway token，不得明文落盘
     log.error(
-      `[renderer:${label}] did-fail-load: code=${code}, description=${description}, url=${validatedURL}`,
+      `[renderer:${label}] did-fail-load: code=${code}, description=${description}, url=${log.sanitizeUrlForLog(validatedURL)}`,
     );
   });
 
@@ -372,11 +373,18 @@ async function ensureGatewayRunning(source: string): Promise<boolean> {
   await syncGatewayRuntimeConfigFromDisk();
 
   for (let attempt = 1; attempt <= MAX_GATEWAY_START_ATTEMPTS; attempt++) {
-    if (attempt === 1) {
-      await gateway.start();
-    } else {
-      log.warn(`Gateway 启动重试 ${attempt}/${MAX_GATEWAY_START_ATTEMPTS}: ${source}`);
-      await gateway.restart();
+    // try/catch：start/restart 内部同步 throw（如 clawhub wrapper 写盘被杀软锁定）
+    // 不应打断重试链，也不应让 whenReady 启动链整体 reject（跳过失败弹窗与恢复流程）
+    try {
+      if (attempt === 1) {
+        await gateway.start();
+      } else {
+        log.warn(`Gateway 启动重试 ${attempt}/${MAX_GATEWAY_START_ATTEMPTS}: ${source}`);
+        await gateway.restart();
+      }
+    } catch (err) {
+      log.error(`Gateway 启动异常（第 ${attempt} 次尝试, ${source}）: ${err}`);
+      continue;
     }
 
     if (gateway.getState() === "running") {
@@ -485,6 +493,10 @@ function requestGatewayStart(source: string): void {
     log.info(`[gateway] start ignored during .openclaw import: ${source}`);
     return;
   }
+  if (getKernelUpdateState().running) {
+    log.info(`[gateway] start ignored during kernel update: ${source}`);
+    return;
+  }
   inflightGatewayOp = (async () => {
     await syncGatewayRuntimeConfigFromDisk();
     await gateway.start();
@@ -507,12 +519,22 @@ function requestGatewayRestart(source: string): void {
     log.info(`[gateway] restart ignored during .openclaw import: ${source}`);
     return;
   }
+  if (getKernelUpdateState().running) {
+    log.info(`[gateway] restart ignored during kernel update: ${source}`);
+    return;
+  }
   if (restartTimer) clearTimeout(restartTimer);
   log.info(`[gateway] restart requested: ${source}`);
   restartTimer = setTimeout(() => {
     restartTimer = null;
     if (openclawStateImportLifecycle.isImportActive()) {
       log.info(`[gateway] restart skipped during .openclaw import: ${source}`);
+      return;
+    }
+    // 升级在 800ms 防抖窗口内发起时，定时器此处可能已处于换装中——
+    // spawn 半换装内核的 gateway 会污染状态目录并让健康检查误判成功
+    if (getKernelUpdateState().running) {
+      log.info(`[gateway] restart skipped during kernel update: ${source}`);
       return;
     }
     log.info(`[gateway] restart executing: ${source}`);
@@ -705,7 +727,13 @@ ipcMain.handle("gateway:state", (event) => {
 
 // ── 内核升级/回退 ──
 initKernelUpdater({
-  stopGateway: () => gateway.stop(),
+  // 换装前静默 gateway：取消挂起的重启防抖并等在途 start/restart 落定，
+  // 防止 updater 换 asar 的同时 spawn 半换装内核的 gateway（同 .openclaw 导入路径）
+  stopGateway: async () => {
+    cancelPendingGatewayRestart("kernel-update");
+    await inflightGatewayOp;
+    await gateway.stop();
+  },
   startGateway: () => ensureGatewayRunning("kernel-update"),
   getGatewayState: () => gateway.getState(),
   push: (payload) => windowManager.pushKernelUpdateProgress(payload),
@@ -1175,6 +1203,17 @@ app.whenReady().then(async () => {
       };
     },
     restart: async () => {
+      // 与 .openclaw 导入 / 内核升级互斥（IPC 侧 kernel:update、requestGatewayStart/
+      // Restart 都有护栏，唯独这条 CLI 外部入口此前缺失）：换装/导入中 spawn gateway
+      // 会写入半换装内核或半清空状态目录
+      if (openclawStateImportLifecycle.isImportActive()) {
+        throw new Error(".openclaw 导入进行中，请稍后重试");
+      }
+      if (getKernelUpdateState().running) {
+        throw new Error("内核升级进行中，请稍后重试");
+      }
+      cancelPendingGatewayRestart("gateway-control:restart");
+      await inflightGatewayOp;
       await gateway.stop();
       // 覆盖 CLI 直跑 `openclaw update --rollback` 后再 restart 的场景：
       // 内核已被换回旧版，先按双向规则把配置迁回旧落位再启动

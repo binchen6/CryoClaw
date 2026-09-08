@@ -127,7 +127,16 @@ export function writeUserConfig(config: any): void {
   // 覆盖写入前先保留一份当前可解析配置，便于用户在设置页回退。
   backupCurrentUserConfig();
   const configPath = resolveUserConfigPath();
-  fs.writeFileSync(configPath, JSON.stringify(config, null, 2), "utf-8");
+  // 原子写（.tmp + rename）：这是 openclaw.json 的主写路径，写一半崩溃（强杀/断电）
+  // 留下截断配置会让下次启动进入恢复流程；模式对齐 config-backup 的 writeConfigRaw
+  const tmpPath = `${configPath}.tmp`;
+  try {
+    fs.writeFileSync(tmpPath, JSON.stringify(config, null, 2), "utf-8");
+    fs.renameSync(tmpPath, configPath);
+  } catch (err) {
+    try { fs.rmSync(tmpPath, { force: true }); } catch {}
+    throw err;
+  }
   // openclaw 4.x 每次读 openclaw.json 会与 health-state baseline 以及
   // openclaw.json.bak 做字节校验；外部直写会让两者落后，产生 .clobbered 雪崩。
   // 这里把 .bak 同步成当前内容，并清理 health entry 让 openclaw 重建基线。

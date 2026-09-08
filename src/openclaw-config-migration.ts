@@ -10,7 +10,7 @@
 
 import * as fs from "fs";
 import * as path from "path";
-import { resolveGatewayPackageDir, resolveUserStateDir } from "./constants";
+import { resolveGatewayPackageDir, resolveUserStateDir, resolveExtensionsMirrorDir } from "./constants";
 import { readUserConfig, writeUserConfig } from "./provider-config";
 import * as log from "./logger";
 
@@ -249,11 +249,15 @@ function migrateUnavailablePluginEntries(config: any): string[] {
     }
   };
   const bundled = listDirs(path.join(resolveGatewayPackageDir(), "dist", "extensions"));
+  // 安装包内置 mirror（wecom/weixin 等 channel plugin 的来源）：启动期 reconcile 会
+  // 把它复制进状态目录。迁移先于 reconcile 运行时必须把 mirror 视为可解析，
+  // 否则状态目录被清（杀软/误删）后，一轮启动会把渠道插件条目永久禁用
+  const mirrored = listDirs(resolveExtensionsMirrorDir());
   const stateExtDir = path.join(resolveUserStateDir(), "extensions");
   const installed = listDirs(stateExtDir);
   // bundled 由内核发行物保证格式，不做载荷判定；状态目录里的才查
   const resolvable = (id: string): boolean =>
-    bundled.has(id) || (installed.has(id) && hasRunnablePayload(path.join(stateExtDir, id)));
+    bundled.has(id) || mirrored.has(id) || (installed.has(id) && hasRunnablePayload(path.join(stateExtDir, id)));
   const disabled: string[] = [];
   for (const [id, entry] of Object.entries(entries)) {
     const e = entry as any;

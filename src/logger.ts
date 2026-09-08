@@ -121,3 +121,10 @@ export function info(msg: string): void { write("INFO", msg); }
 export function warn(msg: string): void { write("WARN", msg); }
 export function error(msg: string): void { write("ERROR", msg); }
 export function debug(msg: string): void { write("DEBUG", msg); }
+
+// URL 日志脱敏：剥离 query 与 hash（入口 URL 携带 gateway token，app.log 可能被
+// 用户外发分享）。与 sanitizeLogText（main.ts）的职责互补：这里用于「要整条 URL
+// 的日志」，那边用于「自由文本里内嵌 URL」的场景。
+export function sanitizeUrlForLog(url: string): string {
+  return url.split(/[?#]/, 1)[0];
+}

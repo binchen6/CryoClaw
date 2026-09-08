@@ -70,7 +70,8 @@ export function renderWorkspaceView(state: AppViewState, opts: WorkspaceViewOpti
   const ws = workspaceViewState;
   const isAtRoot = !ws.currentPath || !ws.root || ws.currentPath === ws.root;
   const relPath = ws.root && ws.selectedFile ? relativePath(ws.root, ws.selectedFile) : "";
-  const rootName = ws.root?.split("/").pop() ?? "workspace";
+  // Windows 上 agents.files.list 返回反斜杠路径，按双分隔符切分才能取到根目录名
+  const rootName = ws.root?.split(/[/\\]/).filter(Boolean).pop() ?? "workspace";
   const canPreview = ws.selectedFileName ? isTextFile(ws.selectedFileName) : false;
 
   return html`

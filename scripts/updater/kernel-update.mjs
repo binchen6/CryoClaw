@@ -116,6 +116,11 @@ function resolveNpmBin() {
     : path.join(RESOURCES_DIR, "runtime", "npm");
 }
 
+// Windows 直执的 npm-cli.js 路径（Electron AS_NODE 模式承载）
+function resolveNpmCliJs() {
+  return path.join(RESOURCES_DIR, "runtime", "node_modules", "npm", "bin", "npm-cli.js");
+}
+
 function resolveNodeExe() {
   // CryoClaw-CLI.exe（CONSOLE 子系统）优先，回退主 exe；二者都靠 ELECTRON_RUN_AS_NODE 跑脚本
   const installRoot = path.resolve(RESOURCES_DIR, "..", "..");
@@ -128,15 +133,17 @@ function resolveNodeExe() {
 }
 
 function npmRun(args, cwd) {
-  // Windows 上 npm 是 npm.cmd（批处理脚本），Node 直接 spawn .cmd 需要经 cmd.exe 解释。
-  // 历史上用 shell:true + args 触发 Node 22+ DEP0190（args+shell 组合不安全），
-  // 改为显式调用 cmd.exe /c npm.cmd args，shell:false 避免 DEP0190。
+  // Windows：直执 npm-cli.js（ELECTRON_RUN_AS_NODE=1，argv 直传不经 shell）。
+  // 此前的 cmd.exe /c npm.cmd 方案：Node 对含空格路径加引号后，cmd 的引号保留
+  // 规则要求引号间无括号等特殊字符——安装到 C:\Program Files (x86)\ 这类路径
+  // （安装器允许自选目录）会被按 C:\Program 截断，运行时升级必挂。
+  // macOS/Linux：runtime/npm 是 shell wrapper，直执即可。
   const fullArgs = [...args, "--registry", REGISTRY];
   let cmd;
   let cmdArgs;
   if (process.platform === "win32") {
-    cmd = "cmd.exe";
-    cmdArgs = ["/c", resolveNpmBin(), ...fullArgs];
+    cmd = resolveNodeExe();
+    cmdArgs = [resolveNpmCliJs(), ...fullArgs];
   } else {
     cmd = resolveNpmBin();
     cmdArgs = fullArgs;
@@ -146,6 +153,9 @@ function npmRun(args, cwd) {
   // 或版本不在范围内（都会直接拒装）。把捆绑 runtime 目录前置到 PATH，确保
   // 生命周期脚本里的 `node` 命中我们钉的 22.x 运行时。
   const env = { ...process.env };
+  if (process.platform === "win32") {
+    env.ELECTRON_RUN_AS_NODE = "1";
+  }
   const pathKey = Object.keys(env).find((k) => k.toLowerCase() === "path") || "PATH";
   env[pathKey] = path.join(RESOURCES_DIR, "runtime") + path.delimiter + (env[pathKey] || "");
   const result = spawnSync(cmd, cmdArgs, {

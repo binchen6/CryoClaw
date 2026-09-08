@@ -1381,6 +1381,9 @@ const BUNDLED_PLUGINS = [
     refreshEnv: "CRYOCLAW_KIMI_SEARCH_REFRESH",
     defaultURL: KIMI_SEARCH_DEFAULT_TGZ_URL,
     cacheFile: KIMI_SEARCH_CACHE_FILE,
+    // 供应链完整性钉定（2026-09-08 对 cdn.kimi.com 0.1.3 产物实测）：默认 URL 下载
+    // 与缓存复用都强制比对；版本升级换 URL 时必须同步更新此值（不匹配即 die）。
+    sha256: "51ec3973fb7ace34e74ee2fe1b2aa3d7c84425679f76536a2fd9ef19466327e3",
     requiredFiles: ["package.json", "openclaw.plugin.json"],
   },
   {
@@ -1465,28 +1468,88 @@ const OPENCLAW_SKILLS_DARWIN_ONLY = new Set([
   "peekaboo",
 ]);
 
-// openclaw/extensions 只保留 CryoClaw 当前产品面和运行时基础插件。
-// 2 个第三方 channel plugin（wecom-openclaw-plugin / openclaw-weixin）已迁出
-// gateway.asar，改为 extensions-mirror/<id>/，运行时再 reconcile 到
-// ~/.openclaw/extensions/，因此不在此 allowlist 中。
-// dingtalk-connector 走 channel-entry shim 仍然在 bundled 路径下（见
-// BUNDLED_PLUGINS 上方注释）。
-// feishu/qqbot 与 moonshot/kimi/zai/qwen/deepseek provider 自 openclaw ≥2026.6.x
-// 起不再随内核 npm 包发布，由 CryoClaw 构建期 vendor（见 OFFICIAL_VENDOR_PLUGINS），
-// 需保留在 allowlist 中防止被 prune。
+// openclaw（extensions/ 与 dist/extensions/）只保留 allowlist 中的插件。
+// 基线策略（R60 修正）：allowlist = 当前内核 pin（2026.9.2）随包分发的全部上游扩展
+// + CryoClaw 注入/vendor 的插件。即「今天的包内容零变化」，但门禁恢复生效——
+// 内核升级带来新扩展时会被裁掉并在 verifyOutput 前暴露，强制升级时逐个人工审阅
+// 是否纳入产品面；从注入清单移除的插件也会随增量构建被清掉（不再永久残留）。
+// 2 个第三方 channel plugin（wecom-openclaw-plugin / openclaw-weixin）走
+// extensions-mirror/<id>/ 运行时 reconcile，不在 gateway.asar 内，故不在列表中。
+// dingtalk-connector（BUNDLED_PLUGINS shim）与 feishu/qqbot + moonshot/kimi/zai/
+// qwen/deepseek（OFFICIAL_VENDOR_PLUGINS）由构建期注入 dist/extensions/，注入发生在
+// pruneNodeModules 之后，列出仅为语义完整。
 const OPENCLAW_EXTENSION_ALLOWLIST = new Set([
-  "memory-core",
-  "device-pair",
-  "feishu",
-  "telegram",
+  // CryoClaw 注入 / vendor（非 npm 随包）
   "kimi-search",
-  "qqbot",
   "dingtalk-connector",
+  "feishu",
+  "qqbot",
   "moonshot",
   "kimi",
   "zai",
   "qwen",
   "deepseek",
+  // 上游 npm 随包基线（openclaw 2026.9.2 实测清单，2026-09-08）
+  "a2a",
+  "active-memory",
+  "admin-http-rpc",
+  "alibaba",
+  "anthropic",
+  "azure-speech",
+  "beam",
+  "bonjour",
+  "browser",
+  "canvas",
+  "clawrouter",
+  "copilot-proxy",
+  "crabbox",
+  "cua-computer",
+  "deepgram",
+  "device-pair",
+  "document-extract",
+  "elevenlabs",
+  "fal",
+  "file-transfer",
+  "geolocation",
+  "github-copilot",
+  "google",
+  "huggingface",
+  "image-generation-core",
+  "imap",
+  "linux-node",
+  "litellm",
+  "llm-task",
+  "lmstudio",
+  "logbook",
+  "memory-core",
+  "memory-wiki",
+  "microsoft",
+  "microsoft-foundry",
+  "migrate-claude",
+  "migrate-hermes",
+  "minimax",
+  "nvidia",
+  "oc-path",
+  "ollama",
+  "onepassword",
+  "openai",
+  "opencode-go",
+  "openrouter",
+  "policy",
+  "reef",
+  "runway",
+  "senseaudio",
+  "sglang",
+  "talk-voice",
+  "telegram",
+  "together",
+  "tts-local-cli",
+  "vault",
+  "vllm",
+  "web-readability",
+  "webhooks",
+  "workboard",
+  "xai",
 ]);
 
 // openclaw 的 bundled extension 在 2026.3.x 位于顶层 extensions/，在 2026.4.x 迁到 dist/extensions/。
@@ -1544,7 +1607,8 @@ function resolvePluginSource(plugin) {
   return { archivePath, sourceURL, sourceLabel: sourceURL, forceRefresh };
 }
 
-// 下载（或复用缓存）插件 tgz
+// 下载（或复用缓存）插件 tgz。带 sha256 钉定的插件在两条路径上都强制校验
+// （供应链守卫：CDN/缓存被篡改时在此硬失败，不得进入安装包）。
 async function ensurePluginArchive(plugin) {
   const source = resolvePluginSource(plugin);
   const { archivePath } = source;
@@ -1554,12 +1618,33 @@ async function ensurePluginArchive(plugin) {
     return source;
   }
 
+  const verifySha256 = () => {
+    if (!plugin.sha256) return;
+    // 自定义 URL（urlEnv 覆盖，通常为升级前试装新版本）不套用默认产物的钉定值
+    if (source.sourceURL !== plugin.defaultURL) {
+      log(`WARN: ${plugin.id} 使用自定义 URL，跳过 sha256 钉定校验`);
+      return;
+    }
+    const { createHash } = require("crypto");
+    const actual = createHash("sha256").update(fs.readFileSync(archivePath)).digest("hex");
+    if (actual.toLowerCase() !== plugin.sha256.toLowerCase()) {
+      safeUnlink(archivePath);
+      die(
+        `${plugin.id} 插件包 sha256 校验失败:\n  expected ${plugin.sha256}\n  actual   ${actual}\n` +
+          "（CDN 产物变更或缓存被篡改；若为正常版本升级，请同步更新 BUNDLED_PLUGINS 的 sha256 钉定值）",
+      );
+    }
+    log(`${plugin.id} sha256 钉定校验通过`);
+  };
+
   if (source.forceRefresh || !fs.existsSync(archivePath)) {
     log(`下载 ${plugin.id} 插件包: ${source.sourceURL}`);
     safeUnlink(archivePath);
     await downloadFileWithFallback([source.sourceURL], archivePath);
+    verifySha256();
   } else {
     log(`使用缓存的 ${plugin.id} 包: ${path.relative(ROOT, archivePath)}`);
+    verifySha256();
   }
 
   return source;
@@ -1595,10 +1680,12 @@ function removeInstalledPackageSource(gatewayDir, packageName) {
 }
 
 // 校验插件目录结构，确保最基本的运行入口存在。
+// 抛错而非 die()：调用方（bundlePlugin / installNpmPackagePluginInto）需要用
+// finally 清理临时目录——process.exit 会跳过 finally，die 版本让既有清理成为死代码
 function assertPluginDir(plugin, dirPath, missingLabel) {
   for (const f of plugin.requiredFiles) {
     if (!fs.existsSync(path.join(dirPath, f))) {
-      die(`${plugin.id} 包内容无效（缺少 ${missingLabel}${f}）`);
+      throw new Error(`${plugin.id} 包内容无效（缺少 ${missingLabel}${f}）`);
     }
   }
 }
@@ -1824,102 +1911,104 @@ async function installNpmPackagePluginInto(plugin, pluginDir, hostNm, targetId, 
 
   // 在临时目录中独立安装（隔离传递依赖，避免 peerDep 拉入巨型包）
   const tmpDir = createExtractTmpDir(TARGETS_ROOT, `${targetId}_npm_${plugin.id}`);
-  const tmpPkg = { dependencies: { [plugin.packageName]: sourceInfo.source } };
-  fs.writeFileSync(path.join(tmpDir, "package.json"), JSON.stringify(tmpPkg, null, 2));
-
+  // try/finally：npm install / 拷贝 / 裁剪任一环节抛错都必须清理 tmpDir，
+  // 否则 resources/targets/ 下会残留含完整 node_modules 的 _extract_tmp_* 大目录
   try {
-    execNpmSync(
-      ["install", "--omit=dev", "--install-links", "--legacy-peer-deps", `--os=${opts.platform}`, `--cpu=${opts.arch}`],
-      {
-        cwd: tmpDir,
-        stdio: "inherit",
-        env: {
-          ...process.env,
-          NODE_ENV: "production",
-          npm_config_os: opts.platform,
-          npm_config_cpu: opts.arch,
-          NODE_LLAMA_CPP_SKIP_DOWNLOAD: "true",
-        },
-      }
-    );
-  } catch (err) {
-    rmDir(tmpDir);
-    die(`安装 ${plugin.id} 插件失败: ${err.message || String(err)}`);
-  }
+    const tmpPkg = { dependencies: { [plugin.packageName]: sourceInfo.source } };
+    fs.writeFileSync(path.join(tmpDir, "package.json"), JSON.stringify(tmpPkg, null, 2));
 
-  // 定位已安装的插件包
-  const installedPkgDir = resolveInstalledPackageDir(tmpDir, plugin.packageName);
-  if (!fs.existsSync(installedPkgDir)) {
-    rmDir(tmpDir);
-    die(`安装 ${plugin.id} 后未找到包目录: ${installedPkgDir}`);
-  }
-  assertPluginDir(plugin, installedPkgDir, "");
-
-  // 将插件包拷贝到 extensions
-  rmDir(pluginDir);
-  copyDirSync(installedPkgDir, pluginDir);
-
-  // 将提升（hoisted）到 tmpDir/node_modules 的传递依赖收集到插件自身的 node_modules。
-  // 当 hostNm 非 null 时，跳过宿主 node_modules 已有的包（在 gateway 同一 require 树
-  // 内运行时会向上查找到宿主依赖，避免巨型依赖重复拷贝）。当 hostNm 为 null 时（外部
-  // mirror 路径），插件运行时不在宿主 require 树内，所有传递依赖都必须落入插件自身
-  // node_modules。
-  const tmpNm = path.join(tmpDir, "node_modules");
-  const pluginNm = path.join(pluginDir, "node_modules");
-  ensureDir(pluginNm);
-
-  const hostHasScoped = (scope, name) =>
-    hostNm != null && fs.existsSync(path.join(hostNm, scope, name));
-  const hostHasTopLevel = (name) =>
-    hostNm != null && fs.existsSync(path.join(hostNm, name));
-
-  for (const entry of fs.readdirSync(tmpNm, { withFileTypes: true })) {
-    if (entry.name.startsWith(".") || !entry.isDirectory()) continue;
-
-    if (entry.name.startsWith("@")) {
-      // scoped 包：逐个子包检查
-      const scopeDir = path.join(tmpNm, entry.name);
-      for (const child of fs.readdirSync(scopeDir, { withFileTypes: true })) {
-        if (!child.isDirectory()) continue;
-        const fullName = `${entry.name}/${child.name}`;
-        // 跳过插件包自身
-        if (fullName === plugin.packageName) continue;
-        // 宿主已有的跳过（仅 hostNm 非 null 时）
-        if (hostHasScoped(entry.name, child.name)) continue;
-        // 插件 node_modules 里已有的跳过（npm 嵌套安装的优先）
-        const dest = path.join(pluginNm, entry.name, child.name);
-        if (fs.existsSync(dest)) continue;
-        ensureDir(path.join(pluginNm, entry.name));
-        copyDirSync(path.join(scopeDir, child.name), dest);
-      }
-    } else {
-      // 跳过插件包自身
-      if (entry.name === plugin.packageName) continue;
-      // 宿主已有的跳过（仅 hostNm 非 null 时）
-      if (hostHasTopLevel(entry.name)) continue;
-      const dest = path.join(pluginNm, entry.name);
-      if (fs.existsSync(dest)) continue;
-      copyDirSync(path.join(tmpNm, entry.name), dest);
+    try {
+      execNpmSync(
+        ["install", "--omit=dev", "--install-links", "--legacy-peer-deps", `--os=${opts.platform}`, `--cpu=${opts.arch}`],
+        {
+          cwd: tmpDir,
+          stdio: "inherit",
+          env: {
+            ...process.env,
+            NODE_ENV: "production",
+            npm_config_os: opts.platform,
+            npm_config_cpu: opts.arch,
+            NODE_LLAMA_CPP_SKIP_DOWNLOAD: "true",
+          },
+        }
+      );
+    } catch (err) {
+      throw new Error(`安装 ${plugin.id} 插件失败: ${err.message || String(err)}`);
     }
+
+    // 定位已安装的插件包
+    const installedPkgDir = resolveInstalledPackageDir(tmpDir, plugin.packageName);
+    if (!fs.existsSync(installedPkgDir)) {
+      throw new Error(`安装 ${plugin.id} 后未找到包目录: ${installedPkgDir}`);
+    }
+    assertPluginDir(plugin, installedPkgDir, "");
+
+    // 将插件包拷贝到 extensions
+    rmDir(pluginDir);
+    copyDirSync(installedPkgDir, pluginDir);
+
+    // 将提升（hoisted）到 tmpDir/node_modules 的传递依赖收集到插件自身的 node_modules。
+    // 当 hostNm 非 null 时，跳过宿主 node_modules 已有的包（在 gateway 同一 require 树
+    // 内运行时会向上查找到宿主依赖，避免巨型依赖重复拷贝）。当 hostNm 为 null 时（外部
+    // mirror 路径），插件运行时不在宿主 require 树内，所有传递依赖都必须落入插件自身
+    // node_modules。
+    const tmpNm = path.join(tmpDir, "node_modules");
+    const pluginNm = path.join(pluginDir, "node_modules");
+    ensureDir(pluginNm);
+
+    const hostHasScoped = (scope, name) =>
+      hostNm != null && fs.existsSync(path.join(hostNm, scope, name));
+    const hostHasTopLevel = (name) =>
+      hostNm != null && fs.existsSync(path.join(hostNm, name));
+
+    for (const entry of fs.readdirSync(tmpNm, { withFileTypes: true })) {
+      if (entry.name.startsWith(".") || !entry.isDirectory()) continue;
+
+      if (entry.name.startsWith("@")) {
+        // scoped 包：逐个子包检查
+        const scopeDir = path.join(tmpNm, entry.name);
+        for (const child of fs.readdirSync(scopeDir, { withFileTypes: true })) {
+          if (!child.isDirectory()) continue;
+          const fullName = `${entry.name}/${child.name}`;
+          // 跳过插件包自身
+          if (fullName === plugin.packageName) continue;
+          // 宿主已有的跳过（仅 hostNm 非 null 时）
+          if (hostHasScoped(entry.name, child.name)) continue;
+          // 插件 node_modules 里已有的跳过（npm 嵌套安装的优先）
+          const dest = path.join(pluginNm, entry.name, child.name);
+          if (fs.existsSync(dest)) continue;
+          ensureDir(path.join(pluginNm, entry.name));
+          copyDirSync(path.join(scopeDir, child.name), dest);
+        }
+      } else {
+        // 跳过插件包自身
+        if (entry.name === plugin.packageName) continue;
+        // 宿主已有的跳过（仅 hostNm 非 null 时）
+        if (hostHasTopLevel(entry.name)) continue;
+        const dest = path.join(pluginNm, entry.name);
+        if (fs.existsSync(dest)) continue;
+        copyDirSync(path.join(tmpNm, entry.name), dest);
+      }
+    }
+
+    // 裁剪插件的 node_modules（插件内无 skills 目录，platform 无影响）
+    prunePluginNodeModules(pluginNm, opts);
+
+    // channel 插件需要适配 openclaw >= 2026.4.5 的 bundled-channel-entry 契约
+    if (plugin.channelShim) {
+      writeChannelEntryShim(plugin, pluginDir);
+    }
+
+    // 写入版本戳
+    fs.writeFileSync(
+      path.join(pluginDir, `.cryoclaw-${plugin.id}-stamp.json`),
+      JSON.stringify({ source: sourceInfo.stampSource, bundledAt: new Date().toISOString() }, null, 2)
+    );
+    log(`已注入 ${plugin.id} 插件到 ${path.relative(ROOT, pluginDir)}`);
+  } finally {
+    // 清理临时目录（成功与失败路径都走这里）
+    rmDir(tmpDir);
   }
-
-  // 裁剪插件的 node_modules（插件内无 skills 目录，platform 无影响）
-  prunePluginNodeModules(pluginNm, opts);
-
-  // 清理临时目录
-  rmDir(tmpDir);
-
-  // channel 插件需要适配 openclaw >= 2026.4.5 的 bundled-channel-entry 契约
-  if (plugin.channelShim) {
-    writeChannelEntryShim(plugin, pluginDir);
-  }
-
-  // 写入版本戳
-  fs.writeFileSync(
-    path.join(pluginDir, `.cryoclaw-${plugin.id}-stamp.json`),
-    JSON.stringify({ source: sourceInfo.stampSource, bundledAt: new Date().toISOString() }, null, 2)
-  );
-  log(`已注入 ${plugin.id} 插件到 ${path.relative(ROOT, pluginDir)}`);
 }
 
 // tgz 插件依赖补装：读取 package.json dependencies，在临时目录安装后收集到插件 node_modules
@@ -1949,85 +2038,88 @@ function installTgzPluginDeps(plugin, pluginDir, targetId, opts) {
   log(`为 ${plugin.id} 安装生产依赖: ${Object.keys(deps).join(", ")} ...`);
 
   const depTmpDir = createExtractTmpDir(TARGETS_ROOT, `${targetId}_tgzdeps_${plugin.id}`);
-  const tmpPkg = { dependencies: deps };
-  fs.writeFileSync(path.join(depTmpDir, "package.json"), JSON.stringify(tmpPkg, null, 2));
-
+  // try/finally：任一环节抛错都清理 depTmpDir，防 resources/targets/ 残留大目录
   try {
-    execNpmSync(
-      ["install", "--omit=dev", "--install-links", "--legacy-peer-deps", "--ignore-scripts", `--os=${opts.platform}`, `--cpu=${opts.arch}`],
-      {
-        cwd: depTmpDir,
-        stdio: "inherit",
-        env: {
-          ...process.env,
-          NODE_ENV: "production",
-          npm_config_os: opts.platform,
-          npm_config_cpu: opts.arch,
-          NODE_LLAMA_CPP_SKIP_DOWNLOAD: "true",
-        },
-      }
-    );
-  } catch (err) {
-    rmDir(depTmpDir);
-    die(`安装 ${plugin.id} 依赖失败: ${err.message || String(err)}`);
-  }
+    const tmpPkg = { dependencies: deps };
+    fs.writeFileSync(path.join(depTmpDir, "package.json"), JSON.stringify(tmpPkg, null, 2));
 
-  // --ignore-scripts 跳过了 native addon 编译，对需要 node-gyp 的包单独 rebuild
-  // 只 rebuild 有 binding.gyp 但没有 prebuilds 的包（有 prebuilds 的如 node-pty 不需要编译）
-  // 必须 target Electron 的 Node ABI（gateway 由 Electron binary + ELECTRON_RUN_AS_NODE 启动）
-  // macOS Apple Clang 支持 --arch 交叉编译（arm64 runner 可编译 x64 产物）
-  const nativeAddonPkgs = Object.keys(deps).filter((name) => {
-    const pkgDir = path.join(depTmpDir, "node_modules", ...name.split("/"));
-    const hasBindingGyp = fs.existsSync(path.join(pkgDir, "binding.gyp"));
-    const hasPrebuilds = fs.existsSync(path.join(pkgDir, "prebuilds"));
-    return hasBindingGyp && !hasPrebuilds;
-  });
-  if (nativeAddonPkgs.length > 0) {
-    // 读取 Electron 版本，用于 node-gyp --target（确保 ABI 匹配）
-    const electronVersion = JSON.parse(
-      fs.readFileSync(path.join(ROOT, "node_modules", "electron", "package.json"), "utf-8")
-    ).version;
-    log(`为 ${plugin.id} 编译 native addon: ${nativeAddonPkgs.join(", ")} (arch=${opts.arch}, electron=${electronVersion})`);
-    for (const pkg of nativeAddonPkgs) {
-      try {
-        // pkg 来自插件清单声明的包名集合；opts.arch/electronVersion 为受控枚举/本仓库依赖版本
-        execNpmSync(["rebuild", pkg, `--arch=${opts.arch}`, "--runtime=electron", `--target=${electronVersion}`, "--dist-url=https://electronjs.org/headers"], {
+    try {
+      execNpmSync(
+        ["install", "--omit=dev", "--install-links", "--legacy-peer-deps", "--ignore-scripts", `--os=${opts.platform}`, `--cpu=${opts.arch}`],
+        {
           cwd: depTmpDir,
-        });
-      } catch (err) {
-        log(`⚠ ${plugin.id} native addon ${pkg} 编译失败（${opts.arch}）: ${err.message || String(err)}`);
+          stdio: "inherit",
+          env: {
+            ...process.env,
+            NODE_ENV: "production",
+            npm_config_os: opts.platform,
+            npm_config_cpu: opts.arch,
+            NODE_LLAMA_CPP_SKIP_DOWNLOAD: "true",
+          },
+        }
+      );
+    } catch (err) {
+      throw new Error(`安装 ${plugin.id} 依赖失败: ${err.message || String(err)}`);
+    }
+
+    // --ignore-scripts 跳过了 native addon 编译，对需要 node-gyp 的包单独 rebuild
+    // 只 rebuild 有 binding.gyp 但没有 prebuilds 的包（有 prebuilds 的如 node-pty 不需要编译）
+    // 必须 target Electron 的 Node ABI（gateway 由 Electron binary + ELECTRON_RUN_AS_NODE 启动）
+    // macOS Apple Clang 支持 --arch 交叉编译（arm64 runner 可编译 x64 产物）
+    const nativeAddonPkgs = Object.keys(deps).filter((name) => {
+      const pkgDir = path.join(depTmpDir, "node_modules", ...name.split("/"));
+      const hasBindingGyp = fs.existsSync(path.join(pkgDir, "binding.gyp"));
+      const hasPrebuilds = fs.existsSync(path.join(pkgDir, "prebuilds"));
+      return hasBindingGyp && !hasPrebuilds;
+    });
+    if (nativeAddonPkgs.length > 0) {
+      // 读取 Electron 版本，用于 node-gyp --target（确保 ABI 匹配）
+      const electronVersion = JSON.parse(
+        fs.readFileSync(path.join(ROOT, "node_modules", "electron", "package.json"), "utf-8")
+      ).version;
+      log(`为 ${plugin.id} 编译 native addon: ${nativeAddonPkgs.join(", ")} (arch=${opts.arch}, electron=${electronVersion})`);
+      for (const pkg of nativeAddonPkgs) {
+        try {
+          // pkg 来自插件清单声明的包名集合；opts.arch/electronVersion 为受控枚举/本仓库依赖版本
+          execNpmSync(["rebuild", pkg, `--arch=${opts.arch}`, "--runtime=electron", `--target=${electronVersion}`, "--dist-url=https://electronjs.org/headers"], {
+            cwd: depTmpDir,
+          });
+        } catch (err) {
+          log(`⚠ ${plugin.id} native addon ${pkg} 编译失败（${opts.arch}）: ${err.message || String(err)}`);
+        }
       }
     }
-  }
 
-  // 收集 hoisted 依赖到插件 node_modules
-  const tmpNm = path.join(depTmpDir, "node_modules");
-  ensureDir(pluginNm);
+    // 收集 hoisted 依赖到插件 node_modules
+    const tmpNm = path.join(depTmpDir, "node_modules");
+    ensureDir(pluginNm);
 
-  for (const entry of fs.readdirSync(tmpNm, { withFileTypes: true })) {
-    if (entry.name.startsWith(".") || !entry.isDirectory()) continue;
+    for (const entry of fs.readdirSync(tmpNm, { withFileTypes: true })) {
+      if (entry.name.startsWith(".") || !entry.isDirectory()) continue;
 
-    if (entry.name.startsWith("@")) {
-      const scopeDir = path.join(tmpNm, entry.name);
-      for (const child of fs.readdirSync(scopeDir, { withFileTypes: true })) {
-        if (!child.isDirectory()) continue;
-        const dest = path.join(pluginNm, entry.name, child.name);
+      if (entry.name.startsWith("@")) {
+        const scopeDir = path.join(tmpNm, entry.name);
+        for (const child of fs.readdirSync(scopeDir, { withFileTypes: true })) {
+          if (!child.isDirectory()) continue;
+          const dest = path.join(pluginNm, entry.name, child.name);
+          if (fs.existsSync(dest)) continue;
+          ensureDir(path.join(pluginNm, entry.name));
+          copyDirSync(path.join(scopeDir, child.name), dest);
+        }
+      } else {
+        const dest = path.join(pluginNm, entry.name);
         if (fs.existsSync(dest)) continue;
-        ensureDir(path.join(pluginNm, entry.name));
-        copyDirSync(path.join(scopeDir, child.name), dest);
+        copyDirSync(path.join(tmpNm, entry.name), dest);
       }
-    } else {
-      const dest = path.join(pluginNm, entry.name);
-      if (fs.existsSync(dest)) continue;
-      copyDirSync(path.join(tmpNm, entry.name), dest);
     }
+
+    // 裁剪依赖中的无用文件（含非目标平台 prebuilds / 原生平台包）
+    prunePluginNodeModules(pluginNm, opts);
+
+    log(`${plugin.id} 依赖安装完成`);
+  } finally {
+    rmDir(depTmpDir);
   }
-
-  // 裁剪依赖中的无用文件（含非目标平台 prebuilds / 原生平台包）
-  prunePluginNodeModules(pluginNm, opts);
-
-  rmDir(depTmpDir);
-  log(`${plugin.id} 依赖安装完成`);
 }
 
 // 把官方 npm 插件包原样 vendor 到 gateway/node_modules/openclaw/dist/extensions/<id>/。
@@ -2328,7 +2420,13 @@ function pruneNodeModules(nmDir, platform) {
 
   const openclawDir = path.join(nmDir, "openclaw");
   const openclawDocsDir = path.join(openclawDir, "docs");
-  const openclawExtensionsDir = path.join(openclawDir, "extensions");
+  // extensions 白名单裁剪的目标路径：2026.4.x 起内核插件根在 dist/extensions/，
+  // 旧顶层 extensions/ 保留兼容（与 verifyOutput 的 bundledCandidates 双路径同法）。
+  // 此前只指向旧路径导致 2026.9.x 上裁剪从未生效（上游全部扩展进包）。
+  const openclawExtensionsDirs = [
+    path.join(openclawDir, "extensions"),
+    path.join(openclawDir, "dist", "extensions"),
+  ];
   const openclawDocsKeepDir = path.join(openclawDocsDir, "reference", "templates");
 
   // 需要删除的目录名（只保留运行所需内容）
@@ -2450,27 +2548,29 @@ function pruneNodeModules(nmDir, platform) {
     walkDocs(openclawDocsDir);
   }
 
-  // openclaw/extensions 不再整目录豁免，只保留 CryoClaw 需要的插件。
+  // openclaw/extensions（含 dist/extensions）不再整目录豁免，只保留白名单插件。
   function pruneOpenclawExtensions() {
-    if (!fs.existsSync(openclawExtensionsDir)) return;
+    for (const extensionsDir of openclawExtensionsDirs) {
+      if (!fs.existsSync(extensionsDir)) continue;
 
-    let entries;
-    try {
-      entries = fs.readdirSync(openclawExtensionsDir, { withFileTypes: true });
-    } catch {
-      return;
-    }
-
-    for (const entry of entries) {
-      const fullPath = path.join(openclawExtensionsDir, entry.name);
-      if (!entry.isDirectory()) {
+      let entries;
+      try {
+        entries = fs.readdirSync(extensionsDir, { withFileTypes: true });
+      } catch {
         continue;
       }
-      if (!OPENCLAW_EXTENSION_ALLOWLIST.has(entry.name)) {
-        removeDir(fullPath);
-        continue;
+
+      for (const entry of entries) {
+        const fullPath = path.join(extensionsDir, entry.name);
+        if (!entry.isDirectory()) {
+          continue;
+        }
+        if (!OPENCLAW_EXTENSION_ALLOWLIST.has(entry.name)) {
+          removeDir(fullPath);
+          continue;
+        }
+        walk(fullPath);
       }
-      walk(fullPath);
     }
   }
 
@@ -2510,7 +2610,7 @@ function pruneNodeModules(nmDir, platform) {
 
       if (entry.isDirectory()) {
         // extensions 改成白名单保留，并继续深入清理保留插件内部垃圾。
-        if (fullPath === openclawExtensionsDir) {
+        if (openclawExtensionsDirs.includes(fullPath)) {
           pruneOpenclawExtensions();
           continue;
         }

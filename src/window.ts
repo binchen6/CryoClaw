@@ -182,7 +182,10 @@ export class WindowManager {
       if (!isMainFrame) {
         return;
       }
-      log.error(`WebContents 主帧加载失败: code=${code} description=${description} url=${url}`);
+      // 脱敏：入口 URL 的 query 携带 gateway token，不得明文落盘
+      log.error(
+        `WebContents 主帧加载失败: code=${code} description=${description} url=${log.sanitizeUrlForLog(url)}`,
+      );
       this.recoverVirtualPathReload(code, url);
     });
     this.win.webContents.on("did-finish-load", () => {

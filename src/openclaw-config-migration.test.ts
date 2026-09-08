@@ -16,21 +16,24 @@ import * as os from "os";
 const mockState: {
   gatewayPkgDir: string;
   userStateDir: string;
+  mirrorDir: string;
   currentConfig: any;
   writeCount: number;
   writeShouldThrow: boolean;
 } = {
   gatewayPkgDir: "",
   userStateDir: "",
+  mirrorDir: "",
   currentConfig: {},
   writeCount: 0,
   writeShouldThrow: false,
 };
 
 vi.mock("./constants", () => ({
-  // 仅暴露 migration 实际使用的一个函数；其他导出不需要
+  // 仅暴露 migration 实际使用的函数；其他导出不需要
   resolveGatewayPackageDir: () => mockState.gatewayPkgDir,
   resolveUserStateDir: () => mockState.userStateDir,
+  resolveExtensionsMirrorDir: () => mockState.mirrorDir,
 }));
 
 vi.mock("./provider-config", () => ({
@@ -59,6 +62,10 @@ beforeEach(() => {
   mockState.userStateDir = path.join(tmpDir, "user-state");
   fs.mkdirSync(path.join(mockState.userStateDir, "extensions"), { recursive: true });
   fs.mkdirSync(path.join(mockState.gatewayPkgDir, "dist", "extensions"), { recursive: true });
+  // mirror 默认指向空目录（listDirs 返回空集 → 与无 mirror 的旧行为等价）；
+  // 个别用例往里放插件目录以验证「mirror 可救回」的新语义
+  mockState.mirrorDir = path.join(tmpDir, "extensions-mirror");
+  fs.mkdirSync(mockState.mirrorDir, { recursive: true });
   mockState.currentConfig = {};
   mockState.writeCount = 0;
   mockState.writeShouldThrow = false;
@@ -574,6 +581,20 @@ test("2026.8: enabled 但未安装的插件条目降级为禁用", async () => {
   expect(entries.tavily.config.webSearch.apiKey).toBe("x"); // 配置本体保留
   expect(entries["memory-lancedb"].enabled).toBe(false);
   expect(mockState.writeCount).toBe(1);
+});
+
+test("2026.8: mirror 中的插件不降级（reconcile 稍后会装回状态目录）", async () => {
+  writeKernelVersion("2026.8.2");
+  // 状态目录被清（杀软/误删）但安装包 mirror 里有 wecom：启动期迁移不得永久禁用它
+  fs.mkdirSync(path.join(mockState.mirrorDir, "wecom-openclaw-plugin"), { recursive: true });
+  mockState.currentConfig = {
+    plugins: { entries: { "wecom-openclaw-plugin": { enabled: true } } },
+    tools: { updatePlan: true },
+  };
+  const { migrateOpenclawConfigForKernelUpgrade } = await import("./openclaw-config-migration");
+  migrateOpenclawConfigForKernelUpgrade();
+  expect(mockState.currentConfig.plugins.entries["wecom-openclaw-plugin"].enabled).toBe(true);
+  expect(mockState.writeCount).toBe(0); // 全部可解析 → 不写文件
 });
 
 test("2026.8: 插件全部可解析时不写文件", async () => {

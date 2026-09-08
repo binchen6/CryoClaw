@@ -864,6 +864,11 @@ function insertCommand(props: ChatProps, name: string) {
 
 // 渲染 / 命令建议浮层
 function renderCommandSuggestions(props: ChatProps) {
+  // 防御校验：发送后清空草稿 / 切会话 / 引用插入等程序化改 draft 的路径不触发
+  // input 事件，过期建议不能继续浮在空输入框上（点了会把旧命令插进新草稿）
+  if (!/^\/(\S*)$/.test(props.draft ?? "")) {
+    return nothing;
+  }
   if (commandSuggestions.length === 0) {
     return nothing;
   }
@@ -925,6 +930,8 @@ export function renderChat(props: ChatProps) {
     goalFormOpen = false;
     goalDraft = "";
     queueEditingId = null;
+    commandSuggestions = [];
+    commandIndex = 0;
   }
   const canCompose = props.connected;
   const { isBusy, showStop } = computeStopButtonVisible(props);

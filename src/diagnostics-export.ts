@@ -68,7 +68,11 @@ async function readLogEntries(logsDir: string): Promise<Record<string, Uint8Arra
       const buf = await fs.promises.readFile(full);
       const budget = Math.min(MAX_LOG_BYTES_PER_FILE, MAX_LOG_BYTES_TOTAL - total);
       const slice = buf.length > budget ? buf.subarray(buf.length - budget) : buf;
-      out[`logs/${name}`] = new Uint8Array(slice);
+      // 兜底脱敏：历史版本日志可能含未剥离 query 的入口 URL（?token=…），
+      // 外发诊断包必须保证 token 不离开本机
+      out[`logs/${name}`] = new Uint8Array(
+        Buffer.from(slice.toString("utf-8").replace(/([?&]token=)[^&#\s)"']*/g, "$1***"), "utf-8"),
+      );
       total += slice.length;
     } catch {
       // 单个文件读取失败跳过
@@ -124,8 +128,9 @@ export async function exportDiagnosticsBundle(targetZipPath: string): Promise<vo
       const p = path.join(stateDir, legacy);
       if (!files[`logs/${legacy}`]) {
         const buf = await fs.promises.readFile(p);
+        const slice = buf.length > MAX_LOG_BYTES_PER_FILE ? buf.subarray(buf.length - MAX_LOG_BYTES_PER_FILE) : buf;
         files[`logs/legacy-${legacy}`] = new Uint8Array(
-          buf.length > MAX_LOG_BYTES_PER_FILE ? buf.subarray(buf.length - MAX_LOG_BYTES_PER_FILE) : buf,
+          Buffer.from(slice.toString("utf-8").replace(/([?&]token=)[^&#\s)"']*/g, "$1***"), "utf-8"),
         );
       }
     } catch {}

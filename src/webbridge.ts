@@ -789,16 +789,26 @@ export async function installWebbridgeSkill(
 
 // ───────────────────────── Precheck ─────────────────────────
 
+// 平台优先序对齐 constants.resolveWebbridgeDataDir（Win: USERPROFILE 优先）：
+// 从 Git Bash / MSYS（设了 HOME）启动时，HOME 优先会把 skill 探测指到与
+// 二进制落盘目录不同的根，precheck 恒报 missing.skill
 function home(): string {
-  return process.env.HOME ?? process.env.USERPROFILE ?? os.homedir();
+  return (process.platform === "win32" ? process.env.USERPROFILE : process.env.HOME)
+    || process.env.HOME
+    || os.homedir();
 }
 
 // CryoClaw 只关心自己的 OpenClaw runtime（~/.agents/skills/kimi-webbridge）。
 // install-skill -y 会顺手装到检测到的其它 AI runtime（Claude / Codex / Kimi CLI），
 // 但那些不属于 CryoClaw 必须保证的能力，所以 precheck 只看这一处。
-export const KIMI_WEBBRIDGE_SKILL_PATHS: string[] = [
-  path.join(home(), ".agents/skills/kimi-webbridge"),
-];
+// 注意：延迟到首次访问再求值（模块加载时 HOME 可能尚未由主流程修正）。
+export const KIMI_WEBBRIDGE_SKILL_PATHS: string[] = [];
+function skillPaths(): string[] {
+  if (KIMI_WEBBRIDGE_SKILL_PATHS.length === 0) {
+    KIMI_WEBBRIDGE_SKILL_PATHS.push(path.join(home(), ".agents", "skills", "kimi-webbridge"));
+  }
+  return KIMI_WEBBRIDGE_SKILL_PATHS;
+}
 
 export interface WebbridgePrecheckResult {
   ok: boolean;
@@ -840,10 +850,10 @@ export interface WebbridgePrecheckDeps {
 export async function getWebbridgePrecheck(
   deps: WebbridgePrecheckDeps,
 ): Promise<WebbridgePrecheckResult> {
-  const skillPaths = deps.skillPaths ?? KIMI_WEBBRIDGE_SKILL_PATHS;
+  const resolvedSkillPaths = deps.skillPaths ?? skillPaths();
 
   const binaryMissing = !deps.fileExists(deps.binaryPath);
-  const fileMissing = !skillPaths.some((p) => deps.fileExists(p));
+  const fileMissing = !resolvedSkillPaths.some((p) => deps.fileExists(p));
   // 文件在但被 disable 才算 missing 的前提：用户当前已处于 webbridge 模式
   // （否则 enabled=false 是 openclaw/chrome 模式的正常配置，模式切换会自动翻回 true）。
   const skillEnabled = deps.readSkillEnabled?.() ?? true;

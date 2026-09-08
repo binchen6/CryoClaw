@@ -15,6 +15,7 @@
  */
 import type { GatewayBrowserClient } from "../gateway.ts";
 import type { ConfiguredModel } from "../ui-types.ts";
+import { t } from "../i18n.ts";
 
 export interface ConfigSnapshot {
   hash: string;
@@ -260,25 +261,25 @@ export interface PatchConfigOptions {
 const BASE_HASH_CONFLICT_HINT = "config changed since last load";
 const ARRAY_REMOVE_GUARD_HINT = "would remove entries from array path";
 
-/** 内核错误 → 中文提示 */
+/** 内核错误 → 用户可见提示（i18n：错误文案直接展示在各设置 tab 的 message-box） */
 export function mapConfigPatchError(err: unknown): string {
   const message = err instanceof Error ? err.message : String(err ?? "");
   if (message.includes(BASE_HASH_CONFLICT_HINT)) {
-    return "配置已被其他进程修改，请重试";
+    return t("config.error.hashConflict");
   }
   if (message.includes(ARRAY_REMOVE_GUARD_HINT)) {
-    return "内核拒绝了数组删减操作（缺少 replacePaths 声明）";
+    return t("config.error.arrayRemoveGuard");
   }
   if (message.includes("base hash required") || message.includes("base hash unavailable")) {
-    return "配置快照失效，请刷新后重试";
+    return t("config.error.baseHash");
   }
   if (message.includes("JSON5") || message.includes("parse")) {
-    return "配置内容解析失败";
+    return t("config.error.parse");
   }
   if (message.includes("not connected") || message.includes("handshake")) {
-    return "gateway 连接已断开，请稍后重试";
+    return t("config.error.notConnected");
   }
-  return message || "配置写入失败";
+  return message || t("config.error.writeFailed");
 }
 
 interface PatchResponse {
@@ -312,7 +313,7 @@ export async function patchConfig(
   for (let attempt = 0; attempt < 2; attempt++) {
     const snapshot = await getConfigSnapshot(client, { force: attempt > 0 });
     if (!snapshot) {
-      return { ok: false, noop: false, requiresRestart: false, restartScheduled: false, error: "无法读取配置快照（gateway 不可达）" };
+      return { ok: false, noop: false, requiresRestart: false, restartScheduled: false, error: t("config.error.snapshotUnavailable") };
     }
     const draft = structuredClone(snapshot.config);
     try {
@@ -347,7 +348,7 @@ export async function patchConfig(
       return { ok: false, noop: false, requiresRestart: false, restartScheduled: false, error: mapConfigPatchError(err) };
     }
   }
-  return { ok: false, noop: false, requiresRestart: false, restartScheduled: false, error: "配置已被其他进程修改，请重试" };
+  return { ok: false, noop: false, requiresRestart: false, restartScheduled: false, error: t("config.error.hashConflict") };
 }
 
 /* ── 从配置快照派生已配置模型列表（替代 settings:get-configured-models IPC） ── */

@@ -11,6 +11,10 @@ import {
   getPath,
   REDACTED_SENTINEL,
 } from "./config.ts";
+import { setLocale, t } from "../i18n.ts";
+
+// 错误文案走 i18n，测试前钉住 locale 保证断言稳定
+setLocale("zh");
 
 function makeClient(handler: (method: string, params: any) => unknown) {
   const calls: Array<{ method: string; params: any }> = [];
@@ -239,7 +243,7 @@ async function testPatchConfigDoubleConflictFails() {
     (draft.agents as any).defaults.model.primary = "moonshot/kimi-k2.5";
   });
   assert.equal(result.ok, false);
-  assert.equal(result.error, "配置已被其他进程修改，请重试");
+  assert.equal(result.error, t("config.error.hashConflict"));
   invalidateConfigSnapshotCache();
 }
 
@@ -262,13 +266,13 @@ async function testPatchConfigArrayRemovalSendsReplacePaths() {
 function testMapConfigPatchError() {
   assert.equal(
     mapConfigPatchError(new Error("config changed since last load; re-run config.get and retry")),
-    "配置已被其他进程修改，请重试",
+    t("config.error.hashConflict"),
   );
   assert.equal(
     mapConfigPatchError(new Error("config.patch would remove entries from array path(s): x")),
-    "内核拒绝了数组删减操作（缺少 replacePaths 声明）",
+    t("config.error.arrayRemoveGuard"),
   );
-  assert.equal(mapConfigPatchError(new Error("gateway not connected")), "gateway 连接已断开，请稍后重试");
+  assert.equal(mapConfigPatchError(new Error("gateway not connected")), t("config.error.notConnected"));
   assert.equal(mapConfigPatchError(new Error("some other failure")), "some other failure");
 }
 
