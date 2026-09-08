@@ -25,6 +25,74 @@ import type {
 
 export const CDN_BASE_URL = "https://kimi-web-img.moonshot.cn/webbridge";
 
+// ═══════════════════════════════════════════════════════════════════
+// 供应链钉定（R65，对齐 kimi-search tgz sha256 钉定模型）：
+// CDN 只暴露 latest 别名（版本化 URL 是 NoSuchKey），latest 内容由上游随时
+// 可变——下载后立即执行的二进制必须有内容完整性校验。下表钉定当前 latest
+// 各平台产物的 sha256；上游换新内容后哈希不匹配 → 拒装（fail closed），
+// setup 流程按既有设计降级 openclaw 模式，应用不受阻。升级 webbridge =
+// 重新取哈希更新本表。KIMI_WEBBRIDGE_SKIP_PIN=1 为排障逃生门（勿日常使用）。
+// ═══════════════════════════════════════════════════════════════════
+export const WEBBRIDGE_BINARY_SHA256_PINS: Record<string, string> = {
+  "kimi-webbridge-windows-amd64.exe":
+    "2257775aa028a114d82d77d3d380e586f1fe002a0fb764f052152e416eb8a136",
+  "kimi-webbridge-darwin-arm64":
+    "30f676a00358304a68f4c0ba4ff04b3e400285c483f88a0f848848f50ac42310",
+  "kimi-webbridge-darwin-amd64":
+    "18b35c39977747d032963a87522e96d4dcf83c0078048e3295d45beb9dcde705",
+};
+
+export function resolveWebbridgeBinaryPin(filename: string): string | null {
+  return WEBBRIDGE_BINARY_SHA256_PINS[filename] ?? null;
+}
+
+/** 当前平台二进制文件名（不支持的平台返回 null，调用方跳过校验）。 */
+function safeResolveWebbridgePinFilename(): string | null {
+  try {
+    return resolvePlatformBinaryName(process.platform, process.arch);
+  } catch {
+    return null;
+  }
+}
+
+function sha256FileSync(filePath: string): string {
+  const { createHash } = require("crypto") as typeof import("crypto");
+  return createHash("sha256").update(fs.readFileSync(filePath)).digest("hex");
+}
+
+/**
+ * 校验已下载的 webbridge 二进制与钉定哈希一致。
+ * - expected 未给：按二进制文件名取内置 pin 表（生产路径）。
+ * - expected === ""：显式跳过（测试 fixture 注入口，两条路径语义一致）。
+ * - expected 非空：以调用方为准。
+ * - KIMI_WEBBRIDGE_SKIP_PIN=1：排障逃生门，直接放行。
+ * 失败抛错并删除落盘文件（fail closed，不留可执行物）。
+ */
+export function verifyWebbridgeBinarySha256(
+  binaryPath: string,
+  filename: string,
+  expected?: string,
+): void {
+  if (process.env.KIMI_WEBBRIDGE_SKIP_PIN === "1") return;
+  if (expected === "") return;
+  const pin = expected ?? resolveWebbridgeBinaryPin(filename);
+  if (!pin) {
+    fs.rmSync(binaryPath, { force: true });
+    throw new Error(
+      `webbridge 二进制缺少 sha256 钉定（${filename}）——拒绝执行未校验的下载产物；` +
+        `请更新 WEBBRIDGE_BINARY_SHA256_PINS 或设置 KIMI_WEBBRIDGE_SKIP_PIN=1 排障`,
+    );
+  }
+  const actual = sha256FileSync(binaryPath);
+  if (actual.toLowerCase() !== pin.toLowerCase()) {
+    fs.rmSync(binaryPath, { force: true });
+    throw new Error(
+      `webbridge 二进制 sha256 校验失败: ${filename}\n  expected ${pin}\n  actual   ${actual}` +
+        `\n（上游 latest 内容已变化或传输被污染；升级需更新钉定表）`,
+    );
+  }
+}
+
 export function buildDownloadUrl(version: string, filename: string): string {
   return `${CDN_BASE_URL}/${version}/releases/${filename}`;
 }
@@ -317,6 +385,8 @@ export interface InstallOptions {
   onProgress?: ProgressHandler;
   force?: boolean;
   maxRetries?: number;
+  /** 期望的 sha256（hex）。缺省 = 按文件名取内置钉定表；空串 = 跳过（测试 fixture）。 */
+  expectedSha256?: string;
 }
 
 export interface InstallResult {
@@ -402,13 +472,33 @@ export async function installWebbridge(
       cache.etag === head.etag &&
       fs.existsSync(binaryPath)
     ) {
-      return {
-        installed: false,
-        skipped: true,
-        version,
-        binaryPath,
-        etag: head.etag,
-      };
+      // 缓存命中也复验钉定（R65）：缓存可能由旧版本 App（无钉定校验时期）落盘，
+      // 或磁盘二进制被篡改；不匹配不作废整条缓存路径而是删除产物走重下，
+      // 由下载后的正式校验决断（重下仍不匹配才 fail closed 抛错）。
+      // expectedSha256 语义与下载路径一致：未给 = 内置 pin；空串 = 显式跳过。
+      const pin = options.expectedSha256 === undefined
+        ? resolveWebbridgeBinaryPin(filename)
+        : (options.expectedSha256 || null);
+      const cacheOk = (() => {
+        if (!pin) return true; // 无钉定条目：按下载后校验的策略处理，此处放行
+        try {
+          return sha256FileSync(binaryPath).toLowerCase() === pin.toLowerCase();
+        } catch {
+          return false;
+        }
+      })();
+      if (cacheOk) {
+        return {
+          installed: false,
+          skipped: true,
+          version,
+          binaryPath,
+          etag: head.etag,
+        };
+      }
+      // 缓存产物与钉定不符：作废缓存，继续走下载路径
+      fs.rmSync(binaryPath, { force: true });
+      writeCacheManifest(dataDir, { version: "", etag: null, lastModified: null, contentLength: null });
     }
   }
 
@@ -428,6 +518,10 @@ export async function installWebbridge(
     }
   }
   if (lastErr) throw lastErr;
+
+  // 供应链钉定：下载产物过 sha256 校验才允许落盘执行（fail closed，详见
+  // verifyWebbridgeBinarySha256 注释）。CDN 只暴露 latest，必须内容级校验。
+  verifyWebbridgeBinarySha256(binaryPath, filename, options.expectedSha256);
 
   if (process.platform !== "win32") {
     fs.chmodSync(binaryPath, 0o755);
@@ -554,6 +648,23 @@ export async function runWebbridgeSetupTask(
   if (deps.skipBinaryInstall) {
     binaryPath = deps.existingBinaryPath ?? null;
     log.info(`[webbridge-setup] 跳过 binary 下载（已就绪）: path=${binaryPath ?? "(unknown)"}`);
+    // repair 路径的既有二进制也过钉定校验（R65 复核 P2）：磁盘上的产物可能由
+    // 旧版本 App（无钉定时期）落盘或被篡改，执行前必须验哈希；不匹配按既有
+    // fail 链降级 openclaw 模式（不自动重下——repair 场景保持用户可见的确定性）。
+    if (binaryPath && fs.existsSync(binaryPath)) {
+      const pinFilename = safeResolveWebbridgePinFilename();
+      if (pinFilename) {
+        try {
+          verifyWebbridgeBinarySha256(binaryPath, pinFilename);
+        } catch (err) {
+          return fail(
+            "既有 webbridge 二进制 sha256 校验失败（可能被篡改或来自未校验时期）",
+            err instanceof Error ? err.message : String(err),
+            binaryPath,
+          );
+        }
+      }
+    }
   } else {
     try {
       const installResult = await deps.installer();

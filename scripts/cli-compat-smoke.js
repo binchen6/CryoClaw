@@ -43,16 +43,27 @@ if (!fs.existsSync(wrapper)) {
 
 // runner：通过 cmd.exe 执行 .cmd wrapper（与用户终端一致）；入口直跑用 node。
 // Node 出于 CVE-2024-27980 加固不允许直接 spawn .cmd，必须经 cmd.exe；
-// 引号策略：路径无空格用平铺拼接（cmd /c 原生稳定），有空格用 /s + 引号形态。
+// 引号策略：wrapper 路径无空格用平铺拼接（cmd /c 原生稳定），有空格用 /s + 引号形态。
+// 参数级引号（R64 遗留 P3）：含空白的 benign 参数（如带空格的路径）整体加引号
+// 防被 cmd 拆散；含 cmd 元字符（$ % ! & | < > ^ "）的参数必须原样透传——cmd /c
+// 对带这些字符的引号段会直接语法报错（实测 "we%25ird $x y" → 此时不应有 $x，
+// exit 255），是 cmd 固有限制，断言聚焦首词存活。
+function quoteArgForCmd(a) {
+  if (!/\s/.test(a) || /["&|<>^$%!]/.test(a)) return a;
+  return `"${a}"`;
+}
 function runCli(cmd, args, opts = {}) {
   const isCmd = /\.cmd$/i.test(cmd);
   let finalCmd, finalArgs;
   if (isCmd) {
     const quoted = /\s/.test(cmd);
     finalCmd = "cmd.exe";
+    // /s 契约（R64 复核修复）：命令串必须以引号开头且以引号结尾，cmd 只剥首尾
+    // 两个引号——旧形态缺外层包裹，经 libuv 转义后整条命令损坏
+    //（'"C:\...\tool.cmd" 不是内部或外部命令'，用户名含空格即触发）。
     finalArgs = quoted
-      ? ["/d", "/s", "/c", `"${cmd}" ${args.join(" ")}`]
-      : ["/d", "/c", `${cmd} ${args.join(" ")}`];
+      ? ["/d", "/s", "/c", `""${cmd}" ${args.map(quoteArgForCmd).join(" ")}"`]
+      : ["/d", "/c", `${cmd} ${args.map(quoteArgForCmd).join(" ")}`];
   } else if (opts.runtime === "electron-node") {
     finalCmd = nodeBin;
     finalArgs = [cmd, ...args];

@@ -1,6 +1,7 @@
 // webbridge.test.ts — 关键链路：CDN 下载 / setup 编排 / 状态聚合 / precheck
 import test from "node:test";
 import assert from "node:assert/strict";
+import { createHash } from "crypto";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
@@ -13,6 +14,7 @@ import {
   installWebbridgeSkill,
   readCacheManifest,
   runWebbridgeSetupTask,
+  verifyWebbridgeBinarySha256,
   writeCacheManifest,
   type WebbridgeSetupTaskDeps,
 } from "./webbridge";
@@ -50,12 +52,13 @@ test("路径 + URL：resolveWebbridgeDataDir → HOME/.kimi-webbridge；buildDow
 
 test("installWebbridge: 首次下载 → installed + chmod + manifest；ETag 命中 → skipped 不发 GET", async () => {
   const body = Buffer.alloc(2048, 0x42);
+  const bodySha = createHash("sha256").update(body).digest("hex");
   let getCalls = 0;
   const { url, close } = await startCdn(body, '"v1"', () => { getCalls++; });
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "wb-"));
   const bin = path.join(dir, "bin/kimi-webbridge");
   try {
-    const fresh = await installWebbridge({ dataDir: dir, binaryPath: bin, platform: "darwin", arch: "arm64", cdnBaseUrl: url });
+    const fresh = await installWebbridge({ dataDir: dir, binaryPath: bin, platform: "darwin", arch: "arm64", cdnBaseUrl: url, expectedSha256: bodySha });
     assert.equal(fresh.installed, true);
     assert.equal(fs.statSync(bin).size, body.length);
     if (process.platform !== "win32") assert.equal(fs.statSync(bin).mode & 0o777, 0o755);
@@ -63,11 +66,75 @@ test("installWebbridge: 首次下载 → installed + chmod + manifest；ETag 命
     assert.equal(getCalls, 1);
 
     writeCacheManifest(dir, { version: "latest", etag: '"v1"', lastModified: null, contentLength: null });
-    const cached = await installWebbridge({ dataDir: dir, binaryPath: bin, platform: "darwin", arch: "arm64", cdnBaseUrl: url });
+    const cached = await installWebbridge({ dataDir: dir, binaryPath: bin, platform: "darwin", arch: "arm64", cdnBaseUrl: url, expectedSha256: bodySha });
     assert.equal(cached.skipped, true);
     assert.equal(getCalls, 1, "ETag 命中不应再发 GET");
   } finally { await close(); fs.rmSync(dir, { recursive: true, force: true }); }
 });
+
+test("供应链钉定：哈希不匹配 → 拒装并删除落盘文件；未知文件名无钉 → fail closed；SKIP_PIN 逃生门放行", async () => {
+  const body = Buffer.alloc(64, 0x43);
+  const bodySha = createHash("sha256").update(body).digest("hex");
+  const { url, close } = await startCdn(body, '"v1"');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "wb-pin-"));
+  const mkBin = () => path.join(dir, `bin/kimi-webbridge-${Math.random().toString(16).slice(2, 8)}`);
+  try {
+    // 1) 哈希不匹配（内置 pin 表：darwin-arm64 有钉定，fixture 不匹配）
+    const bin1 = mkBin();
+    await assert.rejects(
+      installWebbridge({ dataDir: dir, binaryPath: bin1, platform: "darwin", arch: "arm64", cdnBaseUrl: url }),
+      /sha256 校验失败/,
+    );
+    assert.equal(fs.existsSync(bin1), false, "校验失败必须删除落盘产物");
+
+    // 2) verifyWebbridgeBinarySha256 直测：未知文件名 fail closed / 匹配通过 / SKIP_PIN 放行
+    const bin2 = mkBin();
+    fs.mkdirSync(path.dirname(bin2), { recursive: true });
+    fs.writeFileSync(bin2, body);
+    assert.throws(() => verifyWebbridgeBinarySha256(bin2, "totally-unknown-binary"), /缺少 sha256 钉定/);
+    assert.equal(fs.existsSync(bin2), false);
+    const bin3 = mkBin();
+    fs.writeFileSync(bin3, body);
+    verifyWebbridgeBinarySha256(bin3, "any-name", bodySha); // 显式期望 → 通过
+    const prev = process.env.KIMI_WEBBRIDGE_SKIP_PIN;
+    process.env.KIMI_WEBBRIDGE_SKIP_PIN = "1";
+    try {
+      const bin4 = mkBin();
+      fs.writeFileSync(bin4, body);
+      verifyWebbridgeBinarySha256(bin4, "totally-unknown-binary"); // 逃生门 → 放行
+      fs.rmSync(bin4, { force: true });
+    } finally {
+      if (prev === undefined) delete process.env.KIMI_WEBBRIDGE_SKIP_PIN; else process.env.KIMI_WEBBRIDGE_SKIP_PIN = prev;
+    }
+  } finally { await close(); fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("供应链钉定：缓存命中但磁盘哈希不符 → 作废缓存重下并恢复匹配", async () => {
+  const body = Buffer.alloc(128, 0x44);
+  const bodySha = createHash("sha256").update(body).digest("hex");
+  let getCalls = 0;
+  const { url, close } = await startCdn(body, '"v1"', () => { getCalls++; });
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "wb-cache-"));
+  const bin = path.join(dir, "bin/kimi-webbridge");
+  try {
+    // 首次正常安装（1 次 GET）
+    const fresh = await installWebbridge({ dataDir: dir, binaryPath: bin, platform: "darwin", arch: "arm64", cdnBaseUrl: url, expectedSha256: bodySha });
+    assert.equal(fresh.installed, true);
+    assert.equal(getCalls, 1);
+    // 篡改磁盘二进制（manifest 的 ETag 不变，模拟旧版落盘/被篡改场景）
+    fs.writeFileSync(bin, Buffer.alloc(128, 0x99));
+    // ETag 仍命中 → 复验发现不符 → 作废重下（再 1 次 GET）→ 下载后校验通过
+    const repaired = await installWebbridge({ dataDir: dir, binaryPath: bin, platform: "darwin", arch: "arm64", cdnBaseUrl: url, expectedSha256: bodySha });
+    assert.equal(repaired.installed, true, "缓存哈希不符必须走重下而非 skipped");
+    assert.equal(getCalls, 2);
+    assert.equal(fs.statSync(bin).size, body.length);
+    assert.equal(sha256File(bin), bodySha);
+  } finally { await close(); fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+function sha256File(p: string): string {
+  return createHash("sha256").update(fs.readFileSync(p)).digest("hex");
+}
 
 function setupDeps(over: Partial<WebbridgeSetupTaskDeps> = {}): WebbridgeSetupTaskDeps {
   return {

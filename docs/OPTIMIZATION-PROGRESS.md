@@ -10,7 +10,7 @@
 面向国内生态（Kimi / Moonshot / 飞书 / 企微 / 微信 / 钉钉 / QQ）。
 
 **当前状态**：
-- 重设计工程 **R1–R64 完成**（R64：三路全库审查修复批次 + UI 截图 QA 固定流程；R63：MCP 页重叠修复 + 真静默更新换装；R62：回底按钮修复 + 消息对齐及时性；R61：内核问答卡片；R60：设置页 MCP & Hooks + 四路全库审查；R59：在途 run 输出恢复；R58b/R58a/R58：对齐/用量/在线模型，详见工程记录），最新发版 **v2026.909.17**。
+- 重设计工程 **R1–R65 完成**（R65：WebBridge 供应链钉定 + CLI 冒烟修复；R64：三路全库审查修复批次 + UI 截图 QA 固定流程；R63：MCP 页重叠修复 + 真静默更新换装；R62：回底按钮修复 + 消息对齐及时性；R61：内核问答卡片；R60：设置页 MCP & Hooks + 四路全库审查；R59：在途 run 输出恢复；R58b/R58a/R58：对齐/用量/在线模型，详见工程记录），最新发版 **v2026.909.18**。
 - 内核 openclaw **2026.9.2**（版本 pin 在 package.json `cryoclaw.openclaw`；更新目标走 `kernel-channel.json` 策展渠道，minSupported 2026.7.0）；**Electron 43.4.0**（audit 0 漏洞）。
 - 测试基线 **1046 pass / 0 fail / 4 skipped**（vitest 159 + node 180 + chat-ui 630 + scripts 77；2026-09-09 实测，0 fail 为硬指标）。
 - 重复率 **1.18%**（94 clones，阈值 5%，`npm run dupcheck` 防回退）；视图 id 收敛为 6（chat/setup/settings/workspace/tasks/extensions）。
@@ -590,3 +590,9 @@
 - **验证**：全量 1046 pass / 0 fail（vitest 159 + node 180 + chat-ui 630 + scripts 77）；发版管线：silent-install E2E + 三 CDP 冒烟全绿（详见 R64 发版记录）。
 - **验证补记**：UI 截图 QA 31 张 0 重叠/0 异常/0 裸 key（en rail「中文残留」为视觉模型误报，CDP 确证 ?lang=en 全英文）。
 - **应用内静默换装实证（.16→.17，R63 修复的首个真实生效路径）**：装回 .16 → 应用内「更新→重启安装」→ app.log 确证「启动静默安装器」（新 /S 代码路径）→ 300s 窗口轮询 0 可见安装器窗口 → 安装位 .16→.17 完成换装；--force-run 自动拉起在参数向量级测试（.15→.16）已实证（换装完成即 4 进程自动运行）。用户投诉的「更新要手点安装器向导」双路验证修复。E2E 脚本教训：更新日志模态会挡住更新弹窗，自动化须先关「知道了」；弹窗按钮定位须精确匹配（宽松正则会点错按钮误报安装未触发）。
+
+### R65 · WebBridge 供应链钉定 + CLI 冒烟修复（完成，随 v2026.909.18 发版）
+
+- **webbridge sha256 钉定**（R64 审查遗留 P2，供应链）：CDN 只暴露 latest 别名（版本化 URL 实测 NoSuchKey）、内容上游随时可变，而 webbridge 二进制下载后即执行（install-skill）。取证后钉定当前 latest 三平台产物哈希（win-x64 2257775a…/darwin-arm64 30f676a0…/darwin-amd64 18b35c39…，全部 MZ/Mach-O 头校验），`verifyWebbridgeBinarySha256` 下载后校验、失败删产物 fail closed；缓存命中（ETag 跳过）路径复验——旧版本 App 无钉定时期落盘/被篡改的二进制作废重下；repair 路径（skipBinaryInstall）的既有二进制执行前同样过校验（复核 P2 修复），不匹配走既有 fail 链降级 openclaw 模式。升级 webbridge = 更新钉定表；KIMI_WEBBRIDGE_SKIP_PIN=1 排障逃生门。`expectedSha256: ""` 两路径统一为显式跳过（复核 P3）。
+- **cli-compat-smoke 修复**（R64 遗留 P3 + 复核新发现）：quoteArgForCmd 只对含空白且无 cmd 元字符的参数整体加引号（实测引号段含 $/% 会让 cmd 语法报错 exit 255，元字符参数维持原样透传是 cmd 固有限制）；/s 形态按契约补外层引号包裹（旧形态经 libuv 转义后整条命令损坏，用户名含空格的机器 smoke 整体失败）。实测 13/13 断言通过（此前 worktrees --help 偶发超时为瞬时抖动）。
+- **验证**：聚焦复核（审查代理）发现 1 P2 + 3 P3 全部修复（repair 绕过、空串语义、缓存复验零覆盖、/s 死分支）；全量 1047 pass / 0 fail（vitest 159 + node 182 + chat-ui 630 + scripts 77，新增 webbridge 钉定/缓存复验 2 测）；发版管线 silent-install E2E + 三 CDP 冒烟全绿。
