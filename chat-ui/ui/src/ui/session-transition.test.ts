@@ -118,10 +118,33 @@ async function testClearSessionDraftSnapshot() {
   assert.deepEqual(ctx.host.chatAttachments, []);
 }
 
+// LRU 上限（R64 审查 P3）：快照 Map 上限 20 条，超出后最旧条目被逐出，
+// 防大附件 base64 跨大量会话线性累积驻留内存。
+async function testDraftSnapshotLruEviction() {
+  const ctx = makeHost();
+  // session-a 持有可识别草稿 s0-draft；切到 session-b（其草稿 draft-1 也会入快照），
+  // 再经 s1..s20 共 20 次切换写入 20 个快照——Map 上限 20，最早的 session-a 被逐出。
+  ctx.host.chatMessage = "s0-draft";
+  applySessionKeyTransition(ctx.host, "session-b");
+  for (let i = 1; i <= 20; i++) {
+    ctx.host.chatMessage = `draft-${i}`;
+    applySessionKeyTransition(ctx.host, `s${i}`);
+  }
+  // 窗口内最旧的是 session-b（draft-1），s1 存的是 draft-2；session-a 已被逐出。
+  ctx.host.chatMessage = "probe";
+  applySessionKeyTransition(ctx.host, "s1");
+  assert.equal(ctx.host.chatMessage, "draft-2", "窗口内条目 s1 应仍可恢复");
+  ctx.host.chatMessage = "probe2";
+  applySessionKeyTransition(ctx.host, "session-a");
+  assert.equal(ctx.host.chatMessage, "", "超出 LRU 上限的最旧条目 session-a 应已被逐出");
+  assert.deepEqual(ctx.host.chatAttachments, []);
+}
+
 async function main() {
   await testApplySessionKeyTransitionResetsComposerState();
   await testDraftSnapshotSavedAndRestored();
   await testClearSessionDraftSnapshot();
+  await testDraftSnapshotLruEviction();
   console.log("session transition tests passed");
 }
 
