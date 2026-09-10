@@ -34,12 +34,14 @@ export const CDN_BASE_URL = "https://kimi-web-img.moonshot.cn/webbridge";
 // 重新取哈希更新本表。KIMI_WEBBRIDGE_SKIP_PIN=1 为排障逃生门（勿日常使用）。
 // ═══════════════════════════════════════════════════════════════════
 export const WEBBRIDGE_BINARY_SHA256_PINS: Record<string, string> = {
+  // 2026-09-10 上游 latest 整批换新（CDN Last-Modified 2026-09-10 09:46 GMT，
+  // 三平台同批替换、curl+Node 双通道下载哈希一致），重新取证更新本表
   "kimi-webbridge-windows-amd64.exe":
-    "2257775aa028a114d82d77d3d380e586f1fe002a0fb764f052152e416eb8a136",
+    "75f7f1b00af268b0f56ab03d0ef63331f6ab1159827a6468c5b551cbf096dcd0",
   "kimi-webbridge-darwin-arm64":
-    "30f676a00358304a68f4c0ba4ff04b3e400285c483f88a0f848848f50ac42310",
+    "80d92c2c1f039b60368223e6dcb2c4b2fe3e139549af13784a8074fb1bc2414a",
   "kimi-webbridge-darwin-amd64":
-    "18b35c39977747d032963a87522e96d4dcf83c0078048e3295d45beb9dcde705",
+    "9f25e2501c56fc9205da8059d8207b7bde0360a11bdafa626d34b68096b49257",
 };
 
 export function resolveWebbridgeBinaryPin(filename: string): string | null {
@@ -644,28 +646,33 @@ export async function runWebbridgeSetupTask(
   };
 
   // Step 1：下载 webbridge 二进制（precheck 已就绪时跳过）
-  let binaryPath: string | null;
+  let binaryPath: string | null = null;
+  let needDownload = !deps.skipBinaryInstall;
   if (deps.skipBinaryInstall) {
     binaryPath = deps.existingBinaryPath ?? null;
     log.info(`[webbridge-setup] 跳过 binary 下载（已就绪）: path=${binaryPath ?? "(unknown)"}`);
     // repair 路径的既有二进制也过钉定校验（R65 复核 P2）：磁盘上的产物可能由
-    // 旧版本 App（无钉定时期）落盘或被篡改，执行前必须验哈希；不匹配按既有
-    // fail 链降级 openclaw 模式（不自动重下——repair 场景保持用户可见的确定性）。
+    // 旧版本 App（无钉定时期）落盘或被篡改，执行前必须验哈希。不匹配不作 fail——
+    // 上游换新后钉定表更新、而磁盘仍是旧产物是正常场景（R66 实测），此时作废产物
+    // 转重下，由下载后校验决断；一次修复动作内收敛，避免用户点两次才成功。
     if (binaryPath && fs.existsSync(binaryPath)) {
       const pinFilename = safeResolveWebbridgePinFilename();
       if (pinFilename) {
         try {
           verifyWebbridgeBinarySha256(binaryPath, pinFilename);
         } catch (err) {
-          return fail(
-            "既有 webbridge 二进制 sha256 校验失败（可能被篡改或来自未校验时期）",
-            err instanceof Error ? err.message : String(err),
-            binaryPath,
+          log.info(
+            `[webbridge-setup] 既有二进制校验失败，转为重新下载: ${
+              err instanceof Error ? err.message : String(err)
+            }`,
           );
+          binaryPath = null;
+          needDownload = true;
         }
       }
     }
-  } else {
+  }
+  if (needDownload) {
     try {
       const installResult = await deps.installer();
       binaryPath = installResult.binaryPath;

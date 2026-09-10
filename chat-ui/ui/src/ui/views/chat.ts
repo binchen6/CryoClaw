@@ -942,6 +942,10 @@ export function renderChat(props: ChatProps) {
   const { isBusy, showStop } = computeStopButtonVisible(props);
   const activeSession = props.sessions?.sessions?.find((row) => row.key === props.sessionKey);
   const reasoningLevel = activeSession?.reasoningLevel ?? "off";
+  // 模型选择器按会话取值：内核 per-session 持久化 model（sessions.patch），
+  // 切会话后选择器必须反映该会话真实模型，否则显示上一个会话的模型而实际按本会话跑
+  // （thinkingLevel 走 activeSession 同源，模型此前漏了）。会话无显式 model → 用全局默认。
+  const modelSelectValue = activeSession?.model || props.currentModel || "";
   const thinkingActive = Boolean((props.thinkingToggleLevel && props.thinkingToggleLevel !== "off") || (props.thinkingLevel && props.thinkingLevel !== "off"));
   const showReasoning = Boolean(props.showThinking && (reasoningLevel !== "off" || thinkingActive));
   const assistantIdentity = {
@@ -1427,14 +1431,14 @@ export function renderChat(props: ChatProps) {
               ? html`
                 <select
                   class="chat-compose__model-select"
-                  .value=${props.currentModel ?? ""}
+                  .value=${modelSelectValue}
                   @change=${(e: Event) => {
                     const val = (e.target as HTMLSelectElement).value;
                     props.onModelChange?.(val);
                   }}
                   ?disabled=${!props.connected}
                 >
-                  ${renderConfiguredModelOptions(props.configuredModels, loadModelOrg(), props.currentModel ?? undefined, true)}
+                  ${renderConfiguredModelOptions(props.configuredModels, loadModelOrg(), modelSelectValue || undefined, true)}
                 </select>
               `
               : props.configuredModels && props.configuredModels.length === 1

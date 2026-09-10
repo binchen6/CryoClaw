@@ -309,6 +309,10 @@ export function registerWebbridgeIpc(opts: SettingsIpcOptions): void {
       //   2) 三组件都健康但 presentInChrome=false（用户没在浏览器点"启用扩展"）→ pill 仍显示
       //      —— External JSON 写完只是"我们这边装好了"，必须等用户在浏览器里启用才算真正连接
       const extId = readWebbridgeExtensionId();
+      // 单一默认浏览器策略：先解析默认浏览器，precheck 与后续状态查询都只对默认浏览器
+      // 查进程（与 settings:webbridge-status 同策略，避免 Win 下 tasklist 被 Defender
+      // 实时扫描拖慢、每 30s pill 轮询多花 2 次进程枚举）。
+      const def = await getDefaultBrowser();
       const pre = await getWebbridgePrecheck({
         binaryPath: resolveWebbridgeBinaryPath(),
         extensionId: extId,
@@ -316,8 +320,9 @@ export function registerWebbridgeIpc(opts: SettingsIpcOptions): void {
         readExtensionStates: (id) =>
           getExtensionStates(specFromExtId(id), {
             processExec: DEFAULT_PROCESS_EXEC,
+            processCheckBrowserId: def?.target.id,
           }),
-        getDefaultBrowser,
+        getDefaultBrowser: async () => def,
         readSkillEnabled: readKimiWebbridgeSkillEnabled,
         currentBrowserMode: getCurrentBrowserMode(),
       });
@@ -328,19 +333,19 @@ export function registerWebbridgeIpc(opts: SettingsIpcOptions): void {
         };
       }
       // 三组件健康——再看用户是否真的启用了扩展
-      const def = pre.defaultBrowser;
-      if (!def || !extId) {
-        return { success: true, data: { visible: false, defaultBrowser: def } };
+      const defBrowser = pre.defaultBrowser;
+      if (!defBrowser || !extId) {
+        return { success: true, data: { visible: false, defaultBrowser: defBrowser } };
       }
       const states = await getExtensionStates(specFromExtId(extId), {
         processExec: DEFAULT_PROCESS_EXEC,
-        processCheckBrowserId: def.id,
+        processCheckBrowserId: defBrowser.id,
       });
-      const enabled = states.find((s) => s.browserId === def.id)
+      const enabled = states.find((s) => s.browserId === defBrowser.id)
         ?.presentInChrome === true;
       return {
         success: true,
-        data: { visible: !enabled, defaultBrowser: def },
+        data: { visible: !enabled, defaultBrowser: defBrowser },
       };
     } catch (err: any) {
       return {

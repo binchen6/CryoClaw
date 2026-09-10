@@ -18,6 +18,7 @@ import * as ipc from "../../data/ipc-bridge.ts";
 import "../../components/toggle-switch.ts";
 import "../../components/message-box.ts";
 import { getConfigSnapshot, getCachedConfigSnapshot } from "../../controllers/config.ts";
+import { isWebbridgePinStaleError } from "../../webbridge-error.ts";
 import { runConfigPatch } from "./tab-patch.ts";
 import { extractAdvancedView, applyAdvancedSave } from "./tab-channels.lib.ts";
 
@@ -83,6 +84,9 @@ function createAdvancedState() {
     error: null as string | null,
     successMsg: null as string | null,
     initialized: false,
+    // 初始化拉取失败标记：为 true 时禁止保存——否则 s 仍是默认值（browserMode=openclaw、
+    // launchAtLogin=false、registry 空），保存会把用户真实配置静默覆写成默认。
+    loadFailed: false,
     // webbridge precheck 进行中标志，避免切换抖动
     precheckInflight: false,
     // 是否需要在 radio 下方显示「⚠ WebBridge 需要修复」链接
@@ -129,7 +133,13 @@ async function init(state: AppViewState) {
     if (s.browserMode === "webbridge") {
       void refreshWebbridgeHealth(state);
     }
-  } catch {}
+  } catch (e: any) {
+    // 拉取失败时 state 仍是默认值；禁止保存（见 loadFailed 注释）并把错误显示出来。
+    // 保持 initialized=true 避免每次渲染重试打爆 IPC；离开设置页会 resetAdvancedState()，
+    // 下次进入重新尝试。
+    s.loadFailed = true;
+    s.error = tWithDetail("settings.error.loadFailed", e?.message);
+  }
 }
 
 async function toggleCli(state: AppViewState, install: boolean) {
@@ -324,7 +334,9 @@ async function onRepairConfirm(state: AppViewState) {
       s.repairModal = {
         ...m,
         saving: false,
-        message: t("settings.advanced.wbRepairFailed") + (res.message ? ": " + res.message : ""),
+        message: isWebbridgePinStaleError(res.message)
+          ? t("settings.advanced.wbRepairPinStale")
+          : t("settings.advanced.wbRepairFailed") + (res.message ? ": " + res.message : ""),
         messageKind: "error",
       };
     }
@@ -341,6 +353,13 @@ async function onRepairConfirm(state: AppViewState) {
 }
 
 async function handleSave(state: AppViewState) {
+  // 初始化失败时 state 是默认值，保存会把 browserMode/launchAtLogin/registry 覆写成默认
+  // （用户只改了执行模式却把浏览器模式打回 openclaw）。拦下并给出可重试的错误提示。
+  if (s.loadFailed) {
+    s.error = t("settings.error.loadFailed");
+    state.requestUpdate();
+    return;
+  }
   s.saving = true; s.error = null; s.successMsg = null; s.hint = null; state.requestUpdate();
   // 1) openclaw.json 侧（热应用模式/执行权限/沙箱/iMessage）走 config.patch
   const patched = await runConfigPatch(state, (draft) => {
@@ -617,7 +636,7 @@ export function renderTabAdvanced(state: AppViewState) {
       ${s.hint ? html`<div class="oc-settings__hint oc-mt-4">${s.hint}</div>` : nothing}
 
       <div class="oc-settings__btn-row">
-        <button class="oc-settings__btn oc-settings__btn--primary" ?disabled=${s.saving} @click=${() => handleSave(state)}>${t("settings.save")}</button>
+        <button class="oc-settings__btn oc-settings__btn--primary" ?disabled=${s.saving || s.loadFailed} @click=${() => handleSave(state)}>${t("settings.save")}</button>
       </div>
 
       ${renderRepairModal(state)}

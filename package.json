@@ -1,6 +1,6 @@
 {
   "name": "cryoclaw",
-  "version": "2026.909.18",
+  "version": "2026.910.0",
   "private": true,
   "description": "CryoClaw desktop app — cross-platform Electron shell for openclaw",
   "main": "dist/main.js",
@@ -57,6 +57,7 @@
   },
   "cryoclaw": {
     "openclaw": "2026.9.2",
+    "clawhub": "0.23.3",
     "node": "22.23.2",
     "dingtalkConnector": "0.8.25",
     "weixin": "2.4.8",

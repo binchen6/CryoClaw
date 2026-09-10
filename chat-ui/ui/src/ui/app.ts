@@ -63,6 +63,7 @@ import { getConfigSnapshot, deriveConfiguredModels, patchConfig } from "./contro
 import { getCachedGatewayModelEntries } from "./controllers/models.ts";
 import { extractAdvancedView, applyAdvancedSave } from "./views/settings/tab-channels.lib.ts";
 import { markSessionMeterDirty } from "./context-meter.ts";
+import { isWebbridgePinStaleError } from "./webbridge-error.ts";
 import { resolveThinkingCapabilities } from "./chat/thinking-levels.ts";
 import { getLocale, t, tWithDetail } from "./i18n.ts";
 import { loadSettings, type UiSettings } from "./storage.ts";
@@ -339,6 +340,8 @@ export class OpenClawApp extends LitElement {
   lastError: string | null = null;
   private toolStreamSyncTimer: number | null = null;
   private sidebarCloseTimer: number | null = null;
+  // R66：问答卡倒计时/过期回收的秒级 ticker（仅在存在 pending 且未过期的问题时运行）
+  private questionTicker: number | null = null;
 
   assistantName = injectedAssistantIdentity.name;
   assistantAvatar = injectedAssistantIdentity.avatar;
@@ -754,6 +757,10 @@ export class OpenClawApp extends LitElement {
       clearTimeout(this.kernelAutoUpgradeDoneTimer);
       this.kernelAutoUpgradeDoneTimer = null;
     }
+    if (this.questionTicker !== null) {
+      window.clearInterval(this.questionTicker);
+      this.questionTicker = null;
+    }
     handleDisconnected(this as unknown as Parameters<typeof handleDisconnected>[0]);
     super.disconnectedCallback();
   }
@@ -768,6 +775,22 @@ export class OpenClawApp extends LitElement {
     // updateThinkingCapabilities 只写 thinkingLevels/isBinaryThinking，不会再改这两个 watched 字段）
     if (changed.has("sessionKey") || changed.has("chatThinkingLevel")) {
       this.updateThinkingCapabilities();
+    }
+    this.syncQuestionTicker();
+  }
+
+  // 问答卡倒计时/过期回收：渲染层按 Date.now() 计算剩余秒数、并过滤已过期项，
+  // 但代理等待回答时没有任何流式事件驱动重渲染，秒数会一直停在旧值、过期卡片也
+  // 不消失。存在 pending 且未过期的问题时按秒驱动 requestUpdate；全部过期/清空后自停。
+  private syncQuestionTicker() {
+    const active = this.questionPrompts.some(
+      (p) => p.status === "pending" && p.expiresAtMs > Date.now(),
+    );
+    if (active && this.questionTicker === null) {
+      this.questionTicker = window.setInterval(() => this.requestUpdate(), 1000);
+    } else if (!active && this.questionTicker !== null) {
+      window.clearInterval(this.questionTicker);
+      this.questionTicker = null;
     }
   }
 
@@ -869,7 +892,13 @@ export class OpenClawApp extends LitElement {
         } else if (r?.code === "DEFAULT_BROWSER_UNSUPPORTED") {
           this.webbridgePillModal = { kind: "unsupported" };
         } else {
-          this.webbridgePillModal = { kind: "failed", message: r?.message };
+          this.webbridgePillModal = {
+            kind: "failed",
+            // 钉定校验失败对用户不可操作（消息含内部哈希/开发逃生门）→ 显示升级提示
+            message: isWebbridgePinStaleError(r?.message)
+              ? t("settings.advanced.wbRepairPinStale")
+              : r?.message,
+          };
         }
       }
       // 修复后重查一次 needs-repair——若扩展真启用了 pill 自然消失
@@ -1036,6 +1065,7 @@ export class OpenClawApp extends LitElement {
 
   // 切换当前 session 的模型（通过 sessions.patch RPC）
   async handleModelChange(modelKey: string) {
+    const previousModel = this.currentModel;
     this.currentModel = modelKey;
     if (!this.client || !this.connected) {
       return;
@@ -1056,7 +1086,11 @@ export class OpenClawApp extends LitElement {
         model: modelKey,
       });
     } catch (err) {
+      // patch 失败：回滚展示值——否则选择器显示内核并未接受的模型，下条消息按旧模型跑
+      // 而 UI 声称已切换。会话行仍是旧 model，选择器（modelSelectValue）随之复位。
+      this.currentModel = previousModel;
       this.lastError = String(err);
+      this.requestUpdate();
     }
     this.updateThinkingCapabilities();
   }

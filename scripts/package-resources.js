@@ -1113,7 +1113,15 @@ function assertNativeDepsMatchTarget(nmDir, platform, arch) {
 function installDependencies(opts, gatewayDir) {
   const stampPath = path.join(gatewayDir, ".gateway-stamp");
   const sourceInfo = getPackageSource();
-  const targetStamp = `${opts.platform}-${opts.arch}|${sourceInfo.stampSource}`;
+  // clawhub 同样钉定（R66）：此前是唯一写死 "latest" 的发行依赖——产物随构建时机
+  // 漂移，且不进 stamp（缓存命中会静默复用任意版本）。与 openclaw/插件同一阶梯：
+  // env 覆盖 → package.json cryoclaw.clawhub → npm latest（带警告）。
+  const clawhubInfo = resolveBundledPluginSource({
+    packageName: "clawhub",
+    envKey: "CRYOCLAW_CLAWHUB_PACKAGE_SOURCE",
+    pkgJsonKey: "clawhub",
+  });
+  const targetStamp = `${opts.platform}-${opts.arch}|${sourceInfo.stampSource}|${clawhubInfo.stampSource}`;
 
   // 增量检测：stamp 匹配 + entry.js 存在 → 跳过安装
   const installedEntry = path.join(gatewayDir, "node_modules", "openclaw", "dist", "entry.js");
@@ -1152,7 +1160,7 @@ function installDependencies(opts, gatewayDir) {
   const pkg = {
     dependencies: {
       openclaw: source,
-      clawhub: "latest",
+      clawhub: clawhubInfo.source,
     },
   };
   fs.writeFileSync(path.join(gatewayDir, "package.json"), JSON.stringify(pkg, null, 2));

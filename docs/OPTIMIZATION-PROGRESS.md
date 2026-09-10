@@ -10,10 +10,10 @@
 面向国内生态（Kimi / Moonshot / 飞书 / 企微 / 微信 / 钉钉 / QQ）。
 
 **当前状态**：
-- 重设计工程 **R1–R65 完成**（R65：WebBridge 供应链钉定 + CLI 冒烟修复；R64：三路全库审查修复批次 + UI 截图 QA 固定流程；R63：MCP 页重叠修复 + 真静默更新换装；R62：回底按钮修复 + 消息对齐及时性；R61：内核问答卡片；R60：设置页 MCP & Hooks + 四路全库审查；R59：在途 run 输出恢复；R58b/R58a/R58：对齐/用量/在线模型，详见工程记录），最新发版 **v2026.909.18**。
+- 重设计工程 **R1–R66 完成**（R66：WebBridge 钉定表随上游轮换 + 功能/页面审查 17 项修复；R65：WebBridge 供应链钉定 + CLI 冒烟修复；R64：三路全库审查修复批次 + UI 截图 QA 固定流程；R63：MCP 页重叠修复 + 真静默更新换装；R62：回底按钮修复 + 消息对齐及时性；R61：内核问答卡片；R60：设置页 MCP & Hooks + 四路全库审查；R59：在途 run 输出恢复；R58b/R58a/R58：对齐/用量/在线模型，详见工程记录），最新发版 **v2026.910.0**。
 - 内核 openclaw **2026.9.2**（版本 pin 在 package.json `cryoclaw.openclaw`；更新目标走 `kernel-channel.json` 策展渠道，minSupported 2026.7.0）；**Electron 43.4.0**（audit 0 漏洞）。
-- 测试基线 **1046 pass / 0 fail / 4 skipped**（vitest 159 + node 180 + chat-ui 630 + scripts 77；2026-09-09 实测，0 fail 为硬指标）。
-- 重复率 **1.18%**（94 clones，阈值 5%，`npm run dupcheck` 防回退）；视图 id 收敛为 6（chat/setup/settings/workspace/tasks/extensions）。
+- 测试基线 **1060 pass / 0 fail / 4 skipped**（vitest 159 + node 184 + chat-ui 640 + scripts 77；2026-09-10 实测，0 fail 为硬指标）。
+- 重复率 **1.17%**（96 clones，阈值 5%，`npm run dupcheck` 防回退）；视图 id 收敛为 6（chat/setup/settings/workspace/tasks/extensions）。
 - 开源：GitHub `binchen6/CryoClaw`（AGPL-3.0-only，干净历史）；发版走本地 `dist:win` + `gh release`；CI `tests.yml` 每次 push/PR 全量回归。
 
 **常用命令**：
@@ -38,7 +38,7 @@
 | `CLAUDE.md` / `AGENTS.md`（symlink） | 项目硬规范 |
 | `docs/architecture.md` | 架构分层说明 |
 | `docs/ipc-api.md` | 主进程 IPC 通道清单 |
-| `docs/gotchas.md` | 90 条已验证坑（改代码前搜一遍） |
+| `docs/gotchas.md` | 96 条已验证坑（改代码前搜一遍） |
 | `docs/design-guidelines-zh/en.md` | 2026.9 R2b 设计规范（中性灰 + CryoBlue 混色 token + CryoIcons 图标规范） |
 
 ## 🗺 关键路径地图（改动前必读）
@@ -59,7 +59,7 @@
 | 样式 hub | `chat-ui/ui/src/styles.css` | **只做 @import，层叠顺序敏感**：design-tokens → tokens-ext → base → **primitives** → **utilities** → chat/components/panels/sidebar/skills/compose/workspace/cron/misc/panel/plan →（末尾）settings → setup |
 | 设计 token | `shared/design-tokens.css` + `styles/tokens-ext.css` | 中性灰 + CryoBlue 混色；兼容别名 --accent/--bg |
 | 契约组件 | `styles/primitives.css` | cc-btn/cc-input/cc-card/cc-dialog/cc-tag/cc-menu/cc-alert/cc-skeleton/cc-table/cc-tabs/cc-chip |
-| 进度/坑 | `docs/OPTIMIZATION-PROGRESS.md` + `docs/gotchas.md` | 本文件 + 90 条已验证坑（gotchas 为准） |
+| 进度/坑 | `docs/OPTIMIZATION-PROGRESS.md` + `docs/gotchas.md` | 本文件 + 96 条已验证坑（gotchas 为准） |
 
 ## ⚙️ 运行机制既有事实（勿重复调查）
 
@@ -597,3 +597,15 @@
 - **cli-compat-smoke 修复**（R64 遗留 P3 + 复核新发现）：quoteArgForCmd 只对含空白且无 cmd 元字符的参数整体加引号（实测引号段含 $/% 会让 cmd 语法报错 exit 255，元字符参数维持原样透传是 cmd 固有限制）；/s 形态按契约补外层引号包裹（旧形态经 libuv 转义后整条命令损坏，用户名含空格的机器 smoke 整体失败）。实测 13/13 断言通过（此前 worktrees --help 偶发超时为瞬时抖动）。
 - **验证**：聚焦复核（审查代理）发现 1 P2 + 3 P3 全部修复（repair 绕过、空串语义、缓存复验零覆盖、/s 死分支）；全量 1047 pass / 0 fail（vitest 159 + node 182 + chat-ui 630 + scripts 77，新增 webbridge 钉定/缓存复验 2 测）；发版管线 silent-install E2E + 三 CDP 冒烟全绿。
 - **收敛审查（R65 后增量）**：增量审查代理确认 R63/R64/R65 三轮 commit 无回归、volcengine-cdn-refresh 挂起项确证不在任何发版链（纯手动运维工具）、TODO/FIXME 扫描无未完成安全工作；唯一 P3（草稿快照 LRU 无直接单测）已补 testDraftSnapshotLruEviction（20 条上限、最旧逐出断言）。审查循环至此收敛——无新发现，任务闭环。
+
+### R66 · WebBridge 钉定表随上游轮换 + 功能/页面审查修复（完成，随 v2026.910.0 发版）
+
+- **用户报告的修复失败定位与处置**：高级设置「修复 WebBridge」报 `sha256 校验失败: expected 2257775a… actual 75f7f1b0…`。取证：上游 CDN 于 2026-09-10 09:46 GMT 换新全部三平台产物（win 2257775a→75f7f1b0、darwin-arm64 30f676a0→80d92c2c、darwin-amd64 18b35c39→9f25e250）；curl 与 Node https 两次独立下载哈希完全一致（排除传输污染），三平台同批替换（协同发版而非单文件篡改）→ 判定为上游正常换新，按 R65 定下的升级路径重新取证更新钉定表。
+- **修复路径一次点击收敛**：此前 repair 路径遇到「钉定表已更新、本机仍是旧产物」会直接 fail（删产物 + 抛错），用户要点两次才成功；现改为作废旧产物 → 自动重下 → 由下载后校验决断（仍 fail closed），一次修复动作内收敛。repair 且重下失败时保持原有确定性降级语义（不写 config，由调用方决定）。
+- **面向用户的错误文案**：钉定失败原文含内部哈希与 `KIMI_WEBBRIDGE_SKIP_PIN` 逃生门说明，终端用户无法操作；UI 两处（设置-高级修复弹窗、侧栏 pill 修复弹窗）改为「请升级 CryoClaw 后重试」，技术细节保留在日志。
+- **三路审查（主进程 / chat-ui / scripts+发版物料）**：17 项发现全部核实并修复——
+  - 主进程：Windows 全局 npm 卸载静默失效（`execFile` 直调 `npm.cmd` 在 Node ≥18.20 必抛 EINVAL，错误被当"未安装正常"记 info、调用方又忽略返回值）→ 改经 `cmd.exe /d /s /c` 调用并让 setup 感知失败；webbridge repair 校验失败自动重下；extension-mirror 直写 openclaw.json 后补 `syncOpenClawStateAfterWrite`（防 .bak 回退抹掉 plugins.allow → 外部通道能登录但永远不回消息）；Kimi OAuth 轮询容忍瞬时网络错误（连续 5 次才放弃，不再单次抖动中断登录）；webbridge needs-repair 复用默认浏览器解析（每 30s pill 轮询省 2 次 tasklist 进程枚举）；webbridge 测试 HOME/USERPROFILE 顺序与实现对齐。
+  - chat-ui：模型选择器按会话显示真实模型（此前切会话后仍显示上一会话选的模型，内核却按本会话模型运行）+ patch 失败回滚；设置-高级页加载失败不再静默用默认值（浏览器模式/开机自启/ClawHub 源）覆写用户真实配置（loadFailed 禁保存 + 报错）；钉定失败文案；定时任务切换调度类型时归一化时间字段（修"显示有效时间却报无效"）；技能页计数与列表过滤口径统一；问答卡倒计时秒级 tick + 过期卡片自动回收。
+  - 构建/发版物料：clawhub 依赖钉定 0.23.3（此前是唯一 "latest" 依赖，发行产物随构建时机漂移且不进缓存戳）；CI 脚本测试清单改为动态生成（原清单引用已删除的测试文件、且漏跑 5 个测试文件）+ `npm ci` + 依赖缓存 + Node 22.23.2 与发行运行时对齐；官网第三处版本徽章（terminal 标题）纳入自动刷新。
+- **发版门禁工具两处假阳性修复**（本轮实际两次误拦发版）：① 裸 i18n key 扫描扫全 body 文本 → 命中模型思考块「…triggers additional tasks.Let me…」（内容污染；且 token 由相邻文本节点拼接而成，逐节点搜索反而定位不到）→ 抽 `scripts/lib/bare-i18n-scan.js` 只扫 UI chrome；② 重叠检测未考虑祖先裁剪 → 折叠思考块（height:0 + overflow:hidden）内不可见文本被算成"压住输入框" → 抽 `scripts/lib/overlap-scan.js` 按**可见矩形**（与所有裁剪祖先求交）判定。两者均做阳性/阴性双向对照（chrome 假键被抓到、内容容器假键排除；注入可见重叠被抓到、裁剪内容不误报），三个冒烟脚本共用，重复实现收敛。
+- **验证**：全量 **1060 pass / 0 fail / 4 skipped**（vitest 159 + node 184 + chat-ui 640 + scripts 77；新增 webbridge repair 重下 2 测、cron 归一化 5 测、技能过滤 3 测、钉定错误判定 2 测）；dupcheck 1.17%；silent-install E2E 静默装 2026.910.0 通过；**发行产物内容断言**：安装位 app.asar 含新钉定且旧钉定 0 命中、gateway.asar 内 openclaw 2026.9.2 + clawhub 0.23.3；gateway `GET /` 200；三 CDP 冒烟全绿（layout 24 场景 0 issue/0 裸键/0 异常、settings 14 tab 0 重叠/0 裸键、UI 截图 QA 31 张 0 重叠/0 异常/0 裸键）。

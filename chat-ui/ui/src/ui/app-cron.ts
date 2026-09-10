@@ -11,6 +11,7 @@ import {
   runCronJob,
   addCronJob,
   updateCronJob,
+  normalizeScheduleKindChange,
 } from "./controllers/cron.ts";
 import { DEFAULT_CRON_FORM } from "./app-defaults.ts";
 import { handleSessionChange } from "./app-session-actions.ts";
@@ -94,7 +95,9 @@ export function renderCronView(state: AppViewState, opts?: { onOpenRunsTab?: () 
       state.requestUpdate();
     },
     onFormChange: (patch) => {
-      state.cronForm = { ...state.cronForm, ...patch };
+      // 切换调度类型时归一化 cronExpr 语义（daily="HH:MM" ↔ cron 表达式）；
+      // 见 controllers/cron.ts normalizeScheduleKindChange 的说明与用例。
+      state.cronForm = normalizeScheduleKindChange(state.cronForm, patch);
       state.requestUpdate();
     },
     onAddJob: () => {

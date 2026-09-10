@@ -42,7 +42,11 @@ function startCdn(body: Buffer, etag: string, onGet?: () => void): Promise<{ url
 }
 
 test("路径 + URL：resolveWebbridgeDataDir → HOME/.kimi-webbridge；buildDownloadUrl 拼 CDN", () => {
-  const home = process.env.HOME || process.env.USERPROFILE || "";
+  // 与实现同序（Win 下 USERPROFILE 优先）——MSYS/Git Bash 可能注入 POSIX 形态 HOME，
+  // 顺序不一致时开发机上会算出与实现不同的根。
+  const home =
+    (process.platform === "win32" ? process.env.USERPROFILE : process.env.HOME) ||
+    os.homedir();
   assert.equal(resolveWebbridgeDataDir(), path.join(home, ".kimi-webbridge"));
   assert.equal(
     buildDownloadUrl("0.3.0", "kimi-webbridge-darwin-arm64"),
@@ -187,6 +191,53 @@ test("runWebbridgeSetupTask: installExtensions 返回 [] / 全 browser-not-insta
   }));
   assert.equal(errored.outcome, "fell-back-to-openclaw");
 });
+
+// 需要真实平台钉定条目（win32/darwin）；其它平台 safeResolveWebbridgePinFilename 返回
+// null 会整体跳过校验，测不到这条路径。
+const HAS_PIN = process.platform === "win32" || process.platform === "darwin";
+
+test("runWebbridgeSetupTask: repair 既有二进制钉定不符 → 作废并自动重下（一次点击收敛，R66）",
+  { skip: !HAS_PIN },
+  async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "wb-repair-"));
+    const stale = path.join(dir, "kimi-webbridge.exe");
+    fs.writeFileSync(stale, Buffer.from("stale-binary-not-matching-pin"));
+    let installerCalls = 0;
+    const res = await runWebbridgeSetupTask(setupDeps({
+      skipBinaryInstall: true,
+      existingBinaryPath: stale,
+      installer: async () => {
+        installerCalls++;
+        return { installed: true, skipped: false, version: "1", binaryPath: "/x/kimi-new", etag: null };
+      },
+    }));
+    // 旧行为：直接 fail（用户要点两次才成功）。新行为：作废旧产物 → 重下 → ready。
+    assert.equal(installerCalls, 1);
+    assert.equal(res.outcome, "webbridge-ready");
+    assert.equal(res.binaryPath, "/x/kimi-new");
+    assert.equal(fs.existsSync(stale), false);
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+test("runWebbridgeSetupTask: repair 校验不符且重下失败 → 仍降级（确定性失败，不留半成品）",
+  { skip: !HAS_PIN },
+  async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "wb-repair-"));
+    const stale = path.join(dir, "kimi-webbridge.exe");
+    fs.writeFileSync(stale, Buffer.from("stale-binary-not-matching-pin"));
+    const writes: any[] = [];
+    const res = await runWebbridgeSetupTask(setupDeps({
+      skipBinaryInstall: true,
+      existingBinaryPath: stale,
+      fallbackOnFailure: false,
+      installer: async () => { throw new Error("CDN 503"); },
+      writeConfig: (c) => writes.push(c),
+    }));
+    assert.equal(res.outcome, "fell-back-to-openclaw");
+    assert.match(res.error ?? "", /CDN 503/);
+    assert.equal(writes.length, 0); // 调用方决定是否写 config
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
 
 test("getWebbridgeInstallState: binary 缺 → installed=false；存在 + manifest → version", async () => {
   const base = { binaryPath: "/x", dataDir: "/y", readExtensionStates: async () => [], extensionId: EXT };

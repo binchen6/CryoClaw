@@ -28,6 +28,7 @@ import {
   resolveUserExtensionsDir,
   resolveUserStateDir,
 } from "./constants";
+import { syncOpenClawStateAfterWrite } from "./openclaw-health-state";
 import * as log from "./logger";
 
 /** 读取 `<dir>/package.json` 的 version 字段，失败返回 null */
@@ -306,6 +307,10 @@ function ensurePluginsAllow(pluginIds: readonly string[]): void {
     fs.mkdirSync(resolveUserStateDir(), { recursive: true });
     fs.writeFileSync(tmpPath, JSON.stringify(config, null, 2), { encoding: "utf-8", mode: 0o600 });
     fs.renameSync(tmpPath, configPath);
+    // 与其它 openclaw.json 直写点一致：同步 health state 基线，避免 gateway 读到
+    // 旧字节数快照 → dump clobbered → .bak 回退把刚加的 plugins.allow 抹掉
+    // （外部 channel 会走降级路径：能登录但永远不回消息）。
+    syncOpenClawStateAfterWrite(configPath);
     log.info(`[ext-mirror] plugins.allow updated (+${added}): ${pluginIds.join(",")}`);
   } catch (err) {
     log.warn(`[ext-mirror] failed to persist plugins.allow: ${(err as Error).message}`);

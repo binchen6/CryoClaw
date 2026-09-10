@@ -14,10 +14,13 @@ jobs:
 
       - uses: actions/setup-node@v5
         with:
-          node-version: 22
+          # 与产物运行时同 patch（package.json cryoclaw.node）：避免测试跑在
+          # 与发行版不同的 Node 补丁级上导致行为漂移
+          node-version: 22.23.2
+          cache: npm
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
       # Electron 42+ 不再在 postinstall 下载二进制（首次 import 时才懒下载）；
       # 主进程 vitest 会 import electron，需显式预置二进制（GitHub runner 可直连官方源）
@@ -34,8 +37,11 @@ jobs:
 
       # 打包/升级链路脚本用例（不需要内核下载，纯逻辑验证）；
       # package-resources.test.js 会在 vm 里真实执行打包逻辑，与其它用例并行会争抢
-      # 临时文件（Unable to deserialize cloned data），故拆分单独串行运行
+      # 临时文件（Unable to deserialize cloned data），故拆分单独串行运行。
+      # 除该文件外的清单由 glob 动态生成——写死清单曾在删除测试文件后静默漏跑/引用
+      # 不存在的文件（R66 修复）。
       - name: Script tests
+        shell: bash
         run: |
-          node --test scripts/afterPack.test.js scripts/analytics-build-config.test.js scripts/gateway-ctl.test.js scripts/kernel-prune.test.js scripts/openclaw-version-utils.test.js
+          node --test $(ls scripts/*.test.js | grep -v '/package-resources\.test\.js$')
           node --test scripts/package-resources.test.js

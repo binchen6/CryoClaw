@@ -314,11 +314,17 @@ const OPENCLAW_PACKAGES = ["openclaw", "openclaw-cn"];
 // 全局卸载所有 openclaw 相关 npm 包
 export async function uninstallGlobalOpenclaw(): Promise<boolean> {
   log.info("[install-detector] uninstalling global openclaw packages");
-  const npm = IS_WIN ? "npm.cmd" : "npm";
+  // Windows 上 npm 是 npm.cmd：Node ≥18.20（CVE-2024-27980 修复）禁止 execFile 直接
+  // spawn .cmd/.bat（抛 EINVAL），必须经 cmd.exe 解释——与 scripts/lib/openclaw-version-utils.js
+  // 的既有做法一致。包名来自固定白名单，无注入面。
   let allOk = true;
   for (const pkg of OPENCLAW_PACKAGES) {
     try {
-      await execFileAsync(npm, ["uninstall", "-g", pkg], 30_000);
+      if (IS_WIN) {
+        await execFileAsync("cmd.exe", ["/d", "/s", "/c", `npm uninstall -g ${pkg}`], 30_000);
+      } else {
+        await execFileAsync("npm", ["uninstall", "-g", pkg], 30_000);
+      }
     } catch (err) {
       // 未安装的包卸载报错是正常的，只记录日志
       log.info(`[install-detector] npm uninstall -g ${pkg}: ${err instanceof Error ? err.message : String(err)}`);

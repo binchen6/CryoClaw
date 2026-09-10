@@ -215,9 +215,15 @@ export function registerSetupIpc(deps: SetupIpcDeps): void {
           await killPortProcess(pid);
         }
       }
-      await uninstallGlobalOpenclaw();
+      const npmRemoved = await uninstallGlobalOpenclaw();
       // 保留 ~/.openclaw/：聊天记录、项目数据都在里面
-      log.info("[setup] 旧版 OpenClaw 卸载完成");
+      if (npmRemoved) {
+        log.info("[setup] 旧版 OpenClaw 卸载完成");
+      } else {
+        // 守护进程 + 端口进程已清理（冲突已解除），但 npm 全局包可能仍在（npm 不可用等）——
+        // 不阻断 setup；留 warn 便于下次冲突复现时定位。
+        log.warn("[setup] 旧版 OpenClaw 守护进程已清理，但 npm 全局包未全部卸载成功（详见 install-detector 日志）");
+      }
       return { success: true };
     } catch (err: any) {
       log.error(`[setup] 冲突处理失败: ${err?.message ?? err}`);

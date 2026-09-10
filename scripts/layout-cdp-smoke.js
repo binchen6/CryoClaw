@@ -32,6 +32,8 @@ const httpClient = require("http");
 const { spawn } = require("child_process");
 // 进程树终止（argv 数组直传，无 shell 拼接）
 const { execFileSync: killTreeCmd } = require("child_process");
+// 裸 i18n key 扫描（排除用户/模型内容容器，见模块注释）
+const { bareI18nScanExpr } = require("./lib/bare-i18n-scan.js");
 
 const root = path.resolve(__dirname, "..");
 
@@ -202,12 +204,7 @@ async function main() {
       .then((v) => (v ? JSON.parse(v) : null));
 
   const bareKeysScan = () =>
-    cdp.evaluate(`(() => {
-      const text = document.body.textContent || "";
-      const re = /\\b(app|chat|settings|setup|common|workspace|tasks|extensions|sessions)\\.[a-zA-Z][a-zA-Z0-9_.]{2,}/g;
-      const ext = /\\.(xml|json|md|png|jpe?g|gif|js|mjs|ts|html|css|txt|ya?ml|exe|asar|zip)$/i;
-      return JSON.stringify([...new Set((text.match(re) || []).filter((k) => !ext.test(k)))]);
-    })()`).then((v) => JSON.parse(v || "[]"));
+    cdp.evaluate(bareI18nScanExpr()).then((v) => JSON.parse(v || "[]"));
 
   async function setViewport(width, dsf = 1) {
     await cdp.send("Emulation.setDeviceMetricsOverride", {

@@ -17,6 +17,10 @@ const fs = require("fs");
 const path = require("path");
 const http = require("http");
 const { spawn, execFileSync } = require("child_process");
+// 裸 i18n key 扫描（排除用户/模型内容容器，见模块注释）
+const { bareI18nScanExpr } = require("./lib/bare-i18n-scan.js");
+// 跨组件重叠检测（含祖先裁剪感知，见模块注释）
+const { overlapCheckExpr } = require("./lib/overlap-scan.js");
 
 const root = path.resolve(__dirname, "..");
 function arg(name, fallback) {
@@ -80,34 +84,7 @@ class Cdp {
   }
 }
 
-const overlapExpr = `(() => {
-  // 模态/对话框打开时跳过：模态（cc-dialog-overlay、确认弹窗等）带遮罩覆盖
-  // 底层内容属预期交互，其与底层叶子元素的几何相交不是排版缺陷。
-  if (document.querySelector('.cc-dialog-overlay, [role="dialog"][aria-modal="true"]')) return "[]";
-  const scope = document.querySelector('.oc-settings-content') || document.body;
-  const customAncestor = (e) => { let n = e; while (n && n !== document.body) { if (n.tagName.includes('-')) return n; n = n.parentElement; } return null; };
-  const els = [...scope.querySelectorAll('*')].filter(e => {
-    const r = e.getBoundingClientRect();
-    if (r.width < 5 || r.height < 5) return false;
-    if (e.children.length > 0) return false;
-    const cs = getComputedStyle(e);
-    if (cs.position === 'fixed' || cs.visibility === 'hidden' || cs.display === 'none') return false;
-    return r.top >= 0 && r.bottom <= innerHeight; // 只查视口内（截图可见区）
-  });
-  const bad = [];
-  for (let i = 0; i < els.length; i++) {
-    for (let j = i + 1; j < els.length; j++) {
-      if (els[i].contains(els[j]) || els[j].contains(els[i])) continue;
-      const ca = customAncestor(els[i]), cb = customAncestor(els[j]);
-      if (ca && ca === cb) continue;
-      const a = els[i].getBoundingClientRect(), b = els[j].getBoundingClientRect();
-      const xo = Math.min(a.right, b.right) - Math.max(a.left, b.left);
-      const yo = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
-      if (xo > 8 && yo > 6) bad.push(((els[i].className||els[i].tagName)+':'+(els[j].className||els[j].tagName)).slice(0,110));
-    }
-  }
-  return JSON.stringify([...new Set(bad)].slice(0, 15));
-})()`;
+const overlapExpr = overlapCheckExpr();
 
 async function main() {
   console.log(`[ui-qa] 启动: ${exe}`);
@@ -211,12 +188,7 @@ async function main() {
   await sleep(1000);
   await shot("settings_first_1440_en");
 
-  const bare = JSON.parse((await cdp.evaluate(`(() => {
-    const text = document.body.textContent || "";
-    const re = /\\b(app|chat|settings|setup|common|workspace|tasks|extensions|sessions)\\.[a-zA-Z][a-zA-Z0-9_.]{2,}/g;
-    const ext = /\\.(xml|json|md|png|jpe?g|gif|js|mjs|ts|html|css|txt|ya?ml|exe|asar|zip)$/i;
-    return JSON.stringify([...new Set((text.match(re) || []).filter((k) => !ext.test(k)))]);
-  })()`)) || "[]");
+  const bare = JSON.parse((await cdp.evaluate(bareI18nScanExpr())) || "[]");
 
   await cdp.send("Emulation.clearDeviceMetricsOverride");
   const summary = {

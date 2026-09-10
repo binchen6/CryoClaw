@@ -50,6 +50,31 @@ export async function loadCronJobs(state: CronState) {
   }
 }
 
+const HHMM_RE = /^\d{1,2}:\d{2}$/;
+
+/**
+ * 切换调度类型时归一化 cronExpr 的语义（R66）。
+ * 表单把 cronExpr 复用为两种语义：daily = "HH:MM"，cron = 五段表达式。切 kind 时若
+ * 不归一化，界面显示值与 state 会脱节——daily 视图对非 HH:MM 的值回退显示 "10:00"
+ * 但不写回 state，用户点创建却报"时间无效"；反向从 daily 切 cron 会把 "10:00" 当
+ * 表达式提交。返回新对象（不改入参）。
+ */
+export function normalizeScheduleKindChange(
+  form: CronFormState,
+  patch: Partial<CronFormState>,
+): CronFormState {
+  const next: CronFormState = { ...form, ...patch };
+  if (!patch.scheduleKind || patch.scheduleKind === form.scheduleKind) return next;
+  const expr = (next.cronExpr ?? "").trim();
+  if (patch.scheduleKind === "daily") {
+    next.cronExpr = HHMM_RE.test(expr) ? expr : "10:00";
+  } else if (patch.scheduleKind === "cron" && HHMM_RE.test(expr)) {
+    const [h, m] = expr.split(":");
+    next.cronExpr = `${parseInt(m, 10)} ${parseInt(h, 10)} * * *`;
+  }
+  return next;
+}
+
 export function buildCronSchedule(form: CronFormState) {
   // "daily" is a UI-only kind → convert HH:MM to cron expr
   if (form.scheduleKind === "daily") {

@@ -159,15 +159,31 @@ async function pollForToken(
   interval: number,
   onWaiting?: () => void,
 ): Promise<OAuthToken> {
+  // 瞬时网络错误容忍：单次请求失败（切网/代理抖动）不应打断整个扫码登录——
+  // 用户在手机上完成授权后回到应用却看到"登录失败"、只能从头再扫是最差路径。
+  // 连续失败超过阈值才放弃；authorization_pending 正常等待不计入。
+  const MAX_CONSECUTIVE_NETWORK_ERRORS = 5;
+  let networkErrors = 0;
   for (let i = 0; i < POLL_MAX_RETRIES; i++) {
     await sleep(interval * 1000);
     if (abortFlag) throw new Error("已取消");
 
-    const { data } = await postForm("/api/oauth/token", {
-      client_id: KIMI_CODE_CLIENT_ID,
-      device_code: deviceCode,
-      grant_type: "urn:ietf:params:oauth:grant-type:device_code",
-    });
+    let data: Record<string, unknown>;
+    try {
+      ({ data } = await postForm("/api/oauth/token", {
+        client_id: KIMI_CODE_CLIENT_ID,
+        device_code: deviceCode,
+        grant_type: "urn:ietf:params:oauth:grant-type:device_code",
+      }));
+      networkErrors = 0;
+    } catch (err) {
+      networkErrors += 1;
+      if (networkErrors >= MAX_CONSECUTIVE_NETWORK_ERRORS) {
+        throw err instanceof Error ? err : new Error(String(err));
+      }
+      onWaiting?.();
+      continue;
+    }
 
     // 授权成功
     if (data.access_token) {

@@ -6,6 +6,7 @@
 import { html, nothing } from "lit";
 import { t } from "./i18n.ts";
 import { renderSkillStoreView, skillAvatarColor, type SkillStoreState } from "./skill-store-view.ts";
+import { selectVisibleInstalledSkills } from "./skill-visibility.ts";
 import { showToast } from "./app-toast.ts";
 import "./components/toggle-switch.ts";
 import type { SkillStatusEntry } from "./types.ts";
@@ -225,18 +226,11 @@ function clamp(text: string | undefined, max: number): string {
   return text.length > max ? text.slice(0, max) + "…" : text;
 }
 
+// 已安装技能列表的可见集合（纯逻辑见 skill-visibility.ts）：计数徽章与列表共用，
+// 避免出现"58 项"却只渲染 2 行的偏差。
 // 渲染已安装技能视图
 function renderInstalledSkillsView(state: AppViewState) {
-  const report = state.skillsReport;
-  const allSkills = report?.skills ?? [];
-  // 1. 过滤被阻止的 skill（blockedByAllowlist 或 eligible === false）
-  const visibleSkills = allSkills.filter((s: SkillStatusEntry) => s.eligible !== false);
-  const filter = (state.skillsFilter ?? "").trim().toLowerCase();
-  const filtered = filter
-    ? visibleSkills.filter((s: SkillStatusEntry) =>
-        [s.name, s.description, s.source].join(" ").toLowerCase().includes(filter),
-      )
-    : visibleSkills;
+  const filtered = selectVisibleInstalledSkills(state);
   const groups = groupLocalSkills(filtered);
   const busy = state.skillsBusyKey;
   const messages = state.skillMessages;
@@ -377,7 +371,7 @@ export function renderSkillsView(state: AppViewState) {
           <div class="skills-tab-bar__actions panel__actions">
             ${skillsSubTab === "installed"
               ? html`
-                  <span class="skills-count">${t("skills.shown").replace("{n}", String((state.skillsReport?.skills ?? []).length))}</span>
+                  <span class="skills-count">${t("skills.shown").replace("{n}", String(selectVisibleInstalledSkills(state).length))}</span>
                   <button
                     class="skill-store__sort-btn"
                     type="button"
