@@ -16,7 +16,7 @@ export function renderRestartGatewayDialog(state: AppViewState) {
   };
 
   return html`
-    <div class="cc-dialog-overlay" role="dialog" aria-modal="true">
+    <div class="cc-dialog-overlay" role="dialog" aria-modal="true" tabindex="-1">
       <div class="cc-dialog cc-dialog--sm">
         <div class="cc-dialog__head">
           <div class="cc-dialog__title">${t("restartDialog.title")}</div>

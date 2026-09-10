@@ -7,6 +7,7 @@
 import { html, nothing } from "lit";
 import { formatRelativeTimestamp } from "../format.ts";
 import { icons } from "../icons.ts";
+import { activateOnKeydown } from "../a11y.ts";
 import { t } from "../i18n.ts";
 import {
   isLiveWorktree,
@@ -75,7 +76,10 @@ function renderWorktreeCard(props: WorktreesProps, w: WorktreeRecord, compact: b
     return html`
       <div
         class="wt-card wt-card--compact ${live ? "" : "wt-card--removed"}"
+        role="button"
+        tabindex=${live ? "0" : "-1"}
         @click=${() => live && props.onSelectRepo?.(w.path)}
+        @keydown=${activateOnKeydown(() => { if (live) props.onSelectRepo?.(w.path); })}
       >
         <div class="wt-card__main">
           <div class="wt-card__title">${w.name}</div>

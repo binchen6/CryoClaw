@@ -19,7 +19,7 @@ export function renderSharePrompt(state: AppViewState) {
   };
 
   return html`
-    <div class="cc-dialog-overlay" role="dialog" aria-modal="true" aria-live="polite">
+    <div class="cc-dialog-overlay" role="dialog" aria-modal="true" aria-live="polite" tabindex="-1">
       <div class="cc-dialog cc-dialog--lg">
         <div class="cc-dialog__head">
           <div style="flex: 1; min-width: 0;">

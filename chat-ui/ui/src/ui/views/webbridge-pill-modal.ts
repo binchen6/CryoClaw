@@ -56,7 +56,7 @@ export function renderWebbridgePillModal(state: AppViewState) {
   };
 
   return html`
-    <div class="cc-dialog-overlay" role="dialog" aria-modal="true" @click=${close}>
+    <div class="cc-dialog-overlay" role="dialog" aria-modal="true" @click=${close} tabindex="-1">
       <div class="cc-dialog cc-dialog--sm" @click=${(e: Event) => e.stopPropagation()}>
         <div class="cc-dialog__head">
           <div class="cc-dialog__title">${title}</div>

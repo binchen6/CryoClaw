@@ -1,5 +1,12 @@
 [
   {
+    "version": "2026.910.2",
+    "notes": {
+      "zh": "无障碍改进（键盘/读屏可用性批次）：① 全部 9 个模态弹窗（确认框、更新、重启网关、WebBridge 修复、发布说明、分享、网关地址确认等）现在支持 Escape 关闭，打开时焦点自动移入弹窗——此前键盘用户无法关闭弹窗、读屏用户被困在遮罩层外的页面上；② 会话列表行、工作区文件树与导航节点、Git 文件行、worktree 卡片、设置页 CLI 开关补齐 role/tabindex 与 Enter/Space 触发——此前这些可点击行 Tab 都到不了；③ 新增键盘交互工具模块（含长按 repeat 防护与 Space 滚动拦截）并加单测锁定语义",
+      "en": "Accessibility improvements (keyboard/screen-reader pass): (1) all 9 modal dialogs (confirm, update, restart gateway, WebBridge repair, release notes, share, gateway URL confirmation, ...) can now be dismissed with Escape, and focus moves into the dialog when it opens - previously keyboard users could not close them and screen-reader users were stranded on the page behind the overlay; (2) session list rows, the workspace file tree and nav nodes, Git file rows, worktree cards and the settings CLI switch now carry role/tabindex and respond to Enter/Space - these clickable rows were previously unreachable by Tab; (3) a shared keyboard-interaction helper module (with key-repeat guard and Space scroll prevention) was added with unit tests locking the semantics."
+    }
+  },
+  {
     "version": "2026.910.1",
     "notes": {
       "zh": "WebBridge 修复永久化（根因定位并根治）：上游把 latest 产物当可反复重建的发布位——实测同一文件重建后字节数完全不变、仅 Go build ID 等约 177 字节元数据变化（2026-09-10 一天内两次），而钉定值写在 App 内，导致每次上游重建都要等发新版才能修复。现改为**可自动更新的远端钉定清单**（托管在本仓库 resources/webbridge-pins.json，修复时经 jsDelivr / raw.githubusercontent 自动拉取并缓存 24 小时，内置表仅作兜底）：上游再换新时维护者只需更新该清单，用户无需升级 App 即可修复；校验仍是精确 sha256 比对，内置表与远端清单都不匹配时维持 fail closed 拒装。本版同时把内置钉定表更新到当前值\n本版含第二轮功能/页面审查修复 10 项：全新安装（gateway 未启动）时选 Anthropic/OpenAI/Google/Moonshot-CN 不再因模型控件整体消失而无法完成安装（静态候选兜底 + 「自定义模型」入口始终可达）；更新弹窗「重试下载」此前必然失败（错误态被下载入口拒绝）→ 改为先重新检查再下载；中文界面下文档语言标记正确同步（读屏发音/CJK 字体）；侧栏会话重命名/置顶/未读/归档失败不再静默无反应（统一提示）；安装向导第三步 WebBridge 开关支持键盘；断连时新建 worktree 不再假成功；图片放大支持键盘；移除 6 处违反设计规范的 text-transform: uppercase；修复消息框残留的退役 indigo 兜底色；IPC 文档补齐 workspace/git 通道并移除已退役的幽灵行",

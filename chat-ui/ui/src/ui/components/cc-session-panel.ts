@@ -2,6 +2,7 @@ import { LitElement, html, nothing } from "lit";
 import { repeat } from "lit/directives/repeat.js";
 import { customElement } from "lit/decorators.js";
 import { t } from "../i18n.ts";
+import { activateOnKeydown } from "../a11y.ts";
 import { icons } from "../icons.ts";
 import { groupSidebarSessions } from "../sidebar-grouping.ts";
 
@@ -293,7 +294,11 @@ function renderSessionItem(
   return html`
     <div
       class="cc-panel__session-item ${isActive ? "active" : ""} ${menuOpen ? "menu-open" : ""} ${s.archived ? "is-archived" : ""}"
+      role="button"
+      tabindex="0"
+      aria-current=${isActive ? "true" : nothing}
       @click=${() => props.onSelectSession(s.key)}
+      @keydown=${activateOnKeydown(() => props.onSelectSession(s.key))}
     >
       <span
         class="cc-panel__session-name"

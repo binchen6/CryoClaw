@@ -1,7 +1,7 @@
 # CryoClaw 优化工程 — 进度追踪（断点续作锚点）
 
 > 新接手先读「快速上手」+「关键路径地图」+「下一步计划」，再按需查「工程记录」与「既有事实」。
-> 创建：2026-07-29；最近重写：2026-08-25（R27 精简重构）。
+> 当此文档过长时，请将过时记录归档或简化。
 
 ## 🚀 快速上手
 
@@ -10,9 +10,9 @@
 面向国内生态（Kimi / Moonshot / 飞书 / 企微 / 微信 / 钉钉 / QQ）。
 
 **当前状态**：
-- 重设计工程 **R1–R68 完成**（R68：WebBridge 修复永久化——可自动更新的远端钉定清单；R67：第二轮功能/页面审查（P0 安装向导模型控件 + 9 项）；R66：WebBridge 钉定表随上游轮换 + 功能/页面审查 17 项修复；R65：WebBridge 供应链钉定；R64：三路全库审查 + UI 截图 QA；R63：MCP 页重叠修复 + 真静默更新换装；R62：回底按钮 + 消息对齐及时性；R61：内核问答卡片；R60：设置页 MCP 与 Hooks + 四路全库审查；R59–R58：在途输出恢复/对齐用量，详见工程记录），最新发版 **v2026.910.1**。
+- 重设计工程 **R1–R69 完成**（R69：无障碍批次——模态键盘关闭/焦点 + 可交互行键盘可达；R68：WebBridge 修复永久化——可自动更新的远端钉定清单；R67：第二轮功能/页面审查（P0 安装向导模型控件 + 9 项）；R66：WebBridge 钉定表随上游轮换 + 功能/页面审查 17 项修复；R65：WebBridge 供应链钉定；R64：三路全库审查 + UI 截图 QA；R63：MCP 页重叠修复 + 真静默更新换装；R62：回底按钮 + 消息对齐及时性；R61：内核问答卡片；R60：设置页 MCP 与 Hooks + 四路全库审查；R59–R58：在途输出恢复/对齐用量，详见工程记录），最新发版 **v2026.910.2**。
 - 内核 openclaw **2026.9.2**（版本 pin 在 package.json `cryoclaw.openclaw`；更新目标走 `kernel-channel.json` 策展渠道，minSupported 2026.7.0）；**Electron 43.4.0**（audit 0 漏洞）。
-- 测试基线 **1065 pass / 0 fail / 4 skipped**（vitest 159 + node 187 + chat-ui 642 + scripts 77；2026-09-10 实测，0 fail 为硬指标）。
+- 测试基线 **1068 pass / 0 fail / 4 skipped**（vitest 159 + node 187 + chat-ui 645 + scripts 77；2026-09-10 实测，0 fail 为硬指标）。
 - 重复率 **1.17%**（96 clones，阈值 5%，`npm run dupcheck` 防回退）；视图 id 收敛为 6（chat/setup/settings/workspace/tasks/extensions）。
 - 开源：GitHub `binchen6/CryoClaw`（AGPL-3.0-only，干净历史）；发版走本地 `dist:win` + `gh release`；CI `tests.yml` 每次 push/PR 全量回归。
 
@@ -621,3 +621,11 @@
 - **复发取证**：用户在新版（v2026.910.0，含 R66 的友好文案）仍看到「组件校验未通过」。实测上游 **当日第二次换新**：`.../latest/releases/kimi-webbridge-windows-amd64.exe` 字节数与前次完全相同（10342912B），逐字节比对仅 **177B 差异，首个差异即 `Go build ID`** 字符串——上游把 latest 当"可反复重建的发布位"，而 exact-hash 钉定写在 App 里，于是每次重建都要等发版才能修复（R65 建立、R66 更新的模型本身不可持续）。
 - **永久修复**：新增 `src/webbridge-pins.ts` + 仓库内 `resources/webbridge-pins.json`——钉定值改为**可自动更新的远端清单**：修复/安装时读本地缓存（24h 新鲜期）→ 过期则按序拉取 jsDelivr → raw.githubusercontent（限 64KB/10s、禁 https 降级、JSON 严格校验：值必须 64-hex，任一条目非法即整体丢弃）；校验链 = 内置嵌入表 ∪ 远端清单，任一精确匹配即通过；两者都不匹配维持 fail closed 删产物。上游再换新时，**更新清单文件即可修复所有用户，无需发版**。repair 跳过下载的既有二进制复核同样接入远端清单；`installWebbridge` 缓存命中复核与下载后校验共用同一 `remotePins`。
 - **验证**：新增 3 个单测（清单严格解析/缓存新鲜期与过期回退/远端命中放行且不删产物、双不匹配删产物）；真实 CDN E2E：`installWebbridge`（force）下载并校验通过（etag EEED8871…）；远端清单在本仓库 push 前 404 时正确回退内置表（不阻断修复）。内置表同步更新为当前三平台哈希（win eec1976d…/darwin-arm64 04532d77…/darwin-amd64 931769e9…）。
+
+### R69 · 无障碍批次：模态键盘关闭/焦点 + 可交互行键盘可达
+
+- **来源**：R67 第二轮审查登记并延后的 a11y 批次（当时判断需组件生命周期改造，本轮找到低侵入实现方式）。
+- **弹窗键盘可达（9 处）**：新增 `chat-ui/ui/src/ui/dialog-a11y.ts`——app 层安装一个 document 级 keydown：Escape 时对**最上层可见弹窗遮罩**派发一次 click（各处遮罩点击语义已统一为"关闭/取消"，且"下载中不可关"这类守卫写在 click 处理器内部，因此同样生效），并在 `updated()` 里于弹窗出现且焦点仍在外部时把焦点移入遮罩（9 个遮罩补 `tabindex="-1"`）。此前 8 个文件 9 处弹窗只有鼠标可关、打开时焦点留在背后页面（读屏用户被困）。
+- **可交互行键盘可达**：新增 `a11y.ts#activateOnKeydown`（Enter/Space 触发、`e.repeat` 防护、Space 拦截滚动）。接入：会话列表行（`cc-session-panel`，附 `aria-current`）、工作区导航节点 ×3 与文件树行、Git 文件行、worktree 卡片、设置页 CLI 开关（补 `role=switch`/`aria-checked`）。这些行此前 Tab 到不了、Enter 无效。
+- **测试**：新增 `a11y.test.ts`（Enter/Space 触发与拦截、Tab/Escape 不拦截、长按 repeat 不触发、isEscapeKey 含 keyCode 兜底）；chat-ui 645 pass。语义用单测钉死，避免后续回退。
+- **验证**：全量 **1068 pass / 0 fail / 4 skipped**（vitest 159 + node 187 + chat-ui 645 + scripts 77）；发版管线 silent-install E2E + 产物断言 + gateway 200 + 三套 CDP 冒烟全绿（详见发版记录）。

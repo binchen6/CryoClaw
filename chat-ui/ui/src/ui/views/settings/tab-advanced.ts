@@ -19,6 +19,7 @@ import "../../components/toggle-switch.ts";
 import "../../components/message-box.ts";
 import { getConfigSnapshot, getCachedConfigSnapshot } from "../../controllers/config.ts";
 import { isWebbridgePinStaleError } from "../../webbridge-error.ts";
+import { activateOnKeydown } from "../../a11y.ts";
 import { runConfigPatch } from "./tab-patch.ts";
 import { extractAdvancedView, applyAdvancedSave } from "./tab-channels.lib.ts";
 
@@ -406,7 +407,7 @@ function renderRepairModal(state: AppViewState) {
 
   if (m.view === "default-unsupported") {
     return html`
-      <div class="wb-modal-overlay" role="dialog" aria-modal="true" @click=${close}>
+      <div class="wb-modal-overlay" role="dialog" aria-modal="true" @click=${close} tabindex="-1">
         <div class="wb-modal-card" @click=${(e: Event) => e.stopPropagation()}>
           <h3 class="wb-modal-title">${t("settings.advanced.wbRepairDefaultUnsupportedTitle")}</h3>
           <p class="wb-modal-desc">${t("settings.advanced.wbRepairDefaultUnsupportedDesc")}</p>
@@ -439,7 +440,7 @@ function renderRepairModal(state: AppViewState) {
   ];
 
   return html`
-    <div class="wb-modal-overlay" role="dialog" aria-modal="true" @click=${close}>
+    <div class="wb-modal-overlay" role="dialog" aria-modal="true" @click=${close} tabindex="-1">
       <div class="wb-modal-card" @click=${(e: Event) => e.stopPropagation()}>
         <h3 class="wb-modal-title">${t("settings.advanced.wbRepairTitle")}</h3>
         <p class="wb-modal-desc">${t("settings.advanced.wbRepairDesc")}</p>
@@ -612,7 +613,12 @@ export function renderTabAdvanced(state: AppViewState) {
       ` : nothing}
 
       <div class="oc-settings__form-group">
-        <div class="oc-toggle ${s.cliLoading ? 'oc-toggle--disabled' : ''}" @click=${() => { if (!s.cliLoading) toggleCli(state, !s.cliInstalled); }}>
+        <div class="oc-toggle ${s.cliLoading ? 'oc-toggle--disabled' : ''}"
+          role="switch"
+          aria-checked=${s.cliInstalled ? "true" : "false"}
+          tabindex=${s.cliLoading ? "-1" : "0"}
+          @click=${() => { if (!s.cliLoading) toggleCli(state, !s.cliInstalled); }}
+          @keydown=${activateOnKeydown(() => { if (!s.cliLoading) toggleCli(state, !s.cliInstalled); })}>
           <span class="oc-toggle-label">${s.cliLoading ? t("settings.advanced.cliInstalling") : html`${t("settings.advanced.cliLabel")} <code class="oc-settings__cli-code">openclaw</code>`}</span>
           <span class="oc-toggle-track ${s.cliInstalled ? 'oc-toggle-track--on' : ''}">
             <span class="oc-toggle-thumb"></span>

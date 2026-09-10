@@ -64,6 +64,7 @@ import { getCachedGatewayModelEntries } from "./controllers/models.ts";
 import { extractAdvancedView, applyAdvancedSave } from "./views/settings/tab-channels.lib.ts";
 import { markSessionMeterDirty } from "./context-meter.ts";
 import { isWebbridgePinStaleError } from "./webbridge-error.ts";
+import { closeTopDialog, focusOpenDialogIfNeeded, isEscapeKey } from "./dialog-a11y.ts";
 import { resolveThinkingCapabilities } from "./chat/thinking-levels.ts";
 import { getLocale, t, tWithDetail } from "./i18n.ts";
 import { loadSettings, type UiSettings } from "./storage.ts";
@@ -343,6 +344,8 @@ export class OpenClawApp extends LitElement {
   private sidebarCloseTimer: number | null = null;
   // R66：问答卡倒计时/过期回收的秒级 ticker（仅在存在 pending 且未过期的问题时运行）
   private questionTicker: number | null = null;
+  // R69：弹窗 Escape 关闭的 document 级监听
+  private dialogKeydownHandler: ((e: KeyboardEvent) => void) | null = null;
 
   assistantName = injectedAssistantIdentity.name;
   assistantAvatar = injectedAssistantIdentity.avatar;
@@ -577,6 +580,7 @@ export class OpenClawApp extends LitElement {
     this.bindAppNavigation();
     this.bindGatewayReady();
     this.bindWebbridgeStateChanged();
+    this.bindDialogKeyboard();
     this.bindWebbridgeRepairPoll();
     this.bindAppUpdateState();
     this.bindKernelUpdateProgress();
@@ -769,6 +773,10 @@ export class OpenClawApp extends LitElement {
       window.clearInterval(this.questionTicker);
       this.questionTicker = null;
     }
+    if (this.dialogKeydownHandler) {
+      document.removeEventListener("keydown", this.dialogKeydownHandler);
+      this.dialogKeydownHandler = null;
+    }
     handleDisconnected(this as unknown as Parameters<typeof handleDisconnected>[0]);
     super.disconnectedCallback();
   }
@@ -785,6 +793,8 @@ export class OpenClawApp extends LitElement {
       this.updateThinkingCapabilities();
     }
     this.syncQuestionTicker();
+    // 弹窗出现时把焦点移入（仅当焦点还在外部页面）——读屏/键盘用户不再被困在遮罩后
+    focusOpenDialogIfNeeded(document);
   }
 
   // 问答卡倒计时/过期回收：渲染层按 Date.now() 计算剩余秒数、并过滤已过期项，
@@ -933,6 +943,16 @@ export class OpenClawApp extends LitElement {
       });
       this.webbridgeStateCleanup = typeof unsubscribe === "function" ? unsubscribe : null;
     }
+  }
+
+  // 弹窗键盘可达（R69）：document 级 Escape → 关最上层弹窗；弹窗出现时把焦点移入。
+  private bindDialogKeyboard() {
+    if (this.dialogKeydownHandler) return;
+    this.dialogKeydownHandler = (e: KeyboardEvent) => {
+      if (!isEscapeKey(e)) return;
+      if (closeTopDialog(document)) e.preventDefault();
+    };
+    document.addEventListener("keydown", this.dialogKeydownHandler);
   }
 
   // 主进程通知 gateway 已就绪，立即重连（跳过指数退避盲等）

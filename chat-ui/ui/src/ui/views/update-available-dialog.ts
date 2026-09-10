@@ -35,7 +35,7 @@ export function renderUpdateAvailableDialog(state: AppViewState) {
     : "";
 
   return html`
-    <div class="cc-dialog-overlay" role="dialog" aria-modal="true" @click=${() => !downloading && close()}>
+    <div class="cc-dialog-overlay" role="dialog" aria-modal="true" tabindex="-1" @click=${() => !downloading && close()}>
       <div class="cc-dialog release-notes-dialog update-available-dialog" @click=${(e: Event) => e.stopPropagation()}>
         <div class="cc-dialog__head">
           <div style="flex: 1; min-width: 0;">

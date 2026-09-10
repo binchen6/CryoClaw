@@ -15,6 +15,7 @@ import {
 } from "../controllers/git.ts";
 import { formatRelativeTimestamp } from "../format.ts";
 import { icons } from "../icons.ts";
+import { activateOnKeydown } from "../a11y.ts";
 import { t, tWithDetail } from "../i18n.ts";
 
 export type GitPanelProps = {
@@ -139,9 +140,14 @@ function renderFileRow(
     <div class="gitp-file ${selected ? "active" : ""}">
       <div
         class="gitp-file__main ${canShowDiff ? "gitp-file__main--clickable" : ""}"
+        role="button"
+        tabindex=${canShowDiff ? "0" : "-1"}
         @click=${() => {
           if (canShowDiff) props.onSelectFile(side, entry.path);
         }}
+        @keydown=${activateOnKeydown(() => {
+          if (canShowDiff) props.onSelectFile(side, entry.path);
+        })}
       >
         <span class="gitp-letter ${statusLetterClass(letter)}">${letter}</span>
         <span class="gitp-file__path" title=${entry.origPath ? `${entry.origPath} → ${entry.path}` : entry.path}>
