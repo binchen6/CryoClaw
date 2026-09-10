@@ -24,7 +24,7 @@ export function renderReleaseNotesModal(state: AppViewState) {
             <div class="cc-dialog__title">${t("releaseNotes.title")}</div>
             <div class="cc-dialog__subtitle">${t("releaseNotes.currentVersion")} ${currentVersion}</div>
           </div>
-          <button class="cc-dialog__close" type="button" @click=${handleDismiss} aria-label=${t("releaseNotes.close")}>
+          <button class="cc-dialog__close" type="button" data-dialog-dismiss @click=${handleDismiss} aria-label=${t("releaseNotes.close")}>
             ${icons.x}
           </button>
         </div>

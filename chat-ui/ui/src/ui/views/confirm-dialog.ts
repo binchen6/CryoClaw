@@ -46,7 +46,7 @@ export function renderConfirmDialog(state: AppViewState) {
         </div>
         <div class="cc-dialog__body">${message}</div>
         <div class="cc-dialog__foot">
-          <button class="btn" @click=${() => settle(state, false)}>
+          <button class="btn" data-dialog-dismiss @click=${() => settle(state, false)}>
             ${t("settings.cancel")}
           </button>
           <button class="btn ${danger ? "danger" : "primary"}" @click=${() => settle(state, true)}>

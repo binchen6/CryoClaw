@@ -415,7 +415,7 @@ function renderRepairModal(state: AppViewState) {
             ${m.message ?? "—"}
           </div>
           <div class="wb-modal-actions">
-            <button type="button" class="oc-settings__btn" ?disabled=${m.saving} @click=${close}>
+            <button type="button" class="oc-settings__btn" data-dialog-dismiss ?disabled=${m.saving} @click=${close}>
               ${t("settings.advanced.wbRepairCancel")}
             </button>
             <button type="button" class="oc-settings__btn oc-settings__btn--primary" ?disabled=${m.saving} @click=${() => onRepairConfirm(state)}>
@@ -456,7 +456,7 @@ function renderRepairModal(state: AppViewState) {
           ${m.message ?? "—"}
         </div>
         <div class="wb-modal-actions">
-          <button type="button" class="oc-settings__btn" ?disabled=${m.saving} @click=${close}>
+          <button type="button" class="oc-settings__btn" data-dialog-dismiss ?disabled=${m.saving} @click=${close}>
             ${t("settings.advanced.wbRepairCancel")}
           </button>
           <button type="button" class="oc-settings__btn oc-settings__btn--primary" ?disabled=${m.saving} @click=${() => onRepairConfirm(state)}>

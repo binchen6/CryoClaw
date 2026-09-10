@@ -23,7 +23,7 @@ export function renderRestartGatewayDialog(state: AppViewState) {
         </div>
         <div class="cc-dialog__body">${t("restartDialog.subtitle")}</div>
         <div class="cc-dialog__foot">
-          <button class="btn" @click=${handleDismiss}>
+          <button class="btn" data-dialog-dismiss @click=${handleDismiss}>
             ${t("restartDialog.dismiss")}
           </button>
           <button class="btn primary" @click=${handleRestart}>

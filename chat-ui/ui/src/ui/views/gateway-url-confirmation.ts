@@ -24,6 +24,7 @@ export function renderGatewayUrlConfirmation(state: AppViewState) {
         <div class="cc-dialog__foot">
           <button
             class="btn"
+            data-dialog-dismiss
             @click=${() => state.handleGatewayUrlCancel()}
           >
             ${t("settings.cancel")}

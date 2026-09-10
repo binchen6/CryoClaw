@@ -1,5 +1,12 @@
 [
   {
+    "version": "2026.910.3",
+    "notes": {
+      "zh": "修复（交互审查发现）：通用确认弹窗（含「恢复出厂设置」等危险操作）此前遮罩不响应点击，导致上一版加入的 Escape 关闭对它无效——现在 Escape 优先点击弹窗内显式标记的「取消」按钮（7 处弹窗补齐标记），危险确认框也能用键盘取消，且不会误触确认。",
+      "en": "Fix (found by interaction audit): the shared confirm dialog (used by dangerous actions such as factory reset) had no overlay click handler, so the Escape-to-close added in the previous release did nothing for it - Escape now clicks the dialog's explicitly marked cancel button (markers added across 7 dialogs), so dangerous confirmations can be cancelled from the keyboard without any risk of triggering confirm."
+    }
+  },
+  {
     "version": "2026.910.2",
     "notes": {
       "zh": "无障碍改进（键盘/读屏可用性批次）：① 全部 9 个模态弹窗（确认框、更新、重启网关、WebBridge 修复、发布说明、分享、网关地址确认等）现在支持 Escape 关闭，打开时焦点自动移入弹窗——此前键盘用户无法关闭弹窗、读屏用户被困在遮罩层外的页面上；② 会话列表行、工作区文件树与导航节点、Git 文件行、worktree 卡片、设置页 CLI 开关补齐 role/tabindex 与 Enter/Space 触发——此前这些可点击行 Tab 都到不了；③ 新增键盘交互工具模块（含长按 repeat 防护与 Space 滚动拦截）并加单测锁定语义",

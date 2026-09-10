@@ -36,13 +36,16 @@
 
    脚本自动杀残留进程 → Node spawn 原样传参真静默安装（等待退出）→ 读安装位 app.asar 校验版本一致。
 
-   3.6. **CDP 冒烟 + UI 截图 QA（发版固定三步）**：
+   3.6. **CDP 冒烟 + UI 截图 QA（发版固定四步）**：
    ```bash
-   node scripts/layout-cdp-smoke.js --port 9227      # 主视图 rail 巡览 × 宽度/主题/DPI/动效/语言
-   node scripts/settings-cdp-smoke.js --port 9229    # 设置页全 tab 巡览 + MCP 表单展开（跨组件重叠/异常/裸 key）
-   node scripts/ui-screenshot-qa.js --port 9230      # 全页面系统化截图（out/ui-qa/）供视觉审查
+   node scripts/layout-cdp-smoke.js --port 9227       # 主视图 rail 巡览 × 宽度/主题/DPI/动效/语言
+   node scripts/settings-cdp-smoke.js --port 9229     # 设置页全 tab 巡览 + MCP 表单展开（跨组件重叠/异常/裸 key）
+   node scripts/interaction-cdp-smoke.js --port 9231  # 交互级：逐视图/tab 实际操作 + 危险确认框 Escape 取消（异常追踪）
+   node scripts/ui-screenshot-qa.js --port 9230       # 全页面系统化截图（out/ui-qa/）供视觉审查
    ```
-   三者任一非零退出码都不得发版（重叠/异常/裸 key 是硬门槛）；截图目录按需人工/AI 复核。
+   四者任一非零退出码都不得发版（重叠/异常/裸 key 是硬门槛）；截图目录按需人工/AI 复核。
+   交互冒烟与前三者的区别：前三者是"看"（几何/截图/文本），它是"动"——真实点击控件并验证键盘语义
+   （R70 新增，正是它发现了「重置配置并重启」确认框无法用 Escape 取消）。
 5. **发布（gh CLI 草稿流，现行标准做法）**：
 
    ```bash

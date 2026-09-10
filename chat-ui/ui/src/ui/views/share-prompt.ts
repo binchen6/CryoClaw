@@ -29,6 +29,7 @@ export function renderSharePrompt(state: AppViewState) {
           <button
             class="cc-dialog__close"
             type="button"
+            data-dialog-dismiss
             aria-label=${t("sharePrompt.close")}
             data-tooltip=${t("sharePrompt.close")}
             @click=${() => state.dismissSharePrompt()}

@@ -43,7 +43,7 @@ export function renderUpdateAvailableDialog(state: AppViewState) {
             <div class="cc-dialog__subtitle">v${us.currentVersion} → v${us.version}</div>
           </div>
           ${!downloading
-            ? html`<button class="cc-dialog__close" type="button" @click=${close} aria-label=${t("releaseNotes.close")}>${icons.x}</button>`
+            ? html`<button class="cc-dialog__close" type="button" data-dialog-dismiss @click=${close} aria-label=${t("releaseNotes.close")}>${icons.x}</button>`
             : nothing}
         </div>
 

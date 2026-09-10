@@ -24,12 +24,20 @@ export function findOpenDialog(doc: Document = document): HTMLElement | null {
 }
 
 /**
- * 关闭最上层弹窗：对遮罩派发一次 click（等价于用户点遮罩）。
- * 返回是否真的派发（无弹窗时为 false）。
+ * 关闭最上层弹窗（Escape 语义）：
+ * ① 优先点击弹窗内显式标记的"取消/关闭"按钮（`[data-dialog-dismiss]`）——对
+ *    遮罩不响应点击的弹窗（如通用确认框，避免误触外点即取消危险操作的语义）同样有效；
+ * ② 否则对遮罩派发一次 click（各处遮罩点击语义已统一为"关闭/取消"）。
+ * 返回是否真的派发了关闭动作（无弹窗时为 false）。
  */
 export function closeTopDialog(doc: Document = document): boolean {
   const dialog = findOpenDialog(doc);
   if (!dialog) return false;
+  const dismiss = dialog.querySelector<HTMLElement>("[data-dialog-dismiss]");
+  if (dismiss) {
+    dismiss.click();
+    return true;
+  }
   dialog.click();
   return true;
 }

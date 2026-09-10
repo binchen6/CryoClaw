@@ -10,7 +10,7 @@
 面向国内生态（Kimi / Moonshot / 飞书 / 企微 / 微信 / 钉钉 / QQ）。
 
 **当前状态**：
-- 重设计工程 **R1–R69 完成**（R69：无障碍批次——模态键盘关闭/焦点 + 可交互行键盘可达；R68：WebBridge 修复永久化——可自动更新的远端钉定清单；R67：第二轮功能/页面审查（P0 安装向导模型控件 + 9 项）；R66：WebBridge 钉定表随上游轮换 + 功能/页面审查 17 项修复；R65：WebBridge 供应链钉定；R64：三路全库审查 + UI 截图 QA；R63：MCP 页重叠修复 + 真静默更新换装；R62：回底按钮 + 消息对齐及时性；R61：内核问答卡片；R60：设置页 MCP 与 Hooks + 四路全库审查；R59–R58：在途输出恢复/对齐用量，详见工程记录），最新发版 **v2026.910.2**。
+- 重设计工程 **R1–R70 完成**（R70：交互级页面审查（新增发版固定步骤）+ 确认弹窗 Escape 修复；R69：无障碍批次——模态键盘关闭/焦点 + 可交互行键盘可达；R68：WebBridge 修复永久化——可自动更新的远端钉定清单；R67：第二轮功能/页面审查（P0 安装向导模型控件 + 9 项）；R66：WebBridge 钉定表随上游轮换 + 功能/页面审查 17 项修复；R65：WebBridge 供应链钉定；R64：三路全库审查 + UI 截图 QA；R63：MCP 页重叠修复 + 真静默更新换装；R62：回底按钮 + 消息对齐及时性；R61：内核问答卡片；R60：设置页 MCP 与 Hooks + 四路全库审查；R59–R58：在途输出恢复/对齐用量，详见工程记录），最新发版 **v2026.910.3**。
 - 内核 openclaw **2026.9.2**（版本 pin 在 package.json `cryoclaw.openclaw`；更新目标走 `kernel-channel.json` 策展渠道，minSupported 2026.7.0）；**Electron 43.4.0**（audit 0 漏洞）。
 - 测试基线 **1068 pass / 0 fail / 4 skipped**（vitest 159 + node 187 + chat-ui 645 + scripts 77；2026-09-10 实测，0 fail 为硬指标）。
 - 重复率 **1.17%**（96 clones，阈值 5%，`npm run dupcheck` 防回退）；视图 id 收敛为 6（chat/setup/settings/workspace/tasks/extensions）。
@@ -629,3 +629,10 @@
 - **可交互行键盘可达**：新增 `a11y.ts#activateOnKeydown`（Enter/Space 触发、`e.repeat` 防护、Space 拦截滚动）。接入：会话列表行（`cc-session-panel`，附 `aria-current`）、工作区导航节点 ×3 与文件树行、Git 文件行、worktree 卡片、设置页 CLI 开关（补 `role=switch`/`aria-checked`）。这些行此前 Tab 到不了、Enter 无效。
 - **测试**：新增 `a11y.test.ts`（Enter/Space 触发与拦截、Tab/Escape 不拦截、长按 repeat 不触发、isEscapeKey 含 keyCode 兜底）；chat-ui 645 pass。语义用单测钉死，避免后续回退。
 - **验证**：全量 **1068 pass / 0 fail / 4 skipped**（vitest 159 + node 187 + chat-ui 645 + scripts 77）；发版管线 silent-install E2E + 产物断言 + gateway 200 + 三套 CDP 冒烟全绿（详见发版记录）。
+
+### R70 · 交互级页面审查（新增发版固定步骤）+ 确认弹窗 Escape 修复
+
+- **新增交互级冒烟** `scripts/interaction-cdp-smoke.js`（发版固定步骤第 4 个，docs/releasing.md 3.6）：逐视图点击 rail、逐设置 tab 巡视、触发危险确认弹窗并验证 Escape 取消，全程追踪 renderer 异常。与既有三个冒烟的差别：那三个是"看"（几何/截图/文本），这个是"动"（真实控件交互）。防误触设计：危险操作本体都有 `await showConfirm` 前置守卫，脚本点开确认框后立刻 Escape，并断言取消后应用与网关均未受影响。
+- **它发现的真缺陷（本阶段修复）**：通用确认弹窗（`confirm-dialog.ts`，用于「重置配置并重启」等危险操作）的遮罩**不响应点击**（这是刻意的——避免"点外面就取消危险操作"的歧义），因此 R69 加入的 Escape 关闭对它无效。修复：`closeTopDialog` 优先点击弹窗内显式标记 `data-dialog-dismiss` 的取消/关闭按钮，找不到才回退遮罩点击；9 处弹窗的取消/关闭按钮补齐该标记。
+- **顺带修正的审查脚本问题**（避免误判）：① 先切到「备份恢复」tab 再找重置按钮（tab 循环结束时停在最后一个 tab）；② 设置页「搜索」tab 会按设计触发热应用重启，网关健康检查改为轮询 30s（此前单次检查过早 → 误报"网关不可用"）；③ SPA 会把 URL 重写为虚拟路径，断言不再要求 `index.html`；④ 残留实例会占单实例锁/端口，审查前需清理。
+- **验证**：交互冒烟 10 步全绿（6 视图 + 13 tab 0 渲染异常；对话 5 个、工作空间 33 个键盘可达行；确认框 Escape 关闭 1→0；取消后网关仍 200）；全量 **1068 pass / 0 fail**；发版管线 silent-install E2E 装 2026.910.3 + gateway 200 + 四套 CDP 冒烟全绿。

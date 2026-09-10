@@ -65,7 +65,7 @@ export function renderWebbridgePillModal(state: AppViewState) {
           ? nothing
           : html`<div class="cc-dialog__body cc-dialog__body--pre">${desc}</div>`}
         <div class="cc-dialog__foot">
-          <button class="btn primary" type="button" @click=${close}>
+          <button class="btn primary" type="button" data-dialog-dismiss @click=${close}>
             ${t("sidebar.webbridgePillModalConfirm")}
           </button>
         </div>
