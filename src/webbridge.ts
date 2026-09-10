@@ -12,6 +12,7 @@ import {
   readWebbridgeCrxMetadata,
   resolveWebbridgeCrxPath,
 } from "./constants";
+import { loadRemotePins } from "./webbridge-pins";
 import type {
   BrowserInstallSummary,
   BrowserMode,
@@ -34,14 +35,16 @@ export const CDN_BASE_URL = "https://kimi-web-img.moonshot.cn/webbridge";
 // 重新取哈希更新本表。KIMI_WEBBRIDGE_SKIP_PIN=1 为排障逃生门（勿日常使用）。
 // ═══════════════════════════════════════════════════════════════════
 export const WEBBRIDGE_BINARY_SHA256_PINS: Record<string, string> = {
-  // 2026-09-10 上游 latest 整批换新（CDN Last-Modified 2026-09-10 09:46 GMT，
-  // 三平台同批替换、curl+Node 双通道下载哈希一致），重新取证更新本表
+  // 2026-09-10 两次换新（同日）：上游对 latest 产物反复重建，字节数不变、仅 Go
+  // build ID 等约 177B 元数据变化。嵌入表只是**兜底快照**，权威值在同仓库
+  // resources/webbridge-pins.json（App 修复时自动拉取，见 webbridge-pins.ts）——
+  // 这样上游再换新时无需发版即可修复（R68 永久修复）。
   "kimi-webbridge-windows-amd64.exe":
-    "75f7f1b00af268b0f56ab03d0ef63331f6ab1159827a6468c5b551cbf096dcd0",
+    "eec1976d5da3338a94ed9981796f7284570b8100cc62706a6de89f3d25a433c6",
   "kimi-webbridge-darwin-arm64":
-    "80d92c2c1f039b60368223e6dcb2c4b2fe3e139549af13784a8074fb1bc2414a",
+    "04532d772d3c7789f6ab61e1e055c56bf73724757596ff0ab64ea29abef0a261",
   "kimi-webbridge-darwin-amd64":
-    "9f25e2501c56fc9205da8059d8207b7bde0360a11bdafa626d34b68096b49257",
+    "931769e94f5b84cca8f130e94e7151bcdeee9e70bcddaf1f513ac194c3b8cc0c",
 };
 
 export function resolveWebbridgeBinaryPin(filename: string): string | null {
@@ -67,6 +70,8 @@ function sha256FileSync(filePath: string): string {
  * - expected 未给：按二进制文件名取内置 pin 表（生产路径）。
  * - expected === ""：显式跳过（测试 fixture 注入口，两条路径语义一致）。
  * - expected 非空：以调用方为准。
+ * - extraPins：远端可更新清单（webbridge-pins.ts）；与内置表任一命中即通过——
+ *   上游反复重建 latest 时无需发版即可修复（R68），仍是精确 sha256 比对。
  * - KIMI_WEBBRIDGE_SKIP_PIN=1：排障逃生门，直接放行。
  * 失败抛错并删除落盘文件（fail closed，不留可执行物）。
  */
@@ -74,10 +79,13 @@ export function verifyWebbridgeBinarySha256(
   binaryPath: string,
   filename: string,
   expected?: string,
+  extraPins?: Record<string, string> | null,
 ): void {
   if (process.env.KIMI_WEBBRIDGE_SKIP_PIN === "1") return;
   if (expected === "") return;
-  const pin = expected ?? resolveWebbridgeBinaryPin(filename);
+  const embedded = expected ?? resolveWebbridgeBinaryPin(filename);
+  const remote = extraPins?.[filename] ?? null;
+  const pin = embedded ?? remote;
   if (!pin) {
     fs.rmSync(binaryPath, { force: true });
     throw new Error(
@@ -86,10 +94,14 @@ export function verifyWebbridgeBinarySha256(
     );
   }
   const actual = sha256FileSync(binaryPath);
-  if (actual.toLowerCase() !== pin.toLowerCase()) {
+  const okEmbedded = actual.toLowerCase() === pin.toLowerCase();
+  const okRemote =
+    !okEmbedded && remote !== null && actual.toLowerCase() === remote.toLowerCase();
+  if (!okEmbedded && !okRemote) {
     fs.rmSync(binaryPath, { force: true });
     throw new Error(
-      `webbridge 二进制 sha256 校验失败: ${filename}\n  expected ${pin}\n  actual   ${actual}` +
+      `webbridge 二进制 sha256 校验失败: ${filename}\n  expected ${pin}` +
+        `${remote && remote !== pin ? `\n  remote   ${remote}` : ""}\n  actual   ${actual}` +
         `\n（上游 latest 内容已变化或传输被污染；升级需更新钉定表）`,
     );
   }
@@ -466,6 +478,13 @@ export async function installWebbridge(
   // HEAD 拿 ETag（同时作为版本探测；404/403 会在这里直接抛出，transient 错误自动重试）
   const head = await httpHeadWithRetry(url, maxRetries);
 
+  // 远端可更新钉定清单（R68）：只在生产路径（未显式传入 fixture 期望值）加载，
+  // 保证测试不触网；拉取失败返回 null，回退内置表。
+  const remotePins =
+    options.expectedSha256 === undefined
+      ? (await loadRemotePins({ dataDir }).catch(() => ({ pins: null, source: null }))).pins
+      : null;
+
   if (!options.force) {
     const cache = readCacheManifest(dataDir);
     if (
@@ -481,13 +500,16 @@ export async function installWebbridge(
       const pin = options.expectedSha256 === undefined
         ? resolveWebbridgeBinaryPin(filename)
         : (options.expectedSha256 || null);
+      const remotePin = options.expectedSha256 === undefined ? remotePins?.[filename] ?? null : null;
       const cacheOk = (() => {
-        if (!pin) return true; // 无钉定条目：按下载后校验的策略处理，此处放行
+        if (!pin && !remotePin) return true; // 无钉定条目：按下载后校验的策略处理，此处放行
+        let actual: string;
         try {
-          return sha256FileSync(binaryPath).toLowerCase() === pin.toLowerCase();
+          actual = sha256FileSync(binaryPath).toLowerCase();
         } catch {
           return false;
         }
+        return (!!pin && actual === pin.toLowerCase()) || (!!remotePin && actual === remotePin.toLowerCase());
       })();
       if (cacheOk) {
         return {
@@ -522,8 +544,9 @@ export async function installWebbridge(
   if (lastErr) throw lastErr;
 
   // 供应链钉定：下载产物过 sha256 校验才允许落盘执行（fail closed，详见
-  // verifyWebbridgeBinarySha256 注释）。CDN 只暴露 latest，必须内容级校验。
-  verifyWebbridgeBinarySha256(binaryPath, filename, options.expectedSha256);
+  // verifyWebbridgeBinarySha256 注释）。CDN 只暴露 latest，必须内容级校验；
+  // 远端清单（R68）让上游反复重建时无需发版即可修复。
+  verifyWebbridgeBinarySha256(binaryPath, filename, options.expectedSha256, remotePins);
 
   if (process.platform !== "win32") {
     fs.chmodSync(binaryPath, 0o755);
@@ -592,6 +615,11 @@ export interface WebbridgeSetupTaskDeps {
    * 由调用方提供已存在的 binary 路径填入 summary。
    */
   existingBinaryPath?: string;
+  /**
+   * 远端可更新钉定清单（R68；由调用方 loadRemotePins 后注入）。
+   * 缺省 null = 只用内置表（测试路径不触网）。
+   */
+  remotePins?: Record<string, string> | null;
 }
 
 export type SetupTaskOutcome =
@@ -659,7 +687,7 @@ export async function runWebbridgeSetupTask(
       const pinFilename = safeResolveWebbridgePinFilename();
       if (pinFilename) {
         try {
-          verifyWebbridgeBinarySha256(binaryPath, pinFilename);
+          verifyWebbridgeBinarySha256(binaryPath, pinFilename, undefined, deps.remotePins ?? null);
         } catch (err) {
           log.info(
             `[webbridge-setup] 既有二进制校验失败，转为重新下载: ${

@@ -53,7 +53,9 @@ styleSheet.replaceSync(/* css */`
     border: 1px solid color-mix(in srgb, var(--ok, #16a34a) 25%, transparent);
   }
   .oc-msgbox--info {
-    background: var(--accent-subtle, rgba(79,70,229,0.08));
+    /* fallback 同步 CryoBlue 浅色主色（#1a6fd0 @ 8%）——此处曾残留退役 indigo
+       rgba(79,70,229,.08)，token 缺席时会渲染成已废弃的紫蓝（R67） */
+    background: var(--accent-subtle, rgba(26,111,208,0.08));
     color: var(--accent, #1a6fd0);
     border: 1px solid color-mix(in srgb, var(--accent, #1a6fd0) 25%, transparent);
   }

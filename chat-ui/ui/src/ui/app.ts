@@ -137,6 +137,7 @@ type CryoClawBridge = {
   dismissReleaseNotes?: (version: string) => Promise<void>;
   // App 自动更新全局感知（角标 + 更新弹窗）；响应为 { success, data } 包装
   appUpdateGetState?: () => Promise<{ success: boolean; data?: AppUpdateState } | null>;
+  appUpdateCheck?: () => Promise<{ success: boolean; data?: AppUpdateState; message?: string } | null>;
   appUpdateDownload?: () => Promise<{ success: boolean; data?: AppUpdateState; message?: string } | null>;
   appUpdateQuitAndInstall?: () => Promise<{ success: boolean; message?: string } | null>;
   appUpdateSnooze?: (opts: { days?: number; forever?: boolean }) => Promise<{ success: boolean; data?: AppUpdateState; message?: string } | null>;
@@ -683,6 +684,13 @@ export class OpenClawApp extends LitElement {
   async startUpdateDownload() {
     const bridge = this.getCryoClawBridge();
     try {
+      // 下载失败后主进程 status 停在 "error"（version 保留），而 downloadAppUpdate()
+      // 只在 status === "available" 时放行——直接重试必然被拒。故 error 态下先重新
+      // check 一次（唯一能脱离 error 的路径），拿到 available 再下载（R67）。
+      if (this.appUpdateDialog?.status === "error") {
+        const chk = await bridge?.appUpdateCheck?.();
+        if (chk?.success && chk.data) this.appUpdateDialog = chk.data;
+      }
       const r = await bridge?.appUpdateDownload?.();
       if (r && r.success === false) throw new Error(r.message ?? "");
       if (r?.success && r.data) this.appUpdateDialog = r.data;

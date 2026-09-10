@@ -29,6 +29,30 @@ export const AUTH_PROXY_API_KEY_SENTINEL = "proxy-managed";
 /** Kimi Code 代理模式固定模型（auth proxy 只透传 coding 端点的唯一模型） */
 export const KIMI_CODE_FIXED_MODEL = "kimi-for-coding";
 
+/**
+ * gateway 未就绪时（全新安装的 Setup 阶段）的静态模型兜底清单。
+ *
+ * 动态目录（models.list，见 controllers/models.ts）仍是首选；但全新安装时主进程只
+ * 显示 Setup、不启动 gateway，目录必然为空。此前 getModels() 直接返回空 → 模型下拉
+ * 整体不渲染、下拉里的「自定义模型」哨兵项也不可达 → 选 Anthropic/OpenAI/Google/
+ * Moonshot-CN 的用户看到「请填写模型 ID」却无处可填，Setup 无法完成（R67 修复）。
+ * 这里只提供候选，用户仍可选「自定义模型」手填。
+ */
+export const STATIC_MODEL_FALLBACKS: Record<string, string[]> = {
+  moonshot: ["kimi-k2.6", "kimi-k2.5", "kimi-k2-turbo-preview", "moonshot-v1-128k"],
+  "moonshot-cn": ["kimi-k2.6", "kimi-k2.5", "kimi-k2-turbo-preview", "moonshot-v1-128k"],
+  "moonshot-ai": ["kimi-k2.6", "kimi-k2.5", "kimi-k2-turbo-preview", "moonshot-v1-128k"],
+  "kimi-coding": [KIMI_CODE_FIXED_MODEL],
+  anthropic: ["claude-haiku-4-5-20251001", "claude-sonnet-4-5-20250929", "claude-opus-4-1-20250805"],
+  openai: ["gpt-5.1", "gpt-5", "gpt-4.1", "o4-mini"],
+  google: ["gemini-3-pro-preview", "gemini-2.5-pro", "gemini-2.5-flash"],
+};
+
+/** 静态模型兜底查询（动态目录无该 provider 条目时使用）。 */
+export function staticModelsFor(providerKey: string): string[] {
+  return STATIC_MODEL_FALLBACKS[providerKey] ?? [];
+}
+
 export const PROVIDERS: Record<string, ProviderDef> = {
   moonshot: {
     placeholder: "sk-...",

@@ -117,11 +117,18 @@ export class ManagedImage extends LitElement {
 
   render() {
     if (this.resolvedSrc) {
+      // 键盘可达：img 加 role=button + tabindex + Enter/Space 展开（此前仅鼠标可点，R67）
       return html`<img
         class=${this.expanded ? "expanded" : ""}
         src=${this.resolvedSrc}
         alt=${this.alt || "image"}
+        role="button"
+        tabindex="0"
+        aria-expanded=${this.expanded ? "true" : "false"}
         @click=${this.toggleExpand}
+        @keydown=${(e: KeyboardEvent) => {
+          if (e.key === "Enter" || e.key === " ") { e.preventDefault(); this.toggleExpand(); }
+        }}
       />`;
     }
     if (this.failed) {

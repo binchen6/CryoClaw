@@ -135,7 +135,9 @@ function toggleCreatePanel(state: AppViewState) {
 }
 
 async function submitCreateWorktree(state: AppViewState) {
-  if (createState.creating || !isValidWorktreeName(createState.name) || !createState.repoRoot) return;
+  // state.connected 必须显式校验：createWorktree 在断连时直接 return null（什么都不做），
+  // 而面板提交按钮不看连接状态——按下去会弹「已创建」成功 toast 却什么都没发生（R67）。
+  if (createState.creating || !state.connected || !isValidWorktreeName(createState.name) || !createState.repoRoot) return;
   createState.creating = true;
   createState.error = null;
   try {
@@ -144,12 +146,17 @@ async function submitCreateWorktree(state: AppViewState) {
       name: createState.name,
       baseRef: createState.baseRef || undefined,
     });
+    if (!res) {
+      // 断连/空响应：不关面板、不报成功
+      createState.error = t("worktrees.createFailed");
+      return;
+    }
     createState.open = false;
     createState.name = "";
     createState.baseRef = "";
     showToast(
       state,
-      res?.worktree?.branch
+      res.worktree?.branch
         ? t("worktrees.created").replace("{branch}", res.worktree.branch)
         : t("worktrees.createdPlain"),
     );

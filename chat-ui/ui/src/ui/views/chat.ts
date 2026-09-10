@@ -1284,6 +1284,7 @@ export function renderChat(props: ChatProps) {
             <button
               class="btn chat-new-messages"
               type="button"
+              aria-label=${t("chat.scrollToBottom")}
               @click=${props.onScrollToBottom}
             >
               ${icons.arrowDown}
@@ -1492,6 +1493,7 @@ export function renderChat(props: ChatProps) {
                     class="chat-compose__send-btn"
                     ?disabled=${!props.connected}
                     @click=${props.onAbort}
+                    aria-label=${t("chat.stop")}
                     data-tooltip=${t("chat.stop")}
                   >${icons.stop}</button>`
                 : nothing
@@ -1500,6 +1502,7 @@ export function renderChat(props: ChatProps) {
               class="chat-compose__send-btn"
               ?disabled=${!props.connected}
               @click=${props.onSend}
+              aria-label=${isBusy ? t("chat.sendEnqueue") : t("chat.send")}
               data-tooltip=${isBusy ? t("chat.sendEnqueue") : t("chat.send")}
             >${icons.arrowUp}</button>
           </div>

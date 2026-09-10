@@ -8,6 +8,7 @@
  */
 import { LitElement, html } from "lit";
 import { property } from "lit/decorators.js";
+import { t } from "../i18n.ts";
 
 export class PasswordInput extends LitElement {
   createRenderRoot() { return this; }
@@ -42,7 +43,10 @@ export class PasswordInput extends LitElement {
           ?disabled=${this.disabled}
           @input=${this.handleInput}
         />
-        <button class="oc-password__toggle" type="button" @click=${this.toggleVisibility} tabindex="-1">
+        <button class="oc-password__toggle" type="button"
+          aria-label=${this.visible ? t("settings.hidePassword") : t("settings.showPassword")}
+          aria-pressed=${this.visible ? "true" : "false"}
+          @click=${this.toggleVisibility} tabindex="-1">
           ${this.visible ? eyeOffSvg : eyeSvg}
         </button>
       </div>

@@ -14,6 +14,7 @@ import "../../components/toggle-switch.ts";
 import {
   PROVIDERS, CUSTOM_PRESETS, KIMI_CODE_FIXED_MODEL, SUB_PLATFORM_URLS,
   CUSTOM_MODEL_SENTINEL, PROVIDER_DISPLAY_ORDER, getProviderLabels, isValidHttpBaseUrl,
+  staticModelsFor,
 } from "./setup-constants.ts";
 import { getCachedGatewayModels, loadGatewayModels, catalogModelSupportsImage } from "../../controllers/models.ts";
 import {
@@ -128,17 +129,26 @@ function getSubPlatform(): string {
 }
 
 function getModels(): string[] {
-  // 模型清单走 models.list 动态目录；gateway 未就绪时返回空，用户可选手动输入
+  // 模型清单优先走 models.list 动态目录；目录为空（全新安装时 gateway 尚未启动）
+  // 时回退静态清单——否则模型控件整体消失、Setup 无法完成（R67）。
   const catalog = getCachedGatewayModels();
+  const pick = (key: string): string[] => {
+    const live = catalog?.[key];
+    return live && live.length > 0 ? live : staticModelsFor(key);
+  };
   if (s.currentProvider === "moonshot" && s.subPlatform === "kimi-code") {
     // 代理模式固定模型兜底（catalog 未必收录 kimi-coding provider）
-    return catalog?.["kimi-coding"] ?? [KIMI_CODE_FIXED_MODEL];
+    return pick("kimi-coding");
   }
   if (s.currentProvider === "custom" && s.customPreset) {
     const providerKey = CUSTOM_PRESETS[s.customPreset]?.providerKey;
-    return providerKey ? (catalog?.[providerKey] ?? []) : [];
+    return providerKey ? pick(providerKey) : [];
   }
-  return catalog?.[s.currentProvider] ?? [];
+  if (s.currentProvider === "moonshot") {
+    // 非 kimi-code 子平台：目录键与 provider 键可能不同，先按 provider 键取
+    return pick("moonshot");
+  }
+  return pick(s.currentProvider);
 }
 
 // gateway 可达时后台拉取动态模型清单（控制器内带 TTL 缓存与失败节流）；成功后刷新下拉
@@ -476,7 +486,7 @@ export function renderStep2(state: AppViewState, goToStep: (step: number) => voi
         </div>
       ` : nothing}
 
-      ${models.length > 0 ? html`
+      ${(!isManualCustom || models.length > 0) ? html`
         <div class="oc-setup-form-group">
           <label class="oc-setup-label">${t("setup.provider.model")}</label>
           <select class="oc-setup-select" .value=${s.modelId}

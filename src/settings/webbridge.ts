@@ -41,6 +41,7 @@ import {
   runWebbridgeSetupTask,
   type SetupTaskSummary,
 } from "../webbridge";
+import { loadRemotePins } from "../webbridge-pins";
 import { readUserConfig, writeUserConfig } from "../provider-config";
 import { assertTrustedIpcSender } from "../ipc-sender-guard";
 import * as log from "../logger";
@@ -159,8 +160,13 @@ const runSelectiveWebbridgeRepair = async (
   extId: string,
   binaryPath: string,
   missing: { binary: boolean; skill: boolean; extension: boolean },
-): Promise<SetupTaskSummary> =>
-  runWebbridgeSetupTask({
+): Promise<SetupTaskSummary> => {
+  // 远端可更新钉定清单（R68）：repair 跳过下载时也要按最新钉定复核既有二进制，
+  // 上游反复重建 latest 的窗口期不再误报"需要升级应用"。拉取失败回退内置表。
+  const remotePins = (
+    await loadRemotePins({ dataDir: resolveWebbridgeDataDir() }).catch(() => ({ pins: null }))
+  ).pins;
+  return runWebbridgeSetupTask({
     installer: () => installWebbridge({ force: false }),
     installExtensions: async () => {
       const spec = resolveWebbridgeExtensionSpec();
@@ -182,11 +188,13 @@ const runSelectiveWebbridgeRepair = async (
     skipSkillInstall: !missing.skill,
     skipExtensionInstall: !missing.extension,
     existingBinaryPath: binaryPath,
+    remotePins,
     logger: {
       info: (m) => log.info(m),
       error: (m) => log.error(m),
     },
   });
+};
 
 // 针对默认浏览器的修复前 precheck（repair-and-enable / pill-repair 共用）。
 const runDefaultBrowserPrecheck = (

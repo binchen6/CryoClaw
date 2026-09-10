@@ -281,3 +281,80 @@ test("getWebbridgePrecheck: 全 OK / binary 缺 / 默认浏览器不支持 / web
   });
   assert.equal(drift.missing.skill, true, "webbridge 模式下 skill enabled=false 算漂移");
 });
+
+// ── R68：可自动更新的远端钉定清单（上游反复重建 latest 的永久修复） ──
+
+test("webbridge-pins：parsePinsJson 严格校验（合法/非法 hex/包裹形态/元数据键）", async () => {
+  const { parsePinsJson } = await import("./webbridge-pins");
+  const h = "a".repeat(64);
+  assert.equal(parsePinsJson(JSON.stringify({ f: { x: 1 } })), null, "值为对象整体丢弃");
+  assert.deepEqual(parsePinsJson(JSON.stringify({ f: h })), { f: h });
+  assert.deepEqual(parsePinsJson(JSON.stringify({ pins: { f: h }, version: 1, updatedAt: "x" })), { f: h });
+  assert.equal(parsePinsJson(JSON.stringify({ f: "zz" })), null, "非法 hex 整体丢弃");
+  assert.equal(parsePinsJson(JSON.stringify({ f: 123 })), null, "非字符串整体丢弃");
+  assert.equal(parsePinsJson("not json"), null);
+  assert.equal(parsePinsJson("[]"), null);
+  assert.equal(parsePinsJson("{}"), null, "空清单视为无效");
+});
+
+test("webbridge-pins：新鲜缓存不触网；过期缓存拉取失败时回退过期缓存", async () => {
+  const { loadRemotePins } = await import("./webbridge-pins");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "wb-pins-"));
+  const h = "b".repeat(64);
+  let calls = 0;
+  const rt = async () => { calls++; return JSON.stringify({ f: h }); };
+
+  // 首次：无缓存 → 拉取并写缓存
+  const first = await loadRemotePins({ dataDir: dir, urls: ["https://x/pins.json"], fetchText: rt });
+  assert.equal(first.source, "https://x/pins.json");
+  assert.deepEqual(first.pins, { f: h });
+  assert.equal(calls, 1);
+
+  // 二次：新鲜缓存命中 → 不再拉取
+  const second = await loadRemotePins({ dataDir: dir, urls: ["https://x/pins.json"], fetchText: rt });
+  assert.equal(second.source, "cache");
+  assert.equal(calls, 1, "24h 内不重复触网");
+
+  // 强制刷新但全部 URL 失败 → 回退过期缓存（不返回 null）
+  const stale = await loadRemotePins({
+    dataDir: dir, forceRefresh: true, urls: ["https://x/pins.json"],
+    fetchText: async () => { throw new Error("offline"); },
+  });
+  assert.equal(stale.source, "stale-cache");
+  assert.deepEqual(stale.pins, { f: h });
+
+  // 无缓存 + 全部失败 → null（调用方回退内置表）
+  const empty = fs.mkdtempSync(path.join(os.tmpdir(), "wb-pins-"));
+  const none = await loadRemotePins({
+    dataDir: empty, urls: ["https://x/pins.json"],
+    fetchText: async () => { throw new Error("offline"); },
+  });
+  assert.equal(none.pins, null);
+  fs.rmSync(dir, { recursive: true, force: true });
+  fs.rmSync(empty, { recursive: true, force: true });
+});
+
+test("verifyWebbridgeBinarySha256：远端清单命中即放行；都不匹配才 fail closed 并删产物", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "wb-verify-"));
+  const bin = path.join(dir, "kimi-webbridge-windows-amd64.exe");
+  const body = Buffer.from("rebuilt-by-upstream");
+  const actual = createHash("sha256").update(body).digest("hex");
+
+  // 内置表不匹配、远端清单匹配 → 通过（上游重建窗口期）
+  fs.writeFileSync(bin, body);
+  verifyWebbridgeBinarySha256(bin, "kimi-webbridge-windows-amd64.exe", undefined, {
+    "kimi-webbridge-windows-amd64.exe": actual,
+  });
+  assert.equal(fs.existsSync(bin), true, "远端命中不应删产物");
+
+  // 两者都不匹配 → 抛错并删除
+  fs.writeFileSync(bin, body);
+  assert.throws(
+    () => verifyWebbridgeBinarySha256(bin, "kimi-webbridge-windows-amd64.exe", undefined, {
+      "kimi-webbridge-windows-amd64.exe": "c".repeat(64),
+    }),
+    /sha256 校验失败/,
+  );
+  assert.equal(fs.existsSync(bin), false, "fail closed 删除产物");
+  fs.rmSync(dir, { recursive: true, force: true });
+});

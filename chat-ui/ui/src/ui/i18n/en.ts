@@ -43,6 +43,7 @@ export const enDict: Record<string, string> = {
   "restartDialog.restart": "Restart Gateway",
   "restartDialog.dismiss": "Try Later",
   "sidebar.rename": "Rename",
+  "sidebar.patchFailed": "Action failed, please retry",
   "sidebar.delete": "Delete",
   "sidebar.weixinBadgeTooltip": "WeChat channel pending",
   "sidebar.updateBadgeTooltip": "Update available",
@@ -161,6 +162,8 @@ export const enDict: Record<string, string> = {
   "workspace.selectFile": "Select a file to preview",
 
   "settings.save": "Save",
+  "settings.showPassword": "Show password",
+  "settings.hidePassword": "Hide password",
   "settings.saved": "Saved",
   "settings.cancel": "Cancel",
   "settings.confirm": "Confirm",
@@ -813,6 +816,7 @@ export const enDict: Record<string, string> = {
   "chat.placeholder.disconnected": "Connect to the gateway to start chatting…",
   "chat.send": "Send",
   "chat.stop": "Stop",
+  "chat.scrollToBottom": "Jump to latest",
   "chat.newSession": "New session",
   "chat.confirmNewSession":
     "Unmemorized content in the current conversation will be cleared. Continue?",

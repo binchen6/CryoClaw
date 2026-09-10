@@ -177,9 +177,16 @@ export function handleSessionChange(state: AppViewState, nextSessionKey: string)
   applySessionKey(state, nextSessionKey, true);
 }
 
-// 侧边栏重命名回调：修改会话 label 后刷新列表
-export async function patchSessionFromSidebar(state: AppViewState, key: string, newLabel: string) {
-  await patchSession(state, key, { label: newLabel || null });
+// 侧边栏会话属性变更（重命名/置顶/未读/归档）。
+// patchSession 失败时只把错误写进 state.sessionsError，而没有任何视图消费它——
+// 用户点了重命名/置顶/归档会看起来"毫无反应"（R67）。此处统一 toast 失败。
+export async function patchSessionFromSidebar(
+  state: AppViewState,
+  key: string,
+  patch: { label?: string | null; pinned?: boolean; unread?: boolean; archived?: boolean },
+) {
+  const ok = await patchSession(state, key, patch);
+  if (!ok) showToast(state, t("sidebar.patchFailed"));
 }
 
 // 正在删除的 session key —— 侧边栏 per-row spinner 状态

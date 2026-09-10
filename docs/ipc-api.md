@@ -52,7 +52,6 @@
 | `detectEnvKeys()` | `setup:detect-env-keys` | invoke，返回 `{success, data: [{providerKey, envVar, maskedKey}]}` |
 | `adoptEnvKey(params)` | `setup:adopt-env-key` | invoke，入参 `{providerKey, envVar}`，返回 `{ok, providerKey, model?}` 或 `{ok:false, error}` |
 | `completeSetup(params?)` | `setup:complete` | invoke |
-| `retryRandomPort()` | `setup:retry-random-port` | invoke |
 | `detectInstallation()` | `setup:detect-installation` | invoke |
 | `resolveConflict(params)` | `setup:resolve-conflict` | invoke |
 
@@ -200,6 +199,20 @@
 | `selectFiles(options?)` | `dialog:select-files` | invoke |
 | `readFileBase64(path)` | `file:read-base64` | invoke |
 
+## 工作空间（workspace 视图）
+
+| 方法 | IPC 通道 | 方向 |
+|---|---|---|
+| `setWorkspaceRoot(root)` | `workspace:set-root` | invoke |
+| `openWorkspaceFile(filePath)` | `workspace:open-file` | invoke |
+| `openWorkspaceFolder(filePath)` | `workspace:open-folder` | invoke |
+| `listWorkspaceDir(dirPath)` | `workspace:list-dir` | invoke |
+| `readWorkspaceFile(filePath)` | `workspace:read-file` | invoke |
+
+> 全部通道 `assertTrustedIpcSender` 校验；路径必须落在 workspace 根内
+> （`workspace-ipc.ts` 的根内包含校验 + realpath 复核防 symlink 逃逸）。
+> `workspace:set-root` 写 `agents.defaults.workspace` 时用正斜杠（见 gotcha #84）。
+
 ## Git 面板（P4，文件级 v1）
 
 | 方法 | IPC 通道 | 方向 |
@@ -210,6 +223,13 @@
 | `gitStage(cwd, paths)` | `git:stage` | invoke |
 | `gitUnstage(cwd, paths)` | `git:unstage` | invoke |
 | `gitCommit(cwd, message)` | `git:commit` | invoke |
+| `gitBranchList(cwd)` | `git:branch-list` | invoke（R58） |
+| `gitCheckout(cwd, branch)` | `git:checkout` | invoke（R58） |
+| `gitLog(cwd, limit?)` | `git:log` | invoke（R58） |
+| `gitPush(cwd, opts?)` | `git:push` | invoke（R58） |
+| `gitPull(cwd)` | `git:pull` | invoke（R58） |
+| `gitDiscard(cwd, paths)` | `git:discard` | invoke（R58，destructive） |
+| `gitClean(cwd, paths)` | `git:clean` | invoke（R58，destructive） |
 
 > 全部通道 `assertTrustedIpcSender` 校验 + `cwd` 必须 ∈ workspace 白名单根
 > （`workspace-ipc.ts resolveAllowedDir`：path 校验 + realpath 复核防 symlink）。

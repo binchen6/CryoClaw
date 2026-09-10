@@ -1,10 +1,14 @@
 import "./styles.css";
-import { t } from "./ui/i18n";
+import { t, getLocale } from "./ui/i18n";
 import { installLayoutDiagnosticsHook } from "./ui/layout-diagnostics.ts";
 import "./ui/app.ts";
 
 // 渲染进程启动时同步页面标题，避免文档标题与原生窗口标题不一致。
 document.title = t("app.windowTitle");
+
+// 同步文档语言（WCAG 3.1.1 Language of Page）：index.html 静态写死 en，
+// 中文用户（或 ?lang=zh）下若不更新，读屏发音与 CJK 字体选择都会被误导（R67）。
+document.documentElement.lang = getLocale() === "zh" ? "zh-CN" : "en";
 
 // Available to CDP smoke tests and local debugging; reports contain layout metadata only.
 installLayoutDiagnosticsHook();

@@ -30,7 +30,7 @@ import { getToastAction, getToastMessage, hideToast, showToast } from "./app-toa
 import { buildTranscriptFilename, buildTranscriptMarkdown, copyText, downloadMarkdownFile, tryFetchKernelTranscript } from "./chat/transcript-export.ts";
 import type { TranscriptMessage } from "./chat/transcript-export.ts";
 import { setCryoClawView } from "./app-view-switch.ts";
-import { loadSessions, patchSession } from "./controllers/sessions.ts";
+import { loadSessions } from "./controllers/sessions.ts";
 import { activeTaskSessionKeys, isActiveTask } from "./controllers/tasks.ts";
 import type { TaskSummary } from "./types.ts";
 import { t } from "./i18n.ts";
@@ -379,21 +379,22 @@ export function renderApp(state: AppViewState) {
               onSelectSession: (nextSessionKey: string) => handleSessionChange(state, nextSessionKey),
               onNewChat: () => createNewSession(state),
               onRenameSession: (key: string, newLabel: string) => {
-                void patchSessionFromSidebar(state, key, newLabel);
+                void patchSessionFromSidebar(state, key, { label: newLabel || null });
               },
               onDeleteSession: (key: string) => {
                 void deleteSessionFromSidebar(state, key);
               },
               // R58：有 queued/running 任务的会话禁止删除（按 tasks 引用记忆化，避免每帧新 Set）
               activeTaskSessions: activeTaskSessionsOf(state.tasks ?? []),
+              // 失败统一 toast（此前 patchSession 的错误只写进无人消费的 sessionsError → 点了没反应）
               onTogglePin: (key: string, pinned: boolean) => {
-                void patchSession(state as unknown as Parameters<typeof patchSession>[0], key, { pinned });
+                void patchSessionFromSidebar(state, key, { pinned });
               },
               onToggleUnread: (key: string, unread: boolean) => {
-                void patchSession(state as unknown as Parameters<typeof patchSession>[0], key, { unread });
+                void patchSessionFromSidebar(state, key, { unread });
               },
               onSetArchived: (key: string, archived: boolean) => {
-                void patchSession(state as unknown as Parameters<typeof patchSession>[0], key, { archived });
+                void patchSessionFromSidebar(state, key, { archived });
               },
               isDeletingSession: (key: string) => isDeletingSession(key),
               requestUpdate: () => state.requestUpdate(),

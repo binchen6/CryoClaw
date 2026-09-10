@@ -86,6 +86,11 @@ export function renderStep3(state: AppViewState) {
 
   // toggle 是否禁用：默认浏览器还没加载完不禁（loading 闪烁不友好），加载完且 null 才禁
   const wbDisabled = s.defaultBrowserLoaded && !s.defaultBrowser;
+  const toggleWebbridge = () => {
+    if (wbDisabled) return;
+    s.enableWebbridge = !s.enableWebbridge;
+    state.requestUpdate();
+  };
 
   return html`
     <div class="oc-setup-step">
@@ -104,7 +109,15 @@ export function renderStep3(state: AppViewState) {
                - 标题旁 info 图标永远显示「这选项干啥」的常规说明
                - 禁用态：tooltip 挂在右侧 track 上，hover 时显示在开关附近（不再居中漂在 row 中间） -->
           <div class="oc-toggle ${wbDisabled ? 'oc-toggle--disabled' : ''}"
-            @click=${() => { if (wbDisabled) return; s.enableWebbridge = !s.enableWebbridge; state.requestUpdate(); }}>
+            role="switch"
+            aria-checked=${s.enableWebbridge && !wbDisabled ? "true" : "false"}
+            aria-label=${t("setup.done.enableWebbridge")}
+            tabindex=${wbDisabled ? "-1" : "0"}
+            @click=${toggleWebbridge}
+            @keydown=${(e: KeyboardEvent) => {
+              if (wbDisabled || e.repeat) return;
+              if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleWebbridge(); }
+            }}>
             <span class="oc-toggle-label">
               ${t("setup.done.enableWebbridge")}
               <span class="oc-info-icon"
