@@ -10,9 +10,9 @@
 面向国内生态（Kimi / Moonshot / 飞书 / 企微 / 微信 / 钉钉 / QQ）。
 
 **当前状态**：
-- 重设计工程 **R1–R70 完成**（R70：交互级页面审查（新增发版固定步骤）+ 确认弹窗 Escape 修复；R69：无障碍批次——模态键盘关闭/焦点 + 可交互行键盘可达；R68：WebBridge 修复永久化——可自动更新的远端钉定清单；R67：第二轮功能/页面审查（P0 安装向导模型控件 + 9 项）；R66：WebBridge 钉定表随上游轮换 + 功能/页面审查 17 项修复；R65：WebBridge 供应链钉定；R64：三路全库审查 + UI 截图 QA；R63：MCP 页重叠修复 + 真静默更新换装；R62：回底按钮 + 消息对齐及时性；R61：内核问答卡片；R60：设置页 MCP 与 Hooks + 四路全库审查；R59–R58：在途输出恢复/对齐用量，详见工程记录），最新发版 **v2026.910.3**。
+- 重设计工程 **R1–R71 完成**（R71：故障路径审查——网关崩溃自动恢复；R70：交互级页面审查（新增发版固定步骤）+ 确认弹窗 Escape 修复；R69：无障碍批次——模态键盘关闭/焦点 + 可交互行键盘可达；R68：WebBridge 修复永久化——可自动更新的远端钉定清单；R67：第二轮功能/页面审查（P0 安装向导模型控件 + 9 项）；R66：WebBridge 钉定表随上游轮换 + 功能/页面审查 17 项修复；R65：WebBridge 供应链钉定；R64：三路全库审查 + UI 截图 QA；R63：MCP 页重叠修复 + 真静默更新换装；R62：回底按钮 + 消息对齐及时性；R61：内核问答卡片；R60：设置页 MCP 与 Hooks + 四路全库审查；R59–R58：在途输出恢复/对齐用量，详见工程记录），最新发版 **v2026.910.4**。
 - 内核 openclaw **2026.9.2**（版本 pin 在 package.json `cryoclaw.openclaw`；更新目标走 `kernel-channel.json` 策展渠道，minSupported 2026.7.0）；**Electron 43.4.0**（audit 0 漏洞）。
-- 测试基线 **1068 pass / 0 fail / 4 skipped**（vitest 159 + node 187 + chat-ui 645 + scripts 77；2026-09-10 实测，0 fail 为硬指标）。
+- 测试基线 **1072 pass / 0 fail / 4 skipped**（vitest 159 + node 191 + chat-ui 645 + scripts 77；2026-09-10 实测，0 fail 为硬指标）。
 - 重复率 **1.17%**（96 clones，阈值 5%，`npm run dupcheck` 防回退）；视图 id 收敛为 6（chat/setup/settings/workspace/tasks/extensions）。
 - 开源：GitHub `binchen6/CryoClaw`（AGPL-3.0-only，干净历史）；发版走本地 `dist:win` + `gh release`；CI `tests.yml` 每次 push/PR 全量回归。
 
@@ -636,3 +636,10 @@
 - **它发现的真缺陷（本阶段修复）**：通用确认弹窗（`confirm-dialog.ts`，用于「重置配置并重启」等危险操作）的遮罩**不响应点击**（这是刻意的——避免"点外面就取消危险操作"的歧义），因此 R69 加入的 Escape 关闭对它无效。修复：`closeTopDialog` 优先点击弹窗内显式标记 `data-dialog-dismiss` 的取消/关闭按钮，找不到才回退遮罩点击；9 处弹窗的取消/关闭按钮补齐该标记。
 - **顺带修正的审查脚本问题**（避免误判）：① 先切到「备份恢复」tab 再找重置按钮（tab 循环结束时停在最后一个 tab）；② 设置页「搜索」tab 会按设计触发热应用重启，网关健康检查改为轮询 30s（此前单次检查过早 → 误报"网关不可用"）；③ SPA 会把 URL 重写为虚拟路径，断言不再要求 `index.html`；④ 残留实例会占单实例锁/端口，审查前需清理。
 - **验证**：交互冒烟 10 步全绿（6 视图 + 13 tab 0 渲染异常；对话 5 个、工作空间 33 个键盘可达行；确认框 Escape 关闭 1→0；取消后网关仍 200）；全量 **1068 pass / 0 fail**；发版管线 silent-install E2E 装 2026.910.3 + gateway 200 + 四套 CDP 冒烟全绿。
+
+### R71 · 故障路径审查：网关崩溃自动恢复（新轴）
+
+- **新审查轴**：此前各轮覆盖功能/页面/i18n/a11y/交互，本轮做**故障注入**——杀掉网关子进程观察应用行为。
+- **发现（真缺陷）**：网关非预期退出后 `gateway-process` 只把状态置为 `stopped`，**没有任何重启路径**（`start()` 里的 5s 崩溃冷却说明设计上预期会有重启，但触发点从未接线）；渲染层只会无限重连一个已经死掉的 WebSocket。实测崩溃后 60s 内未恢复，用户会一直停在「无法连接到 Gateway」，只能手动点重启或重启应用。
+- **修复**：`GatewayProcess` 新增 `onCrash` 回调（running 期崩溃与 starting 期退出均触发）；main 侧新增有界自动重启——延迟 3s 重启、**5 分钟滑动窗内最多 3 次**（防崩溃循环），达上限转 `openRecoverySettings("gateway-recovery-failed")` 人工入口；退出序列（`isQuitting`）不再拉起新进程，定时器 unref 且随退出清理。策略抽为纯函数 `src/gateway-crash-restart.ts`（`decideCrashRestart`）并加 4 个单测（上限拒绝、窗口滑动恢复、部分过期只数窗内、自定义参数）。
+- **验证**：故障注入脚本 `.cache/r71-crash-recovery.js`（杀端口占用进程 → 观察恢复）；node 测试 195 项（191 pass / 4 skipped / 0 fail）；发版管线 silent-install E2E 装 2026.910.4 + gateway 200 + 四套 CDP 冒烟全绿。

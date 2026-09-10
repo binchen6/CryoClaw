@@ -81,6 +81,12 @@ interface GatewayOptions {
   port?: number;
   token: string;
   onStateChange?: (state: GatewayState) => void;
+  /**
+   * 非预期退出（运行中崩溃 / 启动期退出）回调——由 main 决定是否自动重启。
+   * 不在本类内部自动重启：重启需要「有界次数 + 冷却 + 达上限后人工恢复」策略，
+   * 属应用层关注点（R71 修复：此前崩溃后无人重启，用户卡在连接失败直到手动重启应用）。
+   */
+  onCrash?: (info: { code: number | null; signal: string | null }) => void;
 }
 
 export class GatewayProcess {
@@ -91,6 +97,7 @@ export class GatewayProcess {
   private extraEnv: Record<string, string> = {};
   private lastCrashTime = 0;
   private onStateChange?: (state: GatewayState) => void;
+  private onCrash?: (info: { code: number | null; signal: string | null }) => void;
   private startedAt: number | null = null;
 
   // 世代计数器：每次 spawn 递增，exit handler 只处理同代进程的退出
@@ -100,6 +107,7 @@ export class GatewayProcess {
     this.port = opts.port ?? DEFAULT_PORT;
     this.token = opts.token;
     this.onStateChange = opts.onStateChange;
+    this.onCrash = opts.onCrash;
   }
 
   getState(): GatewayState {
@@ -290,10 +298,16 @@ export class GatewayProcess {
         diagLog("WARN: gateway 运行中意外退出");
         this.lastCrashTime = Date.now();
         this.setState("stopped");
+        this.proc = null;
+        this.onCrash?.({ code, signal });
+        return;
       } else {
         // starting 阶段退出（如端口冲突）
         this.lastCrashTime = Date.now();
         this.setState("stopped");
+        this.proc = null;
+        this.onCrash?.({ code, signal });
+        return;
       }
       this.proc = null;
     });

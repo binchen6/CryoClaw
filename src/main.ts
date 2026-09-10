@@ -23,6 +23,12 @@ app.commandLine.appendSwitch("disable-component-update");
 app.commandLine.appendSwitch("disable-breakpad");
 
 import { GatewayProcess, closeDiagLogStream } from "./gateway-process";
+import {
+  CRASH_RESTART_DELAY_MS,
+  CRASH_RESTART_MAX,
+  CRASH_RESTART_WINDOW_MS,
+  decideCrashRestart,
+} from "./gateway-crash-restart";
 import { WindowManager } from "./window";
 import { TrayManager } from "./tray";
 // SetupManager removed: Setup is now a Lit view inside the main window
@@ -159,6 +165,9 @@ const gateway = new GatewayProcess({
       }
     }
   },
+  // 非预期退出 → 有界自动重启（R71）。此前崩溃后无人重启，用户会一直停在
+  // 「无法连接到 Gateway」直到手动重启应用；现在自动恢复，崩溃循环则转人工入口。
+  onCrash: (info) => scheduleGatewayCrashRestart(info),
 });
 const windowManager = new WindowManager();
 const tray = new TrayManager();
@@ -512,6 +521,37 @@ function cancelPendingGatewayRestart(source: string): void {
   clearTimeout(restartTimer);
   restartTimer = null;
   log.info(`[gateway] pending restart canceled: ${source}`);
+}
+
+// ── 网关崩溃自动重启（R71）──
+// 非预期退出后自动重启；5 分钟窗口内最多 3 次（防崩溃循环），达上限转人工恢复入口。
+// 判定逻辑在 gateway-crash-restart.ts（纯函数，有单测）；计时器 unref 且随退出取消。
+let crashRestartTimes: number[] = [];
+let crashRestartTimer: ReturnType<typeof setTimeout> | null = null;
+// 退出序列标志：退出中不允许再自动拉起网关（避免孤儿进程 / 打断退出）
+let isQuitting = false;
+
+function scheduleGatewayCrashRestart(info: { code: number | null; signal: string | null }): void {
+  // 应用退出中不重启（stop 触发的退出已在 gateway-process 里按 stopping 分支处理，
+  // 这里再兜一层：退出流程进行中崩溃不应再拉起新进程）
+  if (isQuitting) return;
+  const decision = decideCrashRestart(crashRestartTimes, Date.now());
+  crashRestartTimes = decision.times;
+  if (!decision.allow) {
+    log.error(
+      `[gateway] 崩溃自动重启已达上限（${CRASH_RESTART_MAX} 次 / ${CRASH_RESTART_WINDOW_MS / 60000} 分钟），转为人工恢复`,
+    );
+    openRecoverySettings("gateway-recovery-failed");
+    return;
+  }
+  log.warn(
+    `[gateway] 非预期退出（code=${info.code} signal=${info.signal}），${CRASH_RESTART_DELAY_MS / 1000}s 后自动重启（第 ${decision.attempt}/${CRASH_RESTART_MAX} 次）`,
+  );
+  crashRestartTimer = setTimeout(() => {
+    crashRestartTimer = null;
+    void ensureGatewayRunning("recovery:crash");
+  }, CRASH_RESTART_DELAY_MS);
+  crashRestartTimer.unref?.();
 }
 
 function requestGatewayRestart(source: string): void {
@@ -1010,6 +1050,11 @@ void detectGitCached();
 // ── 退出 ──
 
 async function quit(): Promise<void> {
+  isQuitting = true;
+  if (crashRestartTimer) {
+    clearTimeout(crashRestartTimer);
+    crashRestartTimer = null;
+  }
   cancelPendingGatewayRestart("app-quit");
   stopTokenRefresh();
   await stopAuthProxy();
@@ -1348,6 +1393,12 @@ app.on("window-all-closed", () => {
 // ── 退出前清理 ──
 
 app.on("before-quit", () => {
+  // 退出序列开始：禁止崩溃自动重启再拉起网关（R71），并取消待执行的崩溃重启定时器
+  isQuitting = true;
+  if (crashRestartTimer) {
+    clearTimeout(crashRestartTimer);
+    crashRestartTimer = null;
+  }
   // 取消待执行的 gateway 重启防抖（R64 审查 P2）：退出序列中触发 restart
   // 会在 Windows 上留下占端口/锁文件的孤儿 gateway 子进程
   cancelPendingGatewayRestart("app-quit");

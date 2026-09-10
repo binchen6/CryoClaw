@@ -1,5 +1,12 @@
 [
   {
+    "version": "2026.910.4",
+    "notes": {
+      "zh": "可靠性：核心服务（网关）进程意外崩溃后现在会自动重启恢复——此前崩溃后没有任何重启路径（界面只反复重连一个已经死掉的连接），用户会一直停在「无法连接到 Gateway」直到手动重启应用。新逻辑：检测到非预期退出后延迟 3 秒重启，5 分钟窗口内最多 3 次（防止崩溃循环拖垮系统），达上限则转入设置页的人工恢复入口并给出提示；应用正在退出时不再拉起新进程。",
+      "en": "Reliability: the core service (gateway) process now auto-restarts after an unexpected crash. Previously a crash had no recovery path at all - the UI only kept retrying a connection whose process was already dead - so users were stuck at \"cannot connect to Gateway\" until they relaunched the app. New behaviour: after an unexpected exit the gateway is restarted 3s later, at most 3 times within a rolling 5-minute window (crash-loop protection), and on exceeding that limit the app routes to the manual recovery entry in Settings with a notice; no new process is spawned while the app is quitting."
+    }
+  },
+  {
     "version": "2026.910.3",
     "notes": {
       "zh": "修复（交互审查发现）：通用确认弹窗（含「恢复出厂设置」等危险操作）此前遮罩不响应点击，导致上一版加入的 Escape 关闭对它无效——现在 Escape 优先点击弹窗内显式标记的「取消」按钮（7 处弹窗补齐标记），危险确认框也能用键盘取消，且不会误触确认。",
