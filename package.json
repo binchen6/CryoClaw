@@ -42,7 +42,7 @@
     "@types/node": "^22.15.0",
     "electron": "^43.4.0",
     "electron-builder": "^26.7.0",
-    "esbuild": "^0.25.12",
+    "esbuild": "^0.28.2",
     "isbinaryfile": "^5.0.0",
     "js-yaml": "^4.1.1",
     "jscpd": "^5.0.16",
