@@ -77,7 +77,6 @@ const CJK_RE = /[\u4e00-\u9fff]/;
 
 // zh 区允许纯英文的值：品牌名、产品名、技术字段标签（App ID / Client Secret 等业界通用）。
 const ZH_ENGLISH_ALLOWLIST = new Set([
-  "sidebar.brand",
   "settings.env.gateway",
   "settings.about.cryoclaw",
   "settings.about.openclaw",

@@ -122,6 +122,7 @@ export function renderStep3(state: AppViewState) {
               ${t("setup.done.enableWebbridge")}
               <span class="oc-info-icon"
                 data-tooltip=${t("setup.done.enableWebbridgeTooltip")}
+                data-tooltip-wide="true"
                 @click=${(e: Event) => e.stopPropagation()}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <circle cx="12" cy="12" r="10"/>
@@ -131,7 +132,8 @@ export function renderStep3(state: AppViewState) {
               </span>
             </span>
             <span class="oc-toggle-track ${s.enableWebbridge && !wbDisabled ? 'oc-toggle-track--on' : ''}"
-              data-tooltip=${wbDisabled ? t("setup.done.enableWebbridgeDisabledTooltip") : ""}>
+              data-tooltip=${wbDisabled ? t("setup.done.enableWebbridgeDisabledTooltip") : ""}
+              data-tooltip-wide="true">
               <span class="oc-toggle-thumb"></span>
             </span>
           </div>

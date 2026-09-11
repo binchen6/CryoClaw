@@ -33,7 +33,9 @@ function bareI18nScanExpr() {
       if (n.parentElement && isContent(n.parentElement)) continue;
       text += n.textContent + "\\n";
     }
-    const re = /\\b(app|chat|settings|setup|common|workspace|tasks|extensions|sessions)\\.[a-zA-Z][a-zA-Z0-9_.]{2,}/g;
+    // 前缀族与词典顶层前缀保持一致（R72：原仅 8 个前缀，sidebar./cron./git./goal./
+    // theme./confirm. 等 21 个族的裸键会漏过线上扫描）
+    const re = /\\b(app|appUpdate|chat|commands|config|confirm|cron|error|extensions|gatewayUrl|git|goal|kernelAutoUpgrade|markdownSidebar|panel|plan|progressCard|rail|releaseNotes|restartDialog|settings|setup|sharePrompt|sidebar|skillStore|skills|tasks|theme|workspace|worktrees|common|sessions)\\.[a-zA-Z][a-zA-Z0-9_.]{2,}/g;
     const ext = /\\.(xml|json|md|png|jpe?g|gif|js|mjs|ts|html|css|txt|ya?ml|exe|asar|zip)$/i;
     return JSON.stringify([...new Set((text.match(re) || []).filter((k) => !ext.test(k)))]);
   })()`;

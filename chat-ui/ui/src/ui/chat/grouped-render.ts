@@ -36,7 +36,10 @@ import "../components/managed-image.ts";
 // JSON 自动检测最大字符数，防止大 JSON 导致渲染卡顿
 const MAX_JSON_AUTOPARSE_CHARS = 20_000;
 
-// 检测文本是否为 JSON 对象或数组
+// 检测文本是否为 JSON 对象或数组（按消息引用缓存：≤20k 字符的 JSON 每次重渲染
+// 都重新 JSON.parse + stringify 是纯浪费，R72 对齐 extractTextCached 模式）
+const jsonDetectCache = new WeakMap<object, { parsed: unknown; pretty: string } | null>();
+
 function detectJson(text: string): { parsed: unknown; pretty: string } | null {
   const t = text.trim();
   if (t.length > MAX_JSON_AUTOPARSE_CHARS) {
@@ -51,6 +54,15 @@ function detectJson(text: string): { parsed: unknown; pretty: string } | null {
     }
   }
   return null;
+}
+
+function detectJsonCached(message: object, text: string): { parsed: unknown; pretty: string } | null {
+  if (jsonDetectCache.has(message)) {
+    return jsonDetectCache.get(message) ?? null;
+  }
+  const value = detectJson(text);
+  jsonDetectCache.set(message, value);
+  return value;
 }
 
 // 生成 JSON 折叠摘要标签
@@ -73,7 +85,25 @@ type ImageBlock = {
   alt?: string;
 };
 
+// 按消息引用缓存（R72，对齐 extractTextCached）：图片抽取遍历 content 数组，
+// 工具密集 run 期间每 tick 重摊平时未变消息无需重扫。返回数组视为只读。
+const imagesCache = new WeakMap<object, ImageBlock[]>();
+
 function extractImages(message: unknown): ImageBlock[] {
+  if (!message || typeof message !== "object") {
+    return extractImagesUncached(message);
+  }
+  const obj = message as object;
+  const cached = imagesCache.get(obj);
+  if (cached) {
+    return cached;
+  }
+  const images = extractImagesUncached(message);
+  imagesCache.set(obj, images);
+  return images;
+}
+
+function extractImagesUncached(message: unknown): ImageBlock[] {
   const m = message as Record<string, unknown>;
   const content = m.content;
   const images: ImageBlock[] = [];
@@ -587,7 +617,10 @@ function renderGroupedMessage(
     : nothing;
 
   // 检测纯 JSON 消息，用折叠块展示
-  const jsonResult = markdown && !opts.isStreaming ? detectJson(markdown) : null;
+  const jsonResult =
+    markdown && !opts.isStreaming && message && typeof message === "object"
+      ? detectJsonCached(message as object, markdown)
+      : null;
 
   const bubbleClasses = [
     "chat-bubble",

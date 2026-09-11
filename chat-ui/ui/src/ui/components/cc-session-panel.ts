@@ -45,6 +45,29 @@ export class CcSessionPanel extends LitElement {
     this.requestUpdate();
   };
 
+  // 会话搜索防抖（R72）：击键只更新本地草稿 + 本组件重绘，150ms 停顿后才提交全局
+  // 状态——直接提交会让每次击键触发 resolveSessionOptions 重过滤 + 整列表重渲染。
+  searchDraft: string | null = null;
+  private searchCommitTimer: number | null = null;
+
+  scheduleSearchCommit(value: string): void {
+    this.searchDraft = value;
+    if (this.searchCommitTimer != null) window.clearTimeout(this.searchCommitTimer);
+    this.searchCommitTimer = window.setTimeout(() => this.commitSearchDraft(), 150);
+    this.bump();
+  }
+
+  commitSearchDraft = (): void => {
+    if (this.searchCommitTimer != null) {
+      window.clearTimeout(this.searchCommitTimer);
+      this.searchCommitTimer = null;
+    }
+    if (this.searchDraft == null || !this.props) return;
+    const value = this.searchDraft;
+    this.searchDraft = null;
+    this.props.onSessionSearchChange(value);
+  };
+
   shouldUpdate(changed: Map<PropertyKey, unknown>): boolean {
     if (this.internalEpoch !== this.renderedEpoch) return true;
     if (!changed.has("props")) return false;
@@ -87,6 +110,11 @@ export class CcSessionPanel extends LitElement {
 
   disconnectedCallback() {
     super.disconnectedCallback();
+    if (this.searchCommitTimer != null) {
+      window.clearTimeout(this.searchCommitTimer);
+      this.searchCommitTimer = null;
+    }
+    this.searchDraft = null;
     resetMenuState();
   }
 }
@@ -426,6 +454,7 @@ function renderPanelInner(host: CcSessionPanel, props: SessionPanelProps) {
                 ? html`<div class="cc-panel__more-menu" role="menu" @click=${(e: Event) => e.stopPropagation()}>
                     <button class="cc-panel__more-item" type="button" role="menuitem"
                       data-tooltip=${t("sidebar.newWorktreeChatHint")}
+                      data-tooltip-wide="true"
                       @click=${() => { closeMoreMenu(host.bump); props.onNewWorktreeChat(); }}>
                       ${icons.gitBranch} ${t("sidebar.newWorktreeChat")}
                     </button>
@@ -454,10 +483,10 @@ function renderPanelInner(host: CcSessionPanel, props: SessionPanelProps) {
         <input
           class="cc-panel__search-input"
           type="search"
-          .value=${props.sessionSearch}
+          .value=${host.searchDraft ?? props.sessionSearch}
           placeholder=${t("sidebar.searchSessions")}
           aria-label=${t("sidebar.searchSessions")}
-          @input=${(e: Event) => props.onSessionSearchChange((e.target as HTMLInputElement).value)}
+          @input=${(e: Event) => host.scheduleSearchCommit((e.target as HTMLInputElement).value)}
         />
       </div>
 

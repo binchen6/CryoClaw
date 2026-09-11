@@ -30,8 +30,9 @@ function arg(name, fallback) {
 
 const wrapper = arg("--wrapper", path.join(process.env.LOCALAPPDATA || os.homedir(), "CryoClaw", "bin", "openclaw.cmd"));
 const kernelEntry = arg("--kernel-entry", null);
-// 参考内核入口的运行时：默认 Electron 自带 Node（满足 2026.9.2 的 engine 要求，
-// 系统 Node 24.14 < 24.15 会被内核 preinstall 守卫拒绝）
+// 参考内核入口的运行时：默认 Electron 自带 Node 24.18.1（满足 2026.9.3 的 engine 要求
+// >=24.16.0 <25；系统 Node 若低于 24.16 会被内核 preinstall 守卫拒绝——2026.9.3 起
+// Node 22/25 线已被剔除）
 const nodeBin = arg("--node-bin", path.join(__dirname, "..", "node_modules", "electron", "dist", "electron.exe"));
 const matrixOnly = process.argv.includes("--matrix-only");
 const timeoutMs = Number(arg("--timeout-ms", "30000"));

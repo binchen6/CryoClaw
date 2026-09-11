@@ -27,7 +27,14 @@ export type AgentEventPayload = {
 // 每次新 tool call 到来时，把当前在打字的 assistant 文本冻结成一段，挂在这条 tool entry 上。
 // 这样渲染时能按"上一段文本 → tool call → tool result → 下一段文本 …"的时间序展开，
 // 与 gateway 写进 transcript 的消息形态保持一致（history 加载后也是这样分开展示）。
-export type StreamSegment = { text: string; ts: number };
+// renderMessage：该段摊平进 chatToolMessages 时用的包装消息，构建一次后复用同一对象
+// （R72：每 80ms tick 重建时间线时若段消息每次都是新对象，下游按消息引用的
+// WeakMap 派生缓存会全部落空，工具密集 run 期间派生计算退化为每 tick 全量重算）。
+export type StreamSegment = {
+  text: string;
+  ts: number;
+  renderMessage?: Record<string, unknown>;
+};
 
 export type ToolStreamEntry = {
   toolCallId: string;
@@ -250,17 +257,22 @@ function trimToolStream(host: ToolStreamHost) {
   }
 }
 
+function segmentRenderMessage(seg: StreamSegment): Record<string, unknown> {
+  seg.renderMessage ??= {
+    role: "assistant",
+    content: [{ type: "text", text: seg.text }],
+    timestamp: seg.ts,
+  };
+  return seg.renderMessage;
+}
+
 function syncToolStreamMessages(host: ToolStreamHost) {
   // 摊平成时间线：每条 entry 依次贡献 leadingSegment（若有）→ callMessage → resultMessage（若已出）
   const out: Record<string, unknown>[] = [];
   // 先放被 trim 淘汰的 leadingSegments，保证渲染时序与原本一致（它们时间最早）。
   for (const seg of host.evictedLeadingSegments) {
     if (seg.text.trim().length === 0) continue;
-    out.push({
-      role: "assistant",
-      content: [{ type: "text", text: seg.text }],
-      timestamp: seg.ts,
-    });
+    out.push(segmentRenderMessage(seg));
   }
   for (const id of host.toolStreamOrder) {
     const entry = host.toolStreamById.get(id);
@@ -268,16 +280,20 @@ function syncToolStreamMessages(host: ToolStreamHost) {
       continue;
     }
     if (entry.leadingSegment && entry.leadingSegment.text.trim().length > 0) {
-      out.push({
-        role: "assistant",
-        content: [{ type: "text", text: entry.leadingSegment.text }],
-        timestamp: entry.leadingSegment.ts,
-      });
+      out.push(segmentRenderMessage(entry.leadingSegment));
     }
     out.push(entry.callMessage);
     if (entry.resultMessage) {
       out.push(entry.resultMessage);
     }
+  }
+  // 内容未变（tick 间无 entry 增改）时保留旧数组引用，让下游引用比较 memo 继续命中
+  const prev = host.chatToolMessages;
+  if (
+    prev.length === out.length &&
+    prev.every((item, i) => item === out[i])
+  ) {
+    return;
   }
   host.chatToolMessages = out;
 }

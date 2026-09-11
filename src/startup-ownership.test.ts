@@ -2,7 +2,7 @@
 import { test, expect, vi } from "vitest";
 import * as fs from "fs";
 import * as path from "path";
-import { useTempStateDir } from "./vitest-state-dir";
+import { useTempStateDir } from "./test-support/vitest-state-dir";
 
 vi.mock("electron", () => ({
   app: { getVersion: () => "2026.3.10" },

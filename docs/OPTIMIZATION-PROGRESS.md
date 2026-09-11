@@ -10,9 +10,9 @@
 面向国内生态（Kimi / Moonshot / 飞书 / 企微 / 微信 / 钉钉 / QQ）。
 
 **当前状态**：
-- 重设计工程 **R1–R71 完成**（R71：故障路径审查——网关崩溃自动恢复；R70：交互级页面审查（新增发版固定步骤）+ 确认弹窗 Escape 修复；R69：无障碍批次——模态键盘关闭/焦点 + 可交互行键盘可达；R68：WebBridge 修复永久化——可自动更新的远端钉定清单；R67：第二轮功能/页面审查（P0 安装向导模型控件 + 9 项）；R66：WebBridge 钉定表随上游轮换 + 功能/页面审查 17 项修复；R65：WebBridge 供应链钉定；R64：三路全库审查 + UI 截图 QA；R63：MCP 页重叠修复 + 真静默更新换装；R62：回底按钮 + 消息对齐及时性；R61：内核问答卡片；R60：设置页 MCP 与 Hooks + 四路全库审查；R59–R58：在途输出恢复/对齐用量，详见工程记录），最新发版 **v2026.910.4**。
-- 内核 openclaw **2026.9.2**（版本 pin 在 package.json `cryoclaw.openclaw`；更新目标走 `kernel-channel.json` 策展渠道，minSupported 2026.7.0）；**Electron 43.4.0**（audit 0 漏洞）。
-- 测试基线 **1072 pass / 0 fail / 4 skipped**（vitest 159 + node 191 + chat-ui 645 + scripts 77；2026-09-10 实测，0 fail 为硬指标）。
+- 重设计工程 **R1–R72 完成**（R72：内核 2026.9.3 适配（Node runtime 22→24）+ 词条覆盖/长文案溢出审查 + 性能与内存批次 + 死代码清理；R71：故障路径审查——网关崩溃自动恢复；R70：交互级页面审查（新增发版固定步骤）+ 确认弹窗 Escape 修复；R69：无障碍批次——模态键盘关闭/焦点 + 可交互行键盘可达；R68：WebBridge 修复永久化——可自动更新的远端钉定清单；R67：第二轮功能/页面审查（P0 安装向导模型控件 + 9 项）；R66：WebBridge 钉定表随上游轮换 + 功能/页面审查 17 项修复；R65：WebBridge 供应链钉定；R64：三路全库审查 + UI 截图 QA；R63：MCP 页重叠修复 + 真静默更新换装；R62：回底按钮 + 消息对齐及时性；R61：内核问答卡片；R60：设置页 MCP 与 Hooks + 四路全库审查；R59–R58：在途输出恢复/对齐用量，详见工程记录），最新发版 **v2026.911.0**。
+- 内核 openclaw **2026.9.3**（版本 pin 在 package.json `cryoclaw.openclaw`，捆绑 runtime Node **24.21.0**——2026.9.3 起 engines 剔除 Node 22/25 线；更新目标走 `kernel-channel.json` 策展渠道，minSupported 2026.7.0）；**Electron 43.4.0**（audit 0 漏洞）。
+- 测试基线 **1074 pass / 0 fail / 4 skipped**（vitest 159 + node 191 + chat-ui 645 + scripts 79；2026-09-11 实测，0 fail 为硬指标）。
 - 重复率 **1.17%**（96 clones，阈值 5%，`npm run dupcheck` 防回退）；视图 id 收敛为 6（chat/setup/settings/workspace/tasks/extensions）。
 - 开源：GitHub `binchen6/CryoClaw`（AGPL-3.0-only，干净历史）；发版走本地 `dist:win` + `gh release`；CI `tests.yml` 每次 push/PR 全量回归。
 
@@ -637,6 +637,14 @@
 - **顺带修正的审查脚本问题**（避免误判）：① 先切到「备份恢复」tab 再找重置按钮（tab 循环结束时停在最后一个 tab）；② 设置页「搜索」tab 会按设计触发热应用重启，网关健康检查改为轮询 30s（此前单次检查过早 → 误报"网关不可用"）；③ SPA 会把 URL 重写为虚拟路径，断言不再要求 `index.html`；④ 残留实例会占单实例锁/端口，审查前需清理。
 - **验证**：交互冒烟 10 步全绿（6 视图 + 13 tab 0 渲染异常；对话 5 个、工作空间 33 个键盘可达行；确认框 Escape 关闭 1→0；取消后网关仍 200）；全量 **1068 pass / 0 fail**；发版管线 silent-install E2E 装 2026.910.3 + gateway 200 + 四套 CDP 冒烟全绿。
 
+### R72 · 内核 2026.9.3 适配 + 词条/长文案/性能三轴审查 + 死代码清理
+
+- **内核 2026.9.3 适配（取证先行）**：docs/kernel-recon/2026.9.3-diff.md（npm 双版本解包 + 真实 npm install 树实跑补丁 + Electron-as-Node CLI 矩阵）。两处硬阻断：① engines 剔除 Node 22/25（`>=24.16.0 <25 || >=26.1.0`，preinstall + 运行时双守卫）→ 捆绑 runtime 22.23.2 → **24.21.0**（Electron 43 内嵌 24.18.1 本就满足，gateway/CLI 路径不受影响）；② dist 根 chunk **.js → .mjs 翻转**（5380 个 .mjs）→ kernel-dist-patch 三个扫描点（asar 边界候选 / windowsHide 收集 / marker 检查）扩展收 .mjs，`assertAsarBoundaryCoverage` 追加 peer-link .mjs 形态断言（堵住「root-file PASS 但 peer-link 整体漏打」盲区），测试补 .mjs fixtures。fs-safe 0.8.5 六注入点逐字节同形态零改动；RPC +6/-0 纯增量；config migration 零新增。**适配过程中实测发现并修复**：`resolveUserStateDir()` 对相对 OPENCLAW_STATE_DIR 不做绝对化，gateway 子进程（cwd 在 openclaw 包目录）解析到不存在路径——2026.9.2 静默回退 ~/.openclaw 误读生产配置掩盖了该 bug，2026.9.3 严格校验 exit 78 将其暴露。kernel-channel.json stable 保持 2026.8.2（旧产物内升级会 npm 拒装，携带 Node 24 的本版发布后再推进）。
+- **词条覆盖率审查**（.cache/i18n-audit/ 脚本可复跑）：1088/1088 zh-en 完全 parity、静态使用 932 key 零缺失、英文侧零硬编码；3 条死词条清理（sidebar.brand / settings.provider.syncModels / settings.provider.usage.query，白名单同步）；commands.ts 21 条手写中文映射迁入 commands.* 词典（en 界面优先内核描述防漂移）；用量面板 reset 文案入词典并把 lib 层冗余 locale 参数移除；setup auth proxy 错误双语化。
+- **长文案溢出审查**：3 条 nowrap tooltip（setup WebBridge 双提示 + worktree 新会话提示，英文最长 130 显示宽 ≈900px 单行）补 data-tooltip-wide；CDP 裸 key 扫描前缀从 8 族扩到全部 30 族（此前 sidebar./cron./git./goal./theme./confirm. 等 21 族线上漏检）。
+- **性能/内存批次（长历史/大量会话）**：① 工具流 80ms tick 的段包装消息对象稳定化（StreamSegment.renderMessage 缓存）+ 时间线未变时保留旧数组引用 → 下游引用比较 memo 继续命中；② extractToolCards / extractImages / detectJson 三处派生加 WeakMap（对齐 extractTextCached 模式）——工具密集 run 每 tick ~450 项的全量重算被消除；③ toStreamingMarkdownHtml 单槽 memo（>50k 稳定段不再每帧 escapeHtml+DOMPurify）；④ 会话搜索 150ms 防抖（草稿本地化，断连清理）；⑤ tasks 事件本地增量应用（视图打开时不再每事件全量重拉 tasks.list）；⑥ gateway request 日志走 debugLog 门控（默认零 IPC 转发）。审查结论：无 P0 泄漏（监听器/定时器全成对清理、缓存全有界）；DOM 全量驻留（200 条窗口无虚拟化）记录为候选欠账。
+- **死代码清理**：chat-ui __fixtures__/loader.mjs（strip-types 时代遗留 ESM resolver，零消费者）删除；src/vitest-state-dir.ts 移入 src/test-support/ 并排除出生产 tsc（此前 vitest 依赖会被编译进 dist/ 打入发行包）。
+- **验证**：npm test 1074 pass / 0 fail（+2 新测试）；内核补丁在 2026.9.3 真实树实跑：6 文件命中、peer-link .mjs 已打、coverage PASS、幂等；gateway 2026.9.3 就绪（health 200 + qqbot 渠道 ready）。
 ### R71 · 故障路径审查：网关崩溃自动恢复（新轴）
 
 - **新审查轴**：此前各轮覆盖功能/页面/i18n/a11y/交互，本轮做**故障注入**——杀掉网关子进程观察应用行为。

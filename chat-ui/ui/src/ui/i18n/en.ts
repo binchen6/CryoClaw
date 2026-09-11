@@ -10,7 +10,6 @@ export const enDict: Record<string, string> = {
   "panel.expand": "Expand session panel",
 
   // Sidebar
-  "sidebar.brand": "CryoClaw",
   "sidebar.newChat": "New Chat",
   "sidebar.settings": "Settings",
   "sidebar.webbridgeRepairNeeded": "Connect your browser",
@@ -629,8 +628,10 @@ export const enDict: Record<string, string> = {
   "settings.provider.usage.refresh": "Refresh",
   "settings.provider.usage.hourUsage": "{n}h usage",
   "settings.provider.usage.minuteUsage": "{n}m usage",
+  "settings.provider.usage.resetHours": "{n}h reset",
+  "settings.provider.usage.resetMinutes": "{n}m reset",
+  "settings.provider.usage.resetSoon": "resetting soon",
   // R58: live model sync (provider /models endpoints)
-  "settings.provider.syncModels": "Fetch models from provider",
   "settings.provider.syncModelsShort": "Sync models",  "settings.provider.syncLoading": "Fetching models from provider…",
   "settings.provider.syncFailed": "Failed to fetch model list",
   "settings.provider.syncRetry": "Retry",
@@ -644,7 +645,6 @@ export const enDict: Record<string, string> = {
   "settings.provider.fetchFromProvider": "Fetch from provider",
   "settings.provider.modelsEmptyHint": "No catalog models yet; fetch from provider or enter a model ID manually",
   // R58: usage / balance query (moonshot/deepseek/zai etc.)
-  "settings.provider.usage.query": "Query usage / balance",
   "settings.provider.usage.queryShort": "Usage",
   "settings.provider.usage.retry": "Retry",
   "settings.provider.usage.kimiUnavailable": "Membership usage not fetched yet (network or login state issue)",  "settings.provider.usage.unsupported": "Usage query is not supported for this provider yet",
@@ -725,6 +725,7 @@ export const enDict: Record<string, string> = {
   "settings.loading": "Loading…",
 
   // Setup
+  "setup.provider.authProxyError": "Auth proxy failed to start (port={port})",
   "setup.provider.apiKey": "API Key",
   "setup.provider.oauth.advanced": "Advanced",
 
@@ -1172,4 +1173,27 @@ export const enDict: Record<string, string> = {
   "goal.status.budgetLimited": "Budget limit",
   "goal.status.complete": "Complete",
   "goal.placeholder": "Enter goal… (sent via /goal command)",
+
+  // Slash command descriptions (zh primary; en falls back to kernel description)
+  "commands.goal": "Set or manage the session goal (start, pause, resume, clear)",
+  "commands.think": "Adjust thinking effort (think hard / think harder, etc.)",
+  "commands.fast": "Toggle fast mode (fast on/off/auto)",
+  "commands.new": "Start a new session",
+  "commands.compact": "Compact session history",
+  "commands.exec": "Run a command and adjust exec policy (host/security/ask)",
+  "commands.plan": "Enter plan mode (plan before executing)",
+  "commands.elevated": "Toggle elevated execution (elevated on/full)",
+  "commands.sandbox": "View or manage sandbox containers",
+  "commands.help": "Show help",
+  "commands.status": "Show current status",
+  "commands.usage": "Show usage statistics",
+  "commands.memory": "Manage long-term memory",
+  "commands.skills": "Manage skills",
+  "commands.doctor": "Diagnose and repair the runtime environment",
+  "commands.config": "View or change configuration",
+  "commands.sessions": "Manage session list",
+  "commands.channels": "Show channel status",
+  "commands.cron": "Manage scheduled jobs",
+  "commands.tasks": "Show background tasks",
+  "commands.node": "Manage node devices",
 };

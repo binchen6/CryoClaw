@@ -72,3 +72,7 @@ chat-ui/ui/.test-dist/
 .mimosa/
 .release-notes-*.md
 .dev-state-pkg/
+
+# 本地未跟踪目录（驱动残留/文档生成物，勿提交）
+NVIDIA Corporation/
+repowiki/

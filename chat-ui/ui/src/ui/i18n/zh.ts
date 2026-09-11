@@ -10,7 +10,6 @@ export const zhDict: Record<string, string> = {
   "panel.expand": "展开会话面板",
 
   // Sidebar
-  "sidebar.brand": "CryoClaw",
   "sidebar.newChat": "新建对话",
   "sidebar.settings": "设置",
   "sidebar.webbridgeRepairNeeded": "连接你的常用浏览器",
@@ -666,8 +665,10 @@ export const zhDict: Record<string, string> = {
   "settings.provider.usage.refresh": "刷新",
   "settings.provider.usage.hourUsage": "{n} 小时用量",
   "settings.provider.usage.minuteUsage": "{n} 分钟用量",
+  "settings.provider.usage.resetHours": "{n}小时后重置",
+  "settings.provider.usage.resetMinutes": "{n}分钟后重置",
+  "settings.provider.usage.resetSoon": "即将重置",
   // R58：在线模型同步（提供商 /models 端点）
-  "settings.provider.syncModels": "从提供商获取模型列表",
   "settings.provider.syncModelsShort": "同步模型",  "settings.provider.syncLoading": "正在从提供商获取模型列表…",
   "settings.provider.syncFailed": "获取模型列表失败",
   "settings.provider.syncRetry": "重试",
@@ -681,7 +682,6 @@ export const zhDict: Record<string, string> = {
   "settings.provider.fetchFromProvider": "从提供商获取",
   "settings.provider.modelsEmptyHint": "暂无目录模型，可点击右侧按钮从提供商获取，或手动输入模型 ID",
   // R58：用量/余额查询（moonshot/deepseek/zai 等）
-  "settings.provider.usage.query": "查询用量 / 余额",
   "settings.provider.usage.queryShort": "查用量",
   "settings.provider.usage.retry": "重试",
   "settings.provider.usage.kimiUnavailable": "会员用量暂未获取（网络或登录状态问题）",  "settings.provider.usage.unsupported": "该提供商暂不支持用量查询",
@@ -762,6 +762,7 @@ export const zhDict: Record<string, string> = {
   "settings.loading": "加载中…",
 
   // Setup
+  "setup.provider.authProxyError": "auth 代理未启动（port={port}）",
   "setup.provider.apiKey": "API Key",
   "setup.provider.oauth.advanced": "高级选项",
 
@@ -1171,4 +1172,27 @@ export const zhDict: Record<string, string> = {
 
   // Errors
   "error.disconnected": "已断开与 Gateway 的连接。",
+
+  // 斜杠命令描述（zh 界面优先词典；en 界面优先内核英文描述）
+  "commands.goal": "设置/管理会话目标（开始、暂停、恢复、清除）",
+  "commands.think": "调整思考强度（think hard / think harder 等）",
+  "commands.fast": "切换快速模式（fast on/off/auto）",
+  "commands.new": "新建会话",
+  "commands.compact": "压缩会话历史",
+  "commands.exec": "执行命令并调整执行策略（host/security/ask）",
+  "commands.plan": "进入计划模式（先规划后执行）",
+  "commands.elevated": "切换提权执行（elevated on/full）",
+  "commands.sandbox": "查看/管理沙箱容器",
+  "commands.help": "显示帮助",
+  "commands.status": "查看当前状态",
+  "commands.usage": "查看用量统计",
+  "commands.memory": "管理长期记忆",
+  "commands.skills": "管理技能",
+  "commands.doctor": "运行环境诊断与修复",
+  "commands.config": "查看/修改配置",
+  "commands.sessions": "管理会话列表",
+  "commands.channels": "查看渠道状态",
+  "commands.cron": "管理定时任务",
+  "commands.tasks": "查看后台任务",
+  "commands.node": "管理节点设备",
 };

@@ -1,4 +1,5 @@
 import { buildDeviceAuthPayload } from "../../../src/gateway/device-auth.js";
+import { debugLog } from "./debug.ts";
 import {
   GATEWAY_CLIENT_CAPS,
   GATEWAY_CLIENT_MODES,
@@ -429,7 +430,7 @@ export class GatewayBrowserClient {
       });
     });
     ws.send(JSON.stringify(frame));
-    console.debug("[gateway] request sent", method);
+    debugLog("gateway", "request sent", { method });
     return p;
   }
 

@@ -53,9 +53,12 @@ test("resolveCommandDescription：英文界面下优先内核英文描述", () =
   try {
     // 收录命令也应显示英文
     assert.equal(resolveCommandDescription(cmd("goal")), "English desc for goal");
-    // 内核无英文描述时才回退中文映射（模拟内核缺失 description 的运行时数据）
+    // 内核无英文描述时回退词典英文值（不再是中文映射）
     const noDesc = { name: "goal", acceptsArgs: true } as unknown as CommandEntry;
-    assert.equal(resolveCommandDescription(noDesc), "设置/管理会话目标（开始、暂停、恢复、清除）");
+    assert.equal(resolveCommandDescription(noDesc), "Set or manage the session goal (start, pause, resume, clear)");
+    // 未收录命令且内核无描述 → 空串
+    const unknown = { name: "customcmd", acceptsArgs: true } as unknown as CommandEntry;
+    assert.equal(resolveCommandDescription(unknown), "");
   } finally {
     setLocale("zh");
   }

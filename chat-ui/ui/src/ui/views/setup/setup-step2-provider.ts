@@ -245,7 +245,7 @@ async function saveProviderFragment(apiKey: string, modelID: string, supportsIma
     // 守卫（对齐设置页 tab-provider 的同款逻辑）：异常端口不得落盘——否则会写入
     // baseUrl 指向 :0 端口的坏 provider 且向导误报成功（失败路径 unwrapData 已抛错）
     if (proxyPort <= 0) {
-      throw new Error(`auth proxy 未启动（port=${proxyPort}）`);
+      throw new Error(t("setup.provider.authProxyError").replace("{port}", String(proxyPort)));
     }
     effectiveApiKey = AUTH_PROXY_API_KEY_SENTINEL;
     effectiveTarget = { ...target, baseUrl: `http://127.0.0.1:${proxyPort}/coding` };

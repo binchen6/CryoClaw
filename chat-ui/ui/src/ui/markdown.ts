@@ -199,19 +199,27 @@ export type MarkdownSafeSplit = { stable: string; tail: string };
 // 每帧对全文全量 marked.parse + DOMPurify，长回复呈 O(n²)。本函数（R41 Task 9）
 // 是有意升级：解析对象只剩不变稳定段且命中 LRU，成本降到边界推进频率；
 // 安全面不变——稳定段经 DOMPurify，尾部经 escapeHtml。
+//
+// R72 单槽 memo：rAF 每帧都会带着当前全文调用（delta 合帧后文本未变的帧也很多），
+// >50k 的稳定段又不读 LRU——同文本帧直接复用上次结果，把超长回复的每帧
+// escapeHtml+DOMPurify 降为只在文本实际变化时执行一次。只存最近一条，无泄漏面。
+let streamingMemo: { text: string; html: string } | null = null;
+
 export function toStreamingMarkdownHtml(text: string): string {
   const trimmed = text.trim();
   if (!trimmed) {
     return "";
   }
+  if (streamingMemo && streamingMemo.text === trimmed) {
+    return streamingMemo.html;
+  }
   const { stable, tail } = splitMarkdownSafePrefix(trimmed);
   // 稳定段走默认缓存路径：内部以 trim 后全文作键，边界不推进时稳定段内容不变即命中；
   // splitMarkdownSafePrefix 的边界含行尾 \n，键不会因尾随空白抖动。
   const stableHtml = stable ? toSanitizedMarkdownHtml(stable) : "";
-  if (!tail) {
-    return stableHtml;
-  }
-  return `${stableHtml}<p>${escapeHtml(tail)}</p>`;
+  const html = tail ? `${stableHtml}<p>${escapeHtml(tail)}</p>` : stableHtml;
+  streamingMemo = { text: trimmed, html };
+  return html;
 }
 
 // 安全前缀切分（对齐官方 control-ui 流式 markdown 做法）：

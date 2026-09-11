@@ -57,14 +57,14 @@ function patchWindowsHideGlobal(dir) {
   return { scanned, patched };
 }
 
-// 递归收集目录下所有 .js 文件
+// 递归收集目录下所有 .js/.mjs 文件（openclaw ≥2026.9.3 起 dist 根 chunk 大量翻转为 .mjs）
 function collectJsFilesRecursive(dir) {
   const results = [];
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) {
       results.push(...collectJsFilesRecursive(full));
-    } else if (entry.isFile() && entry.name.endsWith(".js")) {
+    } else if (entry.isFile() && (entry.name.endsWith(".js") || entry.name.endsWith(".mjs"))) {
       results.push(full);
     }
   }
@@ -133,19 +133,20 @@ function patchAsarBoundaryCheck(gatewayDir) {
   const distDir = path.join(gatewayDir, "node_modules", "openclaw", "dist");
   if (!fs.existsSync(distDir)) return 0;
 
-  // 扫描 dist 根下所有 .js chunk，按函数标记注入（hash 文件名随版本变化）。
+  // 扫描 dist 根下所有 .js/.mjs chunk，按函数标记注入（hash 文件名随版本变化；
+  // openclaw ≥2026.9.3 起根 chunk 从 .js 翻转为 .mjs，peer-link 等补丁目标住 .mjs）。
   // openclaw ≥2026.9.2 起边界校验函数住在 @openclaw/fs-safe 包里，需一并扫描
   // （只扫该包 dist 根一层——fs-safe 的源码形态是散文件，不是 chunk）。
   const candidateFiles = [];
   for (const fileName of fs.readdirSync(distDir)) {
-    if (fileName.endsWith(".js")) {
+    if (fileName.endsWith(".js") || fileName.endsWith(".mjs")) {
       candidateFiles.push({ filePath: path.join(distDir, fileName), root: "openclaw" });
     }
   }
   const fsSafeDist = path.join(gatewayDir, "node_modules", "@openclaw", "fs-safe", "dist");
   if (fs.existsSync(fsSafeDist)) {
     for (const fileName of fs.readdirSync(fsSafeDist)) {
-      if (fileName.endsWith(".js")) {
+      if (fileName.endsWith(".js") || fileName.endsWith(".mjs")) {
         candidateFiles.push({ filePath: path.join(fsSafeDist, fileName), root: "fs-safe" });
       }
     }
@@ -396,7 +397,7 @@ function hasAsarBoundaryPatchMarker(gatewayDir) {
   for (const dir of scanRoots) {
     if (!fs.existsSync(dir)) continue;
     for (const fileName of fs.readdirSync(dir)) {
-      if (!fileName.endsWith(".js")) continue;
+      if (!fileName.endsWith(".js") && !fileName.endsWith(".mjs")) continue;
       const source = fs.readFileSync(path.join(dir, fileName), "utf-8");
       if (markers.some((m) => source.includes(m))) return true;
     }
@@ -404,12 +405,15 @@ function hasAsarBoundaryPatchMarker(gatewayDir) {
   return false;
 }
 
-// 内核形态感知的补丁覆盖断言（R19：验证终点必须是产物/树内内容断言）。
+// v9 形态感知的补丁覆盖断言（R19：验证终点必须是产物/树内内容断言）。
 // R56 事故：v9 内核把边界校验函数迁到 @openclaw/fs-safe 包，旧扫描只看 openclaw
 // dist chunk → 补丁计数 >0（仅 peer-link 命中）但关键快速通道全部漏打，渠道插件
 // 全崩。这里按形态强制校验关键文件确已带补丁：
 //   v9（fs-safe root-file.js 存在）：root-file.js 必须含 asar-bypass。
 //   v8（无 fs-safe 包）：任一 openclaw dist chunk 含 asar-bypass（原逻辑）。
+// R72 追加：openclaw ≥2026.9.3 起 peer-link 函数住 plugin-peer-link-*.mjs，
+// 曾出现 root-file 断言 PASS 而 peer-link 补丁整体漏打（asar 模式下 vendored 插件
+// peer 审计失败 → 启动拒绝 ready）——该形态存在时强制校验已带补丁。
 // 未覆盖时抛 Error，调用方中止打包/升级。
 function assertAsarBoundaryCoverage(gatewayDir) {
   const fsSafeRootFile = path.join(
@@ -417,13 +421,37 @@ function assertAsarBoundaryCoverage(gatewayDir) {
   );
   if (fs.existsSync(fsSafeRootFile)) {
     const source = fs.readFileSync(fsSafeRootFile, "utf-8");
-    if (source.includes("/* asar-bypass */")) return;
-    throw new Error(
-      "@openclaw/fs-safe/dist/root-file.js 缺少 asar 快速通道补丁（上游结构变化？），中止"
-    );
+    if (!source.includes("/* asar-bypass */")) {
+      throw new Error(
+        "@openclaw/fs-safe/dist/root-file.js 缺少 asar 快速通道补丁（上游结构变化？），中止"
+      );
+    }
+    assertPeerLinkPatchCoverage(gatewayDir);
+    return;
   }
   if (hasAsarBoundaryPatchMarker(gatewayDir)) return;
   throw new Error("ASAR 边界校验补丁未命中任何模块（openclaw 上游结构变化？）");
+}
+
+// peer-link 补丁覆盖断言（R72）：dist 根存在 plugin-peer-link-*.js/.mjs 且内含
+// auditOpenClawPeerDependency / linkOpenClawPeerDependency 函数定义时，该文件必须
+// 已带 asar-bypass marker。函数定义不在这些文件里（形态变化）则静默通过。
+function assertPeerLinkPatchCoverage(gatewayDir) {
+  const distDir = path.join(gatewayDir, "node_modules", "openclaw", "dist");
+  if (!fs.existsSync(distDir)) return;
+  for (const fileName of fs.readdirSync(distDir)) {
+    if (!fileName.startsWith("plugin-peer-link-")) continue;
+    if (!fileName.endsWith(".js") && !fileName.endsWith(".mjs")) continue;
+    const source = fs.readFileSync(path.join(distDir, fileName), "utf-8");
+    const hasPeerLinkFn =
+      source.includes("async function auditOpenClawPeerDependency(params) {") ||
+      source.includes("async function linkOpenClawPeerDependency(params) {");
+    if (hasPeerLinkFn && !source.includes("/* asar-bypass */")) {
+      throw new Error(
+        `openclaw dist/${fileName} 含 peer-link 函数但缺少 asar 补丁（扫描面变化？），中止`
+      );
+    }
+  }
 }
 
 // ─── kimi 插件思考档位补丁 ───

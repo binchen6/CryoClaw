@@ -216,7 +216,9 @@
 .release-notes-entry-content {
   font-size: var(--text-sm);
   line-height: var(--leading-body);
-  color: var(--text-muted);
+  /* 更新日志正文是大段阅读文本：text-muted 在深色主题下对比不足（R72 截图审查），
+     用 text-secondary 保证两主题可读 */
+  color: var(--text-secondary);
   white-space: pre-wrap;
   word-break: break-word;
 }

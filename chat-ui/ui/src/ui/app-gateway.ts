@@ -715,13 +715,12 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
     if (next) {
       app.tasks = next;
     } else {
-      // restored / 未知 action → 全量重拉，避免本地状态与内核漂移
+      // restored / 未知 action / 事件载荷不完整 → 全量重拉，避免本地状态与内核漂移
       void loadTasks(app as any);
     }
-    // 任务视图打开时总是刷新（事件可能是 filtered 之外的），否则本地 upsert 已足够
-    if ((app.settings.cryoclawView ?? "chat") === "tasks") {
-      void loadTasks(app as any);
-    }
+    // upserted/deleted 已本地应用（loadTasks 恒拉全量、过滤在客户端，事件带完整
+    // task 对象），任务视图打开时无需再重拉——R72 前此举让任务密集期每个事件都
+    // 触发一次全量 tasks.list 往返。
     app.requestUpdate?.();
     return;
   }

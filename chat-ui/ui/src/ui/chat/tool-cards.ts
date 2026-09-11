@@ -21,7 +21,26 @@ function asInteger(value: unknown): number | undefined {
   return typeof value === "number" && Number.isInteger(value) ? value : undefined;
 }
 
+// 按消息引用缓存抽取结果（对齐 extractTextCached 模式）：工具密集 run 期间
+// chatToolMessages 每 80ms tick 重摊平，未变化的消息对象重复抽取是纯浪费。
+// 返回数组视为只读（所有调用方只遍历），缓存安全。
+const toolCardsCache = new WeakMap<object, ToolCard[]>();
+
 export function extractToolCards(message: unknown): ToolCard[] {
+  if (!message || typeof message !== "object") {
+    return extractToolCardsUncached(message);
+  }
+  const obj = message as object;
+  const cached = toolCardsCache.get(obj);
+  if (cached) {
+    return cached;
+  }
+  const cards = extractToolCardsUncached(message);
+  toolCardsCache.set(obj, cards);
+  return cards;
+}
+
+function extractToolCardsUncached(message: unknown): ToolCard[] {
   const m = message as Record<string, unknown>;
   const content = normalizeContent(m.content);
   const cards: ToolCard[] = [];

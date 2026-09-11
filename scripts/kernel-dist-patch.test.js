@@ -498,7 +498,84 @@ test("assertAsarBoundaryCoverage：v8 形态（无 fs-safe 包）走 chunk marke
 
 test("patchFsSafeAsarUnpacked：无 fs-safe 包（v8 内核）返回 0", (t) => {
   const { gatewayDir } = makeGatewayDist(t, {
-    "root-file-DJGGfXq8.js": "function openRootFileSync(params) {\n\treturn resolveRootFilePathGeneric(params);\n}",
+    "root-file-DJGGfXq8.js": "function openRootFileSync(params) {\n\treturn resolveRootFilePathGeneric(params);}",
   });
   assert.equal(kdp.patchFsSafeAsarUnpacked(gatewayDir), 0);
+});
+
+// ─── openclaw ≥2026.9.3 形态：dist 根 chunk .js → .mjs 翻转 ───
+// peer-link 等函数迁入 .mjs chunk 后，扫描/断言必须同步覆盖 .mjs，
+// 否则 asar 模式下 vendored 插件 peer 审计失败（R72）。
+
+function makeGatewayV93(t) {
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "cryoclaw-asar-patch-v93-"));
+  t.after(() => fs.rmSync(tmpRoot, { recursive: true, force: true }));
+  const gatewayDir = path.join(tmpRoot, "gateway");
+  const openclawDist = path.join(gatewayDir, "node_modules", "openclaw", "dist");
+  const fsSafeDist = path.join(gatewayDir, "node_modules", "@openclaw", "fs-safe", "dist");
+  fs.mkdirSync(openclawDist, { recursive: true });
+  fs.mkdirSync(fsSafeDist, { recursive: true });
+  fs.writeFileSync(path.join(openclawDist, "entry.js"), "module.exports = {};\n");
+  fs.writeFileSync(path.join(fsSafeDist, "root-file.js"), FS_SAFE_ROOT_FILE);
+  fs.writeFileSync(
+    path.join(openclawDist, "plugin-peer-link-Xk9.mjs"),
+    [
+      "async function auditOpenClawPeerDependency(params) {",
+      "\treturn null;",
+      "}",
+      "async function linkOpenClawPeerDependency(params) {",
+      '\treturn "linked";',
+      "}",
+      "",
+    ].join("\n")
+  );
+  return { gatewayDir, openclawDist, fsSafeDist };
+}
+
+test("v9.3 形态：peer-link 住 .mjs chunk 仍被补丁，marker/断言均识别", (t) => {
+  const { gatewayDir, openclawDist, fsSafeDist } = makeGatewayV93(t);
+  // 补丁前：root-file.js 未补丁 → 先抛 root-file 错
+  assert.throws(() => kdp.assertAsarBoundaryCoverage(gatewayDir), /root-file\.js 缺少/);
+  // 补丁前：单独构造 root-file 已补丁但 peer-link 漏打的形态 → 新断言必须兜出（R72 盲区）
+  const peerLinkPath = path.join(openclawDist, "plugin-peer-link-Xk9.mjs");
+  assert.throws(() => {
+    const patchedRoot = fs.readFileSync(path.join(fsSafeDist, "root-file.js"), "utf-8");
+    // 模拟「root-file 命中但 peer-link .mjs 被旧版只扫 .js 的扫描漏掉」
+    // 直接调用内部断言路径：先补 root-file 再人为还原 peer-link
+    kdp.patchAsarBoundaryCheck(gatewayDir);
+    const patchedPeer = fs.readFileSync(peerLinkPath, "utf-8");
+    fs.writeFileSync(peerLinkPath, patchedPeer.replace(/\/\* asar-bypass \*\/[^\n]*\n/g, ""));
+    kdp.assertAsarBoundaryCoverage(gatewayDir);
+  }, /peer-link 函数但缺少 asar 补丁/);
+
+  // 正常流程：重新打全量补丁 → .mjs peer-link 命中 → 断言通过
+  const { gatewayDir: gw2, openclawDist: dist2 } = makeGatewayV93(t);
+  const patched = kdp.patchAsarBoundaryCheck(gw2);
+  assert.equal(patched, 2, "root-file.js + plugin-peer-link .mjs 都应被补丁");
+  const peerLink = fs.readFileSync(path.join(dist2, "plugin-peer-link-Xk9.mjs"), "utf-8");
+  assert.match(peerLink, /params\.hostRoot && params\.hostRoot\.includes\('\.asar'\)/);
+  assert.ok(kdp.hasAsarBoundaryPatchMarker(gw2));
+  kdp.assertAsarBoundaryCoverage(gw2);
+  // 幂等
+  assert.equal(kdp.patchAsarBoundaryCheck(gw2), 0);
+});
+
+test("v9.3 形态：windowsHide 扫描覆盖 .mjs chunk", (t) => {
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "cryoclaw-wh-mjs-"));
+  t.after(() => fs.rmSync(tmpRoot, { recursive: true, force: true }));
+  const distDir = path.join(tmpRoot, "dist");
+  fs.mkdirSync(distDir, { recursive: true });
+  const spawnChunk = 'const child = spawn(cmd, args, { stdio: "ignore" });\n';
+  fs.writeFileSync(path.join(distDir, "server-chat-AbC.mjs"), spawnChunk);
+  fs.writeFileSync(path.join(distDir, "legacy-XYZ.js"), spawnChunk);
+  const result = kdp.patchWindowsHideGlobal(distDir);
+  assert.equal(result.scanned, 2, ".js 与 .mjs 都应被扫描");
+  assert.equal(result.patched, 2, "两个文件的 spawn 都应注入 windowsHide");
+  for (const name of ["server-chat-AbC.mjs", "legacy-XYZ.js"]) {
+    const src = fs.readFileSync(path.join(distDir, name), "utf-8");
+    assert.match(src, /windowsHide: true/, `${name} 应已注入`);
+  }
+  // 幂等
+  const again = kdp.patchWindowsHideGlobal(distDir);
+  assert.equal(again.patched, 0);
 });

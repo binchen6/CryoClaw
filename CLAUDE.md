@@ -6,13 +6,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Project Is
 
-CryoClaw is a cross-platform desktop app that wraps the [openclaw](https://github.com/openclaw/openclaw) gateway into a standalone installable package. It ships a bundled Node.js 22 runtime and the openclaw npm package, so users need zero dev tooling — just install and run.
+CryoClaw is a cross-platform desktop app that wraps the [openclaw](https://github.com/openclaw/openclaw) gateway into a standalone installable package. It ships a bundled Node.js 24 runtime and the openclaw npm package, so users need zero dev tooling — just install and run.
 
 **Three-process architecture:**
 
 ```
 Electron Main Process
-  ├── Gateway child process  (Node.js 22 → openclaw entry.js, port configurable, default 18789)
+  ├── Gateway child process  (Node.js 24 → openclaw entry.js, port configurable, default 18789)
   └── BrowserWindow          (loads Lit Chat UI via file://, connects to gateway via WebSocket)
 ```
 
@@ -75,7 +75,7 @@ cryoclaw/
 │   ├── officecli-pptx/     # PPTX read/write skill backed by bundled OfficeCLI binary
 │   └── officecli-xlsx/     # XLSX read/write skill backed by bundled OfficeCLI binary
 ├── scripts/
-│   ├── package-resources.js    # Downloads Node.js 22 + installs openclaw from npm
+│   ├── package-resources.js    # Downloads Node.js 24 + installs openclaw from npm
 │   ├── afterPack.js            # electron-builder hook: injects resources post-strip
 │   ├── run-mac-builder.js      # macOS build wrapper (sign + notarize)
 │   ├── run-with-env.js         # .env loader for child processes
@@ -97,7 +97,7 @@ cryoclaw/
 
 ```
 resources/targets/<platform-arch>/   # Per-target Node.js + gateway deps
-  ├── runtime/node[.exe]             # Node.js 22 binary
+  ├── runtime/node[.exe]             # Node.js 24 binary
   ├── gateway/                       # openclaw production node_modules (散文件)
   ├── gateway.asar                   # Gateway ASAR archive (CI 构建产物)
   ├── gateway.asar.unpacked/         # ASAR unpacked files (native modules, extensions)
@@ -115,7 +115,7 @@ npm run build                # Vite (chat-ui) + TypeScript → dist/
 npm run build:chat           # Build Chat UI only (Lit + Vite)
 npm run dev                  # Run in dev mode (electron .) — does NOT rebuild, see gotcha #31
 npm run dev:isolated         # Run a second dev instance with its own port + state dir (multi-worktree)
-npm run package:resources    # Download Node.js 22 + install openclaw from npm
+npm run package:resources    # Download Node.js 24 + install openclaw from npm
 npm run dist:mac:arm64       # Full pipeline: package → DMG + ZIP (arm64)
 npm run dist:mac:x64         # Same for x64
 npm run dist:win:x64         # Windows NSIS x64 (cross-compile from macOS works)
@@ -141,7 +141,7 @@ rm -rf .dev-state && npm run clean && rm -rf chat-ui/dist tsconfig.tsbuildinfo
 
 **Full build pipeline** (what `dist:mac:arm64` does):
 
-1. `package:resources` — download Node.js 22, `npm install openclaw@<pinned> --production --install-links` plus per-channel plugins, optionally create `gateway.asar` (set `CRYOCLAW_GATEWAY_ASAR=1`)
+1. `package:resources` — download Node.js 24, `npm install openclaw@<pinned> --production --install-links` plus per-channel plugins, optionally create `gateway.asar` (set `CRYOCLAW_GATEWAY_ASAR=1`)
 2. `build:chat` — Vite builds Lit Chat UI into `chat-ui/dist/`
 3. `tsc` — compile TypeScript
 4. `electron-builder` → `afterPack.js` injects `resources/targets/<target>/` into app bundle → DMG/ZIP/NSIS

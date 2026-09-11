@@ -3,12 +3,13 @@
  * Kept free of Lit / DOM imports so node:test can exercise it directly.
  */
 
-export type Locale = "zh" | "en";
-
 export interface UsageLabels {
   rateFallback: string;   // "速率限制" / "Rate Limit"
   hourUsage: string;      // "{n} 小时用量" / "{n}h usage"
   minuteUsage: string;    // "{n} 分钟用量" / "{n}m usage"
+  resetHours: string;     // "{n}小时后重置" / "{n}h reset"
+  resetMinutes: string;   // "{n}分钟后重置" / "{n}m reset"
+  resetSoon: string;      // "即将重置" / "resetting soon"
 }
 
 export interface UsageCardView {
@@ -72,14 +73,15 @@ export function parseResetSeconds(data: unknown): number {
   return 0;
 }
 
-export function formatResetText(seconds: number, locale: Locale): string {
+export type ResetLabels = Pick<UsageLabels, "resetHours" | "resetMinutes" | "resetSoon">;
+
+export function formatResetText(seconds: number, labels: ResetLabels): string {
   if (!Number.isFinite(seconds) || seconds <= 0) return "";
   const h = Math.floor(seconds / 3600);
   const m = Math.floor((seconds % 3600) / 60);
-  const isZh = locale === "zh";
-  if (h > 0) return h + (isZh ? "小时后重置" : "h reset");
-  if (m > 0) return m + (isZh ? "分钟后重置" : "m reset");
-  return isZh ? "即将重置" : "resetting soon";
+  if (h > 0) return applyTemplate(labels.resetHours, h);
+  if (m > 0) return applyTemplate(labels.resetMinutes, m);
+  return labels.resetSoon;
 }
 
 interface WindowMeta {
@@ -112,8 +114,7 @@ function applyTemplate(template: string, value: number): string {
 
 export function computeRateWindowLabel(
   limits: unknown,
-  locale: Locale,
-  labels: UsageLabels,
+  labels: Pick<UsageLabels, "rateFallback" | "hourUsage" | "minuteUsage">,
 ): string {
   if (!Array.isArray(limits) || limits.length === 0) return labels.rateFallback;
   const meta = readWindowMeta(limits[0]);
@@ -148,7 +149,7 @@ function deriveUsedLimit(source: Record<string, unknown>): { used: number; limit
 function buildCard(
   source: Record<string, unknown>,
   title: string,
-  locale: Locale,
+  labels: ResetLabels,
 ): UsageCardView {
   const { used, limit } = deriveUsedLimit(source);
   const pct = limit > 0
@@ -159,26 +160,25 @@ function buildCard(
     pct,
     pctText: `${pct}%`,
     rawText: `${used} / ${limit}`,
-    resetText: formatResetText(parseResetSeconds(source), locale),
+    resetText: formatResetText(parseResetSeconds(source), labels),
   };
 }
 
 export function deriveUsageView(
   data: unknown,
-  locale: Locale,
   labels: UsageLabels,
 ): UsageView {
   if (!isRecord(data)) return { week: null, rate: null };
 
   const weekSource = isRecord(data.usage) ? (data.usage as Record<string, unknown>) : null;
-  const week = weekSource ? buildCard(weekSource, "", locale) : null;
+  const week = weekSource ? buildCard(weekSource, "", labels) : null;
 
   const limits = Array.isArray(data.limits) ? data.limits : [];
   let rate: UsageCardView | null = null;
   if (limits.length > 0 && isRecord(limits[0])) {
     const item = limits[0] as Record<string, unknown>;
     const detail = isRecord(item.detail) ? (item.detail as Record<string, unknown>) : item;
-    rate = buildCard(detail, computeRateWindowLabel(limits, locale, labels), locale);
+    rate = buildCard(detail, computeRateWindowLabel(limits, labels), labels);
   }
 
   return { week, rate };

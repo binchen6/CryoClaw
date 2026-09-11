@@ -322,7 +322,8 @@
   color: var(--popover-foreground);
   border: var(--hairline);
   border-radius: var(--radius-16);
-  box-shadow: var(--shadow-xl);
+  /* R72：shadow-xl 对「弹窗叠弹窗」与深色主题分离度不足，叠加一圈更深的投影 */
+  box-shadow: 0 24px 48px -8px rgba(23, 23, 23, 0.24), 0 0 0 1px rgba(23, 23, 23, 0.06);
   overflow: hidden;
 }
 

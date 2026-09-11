@@ -336,7 +336,11 @@ export function readWebbridgeExtensionId(): string {
 
 /** 用户状态目录（~/.openclaw/） */
 export function resolveUserStateDir(): string {
-  if (process.env.OPENCLAW_STATE_DIR) return process.env.OPENCLAW_STATE_DIR;
+  // 相对路径必须先绝对化（以主进程 cwd 为基准）：该值会作为 OPENCLAW_STATE_DIR 传给
+  // gateway 子进程，其 cwd 在 openclaw 包目录——相对路径在那里会解析到不存在的位置
+  // （openclaw ≥2026.9.3 对缺失配置直接 exit 78 "Missing config"；2026.9.2 静默回退
+  // ~/.openclaw 读到生产配置，掩盖了该问题——R72 实测发现）。
+  if (process.env.OPENCLAW_STATE_DIR) return path.resolve(process.env.OPENCLAW_STATE_DIR);
   // HOME/USERPROFILE 在 CI / sandbox 下可能没设置，兜底 os.homedir()
   // 避免 path.join("", ".openclaw") 落成当前工作目录下的相对路径
   const home = (IS_WIN ? process.env.USERPROFILE : process.env.HOME) || os.homedir();

@@ -1,5 +1,12 @@
 [
   {
+    "version": "2026.911.0",
+    "notes": {
+      "zh": "内核升级 openclaw 2026.9.2 → 2026.9.3，捆绑运行时同步 Node 22 → 24.21（新版内核要求 Node ≥24.16，旧运行时会在安装期被直接拒绝）。协议层纯增量（新增 transcripts.export/status 等 6 个 RPC），渠道/技能/配置零迁移；针对内核产物从 .js 翻转为 .mjs 的新形态，补丁扫描与覆盖断言已同步扩展并补齐回归测试。\n性能优化（长对话/工具密集场景）：工具运行期间界面从每 80ms 全量重算消息派生（卡片抽取/JSON 检测/图片扫描）改为按消息缓存——工具密集任务连续调用数十次工具时的周期性卡顿显著降低；超长流式回复（>5 万字符）的重复解析净化改为帧间复用；会话搜索加入防抖，大量会话下连续击键不再逐键重过滤整列表；后台任务事件改为本地增量应用，任务视图打开时不再每个事件都全量重拉。\n词条与文案：3 处超长悬浮提示在英文界面下溢出屏幕的问题修复（改为可换行的宽提示）；斜杠命令的中文描述与用量面板的重置文案迁入双语词典（此前硬编码，英文界面会漏译）；清理 3 条遗留死词条；界面裸词条扫描的覆盖面从 8 个前缀族扩展到全部 30 个。\n其他：修复开发隔离模式下状态目录相对路径解析错误（该 bug 在旧内核下被静默掩盖、会误读生产配置）；移除两处随包分发的无用代码。",
+      "en": "Kernel upgrade: openclaw 2026.9.2 -> 2026.9.3, with the bundled runtime moving from Node 22 to 24.21 (the new kernel requires Node >=24.16 and rejects the old runtime at install time). The protocol surface is purely additive (6 new RPCs including transcripts.export/status); channels, skills and config need no migration. The kernel's dist chunks flipped from .js to .mjs - our patch scanner and coverage assertions now handle the new shape, with regression tests added.\nPerformance (long conversations / tool-heavy runs): during tool runs the UI recomputed every message derivation (card extraction, JSON detection, image scanning) every 80ms; these are now cached per message, removing the periodic stutter of long tool-heavy agent runs. Extra-long streaming replies (>50k chars) reuse the previous frame's parse instead of re-sanitizing every frame. Session search is debounced so rapid typing no longer refilters the whole list per keystroke, and background-task events are applied locally instead of re-fetching the full list per event while the tasks view is open.\nCopy & i18n: three over-long tooltips that overflowed the screen in the English UI now wrap; the Chinese slash-command descriptions and the usage-panel reset labels moved into the bilingual dictionary (previously hardcoded, leaking Chinese into the English UI); 3 dead dictionary entries removed; the bare-i18n-key UI scan now covers all 30 key families (was 8).\nAlso: fixed relative state-directory resolution in isolated dev mode (silently masked by the old kernel, which fell back to the production config), and removed two pieces of dead code that shipped in the package."
+    }
+  },
+  {
     "version": "2026.910.4",
     "notes": {
       "zh": "可靠性：核心服务（网关）进程意外崩溃后现在会自动重启恢复——此前崩溃后没有任何重启路径（界面只反复重连一个已经死掉的连接），用户会一直停在「无法连接到 Gateway」直到手动重启应用。新逻辑：检测到非预期退出后延迟 3 秒重启，5 分钟窗口内最多 3 次（防止崩溃循环拖垮系统），达上限则转入设置页的人工恢复入口并给出提示；应用正在退出时不再拉起新进程。",

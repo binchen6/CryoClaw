@@ -11,7 +11,7 @@
  */
 import { html, nothing } from "lit";
 import type { AppViewState } from "../../app-view-state.ts";
-import { t, tWithDetail, getLocale } from "../../i18n.ts";
+import { t, tWithDetail } from "../../i18n.ts";
 import * as ipc from "../../data/ipc-bridge.ts";
 import { runKimiOAuthLogin } from "../../data/kimi-oauth-flow.ts";
 import "../../components/toggle-switch.ts";
@@ -1818,7 +1818,7 @@ function renderProviderUsage(prov: GroupedProvider) {
     <div class="oc-provider-usage-row">
       ${info.plan ? html`<span class="cc-tag">${info.plan}</span>` : nothing}
       <div class="oc-provider-usage-bar"><div class="oc-provider-usage-bar-fill" style="width:${pct ?? 0}%"></div></div>
-      <span class="oc-provider-usage-row__text">${pct !== undefined ? `${pct}%` : ""}${info.resetSeconds ? ` · ${formatResetText(info.resetSeconds, getLocale() === "zh" ? "zh" : "en")}` : ""}</span>
+      <span class="oc-provider-usage-row__text">${pct !== undefined ? `${pct}%` : ""}${info.resetSeconds ? ` · ${formatResetText(info.resetSeconds, usageLabels())}` : ""}</span>
       <span class="oc-provider-usage-row__at">${formatUsageAt(entry.at)}</span>
     </div>
   `;
@@ -1865,15 +1865,22 @@ function renderKimiCodingExtras(prov: GroupedProvider, state: AppViewState) {
   `;
 }
 
-function renderUsagePanel(state: AppViewState) {
-  if (!s.usageData) return nothing;
-  const locale = getLocale() === "zh" ? "zh" : "en";
-  const labels: UsageLabels = {
+// 用量面板文案模板（词典化，zh/en 由 t() 解析；lib 层不再内置 locale 字符串）
+function usageLabels(): UsageLabels {
+  return {
     rateFallback: t("settings.provider.usage.rateLimit"),
     hourUsage: t("settings.provider.usage.hourUsage"),
     minuteUsage: t("settings.provider.usage.minuteUsage"),
+    resetHours: t("settings.provider.usage.resetHours"),
+    resetMinutes: t("settings.provider.usage.resetMinutes"),
+    resetSoon: t("settings.provider.usage.resetSoon"),
   };
-  const view = deriveUsageView(s.usageData, locale, labels);
+}
+
+function renderUsagePanel(state: AppViewState) {
+  if (!s.usageData) return nothing;
+  const labels = usageLabels();
+  const view = deriveUsageView(s.usageData, labels);
   if (!view.week && !view.rate) return nothing;
 
   const refreshTitle = t("settings.provider.usage.refresh");
