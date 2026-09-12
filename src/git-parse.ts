@@ -240,11 +240,6 @@ export type DiffFile = {
   hunks: DiffHunk[];
 };
 
-/** 展示路径：新路径优先（删除文件回退旧路径） */
-export function diffFileDisplayPath(f: DiffFile): string {
-  return f.newPath ?? f.oldPath ?? "";
-}
-
 // `diff --git` 后的两个路径 token：各自可能 C 引用（含空格/八进制转义）。
 // 解析为原始 token 对（保持引用形态，由调用方统一 unquote）。
 function splitDiffGitPaths(rest: string): [string, string] | null {

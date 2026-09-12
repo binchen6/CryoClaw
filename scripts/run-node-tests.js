@@ -16,6 +16,7 @@ const VITEST_FILES = new Set([
   "openclaw-config-migration",
   "openclaw-health-state",
   "startup-ownership",
+  "skill-store-registry",
   "openclaw-state-archive",
   "openclaw-state-import-lifecycle",
   "analytics",

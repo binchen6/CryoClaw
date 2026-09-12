@@ -288,7 +288,7 @@ export function resolveWebbridgeCrxPath(): string {
 }
 
 /** CRX 旁边的元数据 JSON（含 version / extensionId），与 CRX 同步更新 */
-export function resolveWebbridgeCrxMetadataPath(): string {
+function resolveWebbridgeCrxMetadataPath(): string {
   if (app.isPackaged) {
     return path.join(
       process.resourcesPath,

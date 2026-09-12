@@ -7,7 +7,6 @@ import * as os from "os";
 import * as path from "path";
 import * as http from "http";
 import {
-  buildDownloadUrl,
   getWebbridgeInstallState,
   getWebbridgePrecheck,
   installWebbridge,
@@ -41,17 +40,13 @@ function startCdn(body: Buffer, etag: string, onGet?: () => void): Promise<{ url
   });
 }
 
-test("路径 + URL：resolveWebbridgeDataDir → HOME/.kimi-webbridge；buildDownloadUrl 拼 CDN", () => {
+test("路径：resolveWebbridgeDataDir → HOME/.kimi-webbridge", () => {
   // 与实现同序（Win 下 USERPROFILE 优先）——MSYS/Git Bash 可能注入 POSIX 形态 HOME，
   // 顺序不一致时开发机上会算出与实现不同的根。
   const home =
     (process.platform === "win32" ? process.env.USERPROFILE : process.env.HOME) ||
     os.homedir();
   assert.equal(resolveWebbridgeDataDir(), path.join(home, ".kimi-webbridge"));
-  assert.equal(
-    buildDownloadUrl("0.3.0", "kimi-webbridge-darwin-arm64"),
-    "https://kimi-web-img.moonshot.cn/webbridge/0.3.0/releases/kimi-webbridge-darwin-arm64",
-  );
 });
 
 test("installWebbridge: 首次下载 → installed + chmod + manifest；ETag 命中 → skipped 不发 GET", async () => {

@@ -67,7 +67,7 @@ export function backupCurrentUserConfig(): void {
 }
 
 // 列出历史备份，按时间倒序返回，供设置页恢复 UI 展示。
-export function listUserConfigBackups(): ConfigBackupItem[] {
+function listUserConfigBackups(): ConfigBackupItem[] {
   const backupDir = resolveConfigBackupDir();
   if (!fs.existsSync(backupDir)) return [];
   pruneOldBackups(backupDir);

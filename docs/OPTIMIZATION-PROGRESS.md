@@ -10,9 +10,9 @@
 面向国内生态（Kimi / Moonshot / 飞书 / 企微 / 微信 / 钉钉 / QQ）。
 
 **当前状态**：
-- 重设计工程 **R1–R72 完成**（R72：内核 2026.9.3 适配（Node runtime 22→24）+ 词条覆盖/长文案溢出审查 + 性能与内存批次 + 死代码清理；R71：故障路径审查——网关崩溃自动恢复；R70：交互级页面审查（新增发版固定步骤）+ 确认弹窗 Escape 修复；R69：无障碍批次——模态键盘关闭/焦点 + 可交互行键盘可达；R68：WebBridge 修复永久化——可自动更新的远端钉定清单；R67：第二轮功能/页面审查（P0 安装向导模型控件 + 9 项）；R66：WebBridge 钉定表随上游轮换 + 功能/页面审查 17 项修复；R65：WebBridge 供应链钉定；R64：三路全库审查 + UI 截图 QA；R63：MCP 页重叠修复 + 真静默更新换装；R62：回底按钮 + 消息对齐及时性；R61：内核问答卡片；R60：设置页 MCP 与 Hooks + 四路全库审查；R59–R58：在途输出恢复/对齐用量，详见工程记录），最新发版 **v2026.911.0**。
+- 重设计工程 **R1–R74 完成**（R74：安全纵深（OAuth 授权链接域校验 + ClawHub registry scheme 守卫）+ --shadow-dialog 令牌化 + 死代码清理 + 文档同步归档；R73：两轮全面 debug 审查四路 36 项；R72：内核 2026.9.3 适配（Node runtime 22→24）+ 词条覆盖/长文案溢出审查 + 性能与内存批次 + 死代码清理；R71：故障路径审查——网关崩溃自动恢复；R70：交互级页面审查（新增发版固定步骤）+ 确认弹窗 Escape 修复；R69：无障碍批次——模态键盘关闭/焦点 + 可交互行键盘可达；R68：WebBridge 修复永久化——可自动更新的远端钉定清单；R67：第二轮功能/页面审查（P0 安装向导模型控件 + 9 项）；R66：WebBridge 钉定表随上游轮换 + 功能/页面审查 17 项修复；R65：WebBridge 供应链钉定；R64：三路全库审查 + UI 截图 QA；R63：MCP 页重叠修复 + 真静默更新换装；R62：回底按钮 + 消息对齐及时性；R61：内核问答卡片；R60：设置页 MCP 与 Hooks + 四路全库审查；R59–R58：在途输出恢复/对齐用量，详见工程记录），最新发版 **v2026.912.0**。
 - 内核 openclaw **2026.9.3**（版本 pin 在 package.json `cryoclaw.openclaw`，捆绑 runtime Node **24.21.0**——2026.9.3 起 engines 剔除 Node 22/25 线；更新目标走 `kernel-channel.json` 策展渠道，minSupported 2026.7.0）；**Electron 43.4.0**（audit 0 漏洞）。
-- 测试基线 **1074 pass / 0 fail / 4 skipped**（vitest 159 + node 191 + chat-ui 645 + scripts 79；2026-09-11 实测，0 fail 为硬指标）。
+- 测试基线 **1077 pass / 0 fail / 4 skipped**（vitest 160 + node 191 + chat-ui 645 + scripts 81；2026-09-12 实测，0 fail 为硬指标）。
 - 重复率 **1.17%**（96 clones，阈值 5%，`npm run dupcheck` 防回退）；视图 id 收敛为 6（chat/setup/settings/workspace/tasks/extensions）。
 - 开源：GitHub `binchen6/CryoClaw`（AGPL-3.0-only，干净历史）；发版走本地 `dist:win` + `gh release`；CI `tests.yml` 每次 push/PR 全量回归。
 
@@ -675,3 +675,12 @@
 - **登记未修（评估后明确挂起）**：① chat 聊天视图快捷键 document 监听无生命周期拆除（已加视图门，彻底改造需 app 壳重构，与 props 驻留一并评估）；② package-resources STEP 1.5 的 `.npmrc` 写在 npm 从不读取的位置（构建实际用宿主 registry——改为显式 `--registry` 会改变「跟随宿主」的既有行为，需产品决策）；③ DOM 200 条窗口无虚拟化（R72 已记录的候选欠账）；④ fsync 目录级持久性（Windows/Node 无公开 API，文件级 fsync 已落地）。
 - **二轮复核（修复 diff 的回归性复审）**：4 项发现全部修复——① start() 在「旧启动已死未落定」（restart 先 stop 杀子进程，doStart 健康轮询待下个 tick 才察觉）窗口复用旧 promise 会静默不 spawn：state===stopped 且 inflightStart 未清时改为等旧 promise settle 后重入 start()；② merge-release-yml 全缺失场景绕过硬失败且 release/ 已被清空：缺架构检查前移 + 清空挪到全部合并判定成功之后；③ 日志轮转窗口内置 rotating 标志，迟到截断不再抹掉窗口内新写入的行（logger + gateway-process）；④ 恢复路径补 cancelScheduledCrashRestart 注入（crash 定时器不得在恢复写盘期间拉起 gateway）。
 - **验证**：全量 **1076 pass / 0 fail / 4 skipped**（vitest 159 + node 191 + chat-ui 645 + scripts 81，新增 kernel-channel minRuntimeNode 2 项用例）；双 tsc 通过；dupcheck 1.13%；`kernel-update.mjs --check` 真机冒烟（current=2026.9.3、远端清单解析正常、current 更高时不提示降级）；diff 复核代理对全部未提交改动做回归性复审。
+
+### R74 · 四路新轴审查（安全纵深 / 设计规范 / 死代码 / 文档）+ 修复发版
+
+- **审查方法**：R73 已覆盖主进程/settings/scripts/chat-ui 的竞态与错误路径，本轮换四个新轴并行审查——①安全纵深（IPC 输入校验/Electron 姿态/XSS 面/命令注入/token 处理/遥测内容）②chat-ui 设计规范违规（硬编码色值/uppercase/checkbox 开关/死 CSS）③src+scripts 死代码（全量导出交叉引用）④文档陈旧度（计数/引用/归档候选）。基线 1076 pass。
+- **安全结论（大面积干净，两处补强）**：IPC 路径遍历/Electron webPreferences/markdown XSS 面/execFile 命令注入/token 泄漏日志/遥测内容六路核实干净（备份名正则白名单、zip 条目注册表+CRC、全 unsafeHTML 走 DOMPurify、argv 数组无 shell、日志全 strip query）。修复：① `kimiOAuthLogin` 直连 `shell.openExternal` 打开 OAuth 响应体里的授权 URL，绕过了 `app:open-external` 的协议白名单——补 `assertTrustedVerificationUrl`（https + kimi.com 域，对齐 appendChannelUtm 域判定）；② ClawHub registry 自定义地址接受明文 http（技能清单+载荷 MITM 可引导 agent 行为）——`writeSkillStoreRegistry` 写入咽喉点加 scheme 守卫（https 任意主机 / http 限回环 / 空串=清除），既有已保存的 http 配置不受影响（只拦新写入）。
+- **死代码清理（全部 grep 证实零生产引用）**：`writeFileAtomicSyncWithDir`（atomic-write）、`diffFileDisplayPath`（git-parse，测试改断言 newPath/oldPath 保语义）、`buildDownloadUrl`（webbridge，测试同步瘦身）；`resolveWebbridgeCrxMetadataPath`/`listUserConfigBackups` 收回 export（仅模块内使用）。审查同时核实 88 个模块全部有 importer、无 always-true 旗标、legacy shim 均为活迁移路径。
+- **设计令牌**：primitives.css `.cc-dialog` 的硬编码阴影（R72 为弹窗分离度有意加深，但违反该文件「零硬编码色值」契约且暗色下发灰）提升为 `--shadow-dialog`（浅色沿用实测值，暗色改黑基调 0.62+白描边 0.03——修复暗色发灰）；三处主题定义块同步。删除死 CSS `.chat-message-image`（+`:hover`，图片实际走 `oc-managed-img`/`.chat-message-images`）。误报排除：SKILL_AVATAR_COLORS（R3 有意收敛的同族色板，有注释）、approvals `--expired`（回落中性基础样式，非缺陷）。
+- **文档同步**：CLAUDE.md 设置页 14→13 tab（Plugins 已是顶层 extensions 视图）、preload 计数 123→「117 方法 + 6 监听器」（grep 实数 111 invoke + 6 send + 6 on）；README 基线 1034/1076 → 1077；`security-remediation-plan.md`（已闭环）与 `kernel-2026.8.2-research.md`（被 kernel-recon/ 取代）归档至 docs/archive/（package-resources.js 两处注释引用同步改路径）；docs/README.md 索引补 kernel-recon/；删除本地空 repowiki/ 目录（gitignored 残留）。
+- **验证**：全量 **1077 pass / 0 fail / 4 skipped**（vitest 160 + node 191 + chat-ui 645 + scripts 81；新增 registry scheme 守卫单测，run-node-tests 的 vitest 互斥清单同步）；双 tsc 通过。

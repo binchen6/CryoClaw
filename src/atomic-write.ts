@@ -34,9 +34,3 @@ export function writeFileAtomicSync(filePath: string, data: string): void {
     throw err;
   }
 }
-
-// 目录创建 + 原子写的常用组合（调用方普遍先 mkdirSync 状态目录）
-export function writeFileAtomicSyncWithDir(dir: string, filePath: string, data: string): void {
-  fs.mkdirSync(dir, { recursive: true });
-  writeFileAtomicSync(filePath, data);
-}

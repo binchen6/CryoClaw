@@ -1,7 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  diffFileDisplayPath,
   isNotARepoError,
   isStagedEntry,
   isUnstagedEntry,
@@ -205,7 +204,7 @@ test("unified diff：二进制文件（Binary files ... differ，无 hunk）", (
   assert.equal(files.length, 1);
   assert.ok(files[0].isBinary);
   assert.equal(files[0].hunks.length, 0);
-  assert.equal(diffFileDisplayPath(files[0]), "assets/logo.png");
+  assert.equal(files[0].newPath, "assets/logo.png");
 });
 
 test("unified diff：新文件 / 删除文件（/dev/null 端）", () => {
@@ -238,7 +237,7 @@ test("unified diff：新文件 / 删除文件（/dev/null 端）", () => {
   const filesD = parseUnifiedDiff(deleted);
   assert.ok(filesD[0].isDeleted);
   assert.equal(filesD[0].newPath, null);
-  assert.equal(diffFileDisplayPath(filesD[0]), "gone.ts");
+  assert.equal(filesD[0].oldPath, "gone.ts");
 });
 
 test("unified diff：quoted 中文路径（diff --git 与 ---/+++ 均转义）", () => {

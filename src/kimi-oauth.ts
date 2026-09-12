@@ -273,6 +273,18 @@ export async function refreshOAuthToken(token: OAuthToken): Promise<OAuthToken> 
 
 // 完整登录流程：设备授权 → 打开浏览器 → 轮询等待 → 保存 token
 // epoch 取本登录的序号：后续新登录/取消会使本登录的轮询失效（并发防串扰）
+
+// verification_uri 来自 OAuth 响应体——端点被劫持/出错时可能返回任意 URL。
+// main.ts 的 app:open-external 有协议白名单，而此路径直连 shell.openExternal
+// 绕过了它；打开前限定 https + kimi.com 域（对齐 appendChannelUtm 的域判定）。
+function assertTrustedVerificationUrl(raw: string): string {
+  const u = new URL(raw);
+  if (u.protocol !== "https:" || (u.hostname !== "kimi.com" && !u.hostname.endsWith(".kimi.com"))) {
+    throw new Error(`OAuth 授权地址不受信：${u.hostname || u.protocol}`);
+  }
+  return raw;
+}
+
 export async function kimiOAuthLogin(): Promise<{
   success: boolean;
   accessToken?: string;
@@ -283,7 +295,7 @@ export async function kimiOAuthLogin(): Promise<{
     const auth = await requestDeviceAuthorization();
     log.info(`Kimi OAuth: 用户码 ${auth.user_code}，等待浏览器授权`);
 
-    await shell.openExternal(appendChannelUtm(auth.verification_uri_complete));
+    await shell.openExternal(appendChannelUtm(assertTrustedVerificationUrl(auth.verification_uri_complete)));
 
     const token = await pollForToken(auth.device_code, auth.interval, epoch);
     if (epoch !== loginEpoch) throw new Error("已取消");

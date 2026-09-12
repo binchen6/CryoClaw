@@ -77,7 +77,7 @@ function execNpmSync(args, opts = {}) {
 // ─── 统一路径原语（结论记录） ───
 // 曾试验以 safeResolve(root, …) 原语统一路径拼接以消除跨文件污点标记：
 // 实证无效（分析器把原语自身登记为污点汇，边界校验不被跨函数采信），
-// 详见 docs/security-remediation-plan.md 第四轮实验记录。边界证明必须
+// 详见 docs/archive/security-remediation-plan.md 第四轮实验记录。边界证明必须
 // 内联在各 fs 操作函数内（path.relative + startsWith("..") 同函数形态）。
 
 // 计算目标产物的唯一标识
@@ -1426,7 +1426,7 @@ const FORCE_REBUNDLE_EXTRA_EXTERNAL = ["silk-wasm", "mpg123-decoder", "@eshaz/we
 
 // openclaw/skills 只保留 CryoClaw 产品需要的内置技能，上游新增 skill 不会自动打入。
 // 2026.8.x 起 canvas 变为 dist/extensions/canvas 扩展、discord/imsg skill 被上游移除，
-// 均已从白名单删除（见 docs/kernel-2026.8.2-research.md 第 6 节）。
+// 均已从白名单删除（见 docs/archive/kernel-2026.8.2-research.md 第 6 节）。
 const OPENCLAW_SKILLS_ALLOWLIST = new Set([
   "clawhub",
   "coding-agent",

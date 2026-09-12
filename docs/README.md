@@ -11,5 +11,5 @@ docs/ 目录导航。改代码前建议先读 gotchas.md 与 OPTIMIZATION-PROGRE
 | `gotchas.md` | 已验证坑清单（103 条，改代码前先搜一遍） |
 | `releasing.md` | 发布流程：版本 bump、打包、静默安装验证、gh release |
 | `client-ticker.md` | Chat UI 30 秒公共定时器机制与已注册 handler |
-| `kernel-2026.8.2-research.md` | openclaw 2026.8.2 内核调研记录（scripts/package-resources.js 注释仍引用） |
-| `archive/` | 历史档案：已完成/过时的实施计划（plans/）、已被取代的设计（specs/）、已完成的 2026.9 UI 重写契约（`ui-rewrite-2026.9-contract.md`，v2026.903.0 落地）、一次性 prompt 等 |
+| `kernel-recon/` | 内核升级侦察记录（2026.9.2 / 2026.9.3 diff 等，升级内核前先读） |
+| `archive/` | 历史档案：已完成/过时的实施计划（plans/）、已被取代的设计（specs/）、已完成的 2026.9 UI 重写契约（`ui-rewrite-2026.9-contract.md`，v2026.903.0 落地）、已闭环的安全整改记录（`security-remediation-plan.md`）、被 kernel-recon 取代的 2026.8.2 调研、一次性 prompt 等 |

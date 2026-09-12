@@ -85,8 +85,23 @@ export function readSkillStoreRegistry(): string {
   return typeof legacy?.registryUrl === "string" ? legacy.registryUrl : "";
 }
 
-// 写入 registry URL（写到 cryoclaw.config.json + legacy 文件双写）
+// 写入 registry URL（写到 cryoclaw.config.json + legacy 文件双写）。
+// scheme 守卫：registry 是技能清单 + 安装载荷的下载源，明文 http 会被中间人
+// 篡改（技能内容会引导 agent 行为）——仅放行 https，http 限本机回环（本地镜像）。
+// 校验放在写入咽喉点，settings:save-advanced 的 catch 会把异常转成用户可见 message。
 export function writeSkillStoreRegistry(url: string): void {
+  if (url) {
+    let parsed: URL;
+    try {
+      parsed = new URL(url);
+    } catch {
+      throw new Error("ClawHub Registry 地址必须是合法 URL");
+    }
+    const isLoopback = ["localhost", "127.0.0.1", "[::1]"].includes(parsed.hostname);
+    if (parsed.protocol !== "https:" && !(parsed.protocol === "http:" && isLoopback)) {
+      throw new Error("ClawHub Registry 地址必须使用 https（本地镜像可用 http://localhost）");
+    }
+  }
   const config = readCryoclawConfig();
   if (config) {
     if (url) {

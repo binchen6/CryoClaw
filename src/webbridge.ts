@@ -107,10 +107,6 @@ export function verifyWebbridgeBinarySha256(
   }
 }
 
-export function buildDownloadUrl(version: string, filename: string): string {
-  return `${CDN_BASE_URL}/${version}/releases/${filename}`;
-}
-
 export function resolveWebbridgeVersion(override?: string): string {
   if (override) return override;
   const env = process.env.KIMI_WEBBRIDGE_VERSION?.trim();

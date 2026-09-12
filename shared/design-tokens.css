@@ -218,6 +218,8 @@
   --shadow-md: 0 4px 12px rgba(23, 23, 23, 0.07), 0 0 0 1px rgba(23, 23, 23, 0.03);
   --shadow-lg: 0 12px 28px -4px rgba(23, 23, 23, 0.1), 0 0 0 1px rgba(23, 23, 23, 0.03);
   --shadow-xl: 0 24px 48px -8px rgba(23, 23, 23, 0.14), 0 0 0 1px rgba(23, 23, 23, 0.03);
+  /* 模态弹窗：比 xl 更深一档（弹窗叠弹窗 + 浅色主题分离度，R72 实测值 token 化） */
+  --shadow-dialog: 0 24px 48px -8px rgba(23, 23, 23, 0.24), 0 0 0 1px rgba(23, 23, 23, 0.06);
 
   color-scheme: light;
 }
@@ -281,6 +283,8 @@
   --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.34), 0 0 0 1px rgba(255, 255, 255, 0.02);
   --shadow-lg: 0 12px 28px -4px rgba(0, 0, 0, 0.44), 0 0 0 1px rgba(255, 255, 255, 0.02);
   --shadow-xl: 0 24px 48px -8px rgba(0, 0, 0, 0.52), 0 0 0 1px rgba(255, 255, 255, 0.02);
+  /* 模态弹窗：暗色沿用 xl 的黑基调并加深（浅色 ink 硬编码在暗色下发灰） */
+  --shadow-dialog: 0 24px 48px -8px rgba(0, 0, 0, 0.62), 0 0 0 1px rgba(255, 255, 255, 0.03);
 
   color-scheme: dark;
 }
@@ -338,6 +342,7 @@
     --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.34), 0 0 0 1px rgba(255, 255, 255, 0.02);
     --shadow-lg: 0 12px 28px -4px rgba(0, 0, 0, 0.44), 0 0 0 1px rgba(255, 255, 255, 0.02);
     --shadow-xl: 0 24px 48px -8px rgba(0, 0, 0, 0.52), 0 0 0 1px rgba(255, 255, 255, 0.02);
+    --shadow-dialog: 0 24px 48px -8px rgba(0, 0, 0, 0.62), 0 0 0 1px rgba(255, 255, 255, 0.03);
 
     color-scheme: dark;
   }
