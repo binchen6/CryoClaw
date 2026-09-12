@@ -221,12 +221,12 @@ function fallbackStableVersion() {
   return null;
 }
 
-// 返回 { version, source }；全部来源失败时抛错（调用方按"检查失败"处理，不提示更新）。
+// 返回 { version, minRuntimeNode?, source }；全部来源失败时抛错（调用方按"检查失败"处理，不提示更新）。
 async function fetchStableVersion() {
   for (const url of CHANNEL_URLS) {
     try {
       const manifest = kch.parseChannelManifest(await fetchJson(url, CHANNEL_FETCH_TIMEOUT_MS));
-      return { version: manifest.stable, source: url };
+      return { version: manifest.stable, minRuntimeNode: manifest.minRuntimeNode, source: url };
     } catch {
       // 换下一个来源
     }
@@ -234,6 +234,20 @@ async function fetchStableVersion() {
   const fb = fallbackStableVersion();
   if (fb) return { version: fb, source: "builtin-fallback" };
   throw new Error("无法确定内核稳定版（策展清单不可达且无内置兜底）");
+}
+
+// 运行时门槛守卫：openclaw 2026.9.x 起 engines 收敛到 Node 24，旧捆绑运行时
+// （Node 22）的 App 装它会死在 npm preinstall——此处按清单 minRuntimeNode 提前
+// 快速失败并给出「先升级应用」的明确文案。本脚本由捆绑运行时 node 直接 spawn，
+// process.version 即捆绑运行时版本。版本不可判定时放行（preinstall 是最终兜底）。
+function assertRuntimeSatisfies(minRuntimeNode, target) {
+  if (!minRuntimeNode) return;
+  const satisfied = kch.nodeVersionAtLeast(process.version, minRuntimeNode);
+  if (satisfied === false) {
+    fail(
+      `内核 ${target} 要求捆绑运行时 Node ≥ ${minRuntimeNode}，当前 ${process.version} 不满足；请先升级 CryoClaw 应用后再更新内核`,
+    );
+  }
 }
 
 // updateAvailable 判定：仅当 current 落后于策展 stable（三段数字比较，prerelease
@@ -445,6 +459,10 @@ async function cmdUpdate(tag) {
     emit({ type: "done", action: "update", from: current, to: current });
     return;
   }
+
+  // 确认要换装了才做运行时门槛判定：无需更新的早退路径不受门槛影响；
+  // 显式 --tag 无清单可依，不做此判定（npm preinstall 引擎校验兜底）。
+  assertRuntimeSatisfies(stable?.minRuntimeNode, target);
 
   const staging = xfs.mkdtempSync(path.join(os.tmpdir(), "cryoclaw-kernel-update-"));
   let swapped = false;

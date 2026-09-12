@@ -1,6 +1,7 @@
 {
-  "stable": "2026.8.2",
+  "stable": "2026.9.3",
+  "minRuntimeNode": "24.16.0",
   "minSupported": "2026.7.0",
-  "updatedAt": "2026-09-04",
-  "notes": "CryoClaw 策展的内核稳定版。仅当 openclaw 官方发行证据链完整（GitHub release 非 prerelease、ClawHub publish 已验证、无未跑测试豁免）时才推进 stable。运行时 kernel-update.mjs 拉取本文件（raw.githubusercontent → jsdelivr 镜像 → 构建期内置兜底），不再使用 npm dist-tag latest。"
+  "updatedAt": "2026-09-12",
+  "notes": "CryoClaw 策展的内核稳定版。仅当 openclaw 官方发行证据链完整（GitHub release 非 prerelease、ClawHub publish 已验证、无未跑测试豁免）时才推进 stable。运行时 kernel-update.mjs 拉取本文件（raw.githubusercontent → jsdelivr 镜像 → 构建期内置兜底），不再使用 npm dist-tag latest。stable 推进 2026.8.2 → 2026.9.3：2026.9.3 已过完整策展链（engines 收敛到 Node 24、kernel-dist-patch 六注入点逐字节同形态验证、真实安装树补丁 + gateway health 200，见 docs/kernel-recon/2026.9.3-diff.md），且携带 Node 24 运行时的 App 2026.911.0 已发布；minRuntimeNode=24.16.0 让旧运行时 App 快速失败并提示先升级应用，而非等 npm preinstall 拒装。npm dist-tag latest 当前为 2026.9.4（同时挂 beta 标签），证据链未核验，暂不推进。"
 }

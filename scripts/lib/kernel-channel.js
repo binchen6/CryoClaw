@@ -42,7 +42,48 @@ function parseChannelManifest(data) {
     }
     out.minSupported = data.minSupported;
   }
+  // minRuntimeNode（可选）：该 stable 内核要求的最低捆绑运行时 Node 版本
+  //（openclaw 2026.9.x 起 engines 收敛到 Node 24，旧运行时 App 装它会npm 拒装）。
+  // 缺省 = 不设运行时门槛。旧版 App 的解析器不认识该字段会自动忽略（向后兼容）。
+  if (data.minRuntimeNode !== undefined) {
+    if (!isValidNodeVersion(data.minRuntimeNode)) {
+      throw new Error(`策展清单 minRuntimeNode 字段非法: ${JSON.stringify(data.minRuntimeNode)}`);
+    }
+    out.minRuntimeNode = data.minRuntimeNode;
+  }
   return out;
 }
 
-module.exports = { KERNEL_VERSION_RE, isValidKernelVersion, compareKernelVersions, parseChannelManifest };
+// Node 运行时版本：X.Y.Z（process.version 形态 "v24.21.0" 由比较函数自行剥 v）
+const NODE_VERSION_RE = /^\d+\.\d+\.\d+$/;
+
+function isValidNodeVersion(v) {
+  return typeof v === "string" && NODE_VERSION_RE.test(v.trim());
+}
+
+// 捆绑运行时 Node 版本是否 ≥ 最低要求。入参支持 "v24.21.0" / "24.21.0"。
+// 任一侧非法返回 null（调用方保守放行——npm preinstall 引擎校验是最终兜底，
+// 误拦正确版本比放行后被 preinstall 拒绝更伤）。
+function nodeVersionAtLeast(nodeVersion, minNode) {
+  const parse = (v) => {
+    const s = String(v ?? "").trim().replace(/^v/, "");
+    if (!NODE_VERSION_RE.test(s)) return null;
+    return s.split(".").map(Number);
+  };
+  const a = parse(nodeVersion);
+  const b = parse(minNode);
+  if (!a || !b) return null;
+  for (let i = 0; i < 3; i++) {
+    if (a[i] !== b[i]) return a[i] > b[i];
+  }
+  return true;
+}
+
+module.exports = {
+  KERNEL_VERSION_RE,
+  isValidKernelVersion,
+  compareKernelVersions,
+  parseChannelManifest,
+  isValidNodeVersion,
+  nodeVersionAtLeast,
+};
