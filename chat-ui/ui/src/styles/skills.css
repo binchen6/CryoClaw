@@ -73,12 +73,6 @@
   color: var(--text-muted);
 }
 
-.skill-store__sort {
-  display: flex;
-  gap: var(--spacer-8);
-  align-items: center;
-}
-
 /* 排序按钮：cc-chip 契约（pill、selected = accent-subtle 底 + accent 边/字） */
 .skill-store__sort-btn {
   display: inline-flex;

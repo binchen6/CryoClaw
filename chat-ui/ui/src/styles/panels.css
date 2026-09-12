@@ -47,12 +47,6 @@
   background: var(--warn-subtle);
 }
 
-.chip-danger {
-  color: var(--danger);
-  border-color: color-mix(in srgb, var(--destructive) 30%, transparent);
-  background: var(--danger-subtle);
-}
-
 /* ── 待发送队列（compose 上方） ── */
 .chat-queue {
   margin-top: var(--spacer-12);

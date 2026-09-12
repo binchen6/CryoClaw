@@ -1,5 +1,12 @@
 [
   {
+    "version": "2026.912.1",
+    "notes": {
+      "zh": "死代码清理（发行包瘦身）：移除 chat-ui 中从未被引用的平行组件套件——cc-btn/cc-card/cc-input/cc-select/cc-textarea/cc-menu/cc-skeleton/cc-table/cc-tabs/cc-chip 原语与 .btn.secondary/.btn.ghost 变体（各视图实际使用 .btn kit 与组件私有类，两套并存已久），连带 28 个零引用的间距工具类、6 处散落的死样式块，primitives.css 从 635 行减至 216 行。设计规范文档（中英）同步：删除已移除原语的描述，标注清理记录。零功能改动，全部删除项均经全仓引用扫描证实为零使用。",
+      "en": "Dead-code cleanup (bundle slimming): removed the never-referenced parallel component kit from the chat UI - the cc-btn/cc-card/cc-input/cc-select/cc-textarea/cc-menu/cc-skeleton/cc-table/cc-tabs/cc-chip primitives plus .btn.secondary/.btn.ghost variants (views actually use the .btn kit and component-scoped classes; the two systems had coexisted unused for a long time), along with 28 zero-reference spacing utility classes and 6 scattered dead rule blocks; primitives.css went from 635 to 216 lines. Design guideline docs (zh/en) synced: descriptions of removed primitives deleted with cleanup annotations. Zero functional change - every removed item was verified zero-use by repo-wide reference scans."
+    }
+  },
+  {
     "version": "2026.912.0",
     "notes": {
       "zh": "安全加固（纵深防御）：Kimi 登录打开浏览器前先校验授权链接必须是 https 且 kimi.com 域（此前授权端点若被劫持可让应用打开任意网址，与设置页链接的协议白名单对齐）；ClawHub Registry 自定义地址现在只接受 https（本机镜像可用 http://localhost）——明文 http 的技能源会被中间人篡改技能内容，进而引导 agent 行为，写入时即拦截并提示。\n设计令牌：弹窗投影从硬编码色值提升为 --shadow-dialog 令牌，暗色主题改用深黑基调投影（旧的浅色墨水值在暗色下发灰，弹窗叠弹窗分离度不足）。\n清理：移除 3 个无引用的死函数与 2 处过度导出的内部函数、一段死 CSS；文档同步（设置页 13 个 tab 的过时清单、IPC 方法计数、测试基线数字），已闭环的安全整改记录与被取代的旧内核调研归档至 docs/archive/。全量回归 1077 pass / 0 fail。",

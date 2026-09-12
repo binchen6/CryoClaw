@@ -444,32 +444,6 @@
   margin-bottom: var(--spacer-10);
 }
 
-.chat-exec-modes {
-  display: inline-flex;
-  border: var(--hairline);
-  border-radius: var(--radius-full);
-  padding: var(--spacer-2);
-  gap: var(--spacer-2);
-  background: var(--bg-secondary);
-}
-
-.chat-exec-modes__btn {
-  border: none;
-  background: transparent;
-  color: var(--text-muted);
-  font-size: var(--text-sm);
-  font-family: inherit;
-  padding: var(--spacer-4) var(--spacer-10);
-  border-radius: var(--radius-full);
-  cursor: pointer;
-  transition: background var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out);
-}
-
-.chat-exec-modes__btn--active {
-  background: var(--accent);
-  color: var(--text-on-accent);
-}
-
 .chat-approval-panel {
   flex: 1;
   min-width: 260px;

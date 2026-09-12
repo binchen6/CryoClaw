@@ -27,7 +27,7 @@ the current code; the sources of truth are `shared/design-tokens.css`,
 3. **Reuse the `.btn` / `cc-*` primitives first** (see §5); do not invent new
    button/card/dialog styles.
 4. **No `text-transform: uppercase`**: labels render as written — respect brand casing and
-   CJK text. Exceptions: the `cc-table` header and session-panel group labels
+   CJK text. Exception: session-panel group labels
    (`cc-panel__group-label`) keep the component contract's uppercase + caps tracking.
 5. **Boolean settings always use the iOS-style Switch** (`<oc-toggle-switch>`, label left,
    switch right) — not radio buttons or checkboxes.
@@ -251,27 +251,24 @@ opacity 0.5.
 | Class | Tier | Appearance |
 |---|---|---|
 | `.btn.primary` | Primary action (at most one per screen) | solid `--accent` + `--text-on-accent`, hover `--accent-hover` |
-| `.btn` (default) / `.btn.secondary` | Secondary | default = `--bg-elevated` + hairline border; secondary = `--bg-muted` fill + hairline |
+| `.btn` (default) | Secondary | `--bg-elevated` + hairline border |
 | `.btn.danger` | Destructive | `--danger-subtle` background + `--danger` text, borderless |
-| `.btn.ghost` | Low-density auxiliary | transparent, hover shows `--bg-hover` |
 
 Modifier: `.btn--sm` (height 28, padding 10, font `--text-sm`).
-The `cc-btn` kit (`--primary/--secondary/--ghost/--danger`, `--sm`, `--loading`
-leading spinner, `--disabled`) shares the same language and specs; existing code keeps
-using it.
+(R75: the zero-reference `cc-btn` kit plus `.btn.secondary`/`.btn.ghost` were removed from primitives.css.)
 
 ### 5.2 Form controls
 
-`cc-input` / `cc-select` / `cc-textarea` and the `.field` system in `components.css`
-are unified: **32px high (except textarea), `--bg-input` background, hairline border,
-radius-8**; focus = `--border-focus` + `--focus-ring`; placeholder/disabled use
-`--text-muted`. `.field` = label (`--text-sm` medium muted) + control in a grid.
+Form controls use per-component classes plus the `.field` system in `components.css`:
+**32px high, `--bg-input` background, hairline border, radius-8**; focus = `--border-focus` + `--focus-ring`; placeholder/disabled use `--text-muted`.
+`.field` = label (`--text-sm` medium muted) + control in a grid.
+(R75: the zero-reference `cc-input`/`cc-select`/`cc-textarea` were removed.)
 
-### 5.3 Cards (`.card` / `cc-card`)
+### 5.3 Cards (`.card`)
 
 `--card` background + hairline border + **radius-12** + `--shadow-xs` + padding-20;
-`.card` plays a rise entrance animation, hover deepens the border + `--shadow-sm`;
-`cc-card--interactive` for clickable cards (hover `--shadow-md` + stronger border).
+`.card` plays a rise entrance animation, hover deepens the border + `--shadow-sm`.
+(R75: the zero-reference `cc-card` was removed; clickable cards use component classes.)
 
 ### 5.4 Dialogs (`cc-dialog` contract)
 
@@ -294,14 +291,9 @@ never auto-dismisses, and carries a small accent-outlined button
 
 | Class | Purpose | Variants / notes |
 |---|---|---|
-| `cc-tag` | Badge, height 22, pill radius | `--brand` / `--success` / `--warn` / `--error` (subtle bg + semantic text) |
-| `cc-menu` / `cc-menu-item` | Popup menu | radius-12 + `--shadow-lg`; item min-height 32, radius-8 |
-| `cc-alert` | Alert bar, 3px semantic left border | `--info` / `--success` / `--warn` / `--error` |
+| `cc-tag` | Badge, height 22, pill radius | `--brand` (subtle bg + brand text) |
+| `cc-alert` | Alert bar, 3px semantic left border | `--warn` / `--error` |
 | `.callout` | Callout block (subtle bg) | `.danger` / `.info` |
-| `cc-skeleton` | Skeleton | gradient shine; animation off under `prefers-reduced-motion` |
-| `cc-table` | Table | subdued small uppercase header, hairline row dividers, row hover tint |
-| `cc-tabs` / `cc-tab` | Tabs | underline indicator, `--active` |
-| `cc-chip` | Chip (selectable, height 28) | `--selected` = accent border + subtle bg |
 | `.code-block` | Code block | `--mono` + `--bg-muted` + radius-8 |
 | `.compaction-indicator` | Compaction indicator pill in the message stream | `--active` / `--complete` / `--fallback` |
 

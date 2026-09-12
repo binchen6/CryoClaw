@@ -685,3 +685,11 @@
 - **文档同步**：CLAUDE.md 设置页 14→13 tab（Plugins 已是顶层 extensions 视图）、preload 计数 123→「117 方法 + 6 监听器」（grep 实数 111 invoke + 6 send + 6 on）；README 基线 1034/1076 → 1077；`security-remediation-plan.md`（已闭环）与 `kernel-2026.8.2-research.md`（被 kernel-recon/ 取代）归档至 docs/archive/（package-resources.js 两处注释引用同步改路径）；docs/README.md 索引补 kernel-recon/；删除本地空 repowiki/ 目录（gitignored 残留）。
 - **发版管线阻断性 Bug（silent-install E2E 实机捕获，gotcha #104）**：2026.912.0 首次打包的安装包启动即崩（主进程 Cannot find module './gateway-origin'）——根因是 clean 流程删了 dist/ 但留下 tsconfig.tsbuildinfo，增量 tsc 判定「无需 emit」静默产出缺 30 模块的残缺 dist，而 tsc --noEmit 与全量单测照常全绿。修复：clean.js 目标清单补 tsconfig.tsbuildinfo / chat-ui/dist / .test-dist；dist-win.js 构建后新增「src 非测试模块 ↔ dist 同名 .js」1:1 硬校验（任一缺失即 fail 并提示处置）。该 Bug 由发版固定步骤 3（静默安装 E2E）+ 步骤 4（网关 200）拦下，未流出。
 - **验证**：全量 **1077 pass / 0 fail / 4 skipped**（vitest 160 + node 191 + chat-ui 645 + scripts 81；新增 registry scheme 守卫单测，run-node-tests 的 vitest 互斥清单同步）；双 tsc 通过；干净重建后 dist 75/75 模块齐备 + 安装包实机启动网关 200。
+
+### R75 · chat-ui 死 CSS 大清理：未采用的平行组件套件移除
+
+- **背景**：R74 的死代码扫描把 chat-ui 16 个 styles 文件全部过了一遍（此前 R72 只查过 3 个最大的），发现一套**从未被任何视图采用的平行组件套件**——2026.9 重写时规划的 cc-* 原语 kit（按钮/表单/卡片/菜单/骨架屏/表格/页签/chip，约 420 行）与 `.btn.secondary`/`.btn.ghost` 变体，各视图实际使用的是 `.btn` kit + 组件私有 BEM 类。死样式随包分发给每个用户。
+- **清理清单（全部经全仓 TS 引用扫描证实零使用，含模板插值/运行时类名推演）**：① primitives.css：cc-btn kit、cc-input/cc-select/cc-textarea、cc-card、cc-menu、cc-skeleton、cc-table、cc-tabs、cc-chip、.btn.secondary/.btn.ghost、cc-tag--success/--warn/--error、cc-alert--info/--success（635→216 行，-419 行）；② utilities.css：28 个零引用间距档位（67→48 行）；③ 散落死块：.chat-exec-modes×3、.chip-danger、.sm-action/.sm-input focus 行、.oc-setup-checkbox×4、.skill-store__sort。
+- **文档同步**：design-guidelines-zh/en 的组件速查表、5.1/5.2/5.3 节与 uppercase 例外条款删除已移除原语的描述（各补 R75 清理标注）；primitives.css 头注释重写为存活清单（.btn + cc-dialog/cc-tag/cc-alert）。存活原语引用数实测：.btn 55 处、cc-dialog 52 处、cc-panel 42 处、cc-tag 12 处。
+- **有意保留**：model-org.lib/tab-channels.lib 的「零外部引用导出」——它们有配套 .test.ts 直接 import，属测试可达面，非死代码；isRecord 在 7 个文件各有一份本地实现（合并收益低、扰动面大，登记不修）。
+- **验证**：全量 1077 pass / 0 fail（chat-ui 645 全绿 + typecheck）；四套 CDP 冒烟（layout/settings/interaction/screenshot）exit 0，弹窗（cc-dialog 为存活原语）渲染正常。

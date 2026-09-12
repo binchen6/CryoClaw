@@ -23,7 +23,7 @@ UI 内部只用纯色 accent。浅色是默认一等主题，暗色是独立调�
    `prefers-color-scheme` 兜底）。当前全仓视图样式中已无此类块，新增即返工。
 3. **组件优先复用 `.btn` / `cc-*` 原语**（见第 5 节），不要新造按钮/卡片/弹窗样式。
 4. **不 `text-transform: uppercase`**：label 按原文显示，尊重品牌名大小写与 CJK 文本。
-   例外：`cc-table` 表头与会话面板分组标签（`cc-panel__group-label`）沿用组件契约的
+   例外：会话面板分组标签（`cc-panel__group-label`）沿用组件契约的
    uppercase + caps 字距样式。
 5. **布尔设置一律 iOS 风格 Switch**（`<oc-toggle-switch>`，label 左、开关右），
    不用 radio / checkbox。
@@ -223,26 +223,24 @@ focus-visible = `--focus-ring`；disabled = opacity 0.5。
 | 类 | 层级 | 外观 |
 |---|---|---|
 | `.btn.primary` | 主操作（每屏至多一个） | `--accent` 实心 + `--text-on-accent`，hover `--accent-hover` |
-| `.btn`（默认）/ `.btn.secondary` | 次操作 | 默认 = `--bg-elevated` + hairline 描边；secondary = `--bg-muted` 底 + hairline |
+| `.btn`（默认） | 次操作 | `--bg-elevated` + hairline 描边 |
 | `.btn.danger` | 破坏性操作 | `--danger-subtle` 底 + `--danger` 文字，无边框 |
-| `.btn.ghost` | 低密度辅助 | 透明无底无边，hover 出 `--bg-hover` |
 
 修饰：`.btn--sm`（高 28、padding 10、字号 `--text-sm`）。
-`cc-btn` kit（`--primary/--secondary/--ghost/--danger`、`--sm`、`--loading` 前置转环、
-`--disabled`）与 `.btn` 同语言同规格，存量代码继续使用。
+（R75：零引用的 `cc-btn` kit 与 `.btn.secondary`/`.btn.ghost` 已从 primitives.css 删除。）
 
 ### 5.2 表单控件
 
-`cc-input` / `cc-select` / `cc-textarea` 与 `components.css` 的 `.field` 体系统一：
-**32px 高（textarea 除外）、`--bg-input` 底、hairline 描边、radius-8**；
-focus = `--border-focus` + `--focus-ring`；placeholder/disabled 用 `--text-muted`。
-`.field` = label（`--text-sm` medium muted）+ 控件的 grid 组合。
+表单控件走各组件私有类 + `components.css` 的 `.field` 体系：
+**32px 高、`--bg-input` 底、hairline 描边、radius-8**；focus = `--border-focus` + `--focus-ring`；
+placeholder/disabled 用 `--text-muted`。`.field` = label（`--text-sm` medium muted）+ 控件的 grid 组合。
+（R75：零引用的 `cc-input`/`cc-select`/`cc-textarea` 已删除。）
 
-### 5.3 卡片（`.card` / `cc-card`）
+### 5.3 卡片（`.card`）
 
 `--card` 底 + hairline 描边 + **radius-12** + `--shadow-xs` + padding-20；
-`.card` 带 rise 入场动画，hover 边框加深 + `--shadow-sm`；
-`cc-card--interactive` 用于可点卡片（hover `--shadow-md` + 边框加深）。
+`.card` 带 rise 入场动画，hover 边框加深 + `--shadow-sm`。
+（R75：零引用的 `cc-card` 已删除；可点卡片用组件私有类。）
 
 ### 5.4 对话框（`cc-dialog` 弹窗契约）
 
@@ -264,14 +262,9 @@ hairline + radius-12 + `--shadow-lg`，`--text-sm` medium，z-index 10001，
 
 | 类 | 说明 | 变体 / 要点 |
 |---|---|---|
-| `cc-tag` | 徽章，高 22，pill 圆角 | `--brand` / `--success` / `--warn` / `--error`（subtle 底 + 语义文字） |
-| `cc-menu` / `cc-menu-item` | 弹出菜单 | radius-12 + `--shadow-lg`；item min-height 32、radius-8 |
-| `cc-alert` | 警告条，左侧 3px 语义条 | `--info` / `--success` / `--warn` / `--error` |
+| `cc-tag` | 徽章，高 22，pill 圆角 | `--brand`（subtle 底 + 品牌文字） |
+| `cc-alert` | 警告条，左侧 3px 语义条 | `--warn` / `--error` |
 | `.callout` | 提示块（subtle 底） | `.danger` / `.info` |
-| `cc-skeleton` | 骨架屏 | 渐变扫光；`prefers-reduced-motion` 下停动画 |
-| `cc-table` | 表格 | 表头小字弱化 uppercase，行 hairline 分隔，行 hover 底色 |
-| `cc-tabs` / `cc-tab` | 页签 | 下划线指示，`--active` |
-| `cc-chip` | 胶囊（可选中，高 28） | `--selected` = accent 描边 + subtle 底 |
 | `.code-block` | 代码块 | `--mono` + `--bg-muted` + radius-8 |
 | `.compaction-indicator` | 消息流压缩指示胶囊 | `--active` / `--complete` / `--fallback` |
 
