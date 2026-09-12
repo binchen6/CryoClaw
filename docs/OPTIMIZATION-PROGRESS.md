@@ -724,3 +724,11 @@
 - **ipc-api.md 补全**：新增 24 方法 + 2 监听器（kernel:get-update-state/check/update/rollback、settings:fetch-provider-models/get-provider-usage/get-env-info/webbridge-precheck/-repair-and-enable/-needs-repair/-pill-repair/get-default-browser-name/export-diagnostics、plugin-store ×4、app:open-path/reveal-path、clipboard:read-file-paths、app:get/dismiss-release-notes、app:quit/app:setup-view-state、gateway:ready、webbridge:state-changed）+ 两处 /S 陈述修正。补全后脚本对账：preload 108 通道 ↔ 文档零缺失。
 - **README**：657/1077 用例 → 1078、内核 pin 2026.7.1-2 → 2026.9.3、重复率 1.15%/1.13% 统一、自动更新描述补「弹窗决策」现状；**CONTRIBUTING**：447 → 1078；**CLAUDE.md**：45 测试文件、~131 总数、vitest 12 文件、token query param、logs/ 路径树（顺带消掉重复的 app.log 条目）、cc-* 原语清单更新为存活三项；**website** 回填版本号；client-ticker.md 补 R77 隐藏降频机制（新 API initTickerVisibilityHook）。
 - **验证**：全量 1078 pass / 0 fail（无代码改动，跑回归确认）；文档对账脚本零缺失。
+
+### R79 · UI 一致性批次（视觉审查驱动）
+
+- **审查方法**：以 ui-screenshot-qa 的最新截图为输入做视觉审查（对话/设置/暗色三路），每条意见回代码核实后再动手——视觉模型的部分意见（消息列宽与输入框不一致、发送按钮配色）核实后为按设计（--chat-column 列纪律在 compose.css:43 强制同宽；发送按钮全 token 化），不采纳。
+- **开关统一**：高级设置页同屏混用两套开关实现——imessage/开机自启用 `<oc-toggle-switch>` 组件，「终端命令」用手搓 div.oc-toggle（历史原因：label 含 `<code>` 富文本，组件 label 只收 String）。组件新增 `.rich` + 默认 slot（label 属性为空且 rich 时渲染 `<span class="oc-toggle-label"><slot></slot></span>`，既有 19 处调用零影响），CLI 行迁移完成（disabled 态/键盘语义/aria 全部由组件承担，顺带删掉 activateOnKeydown 依赖）。setup-step3 的 WebBridge 手搓行保留：track 上有按态切换的 disabled-tooltip 等真特殊需求，加注释说明。
+- **页面级描述可读性**：8 个设置 tab 的标题下导读段沿用 `.oc-settings__hint`（--text-muted；暗色 #71717a on #101012 ≈ 4.2:1）。新增 `.oc-settings__page-desc`（--text-secondary ≈ 7:1），appearance/advanced/approvals/backup/channels/info/mcp-hooks/memory 八页迁移；表单内部 hint 不变（层级语义保留）。
+- **有意不动**：导航分组小标题维持 --text-muted 小字距样式（对齐系统侧栏惯例的设计语言，文档明示）；时间戳 --text-muted（设计决定）。
+- **验证**：全量 1078 pass / 0 fail；chat-ui typecheck 通过；四套 CDP 冒烟全绿 + 高级设置页截图复核开关视觉一致。

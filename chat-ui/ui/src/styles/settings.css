@@ -128,6 +128,15 @@
   margin: 0;
 }
 
+/* 页面级描述（tab 标题下第一段）：比表单 hint 更可读——用 --text-secondary
+   而非 --text-muted（暗色下 #71717a 对 #101012 仅 ~4.2:1，整页导读文字不该这么弱） */
+.oc-settings__page-desc {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  line-height: var(--leading-body);
+  margin: 0;
+}
+
 .oc-settings__hint {
   font-size: var(--text-sm);
   color: var(--text-muted);

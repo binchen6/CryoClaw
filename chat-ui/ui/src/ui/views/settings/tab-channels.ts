@@ -82,7 +82,7 @@ export function renderTabChannels(state: AppViewState) {
   return html`
     <div class="oc-settings__section">
       <h2 class="oc-settings__section-title">${t("settings.nav.channels")}</h2>
-      <p class="oc-settings__hint">${t("settings.channels.desc")}</p>
+      <p class="oc-settings__page-desc">${t("settings.channels.desc")}</p>
       <div class="oc-settings-channels">
         <nav class="oc-settings-channels__nav">
           ${CHANNEL_PLATFORMS.map(p => html`

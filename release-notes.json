@@ -1,5 +1,12 @@
 [
   {
+    "version": "2026.912.5",
+    "notes": {
+      "zh": "界面一致性批次：① 布尔开关统一到 oc-toggle-switch 组件——「终端命令」一行此前与同页其他开关用的是两套手搓实现（视觉细节易漂移、键盘语义重复维护），组件新增富文本标签插槽后完成迁移，同页三种开关视觉完全一致；② 设置页 8 个标签页的页面级描述文字从表单提示级的弱灰提升为次级文字色（暗色主题下原对比度仅约 4.2:1，整页导读不该这么弱），表单内提示保持原样。",
+      "en": "UI consistency batch: (1) boolean toggles unified onto the oc-toggle-switch component - the \"terminal command\" row had been using a second hand-rolled toggle implementation alongside the component used by its neighbors (visual drift risk plus duplicated keyboard semantics); the component gained a rich-label slot and the row migrated, so all toggles on the page render identically. (2) The page-level description text on 8 settings tabs moved from form-hint-grade muted gray to the secondary text color (in the dark theme the old contrast was only ~4.2:1 - a full-page lead-in should not be that weak); in-form hints are unchanged."
+    }
+  },
+  {
     "version": "2026.912.4",
     "notes": {
       "zh": "文档一致性批次（不改代码）：开发者文档与实际实现全面对齐——架构文档修正 10 处过时陈述（IPC 通道数、测试基线数字、已删除的模块、Node 22→24、令牌注入方式、Windows 健康检查超时、日志路径、设置页 13 个标签页清单、NSIS 静默安装描述等）；IPC 参考补全 24 个此前漏记的方法与 2 个事件监听器（内核升级、插件商店、WebBridge、诊断导出、剪贴板等），现与 preload 白名单 108 通道逐一核对零缺失；README/贡献指南的测试基线（657/447→1078）与内核版本 pin（2026.7→2026.9.3）同步；30 秒轮询定时器的隐藏降频行为写入机制文档。",

@@ -19,7 +19,6 @@ import "../../components/toggle-switch.ts";
 import "../../components/message-box.ts";
 import { getConfigSnapshot, getCachedConfigSnapshot } from "../../controllers/config.ts";
 import { isWebbridgePinStaleError } from "../../webbridge-error.ts";
-import { activateOnKeydown } from "../../a11y.ts";
 import { runConfigPatch } from "./tab-patch.ts";
 import { extractAdvancedView, applyAdvancedSave } from "./tab-channels.lib.ts";
 
@@ -474,7 +473,7 @@ export function renderTabAdvanced(state: AppViewState) {
   return html`
     <div class="oc-settings__section">
       <h2 class="oc-settings__section-title">${t("settings.advanced.title")}</h2>
-      <p class="oc-settings__hint">${t("settings.advanced.desc")}</p>
+      <p class="oc-settings__page-desc">${t("settings.advanced.desc")}</p>
 
       <div class="oc-settings__form-group">
         <label class="oc-settings__label">${t("settings.advanced.clawHubRegistry")}</label>
@@ -613,17 +612,12 @@ export function renderTabAdvanced(state: AppViewState) {
       ` : nothing}
 
       <div class="oc-settings__form-group">
-        <div class="oc-toggle ${s.cliLoading ? 'oc-toggle--disabled' : ''}"
-          role="switch"
-          aria-checked=${s.cliInstalled ? "true" : "false"}
-          tabindex=${s.cliLoading ? "-1" : "0"}
-          @click=${() => { if (!s.cliLoading) toggleCli(state, !s.cliInstalled); }}
-          @keydown=${activateOnKeydown(() => { if (!s.cliLoading) toggleCli(state, !s.cliInstalled); })}>
-          <span class="oc-toggle-label">${s.cliLoading ? t("settings.advanced.cliInstalling") : html`${t("settings.advanced.cliLabel")} <code class="oc-settings__cli-code">openclaw</code>`}</span>
-          <span class="oc-toggle-track ${s.cliInstalled ? 'oc-toggle-track--on' : ''}">
-            <span class="oc-toggle-thumb"></span>
-          </span>
-        </div>
+        <oc-toggle-switch .rich=${true} .checked=${s.cliInstalled} .disabled=${s.cliLoading}
+          @change=${() => { if (!s.cliLoading) toggleCli(state, !s.cliInstalled); }}>
+          ${s.cliLoading
+            ? t("settings.advanced.cliInstalling")
+            : html`${t("settings.advanced.cliLabel")} <code class="oc-settings__cli-code">openclaw</code>`}
+        </oc-toggle-switch>
       </div>
 
       <div class="oc-settings__form-group">

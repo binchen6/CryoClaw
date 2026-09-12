@@ -147,7 +147,7 @@ export function renderTabMemory(state: AppViewState) {
   return html`
     <div class="oc-settings__section">
       <h2 class="oc-settings__section-title">${t("settings.memory.title")}</h2>
-      <p class="oc-settings__hint">${t("settings.memory.desc")}</p>
+      <p class="oc-settings__page-desc">${t("settings.memory.desc")}</p>
 
       <div class="oc-settings__form-group">
         <oc-toggle-switch .label=${t("settings.memory.autoSave")} .checked=${s.sessionMemoryEnabled}

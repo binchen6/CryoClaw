@@ -520,7 +520,7 @@ export function renderTabMcpHooks(state: AppViewState) {
   return html`
     <div class="oc-settings__section">
       <h2 class="oc-settings__section-title">${t("settings.mcpHooks.pageTitle")}</h2>
-      <p class="oc-settings__hint">${t("settings.mcpHooks.pageDesc")}</p>
+      <p class="oc-settings__page-desc">${t("settings.mcpHooks.pageDesc")}</p>
 
       <div class="oc-settings__card">
         <div class="oc-settings__card-title oc-mcp__mappings-head">

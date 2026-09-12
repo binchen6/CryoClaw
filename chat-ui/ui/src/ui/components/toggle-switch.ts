@@ -15,6 +15,8 @@ export class ToggleSwitch extends LitElement {
   @property({ type: Boolean }) checked = false;
   @property({ type: Boolean }) disabled = false;
   @property({ type: String }) label = "";
+  // 富文本 label（label 内嵌 code/图标/tooltip 等）：置 true 时渲染默认 slot 作为 label
+  @property({ type: Boolean }) rich = false;
   // 无文字 label 的调用方必须提供（内部 div 才是 role=switch，host 上的 aria-label 不生效）
   @property({ type: String, attribute: "aria-label" }) ariaLabel = "";
 
@@ -42,7 +44,11 @@ export class ToggleSwitch extends LitElement {
         tabindex=${this.disabled ? "-1" : "0"}
         @click=${this.toggle}
         @keydown=${this.onKeydown}>
-        ${this.label ? html`<span class="oc-toggle-label">${this.label}</span>` : nothing}
+        ${this.label
+          ? html`<span class="oc-toggle-label">${this.label}</span>`
+          : this.rich
+            ? html`<span class="oc-toggle-label"><slot></slot></span>`
+            : nothing}
         <span class="oc-toggle-track ${this.checked ? "oc-toggle-track--on" : ""}">
           <span class="oc-toggle-thumb"></span>
         </span>

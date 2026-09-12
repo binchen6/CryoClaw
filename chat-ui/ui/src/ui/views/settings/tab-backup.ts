@@ -208,7 +208,7 @@ export function renderTabBackup(state: AppViewState, notice: string | null) {
   return html`
     <div class="oc-settings__section">
       <h2 class="oc-settings__section-title">${t("settings.backup.pageTitle")}</h2>
-      <p class="oc-settings__hint">${t("settings.backup.pageDesc")}</p>
+      <p class="oc-settings__page-desc">${t("settings.backup.pageDesc")}</p>
 
       ${notice ? html`<oc-message-box .message=${mapRecoveryNotice(notice)} .type=${"error"} .visible=${true}></oc-message-box>` : nothing}
 

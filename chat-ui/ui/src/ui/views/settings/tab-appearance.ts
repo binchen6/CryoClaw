@@ -50,7 +50,7 @@ export function renderTabAppearance(state: AppViewState) {
   return html`
     <div class="oc-settings__section">
       <h2 class="oc-settings__section-title">${t("settings.appearance.title")}</h2>
-      <p class="oc-settings__hint">${t("settings.appearance.desc")}</p>
+      <p class="oc-settings__page-desc">${t("settings.appearance.desc")}</p>
 
       <div class="oc-settings__form-group">
         <label class="oc-settings__label">${t("settings.appearance.theme")}</label>

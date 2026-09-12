@@ -56,7 +56,7 @@ export function renderTabEnvInfo(state: AppViewState) {
   return html`
     <div class="oc-settings__section">
       <h2 class="oc-settings__section-title">${t("settings.env.title")}</h2>
-      <p class="oc-settings__hint">${t("settings.env.desc")}</p>
+      <p class="oc-settings__page-desc">${t("settings.env.desc")}</p>
 
       ${s.error ? html`<div class="callout danger">${s.error}</div>` : nothing}
       ${s.loading && !s.info ? html`<p class="muted">${t("settings.env.loading")}</p>` : nothing}
