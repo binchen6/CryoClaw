@@ -1,5 +1,12 @@
 [
   {
+    "version": "2026.912.4",
+    "notes": {
+      "zh": "文档一致性批次（不改代码）：开发者文档与实际实现全面对齐——架构文档修正 10 处过时陈述（IPC 通道数、测试基线数字、已删除的模块、Node 22→24、令牌注入方式、Windows 健康检查超时、日志路径、设置页 13 个标签页清单、NSIS 静默安装描述等）；IPC 参考补全 24 个此前漏记的方法与 2 个事件监听器（内核升级、插件商店、WebBridge、诊断导出、剪贴板等），现与 preload 白名单 108 通道逐一核对零缺失；README/贡献指南的测试基线（657/447→1078）与内核版本 pin（2026.7→2026.9.3）同步；30 秒轮询定时器的隐藏降频行为写入机制文档。",
+      "en": "Documentation-consistency batch (no code changes): developer docs realigned with the actual implementation - the architecture doc fixes 10 stale claims (IPC channel counts, test baseline numbers, a deleted module, Node 22 to 24, token injection mechanism, Windows health-check timeout, log paths, the 13-tab settings list, the NSIS silent-install description); the IPC reference gains 24 previously undocumented methods and 2 event listeners (kernel upgrade, plugin store, WebBridge, diagnostics export, clipboard), now verified against the 108-channel preload whitelist with zero missing; README/CONTRIBUTING test baselines (657/447 to 1078) and the kernel version pin (2026.7 to 2026.9.3) synced; the 30s ticker hidden-window throttling documented."
+    }
+  },
+  {
     "version": "2026.912.3",
     "notes": {
       "zh": "启动与空闲性能优化：① 用户配置读取增加原文缓存（键控修改时间+大小）——启动链路原本要连续全文件读取+解析 10 余次（迁移、端口/令牌解析、健康检查等），Windows 实时杀软扫描叠加下是启动期最大的重复同步 IO，现在未变化时只做一次磁盘读；外部改写自动失效，语义与无缓存完全一致。② 网关就绪推送提前：健康探测通过后的等待从 300ms 缩短到 100ms（世代计数器仍是主防线），界面可提前约 200ms 重连。③ 窗口隐藏到托盘后：30 秒轮询（每轮 3-4 个网关请求）与渲染进程内存采样停止，恢复可见立即补一轮——挂后台不再空转流量。④ clawhub CLI 包装器只在内容变化时写盘（此前每次网关启动都重写）；webbridge 状态检查（要拉注册表和进程列表）推迟 1.5 秒不再挤占首屏；两处长周期定时器补 unref。",

@@ -84,7 +84,7 @@ PRs without a corresponding Issue will be closed.
 - Must reference a discussed Issue
 - Concise title describing the change
 - `npm run build` passes locally
-- `npm test` is fully green (baseline 447 pass / 0 fail / 4 skipped); add tests under `chat-ui/ui/src/**/*.test.ts` for new/changed chat-ui controllers or pure functions
+- `npm test` is fully green (baseline 1078 pass / 0 fail / 4 skipped); add tests under `chat-ui/ui/src/**/*.test.ts` for new/changed chat-ui controllers or pure functions
 - One PR, one thing
 
 ## Note for AI Agents

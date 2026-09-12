@@ -21,9 +21,8 @@
 > 才经 `app-update:download` 开始下载；下载进度与「重启安装」在同一弹窗完成。
 > 暂缓持久化在 `src/update-snooze.ts`（`userData/app-update-snooze.json`，
 > 7 天/1 月/3 月/永久/自定义 1–3650 天），期内跳过启动自动检查，手动检查不受影响；
-> `AppUpdateState` 带 `snoozedUntil` 字段。安装**非静默**：quitAndInstall 拉起带进度条的
-> NSIS 安装器窗口（去 `/S`）。换装仍为自实现 spawn（见 gotchas #67），
-> `quitAndInstall()` 仅作文件缺失时的回退。状态机纯逻辑在 `src/app-updater-state.ts`，
+> `AppUpdateState` 带 `snoozedUntil` 字段。安装为**真静默**：自实现 spawn 带 `/S` 的 NSIS 安装器
+> （见 gotchas #67），`quitAndInstall()` 仅作文件缺失时的回退。状态机纯逻辑在 `src/app-updater-state.ts`，
 > IPC handlers 注册在 `src/settings/about.ts`（全部过 `assertTrustedIpcSender`）。
 
 | 方法 | IPC 通道 | 方向 |
@@ -33,8 +32,17 @@
 | `appUpdateDownload()` | `app-update:download` | invoke，available 态开始下载（唯一下载入口，906.0 新增） |
 | `appUpdateSnooze(opts)` | `app-update:snooze` | invoke，`{days: 1–3650}` 或 `{forever: true}`（906.0 新增） |
 | `appUpdateClearSnooze()` | `app-update:clear-snooze` | invoke，清除暂缓恢复自动检查（906.0 新增） |
-| `appUpdateQuitAndInstall()` | `app-update:quit-and-install` | invoke，启动 pending 安装器后 `app.quit()` |
+| `appUpdateQuitAndInstall()` | `app-update:quit-and-install` | invoke，spawn 带 `/S` 的真静默安装器（gotcha #67）后 `app.quit()` |
 | `onAppUpdateState(cb)` | `app:update-state` | 推送（状态快照，返回 unsubscribe 函数） |
+
+## 内核升级/回退
+
+| 方法 | IPC 通道 | 方向 |
+|---|---|---|
+| `kernelGetUpdateState()` | `kernel:get-update-state` | invoke |
+| `kernelCheckUpdate()` | `kernel:check` | invoke |
+| `kernelUpdate(params?)` | `kernel:update` | invoke（tag 可选） |
+| `kernelRollback()` | `kernel:rollback` | invoke |
 
 ## Setup
 
@@ -77,6 +85,8 @@
 | 方法 | IPC 通道 | 方向 |
 |---|---|---|
 | `settingsVerifyKey(params)` | `settings:verify-key` | invoke |
+| `settingsFetchProviderModels(params)` | `settings:fetch-provider-models` | invoke（R58，/models 实时列表） |
+| `settingsGetProviderUsage(params)` | `settings:get-provider-usage` | invoke（R58，套餐用量/余额） |
 | `settingsWriteKimiApiKey(params)` | `settings:write-kimi-api-key` | invoke |
 
 > R4 起 provider/模型配置的读取与写入改走内核原生 `config.get` / `config.patch` RPC
@@ -142,6 +152,13 @@
 | 方法 | IPC 通道 | 方向 |
 |---|---|---|
 | `settingsGetAdvanced()` | `settings:get-advanced` | invoke |
+| `settingsGetEnvInfo()` | `settings:get-env-info` | invoke |
+| `settingsWebbridgePrecheck()` | `settings:webbridge-precheck` | invoke |
+| `settingsWebbridgeRepairAndEnable()` | `settings:webbridge-repair-and-enable` | invoke |
+| `settingsGetDefaultBrowserName()` | `settings:get-default-browser-name` | invoke |
+| `settingsWebbridgeNeedsRepair()` | `settings:webbridge-needs-repair` | invoke（左侧栏 pill） |
+| `settingsWebbridgePillRepair()` | `settings:webbridge-pill-repair` | invoke（pill 点击修复） |
+| `settingsExportDiagnostics()` | `settings:export-diagnostics` | invoke（脱敏诊断包导出） |
 | `settingsSaveAdvanced(params)` | `settings:save-advanced` | invoke |
 | `settingsGetCliStatus()` | `settings:get-cli-status` | invoke |
 | `settingsInstallCli()` | `settings:install-cli` | invoke |
@@ -182,12 +199,25 @@
 | `skillStoreUninstall(params?)` | `skill-store:uninstall` | invoke |
 | `skillStoreListInstalled()` | `skill-store:list-installed` | invoke |
 
+## 插件管理页（extensions 视图）
+
+| 方法 | IPC 通道 | 方向 |
+|---|---|---|
+| `pluginStoreList()` | `plugin-store:list` | invoke |
+| `pluginStoreSearch(params?)` | `plugin-store:search` | invoke |
+| `pluginStoreInstall(params?)` | `plugin-store:install` | invoke |
+| `pluginStoreUninstall(params?)` | `plugin-store:uninstall` | invoke |
+
 ## Chat UI
 
 | 方法 | IPC 通道 | 方向 |
 |---|---|---|
 | `openWebUI()` | `app:open-webui` | send |
+| `quit()` | `app:quit` | send |
+| `reportSetupViewState(active)` | `app:setup-view-state` | send |
 | `getGatewayPort()` | `gateway:port` | invoke |
+| `getReleaseNotes(opts?)` | `app:get-release-notes` | invoke |
+| `dismissReleaseNotes(version)` | `app:dismiss-release-notes` | invoke |
 
 ## 文件操作
 
@@ -195,6 +225,7 @@
 |---|---|---|
 | `selectFiles(options?)` | `dialog:select-files` | invoke |
 | `readFileBase64(path)` | `file:read-base64` | invoke |
+| `readClipboardFilePaths()` | `clipboard:read-file-paths` | invoke（剪贴板文件路径） |
 
 ## 工作空间（workspace 视图）
 
@@ -252,6 +283,8 @@
 | 方法 | IPC 通道 | 方向 |
 |---|---|---|
 | `openExternal(url)` | `app:open-external` | invoke |
+| `openPath(path)` | `app:open-path` | invoke（扩展名白名单） |
+| `revealPath(path)` | `app:reveal-path` | invoke（文件管理器定位） |
 
 > `openExternal` 存在的原因：sandbox 模式下 `shell.openExternal` 不可用，必须走 IPC 到主进程。
 
@@ -262,6 +295,8 @@
 | `onSettingsNavigate(cb)` | `settings:navigate` | Settings tab 导航（含 notice） |
 | `onNavigate(cb)` | `app:navigate` | Chat UI 视图切换（返回 unsubscribe 函数） |
 | `onKernelUpdateProgress(cb)` | `kernel:update-progress` | 内核升级进度推送（返回 unsubscribe 函数） |
+| `onGatewayReady(cb)` | `gateway:ready` | 网关就绪推送（token/gatewayUrl；返回 unsubscribe 函数） |
+| `onWebbridgeStateChanged(cb)` | `webbridge:state-changed` | webbridge 状态变化（setup 装完扩展/修复完成；返回 unsubscribe 函数） |
 
 > `kernel:update-progress` 载荷为 `{step, pct, msg, source?}`；v2026.907.0 起新增
 > `source: "auto" | "manual"` 字段，区分手动升级与「内核低于 minSupported 的兜底自动

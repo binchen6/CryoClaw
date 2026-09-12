@@ -34,7 +34,7 @@ The main process spawns a gateway subprocess, waits for its health check, then o
 
 ```
 cryoclaw/
-├── src/                    # 88 TypeScript modules + 43 test files (vitest + node:test)
+├── src/                    # 88 TypeScript modules + 45 test files (vitest + node:test)
 │   ├── main.ts             # App entry, lifecycle, IPC, Dock toggle, config recovery
 │   ├── constants.ts        # Path resolution (dev vs packaged vs ASAR), health check params
 │   ├── gateway-process.ts  # Child process state machine + diagnostics
@@ -158,11 +158,11 @@ npm run build           # both at once
 
 ### Tests
 
-`npm test` runs the full suite (`test:unit` + `test:scripts`). Tests are excluded from the production `tsc` build (see `tsconfig.json`; the test compile uses `tsconfig.test.json`). Four runners cover ~130 test files (43 in `src/`, 76 in `chat-ui/`, 10 in `scripts/`):
+`npm test` runs the full suite (`test:unit` + `test:scripts`). Tests are excluded from the production `tsc` build (see `tsconfig.json`; the test compile uses `tsconfig.test.json`). Four runners cover ~131 test files (45 in `src/`, 76 in `chat-ui/`, 10 in `scripts/`):
 
 | Runner | Script | What it runs |
 |---|---|---|
-| Vitest | `npm run test:unit:vitest` | The 10 `src/*.test.ts` files that need `vi.mock`/`vi.stubEnv` (listed in `vitest.config.ts`) |
+| Vitest | `npm run test:unit:vitest` | The 12 `src/*.test.ts` files that need `vi.mock`/`vi.stubEnv` (listed in `vitest.config.ts`) |
 | node:test | `npm run test:unit:node` | The remaining `src/*.test.ts`, compiled to `.test-dist/` then run via `node --test` (`scripts/run-node-tests.js`) |
 | Chat UI | `npm run test:chat` | chat-ui typecheck + `chat-ui/**/*.test.ts` (`scripts/run-chat-ui-tests.js`) |
 | Scripts | `npm run test:scripts` | `scripts/*.test.js` via `node --test` |
@@ -199,7 +199,7 @@ CI: `.github/workflows/tests.yml` runs the full regression on every push/PR
 **Core subsystems at a glance:**
 
 - **Gateway process** — State machine (`stopped→starting→running→stopping`) with generation tracking to prevent stale exit events. 3 retries on startup, 90s health check timeout, auto-restart on config change.
-- **Token injection** — Auth token passed to gateway via env var, injected into BrowserWindow via URL fragment (`#token=...`).
+- **Token injection** — Auth token passed to gateway via env var, injected into BrowserWindow via a `?token=` query param.
 - **Provider config** — Unified module shared by Setup + Settings. All Moonshot sub-platforms (moonshot-cn/ai/kimi-code) write `apiKey`+`baseUrl`+`api`+`models` to `models.providers`.
 - **Kimi OAuth** — Device code flow via `auth.kimi.com`, 60s refresh interval, 300s refresh threshold.
 - **Setup wizard** — Step 0 (conflict detection) → Step 1 (welcome) → Step 2 (provider) → Step 3 (done + CLI + login toggle).
@@ -219,8 +219,9 @@ CI: `.github/workflows/tests.yml` runs the full regression on every push/PR
   ├── cryoclaw.config.json              # CryoClaw ownership marker (deviceId, setupCompletedAt)
   ├── openclaw.last-known-good.json    # Last successful gateway startup config snapshot
   ├── .device-id                       # Analytics device ID (UUID)
-  ├── app.log                          # Application log (5MB truncate)
-  ├── gateway.log                      # Gateway child process diagnostic log
+  ├── logs/
+  │   ├── app.log                      # Application log (5MB truncate)
+  │   └── gateway.log                  # Gateway child process diagnostic log
   ├── config-backups/                  # Rolling config backups (max 10)
   │   └── openclaw-YYYYMMDD-HHmmss.json
   ├── credentials/
@@ -240,7 +241,7 @@ For comprehensive design guidelines, please refer to:
 - [Design Guidelines (English)](docs/design-guidelines-en.md)
 - [Design Guidelines (Chinese)](docs/design-guidelines-zh.md)
 
-1. **Theme is neutral gray + a single steady blue accent, via design tokens.** Per the 2026.9 R2b design spec, the accent is CryoBlue, a calm work-oriented blue-cyan blend (`--brand-500: #2a89dd`, light-theme primary `--brand-600: #1a6fd0`, secondary cyan `--accent-2`) from `shared/design-tokens.css`, and the light theme is the first-class theme. Always style via design tokens and the `cc-*` component primitives (`chat-ui/ui/src/styles/primitives.css`) — never hardcode hex. See docs/design-guidelines-zh.md for the full spec and docs/archive/ui-rewrite-2026.9-contract.md for the 2026.9 rewrite contract. Semantic status colors (error red, warning amber) are separate from the accent. (The old indigo `#6366f1`, ice-blue `#0EA5E9` and "signature red `#c0392b`" rules are retired.)
+1. **Theme is neutral gray + a single steady blue accent, via design tokens.** Per the 2026.9 R2b design spec, the accent is CryoBlue, a calm work-oriented blue-cyan blend (`--brand-500: #2a89dd`, light-theme primary `--brand-600: #1a6fd0`, secondary cyan `--accent-2`) from `shared/design-tokens.css`, and the light theme is the first-class theme. Always style via design tokens and the surviving `cc-*` primitives (cc-dialog/cc-tag/cc-alert in `chat-ui/ui/src/styles/primitives.css`) — never hardcode hex. See docs/design-guidelines-zh.md for the full spec and docs/archive/ui-rewrite-2026.9-contract.md for the 2026.9 rewrite contract. Semantic status colors (error red, warning amber) are separate from the accent. (The old indigo `#6366f1`, ice-blue `#0EA5E9` and "signature red `#c0392b`" rules are retired.)
 
 2. **No `text-transform: uppercase` on labels.** Labels should display as written — respect the original casing of brand names (Chrome, iMessage) and CJK text.
 

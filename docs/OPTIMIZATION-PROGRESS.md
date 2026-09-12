@@ -348,7 +348,7 @@
 
 用户指令：UI 全面重写（2026.9 新设计契约）+ 内核 openclaw 2026.8.2 升级适配。
 - **UI 重写**：新应用壳 `cc-rail` / `cc-session-panel` 替换旧侧边栏布局；浅色升为一等主题；主题色从冰蓝 `#0EA5E9` 切换为中性灰 + 单一 indigo 强调色（`--brand-500: #6366f1`，`shared/design-tokens.css`）；默认窗口尺寸调为屏幕 80%。契约文档 `docs/archive/ui-rewrite-2026.9-contract.md`（已完成存档），规范见 `docs/design-guidelines-zh.md`。
-- **内核 2026.8.2 适配**：配置双向迁移（新旧 schema 互转）；不兼容插件自动降级；gateway 握手 Origin 改写；webchat-ui 客户端身份适配。内核调研取证见 `docs/kernel-2026.8.2-research.md`。
+- **内核 2026.8.2 适配**：配置双向迁移（新旧 schema 互转）；不兼容插件自动降级；gateway 握手 Origin 改写；webchat-ui 客户端身份适配。内核调研取证见 `docs/archive/kernel-2026.8.2-research.md`。
 - 内核 pin：`package.json` `cryoclaw.openclaw` = 2026.8.2；发版 v2026.903.0 → v2026.904.0。
 - **测试基线 771→807 全绿**。
 
@@ -716,3 +716,11 @@
 - **小项**：clawhub wrapper 每次网关 start/restart 无条件重写 → writeIfChanged（省 2-3 次同步 IO + Defender 重扫 + 目录监控误触发）；webbridge needs-repair 首查（主进程要拉 reg.exe + tasklist）从 connectedCallback 推迟 1.5s；kimi-oauth 60s 刷新与 analytics 1h 心跳定时器补 unref。
 - **评估不采纳**：whenReady 重排（analytics/tray 挪到开窗后）——估收益 20-40ms 但要重排初始化依赖，与 0.6s 的既有启动成绩相比风险收益比不划算；登记备查。
 - **验证**：全量 **1078 pass / 0 fail / 4 skipped**（新增缓存语义用例）；双 tsc 通过。
+
+### R78 · 文档一致性批次（28 项修复，不改代码）
+
+- **审查方法**：文档↔代码全量对账（architecture/ipc-api/README/CLAUDE/CONTRIBUTING/releasing/website 七路），每项计数用实际命令核实（preload 通道 grep、测试文件计数、gotchas 编号）。
+- **architecture.md（10 项）**：IPC 计数（~77+5 → 108+6）、测试基线（349 → 1078，vitest 7 文件 106 用例 → 12 文件 161、node 71→191、chat-ui 132→645、scripts 40→81）、已删除的 setup-manager.ts、Node 22→24.21、令牌「URL fragment #token」→ 实际 query param、健康检查超时补 Windows 180s、gateway.log 路径 logs/、设置页 6 标签清单 → 13 标签全列、NSIS「非静默去 /S」→ 真静默 spawn /S、app-render 行数。
+- **ipc-api.md 补全**：新增 24 方法 + 2 监听器（kernel:get-update-state/check/update/rollback、settings:fetch-provider-models/get-provider-usage/get-env-info/webbridge-precheck/-repair-and-enable/-needs-repair/-pill-repair/get-default-browser-name/export-diagnostics、plugin-store ×4、app:open-path/reveal-path、clipboard:read-file-paths、app:get/dismiss-release-notes、app:quit/app:setup-view-state、gateway:ready、webbridge:state-changed）+ 两处 /S 陈述修正。补全后脚本对账：preload 108 通道 ↔ 文档零缺失。
+- **README**：657/1077 用例 → 1078、内核 pin 2026.7.1-2 → 2026.9.3、重复率 1.15%/1.13% 统一、自动更新描述补「弹窗决策」现状；**CONTRIBUTING**：447 → 1078；**CLAUDE.md**：45 测试文件、~131 总数、vitest 12 文件、token query param、logs/ 路径树（顺带消掉重复的 app.log 条目）、cc-* 原语清单更新为存活三项；**website** 回填版本号；client-ticker.md 补 R77 隐藏降频机制（新 API initTickerVisibilityHook）。
+- **验证**：全量 1078 pass / 0 fail（无代码改动，跑回归确认）；文档对账脚本零缺失。

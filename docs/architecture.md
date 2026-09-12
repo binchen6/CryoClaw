@@ -16,18 +16,18 @@ Startup sequence:
 4. Resolve port: env `OPENCLAW_GATEWAY_PORT` > config `gateway.port` > default `18789`
 5. Spawn: `<node> <entry.js> gateway run --port <resolved> --bind loopback`
 6. Disable gateway's own npm update check (`update.checkOnStart = false`) — CryoClaw is packaged as a whole unit, users can't independently update the gateway
-7. Poll `GET http://127.0.0.1:<port>/` every 500ms, 90s timeout
+7. Poll `GET http://127.0.0.1:<port>/` every 500ms; 90s timeout (Windows: 180s)
 8. Verify child PID is still alive (avoid port collision false positives)
 
 Main process retries gateway startup **3 times** before showing an error dialog. This covers Windows cold-start slowness (Defender scanning, disk warmup). On success, the current config is snapshotted as "last known good" for recovery.
 
-All stdout/stderr is captured to `~/.openclaw/gateway.log` for diagnostics.
+All stdout/stderr is captured to `~/.openclaw/logs/gateway.log` for diagnostics.
 
 **Automatic restart:** Gateway automatically restarts after user config changes (provider switch, model change, etc.) to pick up the new settings.
 
 ## Token Injection (`window.ts`)
 
-The gateway requires an auth token. The main process generates one (or reads from config), passes it to the gateway via env var, and injects it into the BrowserWindow via URL fragment (`#token=...`) before `loadFile()`.
+The gateway requires an auth token. The main process generates one (or reads from config), passes it to the gateway via env var, and injects it into the BrowserWindow via a `?token=` query param before `loadFile()`.
 
 ## Provider Configuration (`provider-config.ts`)
 
@@ -74,14 +74,21 @@ Post-setup configuration management embedded inside the Chat UI (via `app:naviga
 
 Since R4, all `openclaw.json` reads/writes from the settings UI go through the kernel-native `config.get` / `config.patch` RPC (chat-ui `controllers/config.ts` + pure-function libs under `views/settings/`); the main process keeps only what it owns — credential verification (`settings:verify-key`), sidecar key/proxy files, channel pairing store, weixin login flow, webbridge/browser integration, CLI install, and backup/restore. `src/settings-ipc.ts` is a thin entry registering handlers from the `src/settings/` modules.
 
-Tabs:
+Tabs (13, nav order; source of truth: `settings-constants.ts` SETTINGS_TABS):
 
-- **Provider** — View/edit provider config, verify API key, switch models, Kimi usage display
+- **Channels** — Multi-channel chat integration (WeChat, Feishu, WeCom, DingTalk, QQ Bot) + per-channel pairing/approved lists
+- **Provider** — View/edit provider config, verify API key, switch models, model management + Kimi usage display
 - **Search** — Kimi Search web search toggle + dedicated API key (auto-reuses Kimi Code key if available)
-- **Channels** — Multi-channel chat integration (WeChat, Feishu, WeCom, DingTalk, QQ Bot) with platform status indicators
+- **Memory** — Memory plugin config
+- **Voice** — Voice/TTS config
+- **Session usage** — Session usage stats
+- **MCP & Hooks** — MCP servers + hooks management
 - **Appearance** — Theme selector (system/light/dark), thinking process visibility
-- **Advanced** — Browser profile selector (openclaw/Chrome), iMessage channel toggle, Launch at login toggle, CLI command (`openclaw`) install/uninstall
+- **Advanced** — Browser profile/mode, launch at login, ClawHub registry, gateway/exec/sandbox policies, CLI command (`openclaw`) install/uninstall
+- **Approvals** — Approval history browser
 - **Backup & Restore** — Rolling backup list, restore last-known-good, gateway start/stop/restart, factory reset
+- **Info** — Environment info / diagnostics export
+- **About** — Version, update channel, release notes
 
 ## Multi-Channel Chat Integration
 
@@ -252,9 +259,9 @@ App 级更新客户端（electron-updater，provider = GitHub Releases）：
   下载进度与「重启安装」在同一弹窗完成；设置-关于页有手动下载按钮与暂缓状态/恢复入口
 - **暂缓机制**（`update-snooze.ts`）：7 天/1 月/3 月/永久/自定义（1–3650 天），持久化在
   `userData/app-update-snooze.json`；期内跳过启动自动检查，手动检查不受影响
-- **非静默换装**：quitAndInstall 拉起带进度条的 NSIS 安装器窗口（去 `/S`，
-  `autoInstallOnAppQuit=false`）；换装 spawn 为自实现（gotchas #67），
-  `autoUpdater.quitAndInstall()` 仅作 pending 安装器缺失时的回退
+- **真静默换装**：自实现 spawn 带 `/S` 的静默安装（`autoInstallOnAppQuit=false`；
+  gotchas #67），`autoUpdater.quitAndInstall()` 仅作 pending 安装器缺失时的回退；
+  检查更新为弹窗决策模式（发现新版本先弹窗，用户确认才下载）
 - 状态机纯逻辑在 `app-updater-state.ts`；IPC 通道 `app-update:*` 见 docs/ipc-api.md
 
 Historical CDN-based update flow via `electron-updater`（阶段 4 前的旧方案，仅作参考）:
@@ -331,7 +338,7 @@ Custom NSIS assisted installer with:
 │     ├── tray.ts   (system tray + i18n menu)                  │
 │     ├── provider-config.ts (presets + verify + config)       │
 │     ├── config-backup.ts (rolling backups + recovery)        │
-│     ├── setup-manager.ts + setup-ipc.ts (wizard + CLI)       │
+│     ├── setup-ipc.ts + setup-completion.ts (wizard + CLI)    │
 │     │     ├── setup-completion.ts (completion detection)     │
 │     │     └── install-detector.ts (conflict detection)       │
 │     ├── settings-ipc.ts + settings/ (embedded settings)      │
@@ -353,12 +360,12 @@ Custom NSIS assisted installer with:
 │     ├── gateway-auth.ts (token management)                   │
 │     └── logger.ts (file + console)                           │
 │                                                              │
-│  preload.ts ─── contextBridge (~77 IPC + 5 listeners)        │
+│  preload.ts ─── contextBridge (108 IPC + 6 listeners)        │
 └──────────────────┬───────────────────────────────────────────┘
                    │
      ┌─────────────┴─────────────┐
      │   Gateway Child Process   │
-     │   Node.js 22 + openclaw   │
+     │  Node.js 24 + openclaw    │
      │   :configurable loopback  │
      └─────────────┬─────────────┘
                    │ HTTP + WebSocket
@@ -383,7 +390,7 @@ Custom NSIS assisted installer with:
 - `views/registry.ts`：视图 id 唯一事实来源（`CRYOCLAW_VIEW_IDS` / `CRYOCLAW_VIEW_META` /
   `INJECTABLE_VIEWS`）。**新增视图只接线 3 处**：registry 两条目 → `app-render.ts`
   `renderActiveView()` switch 分支（storage.ts 类型自动生效）。
-- `app-render.ts`：壳层渲染入口（~380 行）：侧边栏 / 标题栏 / 内容区分发 / 全局弹窗。
+- `app-render.ts`：壳层渲染入口（~450 行）：侧边栏 / 标题栏 / 内容区分发 / 全局弹窗。
   各视图实现已拆分为 `app-chat-props.ts`（对话 props 装配）、`app-skills.ts`、
   `app-cron.ts`、`app-tasks.ts`、`app-feedback.ts`、`app-session-actions.ts`（会话操作）、
   `app-view-switch.ts`（`setCryoClawView()` + enter/leave 钩子表）、`app-toast.ts`。
@@ -404,13 +411,13 @@ Custom NSIS assisted installer with:
 
 ## 测试体系（`npm test`，三层）
 
-1. **vitest**（`src/*.test.ts` 7 文件，106 用例）：依赖 `vi.mock`/`vi.stubEnv` 的主进程
-   逻辑（内核升级链、配置迁移、启动所有权、IPC sender guard 等）。
-2. **node:test**（src 编译到 `.test-dist/`，71 pass + 4 平台门控 skip）：不依赖 vitest
+1. **vitest**（`src/*.test.ts` 12 文件，161 用例）：依赖 `vi.mock`/`vi.stubEnv` 的主进程
+   逻辑（内核升级链、配置迁移、启动所有权、IPC sender guard、配置缓存等）。
+2. **node:test**（src 编译到 `.test-dist/`，191 pass + 4 平台门控 skip）：不依赖 vitest
    的 src 测试，由 `scripts/run-node-tests.js` 运行（`test:compile` 先 tsc 编译）。
-3. **chat-ui**（`chat-ui/ui/src/**/*.test.ts`，132 用例）：node:test 风格，
+3. **chat-ui**（`chat-ui/ui/src/**/*.test.ts`，645 用例）：node:test 风格，
    `chat-ui/tsconfig.test.json` 编译到 `chat-ui/ui/.test-dist/`（产物标 `type:module`），
    由 `scripts/run-chat-ui-tests.js` 运行。**新增 chat-ui 控制器/纯函数请同步补该层测试**。
-4. **scripts**（`scripts/*.test.js` 40 用例）：打包/升级脚本纯逻辑。
+4. **scripts**（`scripts/*.test.js` 81 用例）：打包/升级脚本纯逻辑。
 
-基线：**349 pass / 0 fail / 4 skipped**（2026-08-03，阶段 16）。
+基线：**1078 pass / 0 fail / 4 skipped**（2026-09-12，R77 实测；基线数字以 docs/OPTIMIZATION-PROGRESS.md 为准）。
