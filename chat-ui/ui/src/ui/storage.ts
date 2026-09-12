@@ -152,5 +152,10 @@ export function saveSettings(next: UiSettings) {
   // cryoclawView 不持久化：读侧 parseUiSettings 本就硬编码丢弃（初始视图始终由主进程
   // URL fragment 或 app:navigate IPC 决定），写侧同步剔除避免无效字段落盘。
   const { cryoclawView: _omitted, ...toSave } = next;
-  localStorage.setItem(KEY, JSON.stringify(toSave));
+  // 该写路径挂在每个 chat 事件/会话切换上（setLastActiveSessionKey→applySettings）：
+  // localStorage 被禁用/损坏时裸 setItem 会抛进事件处理链中段（如会话切换的
+  // applySessionKeyTransition，host.sessionKey 已变更），best-effort 对齐其他存储写方
+  try {
+    localStorage.setItem(KEY, JSON.stringify(toSave));
+  } catch {}
 }

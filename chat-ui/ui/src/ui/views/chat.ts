@@ -909,6 +909,10 @@ function ensureChatShortcuts(props: ChatProps) {
   chatShortcutProps = props;
   if (chatShortcutHandler) return;
   chatShortcutHandler = (ev: KeyboardEvent) => {
+    // 仅对话视图生效：监听是 document 级常驻的，视图切走后仍存活——不设门的话
+    // 设置/任务等页面按 Ctrl+N 会在无关视图上弹「新建对话」确认框。以聊天视图
+    // 独有的输入框容器存在与否判定当前视图。
+    if (!document.querySelector(".chat-compose__field")) return;
     if (!ev.ctrlKey || ev.metaKey || ev.altKey || ev.shiftKey) return;
     const key = ev.key.toLowerCase();
     if (key === "n") {

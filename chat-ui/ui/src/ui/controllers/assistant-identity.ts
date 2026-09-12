@@ -17,11 +17,16 @@ export async function loadAssistantIdentity(
   if (!state.client || !state.connected) {
     return;
   }
-  const sessionKey = opts?.sessionKey?.trim() || state.sessionKey.trim();
-  const params = sessionKey ? { sessionKey } : {};
+  const requestSessionKey = opts?.sessionKey?.trim() || state.sessionKey.trim();
+  const params = requestSessionKey ? { sessionKey: requestSessionKey } : {};
   try {
     const res = await state.client.request("agent.identity.get", params);
     if (!res) {
+      return;
+    }
+    // 会话切换竞态守卫：请求在途时用户可能已切到别的会话（切换方总会重新发起
+    // 加载），迟到的旧会话身份不能覆盖当前会话——否则头部/头像显示上一个 agent
+    if (state.sessionKey.trim() !== requestSessionKey) {
       return;
     }
     const normalized = normalizeAssistantIdentity(res);

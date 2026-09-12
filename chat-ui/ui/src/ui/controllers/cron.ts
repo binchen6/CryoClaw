@@ -246,15 +246,18 @@ export async function toggleCronJob(state: CronState, job: CronJob, enabled: boo
   }
 }
 
-export async function runCronJob(state: CronState, job: CronJob) {
+export async function runCronJob(state: CronState, job: CronJob, isCurrent?: () => boolean) {
   if (!state.client || !state.connected || state.cronBusy) {
     return;
   }
   state.cronBusy = true;
   state.cronError = null;
   try {
+    // cron.run mode:"force" 可等待数秒：运行日志刷新复用 loadCronRuns 的 stale
+    // 守卫（isCurrent），否则在途期间展开另一任务时，本任务的迟到日志会渲染到
+    // 别人的展开详情下
     await state.client.request("cron.run", { id: job.id, mode: "force" });
-    await loadCronRuns(state, job.id);
+    await loadCronRuns(state, job.id, isCurrent);
   } catch (err) {
     state.cronError = String(err);
   } finally {

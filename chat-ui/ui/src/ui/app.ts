@@ -1114,11 +1114,19 @@ export class OpenClawApp extends LitElement {
         model: modelKey,
       });
     } catch (err) {
+      this.lastError = String(err);
       // patch 失败：回滚展示值——否则选择器显示内核并未接受的模型，下条消息按旧模型跑
       // 而 UI 声称已切换。会话行仍是旧 model，选择器（modelSelectValue）随之复位。
-      this.currentModel = previousModel;
-      this.lastError = String(err);
+      // 会话切换竞态守卫（patch 可等待数十秒）：currentModel 是跨会话的兜底展示值，
+      // 切走后已由 sessionKey watcher 按新会话行重算，旧会话的模型不能写回；且
+      // updateThinkingCapabilities 失配时会向「当前」会话 patch thinkingLevel:"off"，
+      // 跨会话执行等于把 "off" 静默写进新会话配置。
+      if (this.sessionKey === sessionKey) {
+        this.currentModel = previousModel;
+        this.updateThinkingCapabilities();
+      }
       this.requestUpdate();
+      return;
     }
     this.updateThinkingCapabilities();
   }

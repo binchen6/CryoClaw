@@ -29,10 +29,17 @@ const s = {
 
 const TICK_HANDLER_NAME = "settings-backup-gateway";
 
+// init 代际：init 在注册 tick handler 前有 await 窗口，期间可能已离开本 tab
+// （cleanup 注销了同名 handler）或恢复操作触发了重 init——迟到 init 再注册会把
+// 30s gateway 轮询永久挂住（ticker 按名去重，但残留 handler 一直跑 IPC）。
+// cleanup 与重 init 都推进代际，迟到 init 注册前发现不符即放弃。
+let initGeneration = 0;
+
 async function init(state: AppViewState) {
   if (s.initialized) return;
   s.initialized = true;
   s.stateRef = state;
+  const gen = ++initGeneration;
   try {
     const [backup, gw] = await Promise.all([ipc.settingsListConfigBackups(), ipc.getGatewayState()]);
     s.backups = backup.backups ?? [];
@@ -41,6 +48,7 @@ async function init(state: AppViewState) {
     s.gatewayState = gw;
     state.requestUpdate();
   } catch {}
+  if (gen !== initGeneration) return;
 
   // Steady-state gateway polling via tick handler
   registerTickHandler(TICK_HANDLER_NAME, async () => {
@@ -170,6 +178,7 @@ function scheduleGatewayRefresh(state: AppViewState) {
 }
 
 export function cleanupBackupTab() {
+  initGeneration++;
   unregisterTickHandler(TICK_HANDLER_NAME);
   for (const t of s.refreshTimers) clearTimeout(t);
   s.refreshTimers = [];

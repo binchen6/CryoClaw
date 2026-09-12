@@ -33,20 +33,28 @@ const s = {
 let currentState: AppViewState | null = null;
 let unsubscribeProgress: (() => void) | null = null;
 let unsubscribeAppUpdate: (() => void) | null = null;
+// init 代际：init 在订阅前有多个 await 窗口，期间用户可能已离开本 tab（cleanup
+// 把退订句柄清空）或重新进入（initialized 复位后再次 init）——迟到 init 若照常
+// 订阅，旧的退订句柄会被覆盖、订阅永久无人回收。cleanup/新 init 都会推进代际，
+// 迟到 init 在订阅前发现代际不符即放弃。
+let initGeneration = 0;
 
 async function init(state: AppViewState) {
   if (s.initialized) return;
   s.initialized = true;
+  const gen = ++initGeneration;
   try {
     const about = await ipc.settingsGetAboutInfo();
     s.cryoClawVersion = about.cryoClawVersion ?? "";
     s.openClawVersion = about.openClawVersion ?? "";
     state.requestUpdate();
   } catch {}
+  if (gen !== initGeneration) return;
   try {
     s.kernelState = await ipc.kernelGetUpdateState();
     state.requestUpdate();
   } catch {}
+  if (gen !== initGeneration) return;
   // 订阅升级/回退进度（由主进程编排，可能耗时数分钟）
   unsubscribeProgress = ipc.onKernelUpdateProgress((p) => {
     s.progress = p;
@@ -57,6 +65,7 @@ async function init(state: AppViewState) {
     s.appUpdate = await ipc.appUpdateGetState();
     state.requestUpdate();
   } catch {}
+  if (gen !== initGeneration) return;
   unsubscribeAppUpdate = ipc.onAppUpdateState((st) => {
     s.appUpdate = st;
     currentState?.requestUpdate();
@@ -64,6 +73,7 @@ async function init(state: AppViewState) {
 }
 
 export function cleanupAboutTab() {
+  initGeneration++;
   unsubscribeProgress?.();
   unsubscribeProgress = null;
   unsubscribeAppUpdate?.();

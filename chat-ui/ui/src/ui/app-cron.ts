@@ -82,7 +82,10 @@ export function renderCronView(state: AppViewState, opts?: { onOpenRunsTab?: () 
     onRun: (jobId: string) => {
       const job = state.cronJobs.find((j) => j.id === jobId);
       if (job) {
-        void runCronJob(state, job).then(() => state.requestUpdate());
+        // stale 守卫：Run-now 在途期间展开项可能已切换——仅当仍无展开项或展开的
+        // 就是本任务时才落地刷新结果（对齐 onToggleExpand 的 isCurrent 语义）
+        void runCronJob(state, job, () => cronExpandedJobId === null || cronExpandedJobId === jobId)
+          .then(() => state.requestUpdate());
       }
     },
     onToggleForm: () => {
