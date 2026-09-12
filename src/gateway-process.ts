@@ -36,6 +36,8 @@ try {
 const MAX_DIAG_LOG_SIZE = 5 * 1024 * 1024;
 const DIAG_ROTATION_CHECK_INTERVAL = 1000;
 let diagWriteCount = 0;
+// 轮转窗口（对齐 logger.ts）：end+close 异步完成后才截断，期间 diagLog 不重建流
+let diagRotationInProgress = false;
 
 // WriteStream 异步缓冲写入（对齐 src/logger.ts 模式）：gateway 每条 stdout/stderr
 // 都过这里，appendFileSync 同步 I/O 会卡主进程；目录创建也随流创建只做一次。
@@ -61,15 +63,26 @@ export async function closeDiagLogStream(): Promise<void> {
 function diagLog(msg: string): void {
   const line = `[${new Date().toISOString()}] ${msg}\n`;
   try { process.stderr.write(line); } catch {}
+  if (diagRotationInProgress) return;
   try {
     getDiagStream().write(line);
     if (++diagWriteCount >= DIAG_ROTATION_CHECK_INTERVAL) {
       diagWriteCount = 0;
       if (fs.statSync(LOG_PATH).size > MAX_DIAG_LOG_SIZE) {
-        // 截断前先销毁流，避免句柄指向已被覆盖的文件
-        diagStream?.destroy();
+        // 截断前先关流；对齐 logger.ts：destroy() 的 fd 关闭在 Windows 上是异步的，
+        // 紧随的同步截断会 EBUSY 且被吞掉。end+close 完成后再截断，超时兜底；
+        // 窗口内不重建流，否则截断会把窗口内新写入的行一并抹掉。
+        const stream = diagStream;
         diagStream = null;
-        fs.writeFileSync(LOG_PATH, "[truncated]\n");
+        if (!stream) {
+          fs.writeFileSync(LOG_PATH, "[truncated]\n");
+        } else {
+          diagRotationInProgress = true;
+          void endStreamWithTimeout(stream).then(() => {
+            diagRotationInProgress = false;
+            try { fs.writeFileSync(LOG_PATH, "[truncated]\n"); } catch {}
+          });
+        }
       }
     }
   } catch {}
@@ -104,7 +117,11 @@ export class GatewayProcess {
   private generation = 0;
 
   constructor(opts: GatewayOptions) {
-    this.port = opts.port ?? DEFAULT_PORT;
+    // 与 setPort 同口径的范围校验：越界端口会让 probeHealth 的 http.get 同步抛错
+    this.port =
+      opts.port !== undefined && Number.isInteger(opts.port) && opts.port > 0 && opts.port <= 65535
+        ? opts.port
+        : DEFAULT_PORT;
     this.token = opts.token;
     this.onStateChange = opts.onStateChange;
     this.onCrash = opts.onCrash;
@@ -151,7 +168,30 @@ export class GatewayProcess {
   }
 
   // 启动 Gateway 子进程
-  async start(): Promise<void> {
+  // 串行化并发 start：入口守卫只在进入时检查一次，而 stopping 等待（≤6s）与
+  // 崩溃冷却（≤5s）都在守卫之后、setState("starting") 之前 await——第二个并发
+  // start 会同样穿过守卫并各自 spawn（旧世代 exit 被刻意忽略，孤儿 gateway
+  // 与新进程抢端口）。在途启动期间后续调用直接复用同一 promise。
+  private inflightStart: Promise<void> | null = null;
+
+  start(): Promise<void> {
+    if (this.state === "running" || this.state === "starting") return Promise.resolve();
+    if (this.inflightStart) {
+      // state 已是 stopped 但旧启动 promise 尚未落定 = 旧启动正在收尾
+      //（restart() 先 stop 杀子进程 → exit handler 复位 stopped，而 doStart 的
+      // 健康轮询要等下一个 500ms tick 才察觉死亡）。此时复用旧 promise 会「静默
+      // 什么都不 spawn」——restart 链上没有重试的调用方会停在 stopped。等旧
+      // promise settle（finally 先清 inflightStart）后重新进入 start()。
+      if (this.state !== "stopped") return this.inflightStart;
+      return this.inflightStart.then(() => this.start());
+    }
+    this.inflightStart = this.doStart().finally(() => {
+      this.inflightStart = null;
+    });
+    return this.inflightStart;
+  }
+
+  private async doStart(): Promise<void> {
     if (this.state === "running" || this.state === "starting") return;
 
     // 前一次 stop 还未完成，等待其结束再启动

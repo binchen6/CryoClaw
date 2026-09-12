@@ -30,6 +30,9 @@ try {
 let logStream: fs.WriteStream | null = null;
 let writeCount = 0;
 let fileWritesPaused = false;
+// 轮转窗口：end+close 异步完成后才截断，期间 write() 不再重建流追加（否则截断
+// 会把窗口内已落盘的行一起抹掉）
+let rotationInProgress = false;
 const ROTATION_CHECK_INTERVAL = 1000;
 
 function getLogStream(): fs.WriteStream {
@@ -87,11 +90,21 @@ function checkRotation(): void {
   writeCount = 0;
   try {
     if (fs.statSync(LOG_PATH).size > MAX_LOG_SIZE) {
-      if (logStream) {
-        logStream.destroy();
-        logStream = null;
+      const stream = logStream;
+      logStream = null;
+      if (!stream) {
+        fs.writeFileSync(LOG_PATH, "[truncated]\n");
+        return;
       }
-      fs.writeFileSync(LOG_PATH, "[truncated]\n");
+      // destroy() 的 fd 关闭在 Windows 上是异步的：紧随的同步截断会 EBUSY 且被
+      // 吞掉（本轮轮转静默丢失）。改为 end+close（缓冲行落盘）完成后再截断，
+      // 1s 超时兜底；仍失败则下个计数周期重试。窗口内置 rotationInProgress，
+      // write() 不重建流——否则截断会把窗口内新写入的行一并抹掉。
+      rotationInProgress = true;
+      void endStreamWithTimeout(stream).then(() => {
+        rotationInProgress = false;
+        try { fs.writeFileSync(LOG_PATH, "[truncated]\n"); } catch {}
+      });
     }
   } catch {}
 }
@@ -101,7 +114,7 @@ function write(level: string, msg: string): void {
   const levelValue = LOG_LEVELS[level] ?? LOG_LEVELS.INFO;
   if (levelValue > MAX_LEVEL) return; // 低于配置级别：文件与 console 都不写
   const line = `[${new Date().toISOString()}] [${level}] ${msg}\n`;
-  if (!fileWritesPaused) {
+  if (!fileWritesPaused && !rotationInProgress) {
     try {
       getLogStream().write(line);
       checkRotation();

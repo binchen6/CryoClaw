@@ -2,6 +2,7 @@ import * as fs from "fs";
 import * as path from "path";
 import * as crypto from "crypto";
 import { resolveUserStateDir, resolveUserConfigPath } from "./constants";
+import { writeFileAtomicSync } from "./atomic-write";
 
 // ── 类型定义 ──
 
@@ -70,14 +71,14 @@ export function readCryoclawConfig(): CryoclawConfig | null {
 }
 
 // 写入 CryoClaw 专属配置（只写新文件）
+// 原子写（tmp + fsync + rename，对齐 provider-config 的 writeUserConfig）：该文件承载
+// setupCompletedAt / updateChannel / cliPreference 等归属与设置标记，写一半崩溃
+// 留下截断 JSON 后 readCryoclawConfig 永远返回 null，用户设置被静默重置
+// （updateChannel "off" 失效重新开始收到自动更新、release-notes 弹窗复活等）。
 export function writeCryoclawConfig(config: CryoclawConfig): void {
   const dir = resolveUserStateDir();
   fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(
-    resolveCryoclawConfigPath(),
-    JSON.stringify(config, null, 2) + "\n",
-    "utf-8",
-  );
+  writeFileAtomicSync(resolveCryoclawConfigPath(), JSON.stringify(config, null, 2) + "\n");
 }
 
 // ── 归属检测 ──

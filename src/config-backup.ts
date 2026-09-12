@@ -7,6 +7,7 @@ import {
   resolveUserStateDir,
 } from "./constants";
 import { syncOpenClawStateAfterWrite } from "./openclaw-health-state";
+import { writeFileAtomicSync } from "./atomic-write";
 import { formatTimestamp } from "./time-format";
 
 const BACKUP_FILE_PREFIX = "openclaw-";
@@ -203,20 +204,13 @@ function readValidConfigRaw(filePath: string): string | null {
 }
 
 // 统一写入 openclaw.json，保持恢复路径和正常保存路径行为一致。
-// 原子写（.tmp + rename）：恢复路径是用户的最后救命稻草，写一半崩溃（强杀/断电）
-// 留下被截断的配置尤其不该；模式对齐 extension-mirror 的 ensurePluginsAllow。
+// 原子写（tmp + fsync + rename）：恢复路径是用户的最后救命稻草，写一半崩溃（强杀/
+// 断电）留下被截断的配置尤其不该；模式对齐 extension-mirror 的 ensurePluginsAllow。
 function writeConfigRaw(raw: string): void {
   const stateDir = resolveUserStateDir();
   fs.mkdirSync(stateDir, { recursive: true });
   const configPath = resolveUserConfigPath();
-  const tmpPath = `${configPath}.tmp`;
-  try {
-    fs.writeFileSync(tmpPath, raw, "utf-8");
-    fs.renameSync(tmpPath, configPath);
-  } catch (err) {
-    try { fs.rmSync(tmpPath, { force: true }); } catch {}
-    throw err;
-  }
+  writeFileAtomicSync(configPath, raw);
   syncOpenClawStateAfterWrite(configPath);
 }
 

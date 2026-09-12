@@ -1,9 +1,12 @@
 import * as https from "https";
 import * as http from "http";
 import * as fs from "fs";
+import * as path from "path";
 import { resolveUserConfigPath, resolveUserStateDir } from "./constants";
 import { syncOpenClawStateAfterWrite } from "./openclaw-health-state";
 import { backupCurrentUserConfig } from "./config-backup";
+import { writeFileAtomicSync } from "./atomic-write";
+import { formatTimestamp } from "./time-format";
 import { probeImageSupport, type ImageProbeAuth, type ImageProbeOutcome } from "./provider-image-probe";
 import { verifyWecom } from "./wecom-config";
 
@@ -121,22 +124,43 @@ export function readUserConfig(): any {
   }
 }
 
+// 覆盖前的保险丝：磁盘上存在但不可解析的 openclaw.json 绝不能被整文件覆盖。
+// 所有设置保存都是「readUserConfig() 改一小块 → writeUserConfig 整文件写回」，
+// 若读取瞬间文件损坏/被占用（Windows 杀软/索引器 EBUSY），调用方会把改动合并进
+// {} 空对象写回——providers/channels/keys 全部蒸发，且 backupCurrentUserConfig
+// 跳过损坏文件、.bak 又会被同步覆盖，恢复链路一并失守。此处在唯一写咽喉点拦下：
+// 把损坏文件留存为 openclaw.json.corrupt-<ts>（启动期 config-invalid-json 恢复
+// 流程与 writeConfigRaw 恢复路径不受影响，它们不经过本函数）。
+function assertExistingConfigParseable(): void {
+  const configPath = resolveUserConfigPath();
+  if (!fs.existsSync(configPath)) return;
+  let raw: string;
+  try {
+    raw = fs.readFileSync(configPath, "utf-8");
+  } catch {
+    // 读失败（瞬时占用）≠ 内容损坏：不重命名（Windows 上也会因占用失败），
+    // 直接让本次保存报错，用户重试即可。
+    throw new Error("无法读取 openclaw.json（可能被其他程序暂时占用），已取消本次写入以保护现有配置");
+  }
+  try {
+    JSON.parse(raw);
+  } catch {
+    const corruptPath = `${configPath}.corrupt-${formatTimestamp(new Date())}`;
+    try { fs.renameSync(configPath, corruptPath); } catch {}
+    throw new Error(`检测到 openclaw.json 内容损坏，已取消覆盖写入；原文件已留存为 ${path.basename(corruptPath)}`);
+  }
+}
+
 export function writeUserConfig(config: any): void {
+  assertExistingConfigParseable();
   const stateDir = resolveUserStateDir();
   fs.mkdirSync(stateDir, { recursive: true });
   // 覆盖写入前先保留一份当前可解析配置，便于用户在设置页回退。
   backupCurrentUserConfig();
   const configPath = resolveUserConfigPath();
-  // 原子写（.tmp + rename）：这是 openclaw.json 的主写路径，写一半崩溃（强杀/断电）
-  // 留下截断配置会让下次启动进入恢复流程；模式对齐 config-backup 的 writeConfigRaw
-  const tmpPath = `${configPath}.tmp`;
-  try {
-    fs.writeFileSync(tmpPath, JSON.stringify(config, null, 2), "utf-8");
-    fs.renameSync(tmpPath, configPath);
-  } catch (err) {
-    try { fs.rmSync(tmpPath, { force: true }); } catch {}
-    throw err;
-  }
+  // 原子写（tmp + fsync + rename）：这是 openclaw.json 的主写路径，写一半崩溃（强杀/
+  // 断电）留下截断配置会让下次启动进入恢复流程；模式对齐 config-backup 的 writeConfigRaw
+  writeFileAtomicSync(configPath, JSON.stringify(config, null, 2));
   // openclaw 4.x 每次读 openclaw.json 会与 health-state baseline 以及
   // openclaw.json.bak 做字节校验；外部直写会让两者落后，产生 .clobbered 雪崩。
   // 这里把 .bak 同步成当前内容，并清理 health entry 让 openclaw 重建基线。
@@ -195,7 +219,9 @@ export function verifyKFC(proxyPort: number, modelID?: string): Promise<void> {
 
 // Moonshot 子平台验证（moonshot-cn / moonshot-ai）
 export function verifyMoonshot(apiKey: string, subPlatform?: string): Promise<void> {
-  const sub = MOONSHOT_SUB_PLATFORMS[subPlatform || "moonshot-cn"];
+  // subPlatform 来自渲染层入参：未知值回退默认子平台，避免 `undefined.baseUrl`
+  // 的裸 TypeError 混进验证失败文案（对齐 getMoonshotProviderKey 的守卫风格）
+  const sub = MOONSHOT_SUB_PLATFORMS[subPlatform || "moonshot-cn"] || MOONSHOT_SUB_PLATFORMS["moonshot-cn"];
   return jsonRequest(`${sub.baseUrl}/models`, {
     headers: { Authorization: `Bearer ${apiKey}` },
   });
@@ -544,6 +570,11 @@ export function jsonRequestBody<T = unknown>(
   });
 }
 
+// 响应体总量上限：baseURL 可来自用户自定义 provider（任意地址），恶意/故障源的
+// 超长或无限滴流响应会把主进程内存吃穿（Node http 的 timeout 只是 socket 空闲
+// 超时，缓慢滴流不会触发）。上限对齐 skill-store 的 JSON_GET_MAX_BYTES。
+const RAW_JSON_MAX_BYTES = 8 * 1024 * 1024;
+
 function rawJsonRequest(
   url: string,
   opts: { method?: string; headers?: Record<string, string>; body?: string }
@@ -563,7 +594,16 @@ function rawJsonRequest(
       },
       (res) => {
         let body = "";
-        res.on("data", (d) => (body += d));
+        let bytes = 0;
+        res.on("data", (d) => {
+          bytes += d.length;
+          if (bytes > RAW_JSON_MAX_BYTES) {
+            req.destroy();
+            reject(new Error(`响应超过 ${Math.floor(RAW_JSON_MAX_BYTES / 1024 / 1024)}MB 上限，已中断`));
+            return;
+          }
+          body += d;
+        });
         res.on("end", () => {
           const code = res.statusCode ?? 0;
           if (code >= 200 && code < 300) {

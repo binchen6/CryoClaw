@@ -55,10 +55,20 @@ export function loadOAuthToken(): OAuthToken | null {
 }
 
 // 写入 token 并限制文件权限
+// 原子写（.tmp + rename，对齐 gateway-auth）：该文件由自动刷新定时器反复写入，
+// 写一半崩溃留下截断 JSON 会让 loadOAuthToken 返回 null——用户莫名掉登录、
+// 需要重新扫码。
 function saveOAuthToken(token: OAuthToken): void {
   const filePath = resolveOAuthTokenPath();
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.writeFileSync(filePath, JSON.stringify(token, null, 2), "utf-8");
+  const tmpPath = `${filePath}.tmp`;
+  try {
+    fs.writeFileSync(tmpPath, JSON.stringify(token, null, 2), "utf-8");
+    fs.renameSync(tmpPath, filePath);
+  } catch (err) {
+    try { fs.rmSync(tmpPath, { force: true }); } catch {}
+    throw err;
+  }
   try {
     fs.chmodSync(filePath, 0o600);
   } catch {}
@@ -145,18 +155,22 @@ function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-// 轮询中止标志
-let abortFlag = false;
+// 轮询中止：模块级 epoch（登录序号）。kimiOAuthLogin 递增使旧登录的轮询失效，
+// kimiOAuthCancel 递增使所有在途轮询失效——替代旧的全局 abortFlag 布尔量：
+// 并发第二次登录会把第一次的取消标志重置，两次轮询还可能把不同 device_code
+// 的 token 先后落盘（后写覆盖前写，服务端可能已作废前者的 refresh_token）。
+let loginEpoch = 0;
 
 // 取消正在进行的 OAuth 登录
 export function kimiOAuthCancel(): void {
-  abortFlag = true;
+  loginEpoch += 1;
 }
 
 // 轮询等待用户完成授权
 async function pollForToken(
   deviceCode: string,
   interval: number,
+  epoch: number,
   onWaiting?: () => void,
 ): Promise<OAuthToken> {
   // 瞬时网络错误容忍：单次请求失败（切网/代理抖动）不应打断整个扫码登录——
@@ -164,9 +178,12 @@ async function pollForToken(
   // 连续失败超过阈值才放弃；authorization_pending 正常等待不计入。
   const MAX_CONSECUTIVE_NETWORK_ERRORS = 5;
   let networkErrors = 0;
+  // interval 由服务端下发：缺失/0/负值会造成 sleep(0) 的紧密轮询循环
+  //（POLL_MAX_RETRIES 次请求瞬间打完）；slow_down 按 RFC 8628 递增 5s。
+  let effectiveInterval = Math.max(Number.isFinite(interval) ? interval : 5, 1);
   for (let i = 0; i < POLL_MAX_RETRIES; i++) {
-    await sleep(interval * 1000);
-    if (abortFlag) throw new Error("已取消");
+    await sleep(effectiveInterval * 1000);
+    if (epoch !== loginEpoch) throw new Error("已取消");
 
     let data: Record<string, unknown>;
     try {
@@ -177,6 +194,7 @@ async function pollForToken(
       }));
       networkErrors = 0;
     } catch (err) {
+      if (epoch !== loginEpoch) throw new Error("已取消");
       networkErrors += 1;
       if (networkErrors >= MAX_CONSECUTIVE_NETWORK_ERRORS) {
         throw err instanceof Error ? err : new Error(String(err));
@@ -202,8 +220,9 @@ async function pollForToken(
       throw new Error("授权已过期，请重新登录");
     }
 
-    // authorization_pending / slow_down：继续轮询
+    // authorization_pending / slow_down：继续轮询（slow_down 放慢节奏）
     if (errorCode === "authorization_pending" || errorCode === "slow_down") {
+      if (errorCode === "slow_down") effectiveInterval += 5;
       onWaiting?.();
       continue;
     }
@@ -252,20 +271,22 @@ export async function refreshOAuthToken(token: OAuthToken): Promise<OAuthToken> 
   return refreshed;
 }
 
-// 完整登录流程：设备授权 → 打开浏览器 → 轮询等待 → 保存 token（开始前重置中止标志）
+// 完整登录流程：设备授权 → 打开浏览器 → 轮询等待 → 保存 token
+// epoch 取本登录的序号：后续新登录/取消会使本登录的轮询失效（并发防串扰）
 export async function kimiOAuthLogin(): Promise<{
   success: boolean;
   accessToken?: string;
   message?: string;
 }> {
-  abortFlag = false;
+  const epoch = ++loginEpoch;
   try {
     const auth = await requestDeviceAuthorization();
     log.info(`Kimi OAuth: 用户码 ${auth.user_code}，等待浏览器授权`);
 
     await shell.openExternal(appendChannelUtm(auth.verification_uri_complete));
 
-    const token = await pollForToken(auth.device_code, auth.interval);
+    const token = await pollForToken(auth.device_code, auth.interval, epoch);
+    if (epoch !== loginEpoch) throw new Error("已取消");
     saveOAuthToken(token);
     log.info("Kimi OAuth: 登录成功");
     return { success: true, accessToken: token.access_token };

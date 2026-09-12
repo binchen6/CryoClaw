@@ -155,7 +155,9 @@ export function registerBackupIpc(opts: SettingsIpcOptions): void {
       if (!fileName) {
         return { success: false, message: "请选择要恢复的备份文件。" };
       }
+      await quiesceGatewayBeforeRestore();
       restoreUserConfigBackup(fileName);
+      runRestoredConfigMigrations();
       return { success: true };
     } catch (err: any) {
       return { success: false, message: err.message || String(err) };
@@ -166,12 +168,40 @@ export function registerBackupIpc(opts: SettingsIpcOptions): void {
   ipcMain.handle("settings:restore-last-known-good", async (event) => {
     if (!assertTrustedIpcSender(event, "settings:restore-last-known-good")) throw new Error("IPC sender not trusted");
     try {
+      await quiesceGatewayBeforeRestore();
       restoreLastKnownGoodConfigSnapshot();
+      runRestoredConfigMigrations();
       return { success: true };
     } catch (err: any) {
       return { success: false, message: err.message || String(err) };
     }
   });
+
+  // 恢复前静默 gateway（对齐 R64 恢复出厂路径）：内核进程活着时恢复配置，
+  // 其 config observer 可能在退出前把内存里的旧配置写回、盖掉刚恢复的内容。
+  // 同时取消挂起的崩溃自动重启定时器（R71）——否则它可能在恢复写盘期间把
+  // gateway 拉到旧配置上。停不住也继续恢复：由渲染层随后的 restartGateway 收敛。
+  async function quiesceGatewayBeforeRestore(): Promise<void> {
+    opts.cancelScheduledCrashRestart?.();
+    if (opts.stopGateway) {
+      try {
+        await opts.stopGateway();
+      } catch {
+        // 同恢复出厂：停不住不阻塞恢复
+      }
+    }
+  }
+
+  // 备份可能产自旧版本内核/旧版 CryoClaw：直接恢复后重启 gateway 会被
+  // strict 校验拒绝（旧 dingtalk 字段、旧落位字段等，同 .openclaw 导入路径）。
+  // 恢复后按当前内核版本跑一遍存量迁移再交给渲染层重启 gateway。
+  function runRestoredConfigMigrations(): void {
+    try {
+      opts.migrateRestoredConfig?.();
+    } catch {
+      // 迁移失败不阻塞恢复结果返回；启动期迁移与日志会继续兜底
+    }
+  }
 
 
   ipcMain.handle("settings:reset-config-and-relaunch", async (event) => {

@@ -9,18 +9,21 @@ import { readCryoclawConfig } from "./cryoclaw-config";
 // ── 网络端口 ──
 
 export const DEFAULT_PORT = 18789;
-// 从用户配置/环境变量解析 Gateway 端口（与 openclaw 内部逻辑一致）
+// 从用户配置/环境变量解析 Gateway 端口（与 openclaw 内部逻辑一致）。
+// 上限校验：>65535 的配置值会让 probeHealth 的 http.get 抛同步异常（非法 URL），
+// 用户看到的只是含混的「预启动步骤失败」，这里直接回退默认端口。
 export function resolveGatewayPort(): number {
+  const isValidPort = (p: number) => Number.isFinite(p) && p > 0 && p <= 65535 && Number.isInteger(p);
   const envRaw = process.env.OPENCLAW_GATEWAY_PORT?.trim();
   if (envRaw) {
     const parsed = Number.parseInt(envRaw, 10);
-    if (Number.isFinite(parsed) && parsed > 0) return parsed;
+    if (isValidPort(parsed)) return parsed;
   }
   try {
     const raw = fs.readFileSync(resolveUserConfigPath(), "utf-8");
     const cfg = JSON.parse(raw);
     const configPort = cfg?.gateway?.port;
-    if (typeof configPort === "number" && Number.isFinite(configPort) && configPort > 0) {
+    if (typeof configPort === "number" && isValidPort(configPort)) {
       return configPort;
     }
   } catch {}

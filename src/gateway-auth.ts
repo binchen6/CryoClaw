@@ -2,6 +2,7 @@ import * as crypto from "crypto";
 import * as fs from "fs";
 import { resolveUserConfigPath } from "./constants";
 import { backupCurrentUserConfig } from "./config-backup";
+import { writeFileAtomicSync } from "./atomic-write";
 import { syncOpenClawStateAfterWrite } from "./openclaw-health-state";
 import * as log from "./logger";
 
@@ -88,16 +89,9 @@ export function resolveGatewayAuthToken(opts: ResolveTokenOptions = {}): string 
     try {
       // 自动补全 token 前先备份旧配置，保证每次变更都可回退。
       backupCurrentUserConfig();
-      // 原子写（.tmp + rename，R64 审查 P2）：模式对齐 writeUserConfig/writeConfigRaw，
+      // 原子写（tmp + fsync + rename，R64 审查 P2）：模式对齐 writeUserConfig/writeConfigRaw，
       // 直写崩溃窗口会留下截断的 openclaw.json 触发恢复流程
-      const tmpPath = `${configPath}.tmp`;
-      try {
-        fs.writeFileSync(tmpPath, JSON.stringify(config, null, 2), "utf-8");
-        fs.renameSync(tmpPath, configPath);
-      } catch (renameErr) {
-        try { fs.rmSync(tmpPath, { force: true }); } catch {}
-        throw renameErr;
-      }
+      writeFileAtomicSync(configPath, JSON.stringify(config, null, 2));
       syncOpenClawStateAfterWrite(configPath);
     } catch (err: any) {
       // 持久化失败时本会话靠环境变量保持一致，但每次启动都会轮换新 token 且无法诊断，

@@ -494,6 +494,9 @@ async function syncGatewayRuntimeConfigFromDisk(): Promise<void> {
 // 注意：仅 requestGatewayStart/requestGatewayRestart 喂这个变量；ensureGatewayRunning
 // （启动/Setup/导入自身的启动路径）刻意不跟踪，否则导入会 await 自己的 start 而死锁。
 // 那条未跟踪路径与 Settings 触发的导入在现实中不会重叠，且由 stop({ waitForStarting }) 兜底。
+// 后续操作链到上一个 promise 尾部（而非覆盖）：两个操作并发时，若互相覆盖，
+// 静默网关方只等到后一个，前一个的 syncGatewayRuntimeConfigFromDisk（auth-proxy
+// 重绑 + 端口写回）可能与后一个交错，把过期端口写进 openclaw.json。
 let inflightGatewayOp: Promise<void> = Promise.resolve();
 
 // 手动控制 Gateway：统一入口，确保启动前同步最新 port/token。
@@ -506,12 +509,14 @@ function requestGatewayStart(source: string): void {
     log.info(`[gateway] start ignored during kernel update: ${source}`);
     return;
   }
-  inflightGatewayOp = (async () => {
-    await syncGatewayRuntimeConfigFromDisk();
-    await gateway.start();
-  })().catch((err) => {
-    log.error(`Gateway 启动失败(${source}): ${err}`);
-  });
+  inflightGatewayOp = inflightGatewayOp
+    .then(async () => {
+      await syncGatewayRuntimeConfigFromDisk();
+      await gateway.start();
+    })
+    .catch((err) => {
+      log.error(`Gateway 启动失败(${source}): ${err}`);
+    });
 }
 
 // 重启 debounce：多次快速调用只执行最后一次，避免连环重启
@@ -549,9 +554,29 @@ function scheduleGatewayCrashRestart(info: { code: number | null; signal: string
   );
   crashRestartTimer = setTimeout(() => {
     crashRestartTimer = null;
+    // 延迟窗口内可能已进入 .openclaw 导入/内核换装：此时起 gateway 会访问
+    // 半清空的状态目录或半换装的内核（与 requestGatewayStart 的入口护栏同源），
+    // 两条流程收尾时都会自行 ensureGatewayRunning，这里直接跳过即可。
+    if (isQuitting) return;
+    if (openclawStateImportLifecycle.isImportActive()) {
+      log.info("[gateway] crash restart skipped during .openclaw import");
+      return;
+    }
+    if (getKernelUpdateState().running) {
+      log.info("[gateway] crash restart skipped during kernel update");
+      return;
+    }
     void ensureGatewayRunning("recovery:crash");
   }, CRASH_RESTART_DELAY_MS);
   crashRestartTimer.unref?.();
+}
+
+// 取消挂起的崩溃重启定时器（导入/内核换装/退出序列在静默 gateway 前调用）。
+function cancelScheduledCrashRestart(source: string): void {
+  if (!crashRestartTimer) return;
+  clearTimeout(crashRestartTimer);
+  crashRestartTimer = null;
+  log.info(`[gateway] scheduled crash restart canceled: ${source}`);
 }
 
 function requestGatewayRestart(source: string): void {
@@ -578,12 +603,14 @@ function requestGatewayRestart(source: string): void {
       return;
     }
     log.info(`[gateway] restart executing: ${source}`);
-    inflightGatewayOp = (async () => {
-      await syncGatewayRuntimeConfigFromDisk();
-      await gateway.restart();
-    })().catch((err) => {
-      log.error(`Gateway 重启失败(${source}): ${err}`);
-    });
+    inflightGatewayOp = inflightGatewayOp
+      .then(async () => {
+        await syncGatewayRuntimeConfigFromDisk();
+        await gateway.restart();
+      })
+      .catch((err) => {
+        log.error(`Gateway 重启失败(${source}): ${err}`);
+      });
   }, 800);
   // unref（R64 审查 P2）：防抖窗内退出应用时，该定时器不得成为事件循环的
   // 存活理由，也不得在退出序列中 spawn 孤儿 gateway（before-quit 另做取消）。
@@ -604,12 +631,20 @@ const openclawStateImportLifecycle = createOpenclawStateImportLifecycle({
     if (getKernelUpdateState().running) throw new Error("内核升级进行中，请稍后重试");
   },
   quiesceGateway: async () => {
+    // 崩溃重启定时器与 restart 防抖同为延迟 spawn 入口：导入清空状态目录期间
+    // 触发会把 gateway 拉到半清空的状态上（R71 定时器未接护栏，本轮补齐）
+    cancelScheduledCrashRestart("settings:import-openclaw-state");
     cancelPendingGatewayRestart("settings:import-openclaw-state");
     await inflightGatewayOp;
   },
   validateArchive: (filePath) => validateOpenclawStateArchive(filePath, resolveUserStateDir()),
   stopGateway: () => gateway.stop({ waitForStarting: true }),
-  importArchive: (filePath) => log.withFileLoggingPaused(() => importOpenclawStateFromArchive(filePath, resolveUserStateDir(), resolveOpenclawImportBackupDir())),
+  importArchive: (filePath) => log.withFileLoggingPaused(async () => {
+    // Windows：gateway.log 诊断流若不关闭，fs.rm 清空状态目录会因句柄占用
+    // EBUSY/EPERM 失败（app.log 流由 withFileLoggingPaused 关闭，这里补齐另一半）
+    await closeDiagLogStream();
+    return importOpenclawStateFromArchive(filePath, resolveUserStateDir(), resolveOpenclawImportBackupDir());
+  }),
   reconcileHostState: reconcileHostStateAfterOpenclawImport,
   syncImportedConfigState: () => syncOpenClawStateAfterWrite(resolveUserConfigPath()),
   startGateway: async () => {
@@ -773,6 +808,7 @@ initKernelUpdater({
   // 换装前静默 gateway：取消挂起的重启防抖并等在途 start/restart 落定，
   // 防止 updater 换 asar 的同时 spawn 半换装内核的 gateway（同 .openclaw 导入路径）
   stopGateway: async () => {
+    cancelScheduledCrashRestart("kernel-update");
     cancelPendingGatewayRestart("kernel-update");
     await inflightGatewayOp;
     await gateway.stop();
@@ -1039,6 +1075,13 @@ registerSettingsIpc({
   getGatewayToken: () => gateway.getToken(),
   importOpenclawState: (filePath) => openclawStateImportLifecycle.importOpenclawState(filePath),
   stopGateway: () => gateway.stop({ waitForStarting: true }),
+  cancelScheduledCrashRestart: () => cancelScheduledCrashRestart("settings:restore-config"),
+  // 恢复备份后跑存量迁移（备份可能产自旧内核/旧版本，strict 校验起不来）
+  migrateRestoredConfig: () => {
+    migrateDeprecatedDingtalkFields();
+    migrateBrowserProfileConfig();
+    migrateOpenclawConfigForKernelUpgrade();
+  },
 });
 registerSkillStoreIpc();
 registerPluginStoreIpc();

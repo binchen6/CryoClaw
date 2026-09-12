@@ -56,9 +56,13 @@ export function registerAdvancedIpc(opts: SettingsIpcOptions): void {
   //    热应用模式/执行权限/沙箱/iMessage 已由前端走 config.patch） ──
   ipcMain.handle("settings:save-advanced", async (_event, params) => {
     if (!assertTrustedIpcSender(_event, "settings:save-advanced")) throw new Error("IPC sender not trusted");
-    const { browserProfile, browserMode } = params;
-    const launchAtLogin = typeof params?.launchAtLogin === "boolean" ? params.launchAtLogin : undefined;
-    const clawHubRegistry = typeof params?.clawHubRegistry === "string" ? params.clawHubRegistry.trim() : undefined;
+    // 入参可能缺省（渲染层异常 invoke 无参）：裸解构会抛出绕过 {success,message}
+    // 契约的 TypeError；先兜底空对象（下方字段已全部按 undefined 容错读取）
+    const p = (params ?? {}) as Record<string, unknown>;
+    const browserProfile = p.browserProfile as string | undefined;
+    const browserMode = p.browserMode as string | undefined;
+    const launchAtLogin = typeof p.launchAtLogin === "boolean" ? p.launchAtLogin : undefined;
+    const clawHubRegistry = typeof p.clawHubRegistry === "string" ? p.clawHubRegistry.trim() : undefined;
     return runTrackedSettingsAction(
       "save_advanced",
       {
@@ -107,6 +111,10 @@ export function registerAdvancedIpc(opts: SettingsIpcOptions): void {
             migrateBrowserProfileForCurrentGateway(config);
           }
 
+          // 配置写盘放最前：写失败时直接返回，不留「OS 设置已生效但配置没存上」
+          // 的半提交状态（launchAtLogin / registry 都是回滚代价高的外部副作用）
+          writeUserConfig(config);
+
           if (typeof launchAtLogin === "boolean") {
             setLaunchAtLoginEnabled(app, launchAtLogin);
           }
@@ -116,7 +124,6 @@ export function registerAdvancedIpc(opts: SettingsIpcOptions): void {
             writeSkillStoreRegistry(clawHubRegistry);
           }
 
-          writeUserConfig(config);
           opts.requestGatewayRestart?.();
           return { success: true };
         } catch (err: any) {
