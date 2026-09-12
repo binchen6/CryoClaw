@@ -15,8 +15,10 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           # 与产物运行时同 patch（package.json cryoclaw.node）：避免测试跑在
-          # 与发行版不同的 Node 补丁级上导致行为漂移
-          node-version: 22.23.2
+          # 与发行版不同的 Node 补丁级上导致行为漂移（b559a51 把运行时升到
+          # 24.21.0 时漏改这里，CI 一直跑在 22 上——Node 24 Windows fs.rmSync
+          # 静默失败等发行链路问题在 CI 复现不了）
+          node-version: 24.21.0
           cache: npm
 
       - name: Install dependencies
@@ -27,9 +29,10 @@ jobs:
       - name: Install Electron binary
         run: node node_modules/electron/install.js
 
-      # chat-ui 是独立 npm 工程（test:chat 的 typecheck/单测依赖其 node_modules）
+      # chat-ui 是独立 npm 工程（test:chat 的 typecheck/单测依赖其 node_modules）；
+      # 用 npm ci 按 lockfile 安装，避免依赖漂移（与根工程一致）
       - name: Install chat-ui dependencies
-        run: npm --prefix chat-ui/ui install
+        run: npm --prefix chat-ui/ui ci
 
       # 全量回归：vitest（主进程）+ node:test（编译产物）+ chat-ui typecheck 与单测
       - name: Unit tests

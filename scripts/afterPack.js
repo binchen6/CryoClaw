@@ -436,12 +436,18 @@ function copyDirSync(src, dest) {
     const s = path.join(src, entry.name);
     const d = path.join(dest, entry.name);
 
-    if (entry.isDirectory()) {
-      copyDirSync(s, d);
-    } else if (entry.isSymbolicLink()) {
+    // 符号链接分支必须先于 isDirectory 判定：链接到目录时要按 realpath 的目标
+    // 类型分发，否则 copyFileSync(real, d) 会对目录抛 EISDIR
+    if (entry.isSymbolicLink()) {
       const real = fs.realpathSync(s);
-      fs.copyFileSync(real, d);
-      fs.chmodSync(d, fs.statSync(real).mode);
+      if (fs.statSync(real).isDirectory()) {
+        copyDirSync(real, d);
+      } else {
+        fs.copyFileSync(real, d);
+        fs.chmodSync(d, fs.statSync(real).mode);
+      }
+    } else if (entry.isDirectory()) {
+      copyDirSync(s, d);
     } else {
       fs.copyFileSync(s, d);
       fs.chmodSync(d, fs.statSync(s).mode);

@@ -1131,6 +1131,7 @@ function installDependencies(opts, gatewayDir) {
     const nmDir = path.join(gatewayDir, "node_modules");
     // 即使复用缓存依赖，也要执行最新裁剪规则，避免历史产物遗留冗余文件
     pruneNodeModules(nmDir, opts.platform);
+    pruneNonTargetPrebuilds(nmDir, opts.platform, opts.arch);
     pruneFsSafeNativePlatforms(nmDir, opts.platform, opts.arch);
     pruneTreeSitterSources(nmDir);
     pruneDarwinUniversalNativePackages(nmDir, opts.platform);
@@ -1211,6 +1212,7 @@ function installDependencies(opts, gatewayDir) {
   log("依赖安装完成，开始裁剪 node_modules...");
   const nmDir = path.join(gatewayDir, "node_modules");
   pruneNodeModules(nmDir, opts.platform);
+  pruneNonTargetPrebuilds(nmDir, opts.platform, opts.arch);
   pruneFsSafeNativePlatforms(nmDir, opts.platform, opts.arch);
   pruneTreeSitterSources(nmDir);
   pruneDarwinUniversalNativePackages(nmDir, opts.platform);
@@ -2883,7 +2885,11 @@ async function downloadOfficeCli(platform, arch, targetBase) {
 
   const readExpectedHash = () => {
     const sumsContent = fs.readFileSync(cachedSums, "utf-8");
-    const expectedLine = sumsContent.split("\n").find((l) => l.includes(assetName));
+    // SHASUMS 行尾才是文件名（"hash  name"）：includes 会先命中名字是前缀的
+    // 兄弟条目（如 .sig/.blockmap 伴生文件），拿错期望哈希 → 校验必然失败
+    const expectedLine = sumsContent
+      .split("\n")
+      .find((l) => l.trim().endsWith(` ${assetName}`));
     if (!expectedLine) {
       die(`SHA256SUMS 中未找到 ${assetName}`);
     }

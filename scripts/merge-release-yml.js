@@ -63,9 +63,11 @@ function laterDate(a, b) {
   return new Date(a) > new Date(b) ? a : b;
 }
 
-// 合并一组 yml 文件
-function mergeTarget(target) {
+// 合并一组 yml 文件；allowPartial=true 时缺架构仅告警（发布残缺 latest.yml 会让
+// 该架构用户永远收不到更新），默认缺任一架构即抛错。
+function mergeTarget(target, allowPartial) {
   const ymls = [];
+  const missingDirs = [];
 
   for (const dir of target.dirs) {
     const filePath = path.join(OUT_DIR, dir, target.ymlName);
@@ -73,12 +75,25 @@ function mergeTarget(target) {
     const rel = path.relative(OUT_DIR, filePath);
     if (rel.startsWith("..") || path.isAbsolute(rel)) {
       console.warn(`[merge] 跳过越出 OUT_DIR 的路径: ${filePath}`);
+      missingDirs.push(dir);
       continue;
     }
     const data = loadYml(filePath);
     if (data) {
       ymls.push({ dir, data });
+    } else {
+      missingDirs.push(dir);
     }
+  }
+
+  // 缺架构检查必须在「全缺失早退」之前：全部缺失（构建早期就失败）是最恶劣的
+  // 残缺场景，不能因为 ymls.length===0 的早退而绕过硬失败
+  if (missingDirs.length > 0) {
+    const message = `[merge] ${target.name} 缺少架构产物: ${missingDirs.join(", ")}（对应目录无 ${target.ymlName}，构建失败或未完成？）`;
+    if (!allowPartial) {
+      throw new Error(`${message}；确认要发布不完整产物请加 --allow-partial`);
+    }
+    console.warn(`[merge] WARN: ${message}（--allow-partial，继续合并现有架构）`);
   }
 
   if (ymls.length === 0) {
@@ -141,6 +156,14 @@ function collectArtifacts() {
 // ── 入口 ──
 
 function main() {
+  // 先完成全部合并判定、再触碰 release/：硬失败抛出时上一批 release/ 产物保持
+  // 原样——若先清空后失败，失败运行会把既有更新清单一并删掉（最恶劣的残缺场景）
+  const allowPartial = process.argv.includes("--allow-partial");
+  const mergedTargets = MERGE_TARGETS.map((target) => ({
+    target,
+    merged: mergeTarget(target, allowPartial),
+  }));
+
   fs.mkdirSync(RELEASE_DIR, { recursive: true });
 
   // 清空上一次的 release/ 产物（R64 审查 P2）：追加式复制会把旧 exe/blockmap
@@ -151,9 +174,7 @@ function main() {
     if (fs.statSync(p).isFile()) fs.rmSync(p, { force: true });
   }
 
-  // 合并各平台 yml
-  for (const target of MERGE_TARGETS) {
-    const merged = mergeTarget(target);
+  for (const { target, merged } of mergedTargets) {
     if (!merged) continue;
 
     const outPath = path.join(RELEASE_DIR, target.ymlName);
