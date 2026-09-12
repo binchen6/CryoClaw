@@ -706,3 +706,13 @@
   - 【防御】tray nativeTheme 监听 destroy 时摘除（进程级 emitter，托盘重建场景叠加）。
   - 【崩溃面】openclaw-state-archive pushFileToZip 的 zipEntry.push 无守卫：fflate 内部 throw 会变主进程 uncaughtException 而非 rejected promise（对齐 -zip.ts 既有守卫模式）。
 - **验证**：全量 **1077 pass / 0 fail / 4 skipped**；双 tsc 通过；被删 handler 的共享辅助函数复核无孤儿。
+
+### R77 · 启动/空闲性能批次（热路径审查）
+
+- **审查方法**：启动链路（whenReady→开窗→网关 spawn→ready）、渲染首帧、空闲开销三轴逐文件核实；jscpd 重复率复核 1.13%（最大克隆集中在测试文件，合并价值低——判定非目标）。
+- **readUserConfig 原文缓存（最大单项）**：启动链路实测连续全文件读+解析 10+ 次（4 个迁移各读一次、resolveGatewayPort ×3、resolveGatewayAuthToken ×2、readUserConfig ×9、inspectUserConfigHealth 等），Windows Defender 叠加下是启动期最大重复同步 IO。实现：键控 (mtimeMs, size) 缓存原文，每次调用仍 JSON.parse 返回**全新对象**（读-改-写语义与无缓存完全一致，不共享可变引用）；原子写 rename 必改 mtime → 自动失效；文件删除/读取失败路径与旧实现同语义。新增 vitest 用例钉死三条不变量（外部改写失效、返回独立对象、删除回落 {}）。
+- **gateway:ready 提前 ~200ms**：健康探测通过后的 `sleep(300)` 缩至 100ms——世代计数器 + isChildAlive 是防「旧进程占端口误判」的主防线，这个等待只兜底「起即死」。
+- **隐藏期空闲开销**：① client-ticker 30s 轮询在 document.hidden 时整轮跳过（每轮 3-4 个 cron/sessions/tasks 网关请求），visibilitychange 恢复可见立即补一轮（幂等安装防重连叠加监听）；② 渲染内存采样 60s 定时器在 !isVisible() 时跳过（getAppMetrics 要遍历全部进程指标）。推送事件仍走 websocket，隐藏期不丢信息。
+- **小项**：clawhub wrapper 每次网关 start/restart 无条件重写 → writeIfChanged（省 2-3 次同步 IO + Defender 重扫 + 目录监控误触发）；webbridge needs-repair 首查（主进程要拉 reg.exe + tasklist）从 connectedCallback 推迟 1.5s；kimi-oauth 60s 刷新与 analytics 1h 心跳定时器补 unref。
+- **评估不采纳**：whenReady 重排（analytics/tray 挪到开窗后）——估收益 20-40ms 但要重排初始化依赖，与 0.6s 的既有启动成绩相比风险收益比不划算；登记备查。
+- **验证**：全量 **1078 pass / 0 fail / 4 skipped**（新增缓存语义用例）；双 tsc 通过。

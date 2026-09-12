@@ -355,8 +355,10 @@ export class GatewayProcess {
     // 轮询健康检查
     const healthy = await this.waitForHealth(HEALTH_TIMEOUT_MS, childPid);
     if (healthy) {
-      // 健康探测通过后，等一小段时间确认子进程没有立刻退出（排除旧进程误判）
-      await sleep(300);
+      // 健康探测通过后短暂等待确认子进程没有立刻退出（排除旧进程误判）。
+      // R77：300→100ms——世代计数器 + isChildAlive 已是主防线，这里的等待只兜底
+      // 「起即死」，缩短可直接提前 gateway:ready 推送（渲染层可提前重连）。
+      await sleep(100);
       if (this.isChildAlive(childPid)) {
         diagLog("health check passed, child alive");
         this.setState("running");
@@ -648,6 +650,15 @@ async function killProcess(pid: number): Promise<void> {  try {
 }
 
 // 生成 clawhub CLI wrapper 脚本（每次 gateway 启动时确保最新）
+// 内容相同则跳过写盘（R77）：每次 gateway start/restart 都会重建 wrapper，
+// 无变化时的写盘在 Windows 上是纯开销（Defender 重扫 + 目录监控触发）。
+function writeIfChanged(filePath: string, content: string): void {
+  try {
+    if (fs.readFileSync(filePath, "utf-8") === content) return;
+  } catch {}
+  fs.writeFileSync(filePath, content, "utf-8");
+}
+
 function ensureClawhubWrapper(nodeBin: string): void {
   const clawhubEntry = resolveClawhubEntry();
   if (!fs.existsSync(clawhubEntry)) {
@@ -677,7 +688,7 @@ function ensureClawhubWrapper(nodeBin: string): void {
       "exit /b %errorlevel%",
       "",
     ].join("\r\n");
-    fs.writeFileSync(path.join(binDir, "clawhub.cmd"), wrapper, "utf-8");
+    writeIfChanged(path.join(binDir, "clawhub.cmd"), wrapper);
   } else {
     const safeNode = nodeBin.replace(/(["\\$`])/g, "\\$1");
     const safeEntry = clawhubEntry.replace(/(["\\$`])/g, "\\$1");
@@ -693,7 +704,7 @@ function ensureClawhubWrapper(nodeBin: string): void {
       "",
     ].join("\n");
     const wrapperPath = path.join(binDir, "clawhub");
-    fs.writeFileSync(wrapperPath, wrapper, "utf-8");
+    writeIfChanged(wrapperPath, wrapper);
     fs.chmodSync(wrapperPath, 0o755);
   }
 

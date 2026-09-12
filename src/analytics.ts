@@ -421,6 +421,7 @@ export function init(): void {
   heartbeatTimer = setInterval(() => {
     track("app_heartbeat");
   }, HEARTBEAT_MS);
+  heartbeatTimer.unref?.(); // 不阻止进程退出（对齐 app-updater 周期定时器）
 }
 
 // 上报事件（唯一入口）。

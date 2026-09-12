@@ -34,11 +34,27 @@ export function unregisterTickHandler(name: string): void {
   handlers.delete(name);
 }
 
-// 启动定时器（幂等），立即执行一轮所有回调
+// 启动定时器（幂等），立即执行一轮所有回调。
+// 隐藏降频（R77）：窗口藏到托盘后 document.hidden 恒为 true——此前每 30s 仍会
+// 发 3-4 个 gateway 请求（cron/sessions/tasks 轮询）；推送事件仍走 websocket，
+// 隐藏期跳过整轮 tick，恢复可见后下一轮立即补齐。
 export function startTicker(): void {
   if (timerId !== null) return;
-  timerId = window.setInterval(() => void runAllHandlers(), TICK_INTERVAL_MS);
+  timerId = window.setInterval(() => {
+    if (document.hidden) return;
+    void runAllHandlers();
+  }, TICK_INTERVAL_MS);
   void runAllHandlers();
+}
+
+// 页面恢复可见时立即补一轮（跳过的 tick 不用等满 30s；幂等——onHello 重连会重复调用）
+let visibilityHookInstalled = false;
+export function initTickerVisibilityHook(): void {
+  if (visibilityHookInstalled) return;
+  visibilityHookInstalled = true;
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden && timerId !== null) void runAllHandlers();
+  });
 }
 
 // 停止定时器

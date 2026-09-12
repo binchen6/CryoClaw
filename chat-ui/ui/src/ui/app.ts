@@ -929,7 +929,9 @@ export class OpenClawApp extends LitElement {
   }
 
   private bindWebbridgeRepairPoll() {
-    void this.runWebbridgeRepairTick();
+    // 延迟 1.5s 再跑首轮（R77）：needs-repair 检查在主进程侧要拉默认浏览器
+    // （reg.exe）+ 扩展状态（tasklist），纯信息性 pill 不值得挤占首屏路径
+    window.setTimeout(() => void this.runWebbridgeRepairTick(), 1500);
   }
 
   // 主进程通知 webbridge precheck 状态可能已变（setup 后台 task 装完扩展，或 settings 修复完成）

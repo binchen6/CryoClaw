@@ -336,6 +336,7 @@ export function startTokenRefresh(onTokenRefreshed?: (token: OAuthToken) => void
   // 启动时立即检查，不等第一个 interval（覆盖关闭超过 15 分钟后重启的场景）
   checkAndRefresh(onTokenRefreshed);
   refreshTimer = setInterval(() => checkAndRefresh(onTokenRefreshed), REFRESH_CHECK_INTERVAL_MS);
+  refreshTimer.unref?.(); // 不阻止进程退出（对齐 app-updater 周期定时器）
 }
 
 // 停止定时刷新

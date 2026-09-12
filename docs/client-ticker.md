@@ -12,12 +12,19 @@ CryoClaw Chat UI 的统一轮询机制。
 - `unregisterTickHandler(name)` — 移除回调
 - `startTicker()` — 启动定时器（幂等），立即执行一轮
 - `stopTicker()` — 停止定时器
+- `initTickerVisibilityHook()` — 安装 visibilitychange 钩子（幂等）
 
 ## 生命周期
 
-- Gateway WebSocket 连接成功时调用 `startTicker()`
+- Gateway WebSocket 连接成功时调用 `startTicker()` 与 `initTickerVisibilityHook()`
 - Gateway 断开时调用 `stopTicker()`
 - 每个 handler 独立 try-catch，异常不影响其他 handler
+
+## 隐藏降频（R77）
+
+窗口藏到托盘后 `document.hidden` 恒为 true，此时整轮 tick 跳过（每轮 3-4 个
+gateway 请求不再发）；恢复可见时由 visibilitychange 钩子立即补一轮，不用等满
+30s。推送事件仍走 WebSocket，隐藏期不丢信息——handler 只承担「兜底轮询」职责。
 
 ## 已注册的 handler
 

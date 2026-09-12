@@ -17,6 +17,7 @@ const VITEST_FILES = new Set([
   "openclaw-health-state",
   "startup-ownership",
   "skill-store-registry",
+  "provider-config-cache",
   "openclaw-state-archive",
   "openclaw-state-import-lifecycle",
   "analytics",

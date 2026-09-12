@@ -301,6 +301,8 @@ export class WindowManager {
     this.memoryMonitorTimer = setInterval(() => {
       const win = this.win;
       if (!win || win.isDestroyed()) return;
+      // 窗口藏到托盘时不采样（R77）：getAppMetrics 本身要遍历全部进程指标
+      if (!win.isVisible()) return;
       try {
         const pid = win.webContents.getOSProcessId();
         const metric = app.getAppMetrics().find((m) => m.pid === pid);

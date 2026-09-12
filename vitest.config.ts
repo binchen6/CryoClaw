@@ -13,6 +13,7 @@ export default defineConfig({
       "src/openclaw-health-state.test.ts",
       "src/startup-ownership.test.ts",
       "src/skill-store-registry.test.ts",
+      "src/provider-config-cache.test.ts",
       "src/openclaw-state-archive.test.ts",
       "src/openclaw-state-import-lifecycle.test.ts",
       "src/analytics.test.ts",

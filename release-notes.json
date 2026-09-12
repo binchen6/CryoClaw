@@ -1,5 +1,12 @@
 [
   {
+    "version": "2026.912.3",
+    "notes": {
+      "zh": "启动与空闲性能优化：① 用户配置读取增加原文缓存（键控修改时间+大小）——启动链路原本要连续全文件读取+解析 10 余次（迁移、端口/令牌解析、健康检查等），Windows 实时杀软扫描叠加下是启动期最大的重复同步 IO，现在未变化时只做一次磁盘读；外部改写自动失效，语义与无缓存完全一致。② 网关就绪推送提前：健康探测通过后的等待从 300ms 缩短到 100ms（世代计数器仍是主防线），界面可提前约 200ms 重连。③ 窗口隐藏到托盘后：30 秒轮询（每轮 3-4 个网关请求）与渲染进程内存采样停止，恢复可见立即补一轮——挂后台不再空转流量。④ clawhub CLI 包装器只在内容变化时写盘（此前每次网关启动都重写）；webbridge 状态检查（要拉注册表和进程列表）推迟 1.5 秒不再挤占首屏；两处长周期定时器补 unref。",
+      "en": "Startup and idle-performance optimizations: (1) user-config reads now cache the raw text keyed by (mtime, size) - the boot chain previously read + parsed the full file 10+ times in a row (migrations, port/token resolution, health inspection...), the biggest repeated sync IO during startup once Windows real-time AV scanning is factored in; unchanged files are now read from disk only once, external rewrites invalidate the cache, and semantics are identical to no cache. (2) Gateway-ready push is earlier: the post-health-probe wait shrank from 300ms to 100ms (the generation counter remains the primary guard), letting the UI reconnect ~200ms sooner. (3) While the window is hidden to tray: the 30s polling loop (3-4 gateway requests per tick) and the renderer memory sampler now stop, with an immediate catch-up tick on becoming visible - no more idle traffic when parked in background. (4) The clawhub CLI wrapper is only rewritten when content changes (previously rewritten on every gateway start); the webbridge status check (which enumerates the registry and process list) is deferred by 1.5s off the first-paint path; two long-lived timers got unref."
+    }
+  },
+  {
     "version": "2026.912.2",
     "notes": {
       "zh": "可靠性与资源泄漏修复（生命周期审查批次）：① 内核更新子进程在应用退出时不再遗留——此前退出应用后换装脚本最长还能再跑 15 分钟，在无人执行回滚的状态下改写程序文件；② 修复 WebBridge 下载失败路径不关闭写流的问题（Windows 下句柄未关会让临时文件删不掉，反复重试逐次泄漏）；③ 退出路径统一：渲染层退出、安装更新、恢复出厂此前都跳过 token 刷新停止与遥测冲刷（app_closed 事件丢失），现与托盘退出共用同一幂等清理；④ 更新器初始化加重入守卫、托盘主题监听随销毁摘除、状态导出 zip 数据管异常兜底。\n安全面收敛：移除 9 条零调用的 IPC 通道（渠道白名单添加 ×3、WebBridge 状态/安装/清理 ×3、技能详情、工作区打开文件、打开设置）——preload 白名单从 117 方法收缩到 108。",

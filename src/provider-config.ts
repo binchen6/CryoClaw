@@ -114,11 +114,37 @@ export const CUSTOM_PROVIDER_PRESETS: Record<string, CustomProviderPreset> = {
 
 // ── 用户配置读写（薄封装） ──
 
+// openclaw.json 原文缓存（R77）：启动链路会连续读 10+ 次（迁移 ×4、端口/auth
+// 解析、健康检查、渠道确保……），每次都是全文件读 + JSON.parse——Windows 上
+// Defender 实时扫描叠加后是启动期最大的重复同步 IO。键控 (mtimeMs, size)：
+// 原子写 rename 必然改变 mtime，任何外部改写同样失效。每次调用仍 JSON.parse
+// 缓存原文、返回全新对象——调用方「读-改-写」拿到独立副本的语义与无缓存时
+// 完全一致（只省磁盘读，不共享可变引用）。
+let userConfigRawCache: { mtimeMs: number; size: number; raw: string } | null = null;
+
 export function readUserConfig(): any {
   const configPath = resolveUserConfigPath();
-  if (!fs.existsSync(configPath)) return {};
+  let st: fs.Stats;
   try {
-    return JSON.parse(fs.readFileSync(configPath, "utf-8"));
+    st = fs.statSync(configPath);
+  } catch {
+    userConfigRawCache = null;
+    return {};
+  }
+  if (
+    !userConfigRawCache ||
+    userConfigRawCache.mtimeMs !== st.mtimeMs ||
+    userConfigRawCache.size !== st.size
+  ) {
+    try {
+      userConfigRawCache = { mtimeMs: st.mtimeMs, size: st.size, raw: fs.readFileSync(configPath, "utf-8") };
+    } catch {
+      // 读失败（瞬时占用）与旧实现同语义：返回空配置，不污染缓存
+      return {};
+    }
+  }
+  try {
+    return JSON.parse(userConfigRawCache.raw);
   } catch {
     return {};
   }

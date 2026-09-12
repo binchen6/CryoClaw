@@ -10,7 +10,7 @@ import {
   refreshActiveTab,
   setLastActiveSessionKey,
 } from "./app-settings.ts";
-import { registerTickHandler, unregisterTickHandler, startTicker, stopTicker } from "./client-ticker.ts";
+import { registerTickHandler, unregisterTickHandler, startTicker, initTickerVisibilityHook, stopTicker } from "./client-ticker.ts";
 import { loadCronJobs } from "./controllers/cron.ts";
 import { clearSessionMeterDirtyIfUsageAdvanced } from "./context-meter.ts";
 import { handleAgentEvent, resetToolStream, clearFallbackNotice, type AgentEventPayload } from "./app-tool-stream.ts";
@@ -466,6 +466,7 @@ export function connectGateway(host: GatewayHost) {
         }
       });
       startTicker();
+      initTickerVisibilityHook();
     },
     onClose: ({ code, reason }) => {
       console.warn(`[gateway] onClose code=${code} reason=${reason}`);
