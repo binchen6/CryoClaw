@@ -18,6 +18,14 @@ const targets = [
   "resources/gateway",
   "resources/targets",
   "out",
+  // 增量编译状态必须随 dist 一起清：tsc --incremental 只对比源码哈希，
+  // 不校验产物是否仍在——只删 dist 不删 tsbuildinfo 时，下一次 tsc 会
+  // 判定"全部最新、无需 emit"而静默产出残缺 dist，打进安装包启动即崩
+  // （2026.912.0 首次构建实测，gotcha #104）。
+  "tsconfig.tsbuildinfo",
+  // 同为可独立重建的生成物：chat-ui 的 vite 产物与 node:test 编译产物
+  "chat-ui/dist",
+  ".test-dist",
 ];
 
 let failed = 0;

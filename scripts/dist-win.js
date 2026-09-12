@@ -80,6 +80,30 @@ console.log(`[dist-win] 开始: target=${target}`);
 console.log("[dist-win] Step 1/3: npm run build");
 run("npm", ["run", "build"], commonEnv);
 
+// ── dist 完整性硬校验（gotcha #104）──
+// tsc --incremental 不校验产物存在性：stale tsbuildinfo + 被清空的 dist 会让
+// 构建静默产出残缺产物，直到用户安装后主进程 require 崩溃才暴露。这里按
+// "src 每个非测试模块 ↔ dist 同名 .js"逐一断言，任一缺失即硬失败。
+{
+  const srcDir = path.join(root, "src");
+  const distDir = path.join(root, "dist");
+  const expected = require("fs")
+    .readdirSync(srcDir)
+    .filter((f) => f.endsWith(".ts") && !/\.(test|spec)\.ts$/.test(f));
+  const missing = expected.filter(
+    (f) => !require("fs").existsSync(path.join(distDir, f.replace(/\.ts$/, ".js"))),
+  );
+  if (missing.length > 0) {
+    console.error(
+      `\n[dist-win] ✗ dist 产物不完整：缺 ${missing.length}/${expected.length} 个模块` +
+        `（${missing.slice(0, 5).join(", ")}${missing.length > 5 ? " …" : ""}）。` +
+        `通常是 stale tsconfig.tsbuildinfo 导致 tsc 跳过 emit——删除 tsconfig.tsbuildinfo 与 dist/ 后重试。`,
+    );
+    process.exit(1);
+  }
+  console.log(`[dist-win] dist 完整性: ${expected.length}/${expected.length} 模块齐备`);
+}
+
 console.log("[dist-win] Step 2/3: package:resources");
 run("npm", ["run", "package:resources", "--", "--platform", "win32", "--arch", arch], commonEnv);
 

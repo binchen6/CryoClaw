@@ -8,7 +8,7 @@ docs/ 目录导航。改代码前建议先读 gotchas.md 与 OPTIMIZATION-PROGRE
 | `architecture.md` | 架构分层说明：三进程模型、主进程模块职责、启动链路 |
 | `ipc-api.md` | 主进程 IPC 通道契约清单（preload 暴露的全部方法与事件） |
 | `design-guidelines-zh.md` / `design-guidelines-en.md` | UI 设计规范（中英双语）：design token、组件原语、布局规则 |
-| `gotchas.md` | 已验证坑清单（103 条，改代码前先搜一遍） |
+| `gotchas.md` | 已验证坑清单（104 条，改代码前先搜一遍） |
 | `releasing.md` | 发布流程：版本 bump、打包、静默安装验证、gh release |
 | `client-ticker.md` | Chat UI 30 秒公共定时器机制与已注册 handler |
 | `kernel-recon/` | 内核升级侦察记录（2026.9.2 / 2026.9.3 diff 等，升级内核前先读） |
