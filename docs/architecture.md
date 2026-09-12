@@ -276,6 +276,12 @@ carryOverInjected → 补丁命中校验 → 冒烟 → 重打 → 备份 → re
   `__CRYOCLAW_FALLBACK_STABLE__` 占位符为 `package.json` 的 `cryoclaw.openclaw` 钉版本），
   绝不回落 npm latest。`updateAvailable` 用三段数字比较：current 更高（手动 `--tag` 装过
   新版）时不提示「更新」（那是降级）；无 tag 且 current 不落后 stable 时早退。
+- **运行时门槛守卫（2026.912.0 起）**：清单可选 `minRuntimeNode` 字段（stable=2026.9.3
+  起 = `24.16.0`，openclaw 2026.9.x engines 收敛到 Node 24）——`cmdUpdate` 在确认换装后、
+  进 staging 前比较捆绑运行时版本（脚本由捆绑 node 直接 spawn，`process.version` 即运行时
+  版本），不满足即 fail 并提示「先升级应用」，替代死在 npm preinstall 的裸错误；版本不可
+  判定时放行（preinstall 是最终兜底）。显式 `--tag` 路径无清单可依，不做此判定；旧版 App
+  的清单解析器自动忽略未知字段（向后兼容）。
 - **minSupported 兜底自动升级（v2026.907.0）**：内核低于 `kernel-channel.json` 的
   `minSupported`（判定门槛硬编码在 `kernel-updater.ts` 的 `MIN_SUPPORTED_KERNEL_VERSION`，
   推进 minSupported 需同步两处）时，`main.ts scheduleAutoKernelUpgradeIfNeeded()` 在启动

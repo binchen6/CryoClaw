@@ -66,7 +66,7 @@
 ## 注意事项
 
 - **GitHub Releases 没有服务端回滚**：正式 Release 一旦发布，客户端即可能拉到。发错版本的补救方式是删除该 Release（或改回 draft），再发一个更高版本号的新 Release。`latest.yml` 里的 `version` 必须与 `package.json` 一致，发布前建议人工比对一眼。
-- 多架构（x64 + arm64）发布时，两个架构的 `latest.yml` 需要合并为一份再上传：`scripts/merge-release-yml.js` 的多架构合并逻辑在 GitHub 流程下**仍保留使用**（Windows 合并 win32-x64 + win32-arm64 → 单个 latest.yml）。
+- 多架构（x64 + arm64）发布时，两个架构的 `latest.yml` 需要合并为一份再上传：`scripts/merge-release-yml.js` 的多架构合并逻辑在 GitHub 流程下**仍保留使用**（Windows 合并 win32-x64 + win32-arm64 → 单个 latest.yml）。任一架构缺 `latest*.yml` 会**硬失败**（残缺清单会让该架构用户永远收不到更新）；确认要发布不完整产物需显式加 `--allow-partial`。
 - oneclaw.cn CDN 上传链路（`scripts/volcengine-cdn-refresh.js` 等）对 App 更新已**归档不再使用**（文件保留，勿删）；客户端更新全部走 GitHub Releases。
 
 ## macOS 简述

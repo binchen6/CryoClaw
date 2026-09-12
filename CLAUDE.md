@@ -34,7 +34,7 @@ The main process spawns a gateway subprocess, waits for its health check, then o
 
 ```
 cryoclaw/
-├── src/                    # 63 TypeScript modules + 21 test files (vitest + node:test)
+├── src/                    # 88 TypeScript modules + 43 test files (vitest + node:test)
 │   ├── main.ts             # App entry, lifecycle, IPC, Dock toggle, config recovery
 │   ├── constants.ts        # Path resolution (dev vs packaged vs ASAR), health check params
 │   ├── gateway-process.ts  # Child process state machine + diagnostics
@@ -42,7 +42,7 @@ cryoclaw/
 │   ├── window.ts           # BrowserWindow lifecycle, token injection, retry
 │   ├── window-close-policy.ts  # Close behavior: hide vs destroy
 │   ├── tray.ts             # System tray icon + i18n context menu
-│   ├── preload.ts          # contextBridge IPC whitelist (~75 methods + 5 listeners)
+│   ├── preload.ts          # contextBridge IPC whitelist (123 methods + 6 listeners)
 │   ├── provider-config.ts  # Provider presets, verification, config R/W
 │   ├── setup-ipc.ts        # Setup validation + config write + CLI install
 │   ├── setup-completion.ts # Setup wizard completion detection
@@ -118,7 +118,7 @@ npm run dev:isolated         # Run a second dev instance with its own port + sta
 npm run package:resources    # Download Node.js 24 + install openclaw from npm
 npm run dist:mac:arm64       # Full pipeline: package → DMG + ZIP (arm64)
 npm run dist:mac:x64         # Same for x64
-npm run dist:win:x64         # Windows NSIS x64 (cross-compile from macOS works)
+npm run dist:win:x64         # Windows NSIS x64 (via scripts/dist-win.js — runs on macOS and Windows)
 npm run dist:win:arm64       # Windows NSIS arm64
 npm run dist:all:parallel    # Build all 4 targets in parallel
 npm run clean                # Remove all generated files
@@ -158,11 +158,11 @@ npm run build           # both at once
 
 ### Tests
 
-`npm test` runs the full suite (`test:unit` + `test:scripts`). Tests are excluded from the production `tsc` build (see `tsconfig.json`; the test compile uses `tsconfig.test.json`). Four runners cover ~60 test files (21 in `src/`, 33 in `chat-ui/`, 6 in `scripts/`):
+`npm test` runs the full suite (`test:unit` + `test:scripts`). Tests are excluded from the production `tsc` build (see `tsconfig.json`; the test compile uses `tsconfig.test.json`). Four runners cover ~130 test files (43 in `src/`, 76 in `chat-ui/`, 10 in `scripts/`):
 
 | Runner | Script | What it runs |
 |---|---|---|
-| Vitest | `npm run test:unit:vitest` | The 7 `src/*.test.ts` files that need `vi.mock`/`vi.stubEnv` (listed in `vitest.config.ts`) |
+| Vitest | `npm run test:unit:vitest` | The 10 `src/*.test.ts` files that need `vi.mock`/`vi.stubEnv` (listed in `vitest.config.ts`) |
 | node:test | `npm run test:unit:node` | The remaining `src/*.test.ts`, compiled to `.test-dist/` then run via `node --test` (`scripts/run-node-tests.js`) |
 | Chat UI | `npm run test:chat` | chat-ui typecheck + `chat-ui/**/*.test.ts` (`scripts/run-chat-ui-tests.js`) |
 | Scripts | `npm run test:scripts` | `scripts/*.test.js` via `node --test` |
@@ -203,13 +203,13 @@ CI: `.github/workflows/tests.yml` runs the full regression on every push/PR
 - **Provider config** — Unified module shared by Setup + Settings. All Moonshot sub-platforms (moonshot-cn/ai/kimi-code) write `apiKey`+`baseUrl`+`api`+`models` to `models.providers`.
 - **Kimi OAuth** — Device code flow via `auth.kimi.com`, 60s refresh interval, 300s refresh threshold.
 - **Setup wizard** — Step 0 (conflict detection) → Step 1 (welcome) → Step 2 (provider) → Step 3 (done + CLI + login toggle).
-- **Settings** — 6 tabs: Provider, Search, Channels, Appearance, Advanced, Backup.
+- **Settings** — 14 tabs: Provider(+usage), Search, Channels(Feishu/WeCom/DingTalk/QQBot/WeChat/Pairing), Appearance, MCP&Hooks, Memory, Plugins, Approvals, Voice, Session usage, Info, Advanced, Backup, About.
 - **Multi-channel integration** — Feishu / WeCom / DingTalk / QQ Bot / WeChat share a common plugin-enable + channel-config schema. New installs default `dmPolicy: "open"` (with `allowFrom: ["*"]`). Users can opt into `dmPolicy: "pairing"` per channel; approved-user list is maintained via an allowFrom sidecar (no background polling).
 - **Skill store** — clawhub CLI integration, skills at `~/.openclaw/workspace/skills/`, registry config in `~/.openclaw/skill-store.json`.
 - **Config backup** — Rolling 10 backups + last-known-good snapshot + factory reset.
 - **Multi-model management** — IPC handlers for listing, deleting, setting default, and aliasing models across providers.
 - **Gateway ASAR packaging** — Optional `gateway.asar` archive (enabled by `CRYOCLAW_GATEWAY_ASAR=1`) reduces 5000+ files to a single archive for faster Windows installs. Patched openclaw boundary check for ASAR paths (`patchAsarBoundaryCheck` in scripts/package-resources.js: asar fast-paths injected into `@openclaw/fs-safe` chunks — `openRootFileSync`/`openRootFile`, `verifyStableReadTarget`, `openPinnedFileSync`, `sameFileIdentity`; required because Electron asar stats use synthetic dev=1/per-call-counter ino). Extensions unpacked to `gateway.asar.unpacked/`. Official openclaw channel/provider plugins (feishu, qqbot, moonshot/kimi/zai/qwen/deepseek providers) are vendored into `dist/extensions/` at pack time since openclaw ≥2026.6 no longer ships them in the npm tarball.
-- **Preload security** — ~75 IPC methods + 5 event listeners via `contextBridge` (sandbox mode).
+- **Preload security** — 123 IPC methods + 6 event listeners via `contextBridge` (sandbox mode).
 
 ## Runtime Paths (on user's machine)
 
@@ -250,6 +250,6 @@ For comprehensive design guidelines, please refer to:
 
 ## Common Gotchas
 
-See [docs/gotchas.md](docs/gotchas.md) for the full list (95+ items covering packaging, signing, config, tooltip, design tokens, etc. — the numbered list in gotchas.md is the source of truth).
+See [docs/gotchas.md](docs/gotchas.md) for the full list (103 items covering packaging, signing, config, tooltip, design tokens, etc. — the numbered list in gotchas.md is the source of truth).
 
 When you encounter a non-trivial problem and find a working solution, add it to `docs/gotchas.md` so future developers don't repeat the same investigation.

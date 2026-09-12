@@ -651,3 +651,27 @@
 - **发现（真缺陷）**：网关非预期退出后 `gateway-process` 只把状态置为 `stopped`，**没有任何重启路径**（`start()` 里的 5s 崩溃冷却说明设计上预期会有重启，但触发点从未接线）；渲染层只会无限重连一个已经死掉的 WebSocket。实测崩溃后 60s 内未恢复，用户会一直停在「无法连接到 Gateway」，只能手动点重启或重启应用。
 - **修复**：`GatewayProcess` 新增 `onCrash` 回调（running 期崩溃与 starting 期退出均触发）；main 侧新增有界自动重启——延迟 3s 重启、**5 分钟滑动窗内最多 3 次**（防崩溃循环），达上限转 `openRecoverySettings("gateway-recovery-failed")` 人工入口；退出序列（`isQuitting`）不再拉起新进程，定时器 unref 且随退出清理。策略抽为纯函数 `src/gateway-crash-restart.ts`（`decideCrashRestart`）并加 4 个单测（上限拒绝、窗口滑动恢复、部分过期只数窗内、自定义参数）。
 - **验证**：故障注入脚本 `.cache/r71-crash-recovery.js`（杀端口占用进程 → 观察恢复）；node 测试 195 项（191 pass / 4 skipped / 0 fail）；发版管线 silent-install E2E 装 2026.910.4 + gateway 200 + 四套 CDP 冒烟全绿。
+
+### R73 · 两轮全面 debug 审查（主进程/settings/scripts/chat-ui 四路）+ 稳定内核渠道推进
+
+- **审查方法**：Round 1 四路并行审查代理——① 主进程 src/ 顶层 75 模块（异步/泄漏/竞态/错误路径）② settings+配置子系统（配置完整性/迁移/IPC 健壮性/密钥/跨平台）③ scripts+CI（构建正确性/失败检测/确定性/工作流）④ chat-ui 渲染层（状态竞态/监听泄漏/渲染/IPC 契约/localStorage）。基线全量 1074 pass / 0 fail。共 36 项核实发现（P1×4 / P2×6 / P3×26），两轮修复 30 项，其余登记（见末尾）。
+- **Round 1 修复（主进程 + settings + scripts）**：
+  - 【P1】`.openclaw` 导入在 Windows 必败：`withFileLoggingPaused` 只关 app.log 流，gateway 诊断流（`gateway.log`）未关——本会话启动过 gateway 时 `fs.rm` 清状态目录被自己句柄卡死（EBUSY 连 maxRetries 亦无解）。修复：importArchive 内先 `closeDiagLogStream()`（gotcha #99）。
+  - 【P1】R71 崩溃重启定时器未接导入/内核换装护栏：延迟 3s 窗口内进入导入/换装会把 gateway 拉到半清空状态目录或半换装内核上。修复：定时器回调复检 `isImportActive()`/`getKernelUpdateState().running`，新增 `cancelScheduledCrashRestart` 接入 quiesceGateway / 内核 stopGateway。
+  - 【P1】`readUserConfig()` 把「读不到」当「空配置」：RMW 保存链路在文件瞬时损坏/被占（Windows 杀软 EBUSY）时把改动合并进 `{}` 整文件写回——providers/channels/keys 全蒸发，且 backupCurrentUserConfig 跳过坏文件、.bak 又被同步覆盖，恢复链一并失守。修复：`writeUserConfig` 加保险丝（磁盘配置存在但不可解析 → 留存为 `openclaw.json.corrupt-<ts>` 并拒绝写入），单咽喉点覆盖全部 21 个调用方。
+  - 【P1】merge-release-yml 对缺架构静默放行 → 残缺 latest.yml（该架构用户永远收不到更新）。修复：缺任一架构硬失败，`--allow-partial` 显式逃生（gotcha #101）。
+  - 【P2】`GatewayProcess.start()` 双启动竞争：入口守卫只查一次，stopping 等待（≤6s）与崩溃冷却（≤5s）窗口内第二个 start 各自 spawn（旧世代 exit 被忽略，孤儿进程抢端口）。修复：inflightStart promise 串行化。
+  - 【P2】备份恢复路径不复跑迁移、不停 gateway：恢复旧备份后重启 gateway 被 strict 校验拒起（旧 dingtalk 字段等，同导入路径已知的坑），且内核活着时 config observer 可写回复活。修复：两个 restore 通道先 `stopGateway`，恢复后经注入的 `migrateRestoredConfig` 跑存量迁移（settings/types.ts + main.ts 接线）。
+  - 【P2】CI 漂移：tests.yml 跑在 Node 22.23.2，发行运行时已是 24.21.0（b559a51 漏改）——Node 24 Windows fs.rmSync 静默失败类问题 CI 结构性复现不了；chat-ui 用 npm install 漂移。修复：CI 升 24.21.0 + chat-ui `npm ci`。
+  - 【P2】`dist:win:x64/arm64` env 前缀在 Windows cmd 非法（开发机不可用）+ `npm run clean` 用 rm -rf 同样 Windows 必挂。修复：都改走 node 脚本（`dist-win.js --arch` / 新增 `scripts/clean.js` 走 lib/rm-rec）（gotcha #103）。
+  - 【P2】发行包带全部 6 平台 prebuilds（`pruneNonTargetPrebuilds` 只接了插件路径，installDependencies 两分支漏调，实测 win32-x64 unpacked 树 5.6MB+ 冗余）。修复：两个分支补调（幂等）。
+  - 【P2】`writeCryoclawConfig` 是最后一个非原子主配置写（崩溃 → readCryoclawConfig 永远 null，updateChannel "off" 失效重收自动更新等）。修复：统一走新 `src/atomic-write.ts`（tmp + fsync + rename，补齐「断电」 durability 承诺；provider-config/config-backup/gateway-auth 四处收敛共用）。
+  - 【P3 批】verifyMoonshot 未知子平台裸 TypeError → 回退默认；rawJsonRequest 加 8MB 响应上限（对齐 skill-store，防自定义 baseURL 无限滴流 OOM）；kimi-oauth token 原子写 + 轮询间隔下限（防 0/缺失时紧密打满 120 次）+ slow_down 递增 + 并发登录 epoch 化（旧全局 abortFlag 会被第二次登录重置、两份 token 互相覆盖）；resolveGatewayPort/构造器端口范围校验（>65535 使 http.get 同步抛错被吞成含混「预启动失败」）；日志轮转 destroy 后立即截断在 Windows EBUSY（改 end+close 后截断，logger + gateway-process 双处）；save-advanced 参数守卫 + 配置写提前（写失败不留 OS 半提交状态）；afterPack 符号链接目录 EISDIR；OfficeCLI SHASUMS 行尾精确匹配（防前缀兄弟条目错哈希）。
+- **Round 2 修复（chat-ui + 增量复核）**：
+  - 【P2】助手身份跨会话串扰：`agent.identity.get` 在途时切会话，迟到响应把旧 agent 的名字/头像落到新会话（刷新点只有切换/重连，会一直错到下次动作）。修复：落地前对 sessionKey 重检（对齐 loadChatHistory 守卫）。
+  - 【P2】模型切换失败回滚污染新会话：patch 在途（可 30s）切会话后失败——旧会话模型写回跨会话兜底 `currentModel`，且 `updateThinkingCapabilities` 失配时会向「当前」会话 patch `thinkingLevel:"off"`（静默改写新会话配置）。修复：catch 路径 sessionKey 守卫（切换路径由 sessionKey watcher 自行重算，跳过即正确）。
+  - 【P3】cron Run-now 迟到 runs 渲到别的展开任务详情下（复用 loadCronRuns 的 isCurrent 守卫，onRun 传展开态判定）；tab-about 订阅泄漏 + tab-backup 30s 轮询残留（init await 窗口竞态 → 代际计数器，gotcha #100）；saveSettings localStorage 裸写（禁用/损坏时抛进会话切换中段 → best-effort try/catch）；聊天 Ctrl+N/L 在无关视图生效（document 级监听加视图门）。
+- **稳定内核渠道推进（随本阶段）**：`kernel-channel.json` stable 2026.8.2 → **2026.9.3**（R72 证据链 + Node 24 载体版 2026.911.0 已发布，兑现 R72「本版发布后再推进」）；清单新增可选 `minRuntimeNode: "24.16.0"`，kernel-update.mjs 换装前快速失败并提示先升级应用（旧 Node 22 运行时 App 不再撞 npm preinstall 裸错误；旧解析器自动忽略新字段）。npm dist-tag latest 的 2026.9.4（同时挂 beta）证据链未核验，**不推进**。architecture.md 同步。已随 50ef462 推送（CI 绿），jsDelivr 镜像即时生效（raw CDN 有分钟级缓存，gotcha #102）。
+- **登记未修（评估后明确挂起）**：① chat 聊天视图快捷键 document 监听无生命周期拆除（已加视图门，彻底改造需 app 壳重构，与 props 驻留一并评估）；② package-resources STEP 1.5 的 `.npmrc` 写在 npm 从不读取的位置（构建实际用宿主 registry——改为显式 `--registry` 会改变「跟随宿主」的既有行为，需产品决策）；③ DOM 200 条窗口无虚拟化（R72 已记录的候选欠账）；④ fsync 目录级持久性（Windows/Node 无公开 API，文件级 fsync 已落地）。
+- **二轮复核（修复 diff 的回归性复审）**：4 项发现全部修复——① start() 在「旧启动已死未落定」（restart 先 stop 杀子进程，doStart 健康轮询待下个 tick 才察觉）窗口复用旧 promise 会静默不 spawn：state===stopped 且 inflightStart 未清时改为等旧 promise settle 后重入 start()；② merge-release-yml 全缺失场景绕过硬失败且 release/ 已被清空：缺架构检查前移 + 清空挪到全部合并判定成功之后；③ 日志轮转窗口内置 rotating 标志，迟到截断不再抹掉窗口内新写入的行（logger + gateway-process）；④ 恢复路径补 cancelScheduledCrashRestart 注入（crash 定时器不得在恢复写盘期间拉起 gateway）。
+- **验证**：全量 **1076 pass / 0 fail / 4 skipped**（vitest 159 + node 191 + chat-ui 645 + scripts 81，新增 kernel-channel minRuntimeNode 2 项用例）；双 tsc 通过；dupcheck 1.13%；`kernel-update.mjs --check` 真机冒烟（current=2026.9.3、远端清单解析正常、current 更高时不提示降级）；diff 复核代理对全部未提交改动做回归性复审。

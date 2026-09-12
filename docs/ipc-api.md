@@ -167,6 +167,8 @@
 | `settingsRestoreLastKnownGood()` | `settings:restore-last-known-good` | invoke |
 | `settingsResetConfigAndRelaunch()` | `settings:reset-config-and-relaunch` | invoke |
 
+> 恢复语义（2026.912.0 起）：两个 restore 通道在写配置前会先静默 gateway（对齐恢复出厂路径，防内核 config observer 写回复活），恢复落盘后按当前内核版本跑存量迁移（dingtalk 废弃字段 / browser profile / 内核版本门控迁移），返回成功后再由渲染层重启 gateway。旧备份恢复后不再出现 gateway 被 strict 校验拒起的问题。
+
 ## Settings — Share
 
 | 方法 | IPC 通道 | 方向 |
