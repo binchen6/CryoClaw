@@ -693,3 +693,16 @@
 - **文档同步**：design-guidelines-zh/en 的组件速查表、5.1/5.2/5.3 节与 uppercase 例外条款删除已移除原语的描述（各补 R75 清理标注）；primitives.css 头注释重写为存活清单（.btn + cc-dialog/cc-tag/cc-alert）。存活原语引用数实测：.btn 55 处、cc-dialog 52 处、cc-panel 42 处、cc-tag 12 处。
 - **有意保留**：model-org.lib/tab-channels.lib 的「零外部引用导出」——它们有配套 .test.ts 直接 import，属测试可达面，非死代码；isRecord 在 7 个文件各有一份本地实现（合并收益低、扰动面大，登记不修）。
 - **验证**：全量 1077 pass / 0 fail（chat-ui 645 全绿 + typecheck）；四套 CDP 冒烟（layout/settings/interaction/screenshot）exit 0，弹窗（cc-dialog 为存活原语）渲染正常。
+
+### R76 · 生命周期/泄漏批次 + IPC 死链路端到端清理
+
+- **审查方法**：两路并行——① IPC 契约一致性（渲染层 invoke 面 ↔ preload 白名单 ↔ ipcMain 注册 ↔ 响应字段契约 ↔ setup/settings 双注册）② 定时器/监听器/子进程/文件句柄全量生命周期盘点。R73 已修的竞态全部复核无回退。
+- **IPC 契约结论**：111 invoke + 6 send + 6 监听全部 1:1 配对、零孤儿、零双注册、抽查 5 通道响应字段全匹配。**9 条零调用链路端到端移除**（渲染层→preload→handler 三层同步删）：settings:add-{wecom-user,wecom-group,feishu-user}-allow-from ×3、settings:webbridge-{status,install-extensions,clean-blocklist} ×3、skill-store:detail、workspace:open-file、app:open-settings——preload 白名单 117→108 方法（+6 监听 = 114 成员），ipc-api.md 6 行同步删除。ipc-bridge 的 openSettings 包装器与 app-render 3 个类型声明一并清除。
+- **泄漏/生命周期修复（6 项）**：
+  - 【泄漏+孤儿文件】webbridge downloadToFile 失败路径不销毁写流：Windows 下 unlink EBUSY，installWebbridge 2 次重试场景每次失败泄漏一个 fd + *.tmp-* 孤儿 → fail() 先 destroy 再清理。
+  - 【孤儿进程】kernel-updater 子进程退出不终止：换装脚本最长再跑 15 分钟改写 resources、失败无人执行 sawSwap 回滚 → 新增 terminateKernelUpdaterForQuit 接入 before-quit。
+  - 【数据丢失】token 刷新定时器停止与 app_closed 冲刷只挂在 tray quit() 路径：renderer app:quit、更新安装、恢复出厂走 before-quit 全都跳过 → 抽幂等 runQuitTeardown() 两路共用（顺带消除 tray 路径潜在双发）。
+  - 【防御】initAppUpdater 重入守卫（autoUpdater 单例 6 监听会翻倍 + 定时器句柄覆盖成孤儿，对齐兄弟模块既有模式）。
+  - 【防御】tray nativeTheme 监听 destroy 时摘除（进程级 emitter，托盘重建场景叠加）。
+  - 【崩溃面】openclaw-state-archive pushFileToZip 的 zipEntry.push 无守卫：fflate 内部 throw 会变主进程 uncaughtException 而非 rejected promise（对齐 -zip.ts 既有守卫模式）。
+- **验证**：全量 **1077 pass / 0 fail / 4 skipped**；双 tsc 通过；被删 handler 的共享辅助函数复核无孤儿。

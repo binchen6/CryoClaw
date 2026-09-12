@@ -110,6 +110,22 @@ type UpdaterEvent =
 // running 恒为 true（finally 永不执行），用户侧“升级中”永久卡死。取远大于内部各步超时的宽松值。
 const UPDATOR_OVERALL_TIMEOUT_MS = 15 * 60_000;
 
+// 当前在跑的 updater 子进程（模块唯一：running 守卫保证不并发）。
+// 应用退出时必须终止它——否则换装脚本最长还能再跑 15 分钟，在无 App 存活的
+// 状态下改写 resources（失败时也没有人执行 sawSwap 回滚编排）（R76 修复）。
+let liveUpdaterChild: ReturnType<typeof spawn> | null = null;
+
+/** 应用退出序列调用：终止在跑的 updater 子进程（幂等）。 */
+export function terminateKernelUpdaterForQuit(): void {
+  if (liveUpdaterChild && liveUpdaterChild.exitCode === null && !liveUpdaterChild.killed) {
+    log.warn("[kernel-updater] 应用退出：终止在跑的内核更新子进程");
+    try {
+      liveUpdaterChild.kill();
+    } catch {}
+  }
+  liveUpdaterChild = null;
+}
+
 /** 运行 updater 脚本，逐行解析 JSONL 协议；onEvent 抛错不影响子进程。 */
 function runUpdater(args: string[], onEvent: (e: UpdaterEvent) => void): Promise<UpdaterEvent[]> {
   return new Promise((resolve, reject) => {
@@ -123,6 +139,7 @@ function runUpdater(args: string[], onEvent: (e: UpdaterEvent) => void): Promise
       },
       windowsHide: true,
     });
+    liveUpdaterChild = child;
 
     const events: UpdaterEvent[] = [];
     let stdoutBuf = "";
@@ -160,6 +177,7 @@ function runUpdater(args: string[], onEvent: (e: UpdaterEvent) => void): Promise
     });
     child.on("close", (code) => {
       clearTimeout(watchdog);
+      if (liveUpdaterChild === child) liveUpdaterChild = null;
       // 冲刷 decoder 中可能残留的半字符，再尝试解析收尾行（正常协议每行以 \n 结尾）
       stdoutBuf += stdoutDecoder.end();
       const tail = stdoutBuf.trim();

@@ -57,7 +57,7 @@ import { uninstallGatewayDaemon, cleanGatewayLockFiles } from "./install-detecto
 import { runQuitCleanup } from "./quit-cleanup";
 import { detectOwnership, migrateFromLegacy, readCryoclawConfig, writeCryoclawConfig, appendChannelUtm } from "./cryoclaw-config";
 import { startTokenRefresh, stopTokenRefresh, loadOAuthToken } from "./kimi-oauth";
-import { initKernelUpdater, getKernelUpdateState, checkKernelUpdate, runKernelUpdate, runKernelRollback, isKernelBelowMinSupported } from "./kernel-updater";
+import { initKernelUpdater, getKernelUpdateState, checkKernelUpdate, runKernelUpdate, runKernelRollback, isKernelBelowMinSupported, terminateKernelUpdaterForQuit } from "./kernel-updater";
 import { isAutoKernelUpgradeBackoffActive, recordAutoKernelUpgradeFailure, clearAutoKernelUpgradeBackoff } from "./auto-kernel-upgrade-backoff";
 import { initAppUpdater, quitAndInstallAppUpdate } from "./app-updater";
 import { startGatewayControlServer, stopGatewayControlServer } from "./gateway-control-server";
@@ -1042,16 +1042,7 @@ ipcMain.handle("app:dismiss-release-notes", (_e, version: string) => {
   } catch (err: any) {
     log.error(`写入 lastShownReleaseNotesVersion 失败: ${err?.message ?? err}`);
   }
-});
-
-// Chat UI 侧边栏 IPC
-ipcMain.on("app:open-settings", (event) => {
-  if (!assertTrustedIpcSender(event, "app:open-settings")) return;
-  openSettingsInMainWindow().catch((err) => {
-    log.error(`app:open-settings 打开主窗口设置失败: ${err}`);
-  });
-});
-ipcMain.on("app:open-webui", (event) => {
+});ipcMain.on("app:open-webui", (event) => {
   if (!assertTrustedIpcSender(event, "app:open-webui")) return;
   const port = gateway.getPort();
   const token = gateway.getToken().trim();
@@ -1099,11 +1090,9 @@ async function quit(): Promise<void> {
     crashRestartTimer = null;
   }
   cancelPendingGatewayRestart("app-quit");
-  stopTokenRefresh();
+  runQuitTeardown();
   await stopAuthProxy();
   await stopGatewayControlServer();
-  analytics.track("app_closed");
-  await analytics.shutdown();
   windowManager.destroy();
   await gateway.stop();
   tray.destroy();
@@ -1435,6 +1424,22 @@ app.on("window-all-closed", () => {
 
 // ── 退出前清理 ──
 
+// 退出清理（幂等，quit() 与 before-quit 两路共用——R76）：
+// - 终止在跑的内核更新子进程：否则换装脚本在无 App 存活状态下最长还能再跑
+//   15 分钟改写 resources，失败时也没有人执行回滚编排
+// - 停 token 刷新定时器并发 app_closed + 冲刷遥测：renderer 的 app:quit、
+//   更新安装与恢复出厂只走 before-quit，此前这三条路径全都不做（遥测丢失
+//   + 退出期间空转打刷新接口）
+let quitTeardownDone = false;
+function runQuitTeardown(): void {
+  if (quitTeardownDone) return;
+  quitTeardownDone = true;
+  terminateKernelUpdaterForQuit();
+  stopTokenRefresh();
+  analytics.track("app_closed");
+  void analytics.shutdown();
+}
+
 app.on("before-quit", () => {
   // 退出序列开始：禁止崩溃自动重启再拉起网关（R71），并取消待执行的崩溃重启定时器
   isQuitting = true;
@@ -1445,6 +1450,7 @@ app.on("before-quit", () => {
   // 取消待执行的 gateway 重启防抖（R64 审查 P2）：退出序列中触发 restart
   // 会在 Windows 上留下占端口/锁文件的孤儿 gateway 子进程
   cancelPendingGatewayRestart("app-quit");
+  runQuitTeardown();
   // 先放行窗口关闭，避免 close handler 拦截 WM_CLOSE 导致 NSIS 安装器报"无法关闭"
   windowManager.prepareForAppQuit();
   windowManager.destroy();
@@ -1460,5 +1466,4 @@ app.on("before-quit", () => {
   // diagLog 已改 WriteStream 异步缓冲，退出前 flush 落盘（带超时，不阻塞退出）
   closeDiagLogStream().catch(() => {});
 });
-
 

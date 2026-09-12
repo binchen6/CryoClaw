@@ -107,29 +107,7 @@ export function registerWorkspaceIpc(): void {
     workspaceRoot = resolved;
     log.info(`workspace root set: ${resolved}`);
     return { success: true };
-  });
-
-  // 用系统默认应用打开文件
-  ipcMain.handle("workspace:open-file", async (event, filePath: string) => {
-    if (!assertTrustedIpcSender(event, "workspace:open-file")) throw new Error("IPC sender not trusted");
-    const check = await guardRealPath(filePath);
-    if (!check.ok) return check.error;
-    const target = check.target;
-    const ext = path.extname(target).slice(1).toLowerCase();
-    if (!isSafeOpenExt(ext)) {
-      log.warn(`[security] workspace:open-file 拒绝非白名单扩展名: .${ext || "(无)"} ${target.slice(0, 100)}`);
-      return { success: false, message: "不支持的文件类型" };
-    }
-    try {
-      await shell.openPath(target);
-      return { success: true };
-    } catch (err: any) {
-      log.error(`workspace:open-file failed: ${err?.message}`);
-      return { success: false, message: err?.message ?? String(err) };
-    }
-  });
-
-  // 在 Finder/Explorer 中显示文件所在目录
+  });  // 在 Finder/Explorer 中显示文件所在目录
   ipcMain.handle("workspace:open-folder", async (event, filePath: string) => {
     if (!assertTrustedIpcSender(event, "workspace:open-folder")) throw new Error("IPC sender not trusted");
     const check = await guardRealPath(filePath);

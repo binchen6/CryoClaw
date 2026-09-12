@@ -278,6 +278,10 @@ export function downloadToFile(
     let settled = false;
     let lastProgressAt = 0;
     let lastProgressBytes = 0;
+    // 当前尝试的写流句柄（redirect 重入 request 会换新流）：失败清理前必须
+    // destroy——Windows 下仍打开的句柄会让 unlink EBUSY，重试场景每次失败
+    // 都泄漏一个 fd + 一个 *.tmp-* 孤儿文件（R76 修复）
+    let currentFile: fs.WriteStream | null = null;
 
     const cleanupTmp = () => {
       try {
@@ -288,6 +292,7 @@ export function downloadToFile(
     const fail = (err: Error) => {
       if (settled) return;
       settled = true;
+      if (currentFile && !currentFile.destroyed) currentFile.destroy();
       cleanupTmp();
       reject(err);
     };
@@ -308,6 +313,7 @@ export function downloadToFile(
         const total = Number.isFinite(lenParsed) ? lenParsed : null;
 
         const file = fs.createWriteStream(tmpPath);
+        currentFile = file;
         let downloaded = 0;
 
         res.on("data", (chunk: Buffer) => {

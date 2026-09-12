@@ -1,5 +1,12 @@
 [
   {
+    "version": "2026.912.2",
+    "notes": {
+      "zh": "可靠性与资源泄漏修复（生命周期审查批次）：① 内核更新子进程在应用退出时不再遗留——此前退出应用后换装脚本最长还能再跑 15 分钟，在无人执行回滚的状态下改写程序文件；② 修复 WebBridge 下载失败路径不关闭写流的问题（Windows 下句柄未关会让临时文件删不掉，反复重试逐次泄漏）；③ 退出路径统一：渲染层退出、安装更新、恢复出厂此前都跳过 token 刷新停止与遥测冲刷（app_closed 事件丢失），现与托盘退出共用同一幂等清理；④ 更新器初始化加重入守卫、托盘主题监听随销毁摘除、状态导出 zip 数据管异常兜底。\n安全面收敛：移除 9 条零调用的 IPC 通道（渠道白名单添加 ×3、WebBridge 状态/安装/清理 ×3、技能详情、工作区打开文件、打开设置）——preload 白名单从 117 方法收缩到 108。",
+      "en": "Reliability and resource-leak fixes (lifecycle audit batch): (1) the kernel-updater child process is no longer orphaned when the app quits mid-update - previously the swap script could keep running for up to 15 minutes rewriting program files with nobody alive to run the rollback; (2) fixed the WebBridge download failure path leaving the write stream open (on Windows an open handle makes the temp file undeletable, leaking one fd + orphan file per retry); (3) unified quit paths - quitting from the renderer, installing an update, and factory reset previously all skipped stopping the token-refresh timer and flushing telemetry (app_closed events were lost); they now share the same idempotent teardown as tray quit; (4) added a re-entry guard to the updater init, tray theme listener is now removed on destroy, and the state-export zip data pump got an exception guard.\nAttack-surface reduction: removed 9 zero-call IPC channels (channel allowlist add x3, WebBridge status/install/clean x3, skill detail, workspace open-file, open settings) - the preload whitelist shrinks from 117 to 108 methods."
+    }
+  },
+  {
     "version": "2026.912.1",
     "notes": {
       "zh": "死代码清理（发行包瘦身）：移除 chat-ui 中从未被引用的平行组件套件——cc-btn/cc-card/cc-input/cc-select/cc-textarea/cc-menu/cc-skeleton/cc-table/cc-tabs/cc-chip 原语与 .btn.secondary/.btn.ghost 变体（各视图实际使用 .btn kit 与组件私有类，两套并存已久），连带 28 个零引用的间距工具类、6 处散落的死样式块，primitives.css 从 635 行减至 216 行。设计规范文档（中英）同步：删除已移除原语的描述，标注清理记录。零功能改动，全部删除项均经全仓引用扫描证实为零使用。",

@@ -57,13 +57,11 @@ import { renderWebbridgePillModal } from "./views/webbridge-pill-modal.ts";
 declare global {
   interface Window {
     cryoclaw?: {
-      openSettings?: () => void;
       openWebUI?: () => void;
       openExternal?: (url: string) => unknown;
       getGatewayPort?: () => Promise<number>;
       skillStoreList?: (params?: Record<string, unknown>) => Promise<any>;
       skillStoreSearch?: (params?: Record<string, unknown>) => Promise<any>;
-      skillStoreDetail?: (params?: Record<string, unknown>) => Promise<any>;
       skillStoreInstall?: (params?: Record<string, unknown>) => Promise<any>;
       skillStoreUninstall?: (params?: Record<string, unknown>) => Promise<any>;
       skillStoreListInstalled?: () => Promise<any>;
@@ -72,7 +70,6 @@ declare global {
       pluginStoreInstall?: (params?: Record<string, unknown>) => Promise<any>;
       pluginStoreUninstall?: (params?: Record<string, unknown>) => Promise<any>;
       workspaceSetRoot?: (root: string) => Promise<any>;
-      workspaceOpenFile?: (filePath: string) => Promise<any>;
       workspaceOpenFolder?: (filePath: string) => Promise<any>;
       workspaceListDir?: (dirPath: string) => Promise<any>;
       workspaceReadFile?: (filePath: string) => Promise<any>;

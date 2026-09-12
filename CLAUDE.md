@@ -42,7 +42,7 @@ cryoclaw/
 │   ├── window.ts           # BrowserWindow lifecycle, token injection, retry
 │   ├── window-close-policy.ts  # Close behavior: hide vs destroy
 │   ├── tray.ts             # System tray icon + i18n context menu
-│   ├── preload.ts          # contextBridge IPC whitelist (117 methods + 6 listeners)
+│   ├── preload.ts          # contextBridge IPC whitelist (108 methods + 6 listeners)
 │   ├── provider-config.ts  # Provider presets, verification, config R/W
 │   ├── setup-ipc.ts        # Setup validation + config write + CLI install
 │   ├── setup-completion.ts # Setup wizard completion detection
@@ -209,7 +209,7 @@ CI: `.github/workflows/tests.yml` runs the full regression on every push/PR
 - **Config backup** — Rolling 10 backups + last-known-good snapshot + factory reset.
 - **Multi-model management** — IPC handlers for listing, deleting, setting default, and aliasing models across providers.
 - **Gateway ASAR packaging** — Optional `gateway.asar` archive (enabled by `CRYOCLAW_GATEWAY_ASAR=1`) reduces 5000+ files to a single archive for faster Windows installs. Patched openclaw boundary check for ASAR paths (`patchAsarBoundaryCheck` in scripts/package-resources.js: asar fast-paths injected into `@openclaw/fs-safe` chunks — `openRootFileSync`/`openRootFile`, `verifyStableReadTarget`, `openPinnedFileSync`, `sameFileIdentity`; required because Electron asar stats use synthetic dev=1/per-call-counter ino). Extensions unpacked to `gateway.asar.unpacked/`. Official openclaw channel/provider plugins (feishu, qqbot, moonshot/kimi/zai/qwen/deepseek providers) are vendored into `dist/extensions/` at pack time since openclaw ≥2026.6 no longer ships them in the npm tarball.
-- **Preload security** — 117 IPC methods + 6 event listeners (123 exposed members) via `contextBridge` (sandbox mode).
+- **Preload security** — 108 IPC methods + 6 event listeners (114 exposed members) via `contextBridge` (sandbox mode).
 
 ## Runtime Paths (on user's machine)
 

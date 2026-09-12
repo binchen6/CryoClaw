@@ -343,7 +343,6 @@ interface CryoClawBridgeExtended {
       // Navigation
       onNavigate?: (cb: (payload: any) => void) => () => void;
       onSettingsNavigate?: (cb: (payload: any) => void) => () => void;
-      openSettings?: () => void;
       // System
       openExternal?: (url: string) => Promise<any>;
       openPath?: (path: string) => Promise<any>;
@@ -798,9 +797,6 @@ export function onSettingsNavigate(cb: (payload: { tab: string; notice: string }
   return oc().onSettingsNavigate(cb);
 }
 
-export function openSettings(): void {
-  oc().openSettings();
-}
 
 // ---------------------------------------------------------------------------
 // System (3)

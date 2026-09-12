@@ -424,22 +424,7 @@ export function registerSkillStoreIpc(): void {
       debugLog(`ipc search → error: ${err?.message}`);
       return { success: false, message: err?.message ?? String(err) };
     }
-  });
-
-  ipcMain.handle("skill-store:detail", async (_event, params) => {
-    if (!assertTrustedIpcSender(_event, "skill-store:detail")) throw new Error("IPC sender not trusted");
-    debugLog(`ipc detail slug=${params?.slug}`);
-    try {
-      const result = await getSkillDetail(params?.slug ?? "");
-      debugLog(`ipc detail → ${result.name ?? "unknown"}`);
-      return { success: true, data: result };
-    } catch (err: any) {
-      debugLog(`ipc detail → error: ${err?.message}`);
-      return { success: false, message: err?.message ?? String(err) };
-    }
-  });
-
-  ipcMain.handle("skill-store:install", async (_event, params) => {
+  });  ipcMain.handle("skill-store:install", async (_event, params) => {
     if (!assertTrustedIpcSender(_event, "skill-store:install")) throw new Error("IPC sender not trusted");
     debugLog(`ipc install slug=${params?.slug}`);
     const result = await installSkill(params?.slug ?? "");

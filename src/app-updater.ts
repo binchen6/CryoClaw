@@ -185,7 +185,14 @@ export function quitAndInstallAppUpdate(): void {
   autoUpdater.quitAndInstall(true, true);
 }
 
+// 重入守卫：autoUpdater 是模块级单例，二次 init 会让 6 个事件监听翻倍、
+// 并把旧 startup/periodic 定时器句柄覆盖成孤儿（当前只调用一次，属防御性——
+// 对齐 kimi-auth-proxy / gateway-control-server 等兄弟模块的既有模式）
+let inited = false;
+
 export function initAppUpdater(deps: Deps): void {
+  if (inited) return;
+  inited = true;
   pushFn = deps.push;
   beforeQuitAndInstall = deps.beforeQuitAndInstall ?? null;
   state = createInitialAppUpdateState(app.isPackaged, app.getVersion());

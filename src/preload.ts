@@ -77,10 +77,6 @@ contextBridge.exposeInMainWorld("cryoclaw", {
     ipcRenderer.invoke("settings:reject-wecom-pairing", params),
   settingsListWecomApproved: () =>
     ipcRenderer.invoke("settings:list-wecom-approved"),
-  settingsAddWecomUserAllowFrom: (params: Record<string, unknown>) =>
-    ipcRenderer.invoke("settings:add-wecom-user-allow-from", params),
-  settingsAddWecomGroupAllowFrom: (params: Record<string, unknown>) =>
-    ipcRenderer.invoke("settings:add-wecom-group-allow-from", params),
   settingsRemoveWecomApproved: (params: Record<string, unknown>) =>
     ipcRenderer.invoke("settings:remove-wecom-approved", params),
   settingsListFeishuPairing: () =>
@@ -91,8 +87,6 @@ contextBridge.exposeInMainWorld("cryoclaw", {
     ipcRenderer.invoke("settings:reject-feishu-pairing", params),
   settingsListFeishuApproved: () =>
     ipcRenderer.invoke("settings:list-feishu-approved"),
-  settingsAddFeishuUserAllowFrom: (params: Record<string, unknown>) =>
-    ipcRenderer.invoke("settings:add-feishu-user-allow-from", params),
   settingsRemoveFeishuApproved: (params: Record<string, unknown>) =>
     ipcRenderer.invoke("settings:remove-feishu-approved", params),
   // Kimi Search 专属 key（sidecar 文件）+ memory embedding 依赖的 auth proxy
@@ -107,11 +101,6 @@ contextBridge.exposeInMainWorld("cryoclaw", {
   settingsSaveAdvanced: (params: Record<string, unknown>) =>
     ipcRenderer.invoke("settings:save-advanced", params),
   settingsGetEnvInfo: () => ipcRenderer.invoke("settings:get-env-info"),
-  settingsWebbridgeStatus: () => ipcRenderer.invoke("settings:webbridge-status"),
-  settingsWebbridgeInstallExtensions: () =>
-    ipcRenderer.invoke("settings:webbridge-install-extensions"),
-  settingsWebbridgeCleanBlocklist: (browserId: string) =>
-    ipcRenderer.invoke("settings:webbridge-clean-blocklist", browserId),
   settingsWebbridgePrecheck: () =>
     ipcRenderer.invoke("settings:webbridge-precheck"),
   settingsWebbridgeRepairAndEnable: () =>
@@ -144,8 +133,6 @@ contextBridge.exposeInMainWorld("cryoclaw", {
     ipcRenderer.invoke("skill-store:list", params),
   skillStoreSearch: (params?: Record<string, unknown>) =>
     ipcRenderer.invoke("skill-store:search", params),
-  skillStoreDetail: (params?: Record<string, unknown>) =>
-    ipcRenderer.invoke("skill-store:detail", params),
   skillStoreInstall: (params?: Record<string, unknown>) =>
     ipcRenderer.invoke("skill-store:install", params),
   skillStoreUninstall: (params?: Record<string, unknown>) =>
@@ -166,8 +153,6 @@ contextBridge.exposeInMainWorld("cryoclaw", {
   // 工作空间文件操作
   workspaceSetRoot: (root: string) =>
     ipcRenderer.invoke("workspace:set-root", root),
-  workspaceOpenFile: (filePath: string) =>
-    ipcRenderer.invoke("workspace:open-file", filePath),
   workspaceOpenFolder: (filePath: string) =>
     ipcRenderer.invoke("workspace:open-folder", filePath),
   workspaceListDir: (dirPath: string) =>
@@ -223,7 +208,6 @@ contextBridge.exposeInMainWorld("cryoclaw", {
   // Chat UI 侧边栏操作
   quit: () => ipcRenderer.send("app:quit"),
   reportSetupViewState: (active: boolean) => ipcRenderer.send("app:setup-view-state", active),
-  openSettings: () => ipcRenderer.send("app:open-settings"),
   openWebUI: () => ipcRenderer.send("app:open-webui"),
   getGatewayPort: () => ipcRenderer.invoke("gateway:port"),
   // 主进程通知 gateway 已就绪，Chat UI 可立即重连（跳过盲等指数退避）

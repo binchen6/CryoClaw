@@ -108,7 +108,6 @@
 | `settingsApproveFeishuPairing(params)` | `settings:approve-feishu-pairing` | invoke |
 | `settingsRejectFeishuPairing(params)` | `settings:reject-feishu-pairing` | invoke |
 | `settingsListFeishuApproved()` | `settings:list-feishu-approved` | invoke |
-| `settingsAddFeishuUserAllowFrom(params)` | `settings:add-feishu-user-allow-from` | invoke |
 | `settingsRemoveFeishuApproved(params)` | `settings:remove-feishu-approved` | invoke |
 
 ## Settings — Channels (WeCom)
@@ -119,8 +118,6 @@
 | `settingsApproveWecomPairing(params)` | `settings:approve-wecom-pairing` | invoke |
 | `settingsRejectWecomPairing(params)` | `settings:reject-wecom-pairing` | invoke |
 | `settingsListWecomApproved()` | `settings:list-wecom-approved` | invoke |
-| `settingsAddWecomUserAllowFrom(params)` | `settings:add-wecom-user-allow-from` | invoke |
-| `settingsAddWecomGroupAllowFrom(params)` | `settings:add-wecom-group-allow-from` | invoke |
 | `settingsRemoveWecomApproved(params)` | `settings:remove-wecom-approved` | invoke |
 
 ## Settings — Channels (WeChat 微信)
@@ -181,7 +178,6 @@
 |---|---|---|
 | `skillStoreList(params?)` | `skill-store:list` | invoke |
 | `skillStoreSearch(params?)` | `skill-store:search` | invoke |
-| `skillStoreDetail(params?)` | `skill-store:detail` | invoke |
 | `skillStoreInstall(params?)` | `skill-store:install` | invoke |
 | `skillStoreUninstall(params?)` | `skill-store:uninstall` | invoke |
 | `skillStoreListInstalled()` | `skill-store:list-installed` | invoke |
@@ -190,7 +186,6 @@
 
 | 方法 | IPC 通道 | 方向 |
 |---|---|---|
-| `openSettings()` | `app:open-settings` | send |
 | `openWebUI()` | `app:open-webui` | send |
 | `getGatewayPort()` | `gateway:port` | invoke |
 
@@ -206,7 +201,6 @@
 | 方法 | IPC 通道 | 方向 |
 |---|---|---|
 | `setWorkspaceRoot(root)` | `workspace:set-root` | invoke |
-| `openWorkspaceFile(filePath)` | `workspace:open-file` | invoke |
 | `openWorkspaceFolder(filePath)` | `workspace:open-folder` | invoke |
 | `listWorkspaceDir(dirPath)` | `workspace:list-dir` | invoke |
 | `readWorkspaceFile(filePath)` | `workspace:read-file` | invoke |

@@ -96,6 +96,7 @@ function getStateLabel(state: GatewayState): string {
 
 export class TrayManager {
   private tray: Tray | null = null;
+  private onNativeThemeUpdated: (() => void) | null = null;
   private opts: TrayOptions | null = null;
   /** App 更新是否已下载待装（downloaded 态时托盘菜单挂「重启以更新」） */
   private appUpdateReady = false;
@@ -126,9 +127,11 @@ export class TrayManager {
     this.tray = new Tray(icon);
     this.tray.setToolTip("CryoClaw");
 
-    // Windows: 系统主题切换时同步更换托盘图标变体
+    // Windows: 系统主题切换时同步更换托盘图标变体（destroy 时同步摘除——
+    // nativeTheme 是进程级 emitter，托盘重建场景下不摘会逐次叠加监听）
     if (process.platform === "win32") {
-      nativeTheme.on("updated", () => this.applyWindowsTrayIcon());
+      this.onNativeThemeUpdated = () => this.applyWindowsTrayIcon();
+      nativeTheme.on("updated", this.onNativeThemeUpdated);
     }
 
     // 点击托盘图标 → 打开主窗口
@@ -212,6 +215,10 @@ export class TrayManager {
   }
 
   destroy(): void {
+    if (this.onNativeThemeUpdated) {
+      nativeTheme.removeListener("updated", this.onNativeThemeUpdated);
+      this.onNativeThemeUpdated = null;
+    }
     this.tray?.destroy();
     this.tray = null;
   }

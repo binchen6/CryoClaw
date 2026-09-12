@@ -250,33 +250,7 @@ const finalizeWebbridgeRepair = async (
   return includesExtension ? await openWebbridgeEnableGuideInBrowser() : false;
 };
 
-export function registerWebbridgeIpc(opts: SettingsIpcOptions): void {
-  // ── WebBridge 安装状态（只读，不调 CLI） ──
-  // 单一默认浏览器策略：只对默认浏览器查进程，避免 Win 下 Defender 实时扫描 tasklist
-  // 翻倍延迟。非默认浏览器上的 running 字段会是 false（我们不再关心）。
-  ipcMain.handle("settings:webbridge-status", async (event) => {
-    if (!assertTrustedIpcSender(event, "settings:webbridge-status")) throw new Error("IPC sender not trusted");
-    try {
-      const def = await getDefaultBrowser();
-      const state = await getWebbridgeInstallState({
-        binaryPath: resolveWebbridgeBinaryPath(),
-        dataDir: resolveWebbridgeDataDir(),
-        fileExists: fs.existsSync,
-        readManifest: readCacheManifest,
-        readExtensionStates: (extId) =>
-          getExtensionStates(specFromExtId(extId), {
-            processExec: DEFAULT_PROCESS_EXEC,
-            processCheckBrowserId: def?.target.id,
-          }),
-        extensionId: readWebbridgeExtensionId(),
-      });
-      return { success: true, data: state };
-    } catch (err: any) {
-      return { success: false, message: err.message || String(err) };
-    }
-  });
-
-  // ── WebBridge 切换前置 precheck（read-only；binary/skill/extension 三项 + default browser） ──
+export function registerWebbridgeIpc(opts: SettingsIpcOptions): void {  // ── WebBridge 切换前置 precheck（read-only；binary/skill/extension 三项 + default browser） ──
   ipcMain.handle("settings:webbridge-precheck", async (event) => {
     if (!assertTrustedIpcSender(event, "settings:webbridge-precheck")) throw new Error("IPC sender not trusted");
     try {
@@ -538,80 +512,4 @@ export function registerWebbridgeIpc(opts: SettingsIpcOptions): void {
         message: err?.message || String(err),
       };
     }
-  });
-
-  // ── 重新配置浏览器扩展（幂等；用户手动删了 External Extensions 时的恢复入口） ──
-  ipcMain.handle("settings:webbridge-install-extensions", async (event) => {
-    if (!assertTrustedIpcSender(event, "settings:webbridge-install-extensions")) throw new Error("IPC sender not trusted");
-    try {
-      const spec = resolveWebbridgeExtensionSpec();
-      if (!spec) {
-        return {
-          success: false,
-          message:
-            "本构建未注入 WebBridge 扩展 ID 或缺少内置 CRX（dev 构建？）",
-        };
-      }
-      const summary = await installForAllDetectedBrowsers(spec);
-      return { success: true, data: summary };
-    } catch (err: any) {
-      return { success: false, message: err.message || String(err) };
-    }
-  });
-
-  // ── 清理 Chrome external_uninstalls 黑名单（用户 UI 卸载过 → 阻断 External Extensions JSON 安装） ──
-  ipcMain.handle(
-    "settings:webbridge-clean-blocklist",
-    async (_evt, browserId: string) => {
-    if (!assertTrustedIpcSender(_evt, "settings:webbridge-clean-blocklist")) throw new Error("IPC sender not trusted");
-      try {
-        const target = BROWSER_TARGETS.find((t) => t.id === browserId);
-        if (!target) {
-          return { success: false, message: `Unknown browser: ${browserId}` };
-        }
-        const extId = readWebbridgeExtensionId();
-        if (!extId) {
-          return {
-            success: false,
-            message: "本构建未注入 WebBridge 扩展 ID（dev 构建）",
-          };
-        }
-        // 1. 浏览器在跑 → 拒绝（Chrome 启动时会用内存 Preferences 覆盖磁盘改动）
-        //    Win Edge 后台残留 → 主动清理（关窗即认为用户意图退出）
-        const state = await getBrowserRunningState(target);
-        if (state === "foreground") {
-          return {
-            success: false,
-            code: "BROWSER_RUNNING",
-            message: `${target.name} 正在运行；请先完全退出后再点清理。`,
-          };
-        }
-        if (state === "background-only") {
-          const k = await killBackgroundProcesses(target);
-          log.info(
-            `[clean-blocklist] ${target.name} background-only 清理: killed=${k.killed}${
-              k.error ? ` error=${k.error}` : ""
-            }`,
-          );
-        }
-        // 2. 双检：UI 状态可能过期，实际已不在 blocklist
-        if (!(await isExtensionBlocklisted(target, extId))) {
-          return { success: true, code: "NOT_BLOCKLISTED" };
-        }
-        // 3. 改 Preferences（含二次读取验证）
-        const result = await cleanExtensionBlocklist(target, extId);
-        if (result === "verify-failed") {
-          return {
-            success: false,
-            code: "VERIFY_FAILED",
-            message: `${target.name} 配置写入后再读取仍命中黑名单；请完全退出 ${target.name} 后重试。`,
-          };
-        }
-        return { success: true, code: result };
-      } catch (err: any) {
-        return { success: false, message: err.message || String(err) };
-      }
-    },
-  );
-
-}
+  });  // ── 清理 Chrome external_uninstalls 黑名单（用户 UI 卸载过 → 阻断 External Extensions JSON 安装） ──}

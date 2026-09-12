@@ -367,11 +367,24 @@ function applyZipAttributes(zipEntry: ZipPassThrough | ZipDeflate, entry: Opencl
 async function pushFileToZip(absPath: string, zipEntry: ZipDeflate): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     const input = fs.createReadStream(absPath, { highWaterMark: ZIP_CHUNK_SIZE });
-    input.on("data", (chunk) => { zipEntry.push(asUint8Array(chunk)); });
+    // fflate 内部 throw（如流已被终结后再 push）在这里不捕获会变成主进程
+    // uncaughtException 而非 rejected promise（对齐 -zip.ts:163 的守卫模式）
+    input.on("data", (chunk) => {
+      try {
+        zipEntry.push(asUint8Array(chunk));
+      } catch (err) {
+        reject(err as Error);
+        input.destroy();
+      }
+    });
     input.on("error", reject);
     input.on("end", () => {
-      zipEntry.push(new Uint8Array(), true);
-      resolve();
+      try {
+        zipEntry.push(new Uint8Array(), true);
+        resolve();
+      } catch (err) {
+        reject(err as Error);
+      }
     });
   });
 }

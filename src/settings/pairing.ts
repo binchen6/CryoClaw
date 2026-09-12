@@ -127,65 +127,7 @@ export function registerPairingIpc(opts: SettingsIpcOptions): void {
     } catch (err: any) {
       return { success: false, message: err.message || String(err) };
     }
-  });
-
-  // ── 添加企业微信用户白名单条目 ──
-  ipcMain.handle("settings:add-wecom-user-allow-from", async (_event, params) => {
-    if (!assertTrustedIpcSender(_event, "settings:add-wecom-user-allow-from")) throw new Error("IPC sender not trusted");
-    const id = typeof params?.id === "string" ? params.id.trim() : "";
-    if (!id) {
-      return { success: false, message: "用户 ID 不能为空。" };
-    }
-
-    try {
-      const config = readUserConfig();
-      config.channels ??= {};
-      config.channels[WECOM_CHANNEL_ID] ??= {};
-      const currentAllowFrom = normalizeAllowFromEntries(config.channels[WECOM_CHANNEL_ID].allowFrom)
-        .filter((entry) => entry !== WILDCARD_ALLOW_ENTRY);
-      const nextAllowFrom = dedupeEntries([...currentAllowFrom, id]);
-      if (nextAllowFrom.length > 0) {
-        config.channels[WECOM_CHANNEL_ID].allowFrom = nextAllowFrom;
-      }
-      const nextStoreAllowFrom = dedupeEntries([
-        ...readChannelAllowFromStore(WECOM_CHANNEL_ID),
-        id,
-      ]);
-      writeChannelAllowFromStore(WECOM_CHANNEL_ID, nextStoreAllowFrom);
-      writeUserConfig(config);
-      opts.requestGatewayRestart?.();
-      return { success: true };
-    } catch (err: any) {
-      return { success: false, message: err.message || String(err) };
-    }
-  });
-
-  // ── 添加企业微信群白名单条目 ──
-  ipcMain.handle("settings:add-wecom-group-allow-from", async (_event, params) => {
-    if (!assertTrustedIpcSender(_event, "settings:add-wecom-group-allow-from")) throw new Error("IPC sender not trusted");
-    const id = typeof params?.id === "string" ? params.id.trim() : "";
-    if (!id) {
-      return { success: false, message: "群 ID 不能为空。" };
-    }
-
-    try {
-      const config = readUserConfig();
-      config.channels ??= {};
-      config.channels[WECOM_CHANNEL_ID] ??= {};
-      const nextGroupAllowFrom = dedupeEntries([
-        ...normalizeAllowFromEntries(config.channels[WECOM_CHANNEL_ID].groupAllowFrom),
-        id,
-      ]);
-      config.channels[WECOM_CHANNEL_ID].groupAllowFrom = nextGroupAllowFrom;
-      writeUserConfig(config);
-      opts.requestGatewayRestart?.();
-      return { success: true };
-    } catch (err: any) {
-      return { success: false, message: err.message || String(err) };
-    }
-  });
-
-  // ── 删除企业微信已授权用户/群聊 ──
+  });  // ── 添加企业微信群白名单条目 ──  // ── 删除企业微信已授权用户/群聊 ──
   ipcMain.handle("settings:remove-wecom-approved", async (_event, params) => {
     if (!assertTrustedIpcSender(_event, "settings:remove-wecom-approved")) throw new Error("IPC sender not trusted");
     const kind = params?.kind === "group" ? "group" : "user";
@@ -272,40 +214,7 @@ export function registerPairingIpc(opts: SettingsIpcOptions): void {
     } catch (err: any) {
       return { success: false, message: err.message || String(err) };
     }
-  });
-
-  // ── 添加用户白名单条目（飞书 open_id / union_id） ──
-  ipcMain.handle("settings:add-feishu-user-allow-from", async (_event, params) => {
-    if (!assertTrustedIpcSender(_event, "settings:add-feishu-user-allow-from")) throw new Error("IPC sender not trusted");
-    const id = String(params?.id ?? "").trim();
-    if (!id) {
-      return { success: false, message: "用户 ID 不能为空。" };
-    }
-    if (!looksLikeFeishuUserId(id)) {
-      return { success: false, message: "仅允许填写以 ou_ 开头的飞书用户 open_id。" };
-    }
-
-    try {
-      const config = readUserConfig();
-      config.channels ??= {};
-      config.channels.feishu ??= {};
-      const currentAllowFrom = normalizeAllowFromEntries(config.channels.feishu.allowFrom)
-        .filter((entry) => entry !== WILDCARD_ALLOW_ENTRY);
-      const nextAllowFrom = dedupeEntries([...currentAllowFrom, id]);
-      if (nextAllowFrom.length > 0) {
-        config.channels.feishu.allowFrom = nextAllowFrom;
-      }
-      const nextStoreAllowFrom = dedupeEntries([...readFeishuAllowFromStore(), id]);
-      writeFeishuAllowFromStore(nextStoreAllowFrom);
-      writeUserConfig(config);
-      opts.requestGatewayRestart?.();
-      return { success: true };
-    } catch (err: any) {
-      return { success: false, message: err.message || String(err) };
-    }
-  });
-
-  // ── 删除飞书已授权条目（用户/群聊） ──
+  });  // ── 删除飞书已授权条目（用户/群聊） ──
   ipcMain.handle("settings:remove-feishu-approved", async (_event, params) => {
     if (!assertTrustedIpcSender(_event, "settings:remove-feishu-approved")) throw new Error("IPC sender not trusted");
     const kind = String(params?.kind ?? "").trim().toLowerCase() === "group" ? "group" : "user";
