@@ -41,9 +41,14 @@ test("tool summary：多工具走计数 + 名单，非单工具", () => {
 });
 
 // ── resolveActiveToolName ──
+// R83 合并消息语义：call 消息带 pending 标记 = 执行中；不带 = 已完成
 
-function toolCallMsg(name: string) {
-  return { role: "assistant", content: [{ type: "toolCall", name, arguments: {} }] };
+function toolCallMsg(name: string, pending = false) {
+  return {
+    role: "assistant",
+    ...(pending ? { pending: true } : {}),
+    content: [{ type: "toolCall", name, arguments: {} }],
+  };
 }
 function toolResultMsg(name: string) {
   return { role: "tool", content: [{ type: "toolResult", name, text: "ok" }] };
@@ -56,21 +61,25 @@ test("active tool：空时间线返回 null", () => {
   assert.equal(resolveActiveToolName([]), null);
 });
 
-test("active tool：最后一条是有 call 无 result → 返回工具名", () => {
-  assert.equal(resolveActiveToolName([toolCallMsg("read")]), "read");
+test("active tool：pending call → 返回工具名", () => {
+  assert.equal(resolveActiveToolName([toolCallMsg("read", true)]), "read");
 });
 
-test("active tool：call 后已有 result → null（工具已完成）", () => {
-  assert.equal(resolveActiveToolName([toolCallMsg("read"), toolResultMsg("read")]), null);
+test("active tool：合并消息无 pending（result 已并入）→ null（已完成）", () => {
+  assert.equal(resolveActiveToolName([toolCallMsg("read", false)]), null);
 });
 
-test("active tool：完成的工具后再起新 call → 新工具名", () => {
+test("active tool：孤儿 result 消息 → null（已完成）", () => {
+  assert.equal(resolveActiveToolName([toolCallMsg("read", true), toolResultMsg("read")]), null);
+});
+
+test("active tool：完成的工具后再起新 pending call → 新工具名", () => {
   assert.equal(
     resolveActiveToolName([
-      toolCallMsg("read"),
+      toolCallMsg("read", true),
       toolResultMsg("read"),
       textMsg("段间文本"),
-      toolCallMsg("exec"),
+      toolCallMsg("exec", true),
     ]),
     "exec",
   );
@@ -78,30 +87,33 @@ test("active tool：完成的工具后再起新 call → 新工具名", () => {
 
 test("active tool：末尾是文本消息时跳过、由最近工具消息决定", () => {
   assert.equal(
-    resolveActiveToolName([toolCallMsg("read"), toolResultMsg("read"), textMsg("正在写")]),
+    resolveActiveToolName([toolCallMsg("read", true), toolResultMsg("read"), textMsg("正在写")]),
     null,
   );
 });
 
-test("active tool：流式时间线 resultMessage（role=toolResult + 纯文本）也算完成", () => {
-  // 与 app-tool-stream.ts::buildToolResultMessage 同构
+test("active tool：历史 toolResult block 消息也算完成", () => {
   const streamResult = {
     role: "toolResult",
     toolCallId: "tc1",
     content: [{ type: "text", text: "output" }],
   };
-  assert.equal(resolveActiveToolName([toolCallMsg("read"), streamResult]), null);
-  assert.equal(resolveActiveToolName([toolCallMsg("read"), streamResult, toolCallMsg("exec")]), "exec");
+  assert.equal(resolveActiveToolName([toolCallMsg("read", true), streamResult]), null);
+  assert.equal(
+    resolveActiveToolName([toolCallMsg("read", true), streamResult, toolCallMsg("exec", true)]),
+    "exec",
+  );
 });
 
-// ── summarizeToolCards：hasError ──
+// ── summarizeToolCards：hasError / status ──
 
-test("tool summary：任一 result 带 error → hasError true", () => {
+test("tool summary：任一 result 带 error → hasError true + status failed", () => {
   const s = summarizeToolCards([
     card("call", "read"),
     { kind: "result", name: "read", text: "boom", error: "boom" } as ToolCard,
   ]);
   assert.equal(s.hasError, true);
+  assert.equal(s.status, "failed");
 });
 
 test("tool summary：多工具中一个失败 → hasError true", () => {
@@ -114,15 +126,26 @@ test("tool summary：多工具中一个失败 → hasError true", () => {
   assert.equal(s.hasError, true);
 });
 
-test("tool summary：全部成功 → hasError false", () => {
+test("tool summary：全部成功 → hasError false + status completed", () => {
   const s = summarizeToolCards([
     card("call", "read"),
     { kind: "result", name: "read", text: "ok" } as ToolCard,
   ]);
   assert.equal(s.hasError, false);
+  assert.equal(s.status, "completed");
 });
 
-test("tool summary：进行中的 pending call 不算失败", () => {
+test("tool summary：进行中的 pending call 不算失败，status running", () => {
   const s = summarizeToolCards([{ kind: "call", name: "read", pending: true } as ToolCard]);
   assert.equal(s.hasError, false);
+  assert.equal(s.status, "running");
+});
+
+test("tool summary（R83 合并卡）：call 块带 result 载荷 → completed", () => {
+  const s = summarizeToolCards([
+    { kind: "call", name: "exec", args: { command: "ls" }, text: "file list" } as ToolCard,
+  ]);
+  assert.equal(s.status, "completed");
+  assert.equal(s.hasError, false);
+  assert.equal(s.totalTools, 1);
 });

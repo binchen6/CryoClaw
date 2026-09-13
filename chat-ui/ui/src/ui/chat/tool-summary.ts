@@ -18,6 +18,8 @@ export type ToolSummary = {
   isSingle: boolean;
   /** 组内是否有失败（任一 result 带 isError），渲染层据此给摘要行加红色标记 */
   hasError: boolean;
+  /** R83 聚合状态：任一执行中 → running；否则任一失败 → failed；全部完成 → completed */
+  status: "running" | "failed" | "completed";
 };
 
 export function summarizeToolCards(toolCards: readonly ToolCard[]): ToolSummary {
@@ -26,6 +28,11 @@ export function summarizeToolCards(toolCards: readonly ToolCard[]): ToolSummary 
   const totalTools = Math.max(calls.length, results.length) || toolCards.length;
   const names = [...new Set(toolCards.map((c) => c.name))];
   const hasError = toolCards.some((c) => c.error !== undefined);
+  const status: ToolSummary["status"] = toolCards.some((c) => c.pending === true)
+    ? "running"
+    : hasError
+      ? "failed"
+      : "completed";
 
   // 单一工具：用 tool-display 的显示名 + 参数详情（如 read → 文件路径）
   if (names.length === 1) {
@@ -38,6 +45,7 @@ export function summarizeToolCards(toolCards: readonly ToolCard[]): ToolSummary 
       detail: formatToolDetail(display),
       isSingle: true,
       hasError,
+      status,
     };
   }
 
@@ -45,13 +53,16 @@ export function summarizeToolCards(toolCards: readonly ToolCard[]): ToolSummary 
     names.length <= 3
       ? names.join(", ")
       : `${names.slice(0, 2).join(", ")} +${names.length - 2} more`;
-  return { totalTools, label, isSingle: false, hasError };
+  return { totalTools, label, isSingle: false, hasError, status };
 }
 
 /**
  * 解析当前正在执行（有 call 无 result）的工具名。
- * 从工具时间线末尾向前扫描：第一条含工具卡片的消息决定状态——
- * 含 result → 最近一次工具已完成（返回 null）；含 call → 该工具正在执行。
+ * 从工具时间线末尾向前扫描，判定「最近一次工具活动」的状态：
+ * - toolResult 形态消息（孤儿 result / 历史块）→ 已完成，返回 null；
+ * - 合并 call 消息（R83：call+result 同一条）：带 pending 标记 → 执行中（返回工具名），
+ *   不带 → 已完成（返回 null）；
+ * - 纯文本消息不参与判定，继续向前扫描。
  */
 export function resolveActiveToolName(toolMessages: readonly unknown[]): string | null {
   for (let i = toolMessages.length - 1; i >= 0; i--) {
@@ -59,8 +70,6 @@ export function resolveActiveToolName(toolMessages: readonly unknown[]): string 
     if (!m) {
       continue;
     }
-    // 消息级 result 判定：流式时间线的 resultMessage 是 role=toolResult + 纯文本 content
-    // （app-tool-stream.ts::buildToolResultMessage），历史里是 toolResult block 或顶层 toolCallId
     const role = typeof m.role === "string" ? m.role.toLowerCase() : "";
     if (
       role === "toolresult" ||
@@ -98,7 +107,8 @@ export function resolveActiveToolName(toolMessages: readonly unknown[]): string 
       return null;
     }
     if (callName) {
-      return callName;
+      // R83 合并消息：pending 标记在消息级（result 并入前由 app-tool-stream 维护）
+      return m.pending === true ? callName : null;
     }
   }
   return null;

@@ -3,7 +3,7 @@ import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import type { AssistantIdentity } from "../assistant-identity.ts";
 import { icons } from "../icons.ts";
 import type { MessageGroup, ToolCard } from "../types/chat-types.ts";
-import { toSanitizedMarkdownHtml, toStreamingMarkdownHtml } from "../markdown.ts";
+import { toSanitizedMarkdownHtml, toStreamingMarkdownParts } from "../markdown.ts";
 import { detectTextDirection } from "../text-direction.ts";
 import { renderCopyAsMarkdownButton } from "./copy-as-markdown.ts";
 import {
@@ -429,11 +429,12 @@ function renderMessageMediaAttachments(atts: MessageMediaAttachment[]) {
 
 // 将多个 tool card 折叠到 <details> 元素中
 // 单一工具：「⚡ Read · src/main.ts」直接显示动作+目标；多工具：「⚡ N tools · 名单」
+// 摘要行右端是聚合状态（R83）：执行中 spinner / 失败 ✗ / 全部完成 ✓ 已完成
 function renderCollapsedToolCards(
   toolCards: ToolCard[],
   onOpenSidebar?: (content: string) => void,
 ) {
-  const { totalTools, label: summaryLabel, detail, isSingle, hasError } =
+  const { totalTools, label: summaryLabel, detail, isSingle, hasError, status } =
     summarizeToolCards(toolCards);
 
   // 懒渲染：折叠时 body 不挂载（见 hydrateLazyDetailsBody 头注），
@@ -465,6 +466,17 @@ function renderCollapsedToolCards(
               <span class="chat-tools-summary__count">${totalTools} tool${totalTools === 1 ? "" : "s"}</span>
               <span class="chat-tools-summary__names">${summaryLabel}</span>
             `}
+        ${
+          status === "running"
+            ? html`<span class="chat-tools-summary__status chat-tools-summary__status--running" role="status">
+                <span class="chat-tool-card__spinner" aria-hidden="true"></span>
+              </span>`
+            : status === "failed"
+              ? html`<span class="chat-tools-summary__status chat-tools-summary__status--failed">${icons.x}</span>`
+              : html`<span class="chat-tools-summary__status chat-tools-summary__status--done">
+                  ${icons.check}<span>${t("chat.toolCompleted")}</span>
+                </span>`
+        }
       </summary>
       <div class="chat-tools-collapse__body"></div>
     </details>
@@ -634,19 +646,30 @@ function renderGroupedMessage(
 
   // ── streaming 渲染路径（与下方 history 路径刻意分叉）────────
   // streaming 的累计文本经 rAF 每帧全量提交（controllers/chat.ts scheduleChatStreamFlush）。
-  // R5 曾在此只绑纯文本（防每帧全文 marked.parse 的 O(n²)）；R41 Task 9 升级为
-  // 安全前缀渐进渲染：稳定段（已完成结构）走 toStreamingMarkdownHtml 完整解析且命中
-  // LRU，未闭合尾部转义纯文本——解析频率 = 边界推进频率（远低于帧率），而非每帧全文。
-  // 安全面：稳定段经 DOMPurify，尾部经 escapeHtml；不解析 JSON，run 终态后转入
-  // history 路径一次性完整渲染，用户可见的最终结果不变。
+  // R41 Task 9：安全前缀渐进渲染——稳定段（已完成结构）完整解析且命中 LRU，
+  // 未闭合尾部转义纯文本，解析频率 = 边界推进频率（远低于帧率）。
+  // R83 拆分双节点：稳定段与尾部各占一个节点。lit 的 unsafeHTML 对同字符串是
+  // no-op——尾部每帧变化时稳定段 DOM 不重建，代码块的复制按钮/hljs 高亮结果
+  // 保留（此前每帧整块 innerHTML 重写 + 全部 pre 重新增强/重高亮，是流式卡顿热点）。
+  // 安全面：稳定段经 DOMPurify，尾部走纯文本绑定（lit 自动转义）；run 终态后
+  // 转入 history 路径一次性完整渲染，用户可见的最终结果不变。
   if (opts.isStreaming) {
-    const streamHtml = markdown ? toStreamingMarkdownHtml(markdown) : "";
+    const parts = markdown ? toStreamingMarkdownParts(markdown) : { stableHtml: "", tail: "" };
     return html`
       <div class="${bubbleClasses}">
         ${canCopyMarkdown ? renderCopyAsMarkdownButton(markdown!) : nothing}
-        ${streamHtml
-          ? html`<div class="chat-text chat-text--streaming" dir="${detectTextDirection(markdown)}"
-              >${unsafeHTML(linkifyPaths(streamHtml))}</div>`
+        ${parts.stableHtml
+          ? html`<div
+              class="chat-text chat-text--streaming chat-text--stable"
+              dir="${detectTextDirection(markdown)}"
+              ${chatTextEnhanceRef}
+            >${unsafeHTML(linkifyPaths(parts.stableHtml))}</div>`
+          : nothing}
+        ${parts.tail
+          ? html`<div
+              class="chat-text chat-text--streaming chat-text--tail"
+              dir="${detectTextDirection(markdown)}"
+            >${parts.tail}</div>`
           : nothing}
       </div>
     `;

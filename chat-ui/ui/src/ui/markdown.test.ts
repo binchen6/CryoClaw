@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 
 // node 环境无 DOM：DOMPurify 检测到假 window 后走 "not supported" 分支，
 // sanitize 成为透传实现（返回输入）。本测试只关心 LRU 缓存写入策略，
@@ -158,82 +158,106 @@ test("splitMarkdownSafePrefix：表格行不误判为围栏", () => {
   assert.equal(tail, text);
 });
 
-// ── R41 任务 9：流式安全前缀渐进 markdown 渲染 ──
+// ── R41 任务 9 → R83：流式安全前缀渐进 markdown 渲染（parts 双段形态） ──
 
-const { toStreamingMarkdownHtml } = await import("./markdown.ts");
+const { toStreamingMarkdownParts } = await import("./markdown.ts");
 
-test("toStreamingMarkdownHtml：稳定段渲染为 markdown、尾部保持转义纯文本", () => {
-  const html = toStreamingMarkdownHtml("**bold**\n\nhalf `code");
+test("toStreamingMarkdownParts：稳定段渲染为 markdown、尾部保持纯文本", () => {
+  const { stableHtml } = toStreamingMarkdownParts("**bold**\n\nhalf `code");
   // 稳定段（空行之前）完整解析为 markdown 结构
-  assert.ok(html.includes("<strong>bold</strong>"), "稳定段应解析为 <strong>");
-  // 尾部未闭合：转义纯文本原样可见，不被解析成 markdown（无 <code> 包裹）
-  assert.ok(html.includes("half `code"), "尾部应以纯文本形态可见");
-  assert.ok(!html.includes("<code>"), "未闭合尾部不应被解析成 <code> 标签");
+  assert.ok(stableHtml.includes("<strong>bold</strong>"), "稳定段应解析为 <strong>");
 });
 
-test("toStreamingMarkdownHtml：同稳定段重复调用命中缓存不重复解析", () => {
+test("toStreamingMarkdownParts：尾部以原文本返回（调用方纯文本绑定，lit 自动转义）", () => {
+  const { tail } = toStreamingMarkdownParts("**bold**\n\nhalf `code");
+  assert.equal(tail, "half `code", "尾部应原样返回（不再包 <p>/转义——由 lit 文本绑定负责）");
+});
+
+test("toStreamingMarkdownParts：同稳定段重复调用命中缓存不重复解析", () => {
   // 稳定段内容不变 → 缓存键不变：流式期间解析频率 = 边界推进频率，而非帧率。
-  // 尾部每帧都变，不进缓存（只会污染），因此连续 3 次调用缓存增量 ≤ 1。
   const rand = Math.random().toString(36).slice(2);
   const text = `**stable-${rand}**\n\ntail growing ${rand}`;
   const before = markdownCacheSize();
-  const first = toStreamingMarkdownHtml(text);
-  const second = toStreamingMarkdownHtml(text);
-  const third = toStreamingMarkdownHtml(text);
-  assert.equal(second, first, "重复调用结果应一致");
-  assert.equal(third, first, "重复调用结果应一致");
+  const first = toStreamingMarkdownParts(text);
+  const second = toStreamingMarkdownParts(text);
+  const third = toStreamingMarkdownParts(text);
+  assert.equal(second.stableHtml, first.stableHtml, "重复调用结果应一致");
+  assert.equal(third.stableHtml, first.stableHtml, "重复调用结果应一致");
   assert.ok(
     markdownCacheSize() - before <= 1,
     `同稳定段重复调用缓存增量应 ≤ 1，实际 ${markdownCacheSize() - before}`,
   );
 });
 
-test("toStreamingMarkdownHtml：无稳定段时全部走纯文本", () => {
-  const html = toStreamingMarkdownHtml("plain streaming text");
-  assert.ok(html.includes("plain streaming text"), "文本应以转义形态存在");
-  // 除 <p> 包裹外不应出现任何结构化标签（未解析 markdown）
-  for (const tag of ["strong", "em", "code", "pre", "ul", "ol", "h1", "h2", "table", "blockquote"]) {
-    assert.ok(!html.includes(`<${tag}`), `无稳定段时不应出现 <${tag}> 结构`);
-  }
+test("toStreamingMarkdownParts：无稳定段时 stableHtml 为空、全文归 tail", () => {
+  const parts = toStreamingMarkdownParts("plain streaming text");
+  assert.equal(parts.stableHtml, "");
+  assert.equal(parts.tail, "plain streaming text");
 });
 
-test("toStreamingMarkdownHtml：空串返回空串", () => {
-  assert.equal(toStreamingMarkdownHtml(""), "");
-  assert.equal(toStreamingMarkdownHtml("   \n  "), "", "纯空白 trim 后为空也应返回空串");
+test("toStreamingMarkdownParts：空串返回两段空串", () => {
+  assert.deepEqual(toStreamingMarkdownParts(""), { stableHtml: "", tail: "" });
+  assert.deepEqual(toStreamingMarkdownParts("   \n  "), { stableHtml: "", tail: "" });
 });
 
-test("toStreamingMarkdownHtml：尾部含 HTML 片段时转义（XSS 面）", () => {
-  // 尾部永远经 escapeHtml；稳定段里的原始 HTML 在浏览器由 DOMPurify 剥离，
-  // 而 node 桩环境（假 window）下 DOMPurify 是透传，故稳定段避开原始 HTML，
-  // 本用例只验证尾部的独立防线（切分后 <script> 必在尾部）。
-  const html = toStreamingMarkdownHtml("a\n\n<script>alert(1)</script>");
-  assert.ok(!html.includes("<script>"), "尾部不应出现未转义的 <script> 标签");
-  assert.ok(html.includes("&lt;script&gt;"), "尾部 HTML 应以转义文本呈现");
+test("toStreamingMarkdownParts：稳定段含代码围栏完整渲染", () => {
+  const { stableHtml, tail } = toStreamingMarkdownParts("```js\nconst x=1;\n```\ntail");
+  assert.ok(stableHtml.includes("<pre"), "闭合围栏应渲染为 <pre>");
+  assert.ok(stableHtml.includes("<code"), "闭合围栏应渲染为 <code>");
+  assert.ok(stableHtml.includes("const x=1;"), "围栏内容应保留");
+  assert.equal(tail, "tail");
 });
 
-test("toStreamingMarkdownHtml：稳定段含代码围栏完整渲染", () => {
-  const html = toStreamingMarkdownHtml("```js\nconst x=1;\n```\ntail");
-  assert.ok(html.includes("<pre"), "闭合围栏应渲染为 <pre>");
-  assert.ok(html.includes("<code"), "闭合围栏应渲染为 <code>");
-  assert.ok(html.includes("const x=1;"), "围栏内容应保留");
-  // 围栏之后的进行中内容以纯文本存在，不被吸入代码块、也不被解析
-  assert.ok(html.includes("<p>tail</p>"), "tail 应以纯文本段落存在");
+// ── R83：<progress> 元素放行渲染 ──
+
+test("markdown 渲染（R83）：<progress> 标签放行不转义", () => {
+  const html = toSanitizedMarkdownHtml(`进度：\n\n<progress value="30" max="100"></progress>`);
+  assert.ok(html.includes("<progress"), "progress 开标签应原样保留");
+  assert.ok(html.includes("</progress>"), "progress 闭标签应原样保留");
+});
+
+test("markdown 渲染（R83）：progress 属性 value/max 保留在白名单", () => {
+  const html = toSanitizedMarkdownHtml(`<progress value="30" max="100"></progress>`);
+  assert.ok(/value="30"/.test(html), "value 属性应保留");
+  assert.ok(/max="100"/.test(html), "max 属性应保留");
+});
+
+test("markdown 渲染（R83）：其它原始 HTML 仍字面转义（progress 是唯一例外）", () => {
+  const html = toSanitizedMarkdownHtml(`<div>block</div>\n\n<progress value="1" max="2"></progress>`);
+  assert.ok(html.includes("&lt;div&gt;"), "div 仍应转义");
+  assert.ok(html.includes("<progress"), "progress 不受影响");
+});
+
+test("markdown 渲染（R83）：progress 前后的恶意标签仍转义", () => {
+  const html = toSanitizedMarkdownHtml(
+    `<script>alert(1)</script><progress value="1" max="2"></progress>`,
+  );
+  assert.ok(!html.includes("<script>"), "script 标签不应原样出现");
+  assert.ok(html.includes("&lt;script&gt;"), "script 应转义");
+  assert.ok(html.includes("<progress"), "progress 保留");
 });
 
 // ── 源码审计：钉住渲染接线（防止回退到整段纯文本绑定）──
 
-test("渲染接线审计：grouped-render 的 isStreaming 分支调用 toStreamingMarkdownHtml", () => {
-  // 编译产物位于 chat-ui/ui/.test-dist/ui/src/ui/，源文件位于 chat-ui/ui/src/ui/
-  const src = readFileSync(new URL("../../../../src/ui/chat/grouped-render.ts", import.meta.url), "utf8");
+test("渲染接线审计：grouped-render 的 isStreaming 分支调用 toStreamingMarkdownParts", () => {
+  // 兼容两种运行位置：源码直跑（tsx，测试文件就在源码目录）与 .test-dist 编译产物
+  const fromSource = new URL("./chat/grouped-render.ts", import.meta.url);
+  const fromDist = new URL("../../../../src/ui/chat/grouped-render.ts", import.meta.url);
+  const srcUrl = existsSync(fromSource) ? fromSource : fromDist;
+  const src = readFileSync(srcUrl, "utf8");
   const idx = src.indexOf("if (opts.isStreaming)");
   assert.ok(idx >= 0, "grouped-render 应保留 isStreaming 分支");
-  const branch = src.slice(idx, idx + 900);
+  const branch = src.slice(idx, idx + 2400);
   assert.ok(
-    branch.includes("toStreamingMarkdownHtml(markdown)"),
-    "streaming 分支应经 toStreamingMarkdownHtml 渐进渲染",
+    branch.includes("toStreamingMarkdownParts(markdown)"),
+    "streaming 分支应经 toStreamingMarkdownParts 渐进渲染",
   );
   assert.ok(
     !/>\$\{markdown\}<\/div>/.test(branch),
     "streaming 分支不应再把整段 markdown 原文作为纯文本直接绑定",
+  );
+  assert.ok(
+    branch.includes("chat-text--stable") && branch.includes("chat-text--tail"),
+    "streaming 分支应拆分稳定段/尾段双节点（稳定段 DOM 不随尾段每帧重建）",
   );
 });

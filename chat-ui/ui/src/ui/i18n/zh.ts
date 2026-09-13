@@ -1056,6 +1056,8 @@ export const zhDict: Record<string, string> = {
   "chat.toolCopyFailed": "复制失败",
   "chat.toolDiffAria": "代码改动：新增 {added} 行，删除 {removed} 行",
   "chat.toolExitCode": "退出码 {code}",
+  "chat.toolArgs": "输入参数",
+  "chat.toolOpenFull": "查看完整输出",
   "chat.codeCopy": "复制代码",
   "chat.codeCopied": "已复制",
   "chat.codeCopyFailed": "复制失败",

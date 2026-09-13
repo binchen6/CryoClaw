@@ -35,6 +35,10 @@ const allowedTags = [
   "tr",
   "ul",
   "img",
+  // R83：模型/内核输出的 <progress> 进度条元素（value/max 属性）是唯一放行的
+  // 「活」HTML——长任务的进度反馈需要原生进度条。属性面由 DOMPurify 白名单
+  // 收口（仅 value/max/class/title 等），事件属性一律剥除。
+  "progress",
 ];
 
 const allowedAttrs = [
@@ -50,6 +54,9 @@ const allowedAttrs = [
   "type",
   "checked",
   "disabled",
+  // <progress> 的进度属性（DOMPurify 对 progress 元素只保留白名单属性）
+  "value",
+  "max",
 ];
 const sanitizeOptions = {
   ALLOWED_TAGS: allowedTags,
@@ -163,8 +170,26 @@ export function toSanitizedMarkdownHtml(
 // Display it as escaped text so users see the literal markup.
 // Security is handled by DOMPurify, but rendering pasted HTML (e.g. error
 // pages) as formatted output is confusing UX (#13937).
+// R83 例外：<progress> 进度条标签原样放行（唯一白名单「活」元素），
+// 其余 HTML 仍字面转义；放行的标签随后仍经 DOMPurify 属性收口。
+const PROGRESS_TAG_RE = /<\/?progress\b[^>]*\/?>/gi;
 const htmlEscapeRenderer = new marked.Renderer();
-htmlEscapeRenderer.html = ({ text }: { text: string }) => escapeHtml(text);
+htmlEscapeRenderer.html = ({ text }: { text: string }) => {
+  if (!text) {
+    return "";
+  }
+  // \x00 占位符在正常文本中不会出现；即使出现，\x00数字\x00 的还原模式也只匹配
+  // 我们自己写入的占位符（数字由 String.replace 回调产出，无用户可控内容）。
+  const passthrough: string[] = [];
+  const masked = text.replace(PROGRESS_TAG_RE, (tag) => {
+    passthrough.push(tag);
+    return `\x00${passthrough.length - 1}\x00`;
+  });
+  return escapeHtml(masked).replace(/\x00(\d+)\x00/g, (_, idx: string) => {
+    const tag = passthrough[Number(idx)];
+    return tag ?? "";
+  });
+};
 
 // marked 解析异常兜底：退化为转义纯文本块，绝不让单条消息拖垮渲染
 function renderWithFallback(text: string): string {
@@ -203,23 +228,27 @@ export type MarkdownSafeSplit = { stable: string; tail: string };
 // R72 单槽 memo：rAF 每帧都会带着当前全文调用（delta 合帧后文本未变的帧也很多），
 // >50k 的稳定段又不读 LRU——同文本帧直接复用上次结果，把超长回复的每帧
 // escapeHtml+DOMPurify 降为只在文本实际变化时执行一次。只存最近一条，无泄漏面。
-let streamingMemo: { text: string; html: string } | null = null;
+// R83 改为返回 {stableHtml, tail} 两段（调用方分两个节点渲染）：
+// 稳定段节点绑定 unsafeHTML（lit 对同字符串是 no-op，DOM 不重建——代码块的
+// 复制按钮/hljs 高亮结果得以保留），尾部节点纯文本绑定（每帧只更新 textContent）。
+let streamingPartsMemo: { text: string; stableHtml: string; tail: string } | null = null;
 
-export function toStreamingMarkdownHtml(text: string): string {
+export type StreamingMarkdownParts = { stableHtml: string; tail: string };
+
+export function toStreamingMarkdownParts(text: string): StreamingMarkdownParts {
   const trimmed = text.trim();
   if (!trimmed) {
-    return "";
+    return { stableHtml: "", tail: "" };
   }
-  if (streamingMemo && streamingMemo.text === trimmed) {
-    return streamingMemo.html;
+  if (streamingPartsMemo && streamingPartsMemo.text === trimmed) {
+    return { stableHtml: streamingPartsMemo.stableHtml, tail: streamingPartsMemo.tail };
   }
   const { stable, tail } = splitMarkdownSafePrefix(trimmed);
   // 稳定段走默认缓存路径：内部以 trim 后全文作键，边界不推进时稳定段内容不变即命中；
   // splitMarkdownSafePrefix 的边界含行尾 \n，键不会因尾随空白抖动。
   const stableHtml = stable ? toSanitizedMarkdownHtml(stable) : "";
-  const html = tail ? `${stableHtml}<p>${escapeHtml(tail)}</p>` : stableHtml;
-  streamingMemo = { text: trimmed, html };
-  return html;
+  streamingPartsMemo = { text: trimmed, stableHtml, tail };
+  return { stableHtml, tail };
 }
 
 // 安全前缀切分（对齐官方 control-ui 流式 markdown 做法）：

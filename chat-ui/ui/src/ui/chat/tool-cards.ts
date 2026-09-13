@@ -1,13 +1,16 @@
 import { html, nothing } from "lit";
+import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import type { ToolCard } from "../types/chat-types.ts";
 import { icons } from "../icons.ts";
 import { formatToolDetail, resolveToolDisplay, resolveToolLanguage } from "../tool-display.ts";
 import { TOOL_INLINE_THRESHOLD } from "./constants.ts";
 import { extractTextCached } from "./message-extract.ts";
 import { isToolResultMessage } from "./message-normalizer.ts";
+import { toSanitizedMarkdownHtml } from "../markdown.ts";
+import { linkifyPaths } from "./path-linker.ts";
+import { chatTextEnhanceRef } from "./code-block-enhance.ts";
 import {
   formatToolOutputForSidebar,
-  getTruncatedPreview,
   parseDiffStat,
   resolveToolCardErrorText,
 } from "./tool-helpers.ts";
@@ -56,12 +59,23 @@ function extractToolCardsUncached(message: unknown): ToolCard[] {
       // R52 T4：call 内容块上的 diffStat（app-tool-stream 注入：input_delta 实时值 /
       // result 终态值），运行中与完成态都可显示 +a/-r 徽标
       const diffStat = parseDiffStat(item.diffStat);
+      // R83：result 载荷并入 call 块（app-tool-stream 流式 / cc-chat-history 历史合并，
+      // 字段形态与 toolResult block 对齐）——一张卡同时携带输入（args）与输出（text）。
+      // 空字符串也是有效输出（完成态），不能因 falsy 丢失
+      const text = typeof item.text === "string" ? item.text : undefined;
+      const failed = item.isError === true && text !== undefined;
+      const errorSummary = asNonEmptyString(item.toolErrorSummary);
+      const exitCode = asInteger(item.exitCode);
       cards.push({
         kind: "call",
         name: (item.name as string) ?? "tool",
         args: coerceArgs(item.arguments ?? item.args),
         ...(pending ? { pending: true } : {}),
         ...(diffStat ? { diffStat } : {}),
+        ...(text !== undefined ? { text } : {}),
+        ...(failed ? { error: text } : {}),
+        ...(errorSummary ? { errorSummary } : {}),
+        ...(exitCode !== undefined ? { exitCode } : {}),
       });
     }
   }
@@ -207,6 +221,114 @@ function renderDiffStatBadge(stat: { added: number; removed: number }) {
   </span>`;
 }
 
+// ── R83 合并卡：输入参数与输出的完整展示 ──
+
+// 卡内直接渲染输出的字符上限：超出部分截断 + 「查看完整输出」走 sidebar。
+// 卡片本体在折叠 <details> 的懒渲染 body 里，展开才解析一次，上限保住展开帧。
+const TOOL_OUTPUT_RENDER_CAP = 8_000;
+const TOOL_ARGS_RENDER_CAP = 4_000;
+
+// 有信息量的参数键数量（值非空才算）——0 个时输入块无意义（如 read 只带 path
+// 且已在 detail 行展示过时仍可能有 1 个，此时由调用方决定是否显示）
+function countMeaningfulArgs(args: unknown): number {
+  if (!args || typeof args !== "object") {
+    return 0;
+  }
+  return Object.values(args as Record<string, unknown>).filter(
+    (v) => v !== undefined && v !== null && v !== "" && !(Array.isArray(v) && v.length === 0),
+  ).length;
+}
+
+function formatToolArgsJson(args: unknown): string | null {
+  if (args === undefined || args === null) {
+    return null;
+  }
+  let pretty: string;
+  if (typeof args === "string") {
+    pretty = args;
+  } else {
+    try {
+      pretty = JSON.stringify(args, null, 2);
+    } catch {
+      return null;
+    }
+  }
+  const trimmed = pretty.trim();
+  if (!trimmed || trimmed === "{}") {
+    return null;
+  }
+  return trimmed.length > TOOL_ARGS_RENDER_CAP
+    ? `${trimmed.slice(0, TOOL_ARGS_RENDER_CAP)}…`
+    : trimmed;
+}
+
+// 纯 JSON 输出包成代码围栏再走 markdown（否则 JSON 被折成零散段落）
+function toolOutputToMarkdown(text: string): string {
+  const t = text.trim();
+  if ((t.startsWith("{") && t.endsWith("}")) || (t.startsWith("[") && t.endsWith("]"))) {
+    try {
+      JSON.parse(t);
+      return "```json\n" + t + "\n```";
+    } catch {
+      // 非合法 JSON 按普通文本渲染
+    }
+  }
+  return text;
+}
+
+function renderToolCardArgsBlock(card: ToolCard, detail: string | undefined) {
+  const argsJson = formatToolArgsJson(card.args);
+  if (!argsJson) {
+    return nothing;
+  }
+  // detail 行已展示主参数（路径/命令）时，仅当还有其余参数才展开完整输入，
+  // 避免单参数工具在 detail 行与输入块间重复展示同一内容
+  const meaningful = countMeaningfulArgs(card.args);
+  if (detail && meaningful <= 1) {
+    return nothing;
+  }
+  return html`
+    <details class="chat-tool-card__args">
+      <summary>${t("chat.toolArgs")}</summary>
+      <pre class="chat-tool-card__args-body mono">${argsJson}</pre>
+    </details>
+  `;
+}
+
+// 长输出卡内渲染（截断 + 查看完整输出入口）；短输出走 inline，空输出不渲染
+function renderToolCardOutputBody(
+  card: ToolCard,
+  onOpenSidebar: ((content: string) => void) | undefined,
+  language: string | undefined,
+) {
+  const raw = card.text;
+  if (!raw?.trim()) {
+    return nothing;
+  }
+  if (raw.length <= TOOL_INLINE_THRESHOLD) {
+    return html`<div class="chat-tool-card__inline mono">${raw}</div>`;
+  }
+  const capped = raw.length > TOOL_OUTPUT_RENDER_CAP;
+  const slice = capped ? raw.slice(0, TOOL_OUTPUT_RENDER_CAP) : raw;
+  return html`
+    <div
+      class="chat-tool-card__output chat-text"
+      ${chatTextEnhanceRef}
+      @click=${(event: Event) => event.stopPropagation()}
+    >${unsafeHTML(linkifyPaths(toSanitizedMarkdownHtml(toolOutputToMarkdown(slice))))}</div>
+    ${capped
+      ? html`<button
+          class="chat-tool-card__more"
+          type="button"
+          @click=${(event: Event) => {
+            event.stopPropagation();
+            onOpenSidebar?.(formatToolOutputForSidebar(raw, { language }));
+          }}
+        >${t("chat.toolOpenFull")}</button>`
+      : nothing}
+  `;
+}
+
 export function renderToolCardSidebar(card: ToolCard, onOpenSidebar?: (content: string) => void) {
   const display = resolveToolDisplay({ name: card.name, args: card.args });
   const detail = formatToolDetail(display);
@@ -217,8 +339,6 @@ export function renderToolCardSidebar(card: ToolCard, onOpenSidebar?: (content: 
 
   // R52 T4：失败卡可见文案优先 toolErrorSummary（内核 ≤400 字符摘要）而非裸输出开头；
   // sidebar 仍展示完整原始输出。
-  const visibleText = isFailed ? (resolveToolCardErrorText(card) ?? card.text) : card.text;
-  const hasText = Boolean(visibleText?.trim());
   const hasRawOutput = Boolean(card.text?.trim());
   // read/write/edit/apply_patch 类按文件扩展名推断 sidebar 代码围栏语言
   const language = resolveToolLanguage(card.name, card.args);
@@ -241,10 +361,7 @@ export function renderToolCardSidebar(card: ToolCard, onOpenSidebar?: (content: 
       }
     : undefined;
 
-  const isShort = hasText && (visibleText?.length ?? 0) <= TOOL_INLINE_THRESHOLD;
-  const showCollapsed = hasText && !isShort;
-  const showInline = hasText && isShort;
-  const isEmpty = !hasText;
+  const isEmpty = !hasRawOutput;
 
   // R52 T4：diff 徽标（input_delta 实时值在 result 到达时被最终统计替换或清除）
   const diffBadge = card.diffStat ? renderDiffStatBadge(card.diffStat) : nothing;
@@ -305,11 +422,9 @@ export function renderToolCardSidebar(card: ToolCard, onOpenSidebar?: (content: 
                 </span>`
               : isFailed
                 ? html`<span class="chat-tool-card__status chat-tool-card__status--failed">${icons.x}</span>`
-                : canClick
-                  ? html`<span class="chat-tool-card__action">${hasText ? t("chat.toolView") : ""} ${icons.check}</span>`
-                  : isEmpty
-                    ? html`<span class="chat-tool-card__status">${icons.check}</span>`
-                    : nothing
+                : html`<span class="chat-tool-card__status chat-tool-card__status--done">
+                    ${icons.check}<span class="chat-tool-card__status-done-label">${t("chat.toolCompleted")}</span>
+                  </span>`
           }
         </div>
       </div>
@@ -321,7 +436,9 @@ export function renderToolCardSidebar(card: ToolCard, onOpenSidebar?: (content: 
             `
           : isFailed
             ? html`
-                <div class="chat-tool-card__status-text chat-tool-card__status-text--failed">${t("chat.toolFailed")}</div>
+                <div class="chat-tool-card__status-text chat-tool-card__status-text--failed">${
+                  resolveToolCardErrorText(card) ?? t("chat.toolFailed")
+                }</div>
               `
             : isEmpty
               ? html`
@@ -329,12 +446,8 @@ export function renderToolCardSidebar(card: ToolCard, onOpenSidebar?: (content: 
                 `
               : nothing
       }
-      ${
-        showCollapsed
-          ? html`<div class="chat-tool-card__preview mono">${getTruncatedPreview(visibleText!)}</div>`
-          : nothing
-      }
-      ${showInline ? html`<div class="chat-tool-card__inline mono">${visibleText}</div>` : nothing}
+      ${renderToolCardArgsBlock(card, detail)}
+      ${!isRunning ? renderToolCardOutputBody(card, onOpenSidebar, language) : nothing}
     </div>
   `;
 }

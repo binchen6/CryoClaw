@@ -207,10 +207,9 @@ test("tool result：details.diff 文本解析出的最终统计替换实时徽�
   );
   const entry = host.toolStreamById.get("tc1");
   assert.deepEqual(entry?.diffStat, { added: 2, removed: 1 });
-  // call 卡与 result 卡都能拿到最终统计
+  // R83：result 并入 call 内容块（无独立 resultMessage）
   const callContent = (entry?.callMessage.content as Array<Record<string, unknown>>)[0];
   assert.deepEqual(callContent.diffStat, { added: 2, removed: 1 });
-  assert.deepEqual(entry?.resultMessage?.diffStat, { added: 2, removed: 1 });
   assert.equal(entry?.callMessage.pending, undefined);
 });
 
@@ -240,12 +239,15 @@ test("tool result：details 无 diff 时清除实时徽标（对齐 control-ui�
   assert.equal(callContent.diffStat, undefined);
 });
 
-test("tool result：toolErrorSummary / exitCode / toolArgs 透传到 resultMessage", () => {
+test("tool result（R83 合并）：输出/错误摘要/退出码并入 call 内容块，无独立 result 消息", () => {
   const host = makeHost();
   handleAgentEvent(
     host,
     toolEvent({ phase: "start", toolCallId: "tc1", name: "exec", args: { command: "npm test" } }),
   );
+  // 进行中：pending 标记 + 无输出
+  const pendingEntry = host.toolStreamById.get("tc1");
+  assert.equal(pendingEntry?.callMessage.pending, true);
   handleAgentEvent(
     host,
     toolEvent({
@@ -261,13 +263,57 @@ test("tool result：toolErrorSummary / exitCode / toolArgs 透传到 resultMessa
   assert.equal(entry?.isError, true);
   assert.equal(entry?.toolErrorSummary, "command failed: exit 2");
   assert.equal(entry?.exitCode, 2);
-  const resultMessage = entry?.resultMessage;
-  assert.ok(resultMessage);
-  assert.equal(resultMessage.isError, true);
-  assert.equal(resultMessage.toolErrorSummary, "command failed: exit 2");
-  assert.equal(resultMessage.exitCode, 2);
-  assert.equal(resultMessage.toolName, "exec");
-  assert.deepEqual(resultMessage.toolArgs, { command: "npm test" });
+  // call 消息：pending 消失，块上带完整 result 载荷
+  const callMessage = entry?.callMessage as Record<string, unknown>;
+  assert.equal(callMessage.pending, undefined);
+  assert.equal(callMessage.role, "assistant");
+  const block = (callMessage.content as Array<Record<string, unknown>>)[0];
+  assert.equal(block.text, "full raw output…");
+  assert.equal(block.isError, true);
+  assert.equal(block.toolErrorSummary, "command failed: exit 2");
+  assert.equal(block.exitCode, 2);
+  assert.deepEqual(block.arguments, { command: "npm test" });
+  // 时间线只有一条消息（call 含 result）
+  assert.equal(host.chatToolMessages.length, 1);
+  assert.equal(host.chatToolMessages[0], callMessage);
+});
+
+test("tool result：空字符串输出也算完成（不永远 pending）", () => {
+  const host = makeHost();
+  handleAgentEvent(
+    host,
+    toolEvent({ phase: "start", toolCallId: "tc1", name: "read", args: { path: "a.ts" } }),
+  );
+  handleAgentEvent(
+    host,
+    toolEvent({
+      phase: "result",
+      toolCallId: "tc1",
+      name: "read",
+      isError: false,
+      result: "",
+    }),
+  );
+  const entry = host.toolStreamById.get("tc1");
+  assert.equal(entry?.output, "");
+  assert.equal(entry?.callMessage.pending, undefined);
+  const block = (entry?.callMessage.content as Array<Record<string, unknown>>)[0];
+  assert.equal(block.text, "");
+});
+
+test("tool update：空 partialResult 不提前结束执行中状态", () => {
+  const host = makeHost();
+  handleAgentEvent(
+    host,
+    toolEvent({ phase: "start", toolCallId: "tc1", name: "read", args: { path: "a.ts" } }),
+  );
+  handleAgentEvent(
+    host,
+    toolEvent({ phase: "update", toolCallId: "tc1", name: "read", partialResult: "" }),
+  );
+  const entry = host.toolStreamById.get("tc1");
+  assert.equal(entry?.output, undefined);
+  assert.equal(entry?.callMessage.pending, true);
 });
 
 test("tool result：exitCode 宽容解析（非整数/缺失不计）", () => {
@@ -288,5 +334,6 @@ test("tool result：exitCode 宽容解析（非整数/缺失不计）", () => {
   );
   const entry = host.toolStreamById.get("tc1");
   assert.equal(entry?.exitCode, undefined);
-  assert.equal(entry?.resultMessage?.exitCode, undefined);
+  const block = (entry?.callMessage.content as Array<Record<string, unknown>>)[0];
+  assert.equal(block.exitCode, undefined);
 });

@@ -5,7 +5,8 @@ import type { ChatItem, MessageGroup } from "../types/chat-types.ts";
 import type { ChatAttachment } from "../ui-types.ts";
 import { computeSessionFileChanges, type FileChange } from "../chat/file-changes.ts";
 import { renderMessageGroup } from "../chat/grouped-render.ts";
-import { normalizeMessage, normalizeRoleForGrouping } from "../chat/message-normalizer.ts";
+import { normalizeMessage, normalizeRoleForGrouping, isToolResultMessage } from "../chat/message-normalizer.ts";
+import { extractTextCached } from "../chat/message-extract.ts";
 import { getLocale, t } from "../i18n.ts";
 
 // 「历史消息/工具时间线列表」独立组件（R41 Task 11）。
@@ -195,10 +196,9 @@ function buildChatItems(input: ChatHistoryInput): Array<ChatItem | MessageGroup>
     });
   }
   // toolMessages 本身是摊平的时间线（由 app-tool-stream.ts::syncToolStreamMessages 构造）：
-  // 依次包含 leadingSegment 文本 / tool call / tool result，作为普通 message 追加即可，
-  // groupMessages 会按 role 自动分组成和 history 一致的 "assistant 文本+call → toolResult" 节奏。
-  // 工具调用/结果默认显示（渲染层折叠成 summary，点击展开），不依赖 showThinking 开关；
-  // showThinking 只控制思考内容的展示。
+  // 依次包含 leadingSegment 文本 / tool call（result 已并入，R83），作为普通 message
+  // 追加即可。工具调用/结果默认显示（渲染层折叠成 summary，点击展开），不依赖
+  // showThinking 开关；showThinking 只控制思考内容的展示。
   for (let i = 0; i < tools.length; i++) {
     items.push({
       kind: "message",
@@ -216,7 +216,128 @@ function buildChatItems(input: ChatHistoryInput): Array<ChatItem | MessageGroup>
   // R41 Task 10：流式气泡（含空白时的思考指示）与子代理等待卡不再进 chatItems，
   // 改由 renderChat 线程尾部的 <cc-chat-stream> / renderSubagentCards 直接装配：
   // 每帧的流式 delta 不再 invalidate 本 memo，历史部分流式期间保持命中。
-  return groupMessages(items);
+  return groupMessages(mergeToolResultHistory(items));
+}
+
+// ── R83：历史 toolResult 消息合并进对应 assistant toolCall 内容块 ──
+// gateway transcript 里一次工具调用是两条消息（assistant 带 toolCall block +
+// toolResult 消息带输出）。流式路径已在 app-tool-stream 合并；这里把历史也合并成
+// 同一形态，保证「一次调用一张卡（输入+输出）」在流式与历史渲染一致。
+// 合并方式：把 toolResult 的 text/isError/toolErrorSummary/exitCode/diffStat 写到
+// 匹配的 toolCall block 上（消息浅拷贝，不改动 gateway 缓存里的原对象），并从时间线
+// 移除该 toolResult 消息。匹配优先 block.id === toolCallId，兜底按工具名就近匹配；
+// 无匹配的孤儿 result 保留原样（走既有独立渲染路径）。
+type OpenCallSlot = { outIdx: number; blockIdx: number; name: string };
+
+function isCallBlock(value: unknown): value is Record<string, unknown> {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const kind = (typeof (value as Record<string, unknown>).type === "string"
+    ? ((value as Record<string, unknown>).type as string)
+    : ""
+  ).toLowerCase();
+  return ["toolcall", "tool_call", "tooluse", "tool_use"].includes(kind);
+}
+
+function mergeToolResultHistory(items: ChatItem[]): ChatItem[] {
+  const hasAnyToolResult = items.some((item) => {
+    if (item.kind !== "message") {
+      return false;
+    }
+    const m = item.message as Record<string, unknown>;
+    return isToolResultMessage(m) || typeof m.toolCallId === "string";
+  });
+  if (!hasAnyToolResult) {
+    return items;
+  }
+
+  const out: ChatItem[] = [];
+  const openById = new Map<string, OpenCallSlot>();
+  const openByName = new Map<string, OpenCallSlot[]>();
+
+  const registerCallBlocks = (item: ChatItem & { kind: "message" }, outIdx: number) => {
+    const content = (item.message as Record<string, unknown>).content;
+    if (!Array.isArray(content)) {
+      return;
+    }
+    for (let blockIdx = 0; blockIdx < content.length; blockIdx++) {
+      const block = content[blockIdx];
+      if (!isCallBlock(block)) {
+        continue;
+      }
+      // 已并入 result 的块（text 字段存在）不再登记
+      if (typeof block.text === "string") {
+        continue;
+      }
+      const name = typeof block.name === "string" ? block.name : "tool";
+      const slot: OpenCallSlot = { outIdx, blockIdx, name };
+      if (typeof block.id === "string" && block.id) {
+        openById.set(block.id, slot);
+      }
+      const byName = openByName.get(name);
+      if (byName) {
+        byName.push(slot);
+      } else {
+        openByName.set(name, [slot]);
+      }
+    }
+  };
+
+  for (const item of items) {
+    if (item.kind !== "message") {
+      out.push(item);
+      continue;
+    }
+    const m = item.message as Record<string, unknown>;
+    const isToolResultMsg = isToolResultMessage(m) || typeof m.toolCallId === "string";
+    if (isToolResultMsg) {
+      const slot =
+        (typeof m.toolCallId === "string" && openById.get(m.toolCallId)) ||
+        (typeof m.toolName === "string" ? openByName.get(m.toolName)?.shift() : undefined) ||
+        openByName.get("tool")?.shift();
+      if (!slot) {
+        // 孤儿 result（无对应 call）：保留原消息走既有渲染路径
+        out.push(item);
+        continue;
+      }
+      const target = out[slot.outIdx] as ChatItem & { kind: "message" };
+      const targetMsg = target.message as Record<string, unknown>;
+      const content = Array.isArray(targetMsg.content)
+        ? (targetMsg.content as unknown[]).slice()
+        : [];
+      const block = { ...(content[slot.blockIdx] as Record<string, unknown>) };
+      const text = extractTextCached(m) ?? "";
+      block.text = text;
+      if (m.isError === true) {
+        block.isError = true;
+      }
+      if (typeof m.toolErrorSummary === "string" && m.toolErrorSummary.trim()) {
+        block.toolErrorSummary = m.toolErrorSummary;
+      }
+      if (typeof m.exitCode === "number" && Number.isInteger(m.exitCode)) {
+        block.exitCode = m.exitCode;
+      }
+      const diffStat = m.diffStat;
+      if (diffStat && typeof diffStat === "object") {
+        block.diffStat = diffStat;
+      }
+      content[slot.blockIdx] = block;
+      out[slot.outIdx] = {
+        ...target,
+        // 消息浅拷贝：不改动 gateway 缓存里的原对象（WeakMap 派生缓存按引用隔离，
+        // 合并产物只在本组件 memo 生命周期内存在）
+        message: { ...targetMsg, content },
+      };
+      if (typeof m.toolCallId === "string") {
+        openById.delete(m.toolCallId);
+      }
+      continue;
+    }
+    out.push(item);
+    registerCallBlocks(item, out.length - 1);
+  }
+  return out;
 }
 
 type ChatItemsMemo = {

@@ -58,10 +58,10 @@ export type ToolStreamEntry = {
   updatedAt: number;
   // 该 tool 之前冻结下来的 assistant 文本（若有）。只会设一次，就在 entry 创建那一刻。
   leadingSegment?: StreamSegment;
-  // 分成两条 message：call 走 assistant 气泡 + 内联 tool 卡，result 走独立的 toolResult 气泡。
-  // 和 history 里的消息形态完全一致，复用同一套 renderGroupedMessage 分支。
+  // R83 合并展示：一次工具调用只产一条 message（assistant 气泡 + 内联 tool 卡）。
+  // result 到达后把输出/错误/退出码/diff 并入 call 内容块重建本消息，不再单独发
+  // role=toolResult 气泡——同一次调用的输入（命令/参数）与输出（结果）在同一张卡。
   callMessage: Record<string, unknown>;
-  resultMessage?: Record<string, unknown>;
 };
 
 type ToolStreamHost = {
@@ -145,10 +145,13 @@ function formatToolOutput(value: unknown): string | null {
   return `${truncated.text}\n\n… truncated (${truncated.total} chars, showing first ${truncated.text.length}).`;
 }
 
-// 构造 assistant 侧的 tool call 消息：**不挂 toolCallId 到顶层**。
+// 构造 tool call 消息：**不挂 toolCallId 到顶层**。
 // 挂了的话 normalizeMessage 会把它归类成 toolResult，渲染走无气泡的 renderCollapsedToolCards 路径；
 // 不挂则 role 保持 assistant → 走正常气泡分支，tool card 以折叠形式嵌在气泡里（和 history 一致）。
+// R83：result 到达后（entry.output 有值），输出文本与 isError/toolErrorSummary/exitCode
+// 直接并入同一个 toolCall 内容块——渲染层从块上读到这些字段即得「输入+输出」合并卡。
 function buildToolCallMessage(entry: ToolStreamEntry): Record<string, unknown> {
+  const hasResult = entry.output !== undefined;
   return {
     role: "assistant",
     runId: entry.runId,
@@ -160,32 +163,22 @@ function buildToolCallMessage(entry: ToolStreamEntry): Record<string, unknown> {
         arguments: entry.args ?? {},
         // R52 T4：实时/最终 diff 统计随 call 内容块进渲染层（extractToolCards 读 item.diffStat）
         ...(entry.diffStat ? { diffStat: { ...entry.diffStat } } : {}),
+        // R83：result 载荷并入（字段形态与 toolResult block 对齐，渲染层统一读取）
+        ...(hasResult
+          ? {
+              text: entry.output ?? "",
+              ...(entry.isError === true ? { isError: true } : {}),
+              ...(entry.toolErrorSummary ? { toolErrorSummary: entry.toolErrorSummary } : {}),
+              ...(entry.exitCode !== undefined ? { exitCode: entry.exitCode } : {}),
+            }
+          : {}),
       },
     ],
     timestamp: entry.startedAt,
     // 尚无 result 的 call 标记为 pending → 渲染层显示「执行中」而非「已完成」。
-    // result 到达后 callMessage 会被重建，此标记随之消失；历史消息无此字段，不受影响。
-    ...(entry.output === undefined ? { pending: true } : {}),
-  };
-}
-
-// 构造 toolResult 消息：走 role=toolResult 路径，自成一个 group，渲染为独立的 "Tool output" 气泡。
-function buildToolResultMessage(entry: ToolStreamEntry): Record<string, unknown> {
-  return {
-    role: "toolResult",
-    toolCallId: entry.toolCallId,
-    runId: entry.runId,
-    content: [{ type: "text", text: entry.output ?? "" }],
-    timestamp: entry.updatedAt,
-    // 失败标记随消息进渲染层（extractToolCards 读消息级 isError → ToolCard.error）
-    ...(entry.isError === true ? { isError: true } : {}),
-    // R52 T4：result 卡需要工具名/参数来做语言推断（sidebar 代码围栏）与 detail 展示；
-    // toolArgs 是引用透传（同一对象），无额外拷贝开销。
-    toolName: entry.name,
-    ...(entry.args !== undefined ? { toolArgs: entry.args } : {}),
-    ...(entry.toolErrorSummary ? { toolErrorSummary: entry.toolErrorSummary } : {}),
-    ...(entry.exitCode !== undefined ? { exitCode: entry.exitCode } : {}),
-    ...(entry.diffStat ? { diffStat: { ...entry.diffStat } } : {}),
+    // result 到达后 callMessage 会被重建（块上带输出），此标记随之消失；
+    // 历史消息无此字段（历史合并见 cc-chat-history.ts::mergeToolResultHistory），不受影响。
+    ...(hasResult ? {} : { pending: true }),
   };
 }
 
@@ -267,7 +260,7 @@ function segmentRenderMessage(seg: StreamSegment): Record<string, unknown> {
 }
 
 function syncToolStreamMessages(host: ToolStreamHost) {
-  // 摊平成时间线：每条 entry 依次贡献 leadingSegment（若有）→ callMessage → resultMessage（若已出）
+  // 摊平成时间线：每条 entry 依次贡献 leadingSegment（若有）→ callMessage（含并入的 result）
   const out: Record<string, unknown>[] = [];
   // 先放被 trim 淘汰的 leadingSegments，保证渲染时序与原本一致（它们时间最早）。
   for (const seg of host.evictedLeadingSegments) {
@@ -283,9 +276,6 @@ function syncToolStreamMessages(host: ToolStreamHost) {
       out.push(segmentRenderMessage(entry.leadingSegment));
     }
     out.push(entry.callMessage);
-    if (entry.resultMessage) {
-      out.push(entry.resultMessage);
-    }
   }
   // 内容未变（tick 间无 entry 增改）时保留旧数组引用，让下游引用比较 memo 继续命中
   const prev = host.chatToolMessages;
@@ -578,7 +568,9 @@ export function handleAgentEvent(host: ToolStreamHost, payload?: AgentEventPaylo
       sessionKey,
       name,
       args,
-      output: output || undefined,
+      // R83：result 阶段空字符串也是有效 result（`|| undefined` 会把空输出当成「无
+      // result」，卡片永远停在执行中）；update 阶段的空 partialResult 仍视为无输出
+      output: phase === "result" ? (output ?? undefined) : output || undefined,
       isError,
       diffStat: phase === "input_delta" ? liveDiffStat : finalDiffStat,
       toolErrorSummary,
@@ -589,9 +581,6 @@ export function handleAgentEvent(host: ToolStreamHost, payload?: AgentEventPaylo
       callMessage: {},
     };
     entry.callMessage = buildToolCallMessage(entry);
-    if (entry.output !== undefined) {
-      entry.resultMessage = buildToolResultMessage(entry);
-    }
     host.toolStreamById.set(toolCallId, entry);
     host.toolStreamOrder.push(toolCallId);
   } else {
@@ -599,8 +588,8 @@ export function handleAgentEvent(host: ToolStreamHost, payload?: AgentEventPaylo
     if (args !== undefined) {
       entry.args = args;
     }
-    if (output !== undefined) {
-      entry.output = output || undefined;
+    if (phase === "result" ? output !== null : Boolean(output)) {
+      entry.output = output ?? "";
     }
     if (isError !== undefined) {
       entry.isError = isError;
@@ -620,14 +609,11 @@ export function handleAgentEvent(host: ToolStreamHost, payload?: AgentEventPaylo
       }
     }
     entry.updatedAt = now;
-    // 名称/参数变更要反映到 call 消息，但保留其 timestamp（start 时钉住）。
+    // 名称/参数/result 载荷变更要反映到 call 消息，但保留其 timestamp（start 时钉住）。
     entry.callMessage = {
       ...buildToolCallMessage(entry),
       timestamp: entry.callMessage.timestamp ?? entry.startedAt,
     };
-    if (entry.output !== undefined) {
-      entry.resultMessage = buildToolResultMessage(entry);
-    }
   }
 
   trimToolStream(host);

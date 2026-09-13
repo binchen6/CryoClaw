@@ -1168,6 +1168,203 @@ img.chat-avatar {
   word-break: break-word;
 }
 
+/* ── R83 合并卡：完成态徽标 / 输入参数块 / 卡内输出渲染 ── */
+.chat-tool-card__status--done {
+  gap: var(--spacer-4);
+}
+
+.chat-tool-card__status-done-label {
+  font-family: var(--font-meta);
+  font-size: var(--font-size-meta);
+  color: var(--text-muted);
+}
+
+.chat-tool-card__args {
+  margin-top: var(--spacer-6);
+  border: var(--hairline);
+  border-radius: var(--radius-8);
+  background: var(--bg-muted);
+}
+
+.chat-tool-card__args summary {
+  display: flex;
+  align-items: center;
+  padding: var(--spacer-4) var(--spacer-8);
+  cursor: pointer;
+  font-family: var(--font-meta);
+  font-size: var(--font-size-meta);
+  color: var(--text-muted);
+  list-style: none;
+  user-select: none;
+}
+
+.chat-tool-card__args summary::-webkit-details-marker {
+  display: none;
+}
+
+.chat-tool-card__args summary::before {
+  content: "▸";
+  font-size: var(--text-2xs);
+  margin-right: var(--spacer-4);
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+
+.chat-tool-card__args[open] summary::before {
+  transform: rotate(90deg);
+}
+
+.chat-tool-card__args summary:hover {
+  color: var(--text);
+}
+
+.chat-tool-card__args-body {
+  margin: 0;
+  padding: var(--spacer-8) var(--spacer-10);
+  border-top: var(--hairline);
+  font-family: var(--mono);
+  font-size: var(--font-size-meta);
+  line-height: 1.5;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 220px;
+  overflow: auto;
+}
+
+/* 卡内长输出渲染（markdown/JSON 围栏）：视觉上与折叠组的输出区块一致 */
+.chat-tool-card__output {
+  margin-top: var(--spacer-6);
+  padding: var(--spacer-8) var(--spacer-10);
+  border: var(--hairline);
+  border-radius: var(--radius-8);
+  background: var(--bg-muted);
+  font-size: var(--text-sm);
+}
+
+.chat-tool-card__output pre {
+  margin: var(--spacer-4) 0;
+}
+
+.chat-tool-card__more {
+  appearance: none;
+  border: none;
+  background: none;
+  padding: var(--spacer-4) 0 0;
+  margin: 0;
+  cursor: pointer;
+  font-size: var(--text-sm);
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.chat-tool-card__more:hover {
+  text-decoration: underline;
+}
+
+/* 摘要行右端聚合状态（执行中/失败/已完成） */
+.chat-tools-summary__status {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacer-4);
+  font-family: var(--font-meta);
+  font-size: var(--font-size-meta);
+  flex-shrink: 0;
+}
+
+.chat-tools-summary__status svg {
+  width: 13px;
+  height: 13px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 2px;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.chat-tools-summary__status--done {
+  color: var(--ok);
+}
+
+.chat-tools-summary__status--failed {
+  color: var(--destructive);
+}
+
+.chat-tools-summary__status--running .chat-tool-card__spinner {
+  position: static;
+  margin: 0;
+}
+
+/* 流式尾段（未闭合内容）：纯文本绑定，等宽排版与 <p> 一致 */
+.chat-text--tail {
+  white-space: pre-wrap;
+  word-break: break-word;
+  min-height: 1.4em;
+}
+
+/* <progress> 进度条（模型输出的原生 progress 元素，R83 放行渲染）：
+   外观统一到 accent 轨道条；value/max 由 DOMPurify 属性白名单收口 */
+.chat-text progress,
+.sidebar-markdown progress,
+.chat-tool-card__output progress {
+  appearance: none;
+  -webkit-appearance: none;
+  display: block;
+  width: min(320px, 100%);
+  height: 6px;
+  margin: var(--spacer-8) 0;
+  border: none;
+  border-radius: var(--radius-pill);
+  background: var(--bg-muted);
+  overflow: hidden;
+}
+
+.chat-text progress::-webkit-progress-bar,
+.sidebar-markdown progress::-webkit-progress-bar,
+.chat-tool-card__output progress::-webkit-progress-bar {
+  background: var(--bg-muted);
+  border-radius: var(--radius-pill);
+}
+
+.chat-text progress::-webkit-progress-value,
+.sidebar-markdown progress::-webkit-progress-value,
+.chat-tool-card__output progress::-webkit-progress-value {
+  background: var(--accent);
+  border-radius: var(--radius-pill);
+  transition: width var(--duration-normal) var(--ease-out);
+}
+
+.chat-text progress::-moz-progress-bar,
+.sidebar-markdown progress::-moz-progress-bar,
+.chat-tool-card__output progress::-moz-progress-bar {
+  background: var(--accent);
+  border-radius: var(--radius-pill);
+}
+
+.chat-text progress:indeterminate,
+.sidebar-markdown progress:indeterminate,
+.chat-tool-card__output progress:indeterminate {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    var(--accent-subtle) 50%,
+    transparent 100%
+  );
+  animation: chat-progress-indeterminate 1.4s var(--ease-in-out) infinite;
+}
+
+@keyframes chat-progress-indeterminate {
+  0% {
+    opacity: .4;
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    opacity: .4;
+  }
+}
+
 /* ── Tool 调用折叠组（多 tool card 合并展示） ── */
 .chat-tools-summary {
   display: flex;

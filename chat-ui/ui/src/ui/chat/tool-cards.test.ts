@@ -165,3 +165,65 @@ test("tool cards：历史 toolResult block 级 toolErrorSummary/exitCode 宽容�
   assert.equal(card.errorSummary, "exit 1");
   assert.equal(card.exitCode, 1);
 });
+
+// ── R83：合并卡提取（call 块自带 result 载荷）──
+
+test("tool cards（R83）：call 块带输出 → 单张卡同时携带输入与输出", () => {
+  // 与 app-tool-stream.ts::buildToolCallMessage result 后形态同构
+  const msg = {
+    role: "assistant",
+    content: [
+      {
+        type: "toolCall",
+        id: "tc1",
+        name: "exec",
+        arguments: { command: "npm test" },
+        text: "all passed",
+        exitCode: 0,
+      },
+    ],
+  };
+  const cards = extractToolCards(msg);
+  assert.equal(cards.length, 1);
+  assert.equal(cards[0].kind, "call");
+  assert.equal(cards[0].pending, undefined);
+  assert.equal(cards[0].text, "all passed");
+  assert.equal(cards[0].error, undefined);
+  assert.equal(cards[0].exitCode, 0);
+  assert.deepEqual(cards[0].args, { command: "npm test" });
+});
+
+test("tool cards（R83）：call 块带 isError → 卡带 error + errorSummary", () => {
+  const msg = {
+    role: "assistant",
+    content: [
+      {
+        type: "toolCall",
+        id: "tc1",
+        name: "exec",
+        arguments: { command: "npm test" },
+        text: "boom",
+        isError: true,
+        toolErrorSummary: "exit 2",
+        exitCode: 2,
+      },
+    ],
+  };
+  const card = extractToolCards(msg)[0];
+  assert.equal(card.error, "boom");
+  assert.equal(card.errorSummary, "exit 2");
+  assert.equal(card.exitCode, 2);
+});
+
+test("tool cards（R83）：call 块空字符串输出 → 完成态（text 空串）", () => {
+  const msg = {
+    role: "assistant",
+    content: [
+      { type: "toolCall", id: "tc1", name: "read", arguments: { path: "a.ts" }, text: "" },
+    ],
+  };
+  const card = extractToolCards(msg)[0];
+  assert.equal(card.pending, undefined);
+  assert.equal(card.text, "");
+  assert.equal(card.error, undefined);
+});

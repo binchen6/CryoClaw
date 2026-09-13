@@ -993,6 +993,8 @@ export const enDict: Record<string, string> = {
   "chat.toolCopyFailed": "Copy failed",
   "chat.toolDiffAria": "Code changes: {added} lines added, {removed} lines removed",
   "chat.toolExitCode": "Exit code {code}",
+  "chat.toolArgs": "Input",
+  "chat.toolOpenFull": "Open full output",
   "chat.codeCopy": "Copy code",
   "chat.codeCopied": "Copied",
   "chat.codeCopyFailed": "Copy failed",

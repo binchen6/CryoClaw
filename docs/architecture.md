@@ -360,7 +360,7 @@ Custom NSIS assisted installer with:
 │     ├── gateway-auth.ts (token management)                   │
 │     └── logger.ts (file + console)                           │
 │                                                              │
-│  preload.ts ─── contextBridge (108 IPC + 6 listeners)        │
+│  preload.ts ─── contextBridge (111 IPC + 6 listeners)        │
 └──────────────────┬───────────────────────────────────────────┘
                    │
      ┌─────────────┴─────────────┐
