@@ -152,7 +152,7 @@ function renderTtsControls(state: AppViewState) {
 export function resetVoiceTab() { resetVoiceState(); }
 
 export function renderTabVoice(state: AppViewState) {
-  // 网关断线后标记状态过期，重连回来时重新拉取（对齐 tab-memory/tab-session-usage）。
+  // 网关断线后标记状态过期，重连回来时重新拉取（对齐 tab-memory/tab-usage）。
   if (s.wasConnected && !state.connected) {
     s.ttsLoaded = false;
     s.talkLoaded = false;

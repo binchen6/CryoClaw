@@ -79,3 +79,6 @@ repowiki/
 
 # playwright-cli 会话产物（截图/快照/控制台日志）
 **/.playwright-cli/
+
+# tsc 单文件误编译产物（勿提交）
+src/**/*.js

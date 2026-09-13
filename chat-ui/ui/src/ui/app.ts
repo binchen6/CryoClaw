@@ -57,15 +57,17 @@ import {
   emptyProgressCardState,
   type ProgressCardState,
 } from "./controllers/progress-card.ts";
+import { emptyBoardState, type BoardState } from "./controllers/board.ts";
 import { resolveInjectedAssistantIdentity } from "./assistant-identity.ts";
 import { loadAssistantIdentity as loadAssistantIdentityInternal } from "./controllers/assistant-identity.ts";
 import { getConfigSnapshot, deriveConfiguredModels, patchConfig } from "./controllers/config.ts";
-import { getCachedGatewayModelEntries } from "./controllers/models.ts";
+import { getCachedGatewayModelEntries, resolveModelSelectKey } from "./controllers/models.ts";
 import { extractAdvancedView, applyAdvancedSave } from "./views/settings/tab-channels.lib.ts";
 import { markSessionMeterDirty } from "./context-meter.ts";
 import { isWebbridgePinStaleError } from "./webbridge-error.ts";
 import { closeTopDialog, focusOpenDialogIfNeeded, isEscapeKey } from "./dialog-a11y.ts";
 import { resolveThinkingCapabilities } from "./chat/thinking-levels.ts";
+import { loadChatHistory as loadChatHistoryInternal } from "./controllers/chat.ts";
 import { getLocale, t, tWithDetail } from "./i18n.ts";
 import { loadSettings, type UiSettings } from "./storage.ts";
 import { type ChatAttachment, type ChatQueueItem, type ConfiguredModel, type CronFormState } from "./ui-types.ts";
@@ -188,10 +190,13 @@ export class OpenClawApp extends LitElement {
     chatVisibleMessageCount: { state: true },
     chatToolMessages: { state: true },
     chatStream: { state: true },
+    chatThinkingStream: { state: true },
+    chatNarrationText: { state: true },
     chatStreamStartedAt: { state: true },
     chatRunId: { state: true },
     planState: { state: true },
     progressCard: { state: true },
+    board: { state: true },
     compactionStatus: { state: true },
     fallbackNotice: { state: true },
     compactionCheckpoints: { state: true },
@@ -359,6 +364,12 @@ export class OpenClawApp extends LitElement {
   chatVisibleMessageCount = 0;
   chatToolMessages: unknown[] = [];
   chatStream: string | null = null;
+  // R88 思考过程流式 / 中途解说流式（agent 事件 thinking / item-preamble 驱动；
+  // rAF 节流提交，见 controllers/chat.ts scheduleChatStreamFlush）
+  chatThinkingStream: string | null = null;
+  chatNarrationText: string | null = null;
+  chatPendingThinkingText: string | null = null;
+  chatPendingNarrationText: string | null = null;
   chatStreamStartedAt: number | null = null;
   // 最后一次流式活动时间戳（挂起流看门狗锚点）。刻意非响应式：delta 高频更新，
   // 不值得触发 Lit 重渲染；看门狗只读它。
@@ -373,6 +384,8 @@ export class OpenClawApp extends LitElement {
   planState: PlanStreamState | null = null;
   // Progress Card（内核 progressCard.get/put + progressCard.changed，每会话一卡）
   progressCard: ProgressCardState = emptyProgressCardState(this.sessionKey);
+  // R89 Board（会话仪表盘）：board.get + board.changed 事件驱动的会话级状态
+  board: BoardState = emptyBoardState(this.sessionKey);
   compactionStatus: CompactionStatus | null = null;
   // 模型 fallback 提示（lifecycle 事件驱动，5s 自动消失；chat 终态清理）
   fallbackNotice: FallbackNotice | null = null;
@@ -491,9 +504,9 @@ export class OpenClawApp extends LitElement {
   gitNetworkBusy: "push" | "pull" | null = null;
 
   // 执行权限模式（官方 tools.exec.mode 合法值：deny / allowlist / ask / auto / full；
-  // 三态 UI 用其中 ask / auto / full——"approve-all" 不是内核合法值，写入会触发
-  // 内核 resolveExecPolicyForMode 抛 Unsupported exec mode）
-  execMode: "ask" | "auto" | "full" = "ask";
+  // R89 对齐内核 2026.9.3 五档枚举。聊天页加号菜单三态用 ask/auto/full；
+  // 设置页高级 tab 提供完整五档。"approve-all" 不是内核合法值，写入会抛 Unsupported exec mode）
+  execMode: "deny" | "allowlist" | "ask" | "auto" | "full" = "ask";
 
   skillsLoading = false;
   skillsReport: SkillStatusReport | null = null;
@@ -827,6 +840,15 @@ export class OpenClawApp extends LitElement {
     resetToolStreamInternal(this as unknown as Parameters<typeof resetToolStreamInternal>[0]);
   }
 
+  // R88 seq-gap 自愈：agent stream:"error"（reason:"seq gap"）→ 静默拉历史对齐。
+  // 文本基线修复由 chat-stream-reducer 的 message 快照交叉校验（下一帧自纠）。
+  onStreamSeqGap() {
+    void loadChatHistoryInternal(this as unknown as Parameters<typeof loadChatHistoryInternal>[0], {
+      mergeIfStale: true,
+      silent: true,
+    });
+  }
+
   resetChatScroll() {
     resetChatScrollInternal(this as unknown as Parameters<typeof resetChatScrollInternal>[0]);
   }
@@ -1157,9 +1179,16 @@ export class OpenClawApp extends LitElement {
     this.updateThinkingCapabilities();
   }
 
+  // R89：会话实际生效模型——内核行 model 可能是裸 id，先解析回全键；无显式模型回退全局默认。
+  private resolveEffectiveSessionModel(): string | null {
+    const sessionRow = this.sessionsResult?.sessions?.find((r) => r.key === this.sessionKey);
+    const resolved = resolveModelSelectKey(sessionRow?.model ?? null, this.configuredModels);
+    return resolved ?? this.currentModel;
+  }
+
   // 从 models.list 目录缓存查当前模型的 compat（supportedReasoningEfforts 精确回退数据源）
   private currentModelCatalogCompat(): Record<string, unknown> | undefined {
-    const key = this.currentModel;
+    const key = this.resolveEffectiveSessionModel();
     if (!key) return undefined;
     const slash = key.indexOf("/");
     if (slash <= 0) return undefined;
@@ -1170,11 +1199,12 @@ export class OpenClawApp extends LitElement {
 
   // 根据当前模型计算支持的思考级别（内核会话行 thinkingLevels 优先，本地 provider 回退兜底）
   updateThinkingCapabilities() {
-    const model = this.configuredModels.find(m => m.key === this.currentModel);
+    const effectiveModel = this.resolveEffectiveSessionModel();
+    const model = this.configuredModels.find((m) => m.key === effectiveModel);
     const sessionRow = this.sessionsResult?.sessions?.find((r) => r.key === this.sessionKey);
     const caps = resolveThinkingCapabilities({
       provider: model?.provider,
-      modelKey: this.currentModel,
+      modelKey: effectiveModel,
       sessionThinkingLevels: sessionRow?.thinkingLevels,
       sessionThinkingDefault: sessionRow?.thinkingDefault,
       catalogCompat: this.currentModelCatalogCompat(),
@@ -1189,11 +1219,12 @@ export class OpenClawApp extends LitElement {
 
   // 解析智能默认思考级别（内核 thinkingDefault 优先）
   resolveDefaultThinkLevel(): string {
-    const model = this.configuredModels.find(m => m.key === this.currentModel);
+    const effectiveModel = this.resolveEffectiveSessionModel();
+    const model = this.configuredModels.find((m) => m.key === effectiveModel);
     const sessionRow = this.sessionsResult?.sessions?.find((r) => r.key === this.sessionKey);
     return resolveThinkingCapabilities({
       provider: model?.provider,
-      modelKey: this.currentModel,
+      modelKey: effectiveModel,
       sessionThinkingLevels: sessionRow?.thinkingLevels,
       sessionThinkingDefault: sessionRow?.thinkingDefault,
       catalogCompat: this.currentModelCatalogCompat(),

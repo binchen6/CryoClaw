@@ -432,6 +432,21 @@
 - **安装器更新链路硬 bug（发版冒烟拦截，本轮最重要产出）**：静默更新 909.6→909.7 / 同版重装稳定失败——旧卸载器 `--updated` 模式下 electron-builder 26.7.0 atomicRMDir 逐项 rename 报 `Can't rename $INSTDIR` → exit 2 → 新安装器 5 轮重试（每轮 ~4 分钟）→ `uninstallFailed` MessageBox **无 /SD，静默链路永卡弹窗**（用户可见 "Failed to uninstall old application files"）。909.6 全旧代码对照复现 = 上游缺陷非本仓回归；Node/PowerShell/NSIS-mini 三重进程外复刻 rename 全过，失败仅在真实卸载器进程内（被锁文件未能定位，跨进程 LVM_GETITEMTEXT 乱码，取证边界如实记录）。修复双宏：`customRemoveFiles` 整体接管移除（RMDir /r 直删，更新场景无需暂存/还原语义）+ `customUnInstallCheck` 接管旧卸载器失败分支（兜底清场放行安装，弹窗永不出现）。909.6→909.7 升级一次性经历旧卸载器慢重试后成功，909.7 起快速路径。详见 gotcha #81/#82。
 - **验证与交付**：全量 **992 pass / 0 fail / 4 skipped**（vitest 158 + node 163 + chat-ui 594 + scripts 77）；dupcheck 1.03%（81 clones）；README 基线同步；文档精简（R52–R55 压缩、测试基线口径修正）。v2026.909.7。
 
+### R88/R89 · 流式输出大版本：思考流式 + 中途解说流式 + 自愈强化 + 仪表盘适配 + 用量页重构 + 模型显示修复 + 五档执行权限（完成，随 v2026.913.3 发版）
+
+用户闲时任务批次：①思考流式 2a中途消息流式修复 2b输出自愈 3文件卡片点击 5适配仪表盘 6会话用量→用量（参照官方 /usage）7输入框模型/思考强度显示 8执行权限挡位对齐最新内核 9发版流程。
+- **内核取证前置**：从 gateway.asar 抽取 2026.9.3 全量 dist（272MB，junction 组装 node_modules 可直接运行 gateway 做探针）；一次性 ed25519 设备身份 + v2 签名握手（复刻 CryoClaw device-auth）使探针拿到 operator.admin scopes，直连 WS 记录原始事件流。关键实证：① thinking 事件 `data:{text(全量),delta}` 只受 silent 门控、与 reasoningDefault 无关，coalesce 合并 75ms（LIVE_TEXT_PACING_MS）；② 工具间解说文本被内核投影为 `stream:"item" kind:"preamble"（progressText 全量扁平）` 且**刻意不进 chat delta 广播**（shouldSuppressAssistantEventForLiveChat: commentary 对 live chat 抑制）——这就是「中途消息不流式」的根因；③ run 活跃时再发消息：内核回即时空 final 占位新 runId，合并答案仍以原 runId 流式（现有 preserveRunState 路径成立）；④ delta 帧恒带 message 全量快照（resolveBroadcastDelta 同源构造）。
+- **思考流式（目标1）**：ChatState 新增 chatThinkingStream(+pending)，与 chatStream 同帧 rAF 提交；text 全量优先（含 delta）、phase 重启整体替换；渲染在流式气泡内新增实时思考区（.chat-thinking-live，默认展开限高滚动，纯文本绑定免 markdown 解析）。E2E 实证 10 采样帧、峰值 173 字符。
+- **中途解说流式（目标2a）**：消费 kind:"preamble"/"answer_candidate"（后者仅在正文未流式时显示，防双份）；tool start 冻结时 narrationSegment 先于 leadingSegment 入时间线（解说不含 frozenPrefix——它本就不在 chat delta 累计文本里）；answer_candidate 与正文并存时跳过。单测钉住 事件→pending→冻结→时间线顺序 全链。
+- **自愈强化（目标2b）**：chat-stream-reducer append 帧对齐官方 DT 合并——current+delta 与 message 全量不对齐时（丢帧/重连收养基线为空），且快照是 base（frozenPrefix+current）的前向扩展 → 以全量自纠；无关/滞后快照保守追加不倒退。新增 agent stream:"error"（reason:"seq gap"）消费：刷新看门狗锚点 + 触发静默 mergeIfStale 历史对齐（app.onStreamSeqGap 钩子）。
+- **文件卡片点击（目标3）**：双根因——① Electron shell.openPath 失败 resolve 错误串而非 reject（catch 永不触发=零反馈），主进程转 reject；② 渲染层 FILE_CARD_EXTS 与主进程 SAFE_OPEN_EXTS 漂移（.py/.js/.ts/.yml 有卡片但打开必被拒）。修复：chat-ui/src/safe-open.ts 副本 + media-enhance.sync.test.ts 两侧一致性守卫；白名单外扩展名点击降级「在文件夹中定位」（安全边界不动：shell.openPath 白名单不扩代码类，.js 关联 WSH 可执行）。gotcha #108。
+- **仪表盘适配（目标5）**：新 controllers/board.ts（board.get + board.changed + resetBoardForSession，全照 progress-card 生命周期模式：会话切换/onHello/事件失效重拉/竞态守卫/pending 补跑）；widget iframe src = gateway HTTP origin + 内核 frameUrl（bt 票据 HMAC 20min TTL 自鉴权，重拉换新票自动刷新）；聊天页出可折叠「仪表盘」面板（<details> 展开才挂 iframe，sandbox allow-scripts allow-same-origin allow-forms 与官方 control-ui 同款）；board 不可用静默为空（旧内核/宿主关闭）。
+- **用量页重构（目标6）**：tab-session-usage → tab-usage（lib 纯函数 + 组件 + 8 测试）。三个 RPC：usage.cost（每日 tokens/cost）、sessions.usage（limit 1000 + aggregates：messages/tools/byModel/byProvider/byChannel）、usage.status（服务商配额窗口，60s TTL）。UI：今天/7d/30d/全部范围切换 + 刷新、四指标卡、每日活动堆叠条（最近30天）、Top 模型/服务商/渠道份额条、会话明细加成本列。CDP 实测：范围切换/指标卡/每日条/Top 分布全渲染（usage.cost 的成本缓存首次冷读空属内核 stale-while-revalidate 设计，刷新即出）。
+- **模型/思考强度显示（目标7）**：CDP 实证根因——内核会话行 model 存裸 id（"deepseek-flash"）而选项值是 "provider/model" 全键 → select 匹配失败显示空白。修复：resolveModelSelectKey（裸 id 唯一命中解析回全键）+ 未匹配模型补「当前会话」动态选项；updateThinkingCapabilities/resolveDefaultThinkLevel 改用会话实际生效模型（resolveEffectiveSessionModel）而非全局默认做 compat 回退。
+- **执行权限五档（目标8）**：EXEC_MODES = deny|allowlist|ask|auto|full（对齐 2026.9.3 ToolExecSchema；auto=allowlist+on-miss+autoReview）。extractAdvancedView/applyAdvancedSave 收五档，设置页高级 tab 五选一（+deny/allowlist i18n），聊天页加号菜单保持常用三档（deny/allowlist 生效时三档均不选中不再误导）。
+- **审查补漏**：会话切换清 chatThinkingStream/chatNarrationText（session-transition，防跨会话残留）；注释引用改名清理。
+- **验证**：全量 1148 pass / 0 fail（vitest 181 + node 207 + chat-ui 679 + scripts 81）；CDP 实测（用量 tab DOM 断言、模型选择器选中项、思考流式采样、聊天发送链路）；CDP 探针脚本坑（CDP id 必须数字）未入 gotchas（一次性工具）。
+
 ## 📦 发版与实测经验（套路已验证多次）
 
 

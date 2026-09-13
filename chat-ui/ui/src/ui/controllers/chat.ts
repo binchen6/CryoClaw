@@ -57,6 +57,15 @@ export type ChatState = {
   chatStreamFrozenPrefix: string;
   // 最后一次流式活动时间戳（delta 接受/tool/thinking 事件），挂起流看门狗以此为锚
   chatLastActivityAt: number | null;
+  // R88 思考过程流式：当前 reasoning phase 的累计文本（agent 事件 stream:"thinking"，
+  // data.text 为该 phase 全量）。run 终态/新 phase 重启时整体替换。
+  chatThinkingStream: string | null;
+  chatPendingThinkingText: string | null;
+  // R88 中途解说流式：内核把工具之间的 narration 文本经 agent 事件 stream:"item"
+  // (kind:"preamble") 投递（刻意不进 chat delta 广播），progressText 为该段全量。
+  // 下一个 tool start 到来时由 app-tool-stream 冻结进时间线。
+  chatNarrationText: string | null;
+  chatPendingNarrationText: string | null;
   lastError: string | null;
 };
 
@@ -106,17 +115,26 @@ function scheduleChatHistoryHydration(state: ChatState, sessionKey: string, tota
 }
 
 // chat delta 一帧只提交一次最新文本，别让每个 token 都触发 Lit 全量重渲染。
-function scheduleChatStreamFlush(state: ChatState) {
+// thinking/narration 复用同一帧：三类高频流式文本统一 rAF 节流提交。
+// 导出供 app-tool-stream 的 thinking/item 事件处理复用（同一 rAF 帧，合并提交）。
+export function scheduleChatStreamFlush(state: ChatState) {
   if (state.chatStreamFrame !== null) {
     return;
   }
   state.chatStreamFrame = requestAnimationFrame(() => {
     state.chatStreamFrame = null;
-    if (state.chatPendingStreamText === null) {
-      return;
+    if (state.chatPendingStreamText !== null) {
+      state.chatStream = state.chatPendingStreamText;
+      state.chatPendingStreamText = null;
     }
-    state.chatStream = state.chatPendingStreamText;
-    state.chatPendingStreamText = null;
+    if (state.chatPendingThinkingText !== null) {
+      state.chatThinkingStream = state.chatPendingThinkingText;
+      state.chatPendingThinkingText = null;
+    }
+    if (state.chatPendingNarrationText !== null) {
+      state.chatNarrationText = state.chatPendingNarrationText;
+      state.chatPendingNarrationText = null;
+    }
   });
 }
 
@@ -131,6 +149,14 @@ export function flushPendingChatStream(state: ChatState): string {
   if (state.chatPendingStreamText !== null) {
     state.chatStream = state.chatPendingStreamText;
     state.chatPendingStreamText = null;
+  }
+  if (state.chatPendingThinkingText !== null) {
+    state.chatThinkingStream = state.chatPendingThinkingText;
+    state.chatPendingThinkingText = null;
+  }
+  if (state.chatPendingNarrationText !== null) {
+    state.chatNarrationText = state.chatPendingNarrationText;
+    state.chatPendingNarrationText = null;
   }
   return state.chatStream ?? "";
 }
@@ -150,6 +176,11 @@ export function resetChatStreamState(state: ChatState) {
   state.chatLastActivityAt = null;
   // 新一轮 run 重新开始，frozenPrefix 也要清，避免上一轮的前缀切错本轮的累计文本。
   state.chatStreamFrozenPrefix = "";
+  // R88：实时思考/解说随 run 终态一并清理（final 后由历史刷新按 transcript 还原）
+  state.chatPendingThinkingText = null;
+  state.chatThinkingStream = null;
+  state.chatPendingNarrationText = null;
+  state.chatNarrationText = null;
 }
 
 // R30：mergeIfStale 保留本地（内核快照滞后）后的延迟二次拉取。

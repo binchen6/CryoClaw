@@ -548,7 +548,6 @@ export function applyKimiSearchSave(draft: Record<string, unknown>, params: Kimi
 /* ── 高级（openclaw.json 部分） ── */
 
 export type GatewayReloadMode = "off" | "restart" | "hot" | "hybrid";
-export type ExecMode = "ask" | "auto" | "full";
 export type ExecHost = "auto" | "gateway" | "node" | "sandbox";
 export type SandboxMode = "off" | "non-main" | "all";
 export type SandboxWorkspaceAccess = "rw" | "ro" | "none";
@@ -585,7 +584,8 @@ export function extractAdvancedView(config: Record<string, unknown> | null | und
     gatewayReloadMode:
       rawReloadMode === "off" || rawReloadMode === "restart" || rawReloadMode === "hot" || rawReloadMode === "hybrid"
         ? rawReloadMode : "hybrid",
-    execMode: rawExecMode === "auto" || rawExecMode === "full" ? rawExecMode : "ask",
+    // R89 对齐内核 2026.9.3：tools.exec.mode 枚举为 deny|allowlist|ask|auto|full
+    execMode: EXEC_MODES.includes(rawExecMode as ExecMode) ? (rawExecMode as ExecMode) : "ask",
     execHost: rawExecHost === "gateway" || rawExecHost === "node" || rawExecHost === "sandbox" ? rawExecHost : "auto",
     execReviewerModel: typeof reviewer.model === "string" ? reviewer.model : "",
     sandboxMode: rawSandboxMode === "non-main" || rawSandboxMode === "all" ? rawSandboxMode : "off",
@@ -593,6 +593,12 @@ export function extractAdvancedView(config: Record<string, unknown> | null | und
     imessageEnabled: imessage.enabled !== false,
   };
 }
+
+// R89：内核 2026.9.3 ToolExecSchema.tools.exec.mode 完整枚举（zod-schema.agent-runtime）。
+// deny=完全禁用；allowlist=仅白名单；ask=白名单外询问；auto=白名单外自动审批（allowlist
+// + on-miss + autoReview）；full=全部放行。旧三态 ask/auto/full 继续有效。
+export const EXEC_MODES = ["deny", "allowlist", "ask", "auto", "full"] as const;
+export type ExecMode = (typeof EXEC_MODES)[number];
 
 export interface AdvancedSaveParams {
   gatewayReloadMode?: unknown;
@@ -622,7 +628,7 @@ export function applyAdvancedSave(draft: Record<string, unknown>, params: Advanc
 
   // 执行权限（approve-all 历史残留归一化为 full）
   const rawExecMode = params.execMode === "approve-all" ? "full" : params.execMode;
-  if (rawExecMode === "ask" || rawExecMode === "auto" || rawExecMode === "full") {
+  if (EXEC_MODES.includes(rawExecMode as ExecMode)) {
     const tools = ensureRecord(draft, "tools");
     const exec = ensureRecord(tools, "exec");
     exec.mode = rawExecMode;

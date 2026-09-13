@@ -124,3 +124,22 @@ export async function loadGatewayModels(
   })();
   return inflight;
 }
+
+// ── R89：composer 模型选择器的显示值解析 ──
+// 内核会话行的 model 可能是裸模型 id（如 "deepseek-flash"，provider 缺省），
+// 而 configuredModels 的 key 是 "provider/model" 全键。直接把裸 id 塞进 select
+// 匹配不到任何选项 → 选择器显示空白（v2026.913.3 修复目标）。
+// 解析顺序：全键原样 → 裸 id 唯一命中 → 解析失败返回 null（调用方补动态选项）。
+export function resolveModelSelectKey(
+  rawSessionModel: string | null | undefined,
+  configuredModels: Array<{ key: string }>,
+): string | null {
+  const raw = (rawSessionModel ?? "").trim();
+  if (!raw) return null;
+  if (raw.includes("/")) return raw;
+  const hits = configuredModels.filter((m) => {
+    const slash = m.key.indexOf("/");
+    return slash > 0 && m.key.slice(slash + 1) === raw;
+  });
+  return hits.length === 1 ? hits[0]!.key : null;
+}

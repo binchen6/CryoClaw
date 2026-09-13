@@ -1181,7 +1181,7 @@ export function resetMemoryTab() { resetMemoryState(); }
 export function renderTabMemory(state: AppViewState) {
   if (!s.initialized) init(state);
 
-  // 网关断线后标记状态过期，重连回来时重新拉取（对齐 tab-session-usage 的做法）。
+  // 网关断线后标记状态过期，重连回来时重新拉取（对齐 tab-usage 的做法）。
   if (s.wasConnected && !state.connected) s.statusLoaded = false;
   s.wasConnected = state.connected;
   if (!s.statusLoaded && !s.statusLoading && state.connected && state.client) {

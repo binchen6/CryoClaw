@@ -49,6 +49,12 @@ import {
   loadProgressCard,
   type ProgressCardChangedPayload,
 } from "./controllers/progress-card.ts";
+import {
+  handleBoardChanged,
+  loadBoard,
+  type BoardChangedPayload,
+  type BoardHost,
+} from "./controllers/board.ts";
 import { loadCommands } from "./controllers/commands.ts";
 import type { TaskSummary } from "./types.ts";
 import { GatewayBrowserClient } from "./gateway.ts";
@@ -443,6 +449,8 @@ export function connectGateway(host: GatewayHost) {
       void reconcileQuestionPrompts(host);
       // Progress Card：重连后重拉当前会话卡片（断连窗口内的 changed 事件已丢失）
       void loadProgressCard(host as unknown as OpenClawApp);
+      // R89 Board（会话仪表盘）：重连后重拉（board 不可用时静默为空）
+      void loadBoard(host as unknown as BoardHost);
       // worktree 徽标数据（sessions.list 行不带 worktree 字段，靠 ownerId 反推）
       void loadWorktrees(host as unknown as OpenClawApp);
       // 预取 / 命令目录（供 compose 补全）。force：内核升级换装后 Gateway 重启会重新
@@ -683,6 +691,15 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
   if (evt.event === "progressCard.changed") {
     const app = host as unknown as OpenClawApp;
     handleProgressCardChanged(app, evt.payload as ProgressCardChangedPayload | undefined);
+    app.requestUpdate?.();
+    return;
+  }
+
+  // R89 Board（会话仪表盘）：board.update 后定向广播 {sessionKey, revision}，
+  // 按当前会话过滤后失效重拉（重拉会换新 ticket，iframe src 随之刷新）
+  if (evt.event === "board.changed") {
+    const app = host as unknown as OpenClawApp;
+    handleBoardChanged(app as unknown as BoardHost, evt.payload as BoardChangedPayload | undefined);
     app.requestUpdate?.();
     return;
   }

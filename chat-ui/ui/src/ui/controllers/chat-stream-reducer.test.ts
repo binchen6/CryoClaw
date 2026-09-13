@@ -2,7 +2,37 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { reduceChatStreamDelta } from "./chat-stream-reducer.ts";
 
-test("protocol v4 deltaText appends without re-reading cumulative message", () => {
+test("protocol v4 append with consistent full snapshot appends the delta", () => {
+  // 内核 broadcastChatDelta：同一帧的 message 全量与 deltaText 恒一致（同源构造），
+  // 一致时走纯追加（官方 DT 合并行为）。
+  const result = reduceChatStreamDelta({
+    currentText: "Hello",
+    deltaText: " world",
+    message: { content: [{ type: "text", text: "Hello world" }] },
+  });
+  assert.deepEqual(result, {
+    text: "Hello world",
+    accepted: true,
+    source: "deltaText",
+    replaced: false,
+  });
+});
+
+test("self-heal: append frame after a lost frame resyncs from the full snapshot", () => {
+  // R88 对齐官方 DT：丢帧（seq gap / 重连收养后基线为空）时 current+delta 与全量
+  // 不再对齐，下一帧以 message 全量自纠，而不是把增量追加在坏基线上。
+  const result = reduceChatStreamDelta({
+    currentText: "",
+    deltaText: " world",
+    message: { content: [{ type: "text", text: "Hello big world" }] },
+  });
+  assert.equal(result?.text, "Hello big world");
+  assert.equal(result?.accepted, true);
+  assert.equal(result?.source, "snapshot");
+});
+
+test("self-heal: stale (behind) snapshot on an append frame keeps the local stream", () => {
+  // 全量比本地可见文本还短（滞后读/异常帧）：不能倒退，保守追加增量等下一帧对齐
   const result = reduceChatStreamDelta({
     currentText: "Hello",
     deltaText: " world",

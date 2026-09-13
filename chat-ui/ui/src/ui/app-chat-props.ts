@@ -53,6 +53,7 @@ export function buildChatProps(state: AppViewState): ChatProps {
     // Progress Card：折叠偏好持久化在 UiSettings（chatProgressCardCollapsed）；
     // dismiss 走 progressCard.put + expectedRevision 乐观锁（细节见 controllers/progress-card.ts）
     progressCard: state.progressCard,
+    board: state.board ?? null,
     progressCardCollapsed: state.settings.chatProgressCardCollapsed,
     onToggleProgressCardCollapse: () =>
       state.applySettings({
@@ -97,6 +98,8 @@ export function buildChatProps(state: AppViewState): ChatProps {
         });
     },
     stream: state.chatStream,
+    thinkingStream: state.chatThinkingStream ?? null,
+    narrationText: state.chatNarrationText ?? null,
     streamStartedAt: state.chatStreamStartedAt,
     draft: state.chatMessage,
     queue: state.chatQueue,

@@ -67,7 +67,7 @@ function createAdvancedState() {
     launchAtLogin: false,
     clawHubRegistry: "",
     gatewayReloadMode: "hybrid" as "off" | "restart" | "hot" | "hybrid",
-    execMode: "ask" as "ask" | "auto" | "full",
+    execMode: "ask" as "deny" | "allowlist" | "ask" | "auto" | "full",
     execHost: "auto" as "auto" | "gateway" | "node" | "sandbox",
     execReviewerModel: "",
     sandboxMode: "off" as "off" | "non-main" | "all",
@@ -667,8 +667,15 @@ export function renderTabAdvanced(state: AppViewState) {
 
       <div class="oc-settings__form-group">
         <label class="oc-settings__label">${t("settings.advanced.execMode")}</label>
+        <!-- R89 对齐内核 2026.9.3 tools.exec.mode 五档（deny/allowlist 为内核新增） -->
         <div class="oc-settings__radio-group">
-          ${([["ask", "settings.advanced.execModeAsk"], ["auto", "settings.advanced.execModeAuto"], ["full", "settings.advanced.execModeApproveAll"]] as const).map(([value, key]) => html`
+          ${([
+            ["deny", "settings.advanced.execModeDeny"],
+            ["allowlist", "settings.advanced.execModeAllowlist"],
+            ["ask", "settings.advanced.execModeAsk"],
+            ["auto", "settings.advanced.execModeAuto"],
+            ["full", "settings.advanced.execModeApproveAll"],
+          ] as const).map(([value, key]) => html`
             <label class="oc-settings__radio">
               <input type="radio" name="adv-exec" value=${value}
                 .checked=${s.execMode === value}

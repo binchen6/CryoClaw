@@ -31,6 +31,7 @@ import { renderConfiguredModelOptions } from "../components/model-options.ts";
 import { loadModelOrg } from "./settings/model-org.lib.ts";
 import { computeStopButtonVisible } from "./chat-stop-button-gate.ts";
 import { KNOWN_THINKING_LEVELS } from "../chat/thinking-levels.ts";
+import { resolveModelSelectKey } from "../controllers/models.ts";
 import { resolveActiveToolName } from "../chat/tool-summary.ts";
 import { appendQuoteToDraft } from "../chat/quote-text.ts";
 import { isFailedSubagentStatus, selectSubagentCards, type SubagentCard } from "../chat/subagent-status.ts";
@@ -40,6 +41,7 @@ import { renderPlanPanel } from "./plan-panel.ts";
 import type { PlanStreamState } from "../plan-stream.ts";
 import { renderProgressCard } from "./progress-card.ts";
 import type { ProgressCardState } from "../controllers/progress-card.ts";
+import type { BoardState } from "../controllers/board.ts";
 import type { FallbackNotice } from "../app-tool-stream.ts";
 
 export { computeStopButtonVisible };
@@ -74,6 +76,8 @@ export type ChatProps = {
   // Progress Card（内核 progressCard.* 每会话一卡，compose 上方浮卡）
   progressCard?: ProgressCardState | null;
   progressCardCollapsed?: boolean;
+  // R89 Board（会话仪表盘，内核 board.get + board.changed）：会话有 board 时出面板
+  board?: BoardState | null;
   onToggleProgressCardCollapse?: () => void;
   onDismissProgressCard?: () => void;
   messages: unknown[];
@@ -86,6 +90,9 @@ export type ChatProps = {
   questionPrompts?: QuestionPrompt[];
   onResolveQuestion?: (id: string, answers: Record<string, string[]> | null) => void;
   stream: string | null;
+  // R88 思考过程流式 / 中途解说流式（agent 事件驱动，run 终态清空）
+  thinkingStream?: string | null;
+  narrationText?: string | null;
   streamStartedAt: number | null;
   assistantAvatarUrl?: string | null;
   draft: string;
@@ -133,8 +140,8 @@ export type ChatProps = {
   onRequestUpdate?: () => void;
   // / 命令补全目录（官方 commands.list）
   commands?: CommandEntry[] | null;
-  // 执行权限三态 + 待审批队列（官方 tools.exec.mode + exec.approval）
-  execMode?: "ask" | "auto" | "full";
+  // 执行权限挡位（内核 tools.exec.mode 五档枚举）+ 待审批队列（exec.approval）
+  execMode?: "deny" | "allowlist" | "ask" | "auto" | "full";
   onExecModeChange?: (mode: "ask" | "auto" | "full") => void;
   execApprovalQueue?: ExecApprovalRequest[];
   execApprovalBusy?: boolean;
@@ -552,6 +559,39 @@ function renderAttachmentPreview(props: ChatProps) {
   `;
 }
 
+// ── R89 会话仪表盘（内核 board.get + board.changed；会话有 board 时出面板） ──
+function renderBoardPanel(props: ChatProps) {
+  const board = props.board ?? null;
+  if (!board || board.sessionKey !== props.sessionKey || board.widgets.length === 0) {
+    return nothing;
+  }
+  // ticket 20 分钟 TTL（内核 BOARD_VIEW_TICKET_TICKET_TTL）：面板以 <details> 常折，
+  // 展开才挂 iframe（src 由重拉换新 ticket 时刷新），最大化降低 ticket 过期面。
+  return html`
+    <details class="chat-board">
+      <summary class="chat-board__summary">
+        <svg class="chat-board__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>
+        <span>${t("chat.board.title")}</span>
+        <span class="chat-board__count">${board.widgets.length}</span>
+      </summary>
+      <div class="chat-board__body">
+        ${board.widgets.map((widget) => html`
+          <div class="chat-board__widget">
+            <div class="chat-board__widget-name">${widget.kindLabel ?? widget.name}</div>
+            <iframe
+              class="chat-board__frame"
+              src=${widget.src}
+              title=${widget.name}
+              sandbox="allow-scripts allow-same-origin allow-forms"
+              loading="lazy"
+            ></iframe>
+          </div>
+        `)}
+      </div>
+    </details>
+  `;
+}
+
 // ── 待审批队列（compose 上方；执行权限三态已整合进加号菜单） ──
 function renderExecStrip(props: ChatProps) {
   const queue = props.execApprovalQueue ?? [];
@@ -760,6 +800,8 @@ function renderPlusMenu(props: ChatProps) {
     }
   };
 
+  // R89：内核 2026.9.3 tools.exec.mode 五档；聊天页快捷菜单提供常用三档，
+  // deny/allowlist（设置页五档）生效时菜单三档均不选中，避免误导当前档位。
   const execMode = props.execMode ?? "ask";
   const execModes: Array<["ask" | "auto" | "full", string]> = [
     ["ask", t("chat.execModeAsk")],
@@ -949,7 +991,14 @@ export function renderChat(props: ChatProps) {
   // 模型选择器按会话取值：内核 per-session 持久化 model（sessions.patch），
   // 切会话后选择器必须反映该会话真实模型，否则显示上一个会话的模型而实际按本会话跑
   // （thinkingLevel 走 activeSession 同源，模型此前漏了）。会话无显式 model → 用全局默认。
-  const modelSelectValue = activeSession?.model || props.currentModel || "";
+  // R89：内核行 model 可能是裸模型 id（provider 缺省），先解析回 "provider/model" 全键；
+  // 仍解析不出（未知模型）时 selectValue 为 null → 渲染层补一个「当前会话」动态选项，
+  // 不再让选择器显示空白（v2026.913.3 修复）。
+  const rawSessionModel = activeSession?.model ?? null;
+  const resolvedModelKey = resolveModelSelectKey(rawSessionModel, props.configuredModels ?? []);
+  const modelSelectValue: string | null = rawSessionModel
+    ? (resolvedModelKey ?? rawSessionModel)
+    : (props.currentModel || null);
   const thinkingActive = Boolean((props.thinkingToggleLevel && props.thinkingToggleLevel !== "off") || (props.thinkingLevel && props.thinkingLevel !== "off"));
   const showReasoning = Boolean(props.showThinking && (reasoningLevel !== "off" || thinkingActive));
   const assistantIdentity = {
@@ -987,6 +1036,8 @@ export function renderChat(props: ChatProps) {
     (Array.isArray(props.messages) ? props.messages.length : 0) === 0 &&
     (Array.isArray(props.toolMessages) ? props.toolMessages.length : 0) === 0 &&
     props.stream === null &&
+    (props.thinkingStream ?? null) === null &&
+    (props.narrationText ?? null) === null &&
     subagentCards.length === 0;
   // starter prompt chips：点击即填入并发送（与 onGoalCommand 同样的同步「先改草稿再发送」时序）
   const starterKeys = ["chat.starter1", "chat.starter2", "chat.starter3", "chat.starter4"];
@@ -1079,10 +1130,13 @@ export function renderChat(props: ChatProps) {
       ${
         // R41 Task 10：流式气泡/思考指示抽为独立组件，高频更新只命中其自身 render()；
         // 出现条件与原 buildChatItems 的 stream 条目一致（stream !== null，空白时组件内部
-        // 降级为思考指示）。子代理等待卡仍在其后（原「置于时间线末尾（流式气泡之后）」）。
-        props.stream !== null
+        // 降级为思考指示）。R88：思考/解说流式存在时同样挂载（组件内部渲染实时思考区）。
+        // 子代理等待卡仍在其后（原「置于时间线末尾（流式气泡之后）」）。
+        props.stream !== null || props.thinkingStream !== null || props.narrationText !== null
           ? html`<cc-chat-stream
               .stream=${props.stream}
+              .thinkingStream=${props.thinkingStream ?? null}
+              .narrationText=${props.narrationText ?? null}
               .streamStartedAt=${props.streamStartedAt}
               .assistantName=${props.assistantName}
               .assistantAvatar=${assistantIdentity.avatar}
@@ -1282,6 +1336,8 @@ export function renderChat(props: ChatProps) {
         onDismiss: props.onDismissProgressCard,
       })}
 
+      ${renderBoardPanel(props)}
+
       ${
         props.showNewMessages
           ? html`
@@ -1436,7 +1492,7 @@ export function renderChat(props: ChatProps) {
               ? html`
                 <select
                   class="chat-compose__model-select"
-                  .value=${modelSelectValue}
+                  .value=${modelSelectValue ?? ""}
                   @change=${(e: Event) => {
                     const val = (e.target as HTMLSelectElement).value;
                     props.onModelChange?.(val);
@@ -1444,6 +1500,9 @@ export function renderChat(props: ChatProps) {
                   ?disabled=${!props.connected}
                 >
                   ${renderConfiguredModelOptions(props.configuredModels, loadModelOrg(), modelSelectValue || undefined, true)}
+                  ${modelSelectValue !== null && !props.configuredModels.some((m) => m.key === modelSelectValue)
+                    ? html`<option value=${modelSelectValue} selected>${modelSelectValue} · ${t("chat.model.sessionCurrent")}</option>`
+                    : nothing}
                 </select>
               `
               : props.configuredModels && props.configuredModels.length === 1

@@ -65,6 +65,107 @@
   margin: var(--spacer-6) 0 0;
 }
 
+/* ── R88 思考/解说流式区（run 进行中的实时推理与工具间解说）── */
+.chat-thinking-live-bubble {
+  color: var(--text-muted);
+}
+
+.chat-thinking-live[open] .chat-thinking-live__text {
+  max-height: 220px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.chat-thinking-live .chat-thinking-live__text {
+  font-size: var(--text-sm);
+  line-height: var(--leading-relaxed, 1.6);
+  color: var(--text-muted);
+  white-space: pre-wrap;
+  word-break: break-word;
+  padding: var(--spacer-6) var(--spacer-10);
+}
+
+.chat-stream-narration {
+  font-size: var(--text-sm);
+  line-height: var(--leading-relaxed, 1.6);
+  color: var(--text-muted);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* ── R89 会话仪表盘（board.get + board.changed，会话级 board 面板）── */
+.chat-board {
+  margin: var(--spacer-8) 0;
+  border: var(--hairline);
+  border-radius: var(--radius-12);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+}
+.chat-board__summary {
+  display: flex;
+  align-items: center;
+  gap: var(--spacer-8);
+  padding: var(--spacer-10) var(--spacer-12);
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  color: var(--text-secondary);
+  transition: color var(--duration-fast) var(--ease-out), background var(--duration-fast) var(--ease-out);
+}
+.chat-board__summary::-webkit-details-marker {
+  display: none;
+}
+.chat-board__summary::before {
+  content: "▸";
+  font-size: var(--text-2xs);
+  flex-shrink: 0;
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+.chat-board[open] > .chat-board__summary::before {
+  transform: rotate(90deg);
+}
+.chat-board__summary:hover {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+.chat-board__icon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+.chat-board__count {
+  margin-left: auto;
+  min-width: 20px;
+  text-align: center;
+  padding: 0 var(--spacer-6);
+  border-radius: var(--radius-8);
+  background: var(--glass-sm);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+.chat-board__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacer-8);
+  padding: 0 var(--spacer-12) var(--spacer-12);
+}
+.chat-board__widget-name {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  margin-bottom: var(--spacer-4);
+}
+.chat-board__frame {
+  width: 100%;
+  height: 320px;
+  border: var(--hairline);
+  border-radius: var(--radius-8);
+  background: var(--bg);
+  box-sizing: border-box;
+}
+
 /* ── 加号菜单 ── */
 .chat-plus {
   position: relative;

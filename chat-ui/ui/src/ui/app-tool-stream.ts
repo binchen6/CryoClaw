@@ -2,6 +2,10 @@ import { truncateText } from "./format.ts";
 import { debugLog } from "./debug.ts";
 import { handlePlanToolEvent, UPDATE_PLAN_TOOL_NAME, type PlanStreamHost } from "./plan-stream.ts";
 import {
+  scheduleChatStreamFlush,
+  type ChatState,
+} from "./controllers/chat.ts";
+import {
   countUnifiedDiffStat,
   parseDiffStat,
   type ToolDiffStat,
@@ -58,6 +62,10 @@ export type ToolStreamEntry = {
   updatedAt: number;
   // 该 tool 之前冻结下来的 assistant 文本（若有）。只会设一次，就在 entry 创建那一刻。
   leadingSegment?: StreamSegment;
+  // R88 中途解说段（agent 事件 stream:"item" kind:"preamble" 的 progressText）：
+  // 内核刻意不把 narration 并入 chat delta 广播，本字段把它按时间序冻结进时间线，
+  // 渲染顺序 narrationSegment → leadingSegment → callMessage。
+  narrationSegment?: StreamSegment;
   // R83 合并展示：一次工具调用只产一条 message（assistant 气泡 + 内联 tool 卡）。
   // result 到达后把输出/错误/退出码/diff 并入 call 内容块重建本消息，不再单独发
   // role=toolResult 气泡——同一次调用的输入（命令/参数）与输出（结果）在同一张卡。
@@ -82,6 +90,14 @@ type ToolStreamHost = {
   chatStreamFrozenPrefix: string;
   // 最后一次流式活动时间戳（挂起流看门狗锚点；可选以兼容测试替身）
   chatLastActivityAt?: number | null;
+  // R88 思考流式（chatThinkingStream 及其 pending）与中途解说（chatNarrationText
+  // 及其 pending）：字段定义见 controllers/chat.ts ChatState。可选以兼容测试替身。
+  chatThinkingStream?: string | null;
+  chatPendingThinkingText?: string | null;
+  chatNarrationText?: string | null;
+  chatPendingNarrationText?: string | null;
+  // R88 seq-gap agent 错误事件（stream:"error" reason:"seq gap"）触发的历史对齐钩子
+  onStreamSeqGap?: () => void;
   // 被 trimToolStream 淘汰的 entry 上的 leadingSegment 要保留下来，否则一轮工具调用很多时
   // （超过 TOOL_STREAM_LIMIT），早期段会被一起删掉，渲染层只剩 chatStream 的尾段，让用户看着像"开头丢了"。
   evictedLeadingSegments: StreamSegment[];
@@ -231,20 +247,22 @@ function trimToolStream(host: ToolStreamHost) {
   const removed = host.toolStreamOrder.splice(0, overflow);
   for (const id of removed) {
     const entry = host.toolStreamById.get(id);
-    if (entry?.leadingSegment && entry.leadingSegment.text.trim().length > 0) {
-      // 把这条 entry 上的 leading 文本搬到 sticky 列表，渲染时仍能看到（顺序在最前面）。
-      host.evictedLeadingSegments.push(entry.leadingSegment);
-      if (host.evictedLeadingSegments.length > EVICTED_SEGMENTS_LIMIT) {
-        host.evictedLeadingSegments.splice(
-          0,
-          host.evictedLeadingSegments.length - EVICTED_SEGMENTS_LIMIT,
-        );
+    for (const seg of [entry?.narrationSegment, entry?.leadingSegment]) {
+      if (seg && seg.text.trim().length > 0) {
+        // 把这条 entry 上的 leading 文本搬到 sticky 列表，渲染时仍能看到（顺序在最前面）。
+        host.evictedLeadingSegments.push(seg);
+        if (host.evictedLeadingSegments.length > EVICTED_SEGMENTS_LIMIT) {
+          host.evictedLeadingSegments.splice(
+            0,
+            host.evictedLeadingSegments.length - EVICTED_SEGMENTS_LIMIT,
+          );
+        }
+        debugLog("tool", "evict tool entry, retain leadingSegment", {
+          toolCallId: id,
+          segmentLen: seg.text.length,
+          evictedTotal: host.evictedLeadingSegments.length,
+        });
       }
-      debugLog("tool", "evict tool entry, retain leadingSegment", {
-        toolCallId: id,
-        segmentLen: entry.leadingSegment.text.length,
-        evictedTotal: host.evictedLeadingSegments.length,
-      });
     }
     host.toolStreamById.delete(id);
   }
@@ -271,6 +289,10 @@ function syncToolStreamMessages(host: ToolStreamHost) {
     const entry = host.toolStreamById.get(id);
     if (!entry) {
       continue;
+    }
+    // R88 时间线顺序：解说段 → 冻结正文段 → 工具卡（与 transcript 语义一致）
+    if (entry.narrationSegment && entry.narrationSegment.text.trim().length > 0) {
+      out.push(segmentRenderMessage(entry.narrationSegment));
     }
     if (entry.leadingSegment && entry.leadingSegment.text.trim().length > 0) {
       out.push(segmentRenderMessage(entry.leadingSegment));
@@ -317,6 +339,9 @@ export function resetToolStream(host: ToolStreamHost) {
   host.evictedLeadingSegments = [];
   // 清掉 frozenPrefix —— 这个 host-level 字段会跨 turn 残留，新 turn 的累计文本完全不该再切旧前缀。
   host.chatStreamFrozenPrefix = "";
+  // R88：中途解说随 tool stream 一并清（与 run 级 resetChatStreamState 双保险）
+  host.chatNarrationText = null;
+  host.chatPendingNarrationText = null;
   flushToolStreamSync(host);
 }
 
@@ -474,11 +499,86 @@ export function handleAgentEvent(host: ToolStreamHost, payload?: AgentEventPaylo
     return;
   }
 
-  if (payload.stream !== "tool") {
-    // thinking/assistant 流事件：run 仍在活跃的佐证——匹配当前 run 时刷新看门狗锚点，
-    // 长思考（无 delta/无 tool）不被误判为挂起流。
+  // R88 seq-gap：内核对 per-run 文本流乱序/丢帧广播 stream:"error"（data.reason
+  // === "seq gap"，仅发给 control-ui 可见连接）。此前被静默丢弃——丢掉的 delta
+  // 会让后续 append 全部建立在坏基线上。现在触发静默历史对齐；文本基线自愈由
+  // chat-stream-reducer 的全量交叉校验完成（下一帧 message 快照纠正）。
+  if (payload.stream === "error") {
+    const sessionKey = typeof payload.sessionKey === "string" ? payload.sessionKey : undefined;
     if (
-      (payload.stream === "thinking" || payload.stream === "assistant") &&
+      (!payload.sessionKey || sessionKey === host.sessionKey) &&
+      (!host.chatRunId || !payload.runId || payload.runId === host.chatRunId)
+    ) {
+      host.chatLastActivityAt = Date.now();
+      debugLog("stream", "agent stream error (seq gap) → resync", payload.data);
+      host.onStreamSeqGap?.();
+    }
+    return;
+  }
+
+  // R88 思考流式：内核在 reasoning 产出期间持续广播 stream:"thinking"，
+  // data.text 为当前 reasoning phase 的全量累计（2026.9.3 emitReasoningStream：
+  // delta 相对上次流式快照的增量，text 已包含 delta），phase 重启时 text 整体变短。
+  if (payload.stream === "thinking") {
+    const sessionKey = typeof payload.sessionKey === "string" ? payload.sessionKey : undefined;
+    if (
+      host.chatRunId &&
+      (!payload.runId || payload.runId === host.chatRunId) &&
+      (!sessionKey || sessionKey === host.sessionKey)
+    ) {
+      host.chatLastActivityAt = Date.now();
+      const data = payload.data ?? {};
+      const text = typeof data.text === "string" ? data.text : null;
+      const delta = typeof data.delta === "string" ? data.delta : "";
+      const prev = host.chatPendingThinkingText ?? host.chatThinkingStream ?? "";
+      // text（全量）优先；仅 delta 时本地累计。phase 重启 = text 变短 → 直接替换。
+      const next = text !== null ? text : prev + delta;
+      if (next.trim().length > 0) {
+        host.chatPendingThinkingText = next;
+        scheduleChatStreamFlush(host as unknown as ChatState);
+      }
+    }
+    return;
+  }
+
+  // R88 中途解说流式：内核把 assistant 的 commentary（工具间解说）投影为
+  // stream:"item" kind:"preamble"（data.phase:"update"|"end"，data.progressText
+  // 为该段全量扁平文本，data.itemId 区分段落）。该文本刻意不进 chat delta 广播
+  // （shouldSuppressAssistantEventForLiveChat：commentary 对 live chat 抑制），
+  // 不消费它用户就看不到中途消息的流式输出，只能等 final 后历史刷新才出现。
+  if (payload.stream === "item") {
+    const data = payload.data ?? {};
+    const kind = typeof data.kind === "string" ? data.kind : "";
+    if (kind === "preamble" || kind === "answer_candidate") {
+      const sessionKey = typeof payload.sessionKey === "string" ? payload.sessionKey : undefined;
+      if (
+        host.chatRunId &&
+        (!payload.runId || payload.runId === host.chatRunId) &&
+        (!sessionKey || sessionKey === host.sessionKey)
+      ) {
+        host.chatLastActivityAt = Date.now();
+        // answer_candidate 与 chat delta 的正文流可能并存：正文已在流式时不重复显示
+        const liveBody = (
+          (host.chatPendingStreamText ?? "") ||
+          (host.chatStream ?? "")
+        ).trim();
+        if (kind === "preamble" || !liveBody) {
+          const progressText = typeof data.progressText === "string" ? data.progressText : "";
+          if (progressText.trim().length > 0) {
+            host.chatPendingNarrationText = progressText;
+            scheduleChatStreamFlush(host as unknown as ChatState);
+          }
+        }
+      }
+    }
+    return;
+  }
+
+  if (payload.stream !== "tool") {
+    // assistant 流事件：run 仍在活跃的佐证——匹配当前 run 时刷新看门狗锚点，
+    // 长回复不被误判为挂起流（thinking/item 已在上方分支处理）。
+    if (
+      payload.stream === "assistant" &&
       host.chatRunId &&
       (!payload.runId || payload.runId === host.chatRunId) &&
       (!payload.sessionKey || payload.sessionKey === host.sessionKey)
@@ -546,6 +646,14 @@ export function handleAgentEvent(host: ToolStreamHost, payload?: AgentEventPaylo
     const pending = host.chatPendingStreamText;
     const live = host.chatStream;
     const liveText = (pending ?? live ?? "").trim().length > 0 ? (pending ?? live) : null;
+    // R88：pending 的中途解说（未被任何 tool 冻结过的 narration）同样在此冻结。
+    // 它不占 chat delta 累计文本（内核对 commentary 抑制广播），不得并入 frozenPrefix。
+    const narrationPending = host.chatPendingNarrationText ?? host.chatNarrationText ?? "";
+    const narrationText = narrationPending.trim().length > 0 ? narrationPending : null;
+    if (narrationText) {
+      host.chatNarrationText = null;
+      host.chatPendingNarrationText = null;
+    }
     const leading: StreamSegment | undefined = liveText
       ? { text: liveText, ts: host.chatStreamStartedAt ?? now }
       : undefined;
@@ -577,6 +685,7 @@ export function handleAgentEvent(host: ToolStreamHost, payload?: AgentEventPaylo
       exitCode,
       startedAt: typeof payload.ts === "number" ? payload.ts : now,
       updatedAt: now,
+      ...(narrationText ? { narrationSegment: { text: narrationText, ts: now } } : {}),
       leadingSegment: leading,
       callMessage: {},
     };

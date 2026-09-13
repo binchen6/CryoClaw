@@ -168,22 +168,84 @@ export function renderReadingIndicatorGroup(
   `;
 }
 
+// R88 实时思考区（默认展开、限高滚动）：与 renderThinkingCollapsed 同构但
+// summary 带 live 打点动画，正文走纯文本绑定（高频帧免 markdown 解析开销）。
+function renderLiveThinkingBlock(thinking: string) {
+  return html`
+    <details class="chat-thinking-collapse chat-thinking-live" open>
+      <summary class="chat-thinking-summary">
+        <span class="chat-reading-indicator__dots" aria-hidden="true">
+          <span></span><span></span><span></span>
+        </span>
+        <span class="chat-thinking-summary__label">${t("chat.phaseThinking")}</span>
+      </summary>
+      <div class="chat-thinking chat-thinking-live__text">${thinking}</div>
+    </details>
+  `;
+}
+
+// R88：实时思考/解说分组（正文尚未到达但 reasoning/commentary 已在流式输出）。
+export function renderLiveThinkingGroup(
+  assistant?: AssistantIdentity,
+  thinkingStream?: string | null,
+  narrationText?: string | null,
+  activeToolName?: string | null,
+  subagentWaiting?: boolean,
+) {
+  const label = activeToolName
+    ? t("chat.phaseTool").replace("{name}", resolveToolDisplay({ name: activeToolName }).label)
+    : subagentWaiting
+      ? t("chat.subagent.waiting")
+      : t("chat.phaseThinking");
+  const hasThinking = (thinkingStream ?? "").trim().length > 0;
+  const hasNarration = (narrationText ?? "").trim().length > 0;
+  return html`
+    <div class="chat-group assistant">
+      ${renderAvatar("assistant", assistant)}
+      <div class="chat-group-messages">
+        <div class="chat-bubble chat-thinking-live-bubble">
+          ${hasNarration ? html`<div class="chat-stream-narration">${narrationText}</div>` : nothing}
+          ${hasThinking
+            ? renderLiveThinkingBlock(thinkingStream!)
+            : html`
+                <div class="chat-reading-indicator" role="status" aria-live="polite">
+                  <span class="chat-reading-indicator__dots" aria-hidden="true">
+                    <span></span><span></span><span></span>
+                  </span>
+                  <span class="chat-reading-indicator__label">${label}</span>
+                </div>
+              `}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
 export function renderStreamingGroup(
   text: string,
   startedAt: number,
   onOpenSidebar?: (content: string) => void,
   assistant?: AssistantIdentity,
+  live?: { thinkingStream?: string | null; narrationText?: string | null },
 ) {
   const timestamp = new Date(startedAt).toLocaleTimeString([], {
     hour: "numeric",
     minute: "2-digit",
   });
   const name = assistant?.name ?? "Assistant";
+  const narration = (live?.narrationText ?? "").trim().length > 0 ? live!.narrationText : null;
+  const thinking = (live?.thinkingStream ?? "").trim().length > 0 ? live!.thinkingStream : null;
 
   return html`
     <div class="chat-group assistant">
       ${renderAvatar("assistant", assistant)}
       <div class="chat-group-messages">
+        ${narration
+          ? html`<div class="chat-bubble"><div class="chat-stream-narration">${narration}</div></div>`
+          : nothing}
+        ${thinking
+          ? html`<div class="chat-bubble">${renderLiveThinkingBlock(thinking)}</div>`
+          : nothing}
         ${renderGroupedMessage(
           {
             role: "assistant",

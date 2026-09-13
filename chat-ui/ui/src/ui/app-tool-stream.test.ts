@@ -12,6 +12,7 @@ g.window ??= {
 
 import {
   clearFallbackNotice,
+  flushToolStreamSync,
   handleAgentEvent,
   type AgentEventPayload,
 } from "./app-tool-stream.ts";
@@ -336,4 +337,97 @@ test("tool result：exitCode 宽容解析（非整数/缺失不计）", () => {
   assert.equal(entry?.exitCode, undefined);
   const block = (entry?.callMessage.content as Array<Record<string, unknown>>)[0];
   assert.equal(block.exitCode, undefined);
+});
+
+// ── R88：思考流式 / 中途解说（preamble）流式 ──
+
+test("thinking 流式：data.text 全量写入 chatPendingThinkingText（跨 flush 的 pending 语义）", () => {
+  const host = makeHost({ chatThinkingStream: null, chatPendingThinkingText: null });
+  handleAgentEvent(host, {
+    runId: "run-1", seq: 1, stream: "thinking", ts: Date.now(),
+    sessionKey: "agent:main:main",
+    data: { text: "先拆解任务", delta: "先拆解任务" },
+  });
+  assert.equal(host.chatPendingThinkingText, "先拆解任务");
+});
+
+test("thinking 流式：phase 重启（text 变短）整体替换而非追加", () => {
+  const host = makeHost({ chatThinkingStream: "很长的第一段推理...", chatPendingThinkingText: null });
+  handleAgentEvent(host, {
+    runId: "run-1", seq: 2, stream: "thinking", ts: Date.now(),
+    sessionKey: "agent:main:main",
+    data: { text: "第二段", delta: "第二段" },
+  });
+  assert.equal(host.chatPendingThinkingText, "第二段");
+});
+
+test("thinking 流式：sessionKey 不匹配不写入", () => {
+  const host = makeHost({ chatThinkingStream: null, chatPendingThinkingText: null });
+  handleAgentEvent(host, {
+    runId: "run-1", seq: 3, stream: "thinking", ts: Date.now(),
+    sessionKey: "agent:main:other",
+    data: { text: "别家思考", delta: "别家思考" },
+  });
+  assert.equal(host.chatPendingThinkingText ?? null, null);
+});
+
+test("preamble 解说流式：progressText 写入 chatPendingNarrationText", () => {
+  const host = makeHost({ chatNarrationText: null, chatPendingNarrationText: null });
+  handleAgentEvent(host, {
+    runId: "run-1", seq: 4, stream: "item", ts: Date.now(),
+    sessionKey: "agent:main:main",
+    data: { kind: "preamble", phase: "update", title: "Preamble", progressText: "我先跑第一条命令看看输出", itemId: "item-1" },
+  });
+  assert.equal(host.chatPendingNarrationText, "我先跑第一条命令看看输出");
+});
+
+test("preamble → tool start：解说冻结为 narrationSegment，时间线顺序 解说→正文段→工具卡", () => {
+  const host = makeHost({
+    chatNarrationText: "我先跑第一条命令看看输出",
+    chatPendingNarrationText: null,
+    chatStream: "正文第一段",
+    chatStreamStartedAt: Date.now() - 1000,
+  });
+  handleAgentEvent(host, {
+    runId: "run-1", seq: 5, stream: "tool", ts: Date.now(),
+    sessionKey: "agent:main:main",
+    data: { phase: "start", name: "exec", toolCallId: "call-1", args: { command: "echo hi" } },
+  });
+  const entry = host.toolStreamById.get("call-1");
+  assert.ok(entry, "tool entry 应已创建");
+  assert.equal(entry?.narrationSegment?.text, "我先跑第一条命令看看输出");
+  assert.equal(entry?.leadingSegment?.text, "正文第一段");
+  // 解说不并入 frozenPrefix（commentary 被内核从 chat delta 广播中抑制，不属于累计文本）
+  assert.equal(host.chatStreamFrozenPrefix, "正文第一段");
+  // 解说在冻结后被清空
+  assert.equal(host.chatNarrationText ?? null, null);
+  // 时间线顺序：narrationSegment → leadingSegment → callMessage
+  // （start 阶段走节流 flush；测试桩不触发定时器，手动 flush 后断言）
+  flushToolStreamSync(host);
+  assert.equal(host.chatToolMessages.length, 3);
+  const first = host.chatToolMessages[0] as { content: Array<{ text: string }> };
+  assert.equal(first.content[0]?.text, "我先跑第一条命令看看输出");
+});
+
+test("seq-gap agent 错误：匹配当前 run 时触发 onStreamSeqGap 钩子", () => {
+  let called = 0;
+  const host = makeHost({ onStreamSeqGap: () => { called++; } });
+  handleAgentEvent(host, {
+    runId: "run-1", seq: 99, stream: "error", ts: Date.now(),
+    sessionKey: "agent:main:main",
+    data: { reason: "seq gap", expected: 50, received: 99 },
+  });
+  assert.equal(called, 1);
+  assert.notEqual(host.chatLastActivityAt ?? null, null);
+});
+
+test("seq-gap agent 错误：run 不匹配不触发", () => {
+  let called = 0;
+  const host = makeHost({ onStreamSeqGap: () => { called++; } });
+  handleAgentEvent(host, {
+    runId: "run-other", seq: 99, stream: "error", ts: Date.now(),
+    sessionKey: "agent:main:main",
+    data: { reason: "seq gap", expected: 50, received: 99 },
+  });
+  assert.equal(called, 0);
 });

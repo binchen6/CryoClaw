@@ -906,7 +906,7 @@ ipcMain.handle("app:open-external", (event, url: string) => {
   }
   return shell.openExternal(appendChannelUtm(url));
 });
-ipcMain.handle("app:open-path", (event, filePath: string) => {
+ipcMain.handle("app:open-path", async (event, filePath: string) => {
   if (!assertTrustedIpcSender(event, "app:open-path")) return Promise.reject(new Error("IPC sender not trusted"));
   // 安全面：白名单见 safe-open.ts；workspace 内文件由 workspace:open-file 单独处理（有 path traversal 守卫）。
   const ext = path.extname(filePath).slice(1).toLowerCase();
@@ -914,7 +914,14 @@ ipcMain.handle("app:open-path", (event, filePath: string) => {
     log.warn(`[security] app:open-path 拒绝非白名单扩展名: .${ext || "(无)"} ${filePath.slice(0, 100)}`);
     return Promise.reject(new Error("不支持的文件类型"));
   }
-  return shell.openPath(filePath);
+  // shell.openPath 失败时 resolve 出错误串而非 reject（Electron 契约）——此前原样
+  // 返回，渲染层 catch 永不触发，卡片点击零反馈（v2026.913.3 修复）。转为 reject。
+  const result = await shell.openPath(filePath);
+  if (result) {
+    log.warn(`app:open-path 打开失败: ${filePath.slice(0, 100)} → ${result}`);
+    return Promise.reject(new Error(result));
+  }
+  return result;
 });
 // 在文件管理器中定位文件（不执行文件，无白名单限制；聊天文件卡片「在文件夹中显示」用）
 ipcMain.handle("app:reveal-path", (event, filePath: string) => {

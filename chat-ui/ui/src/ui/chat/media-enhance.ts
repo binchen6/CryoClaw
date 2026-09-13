@@ -15,6 +15,11 @@
 import * as ipc from "../data/ipc-bridge.ts";
 import { t } from "../i18n.ts";
 import { showToastGlobal } from "../app-toast.ts";
+// 主进程 app:open-path 的安全白名单（单一事实源）：渲染层据此决定点击行为——
+// 白名单外扩展名（代码/配置等）不再尝试打开（必被主进程拒绝且 toast 报错），
+// 直接降级为「在文件夹中定位」。此前两边清单漂移（.py/.js/.ts/.yml 等有卡片但
+// 打开必失败），是「点击文件卡片无反应」的主因之一。
+import { isSafeOpenExt } from "../../../../src/safe-open.js";
 import { ref } from "lit/directives/ref.js";
 
 // MEDIA 标记：支持带引号路径与裸路径
@@ -322,12 +327,21 @@ function flashFileCardError(card: HTMLElement) {
 }
 
 async function openFileCardPath(path: string, card: HTMLElement) {
+  // 白名单外扩展名：直接在文件夹中定位（打开必被主进程拒绝；定位无扩展名限制）
+  const ext = fileExtOf(path);
+  if (!isSafeOpenExt(ext)) {
+    showToastGlobal(t("chat.fileCard.revealFallback"));
+    await revealFileCardPath(path, card);
+    return;
+  }
   try {
     await ipc.openPath(path);
-  } catch {
-    // 白名单外扩展名被主进程拒绝，或文件不存在
+  } catch (err) {
+    // 主进程已把 shell.openPath 的失败 resolve 串转为 reject（文件被删/移动、
+    // 系统无关联程序等）：报错闪红 + 带 OS 错误信息的 toast，不再零反馈
+    const message = err instanceof Error ? err.message : String(err ?? "");
     flashFileCardError(card);
-    showToastGlobal(t("chat.fileCard.openFailed"));
+    showToastGlobal(`${t("chat.fileCard.openFailed")}${message ? ` (${message})` : ""}`);
   }
 }
 

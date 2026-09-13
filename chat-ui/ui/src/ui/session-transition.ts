@@ -1,5 +1,6 @@
 import type { ChatState } from "./controllers/chat.ts";
 import { resetProgressCardForSession, type ProgressCardHost } from "./controllers/progress-card.ts";
+import { resetBoardForSession, type BoardHost } from "./controllers/board.ts";
 import { clearReconnectOrphanRun } from "./stream-recovery.ts";
 import type { UiSettings } from "./storage.ts";
 
@@ -10,6 +11,8 @@ export type SessionTransitionHost = ChatState & {
   planState?: { sessionKey?: string } | null;
   // Progress Card 状态（可选：测试替身不实现也无妨；切换会话时重建并重新拉取）
   progressCard?: unknown;
+  // R89 Board（会话仪表盘）状态（可选：测试替身不实现也无妨；切换会话时清态+重拉）
+  board?: { sessionKey: string | null } | null;
   // 压缩/降级提示胶囊按会话隔离：切走即清（含自动消失定时器）
   compactionStatus?: unknown | null;
   compactionClearTimer?: number | null;
@@ -83,6 +86,11 @@ export function applySessionKeyTransition(
   host.chatStream = null;
   host.chatPendingStreamText = null;
   host.chatStreamFrozenPrefix = "";
+  // R88：实时思考/解说按会话隔离——不清会残留上一会话的思考流式区
+  host.chatThinkingStream = null;
+  host.chatPendingThinkingText = null;
+  host.chatNarrationText = null;
+  host.chatPendingNarrationText = null;
   host.chatVisibleMessageCount = 0;
   // 加载态随会话重置（R64 审查 P3）：断连交错下旧请求的 finally 以
   // sessionKey 守卫跳过清位，若不在此重置，新会话线程区会一直显示「加载中」
@@ -98,6 +106,10 @@ export function applySessionKeyTransition(
   // Progress Card 同属会话级状态：重建为新会话锚点，随后随历史一起重拉
   // （resetProgressCardForSession 内部会在已连接时发起 progressCard.get）
   resetProgressCardForSession(host as unknown as ProgressCardHost, trimmed);
+  // R89 Board（会话仪表盘）同属会话级状态：清态 + 重拉（board 不可用时静默为空）
+  if (host.board) {
+    resetBoardForSession(host as unknown as BoardHost, trimmed);
+  }
   // 压缩/降级提示同属会话级瞬态：清掉并取消自动消失定时器，防跨会话残留
   if (host.compactionClearTimer != null && typeof window !== "undefined") {
     window.clearTimeout(host.compactionClearTimer);

@@ -1,7 +1,7 @@
 import { LitElement, html, nothing } from "lit";
 import { customElement } from "lit/decorators.js";
 import type { AssistantIdentity } from "../assistant-identity.ts";
-import { renderReadingIndicatorGroup, renderStreamingGroup } from "../chat/grouped-render.ts";
+import { renderLiveThinkingGroup, renderReadingIndicatorGroup, renderStreamingGroup } from "../chat/grouped-render.ts";
 
 // 「当前正在打字的流式气泡」独立组件（R41 Task 10）。
 //
@@ -19,6 +19,8 @@ import { renderReadingIndicatorGroup, renderStreamingGroup } from "../chat/group
 export class CcChatStream extends LitElement {
   static properties = {
     stream: { type: String },
+    thinkingStream: { type: String },
+    narrationText: { type: String },
     streamStartedAt: { attribute: false },
     assistantName: { attribute: false },
     assistantAvatar: { attribute: false },
@@ -28,6 +30,10 @@ export class CcChatStream extends LitElement {
   };
 
   stream: string | null = null;
+  // R88 思考过程流式：当前 reasoning phase 全量文本（null = 无）
+  thinkingStream: string | null = null;
+  // R88 中途解说流式：内核 preamble item 的 progressText（null = 无）
+  narrationText: string | null = null;
   streamStartedAt: number | null = null;
   assistantName = "";
   assistantAvatar: string | null = null;
@@ -46,6 +52,8 @@ export class CcChatStream extends LitElement {
   // 视觉属性之外的变化（主要是每帧新闭包的回调）不触发重渲染。
   private static readonly VISUAL_PROPS = [
     "stream",
+    "thinkingStream",
+    "narrationText",
     "streamStartedAt",
     "assistantName",
     "assistantAvatar",
@@ -58,7 +66,7 @@ export class CcChatStream extends LitElement {
   }
 
   render() {
-    if (this.stream === null) {
+    if (this.stream === null && this.thinkingStream === null && this.narrationText === null) {
       return nothing;
     }
     const identity: AssistantIdentity = {
@@ -68,12 +76,23 @@ export class CcChatStream extends LitElement {
     // 与原 buildChatItems 分支一一对应：非空文本走流式气泡；
     // 仅空白（等待首帧/工具间隙空串）走思考/阶段指示。
     // startedAt 缺省回退当前时间——与原实现每帧重建条目时 Date.now() 求值等价。
-    if (this.stream.trim().length > 0) {
+    if ((this.stream ?? "").trim().length > 0) {
       return renderStreamingGroup(
-        this.stream,
+        this.stream!,
         this.streamStartedAt ?? Date.now(),
         this.onOpenSidebar,
         identity,
+        { thinkingStream: this.thinkingStream, narrationText: this.narrationText },
+      );
+    }
+    // R88：正文未到但思考/解说已在流式——实时思考区替代纯打点指示
+    if ((this.thinkingStream ?? "").trim().length > 0 || (this.narrationText ?? "").trim().length > 0) {
+      return renderLiveThinkingGroup(
+        identity,
+        this.thinkingStream,
+        this.narrationText,
+        this.activeToolName,
+        this.subagentWaiting,
       );
     }
     return renderReadingIndicatorGroup(identity, this.activeToolName, this.subagentWaiting);
