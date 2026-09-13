@@ -1,12 +1,12 @@
 /**
- * Settings 渠道/搜索/记忆/高级配置纯函数库 — config 快照视图提取 + draft 变更应用。
+ * Settings 渠道/搜索/高级配置纯函数库 — config 快照视图提取 + draft 变更应用。
  * 移植自主进程 settings-ipc.ts 与各 *-config.ts 的读写逻辑（R4 config.patch 化），
  * 不依赖 lit / i18n / IPC，可独立单测。
+ * （记忆相关逻辑已迁至 tab-memory.lib.ts）
  *
  * 约定：extract* 从 config.get 脱敏快照派生 UI 视图模型；apply* 在 patchConfig 的
  * draft 上就位变更（REDACTED 哨兵由内核写侧自动还原，原样保留即可）。
  */
-import { AUTH_PROXY_API_KEY_SENTINEL } from "../setup/setup-constants.ts";
 
 /* ── 基础工具 ── */
 
@@ -543,68 +543,6 @@ export function applyKimiSearchSave(draft: Record<string, unknown>, params: Kimi
 
   entries[KIMI_SEARCH_PLUGIN_ID] = entry;
   if (params.enabled) syncPluginAllowOnEnable(draft, KIMI_SEARCH_PLUGIN_ID);
-}
-
-/* ── 记忆 ── */
-
-export const KIMI_EMBEDDING_MODEL = "bge_m3_embed";
-
-export interface MemoryView {
-  sessionMemoryEnabled: boolean;
-  embeddingEnabled: boolean;
-  isKimiCodeConfigured: boolean;
-}
-
-export function extractMemoryView(config: Record<string, unknown> | null | undefined): MemoryView {
-  const hookEntry = isRecord(config?.hooks) && isRecord(config.hooks.internal) && isRecord(config.hooks.internal.entries)
-    ? (config.hooks.internal.entries as Record<string, unknown>)["session-memory"] : undefined;
-  const ms = isRecord(config?.agents) && isRecord(config.agents.defaults)
-    ? (config.agents.defaults as Record<string, unknown>).memorySearch : undefined;
-  return {
-    // session-memory hook：未配置过视为开启（存量用户默认开启）
-    sessionMemoryEnabled: !(isRecord(hookEntry) && hookEntry.enabled === false),
-    // embedding：有 provider + model 配置即为启用（memorySearch.enabled 不在此处判断）
-    embeddingEnabled: isRecord(ms) && ms.provider === "openai" && typeof ms.model === "string" && ms.model.length > 0,
-    isKimiCodeConfigured: isKimiCodeConfigured(config),
-  };
-}
-
-export interface MemorySaveParams {
-  sessionMemoryEnabled?: boolean;
-  embeddingEnabled?: boolean;
-  /** embedding 走本地 auth proxy 时的代理端口（主进程提供）；<=0 时不写 memorySearch */
-  proxyPort?: number;
-}
-
-/** 移植自 settings:save-memory-config + ensureMemorySearchProxyConfig */
-export function applyMemorySave(draft: Record<string, unknown>, params: MemorySaveParams): void {
-  // session-memory hook
-  const hooks = ensureRecord(draft, "hooks");
-  const internal = ensureRecord(hooks, "internal");
-  const entries = ensureRecord(internal, "entries");
-  const existingHook = isRecord(entries["session-memory"]) ? (entries["session-memory"] as Record<string, unknown>) : {};
-  entries["session-memory"] = { ...existingHook, enabled: params.sessionMemoryEnabled !== false };
-
-  // embedding 开关：只控制 provider/model，不碰 memorySearch.enabled（关键词搜索始终可用）
-  const agents = ensureRecord(draft, "agents");
-  const defaults = ensureRecord(agents, "defaults");
-  if (params.embeddingEnabled === true) {
-    const proxyPort = params.proxyPort ?? 0;
-    if (proxyPort > 0) {
-      const ms = ensureRecord(defaults, "memorySearch");
-      const remote = ensureRecord(ms, "remote");
-      ms.enabled = true;
-      ms.provider = "openai";
-      ms.model = KIMI_EMBEDDING_MODEL;
-      remote.baseUrl = `http://127.0.0.1:${proxyPort}/coding/v1/`;
-      remote.apiKey = AUTH_PROXY_API_KEY_SENTINEL;
-    }
-  } else if (params.embeddingEnabled === false && isRecord(defaults.memorySearch)) {
-    const ms = defaults.memorySearch as Record<string, unknown>;
-    delete ms.provider;
-    delete ms.model;
-    delete ms.remote;
-  }
 }
 
 /* ── 高级（openclaw.json 部分） ── */

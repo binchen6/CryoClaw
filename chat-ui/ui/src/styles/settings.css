@@ -2150,3 +2150,60 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* ── Memory tab（记忆设置页：segmented 三选 + 运行状态行）── */
+.oc-settings__segmented {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--spacer-2);
+  padding: var(--spacer-2);
+  border: var(--hairline);
+  border-radius: var(--radius-8);
+  background: var(--bg-input);
+}
+.oc-settings__segmented-btn {
+  height: 26px;
+  padding: 0 var(--spacer-12);
+  font-size: var(--text-sm);
+  font-family: inherit;
+  line-height: 1;
+  border: none;
+  border-radius: var(--radius-6);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
+}
+.oc-settings__segmented-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.oc-settings__segmented-btn[aria-pressed="true"] {
+  background: var(--accent);
+  color: var(--text-on-accent);
+}
+.oc-settings__segmented-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+/* 记忆状态卡：label / value 两端对齐（meta 字体） */
+.oc-memory-status-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--spacer-12);
+}
+.oc-memory-status-row__label {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+.oc-memory-status-row__value {
+  font-family: var(--font-meta);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  text-align: right;
+  overflow-wrap: anywhere;
+}

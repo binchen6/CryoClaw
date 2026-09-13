@@ -484,16 +484,17 @@ export function applyKimiCodeLinkage(draft: Record<string, unknown>, proxyPort: 
     d.plugins.allow.push("kimi-search");
   }
   if (proxyPort > 0) {
-    d.agents ??= {};
-    d.agents.defaults ??= {};
-    d.agents.defaults.memorySearch = {
-      ...(typeof d.agents.defaults.memorySearch === "object" && d.agents.defaults.memorySearch !== null
-        ? d.agents.defaults.memorySearch
-        : {}),
+    // 语义记忆检索写根级 memory.search（内核 2026.8+ strict schema 不认旧
+    // agents.defaults.memorySearch；与主进程 ensureMemorySearchProxyConfig 落位一致）
+    d.memory ??= {};
+    const prevSearch = typeof d.memory.search === "object" && d.memory.search !== null ? d.memory.search : {};
+    const prevRemote = typeof prevSearch.remote === "object" && prevSearch.remote !== null ? prevSearch.remote : {};
+    d.memory.search = {
+      ...prevSearch,
       enabled: true,
       provider: "openai",
       model: "bge_m3_embed",
-      remote: { baseUrl: `http://127.0.0.1:${proxyPort}/coding/v1/`, apiKey: AUTH_PROXY_API_KEY_SENTINEL },
+      remote: { ...prevRemote, baseUrl: `http://127.0.0.1:${proxyPort}/coding/v1/`, apiKey: AUTH_PROXY_API_KEY_SENTINEL },
     };
   }
 }

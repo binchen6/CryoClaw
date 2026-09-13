@@ -1,12 +1,10 @@
 import assert from "node:assert/strict";
 import { buildMergePatch, REDACTED_SENTINEL } from "../../controllers/config.ts";
-import { AUTH_PROXY_API_KEY_SENTINEL } from "../setup/setup-constants.ts";
 import {
   applyAdvancedSave,
   applyDingtalkSave,
   applyFeishuSave,
   applyKimiSearchSave,
-  applyMemorySave,
   applyQqbotSave,
   applyWecomSave,
   applyWeixinSave,
@@ -14,13 +12,13 @@ import {
   extractDingtalkView,
   extractFeishuView,
   extractKimiSearchView,
-  extractMemoryView,
   extractQqbotView,
   extractWecomView,
   extractWeixinEnabled,
   normalizeAllowFromEntries,
   syncPluginAllowOnEnable,
 } from "./tab-channels.lib.ts";
+// 记忆逻辑（extractMemoryView / applyMemorySave）已迁至 tab-memory.lib.test.ts
 
 /* ── 基础工具 ── */
 
@@ -346,52 +344,6 @@ function testKimiSearchSave() {
   assert.deepEqual((draft.plugins as any).allow, ["qqbot", "kimi-search"], "禁用不动白名单");
 }
 
-/* ── 记忆 ── */
-
-function testMemoryExtract() {
-  const config = {
-    hooks: { internal: { entries: { "session-memory": { enabled: false } } } },
-    agents: { defaults: { memorySearch: { enabled: true, provider: "openai", model: "bge_m3_embed" } } },
-    models: { providers: { "kimi-coding": { apiKey: AUTH_PROXY_API_KEY_SENTINEL } } },
-  };
-  const view = extractMemoryView(config as any);
-  assert.equal(view.sessionMemoryEnabled, false);
-  assert.equal(view.embeddingEnabled, true);
-  assert.equal(view.isKimiCodeConfigured, true);
-  const empty = extractMemoryView(null);
-  assert.equal(empty.sessionMemoryEnabled, true, "未配置过视为开启");
-  assert.equal(empty.embeddingEnabled, false);
-}
-
-function testMemorySaveEmbeddingOn() {
-  const draft: Record<string, unknown> = {};
-  applyMemorySave(draft, { sessionMemoryEnabled: true, embeddingEnabled: true, proxyPort: 9090 });
-  const ms = (draft.agents as any).defaults.memorySearch;
-  assert.deepEqual(ms, {
-    enabled: true,
-    provider: "openai",
-    model: "bge_m3_embed",
-    remote: { baseUrl: "http://127.0.0.1:9090/coding/v1/", apiKey: AUTH_PROXY_API_KEY_SENTINEL },
-  });
-  assert.equal((draft.hooks as any).internal.entries["session-memory"].enabled, true);
-}
-
-function testMemorySaveEmbeddingOnWithoutPort() {
-  const draft: Record<string, unknown> = {};
-  applyMemorySave(draft, { sessionMemoryEnabled: false, embeddingEnabled: true, proxyPort: 0 });
-  assert.equal((draft.agents as any).defaults.memorySearch, undefined, "proxyPort<=0 不写 memorySearch");
-  assert.equal((draft.hooks as any).internal.entries["session-memory"].enabled, false);
-}
-
-function testMemorySaveEmbeddingOff() {
-  const draft: Record<string, unknown> = {
-    agents: { defaults: { memorySearch: { enabled: true, provider: "openai", model: "bge_m3_embed", remote: { baseUrl: "x", apiKey: "y" } } } },
-  };
-  applyMemorySave(draft, { embeddingEnabled: false });
-  const ms = (draft.agents as any).defaults.memorySearch;
-  assert.deepEqual(ms, { enabled: true }, "只删 provider/model/remote，保留 enabled");
-}
-
 /* ── 高级 ── */
 
 function testAdvancedExtractDefaults() {
@@ -516,10 +468,6 @@ function main() {
   testWeixinSave();
   testKimiSearchExtract();
   testKimiSearchSave();
-  testMemoryExtract();
-  testMemorySaveEmbeddingOn();
-  testMemorySaveEmbeddingOnWithoutPort();
-  testMemorySaveEmbeddingOff();
   testAdvancedExtractDefaults();
   testAdvancedExtractApproveAll();
   testAdvancedSave();

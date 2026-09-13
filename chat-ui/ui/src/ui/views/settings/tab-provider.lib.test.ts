@@ -3,6 +3,7 @@ import { REDACTED_SENTINEL } from "../../controllers/config.ts";
 import {
   applyCapabilityOverrides,
   applyIdOrder,
+  applyKimiCodeLinkage,
   deriveOverridesFromEntry,
   groupProvidersFromConfig,
   readFallbacks,
@@ -199,6 +200,37 @@ function testResolveReasoningBudgetWarning() {
   assert.deepEqual(resolveReasoningBudgetWarning({ reasoning: true, maxTokensRaw: "abc", inGatewayCatalog: false }), { effectiveMaxTokens: MODELS_ADD_DEFAULT_MAX_TOKENS, source: "kernel-default" });
 }
 
+function testApplyKimiCodeLinkage() {
+  const draft: Record<string, unknown> = {
+    plugins: { allow: ["qqbot"], entries: { "kimi-search": { enabled: false, config: { x: 1 } } } },
+    memory: { search: { provider: "gemini", query: { maxResults: 9 }, remote: { baseUrl: "http://old/v1", headers: { h: "1" } } } },
+  };
+  applyKimiCodeLinkage(draft, 9090);
+  // kimi-search 插件启用 + 白名单补 id + 未知 config 保留
+  const entry = (draft.plugins as any).entries["kimi-search"];
+  assert.equal(entry.enabled, true);
+  assert.deepEqual(entry.config, { x: 1 });
+  assert.deepEqual((draft.plugins as any).allow, ["qqbot", "kimi-search"]);
+  // 语义记忆写根级 memory.search（内核 2026.9.3 strict schema 路径）
+  const ms = (draft.memory as any).search;
+  assert.equal(ms.enabled, true);
+  assert.equal(ms.provider, "openai");
+  assert.equal(ms.model, "bge_m3_embed");
+  assert.equal(ms.remote.baseUrl, "http://127.0.0.1:9090/coding/v1/");
+  assert.equal(ms.remote.apiKey, AUTH_PROXY_API_KEY_SENTINEL);
+  assert.deepEqual(ms.remote.headers, { h: "1" }, "remote 其他字段保留");
+  assert.deepEqual(ms.query, { maxResults: 9 }, "search 其他字段保留");
+  // 不再触碰旧 agents.defaults.memorySearch 路径
+  assert.equal((draft as any).agents, undefined, "不写旧 agents.defaults.memorySearch");
+}
+
+function testApplyKimiCodeLinkageWithoutPort() {
+  const draft: Record<string, unknown> = {};
+  applyKimiCodeLinkage(draft, 0);
+  assert.equal((draft.plugins as any).entries["kimi-search"].enabled, true);
+  assert.equal((draft as any).memory, undefined, "proxyPort<=0 不写 memory.search");
+}
+
 function main() {
   testResolveGroupId();
   testGroupProvidersFromConfig();
@@ -210,6 +242,8 @@ function main() {
   testApplyCapabilityOverrides();
   testDeriveOverridesFromEntry();
   testResolveReasoningBudgetWarning();
+  testApplyKimiCodeLinkage();
+  testApplyKimiCodeLinkageWithoutPort();
   console.log("tab-provider lib tests passed");
 }
 
