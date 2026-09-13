@@ -205,7 +205,7 @@ export function renderChannelWeixin(state: AppViewState) {
               </div>
             </div>
           ` : html`
-            <button class="oc-settings__btn oc-settings__btn--primary" @click=${() => startLogin(state)}>
+            <button class="btn primary" @click=${() => startLogin(state)}>
               ${t("settings.channels.weixin.startLogin")}
             </button>
           `}

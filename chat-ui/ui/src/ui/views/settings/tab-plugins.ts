@@ -243,7 +243,7 @@ function renderInstalledRow(state: AppViewState, plugin: InstalledPluginView) {
           @change=${(e: CustomEvent) => void togglePluginEnabled(state, plugin, e.detail.checked)}
         ></oc-toggle-switch>
         <button
-          class="oc-settings__btn oc-settings__btn--secondary oc-settings__btn--compact"
+          class="btn btn--sm"
           type="button"
           ?disabled=${busy}
           @click=${() => void uninstallPlugin(state, plugin)}
@@ -276,7 +276,7 @@ function renderMarketRow(state: AppViewState, plugin: MarketPluginView) {
         ${installed
           ? html`<span class="oc-plugins__installed-badge">${t("settings.plugins.installedBadge")}</span>`
           : html`<button
-              class="oc-settings__btn oc-settings__btn--primary oc-settings__btn--compact"
+              class="btn primary btn--sm"
               type="button"
               ?disabled=${busy}
               @click=${() => void installFromMarket(state, plugin)}
@@ -314,12 +314,12 @@ export function renderPluginsView(state: AppViewState) {
 
       <div class="oc-plugins__tabs">
         <button
-          class="oc-plugins__tab ${s.subtab === "installed" ? "oc-plugins__tab--active" : ""}"
+          class="oc-plugins__tab ${s.subtab ==="installed" ? "oc-plugins__tab--active" : ""}"
           type="button"
           @click=${() => { s.subtab = "installed"; state.requestUpdate(); }}
         >${t("settings.plugins.installed")} (${s.installed.length})</button>
         <button
-          class="oc-plugins__tab ${s.subtab === "market" ? "oc-plugins__tab--active" : ""}"
+          class="oc-plugins__tab ${s.subtab ==="market" ? "oc-plugins__tab--active" : ""}"
           type="button"
           @click=${() => { s.subtab = "market"; state.requestUpdate(); }}
         >${t("settings.plugins.market")}</button>
@@ -328,7 +328,7 @@ export function renderPluginsView(state: AppViewState) {
       ${s.subtab === "installed"
         ? html`<div class="oc-plugins__toolbar">
             <button
-              class="oc-settings__btn oc-settings__btn--secondary oc-settings__btn--compact"
+              class="btn btn--sm"
               type="button"
               ?disabled=${s.loading || !state.connected}
               @click=${() => void loadInstalled(state)}
@@ -348,7 +348,7 @@ export function renderPluginsView(state: AppViewState) {
               }}
             />
             <button
-              class="oc-settings__btn oc-settings__btn--primary oc-settings__btn--compact"
+              class="btn primary btn--sm"
               type="button"
               ?disabled=${s.searching || !s.query.trim()}
               @click=${() => void searchMarket(state)}

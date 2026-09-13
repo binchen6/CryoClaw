@@ -75,7 +75,7 @@ function renderWorktreeCard(props: WorktreesProps, w: WorktreeRecord, compact: b
   if (compact) {
     return html`
       <div
-        class="wt-card wt-card--compact ${live ? "" : "wt-card--removed"}"
+        class="wt-card wt-card--compact ${live ?"" : "wt-card--removed"}"
         role="button"
         tabindex=${live ? "0" : "-1"}
         @click=${() => live && props.onSelectRepo?.(w.path)}
@@ -146,7 +146,7 @@ function renderWorktreeCard(props: WorktreesProps, w: WorktreeRecord, compact: b
   }
 
   return html`
-    <div class="wt-card ${live ? "" : "wt-card--removed"}">
+    <div class="wt-card ${live ?"" : "wt-card--removed"}">
       <div class="wt-card__main">
         <div class="wt-card__title">${w.name}</div>
         <div class="chip-row">
@@ -277,7 +277,7 @@ function renderCreatePanel(props: WorktreesProps) {
 export function renderWorktrees(props: WorktreesProps, opts?: { compact?: boolean }) {
   const compact = opts?.compact === true;
   return html`
-    <div class="wt-layout ${compact ? "wt-layout--compact" : ""} panel">
+    <div class="wt-layout ${compact ?"wt-layout--compact" : ""} panel">
       ${compact
         ? html`<div class="wt-compact-toolbar">
             <button class="btn btn--sm" type="button"

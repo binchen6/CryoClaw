@@ -90,12 +90,12 @@ function renderRow(state: AppViewState, entry: ApprovalHistoryEntry) {
           ? html`
             <span class="oc-approvals__actions">
               <button
-                class="oc-settings__btn oc-settings__btn--primary oc-settings__btn--compact"
+                class="btn primary btn--sm"
                 ?disabled=${s.busyId !== null}
                 @click=${() => handleResolve(state, entry, "allow-once")}
               >${t("settings.approvals.allowOnce")}</button>
               <button
-                class="oc-settings__btn oc-settings__btn--secondary oc-settings__btn--compact"
+                class="btn btn--sm"
                 ?disabled=${s.busyId !== null}
                 @click=${() => handleResolve(state, entry, "deny")}
               >${t("settings.approvals.deny")}</button>
@@ -131,7 +131,7 @@ export function renderTabApprovals(state: AppViewState) {
         <div class="oc-approvals__card-head">
           <div class="oc-settings__card-title oc-approvals__list-title">${t("settings.approvals.listTitle")}</div>
           <button
-            class="oc-settings__btn oc-settings__btn--secondary oc-settings__btn--compact"
+            class="btn btn--sm"
             ?disabled=${s.loading || !state.connected}
             @click=${() => init(state)}
           >${t("settings.approvals.refresh")}</button>

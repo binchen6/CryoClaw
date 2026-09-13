@@ -2374,7 +2374,7 @@ img.chat-avatar {
 
 .chat-progress-card {
   margin-bottom: var(--spacer-10);
-  /* R58a：与 compose 输入卡同宽对齐（--chat-column 760px 居中列），
+  /* R58a：与 compose 输入卡同宽对齐（--chat-column 居中列），
      此前无宽度约束会撑满整个线程容器，视觉上远宽于输入框 */
   width: 100%;
   max-width: var(--chat-column);
@@ -2779,4 +2779,10 @@ img.chat-avatar {
 .chat-question-card__skip:hover {
   color: var(--accent);
   background: var(--accent-subtle);
+}
+
+/* R84 补缺失样式：进度步骤待执行态（此前回落基础态，与活跃态难以区分） */
+.chat-progress-card__step-icon--pending {
+  color: var(--text-faint);
+  opacity: .8;
 }

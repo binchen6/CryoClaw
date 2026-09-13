@@ -155,8 +155,8 @@ export function renderTabSearch(state: AppViewState) {
       <oc-message-box .message=${s.successMsg ?? ""} .type=${"success"} .visible=${!!s.successMsg}></oc-message-box>
       ${s.hint ? html`<div class="oc-settings__field-hint">${s.hint}</div>` : nothing}
 
-      <div class="oc-settings__btn-row">
-        <button class="oc-settings__btn oc-settings__btn--primary" ?disabled=${s.saving} @click=${() => handleSave(state)}>${t("settings.save")}</button>
+      <div class="btn-row">
+        <button class="btn primary" ?disabled=${s.saving} @click=${() => handleSave(state)}>${t("settings.save")}</button>
       </div>
     </div>
   `;

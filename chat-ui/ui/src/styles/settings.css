@@ -81,7 +81,7 @@
   position: relative;
 }
 .oc-settings-content > * {
-  max-width: 800px;
+  max-width: var(--page-column);
   width: 100%;
   margin-left: auto;
   margin-right: auto;
@@ -227,80 +227,8 @@
   padding-top: var(--spacer-8);
 }
 
-/* 按钮层级：primary = accent 实心 / secondary = hairline 描边 /
-   danger = 危险实心 / 无修饰基类 = ghost 文本按钮 */
-.oc-settings__btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--spacer-6);
-  height: 28px;
-  padding: 0 var(--spacer-12);
-  font-size: var(--text-sm);
-  font-weight: var(--weight-medium);
-  line-height: 1;
-  border-radius: var(--radius-8);
-  cursor: pointer;
-  border: 1px solid transparent;
-  background: transparent;
-  color: var(--text-secondary);
-  white-space: nowrap;
-  transition: background var(--duration-fast) var(--ease-out),
-    color var(--duration-fast) var(--ease-out),
-    border-color var(--duration-fast) var(--ease-out),
-    opacity var(--duration-fast) var(--ease-out);
-  font-family: inherit;
-}
-.oc-settings__btn:hover:not(:disabled) {
-  background: var(--bg-hover);
-  color: var(--text);
-}
-.oc-settings__btn:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-  pointer-events: none;
-}
-.oc-settings__btn--primary {
-  background: var(--accent);
-  color: var(--text-on-accent);
-  border-color: var(--accent);
-}
-.oc-settings__btn--primary:hover:not(:disabled) {
-  background: var(--accent-hover);
-  border-color: var(--accent-hover);
-  color: var(--text-on-accent);
-}
-.oc-settings__btn--secondary {
-  background: transparent;
-  color: var(--text);
-  border-color: var(--border);
-}
-.oc-settings__btn--secondary:hover:not(:disabled) {
-  background: var(--bg-hover);
-  border-color: var(--border-strong);
-  color: var(--text);
-}
-.oc-settings__btn--danger {
-  background: var(--destructive);
-  color: var(--text-on-accent);
-  border-color: var(--destructive);
-}
-.oc-settings__btn--danger:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--destructive) 88%, black);
-  border-color: color-mix(in srgb, var(--destructive) 88%, black);
-  color: var(--text-on-accent);
-}
-
-/* Compact 变体（卡片头部 / 列表行内操作） */
-.oc-settings__btn--compact {
-  height: 24px;
-  padding: 0 var(--spacer-8);
-  font-size: var(--text-xs);
-  gap: var(--spacer-4);
-}
-.oc-settings__btn--compact svg {
-  flex-shrink: 0;
-}
+/* R84 按钮收敛：视图私有 oc-settings__btn* 四套平行 kit 全部迁移到全局
+   .btn 体系（primitives.css），此处只保留布局容器。 */
 
 /* Radio 组 */
 .oc-settings__radio-group {
@@ -2206,4 +2134,13 @@
   color: var(--text-secondary);
   text-align: right;
   overflow-wrap: anywhere;
+}
+
+/* ── R84 补缺失样式：插件市场 meta 子项 ── */
+.oc-plugins__downloads {
+  font-variant-numeric: tabular-nums;
+}
+
+.oc-plugins__owner {
+  color: var(--text-secondary);
 }

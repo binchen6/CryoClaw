@@ -137,9 +137,9 @@ function renderFileRow(
   const busy = props.busyPaths.has(entry.path);
   const canShowDiff = group !== "untracked"; // untracked 无 diff 可看（git diff 不含未跟踪文件）
   return html`
-    <div class="gitp-file ${selected ? "active" : ""}">
+    <div class="gitp-file ${selected ?"active" : ""}">
       <div
-        class="gitp-file__main ${canShowDiff ? "gitp-file__main--clickable" : ""}"
+        class="gitp-file__main ${canShowDiff ?"gitp-file__main--clickable" : ""}"
         role="button"
         tabindex=${canShowDiff ? "0" : "-1"}
         @click=${() => {
@@ -272,7 +272,7 @@ function renderBranchPanel(props: GitPanelProps) {
         ? html`<div class="gitp-branch-empty">${t("git.branchEmpty")}</div>`
         : branches.map(
             (b) => html`
-              <div class="gitp-branch-item ${b.current ? "is-current" : ""}">
+              <div class="gitp-branch-item ${b.current ?"is-current" : ""}">
                 <span class="gitp-branch-name" title=${b.name}>
                   ${b.current ? html`<span class="gitp-branch-current-dot"></span>` : nothing}
                   ${b.name}
@@ -420,7 +420,7 @@ export function renderGitPanel(props: GitPanelProps, opts?: { showRepoSelect?: b
       ${props.repoState === "ok" && branch
         ? html`<div class="chip-row gitp-branch-row-line">
             <button
-              class="chip gitp-branch-toggle ${props.branchPanelOpen ? "is-open" : ""}"
+              class="chip gitp-branch-toggle ${props.branchPanelOpen ?"is-open" : ""}"
               type="button"
               title=${t("git.switchBranch")}
               @click=${props.onToggleBranchPanel}

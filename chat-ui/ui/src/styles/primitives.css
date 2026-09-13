@@ -216,3 +216,18 @@
   border-left-color: var(--destructive);
 }
 
+
+/* text：无边框低强调动作（行内次要操作 / 「换一个」类轻链接）。
+   R84 按钮收敛：视图私有 oc-setup-btn--text 等四套平行 kit 已并入本体系。 */
+.btn--text {
+  border-color: transparent;
+  background: transparent;
+  color: var(--text-secondary);
+  padding: 0 var(--spacer-8);
+}
+
+.btn--text:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: transparent;
+  color: var(--text);
+}

@@ -73,8 +73,8 @@ export function renderTabAppearance(state: AppViewState) {
 
       <oc-message-box .message=${s.successMsg ?? ""} .type=${"success"} .visible=${!!s.successMsg}></oc-message-box>
 
-      <div class="oc-settings__btn-row">
-        <button class="oc-settings__btn oc-settings__btn--primary" @click=${() => handleSave(state)}>${t("settings.save")}</button>
+      <div class="btn-row">
+        <button class="btn primary" @click=${() => handleSave(state)}>${t("settings.save")}</button>
       </div>
     </div>
   `;

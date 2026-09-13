@@ -36,8 +36,8 @@ export function renderStep1(_state: AppViewState, goToStep: (step: number) => vo
         <p class="oc-setup-warning">${t("setup.welcome.warning")}</p>
       </div>
 
-      <div class="oc-setup-btn-row">
-        <button class="oc-setup-btn oc-setup-btn--primary" @click=${() => goToStep(2)}>
+      <div class="btn-row">
+        <button class="btn primary" @click=${() => goToStep(2)}>
           ${t("setup.welcome.next")}
         </button>
       </div>

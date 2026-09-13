@@ -535,3 +535,10 @@
     transition: none;
   }
 }
+
+/* R84 补缺失样式：工作区导航的 git 固定节点（与工作区列表之间的结构分隔） */
+.wk-nav__node--git {
+  margin-top: var(--spacer-4);
+  padding-top: var(--spacer-8);
+  border-top: var(--hairline);
+}

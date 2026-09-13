@@ -60,7 +60,7 @@ function renderBreadcrumb(rootName: string, relPath: string, fullPath: string) {
       ${segments.map(
         (seg, i) => html`
           <span class="wk-preview__crumb-sep" aria-hidden="true">›</span>
-          <span class="wk-preview__crumb ${i === segments.length - 1 ? "wk-preview__crumb--current" : ""}">${seg}</span>
+          <span class="wk-preview__crumb ${i === segments.length - 1 ?"wk-preview__crumb--current" : ""}">${seg}</span>
         `,
       )}
     </header>
@@ -88,7 +88,7 @@ export function renderWorkspaceView(state: AppViewState, opts: WorkspaceViewOpti
             ${o.kind === "workspace" ? t("git.repoWorkspace") : `${t("git.repoWorktree")} · ${o.branch || o.path}`}
           </option>`)}
         </select>
-        <div class="wk-nav__node ${ws.mode === "files" ? "active" : ""}" role="button" tabindex="0" @click=${opts.onOpenFiles} @keydown=${activateOnKeydown(opts.onOpenFiles)}>
+        <div class="wk-nav__node ${ws.mode ==="files" ? "active" : ""}" role="button" tabindex="0" @click=${opts.onOpenFiles} @keydown=${activateOnKeydown(opts.onOpenFiles)}>
           ${icons.folder}<span>${t("workspace.files")}</span>
           <span class="wk-nav__node-actions">
             <button class="wk-nav__icon-btn" type="button"
@@ -108,7 +108,7 @@ export function renderWorkspaceView(state: AppViewState, opts: WorkspaceViewOpti
             : ws.error && ws.items.length === 0
               ? html`<div class="wk-nav__hint">${ws.error}</div>`
               : ws.items.map((item) => html`
-                  <div class="wk-nav__item ${item.isDir ? "wk-nav__item--dir" : ""} ${ws.selectedFile === item.path && ws.mode === "files" ? "active" : ""}"
+                  <div class="wk-nav__item ${item.isDir ?"wk-nav__item--dir" : ""} ${ws.selectedFile === item.path && ws.mode === "files" ? "active" : ""}"
                     role="button" tabindex="0"
                     @click=${() => openWorkspaceDirectory(state, item)}
                     @keydown=${activateOnKeydown(() => openWorkspaceDirectory(state, item))}>
@@ -120,7 +120,7 @@ export function renderWorkspaceView(state: AppViewState, opts: WorkspaceViewOpti
                     >${icons.folderOpen}</button>
                   </div>`)}
         </div>
-        <div class="wk-nav__node wk-nav__node--git ${ws.mode === "git" ? "active" : ""}" role="button" tabindex="0" @click=${opts.onSelectGitNode} @keydown=${activateOnKeydown(opts.onSelectGitNode)}>
+        <div class="wk-nav__node wk-nav__node--git ${ws.mode ==="git" ? "active" : ""}" role="button" tabindex="0" @click=${opts.onSelectGitNode} @keydown=${activateOnKeydown(opts.onSelectGitNode)}>
           ${icons.diff}<span>${t("git.title")}</span>
         </div>
         <section class="wk-nav__section">

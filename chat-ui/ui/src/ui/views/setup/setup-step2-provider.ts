@@ -110,7 +110,7 @@ function renderQuickstart(state: AppViewState, goToStep: (step: number) => void)
               <span class="oc-setup-quickstart__env">${c.envVar}</span>
               <span class="oc-setup-quickstart__key">${c.maskedKey}</span>
             </div>
-            <button class="oc-setup-btn oc-setup-btn--primary" ?disabled=${!!qs.adoptingEnvVar}
+            <button class="btn primary" ?disabled=${!!qs.adoptingEnvVar}
               @click=${() => handleAdoptEnvKey(c, state, goToStep)}>
               ${adopting
                 ? html`<span class="oc-setup-spinner"></span>${t("setup.quickstart.verifying")}`
@@ -521,12 +521,12 @@ export function renderStep2(state: AppViewState, goToStep: (step: number) => voi
       ` : nothing}
       </div>
 
-      <div class="oc-setup-btn-row">
-        <button class="oc-setup-btn oc-setup-btn--secondary" ?disabled=${s.verifying || !!qs.adoptingEnvVar} @click=${() => goToStep(1)}>
+      <div class="btn-row">
+        <button class="btn" ?disabled=${s.verifying || !!qs.adoptingEnvVar} @click=${() => goToStep(1)}>
           ${t("setup.provider.back")}
         </button>
         ${!isOAuth ? html`
-          <button class="oc-setup-btn oc-setup-btn--primary" ?disabled=${s.verifying}
+          <button class="btn primary" ?disabled=${s.verifying}
             @click=${() => handleVerify(state, goToStep)}>
             ${s.verifying ? "..." : t("setup.provider.verify")}
           </button>
@@ -543,7 +543,7 @@ function renderOAuthSection(state: AppViewState, goToStep: (step: number) => voi
         <div class="oc-setup-oauth-status">
           <span class="oc-setup-spinner"></span>
           <span>${t("setup.provider.oauth.waiting")}</span>
-          <button class="oc-setup-btn oc-setup-btn--text" @click=${() => handleOAuthCancel(state)}>
+          <button class="btn btn--text" @click=${() => handleOAuthCancel(state)}>
             ${t("setup.provider.oauth.cancel")}
           </button>
         </div>
@@ -554,7 +554,7 @@ function renderOAuthSection(state: AppViewState, goToStep: (step: number) => voi
         </div>
       ` : html`
         <div class="oc-mt-24 oc-mb-24" style="text-align:center">
-          <button class="oc-setup-btn oc-setup-btn--primary" @click=${() => handleOAuthLogin(state, goToStep)}>
+          <button class="btn primary" @click=${() => handleOAuthLogin(state, goToStep)}>
             ${t("setup.provider.oauth.login")}
           </button>
         </div>
@@ -567,8 +567,8 @@ function renderOAuthSection(state: AppViewState, goToStep: (step: number) => voi
           <oc-password-input .value=${s.apiKey} .placeholder=${getPlaceholder()}
             @input=${(e: CustomEvent) => { s.apiKey = e.detail.value; state.requestUpdate(); }}
           ></oc-password-input>
-          <div class="oc-setup-btn-row oc-mt-12">
-            <button class="oc-setup-btn oc-setup-btn--primary" ?disabled=${s.verifying}
+          <div class="btn-row oc-mt-12">
+            <button class="btn primary" ?disabled=${s.verifying}
               @click=${() => handleVerify(state, goToStep)}>
               ${s.verifying ? "..." : t("setup.provider.verify")}
             </button>

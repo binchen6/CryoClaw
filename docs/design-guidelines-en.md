@@ -61,8 +61,11 @@ were fully retuned.
   `--radius-xs/sm/md/lg/xl` (= 4/8/12/16/20), `--radius-pill` (999px).
 - **Spacer scale** (4px base grid): `--spacer-2/3/4/6/8/10/12/16/20/24/32/40/48/64`.
 - **Icon sizes**: `--icon-size-12/14/16/20/24`.
-- **Reading column widths**: `--chat-column` (760px — centered column for the message
-  stream and compose box), `--ext-column` (960px — content column for extension views).
+- **Reading column widths (R84 fluid)**: `--chat-column` (`min(92%, 1000px)` — centered
+  column for the message stream and compose box), `--ext-column` (`min(92%, 1200px)` —
+  content column for extension views), `--page-column` (`min(92%, 1080px)` — content
+  column for settings/tasks form pages). Columns fill ~92% of available width and
+  stretch with the window; the pixel cap only binds on very wide windows.
 - **Font stacks**: `--font-body` (Inter + SF Pro Text + PingFang SC fallback),
   `--font-display`, `--mono` (JetBrains Mono family), `--font-meta` = `--mono`;
   `--font-size-meta: 11px`, `--font-size-body: 14px`.
@@ -358,8 +361,9 @@ Since the 2026.9 R2 refresh, **all app icons are drawn in-house**
 
 - The 44px titlebar is reserved by the shell (see §4.3); floating layers anchor to
   `--titlebar-h` (e.g. `top: calc(var(--titlebar-h) + var(--spacer-12))`).
-- Centered column constraints: message stream / compose use `--chat-column` (760px);
-  extension-view content columns use `--ext-column` (960px).
+- Centered column constraints (R84 fluid): message stream / compose use `--chat-column`
+  (`min(92%, 1000px)`); extension-view content columns use `--ext-column`
+  (`min(92%, 1200px)`); form pages use `--page-column` (`min(92%, 1080px)`).
 - Narrow windows (≤900px / ≤720px) get session-panel width media queries (see §4.2).
 - Grid overflow guard: `grid-template-columns: minmax(0,1fr)` + `min-width: 0` on
   children.

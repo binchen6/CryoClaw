@@ -301,59 +301,8 @@
   padding-bottom: var(--spacer-32);
 }
 
-.oc-setup-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--spacer-6);
-  height: 32px;
-  padding: 0 var(--spacer-16);
-  font-size: var(--text-base);
-  font-weight: var(--weight-medium);
-  line-height: 1;
-  border-radius: var(--radius-8);
-  cursor: pointer;
-  border: 1px solid transparent;
-  white-space: nowrap;
-  transition: background var(--duration-fast) var(--ease-standard),
-    color var(--duration-fast) var(--ease-standard),
-    border-color var(--duration-fast) var(--ease-standard),
-    opacity var(--duration-fast) var(--ease-standard);
-  font-family: inherit;
-}
-.oc-setup-btn:focus-visible {
-  outline: none;
-  box-shadow: var(--focus-ring);
-}
-.oc-setup-btn:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-  pointer-events: none;
-}
-.oc-setup-btn--primary {
-  background: var(--accent);
-  color: var(--text-on-accent);
-  border-color: var(--accent);
-}
-.oc-setup-btn--primary:hover:not(:disabled) { background: var(--accent-hover); }
-.oc-setup-btn--secondary {
-  background: var(--bg-muted);
-  color: var(--text);
-  border-color: var(--border);
-  margin-right: auto;
-}
-.oc-setup-btn--secondary:hover:not(:disabled) {
-  background: var(--bg-hover);
-  border-color: var(--border-strong);
-}
-.oc-setup-btn--text {
-  background: transparent;
-  border: none;
-  color: var(--text-secondary);
-  padding: var(--spacer-4) var(--spacer-8);
-  font-size: var(--text-base);
-}
-.oc-setup-btn--text:hover { color: var(--text); }
+/* R84 按钮收敛：oc-setup-btn* 迁移到全局 .btn 体系（primitives.css），
+   仅保留 footer 行容器。 */
 
 .oc-setup-oauth-section {
   width: 100%;

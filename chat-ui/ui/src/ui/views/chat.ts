@@ -521,7 +521,7 @@ function renderAttachmentPreview(props: ChatProps) {
     <div class="chat-attachments">
       ${attachments.map(
         (att) => html`
-          <div class="chat-attachment ${att.filePath && !att.dataUrl ? "chat-attachment--file" : ""}">
+          <div class="chat-attachment ${att.filePath && !att.dataUrl ?"chat-attachment--file" : ""}">
             ${
               att.dataUrl
                 ? html`<img
@@ -570,7 +570,7 @@ function renderExecStrip(props: ChatProps) {
           return html`
           <div class="chat-approval-item">
             <div class="chat-approval-item__body">
-              <div class="chat-approval-item__cmd ${entry.kind === "exec" ? "mono" : ""}">${label}</div>
+              <div class="chat-approval-item__cmd ${entry.kind ==="exec" ? "mono" : ""}">${label}</div>
               ${entry.description
                 ? html`<div class="chat-approval-item__desc">${entry.description}</div>`
                 : nothing}
@@ -616,11 +616,11 @@ function renderGoalBanner(props: ChatProps) {
       </div>
       <div class="chat-goal__actions">
         ${active
-          ? html`<button class="chat-goal__btn" type="button" @click=${() => props.onGoalCommand?.("/goal pause")}>${t("goal.pause")}</button>`
+          ? html`<button class="btn btn--sm" type="button" @click=${() => props.onGoalCommand?.("/goal pause")}>${t("goal.pause")}</button>`
           : goal.status !== "complete"
-            ? html`<button class="chat-goal__btn" type="button" @click=${() => props.onGoalCommand?.("/goal resume")}>${t("goal.resume")}</button>`
+            ? html`<button class="btn btn--sm" type="button" @click=${() => props.onGoalCommand?.("/goal resume")}>${t("goal.resume")}</button>`
             : nothing}
-        <button class="chat-goal__btn" type="button" @click=${() => props.onGoalCommand?.("/goal clear")}>${t("goal.clear")}</button>
+        <button class="btn btn--sm" type="button" @click=${() => props.onGoalCommand?.("/goal clear")}>${t("goal.clear")}</button>
       </div>
     </div>
   `;
@@ -770,7 +770,7 @@ function renderPlusMenu(props: ChatProps) {
   return html`
     <div class="chat-plus">
       <button
-        class="chat-compose__tool-btn chat-plus__trigger ${plusMenuOpen ? "chat-plus__trigger--open" : ""}"
+        class="chat-compose__tool-btn chat-plus__trigger ${plusMenuOpen ?"chat-plus__trigger--open" : ""}"
         type="button"
         @click=${(e: Event) => {
           e.stopPropagation();
@@ -799,7 +799,7 @@ function renderPlusMenu(props: ChatProps) {
               </button>
               ${props.onListSkills
                 ? html`
-                  <button class="chat-plus__item ${skillPickerOpen ? "chat-plus__item--active" : ""}" type="button" @click=${() => {
+                  <button class="chat-plus__item ${skillPickerOpen ?"chat-plus__item--active" : ""}" type="button" @click=${() => {
                     if (skillPickerOpen) {
                       skillPickerOpen = false;
                       props.onRequestUpdate?.();
@@ -825,7 +825,7 @@ function renderPlusMenu(props: ChatProps) {
               <div class="chat-plus__section">${t("chat.execMode")}</div>
               ${execModes.map(([value, label]) => html`
                 <button
-                  class="chat-plus__item chat-plus__item--mode ${execMode === value ? "chat-plus__item--active" : ""}"
+                  class="chat-plus__item chat-plus__item--mode ${execMode === value ?"chat-plus__item--active" : ""}"
                   type="button"
                   role="menuitemradio"
                   aria-checked=${execMode === value ? "true" : "false"}
@@ -881,7 +881,7 @@ function renderCommandSuggestions(props: ChatProps) {
     <div class="chat-cmd-suggest" role="listbox">
       ${commandSuggestions.map((cmdEntry, idx) => html`
         <button
-          class="chat-cmd-suggest__item ${idx === commandIndex ? "chat-cmd-suggest__item--active" : ""}"
+          class="chat-cmd-suggest__item ${idx === commandIndex ?"chat-cmd-suggest__item--active" : ""}"
           type="button"
           role="option"
           ?aria-selected=${idx === commandIndex}
@@ -997,7 +997,7 @@ export function renderChat(props: ChatProps) {
   };
   const thread = html`
     <div
-      class="chat-thread ${isEmptySession ? "chat-thread--empty" : ""}"
+      class="chat-thread ${isEmptySession ?"chat-thread--empty" : ""}"
       role="log"
       aria-live="polite"
       @scroll=${props.onChatScroll}
@@ -1115,7 +1115,7 @@ export function renderChat(props: ChatProps) {
         : nothing}
 
       <div
-        class="chat-split-container ${sidebarOpen ? "chat-split-container--open" : ""}"
+        class="chat-split-container ${sidebarOpen ?"chat-split-container--open" : ""}"
       >
         <div
           class="chat-main"
@@ -1374,7 +1374,7 @@ export function renderChat(props: ChatProps) {
               ? html`
                   <div class="chat-compose__thinking">
                     <button
-                      class="chat-compose__thinking-toggle ${props.thinkingToggleLevel && props.thinkingToggleLevel !== "off" ? "chat-compose__thinking-toggle--active" : ""}"
+                      class="chat-compose__thinking-toggle ${props.thinkingToggleLevel && props.thinkingToggleLevel !=="off" ? "chat-compose__thinking-toggle--active" : ""}"
                       type="button"
                       data-tooltip=${t("chat.thinkingPicker")}
                       aria-label=${t("chat.thinkingPicker")}
@@ -1412,7 +1412,7 @@ export function renderChat(props: ChatProps) {
                       ? html`<div class="chat-compose__thinking-popover">
                           ${props.thinkingToggleLevels!.map(level => html`
                             <button
-                              class="chat-compose__thinking-option ${level === (props.thinkingToggleLevel ?? "off") ? "chat-compose__thinking-option--selected" : ""}"
+                              class="chat-compose__thinking-option ${level === (props.thinkingToggleLevel ??"off") ? "chat-compose__thinking-option--selected" : ""}"
                               type="button"
                               @click=${(e: Event) => {
                                 e.stopPropagation();
@@ -1538,8 +1538,7 @@ function renderSubagentCards(cards: SubagentCard[]) {
         (card) => card.id,
         (card) => html`
           <div
-            class="chat-subagent-card ${card.active
-              ? "chat-subagent-card--active"
+            class="chat-subagent-card ${card.active ?"chat-subagent-card--active"
               : isFailedSubagentStatus(card.status)
                 ? "chat-subagent-card--failed"
                 : "chat-subagent-card--done"}"

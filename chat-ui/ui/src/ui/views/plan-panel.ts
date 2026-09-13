@@ -35,7 +35,7 @@ export function renderPlanPanel(plan: PlanStreamState | null | undefined, props:
 
   return html`
     <div
-      class="plan-panel ${allDone ? "plan-panel--done" : ""}"
+      class="plan-panel ${allDone ?"plan-panel--done" : ""}"
       tabindex="0"
       role="region"
       aria-label=${t("plan.title")}
@@ -48,7 +48,7 @@ export function renderPlanPanel(plan: PlanStreamState | null | undefined, props:
     >
       <div class="plan-panel__pill">
         <span
-          class="plan-panel__dot ${allDone ? "plan-panel__dot--done" : current ? "plan-panel__dot--active" : ""}"
+          class="plan-panel__dot ${allDone ?"plan-panel__dot--done" : current ? "plan-panel__dot--active" : ""}"
           aria-hidden="true"
         ></span>
         <span class="plan-panel__progress">${done}/${total}${allDone ? " ✓" : ""}</span>

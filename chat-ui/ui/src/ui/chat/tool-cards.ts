@@ -369,7 +369,7 @@ export function renderToolCardSidebar(card: ToolCard, onOpenSidebar?: (content: 
   const exitBadge =
     card.exitCode !== undefined && EXIT_CODE_TOOL_NAMES.has(card.name.toLowerCase())
       ? html`<span
-          class="chat-tool-card__exit ${card.exitCode !== 0 ? "chat-tool-card__exit--failed" : ""}"
+          class="chat-tool-card__exit ${card.exitCode !== 0 ?"chat-tool-card__exit--failed" : ""}"
           title=${t("chat.toolExitCode").replace("{code}", String(card.exitCode))}
           aria-label=${t("chat.toolExitCode").replace("{code}", String(card.exitCode))}
           >exit ${card.exitCode}</span

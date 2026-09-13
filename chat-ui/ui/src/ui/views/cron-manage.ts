@@ -62,12 +62,12 @@ function renderListItem(job: CronJob, selected: boolean, props: CronManageProps)
 
   return html`
     <div
-      class="cm-list__item ${selected ? "cm-list__item--selected" : ""} ${expired ? "cm-list__item--expired" : ""}"
+      class="cm-list__item ${selected ?"cm-list__item--selected" : ""} ${expired ? "cm-list__item--expired" : ""}"
       @click=${() => props.onToggleExpand(job.id)}
     >
       <div class="cm-list__item-top">
         <span class="cm-list__item-name">${name}</span>
-        <span class="cm-list__item-pill ${expired ? "cm-pill--expired" : enabled ? "cm-pill--enabled" : "cm-pill--disabled"}">
+        <span class="cm-list__item-pill ${expired ?"cm-pill--expired" : enabled ? "cm-pill--enabled" : "cm-pill--disabled"}">
           ${expired ? t("cron.expired") : enabled ? t("cron.enabled") : t("cron.disabled")}
         </span>
       </div>
@@ -308,9 +308,9 @@ function renderForm(props: CronManageProps) {
           </div>
         ` : nothing}
         <div class="cron-form__footer">
-          <button class="cron-form__btn cron-form__btn--secondary" type="button"
+          <button class="btn" type="button"
             @click=${props.onToggleForm}>${t("cron.form.cancel")}</button>
-          <button class="cron-form__btn cron-form__btn--primary" type="button"
+          <button class="btn primary" type="button"
             ?disabled=${props.busy || !form.name.trim() || !form.payloadText.trim()}
             @click=${props.onAddJob}>${props.busy ? t("cron.form.saving") : isEdit ? t("cron.form.save") : t("cron.form.create")}</button>
         </div>

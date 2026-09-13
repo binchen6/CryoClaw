@@ -37,10 +37,13 @@ test("视图 CSS 不得自带标题栏让位（壳层统一占位）", () => {
   }
 });
 
-test("design-tokens：--ext-column / --chat-column 阅读列宽 token 存在", () => {
+test("design-tokens：--ext-column / --chat-column / --page-column 内容列 token 存在且流式（R84）", () => {
   const dt = readFileSync(new URL("../../../../../../shared/design-tokens.css", import.meta.url), "utf8");
-  assert.match(dt, /--ext-column:\s*\d+px/, "缺扩展视图内容列宽 token");
-  assert.match(dt, /--chat-column:\s*\d+px/, "缺聊天阅读列宽 token");
+  // R84：内容列从固定像素改为 min(<百分比>, <可读性上限>) 流式列，
+  // 随窗口伸缩铺满 ~92%，仅超宽窗口收束
+  assert.match(dt, /--ext-column:\s*min\(\s*92%,\s*\d+px\s*\)/, "缺扩展视图流式内容列 token");
+  assert.match(dt, /--chat-column:\s*min\(\s*92%,\s*\d+px\s*\)/, "缺聊天流式阅读列 token");
+  assert.match(dt, /--page-column:\s*min\(\s*92%,\s*\d+px\s*\)/, "缺设置/任务页流式内容列 token");
 });
 
 // R58b：线程尾部内联卡（子代理等待卡）必须与历史消息共用 --chat-column 居中列，

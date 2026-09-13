@@ -448,7 +448,7 @@ function renderCollapsedToolCards(
       @toggle=${(event: Event) =>
         hydrateLazyDetailsBody(event, ":scope > .chat-tools-collapse__body", bodyFn)}
     >
-      <summary class="chat-tools-summary ${hasError ? "chat-tools-summary--failed" : ""}">
+      <summary class="chat-tools-summary ${hasError ?"chat-tools-summary--failed" : ""}">
         ${
           hasError
             ? html`<span class="chat-tools-summary__error" aria-hidden="true">${icons.x}</span>`
@@ -574,7 +574,7 @@ function renderGroupedMessage(
       ? (m.resendAttachments as ChatAttachment[])
       : undefined;
     return html`
-      <div class="chat-bubble chat-error-card ${opts.isHydrating ? "" : "fade-in"}" role="alert">
+      <div class="chat-bubble chat-error-card ${opts.isHydrating ?"" : "fade-in"}" role="alert">
         <span class="chat-error-card__icon" aria-hidden="true">${icons.warning}</span>
         <span class="chat-error-card__text">${errorText}</span>
         ${resendText && opts.onResendError

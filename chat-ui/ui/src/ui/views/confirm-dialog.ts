@@ -49,7 +49,7 @@ export function renderConfirmDialog(state: AppViewState) {
           <button class="btn" data-dialog-dismiss @click=${() => settle(state, false)}>
             ${t("settings.cancel")}
           </button>
-          <button class="btn ${danger ? "danger" : "primary"}" @click=${() => settle(state, true)}>
+          <button class="btn ${danger ?"danger" : "primary"}" @click=${() => settle(state, true)}>
             ${t("settings.confirm")}
           </button>
         </div>

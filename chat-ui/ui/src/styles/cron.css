@@ -600,46 +600,4 @@
   margin-top: var(--spacer-4);
 }
 
-/* 表单按钮：cc-btn 契约（高 28、radius-8、字重 500） */
-.cron-form__btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid transparent;
-  border-radius: var(--radius-8);
-  font-size: var(--text-base);
-  font-weight: var(--weight-medium);
-  font-family: inherit;
-  height: 28px;
-  padding: 0 var(--spacer-12);
-  cursor: pointer;
-  transition: background var(--duration-fast) var(--ease-standard),
-    border-color var(--duration-fast) var(--ease-standard);
-}
-
-.cron-form__btn:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-  pointer-events: none;
-}
-
-.cron-form__btn--secondary {
-  background: var(--bg-muted);
-  border-color: var(--border);
-  color: var(--text);
-}
-
-.cron-form__btn--secondary:hover:not(:disabled) {
-  background: var(--bg-hover);
-  border-color: var(--border-strong);
-}
-
-.cron-form__btn--primary {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--text-on-accent);
-}
-
-.cron-form__btn--primary:hover:not(:disabled) {
-  background: var(--accent-hover);
-}
+/* R84 按钮收敛：cron-form__btn* 迁移到全局 .btn 体系（primitives.css） */

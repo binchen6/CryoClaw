@@ -37,7 +37,7 @@ export class ToggleSwitch extends LitElement {
 
   render() {
     return html`
-      <div class="oc-toggle ${this.disabled ? "oc-toggle--disabled" : ""}"
+      <div class="oc-toggle ${this.disabled ?"oc-toggle--disabled" : ""}"
         role="switch"
         aria-checked=${this.checked ? "true" : "false"}
         aria-label=${this.ariaLabel || nothing}
@@ -49,7 +49,7 @@ export class ToggleSwitch extends LitElement {
           : this.rich
             ? html`<span class="oc-toggle-label"><slot></slot></span>`
             : nothing}
-        <span class="oc-toggle-track ${this.checked ? "oc-toggle-track--on" : ""}">
+        <span class="oc-toggle-track ${this.checked ?"oc-toggle-track--on" : ""}">
           <span class="oc-toggle-thumb"></span>
         </span>
       </div>

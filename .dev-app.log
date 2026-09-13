@@ -1,0 +1,1176 @@
+
+> cryoclaw@2026.912.5 dev:isolated
+> node scripts/dev-isolated.js
+
+[dev-isolated] 状态目录: C:\Users\binchen\Desktop\code\Oneclaw2\Oneclaw\.dev-state
+[dev-isolated] Gateway 端口: 19554
+[dev-isolated] PID: 58596
+[dev-isolated] 已复制 C:\Users\binchen\.openclaw\cryoclaw.config.json
+[dev-isolated] 已初始化 workspace（bootstrap 已复制，memory 为空）
+[dev-isolated] 已重写 agents.defaults.workspace → C:\Users\binchen\Desktop\code\Oneclaw2\Oneclaw\.dev-state\workspace
+[dev-isolated] 启动 electron ...
+
+(node:58596) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead to security vulnerabilities, as the arguments are not escaped, only concatenated.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+
+> cryoclaw@2026.912.5 predev
+> npm install && node scripts/run-with-env.js node scripts/package-resources.js --no-asar && npm run build
+
+
+up to date, audited 350 packages in 5s
+
+64 packages are looking for funding
+  run `npm fund` for details
+
+5 vulnerabilities (2 moderate, 3 high)
+
+To address all issues, run:
+  npm audit fix
+
+Run `npm audit` for details.
+
+[资源打包] ========================================
+[资源打包] 平台: win32 | 架构: x64
+[资源打包] 目标: win32-x64
+[资源打包] ========================================
+
+[资源打包] Step 1: 下载 Node.js 22 运行时
+[资源打包] Node.js 运行时（钉定）: v24.21.0
+[资源打包] runtime 已是 24.21.0-win32-x64，跳过解压
+[资源打包] Step 1.5: 配置 .npmrc
+[资源打包] 已写入 .npmrc（使用 npmmirror 镜像源）
+
+[资源打包] Step 2: 安装 openclaw 生产依赖
+[资源打包] 使用 openclaw@2026.9.3（来源: package.json cryoclaw.openclaw）
+[资源打包] 使用 clawhub@0.23.3（来源: package.json cryoclaw.clawhub）
+[资源打包] 安装 openclaw 依赖 (来源: 2026.9.3) ...
+npm warn deprecated node-domexception@1.0.0: Use your platform's native DOMException instead
+
+added 365 packages, and audited 366 packages in 1m
+
+111 packages are looking for funding
+  run `npm fund` for details
+
+found 0 vulnerabilities
+npm warn install-scripts 5 packages have install scripts not yet covered by allowScripts:
+npm warn install-scripts   openclaw@2026.9.3 (preinstall: node scripts/preinstall-package-manager-warning.mjs; postinstall: node scripts/postinstall-bundled-plugins.mjs)
+npm warn install-scripts   @google/genai@2.19.0 (preinstall: echo 'preinstall: no-op')
+npm warn install-scripts   koffi@3.1.6 (install: node ./cnoke.cjs -P . -D src/koffi --prebuild --release)
+npm warn install-scripts   tree-sitter-bash@0.25.1 (install: node-gyp-build)
+npm warn install-scripts   protobufjs@7.6.6 (postinstall: node scripts/postinstall)
+npm warn install-scripts
+npm warn install-scripts Run `npm install-scripts ls` to review, or `npm install-scripts approve <pkg>` to allow.
+[资源打包] 依赖安装完成，开始裁剪 node_modules...
+[资源打包] node_modules 裁剪统计: 删除文件 13279 个，删除目录 144 个
+[资源打包] 已清理 5 个非目标平台 prebuilds 目录（保留 win32-x64）
+[资源打包] 已移除 tree-sitter C 源码目录（prebuilds/wasm 保留）: tree-sitter-bash/src
+[资源打包] llama 依赖不存在，跳过移除
+[资源打包] 已移除 2 个 .pdb 调试符号文件（运行时无用）
+[资源打包] 已全局注入 windowsHide: 扫描 7114 文件，补丁 32 文件
+[资源打包] 已注入 4 个 CryoClaw 内置 skill
+[资源打包] node_modules 裁剪完成
+
+[资源打包] Step 2.5: 注入 bundled 插件
+[资源打包] 使用缓存的 kimi-search 包: .cache\kimi-search\openclaw-kimi-search-0.1.3.tgz
+[资源打包] kimi-search sha256 钉定校验通过
+[资源打包] 已注入 kimi-search 插件到 resources\targets\win32-x64\gateway\node_modules\openclaw\dist\extensions\kimi-search
+[资源打包] 使用 @dingtalk-real-ai/dingtalk-connector@0.8.25（来源: package.json cryoclaw.dingtalkConnector）
+[资源打包] 独立安装 dingtalk-connector 插件 (pinned:@dingtalk-real-ai/dingtalk-connector@0.8.25) ...
+
+added 57 packages, and audited 58 packages in 8s
+
+8 packages are looking for funding
+  run `npm fund` for details
+
+3 vulnerabilities (1 high, 2 critical)
+
+To address all issues (including breaking changes), run:
+  npm audit fix --force
+
+Run `npm audit` for details.
+[资源打包] node_modules 裁剪统计: 删除文件 91 个，删除目录 10 个
+[资源打包] llama 依赖不存在，跳过移除
+[资源打包] 已为 dingtalk-connector 生成 channel shim (cryoclaw-bundled-entry.mjs)
+[资源打包] 已注入 dingtalk-connector 插件到 resources\targets\win32-x64\gateway\node_modules\openclaw\dist\extensions\dingtalk-connector
+[资源打包] 使用 @wecom/wecom-openclaw-plugin@2026.8.17（来源: package.json cryoclaw.wecom）
+[资源打包] node_modules 裁剪统计: 删除文件 0 个，删除目录 0 个
+[资源打包] llama 依赖不存在，跳过移除
+[资源打包] 复用已注入的 wecom-openclaw-plugin 插件 (pinned:@wecom/wecom-openclaw-plugin@2026.8.17)
+[资源打包] 使用 @tencent-weixin/openclaw-weixin@2.4.8（来源: package.json cryoclaw.weixin）
+[资源打包] node_modules 裁剪统计: 删除文件 0 个，删除目录 0 个
+[资源打包] llama 依赖不存在，跳过移除
+[资源打包] 复用已注入的 openclaw-weixin 插件 (pinned:@tencent-weixin/openclaw-weixin@2.4.8)
+[资源打包] 使用 @openclaw/feishu@2026.8.2（来源: package.json cryoclaw.feishuPlugin）
+npm notice
+npm notice 📦  @openclaw/feishu@2026.8.2
+npm notice Tarball Contents
+npm notice 346B README.md
+npm notice 7.6kB dist/accounts-RwSyseKr.js
+npm notice 96.3kB dist/api.js
+npm notice 7.6kB dist/app-registration-BI99e_JI.js
+npm notice 301B dist/audio-preflight.runtime-BBfC9elv.js
+npm notice 123.1kB dist/channel-BtM7n79m.js
+npm notice 598B dist/channel-entry.js
+npm notice 84B dist/channel-plugin-api.js
+npm notice 9.6kB dist/channel.runtime-DmCiCQJE.js
+npm notice 9.6kB dist/chat-Cbr7P_JH.js
+npm notice 10.5kB dist/client-vJJyfkxI.js
+npm notice 1.3kB dist/configured-state.js
+npm notice 534B dist/contract-api.js
+npm notice 5.3kB dist/conversation-id-VYgGQ-GX.js
+npm notice 167B dist/doctor-contract-api.js
+npm notice 19.1kB dist/doctor-contract-CQAuBotF.js
+npm notice 1.1kB dist/index.js
+npm notice 465B dist/json-response-DXajw_FU.js
+npm notice 8.4kB dist/monitor-BVYpA9SO.js
+npm notice 292.3kB dist/monitor.account-CuOAmGJf.js
+npm notice 7.1kB dist/probe-Cs1s-qSS.js
+npm notice 134.4kB dist/reply-delivery-result-BIIeISPG.js
+npm notice 382B dist/rolldown-runtime-8H4AJuhK.js
+npm notice 1.6kB dist/runtime-api.js
+npm notice 362B dist/runtime-C5JxBWZp.js
+npm notice 92B dist/runtime-setter-api.js
+npm notice 230B dist/secret-contract-api.js
+npm notice 3.6kB dist/secret-contract-BCpDLdg9.js
+npm notice 728B dist/security-audit-DKfR4Cv3.js
+npm notice 1.9kB dist/security-audit-shared-CK5rVR-1.js
+npm notice 142B dist/security-contract-api.js
+npm notice 132B dist/session-binding-contract-api.js
+npm notice 1.0kB dist/session-conversation-DFCIvQK-.js
+npm notice 167B dist/session-key-api.js
+npm notice 172B dist/setup-api.js
+npm notice 539B dist/setup-entry.js
+npm notice 716B dist/subagent-hooks-api.js
+npm notice 7.2kB dist/subagent-hooks-BnO3ALWB.js
+npm notice 2.3kB dist/targets-BUjQ1TcA.js
+npm notice 9.6kB dist/thread-bindings-BiL1wGqK.js
+npm notice 61.8kB openclaw.plugin.json
+npm notice 2.2kB package.json
+npm notice 5.4kB skills/feishu-doc/references/block-types.md
+npm notice 2.1kB skills/feishu-doc/SKILL.md
+npm notice 1.5kB skills/feishu-drive/SKILL.md
+npm notice 1.0kB skills/feishu-perm/SKILL.md
+npm notice 1.3kB skills/feishu-wiki/SKILL.md
+npm notice Bundled Dependencies
+npm notice @larksuiteoapi/node-sdk
+npm notice mdast-util-from-markdown
+npm notice mdast-util-gfm-table
+npm notice micromark-extension-gfm-table
+npm notice typebox
+npm notice zod
+npm notice Tarball Details
+npm notice name: @openclaw/feishu
+npm notice version: 2026.8.2
+npm notice filename: openclaw-feishu-2026.8.2.tgz
+npm notice package size: 4.9 MB
+npm notice unpacked size: 46.4 MB
+npm notice shasum: d04b25dbc872a5dfe4a9e31bd876447cfb6a685d
+npm notice integrity: sha512-gJ0MHsQl76QEK[...]8wIX2Lq/adVtQ==
+npm notice bundled deps: 6
+npm notice bundled files: 0
+npm notice own files: 3697
+npm notice total files: 3697
+npm notice
+openclaw-feishu-2026.8.2.tgz
+[资源打包] node_modules 裁剪统计: 删除文件 1677 个，删除目录 45 个
+[资源打包] 已 vendor 官方插件 feishu (@openclaw/feishu@2026.8.2)
+[资源打包] 使用 @openclaw/qqbot@2026.7.1（来源: package.json cryoclaw.qqbotPlugin）
+npm notice
+npm notice 📦  @openclaw/qqbot@2026.7.1
+npm notice Tarball Contents
+npm notice 306B README.md
+npm notice 1.7kB dist/api.js
+npm notice 48.4kB dist/channel-D1UztsnG.js
+npm notice 100B dist/channel-entry-api.js
+npm notice 4.9kB dist/channel-entry-C5YdhX3Y.js
+npm notice 82B dist/channel-plugin-api.js
+npm notice 824B dist/channel.setup-2ItDYKhz.js
+npm notice 10.5kB dist/config-C1qZbh0K.js
+npm notice 16.6kB dist/config-schema-JZEf1dvB.js
+npm notice 7.0kB dist/doctor-contract-api.js
+npm notice 252.3kB dist/gateway-pJQppxe4.js
+npm notice 42.1kB dist/group-o0GmovSf.js
+npm notice 5.1kB dist/handler-runtime-zQvT6SrI.js
+npm notice 998B dist/index.js
+npm notice 3.8kB dist/log-DEtcoDWe.js
+npm notice 68.1kB dist/outbound-BIrfvvFJ.js
+npm notice 1.5kB dist/request-context-Bm7PTBD1.js
+npm notice 129B dist/runtime-api.js
+npm notice 822B dist/runtime-DodcT_fQ.js
+npm notice 2.2kB dist/secret-contract-api.js
+npm notice 80.2kB dist/sender-CjDuU-uz.js
+npm notice 460B dist/setup-entry.js
+npm notice 98B dist/setup-plugin-api.js
+npm notice 4.3kB dist/state-keys-CQKlAFyo.js
+npm notice 3.6kB dist/string-normalize-R_0cKO7Q.js
+npm notice 2.4kB dist/target-parser-DagYRQkP.js
+npm notice 94B dist/tools-api.js
+npm notice 20.9kB dist/tools-UJJ-tLHP.js
+npm notice 4.3kB npm-shrinkwrap.json
+npm notice 29.3kB openclaw.plugin.json
+npm notice 1.8kB package.json
+npm notice 15.3kB skills/qqbot-channel/references/api_references.md
+npm notice 14.9kB skills/qqbot-channel/SKILL.md
+npm notice 2.8kB skills/qqbot-media/SKILL.md
+npm notice 6.9kB skills/qqbot-remind/SKILL.md
+npm notice Bundled Dependencies
+npm notice simple-yenc
+npm notice @eshaz/web-worker
+npm notice qrcode-terminal
+npm notice silk-wasm
+npm notice ws
+npm notice zod
+npm notice @wasm-audio-decoders/common
+npm notice mpg123-decoder
+npm notice @tencent-connect/qqbot-connector
+npm notice Tarball Details
+npm notice name: @openclaw/qqbot
+npm notice version: 2026.7.1
+npm notice filename: openclaw-qqbot-2026.7.1.tgz
+npm notice package size: 1.3 MB
+npm notice unpacked size: 6.1 MB
+npm notice shasum: 4c9c98aecf92d2c832048eeca04ac3c994373cd6
+npm notice integrity: sha512-h5Ak9UyoIzMl1[...]+yvdLXkSV0lfA==
+npm notice bundled deps: 9
+npm notice bundled files: 0
+npm notice own files: 851
+npm notice total files: 851
+npm notice
+openclaw-qqbot-2026.7.1.tgz
+[资源打包] node_modules 裁剪统计: 删除文件 237 个，删除目录 7 个
+[资源打包] 已 vendor 官方插件 qqbot (@openclaw/qqbot@2026.7.1)
+[资源打包] 使用 @openclaw/moonshot-provider@2026.8.2（来源: package.json cryoclaw.moonshotProviderPlugin）
+npm notice
+npm notice 📦  @openclaw/moonshot-provider@2026.8.2
+npm notice Tarball Contents
+npm notice 297B README.md
+npm notice 421B dist/api.js
+npm notice 2.9kB dist/index.js
+npm notice 2.5kB dist/kimi-web-search-provider-DlE1dJHa.js
+npm notice 12.1kB dist/kimi-web-search-provider.runtime-ILfyNM0k.js
+npm notice 1.3kB dist/media-understanding-provider.js
+npm notice 3.0kB dist/native-video.js
+npm notice 1.1kB dist/onboard.js
+npm notice 4.4kB dist/openclaw.plugin-BLi5Z-ZR.js
+npm notice 1.3kB dist/provider-catalog.js
+npm notice 637B dist/provider-contract-api.js
+npm notice 438B dist/provider-discovery.js
+npm notice 1.4kB dist/provider-policy-api.js
+npm notice 166B dist/web-search-contract-api.js
+npm notice 131B dist/web-search-provider.js
+npm notice 5.6kB openclaw.plugin.json
+npm notice 1.0kB package.json
+npm notice Tarball Details
+npm notice name: @openclaw/moonshot-provider
+npm notice version: 2026.8.2
+npm notice filename: openclaw-moonshot-provider-2026.8.2.tgz
+npm notice package size: 10.1 kB
+npm notice unpacked size: 38.8 kB
+npm notice shasum: 26b12265a1e2187759fcfe1e8884b0dcec251f39
+npm notice integrity: sha512-1dcwS8JzCKdPy[...]bZ1IE0gYPzqUw==
+npm notice total files: 17
+npm notice
+openclaw-moonshot-provider-2026.8.2.tgz
+[资源打包] 已 vendor 官方插件 moonshot (@openclaw/moonshot-provider@2026.8.2)
+[资源打包] 使用 @openclaw/kimi-provider@2026.8.2（来源: package.json cryoclaw.kimiProviderPlugin）
+npm notice
+npm notice 📦  @openclaw/kimi-provider@2026.8.2
+npm notice Tarball Contents
+npm notice 908B README.md
+npm notice 464B dist/api.js
+npm notice 3.2kB dist/index.js
+npm notice 1.2kB dist/onboard.js
+npm notice 4.5kB dist/provider-catalog-DesMT16v.js
+npm notice 355B dist/provider-catalog.js
+npm notice 909B dist/provider-policy-api.js
+npm notice 152B dist/replay-policy.js
+npm notice 11.7kB dist/stream.js
+npm notice 4.3kB openclaw.plugin.json
+npm notice 1.0kB package.json
+npm notice Tarball Details
+npm notice name: @openclaw/kimi-provider
+npm notice version: 2026.8.2
+npm notice filename: openclaw-kimi-provider-2026.8.2.tgz
+npm notice package size: 7.3 kB
+npm notice unpacked size: 28.6 kB
+npm notice shasum: 96310e7004e25d32b62e691a00af245d0a7e4659
+npm notice integrity: sha512-EYhTdhE3k5LeX[...]19KWd6wFDNmNQ==
+npm notice total files: 11
+npm notice
+openclaw-kimi-provider-2026.8.2.tgz
+[资源打包] 已 vendor 官方插件 kimi (@openclaw/kimi-provider@2026.8.2)
+[资源打包] 使用 @openclaw/zai-provider@2026.8.2（来源: package.json cryoclaw.zaiProviderPlugin）
+npm notice
+npm notice 📦  @openclaw/zai-provider@2026.8.2
+npm notice Tarball Contents
+npm notice 274B README.md
+npm notice 674B dist/api.js
+npm notice 6.4kB dist/detect.js
+npm notice 10.6kB dist/index.js
+npm notice 450B dist/media-understanding-provider.js
+npm notice 7.5kB dist/model-definitions-CfIS4QCW.js
+npm notice 563B dist/model-definitions.js
+npm notice 2.1kB dist/onboard.js
+npm notice 1.6kB dist/provider-policy-api.js
+npm notice 79B dist/runtime-api.js
+npm notice 6.4kB openclaw.plugin.json
+npm notice 1.0kB package.json
+npm notice Tarball Details
+npm notice name: @openclaw/zai-provider
+npm notice version: 2026.8.2
+npm notice filename: openclaw-zai-provider-2026.8.2.tgz
+npm notice package size: 8.9 kB
+npm notice unpacked size: 37.6 kB
+npm notice shasum: cbfb4dff84486122497e07f9727e5021c1a99f7d
+npm notice integrity: sha512-uko3vlamusEm9[...]ONtE+Ip8AUr8Q==
+npm notice total files: 12
+npm notice
+openclaw-zai-provider-2026.8.2.tgz
+[资源打包] 已 vendor 官方插件 zai (@openclaw/zai-provider@2026.8.2)
+[资源打包] 使用 @openclaw/qwen-provider@2026.8.2（来源: package.json cryoclaw.qwenProviderPlugin）
+npm notice
+npm notice 📦  @openclaw/qwen-provider@2026.8.2
+npm notice Tarball Contents
+npm notice 269B README.md
+npm notice 3.0kB dist/api.js
+npm notice 11.0kB dist/index.js
+npm notice 1.1kB dist/media-understanding-provider.js
+npm notice 16.1kB dist/models-C6e6jhtg.js
+npm notice 3.0kB dist/models.js
+npm notice 2.3kB dist/onboard.js
+npm notice 854B dist/provider-catalog.js
+npm notice 10.7kB dist/stream.js
+npm notice 1.8kB dist/video-generation-provider.js
+npm notice 16.9kB openclaw.plugin.json
+npm notice 1.0kB package.json
+npm notice Tarball Details
+npm notice name: @openclaw/qwen-provider
+npm notice version: 2026.8.2
+npm notice filename: openclaw-qwen-provider-2026.8.2.tgz
+npm notice package size: 11.3 kB
+npm notice unpacked size: 68.0 kB
+npm notice shasum: 443b4ff017c63842afef10d51ae78325f586638a
+npm notice integrity: sha512-8G7RcVJTxJCwk[...]/x1UeB79q8GYw==
+npm notice total files: 12
+npm notice
+openclaw-qwen-provider-2026.8.2.tgz
+[资源打包] 已 vendor 官方插件 qwen (@openclaw/qwen-provider@2026.8.2)
+[资源打包] 使用 @openclaw/deepseek-provider@2026.8.2（来源: package.json cryoclaw.deepseekProviderPlugin）
+npm notice
+npm notice 📦  @openclaw/deepseek-provider@2026.8.2
+npm notice Tarball Contents
+npm notice 273B README.md
+npm notice 328B dist/api.js
+npm notice 2.3kB dist/index.js
+npm notice 3.8kB dist/models-BQsDjpfu.js
+npm notice 242B dist/models.js
+npm notice 888B dist/onboard.js
+npm notice 349B dist/provider-catalog.js
+npm notice 397B dist/provider-discovery.js
+npm notice 4.4kB dist/provider-policy-api.js
+npm notice 484B dist/stream.js
+npm notice 590B dist/thinking.js
+npm notice 3.4kB openclaw.plugin.json
+npm notice 1.0kB package.json
+npm notice Tarball Details
+npm notice name: @openclaw/deepseek-provider
+npm notice version: 2026.8.2
+npm notice filename: openclaw-deepseek-provider-2026.8.2.tgz
+npm notice package size: 5.0 kB
+npm notice unpacked size: 18.5 kB
+npm notice shasum: bce8b305b986914fafe56939226fe843eab083c8
+npm notice integrity: sha512-razOqDw5nNZPA[...]b9wg0E1Q5UhiQ==
+npm notice total files: 13
+npm notice
+openclaw-deepseek-provider-2026.8.2.tgz
+[资源打包] 已 vendor 官方插件 deepseek (@openclaw/deepseek-provider@2026.8.2)
+[资源打包] 插件 kimi-search 入口已是 native (dist/index.js)，跳过 bundle
+[资源打包] 插件 wecom-openclaw-plugin 复用已有 bundle (dist\cryoclaw-bundle.mjs)
+[资源打包] 插件 openclaw-weixin 复用已有 bundle (dist\cryoclaw-bundle.mjs)
+[资源打包] 插件 qqbot 入口 dist/index.js 已 esbuild → dist\cryoclaw-bundle.mjs
+[资源打包] 插件 qqbot 原地重 bundle ws chunk: dist\gateway-pJQppxe4.js
+[资源打包] 已补丁 kimi 插件思考档位（k3 系按 supportedReasoningEfforts 全档位）
+[资源打包] Step 2.6: 校验插件入口形态
+  [入口 OK] kimi-search → dist/index.js
+  [入口 OK] dingtalk-connector → cryoclaw-bundled-entry.mjs
+  [入口 OK] wecom-openclaw-plugin → dist/cryoclaw-bundle.mjs
+  [入口 OK] openclaw-weixin → dist/cryoclaw-bundle.mjs
+
+[资源打包] Step 3: 生成构建配置
+[资源打包] 已生成 build-config.json（posthog.enabled=false, volcano.enabled=false, clawhubRegistry=(空)）
+
+[资源打包] Step 4: 拷贝图标资源
+[资源打包] 已拷贝 app-icon.png 到 resources\targets\win32-x64\app-icon.png
+
+[资源打包] Step 5: 生成入口文件和构建信息
+[资源打包] 已生成 gateway-entry.mjs
+[资源打包] 已生成 build-info.json
+
+[资源打包] 已清理上一次 asar 构建遗留的 gateway.asar(+.unpacked)（本次为散文件模式）
+[资源打包] Step 6: 跳过 ASAR 打包（未指定 --asar）
+
+[资源打包] Step 7: 下载 OfficeCLI 二进制
+[资源打包] OfficeCLI 已是 1.0.147-win32-x64 (sha256=724056e5ff07…)，跳过
+
+[资源打包] Step 7.5: vendor 内核升级器
+
+up to date in 2s
+[资源打包] 已 vendor 内核升级器 (@electron/asar@4.1.0) → updater/
+
+[资源打包] 正在验证输出文件...
+  [OK] resources\targets\win32-x64\runtime\node.exe
+  [OK] resources\targets\win32-x64\runtime\node_modules\npm
+  [OK] resources\targets\win32-x64\gateway\gateway-entry.mjs
+  [OK] resources\targets\win32-x64\gateway\node_modules\openclaw\openclaw.mjs
+  [OK] resources\targets\win32-x64\gateway\node_modules\openclaw\dist\entry.js
+  [OK] resources\targets\win32-x64\gateway\node_modules\openclaw\dist\control-ui\index.html
+  [OK] resources\targets\win32-x64\gateway\node_modules\clawhub\bin\clawdhub.js
+  [OK] resources\targets\win32-x64\build-config.json
+  [OK] resources\targets\win32-x64\app-icon.png
+  [OK] resources\targets\win32-x64\officecli\officecli.exe
+  [OK] resources\targets\win32-x64\gateway\node_modules\openclaw\dist\extensions\kimi-search\openclaw.plugin.json
+  [OK] resources\targets\win32-x64\gateway\node_modules\openclaw\dist\extensions\dingtalk-connector\openclaw.plugin.json
+  [OK] resources\targets\win32-x64\gateway\node_modules\openclaw\dist\extensions\feishu\openclaw.plugin.json
+  [OK] resources\targets\win32-x64\gateway\node_modules\openclaw\dist\extensions\qqbot\openclaw.plugin.json
+  [OK] resources\targets\win32-x64\gateway\node_modules\openclaw\dist\extensions\moonshot\openclaw.plugin.json
+  [OK] resources\targets\win32-x64\gateway\node_modules\openclaw\dist\extensions\kimi\openclaw.plugin.json
+  [OK] resources\targets\win32-x64\gateway\node_modules\openclaw\dist\extensions\zai\openclaw.plugin.json
+  [OK] resources\targets\win32-x64\gateway\node_modules\openclaw\dist\extensions\qwen\openclaw.plugin.json
+  [OK] resources\targets\win32-x64\gateway\node_modules\openclaw\dist\extensions\deepseek\openclaw.plugin.json
+  [OK] resources\targets\win32-x64\extensions-mirror\wecom-openclaw-plugin\openclaw.plugin.json
+  [OK] resources\targets\win32-x64\extensions-mirror\openclaw-weixin\openclaw.plugin.json
+  [OK] resources\targets\win32-x64\gateway\node_modules\openclaw\dist\extensions\memory-core\openclaw.plugin.json
+  [OK] resources\targets\win32-x64\gateway\node_modules\openclaw\dist\extensions\device-pair\openclaw.plugin.json
+  [OK] resources\targets\win32-x64\gateway\node_modules\openclaw\dist\extensions\feishu\openclaw.plugin.json
+[资源打包] 所有关键文件验证通过
+
+[资源打包] 资源打包完成！
+
+> cryoclaw@2026.912.5 build
+> npm run build:chat && tsc -p tsconfig.json
+
+
+> cryoclaw@2026.912.5 build:chat
+> cd chat-ui/ui && npm install --prefer-offline && npx vite build
+
+
+up to date, audited 45 packages in 2s
+
+16 packages are looking for funding
+  run `npm fund` for details
+
+1 high severity vulnerability
+
+To address all issues, run:
+  npm audit fix
+
+Run `npm audit` for details.
+[36mvite v7.3.6 [32mbuilding client environment for production...[36m[39m
+transforming...
+[32m✓[39m 239 modules transformed.
+rendering chunks...
+[33m[esbuild css minify]
+▲ [WARNING] Unexpected "/" [css-syntax-error]
+
+    <stdin>:721:80:
+      721 │ ...============================================================= *//
+          ╵                                                                    ^
+
+[39m
+[33m[plugin vite:reporter] 
+(!) C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/ui/src/ui/controllers/chat.ts is dynamically imported by C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/ui/src/ui/session-transition.ts but also statically imported by C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/ui/src/ui/app-chat.ts, C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/ui/src/ui/app-gateway.ts, C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/ui/src/ui/app-session-actions.ts, dynamic import will not move module into another chunk.
+[39m
+computing gzip size...
+[2m../dist/[22m[32massets/cryoclaw-favicon-DH5EHX6_.svg             [39m[1m[2m  0.81 kB[22m[1m[22m[2m │ gzip:   0.41 kB[22m
+[2m../dist/[22m[32mindex.html                                       [39m[1m[2m  2.22 kB[22m[1m[22m[2m │ gzip:   1.14 kB[22m
+[2m../dist/[22m[32massets/KaTeX_Size3-Regular-CTq5MqoE.woff         [39m[1m[2m  4.42 kB[22m[1m[22m
+[2m../dist/[22m[32massets/KaTeX_Size4-Regular-Dl5lxZxV.woff2        [39m[1m[2m  4.93 kB[22m[1m[22m
+[2m../dist/[22m[32massets/KaTeX_Size2-Regular-Dy4dx90m.woff2        [39m[1m[2m  5.21 kB[22m[1m[22m
+[2m../dist/[22m[32massets/KaTeX_Size1-Regular-mCD8mA8B.woff2        [39m[1m[2m  5.47 kB[22m[1m[22m
+[2m../dist/[22m[32massets/KaTeX_Size4-Regular-BF-4gkZK.woff         [39m[1m[2m  5.98 kB[22m[1m[22m
+[2m../dist/[22m[32massets/KaTeX_Size2-Regular-oD1tc_U0.woff         [39m[1m[2m  6.19 kB[22m[1m[22m
+[2m../dist/[22m[32massets/KaTeX_Size1-Regular-C195tn64.woff         [39m[1m[2m  6.50 kB[22m[1m[22m
+[2m../dist/[22m[32massets/KaTeX_Caligraphic-Regular-Di6jR-x-.woff2  [39m[1m[2m  6.91 kB[22m[1m[22m
+[2m../dist/[22m[32massets/KaTeX_Caligraphic-Bold-Dq_IR9rO.woff2     [39m[1m[2m  6.91 kB[22m[1m[22m
+[2m../dist/[22m[32massets/KaTeX_Size3-Regular-DgpXs0kz.ttf          [39m[1m[2m  7.59 kB[22m[1m[22m
+[2m../dist/[22m[32massets/KaTeX_Caligraphic-Regular-CTRA-rTL.woff   [39m[1m[2m  7.66 kB[22m[1m[22m
+[2m../dist/[22m[32massets/KaTeX_Caligraphic-Bold-BEiXGLvX.woff      [39m[1m[2m  7.72 kB[22m[1m[22m
+[2m../dist/[22m[32massets/KaTeX_Script-Regular-D3wIWfF6.woff2       [39m[1m[2m  9.64 kB[22m[1m[22m
+[2m../dist/[22m[32massets/KaTeX_SansSerif-Regular-DDBCnlJ7.woff2    [39m[1m[2m 10.34 kB[22m[1m[22m
+[2m../dist/[22m[32massets/KaTeX_Size4-Regular-DWFBv043.ttf          [39m[1m[2m 10.36 kB[22m[1m[22m
+[2m../dist/[22m[32massets/KaTeX_Script-Regular-D5yQViql.woff        [39m[1m[2m 10.59 kB[22m[1m[22m
+[2m../dist/[22m[32massets/KaTeX_Fraktur-Regular-CTYiF6lA.woff2      [39m[1m[2m 11.32 kB[22m[1m[22m
+[2m../dist/[22m[32massets/KaTeX_Fraktur-Bold-CL6g_b3V.woff2         [39m[1m[2m 11.35 kB[22m[1m[22m
+[2m../dist/[22m[32massets/KaTeX_Size2-Regular-B7gKUWhC.ttf          [39m[1m[2m 11.51 kB[22m[1m[22m
+[2m../dist/[22m[32massets/KaTeX_SansSerif-Italic-C3H0VqGB.woff2     [39m[1m[2m 12.03 kB[22m[1m[22m
+[2m../dist/[22m[32massets/KaTeX_SansSerif-Bold-D1sUS0GD.woff2       [39m[1m[2m 12.22 kB[22m[1m[22m
+[2m../dist/[22m[32massets/KaTeX_Size1-Regular-Dbsnue_I.ttf          [39m[1m[2m 12.23 kB[22m[1m[22m
+[2m../dist/[22m[32massets/KaTeX_SansSerif-Regular-CS6fqUqJ.woff     [39m[1m[2m 12.32 kB[22m[1m[22m
+[2m../dist/[22m[32massets/KaTeX_Caligraphic-Regular-wX97UBjC.ttf    [39m[1m[2m 12.34 kB[22m[1m[22m
+[2m../dist/[22m[32massets/KaTeX_Caligraphic-Bold-ATXxdsX0.ttf       [39m[1m[2m 12.37 kB[22m[1m[22m
+[2m../dist/[22m[32massets/KaTeX_Fraktur-Regular-Dxdc4cR9.woff       [39m[1m[2m 13.21 kB[22m[1m[22m
+[2m../dist/[22m[32massets/KaTeX_Fraktur-Bold-BsDP51OF.woff          [39m[1m[2m 13.30 kB[22m[1m[22m
+[2m../dist/[22m[32massets/KaTeX_Typewriter-Regular-CO6r4hn1.woff2   [39m[1m[2m 13.57 kB[22m[1m[22m
+[2m../dist/[22m[32massets/KaTeX_SansSerif-Italic-DN2j7dab.woff      [39m[1m[2m 14.11 kB[22m[1m[22m
+[2m../dist/[22m[32massets/KaTeX_SansSerif-Bold-DbIhKOiC.woff        [39m[1m[2m 14.41 kB[22m[1m[22m
+[2m../dist/[22m[32massets/KaTeX_Typewriter-Regular-C0xS9mPB.woff    [39m[1m[2m 16.03 kB[22m[1m[22m
+[2m../dist/[22m[32massets/KaTeX_Math-BoldItalic-CZnvNsCZ.woff2      [39m[1m[2m 16.40 kB[22m[1m[22m
+[2m../dist/[22m[32massets/KaTeX_Math-Italic-t53AETM-.woff2          [39m[1m[2m 16.44 kB[22m[1m[22m
+[2m../dist/[22m[32massets/KaTeX_Script-Regular-C5JkGWo-.ttf         [39m[1m[2m 16.65 kB[22m[1m[22m
+[2m../dist/[22m[32massets/KaTeX_Main-BoldItalic-DxDJ3AOS.woff2      [39m[1m[2m 16.78 kB[22m[1m[22m
+[2m../dist/[22m[32massets/KaTeX_Main-Italic-NWA7e6Wa.woff2          [39m[1m[2m 16.99 kB[22m[1m[22m
+[2m../dist/[22m[32massets/KaTeX_Math-BoldItalic-iY-2wyZ7.woff       [39m[1m[2m 18.67 kB[22m[1m[22m
+[2m../dist/[22m[32massets/KaTeX_Math-Italic-DA0__PXp.woff           [39m[1m[2m 18.75 kB[22m[1m[22m
+[2m../dist/[22m[32massets/KaTeX_Main-BoldItalic-SpSLRI95.woff       [39m[1m[2m 19.41 kB[22m[1m[22m
+[2m../dist/[22m[32massets/KaTeX_SansSerif-Regular-BNo7hRIc.ttf      [39m[1m[2m 19.44 kB[22m[1m[22m
+[2m../dist/[22m[32massets/KaTeX_Fraktur-Regular-CB_wures.ttf        [39m[1m[2m 19.57 kB[22m[1m[22m
+[2m../dist/[22m[32massets/KaTeX_Fraktur-Bold-BdnERNNW.ttf           [39m[1m[2m 19.58 kB[22m[1m[22m
+[2m../dist/[22m[32massets/KaTeX_Main-Italic-BMLOBm91.woff           [39m[1m[2m 19.68 kB[22m[1m[22m
+[2m../dist/[22m[32massets/KaTeX_SansSerif-Italic-YYjJ1zSn.ttf       [39m[1m[2m 22.36 kB[22m[1m[22m
+[2m../dist/[22m[32massets/KaTeX_SansSerif-Bold-CFMepnvq.ttf         [39m[1m[2m 24.50 kB[22m[1m[22m
+[2m../dist/[22m[32massets/KaTeX_Main-Bold-Cx986IdX.woff2            [39m[1m[2m 25.32 kB[22m[1m[22m
+[2m../dist/[22m[32massets/KaTeX_Main-Regular-B22Nviop.woff2         [39m[1m[2m 26.27 kB[22m[1m[22m
+[2m../dist/[22m[32massets/KaTeX_Typewriter-Regular-D3Ib7_Hf.ttf     [39m[1m[2m 27.56 kB[22m[1m[22m
+[2m../dist/[22m[32massets/KaTeX_AMS-Regular-BQhdFMY1.woff2          [39m[1m[2m 28.08 kB[22m[1m[22m
+[2m../dist/[22m[32massets/KaTeX_Main-Bold-Jm3AIy58.woff             [39m[1m[2m 29.91 kB[22m[1m[22m
+[2m../dist/[22m[32massets/KaTeX_Main-Regular-Dr94JaBh.woff          [39m[1m[2m 30.77 kB[22m[1m[22m
+[2m../dist/[22m[32massets/KaTeX_Math-BoldItalic-B3XSjfu4.ttf        [39m[1m[2m 31.20 kB[22m[1m[22m
+[2m../dist/[22m[32massets/KaTeX_Math-Italic-flOr_0UB.ttf            [39m[1m[2m 31.31 kB[22m[1m[22m
+[2m../dist/[22m[32massets/KaTeX_Main-BoldItalic-DzxPMmG6.ttf        [39m[1m[2m 32.97 kB[22m[1m[22m
+[2m../dist/[22m[32massets/KaTeX_AMS-Regular-DMm9YOAa.woff           [39m[1m[2m 33.52 kB[22m[1m[22m
+[2m../dist/[22m[32massets/KaTeX_Main-Italic-3WenGoN9.ttf            [39m[1m[2m 33.58 kB[22m[1m[22m
+[2m../dist/[22m[32massets/KaTeX_Main-Bold-waoOVXN0.ttf              [39m[1m[2m 51.34 kB[22m[1m[22m
+[2m../dist/[22m[32massets/KaTeX_Main-Regular-ypZvNtVU.ttf           [39m[1m[2m 53.58 kB[22m[1m[22m
+[2m../dist/[22m[32massets/KaTeX_AMS-Regular-DRggAlZN.ttf            [39m[1m[2m 63.63 kB[22m[1m[22m
+[2m../dist/[22m[35massets/vendor-misc-D9PXdmFF.css                  [39m[1m[2m 29.83 kB[22m[1m[22m[2m │ gzip:   8.05 kB[22m
+[2m../dist/[22m[35massets/index-Ds5ezwUY.css                        [39m[1m[2m214.01 kB[22m[1m[22m[2m │ gzip:  29.08 kB[22m
+[2m../dist/[22m[36massets/vendor-noble-wT2yjrEo.js                  [39m[1m[2m  6.20 kB[22m[1m[22m[2m │ gzip:   3.15 kB[22m
+[2m../dist/[22m[36massets/vendor-lit-CDpRZAey.js                    [39m[1m[2m 20.56 kB[22m[1m[22m[2m │ gzip:   7.70 kB[22m
+[2m../dist/[22m[36massets/vendor-dompurify-P3vI1IgJ.js              [39m[1m[2m 28.97 kB[22m[1m[22m[2m │ gzip:  10.86 kB[22m
+[2m../dist/[22m[36massets/vendor-marked-D2lEcfQr.js                 [39m[1m[2m 40.93 kB[22m[1m[22m[2m │ gzip:  12.41 kB[22m
+[2m../dist/[22m[36massets/vendor-misc-C-JV6dUn.js                   [39m[1m[2m340.48 kB[22m[1m[22m[2m │ gzip: 103.13 kB[22m
+[2m../dist/[22m[36massets/index-CLPvXYzo.js                         [39m[1m[33m757.38 kB[39m[22m[2m │ gzip: 194.04 kB[22m
+[33m
+(!) Some chunks are larger than 700 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.[39m
+[32m✓ built in 2.13s[39m
+
+> cryoclaw@2026.912.5 dev
+> electron .
+
+
+[2026-09-13T03:54:47.582Z] [INFO] [git-detector] git available: 2.53.0.windows.2
+[2026-09-13T03:54:47.593Z] [INFO] app ready
+[2026-09-13T03:54:47.612Z] [INFO] [analytics] posthog disabled
+[2026-09-13T03:54:47.612Z] [INFO] [analytics] volcano disabled
+[2026-09-13T03:54:47.612Z] [INFO] [analytics] track fan-out=0 sinks=[]
+[2026-09-13T03:54:47.613Z] [INFO] [app-updater] dev/未打包环境，App 自动更新不可用
+[2026-09-13T03:54:47.674Z] [INFO] [migrate] 已适配新内核配置，不可用（未安装或无可运行载荷）的启用插件已降级为禁用: modelstudio-memory-for-openclaw
+[2026-09-13T03:54:47.691Z] [INFO] [startup] config ownership: cryoclaw
+[2026-09-13T03:54:47.691Z] [INFO] 创建主窗口: port=19554 onboarding=false token=12ae...7964
+[2026-09-13T03:54:47.878Z] [INFO] 准备加载 Chat UI: file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/index.html
+[2026-09-13T03:54:47.893Z] [INFO] WebContents 开始加载
+[2026-09-13T03:54:47.934Z] [INFO] 启动链路开始: app:startup
+[2026-09-13T03:54:47.934Z] [INFO] 复用主窗口: id=1
+[2026-09-13T03:54:50.569Z] [INFO] [ext-mirror] reconcile: openclaw-weixin=install(2.4.8) wecom-openclaw-plugin=install(2026.8.17)
+[2026-09-13T03:54:50.581Z] [INFO] [gateway-control] 本地控制服务已启动 (127.0.0.1:17893)
+[2026-09-13T03:54:50.581Z] [INFO] [auth-proxy] 已启动，监听 127.0.0.1:51705
+[2026-09-13T03:54:50.587Z] state: stopped → starting
+[2026-09-13T03:54:50.588Z] --- gateway start ---
+[2026-09-13T03:54:50.588Z] platform=win32 arch=x64 packaged=false
+[2026-09-13T03:54:50.588Z] resourcesPath=C:\Users\binchen\Desktop\code\Oneclaw2\Oneclaw\resources\targets\win32-x64
+[2026-09-13T03:54:50.588Z] nodeBin=C:\Users\binchen\Desktop\code\Oneclaw2\Oneclaw\node_modules\electron\dist\electron.exe exists=true
+[2026-09-13T03:54:50.589Z] entry=C:\Users\binchen\Desktop\code\Oneclaw2\Oneclaw\resources\targets\win32-x64\gateway\node_modules\openclaw\openclaw.mjs exists=true
+[2026-09-13T03:54:50.589Z] cwd=C:\Users\binchen\Desktop\code\Oneclaw2\Oneclaw\resources\targets\win32-x64\gateway\node_modules\openclaw exists=true
+[2026-09-13T03:54:50.589Z] token=12ae...7964 port=19554
+[2026-09-13T03:54:50.590Z] [INFO] [install-detector] uninstalling gateway daemon
+[2026-09-13T03:54:50.661Z] [INFO] [install-detector] schtasks delete "OpenClaw Gateway": Command failed: schtasks /Delete /F /TN OpenClaw Gateway
+����: ϵͳ�Ҳ���ָ�����ļ���
+
+[2026-09-13T03:54:50.713Z] [INFO] [install-detector] schtasks delete "OpenClaw Node": Command failed: schtasks /Delete /F /TN OpenClaw Node
+����: ϵͳ�Ҳ���ָ�����ļ���
+
+[2026-09-13T03:54:50.719Z] clawhub wrapper 已生成: C:\Users\binchen\Desktop\code\Oneclaw2\Oneclaw\.dev-state\bin
+[2026-09-13T03:54:50.719Z] spawn: C:\Users\binchen\Desktop\code\Oneclaw2\Oneclaw\node_modules\electron\dist\electron.exe C:\Users\binchen\Desktop\code\Oneclaw2\Oneclaw\resources\targets\win32-x64\gateway\node_modules\openclaw\openclaw.mjs gateway run (gen=1)
+(electron) 'console-message' arguments are deprecated and will be removed. Please use Event<WebContentsConsoleMessageEventParams> object instead.
+[2026-09-13T03:54:50.766Z] [INFO] [renderer:id=1] console.INFO: [gateway] connectGateway start (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:39)
+[2026-09-13T03:54:50.766Z] [INFO] [renderer:id=1] console.INFO: [gateway] websocket opening ws://127.0.0.1:19554 (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:39)
+[2026-09-13T03:54:50.800Z] [INFO] [renderer:id=1] dom-ready
+[2026-09-13T03:54:50.800Z] [INFO] WebContents DOM 就绪
+[2026-09-13T03:54:50.808Z] [INFO] Kimi OAuth: token 已自动刷新
+[2026-09-13T03:54:50.831Z] [INFO] [renderer:id=1] did-finish-load
+[2026-09-13T03:54:50.831Z] [INFO] WebContents 加载完成
+[2026-09-13T03:54:50.838Z] [INFO] 主窗口显示
+[2026-09-13T03:54:50.840Z] [INFO] WebContents 停止加载
+[2026-09-13T03:54:52.884Z] [ERROR] [renderer:id=1] console.WARNING: [gateway] websocket error [object Event] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:39)
+[2026-09-13T03:54:52.885Z] [ERROR] [renderer:id=1] console.WARNING: [gateway] websocket closed code=1006 reason= (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:39)
+[2026-09-13T03:54:52.885Z] [ERROR] [renderer:id=1] console.WARNING: [gateway] onClose code=1006 reason= (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:39)
+[2026-09-13T03:54:52.885Z] [ERROR] [renderer:id=1] console.WARNING: [gateway] scheduling reconnect in 800ms (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:39)
+[2026-09-13T03:54:53.784Z] [INFO] [renderer:id=1] console.INFO: [gateway] websocket opening ws://127.0.0.1:19554 (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:39)
+[2026-09-13T03:54:55.799Z] [ERROR] [renderer:id=1] console.WARNING: [gateway] websocket error [object Event] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:39)
+[2026-09-13T03:54:55.799Z] [ERROR] [renderer:id=1] console.WARNING: [gateway] websocket closed code=1006 reason= (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:39)
+[2026-09-13T03:54:55.799Z] [ERROR] [renderer:id=1] console.WARNING: [gateway] onClose code=1006 reason= (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:39)
+[2026-09-13T03:54:55.799Z] [ERROR] [renderer:id=1] console.WARNING: [gateway] scheduling reconnect in 1360ms (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:39)
+[2026-09-13T03:54:57.778Z] [INFO] [renderer:id=1] console.INFO: [gateway] websocket opening ws://127.0.0.1:19554 (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:39)
+[2026-09-13T03:54:59.800Z] [ERROR] [renderer:id=1] console.WARNING: [gateway] websocket error [object Event] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:39)
+[2026-09-13T03:54:59.800Z] [ERROR] [renderer:id=1] console.WARNING: [gateway] websocket closed code=1006 reason= (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:39)
+[2026-09-13T03:54:59.800Z] [ERROR] [renderer:id=1] console.WARNING: [gateway] onClose code=1006 reason= (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:39)
+[2026-09-13T03:54:59.800Z] [ERROR] [renderer:id=1] console.WARNING: [gateway] scheduling reconnect in 2312ms (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:39)
+[gateway] [35m[config][39m [33mwarnings: tools.web.search.provider: web_search provider is not available: tavily (configured plugin "tavily" is unavailable; Gateway will ignore this optional provider until the plugin is installed/enabled or openclaw doctor --fix repairs the config); plugins.entries.tavily: plugin not installed: tavily — install the official external plugin with: openclaw plugins install @openclaw/tavily-plugin; plugins.entries.modelstudio-memory-for-openclaw: plugin not found: modelstudio-memory-for-openclaw (stale config entry ignored; remove it from plugins config); plugins.allow: plugin not found: modelstudio-memory-for-openclaw (stale config entry ignored; remove it from plugins config)[39m
+[2026-09-13T03:55:01.839Z] stderr: [35m[config][39m [33mwarnings: tools.web.search.provider: web_search provider is not available: tavily (configured plugin "tavily" is unavailable; Gateway will ignore this optional provider until the plugin is installed/enabled or openclaw doctor --fix repairs the config); plugins.entries.tavily: plugin not installed: tavily — install the official external plugin with: openclaw plugins install @openclaw/tavily-plugin; plugins.entries.modelstudio-memory-for-openclaw: plugin not found: modelstudio-memory-for-openclaw (stale config entry ignored; remove it from plugins config); plugins.allow: plugin not found: modelstudio-memory-for-openclaw (stale config entry ignored; remove it from plugins config)[39m
+[2026-09-13T03:55:02.788Z] [INFO] [renderer:id=1] console.INFO: [gateway] websocket opening ws://127.0.0.1:19554 (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:39)
+[2026-09-13T03:55:02.958Z] [ERROR] [migrate] CLI launch reconciliation failed: Command failed: powershell.exe -NoProfile -ExecutionPolicy Bypass -Command $target='C:\Users\binchen\AppData\Local\CryoClaw\bin'
+function Normalize([string]$p) {
+  if ([string]::IsNullOrWhiteSpace($p)) { return '' }
+  try { return ([System.IO.Path]::GetFullPath($p)).TrimEnd('\\').ToLowerInvariant() } catch { return $p.Trim().TrimEnd('\\').ToLowerInvariant() }
+}
+$current=[Environment]::GetEnvironmentVariable('Path','User')
+$parts=@()
+if ($current) {
+  $parts=$current -split ';' | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne '' }
+}
+$targetNorm=Normalize $target
+$unique=@()
+$seen=@{}
+foreach ($p in $parts) {
+  $n=Normalize $p
+  if (-not $seen.ContainsKey($n)) {
+    $seen[$n]=$true
+    $unique += $p
+  }
+}
+if ('add' -eq 'add') {
+  if (-not $seen.ContainsKey($targetNorm)) {
+    $unique += $target
+  }
+} else {
+  $unique = $unique | Where-Object { (Normalize $_) -ne $targetNorm }
+}
+[Environment]::SetEnvironmentVariable('Path', ($unique -join ';'), 'User')
+
+[2026-09-13T03:55:04.806Z] [ERROR] [renderer:id=1] console.WARNING: [gateway] websocket error [object Event] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:39)
+[2026-09-13T03:55:04.806Z] [ERROR] [renderer:id=1] console.WARNING: [gateway] websocket closed code=1006 reason= (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:39)
+[2026-09-13T03:55:04.806Z] [ERROR] [renderer:id=1] console.WARNING: [gateway] onClose code=1006 reason= (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:39)
+[2026-09-13T03:55:04.806Z] [ERROR] [renderer:id=1] console.WARNING: [gateway] scheduling reconnect in 3930.4ms (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:39)
+[2026-09-13T03:55:08.783Z] [INFO] [renderer:id=1] console.INFO: [gateway] websocket opening ws://127.0.0.1:19554 (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:39)
+[2026-09-13T03:55:10.815Z] [ERROR] [renderer:id=1] console.WARNING: [gateway] websocket error [object Event] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:39)
+[2026-09-13T03:55:10.815Z] [ERROR] [renderer:id=1] console.WARNING: [gateway] websocket closed code=1006 reason= (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:39)
+[2026-09-13T03:55:10.816Z] [ERROR] [renderer:id=1] console.WARNING: [gateway] onClose code=1006 reason= (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:39)
+[2026-09-13T03:55:10.816Z] [ERROR] [renderer:id=1] console.WARNING: [gateway] scheduling reconnect in 6681.68ms (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:39)
+[gateway] [90m2026-09-13T11:55:14.324+08:00[39m [36m[gateway][39m [36mloading configuration…[39m
+[2026-09-13T03:55:14.325Z] stdout: [90m2026-09-13T11:55:14.324+08:00[39m [36m[gateway][39m [36mloading configuration…[39m
+[gateway] [90m2026-09-13T11:55:14.343+08:00[39m [36m[gateway][39m [36mresolving authentication…[39m
+[2026-09-13T03:55:14.343Z] stdout: [90m2026-09-13T11:55:14.343+08:00[39m [36m[gateway][39m [36mresolving authentication…[39m
+[gateway] [90m2026-09-13T11:55:14.363+08:00[39m [36m[gateway][39m [36mstarting...[39m
+[2026-09-13T03:55:14.363Z] stdout: [90m2026-09-13T11:55:14.363+08:00[39m [36m[gateway][39m [36mstarting...[39m
+[gateway] [90m2026-09-13T11:55:16.912+08:00[39m [31m[secrets][39m [33m[WEB_SEARCH_PROVIDER_INVALID_AUTODETECT] tools.web.search.provider is "tavily". No provider will be selected.[39m
+[2026-09-13T03:55:16.913Z] stderr: [90m2026-09-13T11:55:16.912+08:00[39m [31m[secrets][39m [33m[WEB_SEARCH_PROVIDER_INVALID_AUTODETECT] tools.web.search.provider is "tavily". No provider will be selected.[39m
+[2026-09-13T03:55:17.775Z] [INFO] [renderer:id=1] console.INFO: [gateway] websocket opening ws://127.0.0.1:19554 (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:39)
+[2026-09-13T03:55:17.878Z] [WARN] [kernel-updater] 启动静默检查失败: 内核升级失败: ENOENT: no such file or directory, open 'C:\Users\binchen\Desktop\code\Oneclaw2\Oneclaw\resources\targets\win32-x64\gateway.asar'
+[gateway] [90m2026-09-13T11:55:18.082+08:00[39m [36m[gateway][39m [36mstarting HTTP server...[39m
+[2026-09-13T03:55:18.083Z] stdout: [90m2026-09-13T11:55:18.082+08:00[39m [36m[gateway][39m [36mstarting HTTP server...[39m
+[gateway] [90m2026-09-13T11:55:18.975+08:00[39m [32m[health-monitor][39m [36mstarted (interval: 300s, startup-grace: 60s, channel-connect-grace: 120s)[39m
+[2026-09-13T03:55:18.976Z] stdout: [90m2026-09-13T11:55:18.975+08:00[39m [32m[health-monitor][39m [36mstarted (interval: 300s, startup-grace: 60s, channel-connect-grace: 120s)[39m
+[gateway] [90m2026-09-13T11:55:22.101+08:00[39m [36m[gateway][39m [33m[plugins] typed hook "before_prompt_build" blocked because non-bundled plugins must set plugins.entries.wecom-openclaw-plugin.hooks.allowConversationAccess=true (plugin=wecom-openclaw-plugin, source=C:\Users\binchen\Desktop\code\Oneclaw2\Oneclaw\.dev-state\extensions\wecom-openclaw-plugin\dist\cryoclaw-bundle.mjs)[39m
+[2026-09-13T03:55:22.102Z] stderr: [90m2026-09-13T11:55:22.101+08:00[39m [36m[gateway][39m [33m[plugins] typed hook "before_prompt_build" blocked because non-bundled plugins must set plugins.entries.wecom-openclaw-plugin.hooks.allowConversationAccess=true (plugin=wecom-openclaw-plugin, source=C:\Users\binchen\Desktop\code\Oneclaw2\Oneclaw\.dev-state\extensions\wecom-openclaw-plugin\dist\cryoclaw-bundle.mjs)[39m
+[gateway] [90m2026-09-13T11:55:22.102+08:00[39m [36m[gateway][39m [33mmemory.search.provider="openai" is configured, but no loaded plugin registered a memory embedding provider that can serve "openai". Semantic memory recall will fall back to keyword/FTS-only search. Ensure the plugin that provides "openai" is installed and enabled.[39m
+[2026-09-13T03:55:22.103Z] stderr: [90m2026-09-13T11:55:22.102+08:00[39m [36m[gateway][39m [33mmemory.search.provider="openai" is configured, but no loaded plugin registered a memory embedding provider that can serve "openai". Semantic memory recall will fall back to keyword/FTS-only search. Ensure the plugin that provides "openai" is installed and enabled.[39m
+[gateway] [90m2026-09-13T11:55:22.132+08:00[39m [36m[gateway][39m [36mstarting channels and sidecars...[39m
+[2026-09-13T03:55:22.133Z] stdout: [90m2026-09-13T11:55:22.132+08:00[39m [36m[gateway][39m [36mstarting channels and sidecars...[39m
+[gateway] [90m2026-09-13T11:55:22.379+08:00[39m [36m[gateway][39m [36magent model: zai-cn-coding/GLM-5.3-Flash (thinking=medium, fast=off)[39m
+[2026-09-13T03:55:22.379Z] stdout: [90m2026-09-13T11:55:22.379+08:00[39m [36m[gateway][39m [36magent model: zai-cn-coding/GLM-5.3-Flash (thinking=medium, fast=off)[39m
+[gateway] [90m2026-09-13T11:55:22.379+08:00[39m [36m[gateway][39m [36mhttp server listening (8 plugins: active-memory, feishu, memory-core, memory-wiki, ollama, openclaw-weixin, qqbot, wecom-openclaw-plugin; 7.4s)[39m
+[2026-09-13T03:55:22.380Z] stdout: [90m2026-09-13T11:55:22.379+08:00[39m [36m[gateway][39m [36mhttp server listening (8 plugins: active-memory, feishu, memory-core, memory-wiki, ollama, openclaw-weixin, qqbot, wecom-openclaw-plugin; 7.4s)[39m
+[gateway] [90m2026-09-13T11:55:22.381+08:00[39m [36m[gateway][39m [36mlog file: C:\Users\binchen\AppData\Local\Temp\openclaw\openclaw-2026-09-13.log[39m
+[2026-09-13T03:55:22.382Z] stdout: [90m2026-09-13T11:55:22.381+08:00[39m [36m[gateway][39m [36mlog file: C:\Users\binchen\AppData\Local\Temp\openclaw\openclaw-2026-09-13.log[39m
+[gateway] [90m2026-09-13T11:55:22.400+08:00[39m [33m[hooks][39m [36mloaded 1 internal hook handler[39m
+[2026-09-13T03:55:22.400Z] stdout: [90m2026-09-13T11:55:22.400+08:00[39m [33m[hooks][39m [36mloaded 1 internal hook handler[39m
+[gateway] [90m2026-09-13T11:55:24.097+08:00[39m [33m[feishu][39m [36mstarting feishu[default] (mode: websocket)[39m
+[2026-09-13T03:55:24.098Z] stdout: [90m2026-09-13T11:55:24.097+08:00[39m [33m[feishu][39m [36mstarting feishu[default] (mode: websocket)[39m
+[gateway] [90m2026-09-13T11:55:24.148+08:00[39m [31m[qqbot][39m [36m[qqbot:default] Starting gateway — appId=1903925047, enabled=true, name=unnamed[39m
+[2026-09-13T03:55:24.149Z] stdout: [90m2026-09-13T11:55:24.148+08:00[39m [31m[qqbot][39m [36m[qqbot:default] Starting gateway — appId=1903925047, enabled=true, name=unnamed[39m
+[gateway] [90m2026-09-13T11:55:24.150+08:00[39m [31m[qqbot][39m [36m[default] Registering approval.native runtime context[39m
+[2026-09-13T03:55:24.151Z] stdout: [90m2026-09-13T11:55:24.150+08:00[39m [31m[qqbot][39m [36m[default] Registering approval.native runtime context[39m
+[gateway] [90m2026-09-13T11:55:24.151+08:00[39m [31m[qqbot][39m [36m[default] approval.native context registered (lease=true)[39m
+[2026-09-13T03:55:24.151Z] stdout: [90m2026-09-13T11:55:24.151+08:00[39m [31m[qqbot][39m [36m[default] approval.native context registered (lease=true)[39m
+[gateway] 2026-09-13T11:55:24.241+08:00 [info]: [ 'client ready' ]
+[2026-09-13T03:55:24.242Z] stdout: 2026-09-13T11:55:24.241+08:00 [info]: [ 'client ready' ]
+[gateway] [90m2026-09-13T11:55:24.277+08:00[39m [35m[plugins][39m [36mmemory-core: created managed dreaming cron job.[39m
+[2026-09-13T03:55:24.278Z] stdout: [90m2026-09-13T11:55:24.277+08:00[39m [35m[plugins][39m [36mmemory-core: created managed dreaming cron job.[39m
+[2026-09-13T03:55:24.519Z] [INFO] [renderer:id=1] console.INFO: [gateway] websocket opened (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:39)
+[2026-09-13T03:55:24.522Z] [INFO] [renderer:id=1] console.VERBOSE: [gateway] challenge recv nonce 121e0b4c-2229-4d4d-8a4a-eaa62933ddfc (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:39)
+[2026-09-13T03:55:24.527Z] [INFO] [renderer:id=1] console.VERBOSE: [gateway] begin sendConnect [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:39)
+[2026-09-13T03:55:24.579Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 03:55:24.579 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[gateway] [90m2026-09-13T11:55:24.585+08:00[39m [36m[gateway][39m [36mstartup outcomes: internal-hooks=loaded; internal-startup-hook=scheduled; gateway-start-hooks=scheduled; gmail-watcher=skipped (hooks-disabled); gmail-model=skipped (not-configured)[39m
+[2026-09-13T03:55:24.586Z] stdout: [90m2026-09-13T11:55:24.585+08:00[39m [36m[gateway][39m [36mstartup outcomes: internal-hooks=loaded; internal-startup-hook=scheduled; gateway-start-hooks=scheduled; gmail-watcher=skipped (hooks-disabled); gmail-model=skipped (not-configured)[39m
+[gateway] [90m2026-09-13T11:55:24.589+08:00[39m [36m[gateway][39m [36mready[39m
+[2026-09-13T03:55:24.590Z] stdout: [90m2026-09-13T11:55:24.589+08:00[39m [36m[gateway][39m [36mready[39m
+[gateway] [90m2026-09-13T11:55:24.919+08:00[39m [36m[heartbeat][39m [36mstarted[39m
+[2026-09-13T03:55:24.920Z] stdout: [90m2026-09-13T11:55:24.919+08:00[39m [36m[heartbeat][39m [36mstarted[39m
+[gateway] [90m2026-09-13T11:55:24.967+08:00[39m [36m[ws][39m [33munauthorized conn=5c6fbdb6-9bd8-4fbe-85b1-afdc708ff530 peer=127.0.0.1:51364->127.0.0.1:19554 remote=127.0.0.1 client=webchat-ui webchat vdev role=operator scopes=3 auth=token device=yes platform=Win32 instance=n/a host=127.0.0.1:19554 origin=http://127.0.0.1:19554 ua=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) cryoclaw/2026.912.5 Chrome/150.0.7871.224 Electron/43.4.0 Safari/537.36 reason=token_mismatch guidance=unauthorized: gateway token mismatch (open the dashboard URL and paste the token in Control UI settings)[39m
+[2026-09-13T03:55:24.967Z] stderr: [90m2026-09-13T11:55:24.967+08:00[39m [36m[ws][39m [33munauthorized conn=5c6fbdb6-9bd8-4fbe-85b1-afdc708ff530 peer=127.0.0.1:51364->127.0.0.1:19554 remote=127.0.0.1 client=webchat-ui webchat vdev role=operator scopes=3 auth=token device=yes platform=Win32 instance=n/a host=127.0.0.1:19554 origin=http://127.0.0.1:19554 ua=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) cryoclaw/2026.912.5 Chrome/150.0.7871.224 Electron/43.4.0 Safari/537.36 reason=token_mismatch guidance=unauthorized: gateway token mismatch (open the dashboard URL and paste the token in Control UI settings)[39m
+[2026-09-13T03:55:24.969Z] [ERROR] [renderer:id=1] console.ERROR: [gateway] connect request failed Error: unauthorized: gateway token mismatch (open the dashboard URL and paste the token in Control UI settings) (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:39)
+[2026-09-13T03:55:24.979Z] [ERROR] [renderer:id=1] console.WARNING: [gateway] websocket closed code=1008 reason=unauthorized: gateway token mismatch (open the dashboard URL and paste the token in Control UI settings) (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:39)
+[2026-09-13T03:55:24.979Z] [ERROR] [renderer:id=1] console.WARNING: [gateway] onClose code=1008 reason=unauthorized: gateway token mismatch (open the dashboard URL and paste the token in Control UI settings) (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:39)
+[2026-09-13T03:55:24.979Z] [ERROR] [renderer:id=1] console.WARNING: [gateway] scheduling reconnect in 11358.856ms (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:39)
+[gateway] [90m2026-09-13T11:55:24.984+08:00[39m [36m[ws][39m [33mclosed before connect conn=5c6fbdb6-9bd8-4fbe-85b1-afdc708ff530 peer=127.0.0.1:51364->127.0.0.1:19554 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:19554 host=127.0.0.1:19554 ua=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) cryoclaw/2026.912.5 Chrome/150.0.7871.224 Electron/43.4.0 Safari/537.36 code=1008 reason=unauthorized: gateway token mismatch (open the dashboard URL and paste the token in Control UI settings) phase=auth_credentials_received[39m
+[2026-09-13T03:55:24.984Z] stderr: [90m2026-09-13T11:55:24.984+08:00[39m [36m[ws][39m [33mclosed before connect conn=5c6fbdb6-9bd8-4fbe-85b1-afdc708ff530 peer=127.0.0.1:51364->127.0.0.1:19554 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:19554 host=127.0.0.1:19554 ua=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) cryoclaw/2026.912.5 Chrome/150.0.7871.224 Electron/43.4.0 Safari/537.36 code=1008 reason=unauthorized: gateway token mismatch (open the dashboard URL and paste the token in Control UI settings) phase=auth_credentials_received[39m
+[2026-09-13T03:55:25.201Z] health check passed, child alive
+[2026-09-13T03:55:25.201Z] state: starting → running
+[2026-09-13T03:55:25.206Z] [INFO] Gateway 启动成功（第 1 次尝试）: app:startup
+[2026-09-13T03:55:25.207Z] [INFO] [renderer:id=1] console.INFO: [gateway] websocket opening ws://127.0.0.1:19554 (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:39)
+[2026-09-13T03:55:25.273Z] [INFO] [webbridge-update] 自动检查完成: source=daemon update=no
+[2026-09-13T03:55:25.357Z] [INFO] [renderer:id=1] console.INFO: [gateway] websocket opened (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:39)
+[2026-09-13T03:55:25.357Z] [INFO] [renderer:id=1] console.VERBOSE: [gateway] challenge recv nonce 2d3c487f-2d82-4ab1-96e3-c698951b3706 (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:39)
+[2026-09-13T03:55:25.357Z] [INFO] [renderer:id=1] console.VERBOSE: [gateway] begin sendConnect [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:39)
+[2026-09-13T03:55:25.359Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 03:55:25.359 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[gateway] [90m2026-09-13T11:55:25.416+08:00[39m [31m[qqbot][39m [36m[default] ✅ Access token obtained successfully[39m
+[2026-09-13T03:55:25.417Z] stdout: [90m2026-09-13T11:55:25.416+08:00[39m [31m[qqbot][39m [36m[default] ✅ Access token obtained successfully[39m
+[gateway] [90m2026-09-13T11:55:25.439+08:00[39m [36m[gateway][39m [36mdevice pairing auto-approved device=5473438759ae44019eb1e6c2f8d490a2db385f29127e95cf40a176c815f115e8 role=operator[39m
+[2026-09-13T03:55:25.440Z] stdout: [90m2026-09-13T11:55:25.439+08:00[39m [36m[gateway][39m [36mdevice pairing auto-approved device=5473438759ae44019eb1e6c2f8d490a2db385f29127e95cf40a176c815f115e8 role=operator[39m
+[gateway] [90m2026-09-13T11:55:25.477+08:00[39m [36m[ws][39m [36mwebchat connected conn=d5781da5-28f0-4c51-a302-5cd12412326d remote=127.0.0.1 client=webchat-ui webchat vdev build=legacy[39m
+[2026-09-13T03:55:25.477Z] stdout: [90m2026-09-13T11:55:25.477+08:00[39m [36m[ws][39m [36mwebchat connected conn=d5781da5-28f0-4c51-a302-5cd12412326d remote=127.0.0.1 client=webchat-ui webchat vdev build=legacy[39m
+[gateway] [90m2026-09-13T11:55:25.487+08:00[39m [33m[feishu][39m [36mfeishu[default]: bot open_id resolved: ou_c7e3d1e4586af48d7543477bc78d29b6[39m
+[2026-09-13T03:55:25.488Z] stdout: [90m2026-09-13T11:55:25.487+08:00[39m [33m[feishu][39m [36mfeishu[default]: bot open_id resolved: ou_c7e3d1e4586af48d7543477bc78d29b6[39m
+[gateway] 2026-09-13T11:55:25.488+08:00 [info]: [ 'event-dispatch is ready' ]
+[2026-09-13T03:55:25.489Z] stdout: 2026-09-13T11:55:25.488+08:00 [info]: [ 'event-dispatch is ready' ]
+[gateway] [90m2026-09-13T11:55:25.494+08:00[39m [33m[feishu][39m [36mfeishu[default]: starting WebSocket connection...[39m
+[2026-09-13T03:55:25.495Z] stdout: [90m2026-09-13T11:55:25.494+08:00[39m [33m[feishu][39m [36mfeishu[default]: starting WebSocket connection...[39m
+[gateway] 2026-09-13T11:55:25.501+08:00 [info]: [
+  '[ws]',
+  'receive events or callbacks through persistent connection only available in self-build & Feishu app, Configured in:\n' +
+    '        Developer Console(开发者后台)\n' +
+    '          ->\n' +
+    '        Events and Callbacks(事件与回调)\n' +
+    '          ->\n' +
+    '        Mode of event/callback subscription(订阅方式)\n' +
+    '          ->\n' +
+    '        Receive events/callbacks through persistent connection(使用 长连接 接收事件/回调)'
+]
+[2026-09-13T03:55:25.501Z] stdout: 2026-09-13T11:55:25.501+08:00 [info]: [
+  '[ws]',
+  'receive events or callbacks through persistent connection only available in self-build & Feishu app, Configured in:\n' +
+    '        Developer Console(开发者后台)\n' +
+    '          ->\n' +
+    '        Events and Callbacks(事件与回调)\n' +
+    '          ->\n' +
+    '        Mode of event/callback subscription(订阅方式)\n' +
+    '          ->\n' +
+    '        Receive events/callbacks through persistent connection(使用 长连接 接收事件/回调)'
+]
+[gateway] [90m2026-09-13T11:55:25.502+08:00[39m [33m[feishu][39m [36mfeishu[default]: WebSocket client started[39m
+[2026-09-13T03:55:25.502Z] stdout: [90m2026-09-13T11:55:25.502+08:00[39m [33m[feishu][39m [36mfeishu[default]: WebSocket client started[39m
+[2026-09-13T03:55:25.530Z] [INFO] [renderer:id=1] console.INFO: [gateway] connect response ok (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:39)
+[2026-09-13T03:55:25.530Z] [INFO] [renderer:id=1] console.INFO: [gateway] onHello hello-ok 4 (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:39)
+[2026-09-13T03:55:25.532Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 03:55:25.531 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T03:55:25.532Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 03:55:25.532 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T03:55:25.532Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 03:55:25.532 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T03:55:25.532Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 03:55:25.532 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T03:55:25.533Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 03:55:25.532 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T03:55:25.533Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 03:55:25.533 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T03:55:25.534Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 03:55:25.534 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T03:55:25.534Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 03:55:25.534 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T03:55:25.534Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 03:55:25.534 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T03:55:25.534Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 03:55:25.534 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T03:55:25.535Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 03:55:25.535 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T03:55:25.553Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 03:55:25.552 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T03:55:25.559Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 03:55:25.559 evt:update.available [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T03:55:25.559Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 03:55:25.559 evt:presence [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T03:55:25.559Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 03:55:25.559 evt:health [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[gateway] [90m2026-09-13T11:55:25.908+08:00[39m [36m[ws][39m [36m⇄ res ✓ config.get 349ms conn=d5781da5…326d id=82a2c998…0347[39m
+[2026-09-13T03:55:25.909Z] stdout: [90m2026-09-13T11:55:25.908+08:00[39m [36m[ws][39m [36m⇄ res ✓ config.get 349ms conn=d5781da5…326d id=82a2c998…0347[39m
+[2026-09-13T03:55:26.014Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 03:55:26.014 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[gateway] [90m2026-09-13T11:55:26.147+08:00[39m [36m[ws][39m [36m⇄ res ✓ commands.list 102ms conn=d5781da5…326d id=2797fff6…3033[39m
+[2026-09-13T03:55:26.148Z] stdout: [90m2026-09-13T11:55:26.147+08:00[39m [36m[ws][39m [36m⇄ res ✓ commands.list 102ms conn=d5781da5…326d id=2797fff6…3033[39m
+[gateway] 2026-09-13T11:55:26.149+08:00 [info]: [ '[ws]', 'ws client ready' ]
+[2026-09-13T03:55:26.150Z] stdout: 2026-09-13T11:55:26.149+08:00 [info]: [ '[ws]', 'ws client ready' ]
+[gateway] [90m2026-09-13T11:55:26.245+08:00[39m [36m[ws][39m [36m⇄ res ✓ chat.history 95ms conn=d5781da5…326d id=bea4455f…1619[39m
+[2026-09-13T03:55:26.246Z] stdout: [90m2026-09-13T11:55:26.245+08:00[39m [36m[ws][39m [36m⇄ res ✓ chat.history 95ms conn=d5781da5…326d id=bea4455f…1619[39m
+[2026-09-13T03:55:26.249Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 03:55:26.249 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T03:55:26.285Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 03:55:26.284 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[gateway] [90m2026-09-13T11:55:26.384+08:00[39m [36m[ws][39m [36m⇄ res ✓ sessions.patch 105ms conn=d5781da5…326d id=efc94966…6693[39m
+[2026-09-13T03:55:26.384Z] stdout: [90m2026-09-13T11:55:26.384+08:00[39m [36m[ws][39m [36m⇄ res ✓ sessions.patch 105ms conn=d5781da5…326d id=efc94966…6693[39m
+[2026-09-13T03:55:26.404Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 03:55:26.404 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[gateway] [90m2026-09-13T11:55:26.409+08:00[39m [31m[qqbot][39m [36m[default] [qqbot:api] <<< Status: 200 OK | TraceId: a32aa09a88c09c898ae8d7e6baeff895[39m
+[2026-09-13T03:55:26.409Z] stdout: [90m2026-09-13T11:55:26.409+08:00[39m [31m[qqbot][39m [36m[default] [qqbot:api] <<< Status: 200 OK | TraceId: a32aa09a88c09c898ae8d7e6baeff895[39m
+[gateway] [90m2026-09-13T11:55:26.411+08:00[39m [31m[qqbot][39m [36m[default] Connecting to wss://api.sgroup.qq.com/websocket[39m
+[2026-09-13T03:55:26.411Z] stdout: [90m2026-09-13T11:55:26.411+08:00[39m [31m[qqbot][39m [36m[default] Connecting to wss://api.sgroup.qq.com/websocket[39m
+[gateway] [90m2026-09-13T11:55:26.565+08:00[39m [31m[qqbot][39m [36m[default] WebSocket connected[39m
+[2026-09-13T03:55:26.566Z] stdout: [90m2026-09-13T11:55:26.565+08:00[39m [31m[qqbot][39m [36m[default] WebSocket connected[39m
+[gateway] [90m2026-09-13T11:55:26.566+08:00[39m [31m[qqbot][39m [36m[default] [qqbot:token:1903925047] Background refresh started[39m
+[2026-09-13T03:55:26.566Z] stdout: [90m2026-09-13T11:55:26.566+08:00[39m [31m[qqbot][39m [36m[default] [qqbot:token:1903925047] Background refresh started[39m
+[gateway] [90m2026-09-13T11:55:26.749+08:00[39m [31m[qqbot][39m [36m[qqbot:default] Gateway ready[39m
+[2026-09-13T03:55:26.750Z] stdout: [90m2026-09-13T11:55:26.749+08:00[39m [31m[qqbot][39m [36m[qqbot:default] Gateway ready[39m
+[gateway] [90m2026-09-13T11:55:36.830+08:00[39m [36m[fetch-timeout][39m [33mfetch timeout after 5000ms (elapsed 5014ms) operation=fetchWithSsrFGuard url=https://clawhub.ai/v1/feeds/plugins[39m
+[2026-09-13T03:55:36.831Z] stderr: [90m2026-09-13T11:55:36.830+08:00[39m [36m[fetch-timeout][39m [33mfetch timeout after 5000ms (elapsed 5014ms) operation=fetchWithSsrFGuard url=https://clawhub.ai/v1/feeds/plugins[39m
+[gateway] [90m2026-09-13T11:55:40.514+08:00[39m [36m[fetch-timeout][39m [33mfetch timeout after 15000ms (elapsed 15002ms) operation=fetchWithSsrFGuard url=https://catalog.openclaw.ai/models/v1/catalog.json[39m
+[2026-09-13T03:55:40.515Z] stderr: [90m2026-09-13T11:55:40.514+08:00[39m [36m[fetch-timeout][39m [33mfetch timeout after 15000ms (elapsed 15002ms) operation=fetchWithSsrFGuard url=https://catalog.openclaw.ai/models/v1/catalog.json[39m
+[gateway] [90m2026-09-13T11:55:40.625+08:00[39m [36m[gateway][39m [36mremote model catalog refresh failed[39m
+[2026-09-13T03:55:40.626Z] stdout: [90m2026-09-13T11:55:40.625+08:00[39m [36m[gateway][39m [36mremote model catalog refresh failed[39m
+[2026-09-13T03:55:55.262Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 03:55:55.262 evt:tick [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T03:56:25.264Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 03:56:25.264 evt:health [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T03:56:25.271Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 03:56:25.272 evt:tick [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T03:56:55.276Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 03:56:55.276 evt:tick [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T03:56:56.262Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 03:56:56.257 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T03:56:56.302Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 03:56:56.303 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T03:56:56.329Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 03:56:56.330 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T03:57:19.275Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 03:57:19.251 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T03:57:19.278Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 03:57:19.254 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T03:57:19.278Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 03:57:19.258 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T03:57:25.289Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 03:57:25.288 evt:health [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T03:57:25.303Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 03:57:25.304 evt:tick [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T03:57:25.568Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 03:57:25.569 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T03:57:25.573Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 03:57:25.574 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T03:57:25.587Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 03:57:25.588 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T03:57:55.319Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 03:57:55.319 evt:tick [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T03:57:55.570Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 03:57:55.571 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T03:57:55.572Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 03:57:55.573 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T03:57:55.574Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 03:57:55.574 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T03:58:09.067Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 03:58:09.067 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T03:58:09.103Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 03:58:09.102 evt:presence [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T03:58:10.074Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 03:58:10.075 evt:chat [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T03:58:10.075Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 03:58:10.075 evt:agent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T03:58:10.075Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 03:58:10.075 evt:chat [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T03:58:10.075Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 03:58:10.075 evt:agent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[gateway] 2026-09-13T11:58:10.144+08:00 [wecom-cli:tool] registerTool ctx: sessionKey="agent:main:mtyagjng-1ytq", messageChannel="webchat", agentAccountId="undefined"
+[2026-09-13T03:58:10.144Z] stdout: 2026-09-13T11:58:10.144+08:00 [wecom-cli:tool] registerTool ctx: sessionKey="agent:main:mtyagjng-1ytq", messageChannel="webchat", agentAccountId="undefined"
+[2026-09-13T03:58:14.296Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 03:58:14.297 evt:agent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T03:58:14.320Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 03:58:14.321 evt:chat [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T03:58:14.321Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 03:58:14.321 evt:agent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[gateway] [90m2026-09-13T11:58:14.349+08:00[39m [33m[provider-transport-fetch][39m [36m[model-fetch] start provider=deepseek api=openai-completions model=deepseek-flash method=POST url=https://api.deepseek.com/chat/completions timeoutMs=undefined proxy=none policy=custom[39m
+[2026-09-13T03:58:14.349Z] stdout: [90m2026-09-13T11:58:14.349+08:00[39m [33m[provider-transport-fetch][39m [36m[model-fetch] start provider=deepseek api=openai-completions model=deepseek-flash method=POST url=https://api.deepseek.com/chat/completions timeoutMs=undefined proxy=none policy=custom[39m
+[gateway] [90m2026-09-13T11:58:14.736+08:00[39m [33m[provider-transport-fetch][39m [36m[model-fetch] response provider=deepseek api=openai-completions model=deepseek-flash status=200 elapsedMs=388 dispatcher=new contentType=text/event-stream; charset=utf-8[39m
+[2026-09-13T03:58:14.736Z] stdout: [90m2026-09-13T11:58:14.736+08:00[39m [33m[provider-transport-fetch][39m [36m[model-fetch] response provider=deepseek api=openai-completions model=deepseek-flash status=200 elapsedMs=388 dispatcher=new contentType=text/event-stream; charset=utf-8[39m
+[2026-09-13T03:58:15.869Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 03:58:15.869 evt:agent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T03:58:15.876Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 03:58:15.876 evt:agent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T03:58:15.876Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 03:58:15.876 evt:agent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T03:58:15.898Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 03:58:15.898 evt:agent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[gateway] [90m2026-09-13T11:58:15.919+08:00[39m [33m[provider-transport-fetch][39m [36m[model-fetch] start provider=deepseek api=openai-completions model=deepseek-flash method=POST url=https://api.deepseek.com/chat/completions timeoutMs=undefined proxy=none policy=custom[39m
+[2026-09-13T03:58:15.919Z] stdout: [90m2026-09-13T11:58:15.919+08:00[39m [33m[provider-transport-fetch][39m [36m[model-fetch] start provider=deepseek api=openai-completions model=deepseek-flash method=POST url=https://api.deepseek.com/chat/completions timeoutMs=undefined proxy=none policy=custom[39m
+[2026-09-13T03:58:15.931Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 03:58:15.929 evt:agent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[gateway] [90m2026-09-13T11:58:16.274+08:00[39m [33m[provider-transport-fetch][39m [36m[model-fetch] response provider=deepseek api=openai-completions model=deepseek-flash status=200 elapsedMs=354 dispatcher=reused contentType=text/event-stream; charset=utf-8[39m
+[2026-09-13T03:58:16.274Z] stdout: [90m2026-09-13T11:58:16.274+08:00[39m [33m[provider-transport-fetch][39m [36m[model-fetch] response provider=deepseek api=openai-completions model=deepseek-flash status=200 elapsedMs=354 dispatcher=reused contentType=text/event-stream; charset=utf-8[39m
+[2026-09-13T03:58:17.485Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 03:58:17.485 evt:agent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T03:58:17.485Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 03:58:17.486 evt:agent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T03:58:17.489Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 03:58:17.489 evt:chat [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T03:58:17.489Z] [INFO] [renderer:id=1] console.INFO: [oc:stream] 03:58:17.489 delta accept [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T03:58:17.489Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 03:58:17.489 evt:agent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T03:58:17.527Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 03:58:17.527 evt:agent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T03:58:17.531Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 03:58:17.531 evt:chat [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T03:58:17.531Z] [INFO] [renderer:id=1] console.INFO: [oc:lifecycle] 03:58:17.531 chat:final → reset stream state [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T03:58:17.531Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 03:58:17.532 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T03:58:18.336Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 03:58:18.336 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T03:58:25.286Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 03:58:25.287 evt:health [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T03:58:25.324Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 03:58:25.325 evt:tick [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T03:58:25.575Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 03:58:25.575 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T03:58:25.577Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 03:58:25.578 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T03:58:25.586Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 03:58:25.587 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T03:58:55.339Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 03:58:55.339 evt:tick [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T03:58:58.938Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 03:58:58.922 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T03:58:58.943Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 03:58:58.931 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T03:58:58.943Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 03:58:58.936 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T03:59:25.309Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 03:59:25.309 evt:health [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T03:59:25.336Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 03:59:25.337 evt:tick [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T03:59:29.072Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 03:59:29.060 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T03:59:29.073Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 03:59:29.064 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T03:59:29.082Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 03:59:29.082 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T03:59:55.339Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 03:59:55.337 evt:tick [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T03:59:55.570Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 03:59:55.571 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T03:59:55.574Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 03:59:55.574 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T03:59:55.577Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 03:59:55.578 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T03:59:58.572Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 03:59:58.573 evt:task [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T03:59:58.574Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 03:59:58.575 evt:cron [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[gateway] 2026-09-13T11:59:59.054+08:00 [wecom-cli:tool] registerTool ctx: sessionKey="agent:main:main", messageChannel="feishu", agentAccountId="undefined"
+[2026-09-13T03:59:59.054Z] stdout: 2026-09-13T11:59:59.054+08:00 [wecom-cli:tool] registerTool ctx: sessionKey="agent:main:main", messageChannel="feishu", agentAccountId="undefined"
+[gateway] [90m2026-09-13T12:00:00.652+08:00[39m [33m[provider-transport-fetch][39m [36m[model-fetch] start provider=deepseek api=openai-completions model=deepseek-flash method=POST url=https://api.deepseek.com/chat/completions timeoutMs=undefined proxy=none policy=custom[39m
+[2026-09-13T04:00:00.651Z] stdout: [90m2026-09-13T12:00:00.652+08:00[39m [33m[provider-transport-fetch][39m [36m[model-fetch] start provider=deepseek api=openai-completions model=deepseek-flash method=POST url=https://api.deepseek.com/chat/completions timeoutMs=undefined proxy=none policy=custom[39m
+[gateway] [90m2026-09-13T12:00:01.097+08:00[39m [33m[provider-transport-fetch][39m [36m[model-fetch] response provider=deepseek api=openai-completions model=deepseek-flash status=200 elapsedMs=445 dispatcher=new contentType=text/event-stream; charset=utf-8[39m
+[2026-09-13T04:00:01.096Z] stdout: [90m2026-09-13T12:00:01.097+08:00[39m [33m[provider-transport-fetch][39m [36m[model-fetch] response provider=deepseek api=openai-completions model=deepseek-flash status=200 elapsedMs=445 dispatcher=new contentType=text/event-stream; charset=utf-8[39m
+[gateway] [90m2026-09-13T12:00:02.777+08:00[39m [33m[agent/embedded][39m [33mempty response detected: runId=450cbb8d-ab5e-4e27-b2a9-e7cd90de0858 sessionId=d881b4d6-3658-49e8-bad8-9d4381a4427b provider=deepseek/deepseek-flash — retrying 1/1 with visible-answer continuation[39m
+[2026-09-13T04:00:02.777Z] stderr: [90m2026-09-13T12:00:02.777+08:00[39m [33m[agent/embedded][39m [33mempty response detected: runId=450cbb8d-ab5e-4e27-b2a9-e7cd90de0858 sessionId=d881b4d6-3658-49e8-bad8-9d4381a4427b provider=deepseek/deepseek-flash — retrying 1/1 with visible-answer continuation[39m
+[gateway] 2026-09-13T12:00:02.794+08:00 [wecom-cli:tool] registerTool ctx: sessionKey="agent:main:main", messageChannel="feishu", agentAccountId="undefined"
+[2026-09-13T04:00:02.793Z] stdout: 2026-09-13T12:00:02.794+08:00 [wecom-cli:tool] registerTool ctx: sessionKey="agent:main:main", messageChannel="feishu", agentAccountId="undefined"
+[gateway] [90m2026-09-13T12:00:02.878+08:00[39m [33m[provider-transport-fetch][39m [36m[model-fetch] start provider=deepseek api=openai-completions model=deepseek-flash method=POST url=https://api.deepseek.com/chat/completions timeoutMs=undefined proxy=none policy=custom[39m
+[2026-09-13T04:00:02.877Z] stdout: [90m2026-09-13T12:00:02.878+08:00[39m [33m[provider-transport-fetch][39m [36m[model-fetch] start provider=deepseek api=openai-completions model=deepseek-flash method=POST url=https://api.deepseek.com/chat/completions timeoutMs=undefined proxy=none policy=custom[39m
+[gateway] [90m2026-09-13T12:00:03.199+08:00[39m [33m[provider-transport-fetch][39m [36m[model-fetch] response provider=deepseek api=openai-completions model=deepseek-flash status=200 elapsedMs=321 dispatcher=reused contentType=text/event-stream; charset=utf-8[39m
+[2026-09-13T04:00:03.198Z] stdout: [90m2026-09-13T12:00:03.199+08:00[39m [33m[provider-transport-fetch][39m [36m[model-fetch] response provider=deepseek api=openai-completions model=deepseek-flash status=200 elapsedMs=321 dispatcher=reused contentType=text/event-stream; charset=utf-8[39m
+[gateway] [90m2026-09-13T12:00:05.010+08:00[39m [33m[provider-transport-fetch][39m [36m[model-fetch] start provider=deepseek api=openai-completions model=deepseek-flash method=POST url=https://api.deepseek.com/chat/completions timeoutMs=undefined proxy=none policy=custom[39m
+[2026-09-13T04:00:05.009Z] stdout: [90m2026-09-13T12:00:05.010+08:00[39m [33m[provider-transport-fetch][39m [36m[model-fetch] start provider=deepseek api=openai-completions model=deepseek-flash method=POST url=https://api.deepseek.com/chat/completions timeoutMs=undefined proxy=none policy=custom[39m
+[gateway] [90m2026-09-13T12:00:05.466+08:00[39m [33m[provider-transport-fetch][39m [36m[model-fetch] response provider=deepseek api=openai-completions model=deepseek-flash status=200 elapsedMs=457 dispatcher=reused contentType=text/event-stream; charset=utf-8[39m
+[2026-09-13T04:00:05.466Z] stdout: [90m2026-09-13T12:00:05.466+08:00[39m [33m[provider-transport-fetch][39m [36m[model-fetch] response provider=deepseek api=openai-completions model=deepseek-flash status=200 elapsedMs=457 dispatcher=reused contentType=text/event-stream; charset=utf-8[39m
+[2026-09-13T04:00:07.621Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:00:07.621 evt:heartbeat [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:00:07.630Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:00:07.631 evt:task [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:00:07.638Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:00:07.639 evt:cron [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:00:07.638Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:00:07.639 evt:cron [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[gateway] [90m2026-09-13T12:00:25.200+08:00[39m [31m[state/database-verify][39m [36mdatabase integrity verification passed[39m
+[2026-09-13T04:00:25.199Z] stdout: [90m2026-09-13T12:00:25.200+08:00[39m [31m[state/database-verify][39m [36mdatabase integrity verification passed[39m
+[gateway] [90m2026-09-13T12:00:25.200+08:00[39m [31m[state/database-verify][39m [36mdatabase integrity verification passed[39m
+[2026-09-13T04:00:25.200Z] stdout: [90m2026-09-13T12:00:25.200+08:00[39m [31m[state/database-verify][39m [36mdatabase integrity verification passed[39m
+[2026-09-13T04:00:25.305Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:00:25.304 evt:health [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:00:25.341Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:00:25.342 evt:tick [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:00:25.578Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:00:25.579 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:00:25.581Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:00:25.582 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:00:25.592Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:00:25.593 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:00:55.348Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:00:55.346 evt:tick [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:00:55.567Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:00:55.565 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:00:55.570Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:00:55.568 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:00:55.574Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:00:55.575 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:01:25.305Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:01:25.306 evt:health [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:01:25.358Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:01:25.359 evt:tick [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:01:25.580Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:01:25.581 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:01:25.584Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:01:25.585 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:01:25.592Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:01:25.593 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:01:55.373Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:01:55.371 evt:tick [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:01:55.578Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:01:55.579 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:01:55.580Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:01:55.581 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:01:55.582Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:01:55.583 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:02:25.310Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:02:25.311 evt:health [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:02:25.383Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:02:25.384 evt:tick [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:02:25.573Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:02:25.573 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:02:25.576Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:02:25.576 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:02:25.585Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:02:25.586 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:02:55.399Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:02:55.397 evt:tick [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:02:55.572Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:02:55.569 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:02:55.574Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:02:55.572 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:02:55.576Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:02:55.574 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:03:25.324Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:03:25.326 evt:health [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:03:25.409Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:03:25.411 evt:tick [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:03:25.581Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:03:25.583 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:03:25.585Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:03:25.586 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:03:25.592Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:03:25.593 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:03:55.418Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:03:55.417 evt:tick [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:03:55.589Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:03:55.589 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:03:55.591Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:03:55.590 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:03:55.593Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:03:55.592 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:04:25.328Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:04:25.330 evt:health [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:04:25.431Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:04:25.432 evt:tick [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:04:25.587Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:04:25.589 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:04:25.589Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:04:25.591 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:04:25.597Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:04:25.599 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:04:55.442Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:04:55.441 evt:tick [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:04:55.579Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:04:55.578 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:04:55.581Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:04:55.580 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:04:55.582Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:04:55.581 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:05:25.338Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:05:25.340 evt:health [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:05:25.457Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:05:25.459 evt:tick [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:05:25.583Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:05:25.584 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:05:25.585Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:05:25.587 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:05:25.592Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:05:25.593 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:05:50.922Z] [INFO] Kimi OAuth: token 已自动刷新
+[2026-09-13T04:05:55.474Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:05:55.472 evt:tick [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:05:58.742Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:05:58.734 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:05:58.743Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:05:58.739 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:05:58.743Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:05:58.742 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:06:25.349Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:06:25.350 evt:health [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:06:25.483Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:06:25.485 evt:tick [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:06:25.594Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:06:25.595 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:06:25.598Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:06:25.599 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:06:25.609Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:06:25.610 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:06:42.510Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:06:42.495 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:06:42.511Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:06:42.499 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:06:42.511Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:06:42.502 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:06:48.911Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:06:48.912 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[gateway] [90m2026-09-13T12:06:49.000+08:00[39m [36m[ws][39m [36m⇄ res ✓ doctor.memory.status 83ms conn=d5781da5…326d id=5b17aecd…f10e[39m
+[2026-09-13T04:06:49.001Z] stdout: [90m2026-09-13T12:06:49.000+08:00[39m [36m[ws][39m [36m⇄ res ✓ doctor.memory.status 83ms conn=d5781da5…326d id=5b17aecd…f10e[39m
+[2026-09-13T04:06:55.490Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:06:55.490 evt:tick [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:06:55.584Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:06:55.584 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:06:55.588Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:06:55.587 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:06:55.589Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:06:55.589 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:07:06.543Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:07:06.539 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:07:06.544Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:07:06.544 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:07:06.547Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:07:06.547 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:07:25.354Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:07:25.355 evt:health [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:07:25.502Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:07:25.504 evt:tick [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:07:25.582Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:07:25.583 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:07:25.590Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:07:25.591 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:07:25.598Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:07:25.599 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:07:27.648Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:07:27.632 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:07:27.648Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:07:27.634 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:07:27.648Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:07:27.636 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:07:55.512Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:07:55.511 evt:tick [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:08:04.216Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:08:04.196 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:08:04.216Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:08:04.200 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:08:04.217Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:08:04.203 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:08:25.359Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:08:25.360 evt:health [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:08:25.521Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:08:25.522 evt:tick [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:08:25.584Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:08:25.585 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:08:25.586Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:08:25.588 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:08:25.595Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:08:25.596 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:08:55.527Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:08:55.526 evt:tick [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:08:55.589Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:08:55.588 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:08:55.591Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:08:55.590 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:08:55.594Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:08:55.593 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:09:25.389Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:09:25.375 evt:health [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:09:25.535Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:09:25.536 evt:tick [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:09:25.585Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:09:25.585 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:09:25.589Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:09:25.590 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:09:25.595Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:09:25.596 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:09:27.286Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:09:27.287 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[gateway] [90m2026-09-13T12:09:27.462+08:00[39m [36m[gateway][39m [36mconfig.patch write actor=webchat-ui device=5473438759ae44019eb1e6c2f8d490a2db385f29127e95cf40a176c815f115e8 ip=unknown-ip conn=d5781da5-28f0-4c51-a302-5cd12412326d changedPaths=hooks.internal.entries.session-memory.messages,hooks.internal.entries.session-memory.llmSlug,memory.search.rememberAcrossConversations,memory.search.sources,memory.search.query,memory.citations,plugins.entries.memory-core.config.dreaming,plugins.entries.active-memory.config.enabled,+1 more restartReason=config.patch[39m
+[2026-09-13T04:09:27.463Z] stdout: [90m2026-09-13T12:09:27.462+08:00[39m [36m[gateway][39m [36mconfig.patch write actor=webchat-ui device=5473438759ae44019eb1e6c2f8d490a2db385f29127e95cf40a176c815f115e8 ip=unknown-ip conn=d5781da5-28f0-4c51-a302-5cd12412326d changedPaths=hooks.internal.entries.session-memory.messages,hooks.internal.entries.session-memory.llmSlug,memory.search.rememberAcrossConversations,memory.search.sources,memory.search.query,memory.citations,plugins.entries.memory-core.config.dreaming,plugins.entries.active-memory.config.enabled,+1 more restartReason=config.patch[39m
+[gateway] [90m2026-09-13T12:09:27.603+08:00[39m [31m[secrets][39m [33m[WEB_SEARCH_PROVIDER_INVALID_AUTODETECT] tools.web.search.provider is "tavily". No provider will be selected.[39m
+[2026-09-13T04:09:27.603Z] stderr: [90m2026-09-13T12:09:27.603+08:00[39m [31m[secrets][39m [33m[WEB_SEARCH_PROVIDER_INVALID_AUTODETECT] tools.web.search.provider is "tavily". No provider will be selected.[39m
+[gateway] [90m2026-09-13T12:09:27.702+08:00[39m [34m[reload][39m [36mconfig change detected; evaluating reload (hooks.internal.entries.session-memory.messages, hooks.internal.entries.session-memory.llmSlug, plugins.entries.memory-core.config, plugins.entries.active-memory.config, memory.search.rememberAcrossConversations, memory.search.sources, memory.search.query, memory.citations)[39m
+[2026-09-13T04:09:27.703Z] stdout: [90m2026-09-13T12:09:27.702+08:00[39m [34m[reload][39m [36mconfig change detected; evaluating reload (hooks.internal.entries.session-memory.messages, hooks.internal.entries.session-memory.llmSlug, plugins.entries.memory-core.config, plugins.entries.active-memory.config, memory.search.rememberAcrossConversations, memory.search.sources, memory.search.query, memory.citations)[39m
+[gateway] [90m2026-09-13T12:09:27.720+08:00[39m [31m[secrets][39m [33m[WEB_SEARCH_PROVIDER_INVALID_AUTODETECT] tools.web.search.provider is "tavily". No provider will be selected.[39m
+[2026-09-13T04:09:27.720Z] stderr: [90m2026-09-13T12:09:27.720+08:00[39m [31m[secrets][39m [33m[WEB_SEARCH_PROVIDER_INVALID_AUTODETECT] tools.web.search.provider is "tavily". No provider will be selected.[39m
+[gateway] [90m2026-09-13T12:09:27.763+08:00[39m [34m[reload][39m [33mconfig change requires gateway restart (memory.search.rememberAcrossConversations, memory.search.sources, memory.search.query) — deferring until 1 gateway request(s) complete[39m
+[2026-09-13T04:09:27.764Z] stderr: [90m2026-09-13T12:09:27.763+08:00[39m [34m[reload][39m [33mconfig change requires gateway restart (memory.search.rememberAcrossConversations, memory.search.sources, memory.search.query) — deferring until 1 gateway request(s) complete[39m
+[2026-09-13T04:09:27.765Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:09:27.766 evt:config.changed [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[gateway] [90m2026-09-13T12:09:27.813+08:00[39m [36m[ws][39m [36m⇄ res ✓ config.patch 525ms conn=d5781da5…326d id=f97140ff…3643[39m
+[2026-09-13T04:09:27.813Z] stdout: [90m2026-09-13T12:09:27.813+08:00[39m [36m[ws][39m [36m⇄ res ✓ config.patch 525ms conn=d5781da5…326d id=f97140ff…3643[39m
+[2026-09-13T04:09:27.851Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:09:27.852 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:09:27.890Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:09:27.890 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[gateway] [90m2026-09-13T12:09:28.192+08:00[39m [31m[secrets][39m [33m[WEB_SEARCH_PROVIDER_INVALID_AUTODETECT] tools.web.search.provider is "tavily". No provider will be selected.[39m
+[2026-09-13T04:09:28.192Z] stderr: [90m2026-09-13T12:09:28.192+08:00[39m [31m[secrets][39m [33m[WEB_SEARCH_PROVIDER_INVALID_AUTODETECT] tools.web.search.provider is "tavily". No provider will be selected.[39m
+[gateway] [90m2026-09-13T12:09:28.193+08:00[39m [34m[reload][39m [33mconfig change requires gateway restart (memory.search.rememberAcrossConversations, memory.search.sources, memory.search.query) — preparing[39m
+[2026-09-13T04:09:28.193Z] stderr: [90m2026-09-13T12:09:28.193+08:00[39m [34m[reload][39m [33mconfig change requires gateway restart (memory.search.rememberAcrossConversations, memory.search.sources, memory.search.query) — preparing[39m
+[gateway] [90m2026-09-13T12:09:28.194+08:00[39m [32m[admission][39m [36mclosed: restart-signal fence[39m
+[2026-09-13T04:09:28.194Z] stdout: [90m2026-09-13T12:09:28.194+08:00[39m [32m[admission][39m [36mclosed: restart-signal fence[39m
+[gateway] [90m2026-09-13T12:09:28.194+08:00[39m [32m[admission][39m [36mreopened: restart-signal fence[39m
+[2026-09-13T04:09:28.194Z] stdout: [90m2026-09-13T12:09:28.194+08:00[39m [32m[admission][39m [36mreopened: restart-signal fence[39m
+[gateway] [90m2026-09-13T12:09:28.709+08:00[39m [32m[admission][39m [36mclosed: restart-signal fence[39m
+[2026-09-13T04:09:28.709Z] stdout: [90m2026-09-13T12:09:28.709+08:00[39m [32m[admission][39m [36mclosed: restart-signal fence[39m
+[gateway] [90m2026-09-13T12:09:29.451+08:00[39m [31m[secrets][39m [33m[WEB_SEARCH_PROVIDER_INVALID_AUTODETECT] tools.web.search.provider is "tavily". No provider will be selected.[39m
+[2026-09-13T04:09:29.451Z] stderr: [90m2026-09-13T12:09:29.451+08:00[39m [31m[secrets][39m [33m[WEB_SEARCH_PROVIDER_INVALID_AUTODETECT] tools.web.search.provider is "tavily". No provider will be selected.[39m
+[gateway] [90m2026-09-13T12:09:29.455+08:00[39m [32m[admission][39m [36mclosed: restart drain[39m
+[2026-09-13T04:09:29.455Z] stdout: [90m2026-09-13T12:09:29.455+08:00[39m [32m[admission][39m [36mclosed: restart drain[39m
+[gateway] [90m2026-09-13T12:09:29.456+08:00[39m [36m[gateway][39m [36mreceived SIGUSR1; restarting[39m
+[2026-09-13T04:09:29.456Z] stdout: [90m2026-09-13T12:09:29.456+08:00[39m [36m[gateway][39m [36mreceived SIGUSR1; restarting[39m
+[2026-09-13T04:09:29.458Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:09:29.459 evt:shutdown [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:09:29.465Z] [ERROR] [renderer:id=1] console.WARNING: [gateway] websocket closed code=1012 reason=service restart (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:39)
+[2026-09-13T04:09:29.465Z] [ERROR] [renderer:id=1] console.WARNING: [gateway] onClose code=1012 reason=service restart (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:39)
+[2026-09-13T04:09:29.465Z] [ERROR] [renderer:id=1] console.WARNING: [gateway] scheduling reconnect in 800ms (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:39)
+[gateway] [90m2026-09-13T12:09:29.465+08:00[39m [36m[ws][39m [36mwebchat disconnected code=1012 reason=service restart conn=d5781da5-28f0-4c51-a302-5cd12412326d[39m
+[2026-09-13T04:09:29.465Z] stdout: [90m2026-09-13T12:09:29.465+08:00[39m [36m[ws][39m [36mwebchat disconnected code=1012 reason=service restart conn=d5781da5-28f0-4c51-a302-5cd12412326d[39m
+[gateway] [90m2026-09-13T12:09:29.471+08:00[39m [31m[qqbot][39m [36m[default] [qqbot:token:1903925047] Background refresh stopped[39m
+[2026-09-13T04:09:29.471Z] stdout: [90m2026-09-13T12:09:29.471+08:00[39m [31m[qqbot][39m [36m[default] [qqbot:token:1903925047] Background refresh stopped[39m
+[gateway] [90m2026-09-13T12:09:29.472+08:00[39m [33m[feishu][39m [36mfeishu[default]: abort signal received, stopping[39m
+[2026-09-13T04:09:29.472Z] stdout: [90m2026-09-13T12:09:29.472+08:00[39m [33m[feishu][39m [36mfeishu[default]: abort signal received, stopping[39m
+[gateway] 2026-09-13T12:09:29.474+08:00 [info]: [ '[ws]', 'ws client closed manually' ]
+[2026-09-13T04:09:29.474Z] stdout: 2026-09-13T12:09:29.474+08:00 [info]: [ '[ws]', 'ws client closed manually' ]
+[gateway] [90m2026-09-13T12:09:29.479+08:00[39m [34m[gmail-watcher][39m [36mgmail watcher stopped[39m
+[2026-09-13T04:09:29.479Z] stdout: [90m2026-09-13T12:09:29.479+08:00[39m [34m[gmail-watcher][39m [36mgmail watcher stopped[39m
+[gateway] [90m2026-09-13T12:09:29.499+08:00[39m [33m[shutdown][39m [36mcompleted cleanly in 39ms[39m
+[2026-09-13T04:09:29.499Z] stdout: [90m2026-09-13T12:09:29.499+08:00[39m [33m[shutdown][39m [36mcompleted cleanly in 39ms[39m
+[gateway] [90m2026-09-13T12:09:29.573+08:00[39m [36m[gateway][39m [36mrestart mode: in-process restart (OPENCLAW_NO_RESPAWN)[39m
+[2026-09-13T04:09:29.573Z] stdout: [90m2026-09-13T12:09:29.573+08:00[39m [36m[gateway][39m [36mrestart mode: in-process restart (OPENCLAW_NO_RESPAWN)[39m
+[gateway] [90m2026-09-13T12:09:29.581+08:00[39m [31m[qqbot][39m [36m[default] WebSocket closed: 1005 [39m
+[2026-09-13T04:09:29.581Z] stdout: [90m2026-09-13T12:09:29.581+08:00[39m [31m[qqbot][39m [36m[default] WebSocket closed: 1005 [39m
+[2026-09-13T04:09:30.266Z] [INFO] [renderer:id=1] console.INFO: [gateway] websocket opening ws://127.0.0.1:19554 (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:39)
+[2026-09-13T04:09:32.277Z] [ERROR] [renderer:id=1] console.WARNING: [gateway] websocket error [object Event] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:39)
+[2026-09-13T04:09:32.277Z] [ERROR] [renderer:id=1] console.WARNING: [gateway] websocket closed code=1006 reason= (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:39)
+[2026-09-13T04:09:32.277Z] [ERROR] [renderer:id=1] console.WARNING: [gateway] onClose code=1006 reason= (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:39)
+[2026-09-13T04:09:32.277Z] [ERROR] [renderer:id=1] console.WARNING: [gateway] scheduling reconnect in 1360ms (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:39)
+[2026-09-13T04:09:33.640Z] [INFO] [renderer:id=1] console.INFO: [gateway] websocket opening ws://127.0.0.1:19554 (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:39)
+[gateway] [90m2026-09-13T12:09:34.305+08:00[39m [31m[secrets][39m [33m[WEB_SEARCH_PROVIDER_INVALID_AUTODETECT] tools.web.search.provider is "tavily". No provider will be selected.[39m
+[2026-09-13T04:09:34.305Z] stderr: [90m2026-09-13T12:09:34.305+08:00[39m [31m[secrets][39m [33m[WEB_SEARCH_PROVIDER_INVALID_AUTODETECT] tools.web.search.provider is "tavily". No provider will be selected.[39m
+[gateway] [90m2026-09-13T12:09:34.387+08:00[39m [36m[gateway][39m [36mstarting HTTP server...[39m
+[2026-09-13T04:09:34.388Z] stdout: [90m2026-09-13T12:09:34.387+08:00[39m [36m[gateway][39m [36mstarting HTTP server...[39m
+[gateway] [90m2026-09-13T12:09:34.397+08:00[39m [32m[health-monitor][39m [36mstarted (interval: 300s, startup-grace: 60s, channel-connect-grace: 120s)[39m
+[2026-09-13T04:09:34.397Z] stdout: [90m2026-09-13T12:09:34.397+08:00[39m [32m[health-monitor][39m [36mstarted (interval: 300s, startup-grace: 60s, channel-connect-grace: 120s)[39m
+[gateway] [90m2026-09-13T12:09:34.932+08:00[39m [36m[gateway][39m [33m[plugins] typed hook "before_prompt_build" blocked because non-bundled plugins must set plugins.entries.wecom-openclaw-plugin.hooks.allowConversationAccess=true (plugin=wecom-openclaw-plugin, source=C:\Users\binchen\Desktop\code\Oneclaw2\Oneclaw\.dev-state\extensions\wecom-openclaw-plugin\dist\cryoclaw-bundle.mjs)[39m
+[2026-09-13T04:09:34.933Z] stderr: [90m2026-09-13T12:09:34.932+08:00[39m [36m[gateway][39m [33m[plugins] typed hook "before_prompt_build" blocked because non-bundled plugins must set plugins.entries.wecom-openclaw-plugin.hooks.allowConversationAccess=true (plugin=wecom-openclaw-plugin, source=C:\Users\binchen\Desktop\code\Oneclaw2\Oneclaw\.dev-state\extensions\wecom-openclaw-plugin\dist\cryoclaw-bundle.mjs)[39m
+[gateway] [90m2026-09-13T12:09:34.933+08:00[39m [36m[gateway][39m [33mmemory.search.provider="openai" is configured, but no loaded plugin registered a memory embedding provider that can serve "openai". Semantic memory recall will fall back to keyword/FTS-only search. Ensure the plugin that provides "openai" is installed and enabled.[39m
+[2026-09-13T04:09:34.933Z] stderr: [90m2026-09-13T12:09:34.933+08:00[39m [36m[gateway][39m [33mmemory.search.provider="openai" is configured, but no loaded plugin registered a memory embedding provider that can serve "openai". Semantic memory recall will fall back to keyword/FTS-only search. Ensure the plugin that provides "openai" is installed and enabled.[39m
+[gateway] [90m2026-09-13T12:09:34.940+08:00[39m [36m[gateway][39m [36magent model: zai-cn-coding/GLM-5.3-Flash (thinking=medium, fast=off)[39m
+[2026-09-13T04:09:34.940Z] stdout: [90m2026-09-13T12:09:34.940+08:00[39m [36m[gateway][39m [36magent model: zai-cn-coding/GLM-5.3-Flash (thinking=medium, fast=off)[39m
+[gateway] [90m2026-09-13T12:09:34.940+08:00[39m [36m[gateway][39m [36mhttp server listening (8 plugins: active-memory, feishu, memory-core, memory-wiki, ollama, openclaw-weixin, qqbot, wecom-openclaw-plugin; 4.8s)[39m
+[2026-09-13T04:09:34.940Z] stdout: [90m2026-09-13T12:09:34.940+08:00[39m [36m[gateway][39m [36mhttp server listening (8 plugins: active-memory, feishu, memory-core, memory-wiki, ollama, openclaw-weixin, qqbot, wecom-openclaw-plugin; 4.8s)[39m
+[gateway] [90m2026-09-13T12:09:34.941+08:00[39m [36m[gateway][39m [36mlog file: C:\Users\binchen\AppData\Local\Temp\openclaw\openclaw-2026-09-13.log[39m
+[2026-09-13T04:09:34.941Z] stdout: [90m2026-09-13T12:09:34.941+08:00[39m [36m[gateway][39m [36mlog file: C:\Users\binchen\AppData\Local\Temp\openclaw\openclaw-2026-09-13.log[39m
+[gateway] [90m2026-09-13T12:09:34.946+08:00[39m [36m[gateway][39m [36mstarting channels and sidecars...[39m
+[2026-09-13T04:09:34.946Z] stdout: [90m2026-09-13T12:09:34.946+08:00[39m [36m[gateway][39m [36mstarting channels and sidecars...[39m
+[gateway] [90m2026-09-13T12:09:35.018+08:00[39m [33m[hooks][39m [36mloaded 1 internal hook handler[39m
+[2026-09-13T04:09:35.018Z] stdout: [90m2026-09-13T12:09:35.018+08:00[39m [33m[hooks][39m [36mloaded 1 internal hook handler[39m
+[gateway] [90m2026-09-13T12:09:35.929+08:00[39m [31m[qqbot][39m [36m[qqbot:default] Starting gateway — appId=1903925047, enabled=true, name=unnamed[39m
+[2026-09-13T04:09:35.929Z] stdout: [90m2026-09-13T12:09:35.929+08:00[39m [31m[qqbot][39m [36m[qqbot:default] Starting gateway — appId=1903925047, enabled=true, name=unnamed[39m
+[gateway] [90m2026-09-13T12:09:35.930+08:00[39m [31m[qqbot][39m [36m[default] Registering approval.native runtime context[39m
+[2026-09-13T04:09:35.930Z] stdout: [90m2026-09-13T12:09:35.930+08:00[39m [31m[qqbot][39m [36m[default] Registering approval.native runtime context[39m
+[gateway] [90m2026-09-13T12:09:35.930+08:00[39m [31m[qqbot][39m [36m[default] approval.native context registered (lease=true)[39m
+[2026-09-13T04:09:35.930Z] stdout: [90m2026-09-13T12:09:35.930+08:00[39m [31m[qqbot][39m [36m[default] approval.native context registered (lease=true)[39m
+[gateway] [90m2026-09-13T12:09:35.935+08:00[39m [33m[feishu][39m [36mstarting feishu[default] (mode: websocket)[39m
+[2026-09-13T04:09:35.935Z] stdout: [90m2026-09-13T12:09:35.935+08:00[39m [33m[feishu][39m [36mstarting feishu[default] (mode: websocket)[39m
+[2026-09-13T04:09:35.956Z] [INFO] [renderer:id=1] console.INFO: [gateway] websocket opened (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:39)
+[2026-09-13T04:09:35.956Z] [INFO] [renderer:id=1] console.VERBOSE: [gateway] challenge recv nonce 04d66e86-89a7-4b6d-8ae0-6b50658705f4 (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:39)
+[2026-09-13T04:09:35.956Z] [INFO] [renderer:id=1] console.VERBOSE: [gateway] begin sendConnect [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:39)
+[2026-09-13T04:09:35.957Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:09:35.958 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[gateway] [90m2026-09-13T12:09:35.958+08:00[39m [36m[gateway][39m [36mstartup outcomes: internal-hooks=loaded; internal-startup-hook=scheduled; gateway-start-hooks=scheduled; gmail-watcher=skipped (hooks-disabled); gmail-model=skipped (not-configured)[39m
+[2026-09-13T04:09:35.958Z] stdout: [90m2026-09-13T12:09:35.958+08:00[39m [36m[gateway][39m [36mstartup outcomes: internal-hooks=loaded; internal-startup-hook=scheduled; gateway-start-hooks=scheduled; gmail-watcher=skipped (hooks-disabled); gmail-model=skipped (not-configured)[39m
+[gateway] [90m2026-09-13T12:09:35.959+08:00[39m [36m[gateway][39m [36mready[39m
+[2026-09-13T04:09:35.959Z] stdout: [90m2026-09-13T12:09:35.959+08:00[39m [36m[gateway][39m [36mready[39m
+[gateway] [90m2026-09-13T12:09:36.009+08:00[39m [36m[heartbeat][39m [36mstarted[39m
+[2026-09-13T04:09:36.010Z] stdout: [90m2026-09-13T12:09:36.009+08:00[39m [36m[heartbeat][39m [36mstarted[39m
+[gateway] [90m2026-09-13T12:09:36.031+08:00[39m [36m[ws][39m [36mwebchat connected conn=fbdf0541-e161-4974-85e1-f85651931752 remote=127.0.0.1 client=webchat-ui webchat vdev build=legacy[39m
+[2026-09-13T04:09:36.032Z] stdout: [90m2026-09-13T12:09:36.031+08:00[39m [36m[ws][39m [36mwebchat connected conn=fbdf0541-e161-4974-85e1-f85651931752 remote=127.0.0.1 client=webchat-ui webchat vdev build=legacy[39m
+[2026-09-13T04:09:36.039Z] [INFO] [renderer:id=1] console.INFO: [gateway] connect response ok (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:39)
+[2026-09-13T04:09:36.040Z] [INFO] [renderer:id=1] console.INFO: [gateway] onHello hello-ok 4 (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:39)
+[2026-09-13T04:09:36.040Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:09:36.041 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:09:36.040Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:09:36.041 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:09:36.040Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:09:36.041 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:09:36.040Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:09:36.041 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:09:36.040Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:09:36.041 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:09:36.040Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:09:36.041 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:09:36.040Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:09:36.041 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:09:36.040Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:09:36.041 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:09:36.040Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:09:36.041 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:09:36.040Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:09:36.041 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:09:36.040Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:09:36.041 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:09:36.041Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:09:36.042 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:09:36.045Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:09:36.045 evt:presence [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:09:36.085Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:09:36.086 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[gateway] [90m2026-09-13T12:09:36.176+08:00[39m [36m[ws][39m [36m⇄ res ✓ commands.list 89ms conn=fbdf0541…1752 id=8f8facfc…0830[39m
+[2026-09-13T04:09:36.176Z] stdout: [90m2026-09-13T12:09:36.176+08:00[39m [36m[ws][39m [36m⇄ res ✓ commands.list 89ms conn=fbdf0541…1752 id=8f8facfc…0830[39m
+[2026-09-13T04:09:36.226Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:09:36.226 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:09:36.227Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:09:36.228 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[gateway] [90m2026-09-13T12:09:36.241+08:00[39m [31m[qqbot][39m [36m[default] ✅ Access token obtained successfully[39m
+[2026-09-13T04:09:36.241Z] stdout: [90m2026-09-13T12:09:36.241+08:00[39m [31m[qqbot][39m [36m[default] ✅ Access token obtained successfully[39m
+[gateway] [90m2026-09-13T12:09:36.268+08:00[39m [33m[feishu][39m [36mfeishu[default]: bot open_id resolved: ou_c7e3d1e4586af48d7543477bc78d29b6[39m
+[2026-09-13T04:09:36.268Z] stdout: [90m2026-09-13T12:09:36.268+08:00[39m [33m[feishu][39m [36mfeishu[default]: bot open_id resolved: ou_c7e3d1e4586af48d7543477bc78d29b6[39m
+[gateway] 2026-09-13T12:09:36.269+08:00 [info]: [ 'event-dispatch is ready' ]
+[2026-09-13T04:09:36.269Z] stdout: 2026-09-13T12:09:36.269+08:00 [info]: [ 'event-dispatch is ready' ]
+[gateway] [90m2026-09-13T12:09:36.274+08:00[39m [33m[feishu][39m [36mfeishu[default]: starting WebSocket connection...[39m
+[2026-09-13T04:09:36.274Z] stdout: [90m2026-09-13T12:09:36.274+08:00[39m [33m[feishu][39m [36mfeishu[default]: starting WebSocket connection...[39m
+[gateway] 2026-09-13T12:09:36.276+08:00 [info]: [
+  '[ws]',
+  'receive events or callbacks through persistent connection only available in self-build & Feishu app, Configured in:\n' +
+    '        Developer Console(开发者后台)\n' +
+    '          ->\n' +
+    '        Events and Callbacks(事件与回调)\n' +
+    '          ->\n' +
+    '        Mode of event/callback subscription(订阅方式)\n' +
+    '          ->\n' +
+    '        Receive events/callbacks through persistent connection(使用 长连接 接收事件/回调)'
+]
+[2026-09-13T04:09:36.276Z] stdout: 2026-09-13T12:09:36.276+08:00 [info]: [
+  '[ws]',
+  'receive events or callbacks through persistent connection only available in self-build & Feishu app, Configured in:\n' +
+    '        Developer Console(开发者后台)\n' +
+    '          ->\n' +
+    '        Events and Callbacks(事件与回调)\n' +
+    '          ->\n' +
+    '        Mode of event/callback subscription(订阅方式)\n' +
+    '          ->\n' +
+    '        Receive events/callbacks through persistent connection(使用 长连接 接收事件/回调)'
+]
+[gateway] [90m2026-09-13T12:09:36.277+08:00[39m [33m[feishu][39m [36mfeishu[default]: WebSocket client started[39m
+[2026-09-13T04:09:36.277Z] stdout: [90m2026-09-13T12:09:36.277+08:00[39m [33m[feishu][39m [36mfeishu[default]: WebSocket client started[39m
+[2026-09-13T04:09:36.326Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:09:36.327 evt:health [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:09:36.331Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:09:36.332 evt:sessions.changed [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[2026-09-13T04:09:36.331Z] [INFO] [renderer:id=1] console.INFO: [oc:gateway] 04:09:36.332 request sent [object Object] (file:///C:/Users/binchen/Desktop/code/Oneclaw2/Oneclaw/chat-ui/dist/assets/index-CLPvXYzo.js:26)
+[gateway] 2026-09-13T12:09:36.554+08:00 [info]: [ '[ws]', 'ws client ready' ]
+[2026-09-13T04:09:36.554Z] stdout: 2026-09-13T12:09:36.554+08:00 [info]: [ '[ws]', 'ws client ready' ]
+[gateway] [90m2026-09-13T12:09:36.800+08:00[39m [31m[qqbot][39m [36m[default] [qqbot:api] <<< Status: 200 OK | TraceId: cf04e468b0ae2b89ca463f181a7be77d[39m
+[2026-09-13T04:09:36.800Z] stdout: [90m2026-09-13T12:09:36.800+08:00[39m [31m[qqbot][39m [36m[default] [qqbot:api] <<< Status: 200 OK | TraceId: cf04e468b0ae2b89ca463f181a7be77d[39m
+[gateway] [90m2026-09-13T12:09:36.802+08:00[39m [31m[qqbot][39m [36m[default] Connecting to wss://api.sgroup.qq.com/websocket[39m
+[2026-09-13T04:09:36.803Z] stdout: [90m2026-09-13T12:09:36.802+08:00[39m [31m[qqbot][39m [36m[default] Connecting to wss://api.sgroup.qq.com/websocket[39m
+[gateway] [90m2026-09-13T12:09:36.933+08:00[39m [31m[qqbot][39m [36m[default] WebSocket connected[39m
+[2026-09-13T04:09:36.933Z] stdout: [90m2026-09-13T12:09:36.933+08:00[39m [31m[qqbot][39m [36m[default] WebSocket connected[39m
+[gateway] [90m2026-09-13T12:09:36.934+08:00[39m [31m[qqbot][39m [36m[default] [qqbot:token:1903925047] Background refresh started[39m
+[2026-09-13T04:09:36.934Z] stdout: [90m2026-09-13T12:09:36.934+08:00[39m [31m[qqbot][39m [36m[default] [qqbot:token:1903925047] Background refresh started[39m
+[gateway] [90m2026-09-13T12:09:37.069+08:00[39m [31m[qqbot][39m [36m[qqbot:default] Gateway ready[39m
+[2026-09-13T04:09:37.069Z] stdout: [90m2026-09-13T12:09:37.069+08:00[39m [31m[qqbot][39m [36m[qqbot:default] Gateway ready[39m
+[gateway] [90m2026-09-13T12:09:42.843+08:00[39m [36m[fetch-timeout][39m [33mfetch timeout after 5000ms (elapsed 5010ms) operation=fetchWithSsrFGuard url=https://clawhub.ai/v1/feeds/plugins[39m
+[2026-09-13T04:09:42.843Z] stderr: [90m2026-09-13T12:09:42.843+08:00[39m [36m[fetch-timeout][39m [33mfetch timeout after 5000ms (elapsed 5010ms) operation=fetchWithSsrFGuard url=https://clawhub.ai/v1/feeds/plugins[39m

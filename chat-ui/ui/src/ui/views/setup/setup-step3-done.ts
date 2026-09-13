@@ -143,8 +143,8 @@ export function renderStep3(state: AppViewState) {
         <oc-message-box .message=${s.statusMsg ?? ""} .type=${"info"} .visible=${!!s.statusMsg && !s.error}></oc-message-box>
       </div>
 
-      <div class="oc-setup-btn-row">
-        <button class="oc-setup-btn oc-setup-btn--primary" ?disabled=${s.starting}
+      <div class="btn-row">
+        <button class="btn primary" ?disabled=${s.starting}
           @click=${() => handleComplete(state)}>
           ${s.starting ? t("setup.done.starting") : t("setup.done.start")}
         </button>

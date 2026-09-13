@@ -148,7 +148,7 @@ function renderTaskRow(props: TasksProps, task: TaskSummary) {
   const source = cronSourceName(props, task);
   const title = taskTitle(task);
   return html`
-    <div class="ts-row ${active ? "ts-row--active" : ""}">
+    <div class="ts-row ${active ?"ts-row--active" : ""}">
       <span class="ts-dot ${statusDotClass(status)}" title=${statusLabel(status)}></span>
       <div class="ts-row__main">
         <div class="ts-row__title-line">
@@ -266,14 +266,14 @@ export function renderTasks(props: TasksProps) {
     <div class="ts-layout panel">
       <div class="ts-tabs" role="tablist">
         <button
-          class="ts-tab ${props.tab === "runs" ? "ts-tab--active" : ""}"
+          class="ts-tab ${props.tab ==="runs" ? "ts-tab--active" : ""}"
           type="button"
           role="tab"
           aria-selected=${props.tab === "runs" ? "true" : "false"}
           @click=${() => props.onTabChange("runs")}
         >${t("tasks.runsTab")}</button>
         <button
-          class="ts-tab ${props.tab === "cron" ? "ts-tab--active" : ""}"
+          class="ts-tab ${props.tab ==="cron" ? "ts-tab--active" : ""}"
           type="button"
           role="tab"
           aria-selected=${props.tab === "cron" ? "true" : "false"}

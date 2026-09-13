@@ -1309,7 +1309,7 @@ export function renderTabProvider(state: AppViewState) {
           <h2 class="oc-settings__section-title">${t("settings.provider.title")}</h2>
           <p class="oc-settings__hint">${t("settings.provider.desc")}</p>
         </div>
-        <button class="oc-settings__btn oc-settings__btn--primary" @click=${() => toggleAddPanel(state)}>
+        <button class="btn primary" @click=${() => toggleAddPanel(state)}>
           ${s.addOpen ? t("settings.provider.cancelAdd") : `+ ${t("settings.provider.addModel")}`}
         </button>
       </div>
@@ -1372,7 +1372,7 @@ function renderOrgManager(state: AppViewState) {
         <input class="oc-settings__input" .value=${s.orgGroupDraft} placeholder=${t("settings.provider.customGroups.placeholder")}
           @input=${(e: Event) => { s.orgGroupDraft = (e.target as HTMLInputElement).value; state.requestUpdate(); }}
           @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter") handleOrgAdd(state); }} />
-        <button class="oc-settings__btn oc-settings__btn--secondary" ?disabled=${!s.orgGroupDraft.trim()}
+        <button class="btn" ?disabled=${!s.orgGroupDraft.trim()}
           @click=${() => handleOrgAdd(state)}>${t("settings.provider.customGroups.add")}</button>
       </div>
       ${s.org.groups.length === 0 ? html`
@@ -1385,7 +1385,7 @@ function renderOrgManager(state: AppViewState) {
             const isDragging = s.drag?.kind === "org-group" && s.drag.id === group.id;
             const renaming = s.orgRenaming === group.id;
             return html`
-              <div class="oc-provider-org__row ${isDropBefore ? "drop-before" : ""} ${isDropAfter ? "drop-after" : ""} ${isDragging ? "is-dragging" : ""}"
+              <div class="oc-provider-org__row ${isDropBefore ?"drop-before" : ""} ${isDropAfter ? "drop-after" : ""} ${isDragging ? "is-dragging" : ""}"
                 draggable=${!renaming}
                 @dragstart=${(e: DragEvent) => onDragStart({ kind: "org-group", id: group.id }, e, state)}
                 @dragover=${(e: DragEvent) => onCardDragOver("org-group", group.id, e, state)}
@@ -1399,7 +1399,7 @@ function renderOrgManager(state: AppViewState) {
                       if (e.key === "Enter") handleOrgRenameSave(state);
                       if (e.key === "Escape") { s.orgRenaming = null; state.requestUpdate(); }
                     }} />
-                  <button class="oc-settings__btn oc-settings__btn--primary" @click=${() => handleOrgRenameSave(state)}>${t("settings.save")}</button>
+                  <button class="btn primary" @click=${() => handleOrgRenameSave(state)}>${t("settings.save")}</button>
                 ` : html`
                   <span class="oc-provider-org__name">${group.name}</span>
                   <span class="cc-tag">${modelCountOf(group.id)}</span>
@@ -1450,7 +1450,7 @@ function renderCapsEditor(draft: CapsDraft, state: AppViewState) {
       ${numInput(t("settings.provider.caps.contextWindow"), "contextWindow", t("settings.provider.caps.inheritHint"))}
       <div class="oc-caps-editor__chips">
         ${CONTEXT_PRESETS.map(([label, v]) => html`
-          <button class="oc-caps-chip ${draft.contextWindow === String(v) ? "is-active" : ""}"
+          <button class="oc-caps-chip ${draft.contextWindow === String(v) ?"is-active" : ""}"
             @click=${() => { draft.contextWindow = String(v); state.requestUpdate(); }}>${label}</button>
         `)}
       </div>
@@ -1473,7 +1473,7 @@ function renderCapsEditor(draft: CapsDraft, state: AppViewState) {
           <label class="oc-settings__label">${t("settings.provider.caps.thinkingLevels")}</label>
           <div class="oc-caps-editor__chips">
             ${EDITABLE_THINKING_LEVELS.map(lv => html`
-              <button class="oc-caps-chip ${draft.thinkingLevels.includes(lv) ? "is-active" : ""}"
+              <button class="oc-caps-chip ${draft.thinkingLevels.includes(lv) ?"is-active" : ""}"
                 @click=${() => {
                   const i = draft.thinkingLevels.indexOf(lv);
                   if (i >= 0) draft.thinkingLevels.splice(i, 1);
@@ -1495,9 +1495,9 @@ function renderModelEditPanel(prov: GroupedProvider, entry: ProviderModelEntry, 
     <div class="oc-provider-edit-panel">
       <div class="oc-provider-edit-panel__title">${t("settings.provider.editModel")} · ${entry.name}</div>
       ${renderCapsEditor(s.editDraft, state)}
-      <div class="oc-settings__btn-row">
-        <button class="oc-settings__btn oc-settings__btn--secondary" @click=${() => cancelModelEdit(state)}>${t("settings.cancel")}</button>
-        <button class="oc-settings__btn oc-settings__btn--primary" ?disabled=${s.editSaving || s.busy}
+      <div class="btn-row">
+        <button class="btn" @click=${() => cancelModelEdit(state)}>${t("settings.cancel")}</button>
+        <button class="btn primary" ?disabled=${s.editSaving || s.busy}
           @click=${() => handleModelEditSave(entry, state)}>
           ${s.editSaving ? "..." : t("settings.save")}
         </button>
@@ -1529,7 +1529,7 @@ function renderGroup(group: ProviderGroup, state: AppViewState, fallbackRank: Ma
           else s.collapsedGroups.add(group.groupId);
           state.requestUpdate();
         }}>
-        <svg class="oc-provider-group__chevron ${collapsed ? "" : "is-open"}" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+        <svg class="oc-provider-group__chevron ${collapsed ?"" : "is-open"}" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
         <span class="oc-provider-group__label">${groupLabel(group.groupId)}</span>
         <span class="cc-tag">${count}</span>
         ${singleProv ? html`
@@ -1557,12 +1557,12 @@ function renderProvider(prov: GroupedProvider, group: ProviderGroup, state: AppV
       ${showSubHeader ? html`
         <div class="oc-provider-block__header">
           <span class="oc-provider-block__name">${isKimiCoding ? t("setup.provider.subPlatform.kimiCode") : prov.displayName}</span>
-          <span class="oc-provider-block__key-state ${prov.hasApiKey ? "is-set" : ""}">
+          <span class="oc-provider-block__key-state ${prov.hasApiKey ?"is-set" : ""}">
             ${prov.hasApiKey ? t("settings.provider.keySet") : t("settings.provider.keyMissing")}
           </span>
           <span class="oc-provider-block__actions">
             ${canSyncModels ? html`
-              <button class="oc-provider-block__pill-btn ${s.syncOpenFor === prov.providerKey ? "is-active" : ""}"
+              <button class="oc-provider-block__pill-btn ${s.syncOpenFor === prov.providerKey ?"is-active" : ""}"
                 ?disabled=${s.syncFetching.has(prov.providerKey)}
                 @click=${() => toggleSyncPanel(prov, state)}>
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -1616,9 +1616,9 @@ function renderProvider(prov: GroupedProvider, group: ProviderGroup, state: AppV
           <oc-password-input .value=${s.keyDraft} .placeholder=${t("settings.provider.newKeyPlaceholder")}
             @input=${(e: CustomEvent) => { s.keyDraft = e.detail.value; state.requestUpdate(); }}
           ></oc-password-input>
-          <div class="oc-settings__btn-row">
-            <button class="oc-settings__btn oc-settings__btn--secondary" @click=${() => { s.keyEditing = null; state.requestUpdate(); }}>${t("settings.cancel")}</button>
-            <button class="oc-settings__btn oc-settings__btn--primary" ?disabled=${s.busy} @click=${() => {
+          <div class="btn-row">
+            <button class="btn" @click=${() => { s.keyEditing = null; state.requestUpdate(); }}>${t("settings.cancel")}</button>
+            <button class="btn primary" ?disabled=${s.busy} @click=${() => {
               // catch：verify IPC reject（sender guard / kimi 代理启动失败）时给出可见错误，
               // 而不是静默 unhandled rejection
               handleKeySave(prov, state).catch(e => {
@@ -1645,7 +1645,7 @@ function renderModelCard(prov: GroupedProvider, entry: ProviderModelEntry, state
   const assignedGroup = s.org.groups.find(g => g.id === s.org.assignments[entry.key]);
   const menuOpen = s.assignMenuFor === entry.key;
   return html`
-    <div class="oc-provider-card ${isDropBefore ? "drop-before" : ""} ${isDropAfter ? "drop-after" : ""} ${isDragging ? "is-dragging" : ""} ${menuOpen ? "has-menu" : ""}"
+    <div class="oc-provider-card ${isDropBefore ?"drop-before" : ""} ${isDropAfter ? "drop-after" : ""} ${isDragging ? "is-dragging" : ""} ${menuOpen ? "has-menu" : ""}"
       draggable="true"
       @dragstart=${(e: DragEvent) => onDragStart({ kind: "model", providerKey: prov.providerKey, id: entry.id }, e, state)}
       @dragover=${(e: DragEvent) => onCardDragOver("model", entry.id, e, state)}
@@ -1658,7 +1658,7 @@ function renderModelCard(prov: GroupedProvider, entry: ProviderModelEntry, state
             <input class="oc-settings__input" .value=${s.aliasDraft} placeholder=${t("settings.provider.modelAliasPlaceholder")}
               @input=${(e: Event) => { s.aliasDraft = (e.target as HTMLInputElement).value; state.requestUpdate(); }}
               @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter") handleAliasSave(prov, entry, state); if (e.key === "Escape") { s.aliasEditing = null; state.requestUpdate(); } }} />
-            <button class="oc-settings__btn oc-settings__btn--primary" @click=${() => handleAliasSave(prov, entry, state)}>${t("settings.save")}</button>
+            <button class="btn primary" @click=${() => handleAliasSave(prov, entry, state)}>${t("settings.save")}</button>
           </div>
         ` : html`
           <div class="oc-provider-card__name">${entry.name}</div>
@@ -1679,7 +1679,7 @@ function renderModelCard(prov: GroupedProvider, entry: ProviderModelEntry, state
           @click=${() => s.editingModelKey === entry.key ? cancelModelEdit(state) : startModelEdit(prov, entry, state)}>
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
         </button>
-        <button class="oc-provider-list-item__action-btn ${assignedGroup ? "is-assigned" : ""}"
+        <button class="oc-provider-list-item__action-btn ${assignedGroup ?"is-assigned" : ""}"
           data-tooltip=${t("settings.provider.customGroups.assign")}
           @click=${() => toggleAssignMenu(entry.key, state)}>
           ${assignedGroup
@@ -1696,7 +1696,7 @@ function renderModelCard(prov: GroupedProvider, entry: ProviderModelEntry, state
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
           </button>
         ` : nothing}
-        <button class="oc-provider-list-item__action-btn ${entry.isDefault ? "is-default" : ""}" ?disabled=${entry.isDefault || s.busy}
+        <button class="oc-provider-list-item__action-btn ${entry.isDefault ?"is-default" : ""}" ?disabled=${entry.isDefault || s.busy}
           data-tooltip=${t("settings.provider.setDefault")}
           @click=${() => handleSetDefault(entry.key, state)}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="${entry.isDefault ? "currentColor" : "none"}" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
@@ -1705,10 +1705,10 @@ function renderModelCard(prov: GroupedProvider, entry: ProviderModelEntry, state
       ${menuOpen ? html`
         <div class="oc-provider-assign-menu" @click=${(e: Event) => e.stopPropagation()}>
           <div class="oc-provider-assign-menu__title">${t("settings.provider.customGroups.assign")}</div>
-          <button class="oc-provider-assign-menu__item ${!assignedGroup ? "is-active" : ""}"
+          <button class="oc-provider-assign-menu__item ${!assignedGroup ?"is-active" : ""}"
             @click=${() => handleAssign(entry.key, null, state)}>${t("settings.provider.customGroups.none")}</button>
           ${s.org.groups.map(g => html`
-            <button class="oc-provider-assign-menu__item ${assignedGroup?.id === g.id ? "is-active" : ""}"
+            <button class="oc-provider-assign-menu__item ${assignedGroup?.id === g.id ?"is-active" : ""}"
               @click=${() => handleAssign(entry.key, g.id, state)}>${g.name}</button>
           `)}
           ${s.org.groups.length === 0 ? html`
@@ -1744,7 +1744,7 @@ function renderSyncPanel(prov: GroupedProvider, state: AppViewState) {
     return html`
       <div class="oc-provider-sync-panel">
         <span class="oc-provider-sync-hint oc-provider-sync-hint--error">${error}</span>
-        <button class="oc-settings__btn oc-settings__btn--secondary" @click=${() => fetchLiveModels(state, prov.providerKey)}>
+        <button class="btn" @click=${() => fetchLiveModels(state, prov.providerKey)}>
           ${t("settings.provider.syncRetry")}
         </button>
       </div>
@@ -1773,12 +1773,12 @@ function renderSyncPanel(prov: GroupedProvider, state: AppViewState) {
       <div class="oc-provider-sync-toolbar">
         <span class="oc-provider-sync-hint">${t("settings.provider.syncFound").replace("{count}", String(fresh.length))}</span>
         <span class="oc-provider-sync-actions">
-          <button class="oc-settings__btn oc-settings__btn--secondary" ?disabled=${s.busy}
+          <button class="btn" ?disabled=${s.busy}
             @click=${() => {
               s.syncChecked = allChecked ? new Set() : new Set(fresh.map(m => m.id));
               state.requestUpdate();
             }}>${allChecked ? t("settings.provider.syncUnselectAll") : t("settings.provider.syncSelectAll")}</button>
-          <button class="oc-settings__btn oc-settings__btn--primary" ?disabled=${s.busy || s.syncChecked.size === 0}
+          <button class="btn primary" ?disabled=${s.busy || s.syncChecked.size === 0}
             @click=${() => handleSyncAddSelected(prov, state)}>
             ${s.busy ? "..." : t("settings.provider.syncAddSelected").replace("{count}", String(s.syncChecked.size))}
           </button>
@@ -1858,25 +1858,25 @@ function renderKimiCodingExtras(prov: GroupedProvider, state: AppViewState) {
         <div class="oc-provider-kimi-oauth-row">
           <span class="oc-provider-spinner"></span>
           <span>${t("setup.provider.oauth.waiting")}</span>
-          <button class="oc-settings__btn oc-settings__btn--secondary" @click=${() => handleOAuthCancel(state)}>${t("setup.provider.oauth.cancel")}</button>
+          <button class="btn" @click=${() => handleOAuthCancel(state)}>${t("setup.provider.oauth.cancel")}</button>
         </div>
       ` : s.oauthLoggedIn ? html`
         <div class="oc-provider-kimi-oauth-row">
           <span class="oc-provider-kimi-oauth-ok">${t("setup.provider.oauth.success")}</span>
-          <button class="oc-settings__btn oc-settings__btn--secondary" @click=${() => handleOAuthLogout(state)}>${t("setup.provider.oauth.logout")}</button>
-          <button class="oc-settings__btn oc-settings__btn--secondary" @click=${() => startKeyEdit(prov, state)}>${t("settings.provider.editKey")}</button>
+          <button class="btn" @click=${() => handleOAuthLogout(state)}>${t("setup.provider.oauth.logout")}</button>
+          <button class="btn" @click=${() => startKeyEdit(prov, state)}>${t("settings.provider.editKey")}</button>
         </div>
       ` : html`
         <div class="oc-provider-kimi-oauth-row">
-          <button class="oc-settings__btn oc-settings__btn--primary" @click=${() => handleOAuthLogin(state)}>${t("setup.provider.oauth.login")}</button>
-          <button class="oc-settings__btn oc-settings__btn--secondary" @click=${() => startKeyEdit(prov, state)}>${t("settings.provider.editKey")}</button>
+          <button class="btn primary" @click=${() => handleOAuthLogin(state)}>${t("setup.provider.oauth.login")}</button>
+          <button class="btn" @click=${() => startKeyEdit(prov, state)}>${t("settings.provider.editKey")}</button>
         </div>
       `}
       ${s.oauthLoggedIn ? renderUsagePanel(state) : nothing}
       ${s.oauthLoggedIn && !s.usageData && !s.usageLoading ? html`
         <div class="oc-provider-kimi-oauth-row">
           <span class="oc-provider-sync-hint">${t("settings.provider.usage.kimiUnavailable")}</span>
-          <button class="oc-settings__btn oc-settings__btn--secondary" ?disabled=${s.usageLoading}
+          <button class="btn" ?disabled=${s.usageLoading}
             @click=${() => loadUsage(state)}>${t("settings.provider.usage.retry")}</button>
         </div>
       ` : nothing}
@@ -1920,7 +1920,7 @@ function renderUsagePanel(state: AppViewState) {
     <div class="oc-provider-usage-wrap">
       <div class="oc-provider-usage-toolbar">
         <button
-          class="oc-provider-usage-refresh ${s.usageLoading ? "is-loading" : ""}"
+          class="oc-provider-usage-refresh ${s.usageLoading ?"is-loading" : ""}"
           title=${refreshTitle}
           aria-label=${refreshTitle}
           ?disabled=${s.usageLoading}
@@ -1983,7 +1983,7 @@ function renderAddModelSelect(
           </select>
         ` : html`<span class="oc-provider-dynamic-hint">${t("settings.provider.modelsEmptyHint")}</span>`}
         ${hooks?.onFetch ? html`
-          <button class="oc-settings__btn oc-settings__btn--secondary oc-provider-fetch-btn" type="button"
+          <button class="btn oc-provider-fetch-btn" type="button"
             ?disabled=${hooks.fetchBusy}
             title=${t("settings.provider.fetchFromProvider")}
             @click=${hooks.onFetch}>
@@ -2082,9 +2082,9 @@ function renderGroupAddPanel(state: AppViewState) {
         ${renderCapsEditor(s.addCaps, state)}
       </details>
 
-      <div class="oc-settings__btn-row">
-        <button class="oc-settings__btn oc-settings__btn--secondary" @click=${() => toggleAddPanel(state)}>${t("settings.cancel")}</button>
-        <button class="oc-settings__btn oc-settings__btn--primary" ?disabled=${s.saving || s.busy}
+      <div class="btn-row">
+        <button class="btn" @click=${() => toggleAddPanel(state)}>${t("settings.cancel")}</button>
+        <button class="btn primary" ?disabled=${s.saving || s.busy}
           @click=${() => handleAddToGroupSave(state)}>
           ${s.saving ? "..." : t("settings.provider.addModelSave")}
         </button>
@@ -2183,7 +2183,7 @@ function renderAddPanel(state: AppViewState) {
           ` : s.oauthLoggedIn ? html`
             <div class="oc-provider-kimi-oauth-ok">${t("settings.provider.oauthReusing")}</div>
           ` : html`
-            <button class="oc-settings__btn oc-settings__btn--primary" ?disabled=${s.oauthLoading}
+            <button class="btn primary" ?disabled=${s.oauthLoading}
               @click=${() => handleOAuthLogin(state)}>
               ${s.oauthLoading ? t("setup.provider.oauth.waiting") : t("setup.provider.oauth.login")}
             </button>
@@ -2233,9 +2233,9 @@ function renderAddPanel(state: AppViewState) {
       ` : nothing}
 
       <!-- 4. 保存 -->
-      <div class="oc-settings__btn-row">
-        <button class="oc-settings__btn oc-settings__btn--secondary" @click=${() => toggleAddPanel(state)}>${t("settings.cancel")}</button>
-        <button class="oc-settings__btn oc-settings__btn--primary" ?disabled=${s.saving || s.busy}
+      <div class="btn-row">
+        <button class="btn" @click=${() => toggleAddPanel(state)}>${t("settings.cancel")}</button>
+        <button class="btn primary" ?disabled=${s.saving || s.busy}
           @click=${() => handleAddSave(state)}>
           ${s.saving ? "..." : t("settings.provider.addModelSave")}
         </button>
@@ -2270,7 +2270,7 @@ function renderFallbacks(state: AppViewState, fallbacks: string[]) {
             const isDropBefore = s.dropTarget?.kind === "fallback" && s.dropTarget.id === key && s.dropTarget.position === "before";
             const isDropAfter = s.dropTarget?.kind === "fallback" && s.dropTarget.id === key && s.dropTarget.position === "after";
             return html`
-              <div class="oc-provider-card oc-provider-card--fallback ${isDropBefore ? "drop-before" : ""} ${isDropAfter ? "drop-after" : ""}"
+              <div class="oc-provider-card oc-provider-card--fallback ${isDropBefore ?"drop-before" : ""} ${isDropAfter ? "drop-after" : ""}"
                 draggable="true"
                 @dragstart=${(e: DragEvent) => onDragStart({ kind: "fallback", id: key }, e, state)}
                 @dragover=${(e: DragEvent) => onCardDragOver("fallback", key, e, state)}
@@ -2299,7 +2299,7 @@ function renderFallbacks(state: AppViewState, fallbacks: string[]) {
             <option value="" ?selected=${!s.fallbackAddKey}>${t("settings.provider.fallbacks.addPlaceholder")}</option>
             ${renderModelOptionsGrouped(addable.map(k => ({ key: k, name: nameOf.get(k) ?? k })), s.org, s.fallbackAddKey || undefined)}
           </select>
-          <button class="oc-settings__btn oc-settings__btn--secondary" ?disabled=${!s.fallbackAddKey || s.busy}
+          <button class="btn" ?disabled=${!s.fallbackAddKey || s.busy}
             @click=${() => handleFallbackAdd(state)}>${t("settings.provider.fallbacks.add")}</button>
         </div>
       ` : nothing}

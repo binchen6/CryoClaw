@@ -58,10 +58,13 @@
   --icon-size-20: 20px;
   --icon-size-24: 24px;
 
-  /* 阅读列宽：宽屏下消息流/compose 的居中列约束 */
-  --chat-column: 760px;
-  /* 扩展视图内容列收束宽度 */
-  --ext-column: 960px;
+  /* 阅读列宽（R84 流式化）：内容列铺满可用宽度的 92% 并随窗口伸缩，
+     仅在超宽窗口按可读性上限收束——不再固定像素窄列 */
+  --chat-column: min(92%, 1000px);
+  /* 扩展视图内容列：同样流式，上限略宽（列表型内容可读行宽更大） */
+  --ext-column: min(92%, 1200px);
+  /* 设置/任务/工作树等表单型页面的内容列 */
+  --page-column: min(92%, 1080px);
 
   /* 字体栈（中性工程风 + 中文回退） */
   --font-body: "Inter", "SF Pro Text", "PingFang SC", system-ui, -apple-system,

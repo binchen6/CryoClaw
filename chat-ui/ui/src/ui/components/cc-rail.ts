@@ -119,7 +119,7 @@ function railItem(
   const active = opts.view != null && props.activeView === opts.view;
   return html`
     <button
-      class="cc-rail__item ${active ? "active" : ""} ${opts.extraClass ?? ""}"
+      class="cc-rail__item ${active ?"active" : ""} ${opts.extraClass ?? ""}"
       type="button"
       @click=${opts.onClick}
       aria-current=${active ? "page" : nothing}

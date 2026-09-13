@@ -86,7 +86,7 @@ export function renderTabChannels(state: AppViewState) {
       <div class="oc-settings-channels">
         <nav class="oc-settings-channels__nav">
           ${CHANNEL_PLATFORMS.map(p => html`
-            <button class="oc-settings-channels__nav-item ${p.id === active ? "oc-settings-channels__nav-item--active" : ""}"
+            <button class="oc-settings-channels__nav-item ${p.id === active ?"oc-settings-channels__nav-item--active" : ""}"
               @click=${() => { switchPlatform(p.id); state.requestUpdate(); }}>
               ${t(p.labelKey)}
               ${s.enabledMap[p.id] ? html`<span class="oc-settings-channels__status-dot"></span>` : nothing}

@@ -218,7 +218,7 @@ export function renderTabBackup(state: AppViewState, notice: string | null) {
         ${s.hasLastKnownGood ? html`
           <div class="oc-settings-backup__lkg-row">
             <span class="oc-settings-backup__meta">${t("settings.backup.lastKnownGood")}: ${formatDateTime(s.lastKnownGoodUpdatedAt)}</span>
-            <button class="oc-settings__btn oc-settings__btn--primary oc-settings__btn--compact" ?disabled=${actionDisabled} @click=${() => handleRestoreLKG(state)}>${t("settings.backup.restoreLastKnownGood")}</button>
+            <button class="btn primary btn--sm" ?disabled=${actionDisabled} @click=${() => handleRestoreLKG(state)}>${t("settings.backup.restoreLastKnownGood")}</button>
           </div>
         ` : nothing}
         ${s.backups.length ? html`
@@ -242,17 +242,17 @@ export function renderTabBackup(state: AppViewState, notice: string | null) {
           </div>
           <div class="oc-flex oc-gap-8">
             ${gw === "running" ? html`
-              <button class="oc-settings__btn oc-settings__btn--primary oc-settings__btn--compact" ?disabled=${actionDisabled} @click=${() => handleGatewayAction(state, "restart")}>
+              <button class="btn primary btn--sm" ?disabled=${actionDisabled} @click=${() => handleGatewayAction(state, "restart")}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
                 ${t("settings.backup.restart")}
               </button>
-              <button class="oc-settings__btn oc-settings__btn--primary oc-settings__btn--compact" ?disabled=${actionDisabled} @click=${() => handleGatewayAction(state, "stop")}>
+              <button class="btn primary btn--sm" ?disabled=${actionDisabled} @click=${() => handleGatewayAction(state, "stop")}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
                 ${t("settings.backup.stop")}
               </button>
             ` : nothing}
             ${gw === "stopped" ? html`
-              <button class="oc-settings__btn oc-settings__btn--primary oc-settings__btn--compact" ?disabled=${actionDisabled} @click=${() => handleGatewayAction(state, "start")}>
+              <button class="btn primary btn--sm" ?disabled=${actionDisabled} @click=${() => handleGatewayAction(state, "start")}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
                 ${t("settings.backup.start")}
               </button>
@@ -269,11 +269,11 @@ export function renderTabBackup(state: AppViewState, notice: string | null) {
             <p class="oc-settings-backup__reset-desc">${t("settings.backup.openclawStateDescription")}</p>
           </div>
           <div class="oc-settings-backup__openclaw-state-actions">
-            <button class="oc-settings__btn oc-settings__btn--primary oc-settings__btn--compact" ?disabled=${actionDisabled} @click=${() => handleExportOpenclawState(state)}>
+            <button class="btn primary btn--sm" ?disabled=${actionDisabled} @click=${() => handleExportOpenclawState(state)}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v6h16v-6"/><path d="m8 7 4-4 4 4"/><path d="M12 3v9"/></svg>
               ${t("settings.backup.openclawStateExport")}
             </button>
-            <button class="oc-settings__btn oc-settings__btn--primary oc-settings__btn--compact" ?disabled=${actionDisabled} @click=${() => handleImportOpenclawState(state)}>
+            <button class="btn primary btn--sm" ?disabled=${actionDisabled} @click=${() => handleImportOpenclawState(state)}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v6h16v-6"/><path d="M12 3v9"/><path d="m8 8 4 4 4-4"/></svg>
               ${t("settings.backup.openclawStateImport")}
             </button>
@@ -288,7 +288,7 @@ export function renderTabBackup(state: AppViewState, notice: string | null) {
             <div class="oc-settings__card-title">${t("settings.backup.resetTitle")}</div>
             <p class="oc-settings-backup__reset-desc">${t("settings.backup.resetDescription")}</p>
           </div>
-          <button class="oc-settings__btn oc-settings__btn--danger oc-settings__btn--compact" ?disabled=${actionDisabled} @click=${() => handleResetConfig(state)}>
+          <button class="btn danger btn--sm" ?disabled=${actionDisabled} @click=${() => handleResetConfig(state)}>
             ${t("settings.backup.resetButton")}
           </button>
         </div>

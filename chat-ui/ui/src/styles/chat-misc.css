@@ -297,23 +297,7 @@
   flex-shrink: 0;
 }
 
-.chat-goal__btn {
-  border: var(--hairline);
-  background: transparent;
-  color: var(--text-muted);
-  font-size: var(--text-sm);
-  font-family: inherit;
-  padding: var(--spacer-4) var(--spacer-10);
-  border-radius: var(--radius-8);
-  cursor: pointer;
-  transition: color var(--duration-fast) var(--ease-out), border-color var(--duration-fast) var(--ease-out), background var(--duration-fast) var(--ease-out);
-}
-
-.chat-goal__btn:hover {
-  color: var(--text);
-  border-color: var(--border-strong);
-  background: var(--bg-hover);
-}
+/* R84 按钮收敛：chat-goal__btn 迁移到全局 .btn 体系（btn btn--sm） */
 
 /* ── 目标表单 ── */
 .chat-goal-form {
@@ -529,4 +513,21 @@
 .chat-approval-item__btn--deny {
   border-color: var(--danger);
   color: var(--danger);
+}
+
+/* ── R84 补缺失样式：goal 条元信息子项（此前零规则，仅父级兜底） ── */
+.chat-goal__timer {
+  font-variant-numeric: tabular-nums;
+}
+
+.chat-goal__tokens {
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 元信息项之间的轻分隔点（多于一 item 时出现） */
+.chat-goal__meta > * + *::before {
+  content: "·";
+  margin-right: var(--spacer-12);
+  color: var(--text-faint);
 }

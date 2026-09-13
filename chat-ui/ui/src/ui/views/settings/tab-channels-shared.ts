@@ -179,8 +179,8 @@ export function renderChannelSaveFooter(
     <oc-message-box .message=${st.successMsg ?? ""} .type=${"success"} .visible=${!!st.successMsg}></oc-message-box>
     ${st.hint ? html`<div class="oc-settings__field-hint">${st.hint}</div>` : nothing}
 
-    <div class="oc-settings__btn-row">
-      <button class="oc-settings__btn oc-settings__btn--primary" ?disabled=${st.saving} @click=${onSave}>${t("settings.save")}</button>
+    <div class="btn-row">
+      <button class="btn primary" ?disabled=${st.saving} @click=${onSave}>${t("settings.save")}</button>
     </div>
   `;
 }
@@ -252,8 +252,8 @@ export function renderAddGroupDialog(
           @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter" && !e.isComposing) opts.onConfirm(); if (e.key === "Escape") opts.onCancel(); }} />
         ${st.addGroupError ? html`<div class="oc-settings__field-hint oc-settings__field-hint--danger oc-mt-4">${st.addGroupError}</div>` : nothing}
         <div class="oc-flex oc-gap-8 oc-justify-end oc-mt-12">
-          <button class="oc-settings__btn" @click=${() => opts.onCancel()}>${t("settings.cancel")}</button>
-          <button class="oc-settings__btn oc-settings__btn--primary" @click=${() => opts.onConfirm()}>${t("settings.confirm")}</button>
+          <button class="btn" @click=${() => opts.onCancel()}>${t("settings.cancel")}</button>
+          <button class="btn primary" @click=${() => opts.onConfirm()}>${t("settings.confirm")}</button>
         </div>
       </div>
     </div>

@@ -261,21 +261,21 @@ function renderAppUpdateCard(state: AppViewState) {
           ? html`<div style="color:var(--danger)">${tWithDetail("settings.about.appUpdateError", us.error)}</div>`
           : ""}
         <div class="oc-flex oc-gap-8 oc-mt-4">
-          <button class="oc-settings__btn oc-settings__btn--compact" ?disabled=${checking || downloading} @click=${() => handleAppUpdateCheck(state)}>${checking ? t("settings.about.appUpdateChecking") : us.status === "error" ? t("settings.about.appUpdateRetry") : t("settings.about.appUpdateCheck")}</button>
+          <button class="btn btn--sm" ?disabled=${checking || downloading} @click=${() => handleAppUpdateCheck(state)}>${checking ? t("settings.about.appUpdateChecking") : us.status === "error" ? t("settings.about.appUpdateRetry") : t("settings.about.appUpdateCheck")}</button>
           ${us.status === "available"
-            ? html`<button class="oc-settings__btn oc-settings__btn--primary oc-settings__btn--compact" @click=${() => handleAppUpdateDownload(state)}>${t("appUpdate.updateNow")}</button>`
+            ? html`<button class="btn primary btn--sm" @click=${() => handleAppUpdateDownload(state)}>${t("appUpdate.updateNow")}</button>`
             : ""}
           ${us.status === "downloaded"
-            ? html`<button class="oc-settings__btn oc-settings__btn--primary oc-settings__btn--compact" @click=${() => handleAppUpdateRestart(state)}>${t("settings.about.appUpdateRestart")}</button>`
+            ? html`<button class="btn primary btn--sm" @click=${() => handleAppUpdateRestart(state)}>${t("settings.about.appUpdateRestart")}</button>`
             : ""}
           ${us.status === "available" || us.status === "downloaded"
-            ? html`<button class="oc-settings__btn oc-settings__btn--compact" @click=${() => handleViewUpdateDetails(state)}>${t("settings.about.appUpdateViewDetails")}</button>`
+            ? html`<button class="btn btn--sm" @click=${() => handleViewUpdateDetails(state)}>${t("settings.about.appUpdateViewDetails")}</button>`
             : ""}
         </div>
         ${formatSnoozeUntil(us.snoozedUntil)
           ? html`<div class="oc-flex oc-gap-8 oc-mt-4" style="align-items:center">
               <span style="color:var(--text-secondary)">${t("appUpdate.snoozedHint")}: ${formatSnoozeUntil(us.snoozedUntil)}</span>
-              <button class="oc-settings__btn oc-settings__btn--compact" @click=${() => handleAppUpdateClearSnooze(state)}>${t("appUpdate.resumeCheck")}</button>
+              <button class="btn btn--sm" @click=${() => handleAppUpdateClearSnooze(state)}>${t("appUpdate.resumeCheck")}</button>
             </div>`
           : ""}
         ${downloading && us.progress
@@ -319,12 +319,12 @@ function renderKernelCard(state: AppViewState) {
           ? html`<div style="color:var(--danger)">${tWithDetail("settings.about.kernelCheckFailed", ks.checkError)}</div>`
           : ""}
         <div class="oc-flex oc-gap-8 oc-mt-4">
-          <button class="oc-settings__btn oc-settings__btn--compact" ?disabled=${disabled} @click=${() => handleKernelCheck(state)}>${t("settings.about.kernelCheck")}</button>
+          <button class="btn btn--sm" ?disabled=${disabled} @click=${() => handleKernelCheck(state)}>${t("settings.about.kernelCheck")}</button>
           ${ks.updateAvailable
-            ? html`<button class="oc-settings__btn oc-settings__btn--primary oc-settings__btn--compact" ?disabled=${disabled} @click=${() => handleKernelUpdate(state)}>${t("settings.about.kernelUpdate")}</button>`
+            ? html`<button class="btn primary btn--sm" ?disabled=${disabled} @click=${() => handleKernelUpdate(state)}>${t("settings.about.kernelUpdate")}</button>`
             : ""}
           ${ks.rollbackAvailable
-            ? html`<button class="oc-settings__btn oc-settings__btn--compact" ?disabled=${disabled} @click=${() => handleKernelRollback(state)}>${t("settings.about.kernelRollback")}</button>`
+            ? html`<button class="btn btn--sm" ?disabled=${disabled} @click=${() => handleKernelRollback(state)}>${t("settings.about.kernelRollback")}</button>`
             : ""}
         </div>
         ${s.progress
@@ -360,7 +360,7 @@ export function renderTabAbout(state: AppViewState) {
           <div><strong>${t("settings.about.cryoclaw")}</strong>: ${s.cryoClawVersion}</div>
           <div><strong>${t("settings.about.openclaw")}</strong>: ${s.openClawVersion}</div>
           <div class="oc-flex oc-gap-8 oc-mt-4">
-            <button class="oc-settings__btn oc-settings__btn--compact" @click=${() => handleViewReleaseNotes(state)}>${t("settings.about.viewReleaseNotes")}</button>
+            <button class="btn btn--sm" @click=${() => handleViewReleaseNotes(state)}>${t("settings.about.viewReleaseNotes")}</button>
           </div>
         </div>
       </div>

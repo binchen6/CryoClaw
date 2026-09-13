@@ -83,11 +83,11 @@ export function renderStep0(state: AppViewState, conflict: DetectionResult, goTo
         <oc-message-box .message=${s.error ?? ""} .type=${"error"} .visible=${!!s.error}></oc-message-box>
       </div>
 
-      <div class="oc-setup-btn-row">
-        <button class="oc-setup-btn oc-setup-btn--secondary" @click=${handleQuit}>
+      <div class="btn-row">
+        <button class="btn" @click=${handleQuit}>
           ${t("setup.conflict.quit")}
         </button>
-        <button class="oc-setup-btn oc-setup-btn--primary" ?disabled=${s.resolving}
+        <button class="btn primary" ?disabled=${s.resolving}
           @click=${() => handleUninstall(state, conflict, goToStep)}>
           ${s.resolving ? t("setup.conflict.uninstalling") : t("setup.conflict.uninstall")}
         </button>

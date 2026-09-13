@@ -30,7 +30,7 @@ export class ProviderSegment extends LitElement {
           const isActive = p === this.selected;
           const isLocked = this.locked.includes(p);
           return html`
-            <button class="oc-provider-seg__pill ${isActive ? "oc-provider-seg__pill--active" : ""} ${isLocked ? "oc-provider-seg__pill--locked" : ""}"
+            <button class="oc-provider-seg__pill ${isActive ?"oc-provider-seg__pill--active" : ""} ${isLocked ? "oc-provider-seg__pill--locked" : ""}"
               ?disabled=${isLocked}
               @click=${() => this.handleClick(p)}>
               ${this.labels[p] ?? p}

@@ -43,7 +43,7 @@ function renderRow(label: string, value: string, mono = false) {
   return html`
     <div class="env-row">
       <span class="env-row__label">${label}</span>
-      <span class="env-row__value ${mono ? "mono" : ""}">${value}</span>
+      <span class="env-row__value ${mono ?"mono" : ""}">${value}</span>
     </div>
   `;
 }

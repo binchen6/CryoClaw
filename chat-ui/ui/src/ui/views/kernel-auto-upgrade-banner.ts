@@ -44,7 +44,7 @@ export function renderKernelAutoUpgradeBanner(
 
   return html`
     <div
-      class="kernel-auto-banner ${done ? "kernel-auto-banner--done" : ""} ${failed ? "kernel-auto-banner--error" : ""}"
+      class="kernel-auto-banner ${done ?"kernel-auto-banner--done" : ""} ${failed ? "kernel-auto-banner--error" : ""}"
       role="status"
     >
       <div class="kernel-auto-banner__head">

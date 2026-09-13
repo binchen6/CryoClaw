@@ -300,7 +300,7 @@ function renderServerRow(state: AppViewState, entry: McpServerEntry) {
       <div class="oc-mcp__row-main">
         <div class="oc-mcp__row-head">
           <span class="oc-mcp__name">${entry.name}</span>
-          <span class="oc-mcp__badge oc-mcp__badge--${enabled ? "on" : "off"}">
+          <span class="oc-mcp__badge oc-mcp__badge--${enabled ?"on" : "off"}">
             ${t(enabled ? "settings.mcpHooks.enabled" : "settings.mcpHooks.disabled")}
           </span>
           <span class="oc-mcp__transport">${transport}</span>
@@ -309,11 +309,11 @@ function renderServerRow(state: AppViewState, entry: McpServerEntry) {
       </div>
       <div class="oc-mcp__row-side">
         <button
-          class="oc-settings__btn oc-settings__btn--secondary oc-settings__btn--compact"
+          class="btn btn--sm"
           @click=${() => startEditServer(state, entry)}
         >${t("settings.mcpHooks.editAction")}</button>
         <button
-          class="oc-settings__btn oc-settings__btn--danger oc-settings__btn--compact"
+          class="btn danger btn--sm"
           ?disabled=${s.saving}
           @click=${() => deleteServer(state, entry.name)}
         >${t("settings.mcpHooks.deleteAction")}</button>
@@ -396,10 +396,10 @@ function renderServerForm(state: AppViewState) {
         `}
 
       <oc-message-box .message=${s.error ?? ""} .type=${"error"} .visible=${!!s.error}></oc-message-box>
-      <div class="oc-settings__btn-row">
-        <button class="oc-settings__btn oc-settings__btn--secondary" ?disabled=${s.saving}
+      <div class="btn-row">
+        <button class="btn" ?disabled=${s.saving}
           @click=${() => cancelServerForm(state)}>${t("settings.cancel")}</button>
-        <button class="oc-settings__btn oc-settings__btn--primary" ?disabled=${s.saving}
+        <button class="btn primary" ?disabled=${s.saving}
           @click=${() => saveServer(state)}>${t("settings.save")}</button>
       </div>
     </div>
@@ -447,8 +447,8 @@ function renderMappingRow(state: AppViewState, m: HookMappingDraft) {
           placeholder="payload.summary"
           @input=${(e: Event) => update({ messageTemplate: (e.target as HTMLTextAreaElement).value })}></textarea>
       </div>
-      <div class="oc-settings__btn-row">
-        <button class="oc-settings__btn oc-settings__btn--danger oc-settings__btn--compact"
+      <div class="btn-row">
+        <button class="btn danger btn--sm"
           @click=${() => {
             if (!s.hooks) return;
             s.hooks.mappings = s.hooks.mappings.filter((x) => x.id !== m.id);
@@ -492,7 +492,7 @@ function renderHooksHeading(state: AppViewState) {
     <div class="oc-settings__card">
       <div class="oc-settings__card-title oc-mcp__mappings-head">
         <span>${t("settings.mcpHooks.mappingsTitle")}</span>
-        <button class="oc-settings__btn oc-settings__btn--secondary oc-settings__btn--compact"
+        <button class="btn btn--sm"
           @click=${() => { h.mappings.push(newMappingDraft()); state.requestUpdate(); }}
         >${t("settings.mcpHooks.addMapping")}</button>
       </div>
@@ -525,7 +525,7 @@ export function renderTabMcpHooks(state: AppViewState) {
       <div class="oc-settings__card">
         <div class="oc-settings__card-title oc-mcp__mappings-head">
           <span>${t("settings.mcpHooks.serversTitle")}</span>
-          <button class="oc-settings__btn oc-settings__btn--secondary oc-settings__btn--compact"
+          <button class="btn btn--sm"
             ?disabled=${!state.connected}
             @click=${() => startAddServer(state)}
           >${t("settings.mcpHooks.addServer")}</button>
@@ -547,10 +547,10 @@ export function renderTabMcpHooks(state: AppViewState) {
 
       <oc-message-box .message=${s.error ?? ""} .type=${"error"} .visible=${!!s.error && !showForm}></oc-message-box>
 
-      <div class="oc-settings__btn-row">
-        <button class="oc-settings__btn" ?disabled=${s.loading || !state.connected}
+      <div class="btn-row">
+        <button class="btn" ?disabled=${s.loading || !state.connected}
           @click=${() => refresh(state)}>${t("settings.mcpHooks.reload")}</button>
-        <button class="oc-settings__btn oc-settings__btn--primary" ?disabled=${s.saving || !state.connected || !s.hooks}
+        <button class="btn primary" ?disabled=${s.saving || !state.connected || !s.hooks}
           @click=${() => saveHooks(state)}>${t("settings.save")}</button>
       </div>
     </div>

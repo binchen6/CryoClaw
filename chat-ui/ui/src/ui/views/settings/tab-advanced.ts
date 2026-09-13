@@ -523,14 +523,14 @@ function renderRepairModal(state: AppViewState) {
         <div class="wb-modal-card" @click=${(e: Event) => e.stopPropagation()}>
           <h3 class="wb-modal-title">${t("settings.advanced.wbRepairDefaultUnsupportedTitle")}</h3>
           <p class="wb-modal-desc">${t("settings.advanced.wbRepairDefaultUnsupportedDesc")}</p>
-          <div class="wb-modal-msg ${m.message ? (m.messageKind ?? "info") : ""}" style=${m.message ? "" : "visibility:hidden;"}>
+          <div class="wb-modal-msg ${m.message ? (m.messageKind ??"info") : ""}" style=${m.message ? "" : "visibility:hidden;"}>
             ${m.message ?? "—"}
           </div>
           <div class="wb-modal-actions">
-            <button type="button" class="oc-settings__btn" data-dialog-dismiss ?disabled=${m.saving} @click=${close}>
+            <button type="button" class="btn" data-dialog-dismiss ?disabled=${m.saving} @click=${close}>
               ${t("settings.advanced.wbRepairCancel")}
             </button>
-            <button type="button" class="oc-settings__btn oc-settings__btn--primary" ?disabled=${m.saving} @click=${() => onRepairConfirm(state)}>
+            <button type="button" class="btn primary" ?disabled=${m.saving} @click=${() => onRepairConfirm(state)}>
               ${m.saving ? wbModalSpinner : t("settings.advanced.wbRepairDefaultUnsupportedRetry")}
             </button>
           </div>
@@ -558,20 +558,20 @@ function renderRepairModal(state: AppViewState) {
         <p class="wb-modal-desc">${t("settings.advanced.wbRepairDesc")}</p>
         <ul class="wb-repair-list">
           ${items.map(it => html`
-            <li class="wb-repair-item ${m.missing[it.key] ? "missing" : "ok"}">
+            <li class="wb-repair-item ${m.missing[it.key] ?"missing" : "ok"}">
               ${m.missing[it.key] ? "✗ " : "✓ "}${it.label}
             </li>
           `)}
         </ul>
         <!-- 永远渲染 msg 占位元素：消息切换不会让 modal 高度跳变（旧分支同样的"内容比对跳过 DOM"思路在 Lit 下用占位实现） -->
-        <div class="wb-modal-msg ${m.message ? (m.messageKind ?? "info") : ""}" style=${m.message ? "" : "visibility:hidden;"}>
+        <div class="wb-modal-msg ${m.message ? (m.messageKind ??"info") : ""}" style=${m.message ? "" : "visibility:hidden;"}>
           ${m.message ?? "—"}
         </div>
         <div class="wb-modal-actions">
-          <button type="button" class="oc-settings__btn" data-dialog-dismiss ?disabled=${m.saving} @click=${close}>
+          <button type="button" class="btn" data-dialog-dismiss ?disabled=${m.saving} @click=${close}>
             ${t("settings.advanced.wbRepairCancel")}
           </button>
-          <button type="button" class="oc-settings__btn oc-settings__btn--primary" ?disabled=${m.saving} @click=${() => onRepairConfirm(state)}>
+          <button type="button" class="btn primary" ?disabled=${m.saving} @click=${() => onRepairConfirm(state)}>
             ${m.saving ? wbModalSpinner : t("settings.advanced.wbRepairConfirm")}
           </button>
         </div>
@@ -620,13 +620,13 @@ function renderWebbridgeVersionCard(state: AppViewState) {
             ${s.wbVersionMessage}
           </div>`
         : nothing}
-      <div class="oc-settings__btn-row">
-        <button class="oc-settings__btn oc-settings__btn--compact" ?disabled=${s.wbCheckBusy || s.wbApplyBusy || s.wbVersionLoading}
+      <div class="btn-row">
+        <button class="btn btn--sm" ?disabled=${s.wbCheckBusy || s.wbApplyBusy || s.wbVersionLoading}
           @click=${() => { void onWbCheckUpdate(state); }}>
           ${s.wbCheckBusy ? t("settings.advanced.wbUpdateChecking") : t("settings.advanced.wbUpdateCheck")}
         </button>
         ${v?.updateAvailable
-          ? html`<button class="oc-settings__btn oc-settings__btn--compact oc-settings__btn--primary"
+          ? html`<button class="btn btn--sm primary"
               ?disabled=${s.wbCheckBusy || s.wbApplyBusy}
               @click=${() => { void onWbApplyUpdate(state); }}>
               ${s.wbApplyBusy ? t("settings.advanced.wbUpdateApplying") : t("settings.advanced.wbUpdateApply")}
@@ -796,7 +796,7 @@ export function renderTabAdvanced(state: AppViewState) {
         <label class="oc-settings__label">${t("settings.advanced.diagnosticsTitle")}</label>
         <p class="oc-settings__hint oc-m-0 oc-mb-8">${t("settings.advanced.diagnosticsDesc")}</p>
         <div>
-          <button class="oc-settings__btn oc-settings__btn--compact" ?disabled=${s.diagnosticsBusy} @click=${() => handleExportDiagnostics(state)}>
+          <button class="btn btn--sm" ?disabled=${s.diagnosticsBusy} @click=${() => handleExportDiagnostics(state)}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v6h16v-6"/><path d="m8 7 4-4 4 4"/><path d="M12 3v9"/></svg>
             ${t("settings.advanced.diagnosticsExport")}
           </button>
@@ -807,8 +807,8 @@ export function renderTabAdvanced(state: AppViewState) {
       <oc-message-box .message=${s.successMsg ?? ""} .type=${"success"} .visible=${!!s.successMsg}></oc-message-box>
       ${s.hint ? html`<div class="oc-settings__hint oc-mt-4">${s.hint}</div>` : nothing}
 
-      <div class="oc-settings__btn-row">
-        <button class="oc-settings__btn oc-settings__btn--primary" ?disabled=${s.saving || s.loadFailed} @click=${() => handleSave(state)}>${t("settings.save")}</button>
+      <div class="btn-row">
+        <button class="btn primary" ?disabled=${s.saving || s.loadFailed} @click=${() => handleSave(state)}>${t("settings.save")}</button>
       </div>
 
       ${renderRepairModal(state)}

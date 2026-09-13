@@ -51,8 +51,10 @@ token 分两层：**基础层 `shared/design-tokens.css`**（全局唯一事实�
   兼容别名 `--radius-xs/sm/md/lg/xl`（= 4/8/12/16/20）、`--radius-pill`（999px）。
 - **spacer 数值阶梯**（4px 基网）：`--spacer-2/3/4/6/8/10/12/16/20/24/32/40/48/64`。
 - **icon 尺寸**：`--icon-size-12/14/16/20/24`。
-- **阅读列宽**：`--chat-column`（760px，消息流/compose 的居中列约束）、
-  `--ext-column`（960px，扩展视图内容列收束）。
+- **阅读列宽（R84 流式化）**：`--chat-column`（`min(92%, 1000px)`，消息流/compose
+  的居中列）、`--ext-column`（`min(92%, 1200px)`，扩展视图内容列）、
+  `--page-column`（`min(92%, 1080px)`，设置/任务等表单页内容列）——内容列铺满
+  可用宽度约 92% 并随窗口伸缩，仅超宽窗口按可读性上限收束。
 - **字体栈**：`--font-body`（Inter + SF Pro Text + PingFang SC 回退）、
   `--font-display`、`--mono`（JetBrains Mono 系）、`--font-meta` = `--mono`；
   `--font-size-meta: 11px`、`--font-size-body: 14px`。
@@ -132,12 +134,20 @@ token 分两层：**基础层 `shared/design-tokens.css`**（全局唯一事实�
 
 ### 2.5 间距/布局原子类（`styles/utilities.css`）
 
-视图 TS 中零散的间距需求一律用原子类——flex 骨架（`oc-flex(-col)` /
-`oc-items-{start,center}` / `oc-justify-{end,between}` / `oc-flex-wrap` /
-`oc-flex-1`）、gap（`oc-gap-{2…24}`）、外边距（`oc-m{t|b|l|r}-{2…32}`、
-`oc-m{l|r}-auto`、`oc-m-0`）、内边距（`oc-p-{8…24}`），值走 `--spacer` 阶梯
-（以文件现行集合为准，死类会清理）。功能性样式（尺寸、颜色、定位、动态值）
-不适用，仍写 CSS 块。
+R75 清理后原子类只保留现行使用的 15 个（flex 骨架 `oc-flex(-col)` /
+`oc-items-start` / `oc-justify-end` / `oc-gap-{6,8,12,16}`、外边距 `oc-m-0` /
+`oc-mt-{2,4,6,8,12,24}` / `oc-mb-*` / `oc-ml-auto`、内边距 `oc-p-16`），
+值走 `--spacer` 阶梯，以文件现行集合为准——**新代码不要引用此清单之外的
+原子类**（R75 起死类即删）。功能性样式（尺寸、颜色、定位、动态值）不适用，
+仍写 CSS 块。
+
+### 2.6 按钮体系（R84 收敛）
+
+按钮一律用 `primitives.css` 的 `.btn` kit：`.btn`（hairline 描边默认）/
+`.btn.primary`（accent 实心）/ `.btn.danger`（语义危险）/ `.btn--sm`（28px 小号）/
+`.btn--text`（无边框低强调文本动作）。历史上并存的四套视图私有 kit
+（`oc-settings__btn*` / `oc-setup-btn*` / `cron-form__btn*` / `chat-goal__btn`）
+已于 R84 全量迁移删除，**不要再新建视图私有按钮类**。
 
 ## 3. 主题与配色使用
 
@@ -322,7 +332,7 @@ hairline + radius-12 + `--shadow-lg`，`--text-sm` medium，z-index 10001，
 
 - 标题栏 44px 由壳层统一占位（见 4.3）；浮层定位以 `--titlebar-h` 为锚
   （如 `top: calc(var(--titlebar-h) + var(--spacer-12))`）。
-- 居中列约束：消息流/compose 用 `--chat-column`（760px），扩展视图内容列用
+- 居中列约束（R84 流式）：消息流/compose 用 `--chat-column`（min(92%, 1000px)），扩展视图内容列用
   `--ext-column`（960px）。
 - 窄窗（≤900px / ≤720px）有会话面板宽度 media query 适配（见 4.2）。
 - grid 容器防溢出：`grid-template-columns: minmax(0,1fr)` + 子项 `min-width: 0`。

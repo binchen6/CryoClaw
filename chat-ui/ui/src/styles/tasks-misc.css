@@ -9,7 +9,7 @@
 /* ── Tasks（任务实时视图） ─────────────────────────────── */
 
 .ts-layout {
-  max-width: 880px;
+  max-width: var(--page-column);
   margin: 0 auto;
   /* 壳层标题栏已统一占位 44px（2026.9 提案 A），视图不再自行让位 */
   padding: var(--spacer-16) var(--spacer-24) var(--spacer-48);
@@ -329,7 +329,7 @@
 /* ── Worktrees（worktree 管理视图） ─────────────────────────────── */
 
 .wt-layout {
-  max-width: 880px;
+  max-width: var(--page-column);
   margin: 0 auto;
   /* 壳层标题栏已统一占位 44px（2026.9 提案 A），视图不再自行让位 */
   padding: var(--spacer-16) var(--spacer-24) var(--spacer-48);

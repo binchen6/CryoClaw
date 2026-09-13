@@ -321,7 +321,7 @@ function renderSessionItem(
   const deleting = props.isDeletingSession(s.key);
   return html`
     <div
-      class="cc-panel__session-item ${isActive ? "active" : ""} ${menuOpen ? "menu-open" : ""} ${s.archived ? "is-archived" : ""}"
+      class="cc-panel__session-item ${isActive ?"active" : ""} ${menuOpen ? "menu-open" : ""} ${s.archived ? "is-archived" : ""}"
       role="button"
       tabindex="0"
       aria-current=${isActive ? "true" : nothing}
@@ -334,7 +334,7 @@ function renderSessionItem(
       >${s.unread ? html`<span class="cc-panel__unread-dot" aria-label=${t("sidebar.unread")}></span>` : nothing}${s.label}${s.pinned ? html`<span class="cc-panel__session-pin" aria-label=${t("sidebar.pinned")}>${icons.pin}</span>` : nothing}${s.worktreeBranch ? html`<span class="cc-panel__session-worktree" title=${s.worktreeBranch}>${icons.gitBranch}${s.worktreeBranch}</span>` : nothing}</span>
       <span class="cc-panel__session-menu-wrap">
         <button
-          class="cc-panel__session-action ${menuOpen ? "is-open" : ""} ${deleting ? "is-loading" : ""}"
+          class="cc-panel__session-action ${menuOpen ?"is-open" : ""} ${deleting ? "is-loading" : ""}"
           type="button"
           aria-disabled=${deleting ? "true" : "false"}
           aria-busy=${deleting ? "true" : "false"}
@@ -438,7 +438,7 @@ function renderPanelInner(host: CcSessionPanel, props: SessionPanelProps) {
           ${props.gitAvailable === true
             ? html`<div class="cc-panel__more-wrap">
               <button
-                class="cc-panel__icon-btn ${moreMenuOpen ? "is-open" : ""}"
+                class="cc-panel__icon-btn ${moreMenuOpen ?"is-open" : ""}"
                 type="button"
                 aria-haspopup="menu"
                 aria-expanded=${moreMenuOpen ? "true" : "false"}
@@ -463,7 +463,7 @@ function renderPanelInner(host: CcSessionPanel, props: SessionPanelProps) {
             </div>`
             : nothing}
           <button
-            class="cc-panel__icon-btn ${props.showArchived ? "active" : ""}"
+            class="cc-panel__icon-btn ${props.showArchived ?"active" : ""}"
             type="button"
             @click=${() => {
               closeSessionMenu(host.bump);

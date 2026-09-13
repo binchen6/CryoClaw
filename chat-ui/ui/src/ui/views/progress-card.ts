@@ -64,7 +64,7 @@ export function renderProgressCard(
 
   return html`
     <div
-      class="chat-progress-card ${stats.allDone ? "chat-progress-card--done" : ""} ${props.collapsed ? "chat-progress-card--collapsed" : ""}"
+      class="chat-progress-card ${stats.allDone ?"chat-progress-card--done" : ""} ${props.collapsed ? "chat-progress-card--collapsed" : ""}"
       role="status"
       aria-label=${t("progressCard.title")}
     >
@@ -78,7 +78,7 @@ export function renderProgressCard(
           @click=${() => props.onToggleCollapse?.()}
         >
           <span
-            class="chat-progress-card__dot ${stats.allDone ? "chat-progress-card__dot--done" : stats.current ? "chat-progress-card__dot--active" : ""}"
+            class="chat-progress-card__dot ${stats.allDone ?"chat-progress-card__dot--done" : stats.current ? "chat-progress-card__dot--active" : ""}"
             aria-hidden="true"
           ></span>
           <span class="chat-progress-card__title">${t("progressCard.title")}</span>
