@@ -39,7 +39,7 @@ import { registerPluginStoreIpc } from "./plugin-store";
 import { registerWorkspaceIpc } from "./workspace-ipc";
 import { registerGitIpc } from "./git-ipc";
 import { detectGitCached } from "./git-detector";
-import { isSetupComplete, resolveGatewayPort, resolveGatewayLogPath, resolveUserStateDir, resolveUserConfigPath } from "./constants";
+import { isSetupComplete, resolveGatewayPort, resolveGatewayLogPath, resolveUserStateDir, resolveUserConfigPath, resolveGatewayRoot } from "./constants";
 import { resolveGatewayAuthToken } from "./gateway-auth";
 import {
   getConfigRecoveryData,
@@ -497,9 +497,44 @@ async function syncGatewayRuntimeConfigFromDisk(): Promise<void> {
   gateway.setPort(resolveGatewayPort());
   gateway.setToken(resolveGatewayAuthToken());
   await ensureAuthProxy();
+  healMemoryVectorExtensionPath();
   if (loadOAuthToken()) ensureOAuthTokenRefresh();
   else stopTokenRefresh();
   syncKimiSearchEnv();
+}
+
+// ASAR 打包模式下 sqlite-vec 平台变体的 vec0.dll 在 asar 虚拟路径内，内核通过
+// sqlite loadExtension 加载（不走 Electron fs 补丁）会失败并回退内置 KNN，
+// 语义检索向量库静默降级。用户未配置过 memory.search.store 时，把
+// store.vector.extensionPath 指到 gateway.asar.unpacked 里的真实 DLL 路径
+// （用户已显式配置 store 则一律不动）。
+function healMemoryVectorExtensionPath(): void {
+  try {
+    const root = resolveGatewayRoot();
+    if (!root.endsWith(".asar")) return;
+    // 根级 memory.search 仅内核 >=2026.8 接受（strict schema），旧内核写入会被拒绝
+    const { readKernelVersionParts } = require("./openclaw-config-migration");
+    const kernel = readKernelVersionParts();
+    if (kernel !== null && (kernel.year < 2026 || (kernel.year === 2026 && kernel.month < 8))) return;
+    const nodeModules = path.join(`${root}.unpacked`, "node_modules");
+    const dllName = process.platform === "win32" ? "vec0.dll"
+      : process.platform === "darwin" ? "vec0.dylib" : "vec0.so";
+    let dllPath = "";
+    for (const name of fs.readdirSync(nodeModules)) {
+      if (!name.startsWith("sqlite-vec-")) continue;
+      const candidate = path.join(nodeModules, name, dllName);
+      if (fs.existsSync(candidate)) { dllPath = candidate; break; }
+    }
+    if (!dllPath) return;
+    const config = readUserConfig();
+    if (!config || config.memory?.search?.store !== undefined) return;
+    const search = (((config.memory ??= {}).search) ??= {});
+    search.store = { vector: { extensionPath: dllPath } };
+    writeUserConfig(config);
+    log.info(`[memory] vector extensionPath healed: ${dllPath}`);
+  } catch (err: any) {
+    log.warn(`[memory] vector extensionPath heal failed: ${err?.message ?? err}`);
+  }
 }
 
 // 跟踪最近一次用户触发的 start/restart 游离 promise（已 .catch 包裹，必定 resolve）。

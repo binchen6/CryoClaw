@@ -135,3 +135,108 @@ test("healLegacyProxyProviders 不改写 apiKey 非 proxy-managed 的本地匹�
   expect(healLegacyProxyProviders(config, 18790)).toBe(false);
   expect(config.models.providers["my-local"].baseUrl).toBe("http://127.0.0.1:8080/coding");
 });
+
+// ── ensureMemorySearchProxyConfig（所有权规则：只自愈端口，不回滚用户配置） ──
+// readKernelVersionParts 读取真实网关包，测试环境不可控 → mock 固定内核版本。
+
+vi.mock("./openclaw-config-migration", async (importOriginal) => {
+  const actual: any = await importOriginal();
+  return {
+    ...actual,
+    readKernelVersionParts: () => ({ year: 2026, month: 9 }),
+  };
+});
+
+test("ensureMemorySearchProxyConfig 节点缺失时首次应用完整 Kimi 预设", async () => {
+  const { ensureMemorySearchProxyConfig } = await import("./kimi-config");
+  const config: any = {};
+  expect(ensureMemorySearchProxyConfig(config, 18790)).toBe(true);
+  expect(config.memory.search).toEqual({
+    enabled: true,
+    provider: "openai",
+    model: "bge_m3_embed",
+    remote: { baseUrl: "http://127.0.0.1:18790/coding/v1/", apiKey: "proxy-managed" },
+  });
+});
+
+test("ensureMemorySearchProxyConfig 用户改过 model（仍走代理）→ 只修端口漂移，不回滚 model", async () => {
+  const { ensureMemorySearchProxyConfig } = await import("./kimi-config");
+  const config: any = {
+    memory: {
+      search: {
+        enabled: true,
+        provider: "openai",
+        model: "text-embedding-3-small",
+        remote: { baseUrl: "http://127.0.0.1:40001/coding/v1/", apiKey: "proxy-managed" },
+      },
+    },
+  };
+  expect(ensureMemorySearchProxyConfig(config, 51705)).toBe(true);
+  expect(config.memory.search.model).toBe("text-embedding-3-small");
+  expect(config.memory.search.remote.baseUrl).toBe("http://127.0.0.1:51705/coding/v1/");
+});
+
+test("ensureMemorySearchProxyConfig 用户改过 provider/端点 → 整体不碰", async () => {
+  const { ensureMemorySearchProxyConfig } = await import("./kimi-config");
+  const config: any = {
+    memory: {
+      search: {
+        enabled: true,
+        provider: "ollama",
+        model: "bge-m3",
+        remote: { baseUrl: "http://127.0.0.1:11434/v1/", apiKey: "sk-own" },
+      },
+    },
+  };
+  expect(ensureMemorySearchProxyConfig(config, 18790)).toBe(false);
+  expect(config.memory.search.provider).toBe("ollama");
+  expect(config.memory.search.model).toBe("bge-m3");
+  expect(config.memory.search.remote.baseUrl).toBe("http://127.0.0.1:11434/v1/");
+});
+
+test("ensureMemorySearchProxyConfig 用户禁用了语义搜索（仍指代理）→ 不重新启用", async () => {
+  const { ensureMemorySearchProxyConfig } = await import("./kimi-config");
+  const config: any = {
+    memory: {
+      search: {
+        enabled: false,
+        provider: "openai",
+        model: "bge_m3_embed",
+        remote: { baseUrl: "http://127.0.0.1:40001/coding/v1/", apiKey: "proxy-managed" },
+      },
+    },
+  };
+  expect(ensureMemorySearchProxyConfig(config, 51705)).toBe(true);
+  expect(config.memory.search.enabled).toBe(false);
+  expect(config.memory.search.remote.baseUrl).toBe("http://127.0.0.1:51705/coding/v1/");
+});
+
+test("ensureMemorySearchProxyConfig 预设完好且端口一致 → 幂等返回 false", async () => {
+  const { ensureMemorySearchProxyConfig } = await import("./kimi-config");
+  const config: any = {
+    memory: {
+      search: {
+        enabled: true,
+        provider: "openai",
+        model: "bge_m3_embed",
+        remote: { baseUrl: "http://127.0.0.1:18790/coding/v1/", apiKey: "proxy-managed" },
+      },
+    },
+  };
+  expect(ensureMemorySearchProxyConfig(config, 18790)).toBe(false);
+});
+
+test("ensureMemorySearchProxyConfig 只写过 query 等非 embedding 字段 → 视为未配置，应用预设", async () => {
+  const { ensureMemorySearchProxyConfig } = await import("./kimi-config");
+  const config: any = { memory: { search: { query: { maxResults: 8 } } } };
+  expect(ensureMemorySearchProxyConfig(config, 18790)).toBe(true);
+  expect(config.memory.search.provider).toBe("openai");
+  expect(config.memory.search.query.maxResults).toBe(8);
+});
+
+test("ensureMemorySearchProxyConfig 端口非法 → false 且不创建节点", async () => {
+  const { ensureMemorySearchProxyConfig } = await import("./kimi-config");
+  const config: any = {};
+  expect(ensureMemorySearchProxyConfig(config, 0)).toBe(false);
+  expect(config.memory).toBeUndefined();
+});

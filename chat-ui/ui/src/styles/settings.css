@@ -2136,6 +2136,313 @@
   overflow-wrap: anywhere;
 }
 
+/* ── R87 Memory 四分页：分页栏 / 统计网格 / 列表 / 梦境 / 危险区 ── */
+.oc-memory-subtabs {
+  display: flex;
+  gap: var(--spacer-16);
+  border-bottom: var(--hairline);
+  margin-bottom: var(--spacer-16);
+}
+.oc-memory-subtabs__btn {
+  padding: var(--spacer-8) var(--spacer-4);
+  font-size: var(--text-sm);
+  font-family: inherit;
+  line-height: 1.2;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out);
+}
+.oc-memory-subtabs__btn:hover { color: var(--text); }
+.oc-memory-subtabs__btn[aria-selected="true"] {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+  font-weight: 600;
+}
+.oc-memory-subtabs__btn:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+/* 统计网格（概览） */
+.oc-memory-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--spacer-8);
+  margin-top: var(--spacer-8);
+}
+@media (max-width: 720px) {
+  .oc-memory-stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+.oc-memory-stat {
+  padding: var(--spacer-12);
+  border: var(--hairline);
+  border-radius: var(--radius-8);
+  background: var(--bg-input);
+}
+.oc-memory-stat__value {
+  font-family: var(--font-meta);
+  font-size: 20px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  line-height: 1.2;
+}
+.oc-memory-stat__label {
+  margin-top: var(--spacer-4);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+/* 状态徽标 */
+.oc-memory-badge {
+  display: inline-block;
+  padding: 1px var(--spacer-8);
+  border-radius: 999px;
+  font-size: var(--text-sm);
+}
+.oc-memory-badge--ok {
+  background: color-mix(in srgb, var(--ok, #3fb950) 16%, transparent);
+  color: var(--ok, #3fb950);
+}
+.oc-memory-badge--warn {
+  background: color-mix(in srgb, var(--warn, #d29922) 16%, transparent);
+  color: var(--warn, #d29922);
+}
+
+/* 召回测试 */
+.oc-memory-recall-controls {
+  display: flex;
+  gap: var(--spacer-8);
+  align-items: center;
+}
+.oc-memory-recall-controls .oc-settings__input { flex: 1; }
+.oc-memory-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacer-8);
+  margin: var(--spacer-8) 0;
+}
+.oc-memory-chip {
+  padding: 2px var(--spacer-10);
+  font-size: var(--text-sm);
+  font-family: inherit;
+  border: var(--hairline);
+  border-radius: 999px;
+  background: var(--bg-input);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.oc-memory-chip:hover { background: var(--bg-hover); color: var(--text); }
+.oc-memory-recall-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacer-4);
+  margin-top: var(--spacer-8);
+}
+.oc-memory-recall-item__head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacer-8);
+  width: 100%;
+  padding: var(--spacer-8);
+  font-family: inherit;
+  text-align: left;
+  border: var(--hairline);
+  border-radius: var(--radius-8);
+  background: var(--bg-input);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.oc-memory-recall-item__head:hover { background: var(--bg-hover); }
+.oc-memory-recall-item__score {
+  flex: none;
+  font-family: var(--font-meta);
+  font-size: var(--text-sm);
+  color: var(--accent);
+}
+.oc-memory-recall-item__snippet {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-sm);
+}
+.oc-memory-recall-item__body,
+.oc-memory-item__body,
+.oc-memory-dream__body {
+  margin: var(--spacer-8) 0 0;
+  padding: var(--spacer-12);
+  max-height: 320px;
+  overflow: auto;
+  font-family: var(--font-meta);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  border: var(--hairline);
+  border-radius: var(--radius-8);
+  background: var(--bg-input);
+  color: var(--text-secondary);
+}
+.oc-memory-stale {
+  display: flex;
+  align-items: center;
+  gap: var(--spacer-8);
+  flex-wrap: wrap;
+  margin-top: var(--spacer-8);
+  padding: var(--spacer-8);
+  font-size: var(--text-sm);
+  color: var(--warn, #d29922);
+  border: 1px solid color-mix(in srgb, var(--warn, #d29922) 40%, transparent);
+  border-radius: var(--radius-8);
+  background: color-mix(in srgb, var(--warn, #d29922) 8%, transparent);
+}
+
+/* 记忆分页：工具栏 + 列表 */
+.oc-memory-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--spacer-12);
+  flex-wrap: wrap;
+}
+.oc-memory-toolbar__search { flex: 1; min-width: 200px; }
+.oc-memory-toolbar__count {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.oc-memory-item {
+  margin-top: var(--spacer-8);
+  border: var(--hairline);
+  border-radius: var(--radius-8);
+}
+.oc-memory-item--lt { border-left: 3px solid var(--accent); }
+.oc-memory-item__head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacer-8);
+  width: 100%;
+  padding: var(--spacer-8) var(--spacer-12);
+  font-family: inherit;
+  text-align: left;
+  border: none;
+  border-radius: var(--radius-8);
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+}
+.oc-memory-item__head:hover { background: var(--bg-hover); }
+.oc-memory-item__kind {
+  flex: none;
+  padding: 0 var(--spacer-6);
+  font-size: var(--text-xs, 11px);
+  border-radius: 999px;
+  border: var(--hairline);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.oc-memory-item__title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-sm);
+}
+.oc-memory-item__meta {
+  flex: none;
+  font-family: var(--font-meta);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+.oc-memory-item__snippet {
+  padding: 0 var(--spacer-12) var(--spacer-8);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+/* 新建记忆表单 */
+.oc-memory-create {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacer-8);
+  margin-top: var(--spacer-8);
+  padding: var(--spacer-12);
+  border: var(--hairline);
+  border-radius: var(--radius-8);
+  background: var(--bg-input);
+}
+.oc-memory-create__body {
+  resize: vertical;
+  font-family: inherit;
+}
+
+/* 梦境分页 */
+.oc-memory-dream {
+  margin-top: var(--spacer-8);
+  padding: var(--spacer-12);
+  border: var(--hairline);
+  border-radius: var(--radius-8);
+}
+.oc-memory-dream--tonight {
+  border-left: 3px solid var(--accent);
+  background: var(--bg-input);
+}
+.oc-memory-dream__head {
+  display: flex;
+  align-items: center;
+  gap: var(--spacer-12);
+  flex-wrap: wrap;
+}
+.oc-memory-dream__date {
+  font-family: var(--font-meta);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  flex: 1;
+  min-width: 120px;
+}
+.oc-memory-dream__chars { font-size: var(--text-sm); color: var(--text-muted); }
+.oc-memory-dream__actions { display: flex; gap: var(--spacer-8); }
+.oc-memory-dream__snippet {
+  margin-top: var(--spacer-8);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+/* 分页器 */
+.oc-memory-pager {
+  display: flex;
+  align-items: center;
+  gap: var(--spacer-12);
+  margin-top: var(--spacer-12);
+}
+.oc-memory-pager__info {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 危险区 */
+.oc-memory-danger { border-color: color-mix(in srgb, var(--danger, #f85149) 35%, transparent); }
+.oc-memory-danger__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacer-16);
+  flex-wrap: wrap;
+  margin-top: var(--spacer-12);
+  padding: var(--spacer-12);
+  border: 1px solid color-mix(in srgb, var(--danger, #f85149) 25%, transparent);
+  border-radius: var(--radius-8);
+  font-size: var(--text-sm);
+}
+
 /* ── R84 补缺失样式：插件市场 meta 子项 ── */
 .oc-plugins__downloads {
   font-variant-numeric: tabular-nums;

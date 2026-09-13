@@ -328,6 +328,16 @@ interface CryoClawBridgeExtended {
       settingsGetKimiSearchKey?: () => Promise<any>;
       settingsWriteKimiSearchKey?: (params: Record<string, unknown>) => Promise<any>;
       settingsEnsureKimiProxy?: () => Promise<any>;
+      // Memory 工作区数据 + memory CLI 桥（记忆/梦境分页数据面）
+      memoryListWorkspace?: () => Promise<any>;
+      memoryReadEntry?: (params: Record<string, unknown>) => Promise<any>;
+      memoryAppendEntry?: (params: Record<string, unknown>) => Promise<any>;
+      memoryListDreams?: () => Promise<any>;
+      memoryReadDream?: (params: Record<string, unknown>) => Promise<any>;
+      memoryRecallTest?: (params: Record<string, unknown>) => Promise<any>;
+      memoryReindex?: () => Promise<any>;
+      memoryDeleteDream?: (params: Record<string, unknown>) => Promise<any>;
+      memoryRepairPlugin?: () => Promise<any>;
       // Settings: Advanced / CLI
       settingsGetAdvanced?: () => Promise<any>;
       settingsSaveAdvanced?: (params: Record<string, unknown>) => Promise<any>;
@@ -629,6 +639,92 @@ export async function settingsWriteKimiSearchKey(params: { apiKey: string }): Pr
 /** 确保 auth proxy 运行（memory embedding 依赖），返回 { proxyPort } */
 export async function settingsEnsureKimiProxy(): Promise<{ proxyPort: number }> {
   return unwrapData<{ proxyPort: number }>(await oc().settingsEnsureKimiProxy());
+}
+
+// ---------------------------------------------------------------------------
+// Memory 工作区（记忆/梦境分页 + 召回测试/索引重建；主进程 settings/memory.ts）
+// ---------------------------------------------------------------------------
+
+export type MemoryWorkspaceEntry = {
+  id: string;
+  kind: "long-term" | "daily";
+  title: string;
+  snippet: string;
+  mtimeMs: number | null;
+  bytes: number;
+};
+
+export type MemoryWorkspaceList = {
+  entries: MemoryWorkspaceEntry[];
+  longTermCount: number;
+  dailyCount: number;
+  hasLongTermFile: boolean;
+};
+
+export type MemoryRecallEntry = {
+  id?: string;
+  score?: number;
+  content?: string;
+  path?: string;
+  source?: string;
+};
+
+export type MemoryRecallData = {
+  results: MemoryRecallEntry[];
+  stale: boolean;
+  warning?: string;
+};
+
+export type MemoryReindexData = {
+  ok: boolean;
+  dirty?: boolean;
+  files?: number;
+  chunks?: number;
+  lastSyncError?: string;
+};
+
+export async function memoryListWorkspace(): Promise<MemoryWorkspaceList> {
+  return unwrapData<MemoryWorkspaceList>(await oc().memoryListWorkspace());
+}
+
+export async function memoryReadEntry(id: string): Promise<{ title: string; content: string; kind: string }> {
+  return unwrapData(await oc().memoryReadEntry({ id }));
+}
+
+export async function memoryAppendEntry(title: string, content: string): Promise<void> {
+  unwrapVoid(await oc().memoryAppendEntry({ title, content }));
+}
+
+export type DreamListEntry = {
+  index: number;
+  dateText: string;
+  dateMs: number | null;
+  snippet: string;
+  chars: number;
+};
+
+export async function memoryListDreams(): Promise<{ found: boolean; entries: DreamListEntry[] }> {
+  return unwrapData(await oc().memoryListDreams());
+}
+
+export async function memoryReadDream(index: number): Promise<{ dateText: string; body: string }> {
+  return unwrapData(await oc().memoryReadDream({ index }));
+}
+
+export async function memoryRecallTest(query: string, maxResults = 6): Promise<MemoryRecallData> {
+  return unwrapData<MemoryRecallData>(await oc().memoryRecallTest({ query, maxResults }));
+}
+
+export async function memoryReindex(): Promise<MemoryReindexData> {
+  return unwrapData<MemoryReindexData>(await oc().memoryReindex());
+}
+
+export async function memoryDeleteDream(index: number): Promise<void> {
+  unwrapVoid(await oc().memoryDeleteDream({ index }));
+}
+
+export async function memoryRepairPlugin(): Promise<void> {
+  unwrapVoid(await oc().memoryRepairPlugin());
 }
 
 // ---------------------------------------------------------------------------

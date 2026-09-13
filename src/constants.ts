@@ -195,7 +195,7 @@ export function resolveNpmBin(): string {
  * 返回值可用于拼接 JS 文件路径（ASAR patch 透明可读），
  * 但不可用作 spawn 的 cwd（OS 不认识 asar 虚拟路径）。
  */
-function resolveGatewayRoot(): string {
+export function resolveGatewayRoot(): string {
   const res = resolveResourcesPath();
   // dev 模式用真实 Node.js，无法读取 asar 虚拟路径，直接走散文件
   if (!app.isPackaged) {

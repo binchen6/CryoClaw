@@ -96,6 +96,21 @@ contextBridge.exposeInMainWorld("cryoclaw", {
     ipcRenderer.invoke("settings:write-kimi-search-key", params),
   settingsEnsureKimiProxy: () =>
     ipcRenderer.invoke("settings:ensure-kimi-proxy"),
+  // Memory 工作区数据 + memory CLI 桥（记忆/梦境分页 + 召回测试/索引重建）
+  memoryListWorkspace: () => ipcRenderer.invoke("memory:list"),
+  memoryReadEntry: (params: Record<string, unknown>) =>
+    ipcRenderer.invoke("memory:read", params),
+  memoryAppendEntry: (params: Record<string, unknown>) =>
+    ipcRenderer.invoke("memory:append", params),
+  memoryListDreams: () => ipcRenderer.invoke("memory:list-dreams"),
+  memoryReadDream: (params: Record<string, unknown>) =>
+    ipcRenderer.invoke("memory:read-dream", params),
+  memoryRecallTest: (params: Record<string, unknown>) =>
+    ipcRenderer.invoke("memory:recall-test", params),
+  memoryReindex: () => ipcRenderer.invoke("memory:reindex"),
+  memoryDeleteDream: (params: Record<string, unknown>) =>
+    ipcRenderer.invoke("memory:delete-dream", params),
+  memoryRepairPlugin: () => ipcRenderer.invoke("memory:repair-plugin"),
   settingsGetAboutInfo: () => ipcRenderer.invoke("settings:get-about-info"),
   settingsGetAdvanced: () => ipcRenderer.invoke("settings:get-advanced"),
   settingsSaveAdvanced: (params: Record<string, unknown>) =>

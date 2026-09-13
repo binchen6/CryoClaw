@@ -17,6 +17,7 @@ export default defineConfig({
       "src/openclaw-state-archive.test.ts",
       "src/openclaw-state-import-lifecycle.test.ts",
       "src/analytics.test.ts",
+      "src/memory-workspace.test.ts",
     ],
   },
 });

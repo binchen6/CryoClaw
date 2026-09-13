@@ -1,27 +1,30 @@
 /**
- * Settings: Memory Tab — R85 通俗化信息架构。
+ * Settings: Memory Tab — R87 四分页重构（参照 OpenClaw 官方记忆管理页设计）。
  *
- * 小白友好三卡 + 状态（内核 2026.9.3 记忆配置全景不变，只是收进抽屉）：
- * 1. 记住对话内容（session-memory hook + memory.search 合并主卡；Kimi 一键）
- *    — 技术项（provider/model/baseUrl/阈值/来源/归档参数）全部收进「高级设置」
- * 2. 自动整理记忆（plugins.entries["memory-core"].config.dreaming）
- *    — cron 输入换成常用时间下拉（每天 3 点/4 点/每 12h/6h/自定义），自定义才露出 cron
- * 3. 回复中标注记忆来源（memory.citations）
- * 4. 主动记忆（plugins.entries["active-memory"]，entry 存在才显示）
- * 5. 记忆现状（gateway RPC doctor.memory.status）
+ * 页首水平分页（概览 / 记忆 / 梦境 / 设置），数据面：
+ * - 概览：功能状态卡（doctor.memory.status 深测 + 刷新 + 插件修复）、统计网格、
+ *   召回测试（主进程 spawn 内核 CLI `memory search --json`，与真实对话同一管线）、
+ *   危险区（doctor.memory.resetGroundedShortTerm / resetDreamDiary）
+ * - 记忆：workspace markdown 列表（MEMORY.md 章节 + memory/*.md 日志），
+ *   搜索 / 分页 / 展开 / 新建（追加到 MEMORY.md，主进程备份 .bak）
+ * - 梦境：DREAMS.md 托管区条目（主进程统一解析，index 与删除接口一致），
+ *   今夜梦境 + 历史梦境 + 查看 / 删除
+ * - 设置：R85/R86 的设置表单原样保留（对话记忆 / 自动整理 / 引用标注 / 主动记忆）
  *
- * 配置读写走 config.get 快照 + 单次 config.patch（memory + hooks + plugins 三域
- * 合并在同一 patch，见 tab-memory.lib.ts / tab-patch.ts）；运行状态走 gateway RPC，
- * 与配置读写互不阻塞。lib 层（状态字段/patch 语义）与 R82 完全一致，仅展示重排。
+ * 配置读写仍走 config.get 快照 + 单次 config.patch（tab-memory.lib.ts）；
+ * 运行状态走 gateway RPC；工作区数据走主进程 IPC（data/ipc-bridge.ts memory*）。
  */
 import { html, nothing } from "lit";
 import type { AppViewState } from "../../app-view-state.ts";
-import { loadMemoryStatus, type MemoryStatus } from "../../controllers/memory.ts";
+import { loadMemoryStatus, resetGroundedShortTerm, resetDreamDiary, type MemoryStatus } from "../../controllers/memory.ts";
 import { t, tWithDetail } from "../../i18n.ts";
 import * as ipc from "../../data/ipc-bridge.ts";
+import type { MemoryWorkspaceList, MemoryRecallData, MemoryReindexData, DreamListEntry } from "../../data/ipc-bridge.ts";
 import { getConfigSnapshot, getCachedConfigSnapshot } from "../../controllers/config.ts";
+import { formatRelativeTimestamp } from "../../format.ts";
 import { renderModelOptionsGrouped } from "../../components/model-options.ts";
 import { loadModelOrg } from "./model-org.lib.ts";
+import { showConfirm } from "../confirm-dialog.ts";
 import type { ConfiguredModel } from "../../ui-types.ts";
 import "../../components/toggle-switch.ts";
 import "../../components/message-box.ts";
@@ -35,9 +38,14 @@ import { initChannelTabOnce } from "./tab-channels-shared.ts";
 
 /* ── 状态 ── */
 
+type MemorySubTab = "overview" | "memories" | "dreams" | "settings";
+const WS_PAGE_SIZE = 10;
+const DREAM_PAGE_SIZE = 6;
+
 // Memory 页状态必须可重建，避免用户丢弃的开关草稿污染下次打开。
 function createMemoryState() {
   return {
+    subtab: "overview" as MemorySubTab,
     // 会话记忆（session-memory hook）
     smEnabled: true,
     smMessages: String(SESSION_MEMORY_DEFAULTS.messages),
@@ -86,7 +94,40 @@ function createMemoryState() {
     statusLoading: false,
     statusLoaded: false,
     statusFailed: false,
+    statusProbing: false,
     wasConnected: false,
+    // memory-core 插件启用态（config 快照派生；enabled=false 时概览给一键修复）
+    pluginDisabled: false,
+    // 工作区记忆列表（记忆分页）
+    wsList: null as MemoryWorkspaceList | null,
+    wsLoading: false,
+    wsFailed: false,
+    wsLoaded: false,
+    wsSearch: "",
+    wsPage: 1,
+    wsExpandedId: null as string | null,
+    wsExpandedLoading: false,
+    wsExpandedContent: null as { title: string; content: string } | null,
+    wsCreateOpen: false,
+    wsCreateTitle: "",
+    wsCreateContent: "",
+    wsCreating: false,
+    // 梦境（梦境分页）
+    dreamList: null as { found: boolean; entries: DreamListEntry[] } | null,
+    dreamLoading: false,
+    dreamFailed: false,
+    dreamPage: 1,
+    dreamExpandedIndex: null as number | null,
+    dreamExpandedLoading: false,
+    dreamExpandedBody: null as { dateText: string; body: string } | null,
+    // 召回测试（概览分页）
+    recallQuery: "",
+    recallRunning: false,
+    recallResult: null as MemoryRecallData | null,
+    recallError: null as string | null,
+    recallExpandedId: null as string | null,
+    reindexRunning: false,
+    reindexResult: null as MemoryReindexData | null,
   };
 }
 
@@ -133,11 +174,196 @@ function applyViewToState(view: MemorySettingsView) {
 
 async function init(state: AppViewState) {
   await initChannelTabOnce(state, s, {
-    applyConfig: (config) => applyViewToState(extractMemoryView(config)),
+    applyConfig: (config) => {
+      applyViewToState(extractMemoryView(config));
+      const entry = (config as any)?.plugins?.entries?.["memory-core"];
+      s.pluginDisabled = entry?.enabled === false;
+    },
   });
 }
 
-/* ── 保存 ── */
+/* ── 数据加载 ── */
+
+async function refreshStatus(state: AppViewState, probe: boolean) {
+  s.statusProbing = probe;
+  state.requestUpdate();
+  await loadMemoryStatus(s, state, () => state.requestUpdate(), { force: true, probe });
+  s.statusProbing = false;
+  state.requestUpdate();
+}
+
+async function loadWorkspaceList(state: AppViewState, force = false) {
+  if (s.wsLoading || (s.wsLoaded && !force)) return;
+  s.wsLoading = true; s.wsFailed = false;
+  state.requestUpdate();
+  try {
+    s.wsList = await ipc.memoryListWorkspace();
+    s.wsLoaded = true;
+  } catch {
+    s.wsFailed = true;
+  } finally {
+    s.wsLoading = false;
+    state.requestUpdate();
+  }
+}
+
+async function loadDreams(state: AppViewState, force = false) {
+  if (s.dreamLoading || (s.dreamList && !force)) return;
+  s.dreamLoading = true; s.dreamFailed = false;
+  state.requestUpdate();
+  try {
+    s.dreamList = await ipc.memoryListDreams();
+  } catch {
+    s.dreamFailed = true;
+  } finally {
+    s.dreamLoading = false;
+    state.requestUpdate();
+  }
+}
+
+async function toggleMemoryExpand(state: AppViewState, id: string) {
+  if (s.wsExpandedId === id) {
+    s.wsExpandedId = null; s.wsExpandedContent = null;
+    state.requestUpdate();
+    return;
+  }
+  s.wsExpandedId = id; s.wsExpandedContent = null; s.wsExpandedLoading = true;
+  state.requestUpdate();
+  try {
+    s.wsExpandedContent = await ipc.memoryReadEntry(id);
+  } catch {
+    s.wsExpandedContent = null;
+  } finally {
+    s.wsExpandedLoading = false;
+    state.requestUpdate();
+  }
+}
+
+async function toggleDreamExpand(state: AppViewState, index: number) {
+  if (s.dreamExpandedIndex === index) {
+    s.dreamExpandedIndex = null; s.dreamExpandedBody = null;
+    state.requestUpdate();
+    return;
+  }
+  s.dreamExpandedIndex = index; s.dreamExpandedBody = null; s.dreamExpandedLoading = true;
+  state.requestUpdate();
+  try {
+    s.dreamExpandedBody = await ipc.memoryReadDream(index);
+  } catch {
+    s.dreamExpandedBody = null;
+  } finally {
+    s.dreamExpandedLoading = false;
+    state.requestUpdate();
+  }
+}
+
+async function handleCreateMemory(state: AppViewState) {
+  if (s.wsCreating) return;
+  if (!s.wsCreateTitle.trim() && !s.wsCreateContent.trim()) return;
+  s.wsCreating = true; s.error = null; s.successMsg = null;
+  state.requestUpdate();
+  try {
+    await ipc.memoryAppendEntry(s.wsCreateTitle, s.wsCreateContent);
+    s.wsCreateOpen = false; s.wsCreateTitle = ""; s.wsCreateContent = "";
+    s.successMsg = t("settings.memory.memories.created");
+    await loadWorkspaceList(state, true);
+  } catch (e: any) {
+    s.error = tWithDetail("settings.memory.memories.createFailed", e?.message);
+  } finally {
+    s.wsCreating = false;
+    state.requestUpdate();
+  }
+}
+
+async function handleDeleteDream(state: AppViewState, entry: DreamListEntry) {
+  if (!(await showConfirm(state, t("settings.memory.dreams.deleteConfirm"), { danger: true }))) return;
+  s.error = null; s.successMsg = null;
+  state.requestUpdate();
+  try {
+    await ipc.memoryDeleteDream(entry.index);
+    s.dreamExpandedIndex = null; s.dreamExpandedBody = null;
+    s.successMsg = t("settings.memory.dreams.deleted");
+    await loadDreams(state, true);
+  } catch (e: any) {
+    s.error = tWithDetail("settings.memory.dreams.deleteFailed", e?.message);
+  }
+  state.requestUpdate();
+}
+
+async function handleRecallTest(state: AppViewState) {
+  if (s.recallRunning) return;
+  const query = s.recallQuery.trim();
+  if (!query) return;
+  s.recallRunning = true; s.recallError = null; s.recallResult = null; s.recallExpandedId = null;
+  state.requestUpdate();
+  try {
+    s.recallResult = await ipc.memoryRecallTest(query);
+  } catch (e: any) {
+    s.recallError = e?.message || String(e);
+  } finally {
+    s.recallRunning = false;
+    state.requestUpdate();
+  }
+}
+
+async function handleReindex(state: AppViewState) {
+  if (s.reindexRunning) return;
+  if (!(await showConfirm(state, t("settings.memory.overview.reindexConfirm"), { danger: false }))) return;
+  s.reindexRunning = true; s.error = null; s.successMsg = null; s.reindexResult = null;
+  state.requestUpdate();
+  try {
+    s.reindexResult = await ipc.memoryReindex();
+    s.successMsg = t("settings.memory.overview.reindexDone");
+  } catch (e: any) {
+    s.error = tWithDetail("settings.memory.overview.reindexFailed", e?.message);
+  } finally {
+    s.reindexRunning = false;
+    state.requestUpdate();
+  }
+}
+
+async function handleRepairPlugin(state: AppViewState) {
+  s.error = null; s.successMsg = null;
+  state.requestUpdate();
+  try {
+    await ipc.memoryRepairPlugin();
+    s.pluginDisabled = false;
+    s.successMsg = t("settings.memory.overview.repairDone");
+    // 刷新配置快照，让设置分页同步插件启用态
+    if (state.client && state.connected) {
+      try { await getConfigSnapshot(state.client, { force: true }); } catch {}
+    }
+  } catch (e: any) {
+    s.error = tWithDetail("settings.memory.overview.repairFailed", e?.message);
+  }
+  state.requestUpdate();
+}
+
+async function handleResetShortTerm(state: AppViewState) {
+  if (!(await showConfirm(state, t("settings.memory.danger.resetShortTermConfirm"), { danger: true }))) return;
+  s.error = null; s.successMsg = null;
+  state.requestUpdate();
+  const ok = await resetGroundedShortTerm(state.client ?? null);
+  if (ok) s.successMsg = t("settings.memory.danger.resetShortTermDone");
+  else s.error = t("settings.memory.danger.resetShortTermFailed");
+  state.requestUpdate();
+}
+
+async function handleResetDreams(state: AppViewState) {
+  if (!(await showConfirm(state, t("settings.memory.danger.resetDreamsConfirm"), { danger: true }))) return;
+  s.error = null; s.successMsg = null;
+  state.requestUpdate();
+  const ok = await resetDreamDiary(state.client ?? null);
+  if (ok) {
+    s.successMsg = t("settings.memory.danger.resetDreamsDone");
+    await loadDreams(state, true);
+  } else {
+    s.error = t("settings.memory.danger.resetDreamsFailed");
+  }
+  state.requestUpdate();
+}
+
+/* ── 保存（设置分页；逻辑与 R85/R86 一致） ── */
 
 function parseNumberOr(raw: string, fallback: number): number {
   const n = Number(raw.trim());
@@ -390,7 +616,364 @@ function card(titleKey: string, descKey: string, ...children: unknown[]) {
   `;
 }
 
-/* ── 卡片 ── */
+/* ── 概览分页 ── */
+
+function statCell(labelKey: string, value: unknown) {
+  const v = value == null ? "—" : String(value);
+  return html`
+    <div class="oc-memory-stat">
+      <div class="oc-memory-stat__value">${v}</div>
+      <div class="oc-memory-stat__label">${t(labelKey)}</div>
+    </div>
+  `;
+}
+
+function renderOverviewTab(state: AppViewState) {
+  const ms = s.memoryStatus;
+  const dreaming = ms?.dreaming;
+
+  // 功能状态：插件启用 + embedding 连通 +（可深测）
+  const statusLine = s.statusFailed || !ms
+    ? html`<span class="oc-memory-badge oc-memory-badge--warn">${t("settings.memory.statusUnavailable")}</span>`
+    : s.pluginDisabled
+      ? html`<span class="oc-memory-badge oc-memory-badge--warn">${t("settings.memory.overview.pluginDisabled")}</span>`
+      : ms.embedding?.ok
+        ? html`<span class="oc-memory-badge oc-memory-badge--ok">${t("settings.memory.overview.running")}</span>`
+        : html`<span class="oc-memory-badge oc-memory-badge--warn">${t("settings.memory.statusEmbeddingUnavailable")}</span>`;
+
+  const statusRows = ms && !s.statusFailed ? html`
+    ${ms.provider ? html`<div class="oc-memory-status-row">
+      <span class="oc-memory-status-row__label">${t("settings.memory.statusBackend")}</span>
+      <span class="oc-memory-status-row__value">${ms.provider}</span>
+    </div>` : nothing}
+    <div class="oc-memory-status-row">
+      <span class="oc-memory-status-row__label">${t("settings.memory.statusEmbedding")}</span>
+      <span class="oc-memory-status-row__value">${ms.embedding?.ok
+        ? t("settings.memory.embeddingEnabled")
+        : `${t("settings.memory.statusEmbeddingUnavailable")}${ms.embedding?.error ? ` (${ms.embedding.error})` : ""}`}
+      </span>
+    </div>
+  ` : nothing;
+
+  const recallExamples = [1, 2, 3, 4].map(i => t(`settings.memory.overview.recallExample${i}`));
+  const recallResults = s.recallResult;
+  const recallBody = s.recallRunning
+    ? html`<div class="oc-settings__field-hint">${t("settings.memory.overview.recallRunning")}</div>`
+    : s.recallError
+      ? html`<div class="oc-settings__field-hint">${tWithDetail("settings.memory.overview.recallFailed", s.recallError)}</div>`
+      : recallResults
+        ? html`
+            ${recallResults.stale ? html`
+              <div class="oc-memory-stale">
+                ${t("settings.memory.overview.indexStale")}
+                <button type="button" class="btn btn--sm" ?disabled=${s.reindexRunning}
+                  @click=${() => handleReindex(state)}>${t("settings.memory.overview.reindex")}</button>
+              </div>` : nothing}
+            ${recallResults.results.length === 0
+              ? html`<div class="oc-settings__field-hint">${t("settings.memory.overview.recallEmpty")}</div>`
+              : html`<div class="oc-memory-recall-list">
+                  ${recallResults.results.map((r, i) => {
+                    const id = r.id ?? r.path ?? String(i);
+                    const score = typeof r.score === "number" ? Math.round(r.score * 100) : null;
+                    const snippet = (r.content ?? r.path ?? "").toString();
+                    const expanded = s.recallExpandedId === id;
+                    return html`
+                      <div class="oc-memory-recall-item">
+                        <button type="button" class="oc-memory-recall-item__head" @click=${() => {
+                          s.recallExpandedId = expanded ? null : id;
+                          state.requestUpdate();
+                        }}>
+                          ${score != null ? html`<span class="oc-memory-recall-item__score">${score}%</span>` : nothing}
+                          <span class="oc-memory-recall-item__snippet">${snippet.slice(0, 200)}</span>
+                        </button>
+                        ${expanded ? html`<pre class="oc-memory-recall-item__body">${snippet}</pre>` : nothing}
+                      </div>
+                    `;
+                  })}
+                </div>`}
+          `
+        : nothing;
+
+  return html`
+    <div class="oc-settings__card">
+      <div class="oc-settings__card-title">${t("settings.memory.overview.statusTitle")}</div>
+      <div class="oc-settings__field-hint">${t("settings.memory.overview.statusDesc")}</div>
+      <div class="oc-memory-status-row">
+        <span class="oc-memory-status-row__label">${t("settings.memory.overview.state")}</span>
+        <span class="oc-memory-status-row__value">${statusLine}</span>
+      </div>
+      ${statusRows}
+      <div class="btn-row">
+        <button type="button" class="btn btn--sm" ?disabled=${s.statusProbing}
+          @click=${() => refreshStatus(state, true)}>${t("settings.memory.overview.refresh")}</button>
+        ${s.pluginDisabled ? html`
+          <button type="button" class="btn btn--sm" @click=${() => handleRepairPlugin(state)}>
+            ${t("settings.memory.overview.repairPlugin")}
+          </button>` : nothing}
+        <button type="button" class="btn btn--sm" ?disabled=${s.reindexRunning}
+          @click=${() => handleReindex(state)}>${t("settings.memory.overview.reindex")}</button>
+      </div>
+      ${s.reindexRunning ? html`<div class="oc-settings__field-hint">${t("settings.memory.overview.reindexRunning")}</div>` : nothing}
+      ${s.reindexResult?.ok ? html`<div class="oc-settings__field-hint">${t("settings.memory.overview.reindexSummary")
+        .replace("{files}", String(s.reindexResult.files ?? "—"))
+        .replace("{chunks}", String(s.reindexResult.chunks ?? "—"))}</div>` : nothing}
+    </div>
+
+    <div class="oc-settings__card">
+      <div class="oc-settings__card-title">${t("settings.memory.overview.statsTitle")}</div>
+      <div class="oc-memory-stats-grid">
+        ${statCell("settings.memory.statusShortTerm", dreaming?.shortTermCount)}
+        ${statCell("settings.memory.overview.statRecallSignals", dreaming?.recallSignalCount ?? dreaming?.totalSignalCount)}
+        ${statCell("settings.memory.statusPromoted", dreaming?.promotedTotal)}
+        ${statCell("settings.memory.overview.statPromotedToday", dreaming?.promotedToday)}
+        ${statCell("settings.memory.overview.statMemoryFiles", s.wsList ? s.wsList.longTermCount + s.wsList.dailyCount : null)}
+        ${statCell("settings.memory.overview.statDreams", s.dreamList?.entries.length)}
+        ${statCell("settings.memory.overview.statLightHits", dreaming?.lightPhaseHitCount)}
+        ${statCell("settings.memory.overview.statRemHits", dreaming?.remPhaseHitCount)}
+      </div>
+    </div>
+
+    <div class="oc-settings__card">
+      <div class="oc-settings__card-title">${t("settings.memory.overview.recallTitle")}</div>
+      <div class="oc-settings__field-hint">${t("settings.memory.overview.recallDesc")}</div>
+      <div class="oc-settings__form-group oc-memory-recall-controls">
+        <input class="oc-settings__input" .value=${s.recallQuery}
+          placeholder=${t("settings.memory.overview.recallPlaceholder")}
+          @input=${(e: Event) => { s.recallQuery = (e.target as HTMLInputElement).value; state.requestUpdate(); }}
+          @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter") handleRecallTest(state); }} />
+        <button type="button" class="btn primary btn--sm" ?disabled=${s.recallRunning || !s.recallQuery.trim()}
+          @click=${() => handleRecallTest(state)}>${t("settings.memory.overview.recallRun")}</button>
+      </div>
+      <div class="oc-memory-chips">
+        ${recallExamples.map(q => html`
+          <button type="button" class="oc-memory-chip" @click=${() => { s.recallQuery = q; handleRecallTest(state); }}>${q}</button>
+        `)}
+      </div>
+      ${recallBody}
+      <div class="oc-settings__field-hint">${t("settings.memory.overview.recallTip")}</div>
+    </div>
+
+    <div class="oc-settings__card oc-memory-danger">
+      <div class="oc-settings__card-title">${t("settings.memory.danger.title")}</div>
+      <div class="oc-settings__field-hint">${t("settings.memory.danger.desc")}</div>
+      <div class="oc-memory-danger__item">
+        <div>
+          <div>${t("settings.memory.danger.resetShortTerm")}</div>
+          <div class="oc-settings__field-hint">${t("settings.memory.danger.resetShortTermHint")}</div>
+        </div>
+        <button type="button" class="btn danger btn--sm" @click=${() => handleResetShortTerm(state)}>
+          ${t("settings.memory.danger.resetShortTermButton")}
+        </button>
+      </div>
+      <div class="oc-memory-danger__item">
+        <div>
+          <div>${t("settings.memory.danger.resetDreams")}</div>
+          <div class="oc-settings__field-hint">${t("settings.memory.danger.resetDreamsHint")}</div>
+        </div>
+        <button type="button" class="btn danger btn--sm" @click=${() => handleResetDreams(state)}>
+          ${t("settings.memory.danger.resetDreamsButton")}
+        </button>
+      </div>
+    </div>
+  `;
+}
+
+/* ── 记忆分页 ── */
+
+function filteredWorkspaceEntries() {
+  const list = s.wsList?.entries ?? [];
+  const q = s.wsSearch.trim().toLowerCase();
+  if (!q) return list;
+  return list.filter(e =>
+    e.title.toLowerCase().includes(q) || e.snippet.toLowerCase().includes(q));
+}
+
+function renderMemoriesTab(state: AppViewState) {
+  const all = filteredWorkspaceEntries();
+  const totalPages = Math.max(1, Math.ceil(all.length / WS_PAGE_SIZE));
+  const page = Math.min(s.wsPage, totalPages);
+  const pageEntries = all.slice((page - 1) * WS_PAGE_SIZE, page * WS_PAGE_SIZE);
+
+  const createForm = s.wsCreateOpen ? html`
+    <div class="oc-memory-create">
+      <input class="oc-settings__input" .value=${s.wsCreateTitle}
+        placeholder=${t("settings.memory.memories.createTitlePlaceholder")}
+        @input=${(e: Event) => { s.wsCreateTitle = (e.target as HTMLInputElement).value; state.requestUpdate(); }} />
+      <textarea class="oc-settings__input oc-memory-create__body" rows="4" .value=${s.wsCreateContent}
+        placeholder=${t("settings.memory.memories.createBodyPlaceholder")}
+        @input=${(e: Event) => { s.wsCreateContent = (e.target as HTMLTextAreaElement).value; state.requestUpdate(); }}></textarea>
+      <div class="btn-row">
+        <button type="button" class="btn primary btn--sm" ?disabled=${s.wsCreating || (!s.wsCreateTitle.trim() && !s.wsCreateContent.trim())}
+          @click=${() => handleCreateMemory(state)}>${t("settings.memory.memories.createSave")}</button>
+        <button type="button" class="btn btn--sm" ?disabled=${s.wsCreating}
+          @click=${() => { s.wsCreateOpen = false; state.requestUpdate(); }}>${t("settings.cancel")}</button>
+      </div>
+    </div>
+  ` : nothing;
+
+  const listBody = s.wsLoading && !s.wsList
+    ? html`<div class="oc-settings__field-hint">${t("settings.memory.statusLoading")}</div>`
+    : s.wsFailed
+      ? html`
+          <div class="oc-settings__field-hint">${t("settings.memory.memories.listFailed")}</div>
+          <div class="btn-row">
+            <button type="button" class="btn btn--sm" ?disabled=${s.wsLoading}
+              @click=${() => loadWorkspaceList(state, true)}>${t("settings.memory.overview.refresh")}</button>
+          </div>`
+      : all.length === 0
+        ? html`<div class="oc-settings__field-hint">${t("settings.memory.memories.empty")}</div>`
+        : html`
+            ${pageEntries.map(e => {
+              const expanded = s.wsExpandedId === e.id;
+              return html`
+                <div class="oc-memory-item ${e.kind === "long-term" ? "oc-memory-item--lt" : ""}">
+                  <button type="button" class="oc-memory-item__head" @click=${() => toggleMemoryExpand(state, e.id)}>
+                    <span class="oc-memory-item__kind">${e.kind === "long-term"
+                      ? t("settings.memory.memories.kindLongTerm")
+                      : t("settings.memory.memories.kindDaily")}</span>
+                    <span class="oc-memory-item__title">${e.title}</span>
+                    <span class="oc-memory-item__meta">${e.mtimeMs != null
+                      ? formatRelativeTimestamp(e.mtimeMs, { dateFallback: true })
+                      : ""}</span>
+                  </button>
+                  ${expanded ? html`
+                    <div class="oc-memory-item__snippet">${e.snippet}</div>
+                    ${s.wsExpandedLoading
+                      ? html`<div class="oc-settings__field-hint">${t("settings.memory.statusLoading")}</div>`
+                      : s.wsExpandedContent
+                        ? html`<pre class="oc-memory-item__body">${s.wsExpandedContent.content}</pre>`
+                        : html`<div class="oc-settings__field-hint">${t("settings.memory.memories.readFailed")}</div>`}
+                  ` : nothing}
+                </div>
+              `;
+            })}
+            ${all.length > WS_PAGE_SIZE ? html`
+              <div class="oc-memory-pager">
+                <button type="button" class="btn btn--sm" ?disabled=${page <= 1}
+                  @click=${() => { s.wsPage = page - 1; state.requestUpdate(); }}>${t("settings.memory.pagerPrev")}</button>
+                <span class="oc-memory-pager__info">${t("settings.memory.pagerInfo")
+                  .replace("{page}", String(page)).replace("{total}", String(totalPages))}</span>
+                <button type="button" class="btn btn--sm" ?disabled=${page >= totalPages}
+                  @click=${() => { s.wsPage = page + 1; state.requestUpdate(); }}>${t("settings.memory.pagerNext")}</button>
+              </div>` : nothing}
+          `;
+
+  return html`
+    <div class="oc-settings__card">
+      <div class="oc-memory-toolbar">
+        <input class="oc-settings__input oc-memory-toolbar__search" .value=${s.wsSearch}
+          placeholder=${t("settings.memory.memories.searchPlaceholder")}
+          @input=${(e: Event) => {
+            s.wsSearch = (e.target as HTMLInputElement).value;
+            s.wsPage = 1;
+            state.requestUpdate();
+          }} />
+        <span class="oc-memory-toolbar__count">${t("settings.memory.memories.count")
+          .replace("{n}", String(all.length))}</span>
+        <button type="button" class="btn primary btn--sm" @click=${() => { s.wsCreateOpen = !s.wsCreateOpen; state.requestUpdate(); }}>
+          ${t("settings.memory.memories.create")}
+        </button>
+      </div>
+      ${createForm}
+      ${listBody}
+    </div>
+  `;
+}
+
+/* ── 梦境分页 ── */
+
+function renderDreamsTab(state: AppViewState) {
+  if (s.dreamLoading && !s.dreamList) {
+    return html`<div class="oc-settings__card">
+      <div class="oc-settings__field-hint">${t("settings.memory.statusLoading")}</div>
+    </div>`;
+  }
+  if (s.dreamFailed || !s.dreamList) {
+    return html`<div class="oc-settings__card">
+      <div class="oc-settings__field-hint">${t("settings.memory.dreams.listFailed")}</div>
+      <div class="btn-row">
+        <button type="button" class="btn btn--sm" @click=${() => loadDreams(state, true)}>${t("settings.memory.overview.refresh")}</button>
+      </div>
+    </div>`;
+  }
+  const entries = s.dreamList.entries;
+  if (!s.dreamList.found || entries.length === 0) {
+    return html`<div class="oc-settings__card">
+      <div class="oc-settings__card-title">${t("settings.memory.dreams.empty")}</div>
+      <div class="oc-settings__field-hint">${t("settings.memory.dreams.emptyHint")}</div>
+      <div class="btn-row">
+        <button type="button" class="btn btn--sm" @click=${() => loadDreams(state, true)}>${t("settings.memory.overview.refresh")}</button>
+      </div>
+    </div>`;
+  }
+
+  const tonight = entries[0];
+  const history = entries.slice(1);
+  const totalPages = Math.max(1, Math.ceil(history.length / DREAM_PAGE_SIZE));
+  const page = Math.min(s.dreamPage, totalPages);
+  const pageEntries = history.slice((page - 1) * DREAM_PAGE_SIZE, page * DREAM_PAGE_SIZE);
+
+  const dreamEntry = (e: DreamListEntry, tonightStyle: boolean) => {
+    const expanded = s.dreamExpandedIndex === e.index;
+    return html`
+      <div class="oc-memory-dream ${tonightStyle ? "oc-memory-dream--tonight" : ""}">
+        <div class="oc-memory-dream__head">
+          <span class="oc-memory-dream__date">${e.dateMs != null
+            ? formatRelativeTimestamp(e.dateMs, { dateFallback: true })
+            : e.dateText}</span>
+          <span class="oc-memory-dream__chars">${t("settings.memory.dreams.chars").replace("{n}", String(e.chars))}</span>
+          <span class="oc-memory-dream__actions">
+            <button type="button" class="btn btn--sm" @click=${() => toggleDreamExpand(state, e.index)}>
+              ${t("settings.memory.dreams.view")}
+            </button>
+            <button type="button" class="btn danger btn--sm" @click=${() => handleDeleteDream(state, e)}>
+              ${t("settings.memory.dreams.delete")}
+            </button>
+          </span>
+        </div>
+        <div class="oc-memory-dream__snippet">${e.snippet}</div>
+        ${expanded ? html`
+          ${s.dreamExpandedLoading
+            ? html`<div class="oc-settings__field-hint">${t("settings.memory.statusLoading")}</div>`
+            : s.dreamExpandedBody
+              ? html`<pre class="oc-memory-dream__body">${s.dreamExpandedBody.body}</pre>`
+              : html`<div class="oc-settings__field-hint">${t("settings.memory.dreams.readFailed")}</div>`}
+        ` : nothing}
+      </div>
+    `;
+  };
+
+  return html`
+    <div class="oc-settings__card">
+      <div class="oc-settings__card-title">${t("settings.memory.dreams.tonightTitle")}</div>
+      <div class="oc-settings__field-hint">${t("settings.memory.dreams.tonightDesc")}</div>
+      ${dreamEntry(tonight, true)}
+    </div>
+    <div class="oc-settings__card">
+      <div class="oc-settings__card-title">${t("settings.memory.dreams.historyTitle")}</div>
+      ${history.length === 0
+        ? html`<div class="oc-settings__field-hint">${t("settings.memory.dreams.historyEmpty")}</div>`
+        : html`
+            ${pageEntries.map(e => dreamEntry(e, false))}
+            ${history.length > DREAM_PAGE_SIZE ? html`
+              <div class="oc-memory-pager">
+                <button type="button" class="btn btn--sm" ?disabled=${page <= 1}
+                  @click=${() => { s.dreamPage = page - 1; state.requestUpdate(); }}>${t("settings.memory.pagerPrev")}</button>
+                <span class="oc-memory-pager__info">${t("settings.memory.pagerInfo")
+                  .replace("{page}", String(page)).replace("{total}", String(totalPages))}</span>
+                <button type="button" class="btn btn--sm" ?disabled=${page >= totalPages}
+                  @click=${() => { s.dreamPage = page + 1; state.requestUpdate(); }}>${t("settings.memory.pagerNext")}</button>
+              </div>` : nothing}
+          `}
+      <div class="btn-row">
+        <button type="button" class="btn btn--sm" ?disabled=${s.dreamLoading}
+          @click=${() => loadDreams(state, true)}>${t("settings.memory.overview.refresh")}</button>
+      </div>
+    </div>
+  `;
+}
+
+/* ── 设置分页（R85/R86 卡片原样保留） ── */
 
 // 主卡：会话记忆 + 智能联想合并。两个大白话开关置顶；
 // Kimi 一键紧随其后；全部技术参数（provider/model/阈值/来源/归档）收进「高级设置」。
@@ -579,42 +1162,19 @@ function renderActiveMemoryCard(state: AppViewState) {
   );
 }
 
-/* ── 运行状态卡 ── */
-
-function renderStatusRow(label: string, value: unknown) {
+function renderSettingsTab(state: AppViewState) {
   return html`
-    <div class="oc-memory-status-row">
-      <span class="oc-memory-status-row__label">${label}</span>
-      <span class="oc-memory-status-row__value">${value == null || value === "" ? "—" : String(value)}</span>
+    ${renderMainMemoryCard(state)}
+    ${renderDreamingCard(state)}
+    ${renderCitationsCard(state)}
+    ${renderActiveMemoryCard(state)}
+    <div class="btn-row">
+      <button class="btn primary" ?disabled=${s.saving} @click=${() => handleSave(state)}>${t("settings.save")}</button>
     </div>
   `;
 }
 
-function renderMemoryStatus() {
-  if (s.statusLoading && !s.statusLoaded) {
-    return html`<div class="oc-settings__field-hint">${t("settings.memory.statusLoading")}</div>`;
-  }
-  // 未连接 / RPC 失败 / 内核无记忆后端，统一降级为一行提示。
-  if (s.statusFailed || !s.memoryStatus) {
-    return html`<div class="oc-settings__field-hint">${t("settings.memory.statusUnavailable")}</div>`;
-  }
-  const ms = s.memoryStatus;
-  const embedding = ms.embedding;
-  const embeddingText = embedding?.ok
-    ? t("settings.memory.embeddingEnabled")
-    : `${t("settings.memory.statusEmbeddingUnavailable")}${embedding?.error ? ` (${embedding.error})` : ""}`;
-  const dreaming = ms.dreaming;
-  return html`
-    ${ms.provider ? renderStatusRow(t("settings.memory.statusBackend"), ms.provider) : nothing}
-    ${renderStatusRow(t("settings.memory.statusEmbedding"), embeddingText)}
-    ${dreaming ? html`
-      ${renderStatusRow(t("settings.memory.statusShortTerm"), dreaming.shortTermCount)}
-      ${renderStatusRow(t("settings.memory.statusSignals"), dreaming.totalSignalCount)}
-      ${renderStatusRow(t("settings.memory.statusPromoted"),
-        dreaming.promotedToday ? `${dreaming.promotedTotal ?? 0} (+${dreaming.promotedToday})` : dreaming.promotedTotal)}
-    ` : nothing}
-  `;
-}
+/* ── 页面入口 ── */
 
 export function resetMemoryTab() { resetMemoryState(); }
 
@@ -628,28 +1188,44 @@ export function renderTabMemory(state: AppViewState) {
     loadMemoryStatus(s, state, () => state.requestUpdate());
   }
 
+  // 概览统计要 workspace/梦境计数；记忆/梦境分页各自懒加载。
+  // 失败后（wsFailed/dreamFailed）不再由渲染路径自动重试，避免无限 IPC 循环，
+  // 交给失败卡片上的刷新按钮手动重试。
+  if (s.subtab === "overview" || s.subtab === "memories") {
+    if (!s.wsLoaded && !s.wsLoading && !s.wsFailed) loadWorkspaceList(state);
+  }
+  if (s.subtab === "overview" || s.subtab === "dreams") {
+    if (!s.dreamList && !s.dreamLoading && !s.dreamFailed) loadDreams(state);
+  }
+
+  const subtabs: Array<{ id: MemorySubTab; key: string }> = [
+    { id: "overview", key: "settings.memory.subtabOverview" },
+    { id: "memories", key: "settings.memory.subtabMemories" },
+    { id: "dreams", key: "settings.memory.subtabDreams" },
+    { id: "settings", key: "settings.memory.subtabSettings" },
+  ];
+
   return html`
     <div class="oc-settings__section">
       <h2 class="oc-settings__section-title">${t("settings.memory.title")}</h2>
       <p class="oc-settings__page-desc">${t("settings.memory.desc")}</p>
 
-      ${renderMainMemoryCard(state)}
-      ${renderDreamingCard(state)}
-      ${renderCitationsCard(state)}
-      ${renderActiveMemoryCard(state)}
-
-      <div class="oc-settings__card">
-        <div class="oc-settings__card-title">${t("settings.memory.statusTitle")}</div>
-        ${renderMemoryStatus()}
+      <div class="oc-memory-subtabs" role="tablist">
+        ${subtabs.map(tb => html`
+          <button type="button" role="tab" class="oc-memory-subtabs__btn"
+            aria-selected=${s.subtab === tb.id ? "true" : "false"}
+            @click=${() => { s.subtab = tb.id; state.requestUpdate(); }}>${t(tb.key)}</button>
+        `)}
       </div>
+
+      ${s.subtab === "overview" ? renderOverviewTab(state) : nothing}
+      ${s.subtab === "memories" ? renderMemoriesTab(state) : nothing}
+      ${s.subtab === "dreams" ? renderDreamsTab(state) : nothing}
+      ${s.subtab === "settings" ? renderSettingsTab(state) : nothing}
 
       <oc-message-box .message=${s.error ?? ""} .type=${"error"} .visible=${!!s.error}></oc-message-box>
       <oc-message-box .message=${s.successMsg ?? ""} .type=${"success"} .visible=${!!s.successMsg}></oc-message-box>
       ${s.hint ? html`<div class="oc-settings__field-hint">${s.hint}</div>` : nothing}
-
-      <div class="btn-row">
-        <button class="btn primary" ?disabled=${s.saving} @click=${() => handleSave(state)}>${t("settings.save")}</button>
-      </div>
     </div>
   `;
 }

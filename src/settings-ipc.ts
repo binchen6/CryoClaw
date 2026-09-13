@@ -11,6 +11,7 @@
  *   cli.ts        openclaw CLI 集成
  *   backup.ts     配置备份 / 状态导入导出 / 恢复出厂
  *   about.ts      版本 / 环境信息
+ *   memory.ts     记忆工作区数据 + memory CLI 桥（召回测试 / 索引重建 / 梦境删除）
  */
 import type { SettingsIpcOptions } from "./settings/types";
 import { registerVerifyIpc } from "./settings/verify";
@@ -23,6 +24,7 @@ import { registerAdvancedIpc } from "./settings/advanced";
 import { registerCliIpc } from "./settings/cli";
 import { registerBackupIpc } from "./settings/backup";
 import { registerAboutIpc } from "./settings/about";
+import { registerMemoryIpc } from "./settings/memory";
 
 export type { SettingsIpcOptions } from "./settings/types";
 
@@ -38,4 +40,5 @@ export function registerSettingsIpc(opts: SettingsIpcOptions): void {
   registerCliIpc();
   registerBackupIpc(opts);
   registerAboutIpc();
+  registerMemoryIpc();
 }

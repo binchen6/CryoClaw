@@ -21,6 +21,7 @@ const VITEST_FILES = new Set([
   "openclaw-state-archive",
   "openclaw-state-import-lifecycle",
   "analytics",
+  "memory-workspace",
 ]);
 
 const root = resolve(__dirname, "..");

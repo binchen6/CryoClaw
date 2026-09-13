@@ -42,7 +42,7 @@ cryoclaw/
 │   ├── window.ts           # BrowserWindow lifecycle, token injection, retry
 │   ├── window-close-policy.ts  # Close behavior: hide vs destroy
 │   ├── tray.ts             # System tray icon + i18n context menu
-│   ├── preload.ts          # contextBridge IPC whitelist (111 methods + 6 listeners)
+│   ├── preload.ts          # contextBridge IPC whitelist (120 methods + 6 listeners)
 │   ├── provider-config.ts  # Provider presets, verification, config R/W
 │   ├── setup-ipc.ts        # Setup validation + config write + CLI install
 │   ├── setup-completion.ts # Setup wizard completion detection

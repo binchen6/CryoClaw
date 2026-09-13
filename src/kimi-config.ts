@@ -116,9 +116,29 @@ export function saveKimiSearchConfig(
 
 const KIMI_EMBEDDING_MODEL = "bge_m3_embed";
 
-// 将 memorySearch 指向本地 auth proxy（代理注入最新 token，免密钥刷新）
+// 仍指向本地 auth proxy 的 embedding baseUrl 特征（端口可漂移，path 固定 /coding/v1/）
+const LOCAL_PROXY_EMBEDDING_BASE_RE = /^http:\/\/127\.0\.0\.1:\d+\/coding\/v1\/?$/;
+
+// 记忆语义搜索配置是否已由用户填写过（任一 embedding 相关字段存在即视为"已有配置"）
+function hasMemorySearchEmbeddingConfig(ms: any): boolean {
+  return (
+    ms?.enabled !== undefined ||
+    ms?.provider !== undefined ||
+    ms?.model !== undefined ||
+    ms?.remote !== undefined
+  );
+}
+
+// 将 memorySearch 指向本地 auth proxy（代理注入最新 token，免密钥刷新）。
 // 落位随内核版本：2026.8 起正确路径是根级 memory.search（agents.defaults.memorySearch
 // 会被 strict 校验拒绝），旧内核仍是 agents.defaults.memorySearch；版本不可读时按旧路径。
+//
+// 所有权规则（修复"重启后 Embedding 改动被 Kimi 预设回滚"）：
+// - 节点缺失 / 从未配置过 embedding → 首次应用完整 Kimi 预设（首装/向导路径，行为同旧版）；
+// - 仍指向本地代理（baseUrl 命中 LOCAL_PROXY_EMBEDDING_BASE_RE）→ 只把 baseUrl 端口
+//   漂移修正到当前代理端口，enabled/provider/model/apiKey 一律不动（用户可能只换了
+//   embedding 模型但继续走代理，该改动必须保留）；
+// - 指向用户自建端点/其他 provider → 整体不碰，返回 false。
 export function ensureMemorySearchProxyConfig(config: any, proxyPort: number): boolean {
   if (proxyPort <= 0) return false;
 
@@ -130,24 +150,24 @@ export function ensureMemorySearchProxyConfig(config: any, proxyPort: number): b
 
   const expectedBase = `http://127.0.0.1:${proxyPort}/coding/v1/`;
 
-  // 配置未变则跳过写入
-  if (
-    ms.enabled === true &&
-    ms.provider === "openai" &&
-    ms.model === KIMI_EMBEDDING_MODEL &&
-    ms.remote?.baseUrl === expectedBase &&
-    ms.remote?.apiKey === AUTH_PROXY_API_KEY_SENTINEL
-  ) {
-    return false;
+  if (!hasMemorySearchEmbeddingConfig(ms)) {
+    ms.enabled = true;
+    ms.provider = "openai";
+    ms.model = KIMI_EMBEDDING_MODEL;
+    ms.remote ??= {};
+    ms.remote.baseUrl = expectedBase;
+    ms.remote.apiKey = AUTH_PROXY_API_KEY_SENTINEL;
+    return true;
   }
 
-  ms.enabled = true;
-  ms.provider = "openai";
-  ms.model = KIMI_EMBEDDING_MODEL;
-  ms.remote ??= {};
-  ms.remote.baseUrl = expectedBase;
-  ms.remote.apiKey = AUTH_PROXY_API_KEY_SENTINEL;
-  return true;
+  const baseUrl = typeof ms.remote?.baseUrl === "string" ? ms.remote.baseUrl : "";
+  if (LOCAL_PROXY_EMBEDDING_BASE_RE.test(baseUrl)) {
+    if (baseUrl === expectedBase) return false;
+    ms.remote.baseUrl = expectedBase;
+    return true;
+  }
+
+  return false;
 }
 
 // ── 指向本地代理的遗留 provider 自愈 ──
