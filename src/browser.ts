@@ -707,10 +707,10 @@ function preferencesPath(target: BrowserTarget): string {
   );
 }
 
-function securePreferencesPath(target: BrowserTarget): string {
+function securePreferencesPath(target: BrowserTarget, profileSubdir?: string): string {
   return path.join(
     resolveUserDataDir(target),
-    target.profileSubdir,
+    profileSubdir ?? target.profileSubdir,
     "Secure Preferences",
   );
 }
@@ -768,6 +768,62 @@ export async function isExtensionPresentInChrome(
   const entry = (settings as Record<string, unknown>)[extId];
   if (!entry) return false;
   return isExtensionEntryEnabled(entry);
+}
+
+// ── 多 profile 支持（R86）──
+// BROWSER_TARGETS.profileSubdir 固定 "Default"，但相当多用户的常用 profile 是
+// "Profile 1"/"Profile 2"（Chrome 首个非默认 profile 起名规则）。只查 Default 会把
+// 「扩展装在非默认 profile 且已启用」误判为未连接，导致每次启动都弹
+// 「连接你的常用浏览器」pill。profile 目录清单优先读 Local State 的
+// profile.info_cache（Chromium 权威来源），读不到再退化为目录名规则匹配。
+
+/** 列出 target 浏览器用户数据目录下的全部 profile 子目录（至少含默认 profile） */
+export function listProfileSubdirs(target: BrowserTarget): string[] {
+  const userDataDir = resolveUserDataDir(target);
+  try {
+    const localStateRaw = fs.readFileSync(path.join(userDataDir, "Local State"), "utf-8");
+    const cache = (JSON.parse(localStateRaw) as {
+      profile?: { info_cache?: Record<string, unknown> };
+    })?.profile?.info_cache;
+    if (cache && typeof cache === "object") {
+      const keys = Object.keys(cache).filter((k) => k && !k.startsWith("System Profile"));
+      if (keys.length > 0) return keys;
+    }
+  } catch {
+    // Local State 缺失/损坏 → 退化匹配
+  }
+  try {
+    return fs
+      .readdirSync(userDataDir, { withFileTypes: true })
+      .filter((d) => d.isDirectory() && /^(Default|Profile \d+)$/.test(d.name))
+      .map((d) => d.name);
+  } catch {
+    return [target.profileSubdir];
+  }
+}
+
+/**
+ * 扩展是否在 target 浏览器的任意 profile 中「已加载且启用」。
+ * 与 isExtensionPresentInChrome 的区别：后者只查 BROWSER_TARGETS.profileSubdir
+ * （"Default"），本函数覆盖全部 profile（R86 pill 误报修复）。
+ */
+export async function isExtensionPresentInAnyProfile(
+  target: BrowserTarget,
+  extId: string,
+): Promise<boolean> {
+  for (const sub of listProfileSubdirs(target)) {
+    const p = securePreferencesPath(target, sub);
+    try {
+      const sp = JSON.parse(fs.readFileSync(p, "utf-8"));
+      const settings = sp?.extensions?.settings;
+      if (!settings || typeof settings !== "object") continue;
+      const entry = (settings as Record<string, unknown>)[extId];
+      if (entry && isExtensionEntryEnabled(entry)) return true;
+    } catch {
+      // 单个 profile 的 Secure Preferences 缺失/损坏 → 继续下一个
+    }
+  }
+  return false;
 }
 
 // 比 isExtensionPresentInChrome 弱的判断：只看 settings 里有没有 entry，不要求 enabled。

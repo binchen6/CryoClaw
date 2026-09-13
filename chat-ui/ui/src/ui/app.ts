@@ -938,6 +938,12 @@ export class OpenClawApp extends LitElement {
     // 延迟 1.5s 再跑首轮（R77）：needs-repair 检查在主进程侧要拉默认浏览器
     // （reg.exe）+ 扩展状态（tasklist），纯信息性 pill 不值得挤占首屏路径
     window.setTimeout(() => void this.runWebbridgeRepairTick(), 1500);
+    // pill 可见期间的 30s 自愈轮询（R86）：扩展启用/daemon 连接都是外部异步事件
+    // （浏览器启用弹窗、扩展重连），主进程广播覆盖不到全部时机——pill 显示时
+    // 周期复判，消失即停（隐藏态零开销，避免常态 tasklist 枚举）。
+    window.setInterval(() => {
+      if (this.webbridgeRepairVisible) void this.runWebbridgeRepairTick();
+    }, 30_000);
   }
 
   // 主进程通知 webbridge precheck 状态可能已变（setup 后台 task 装完扩展，或 settings 修复完成）

@@ -79,14 +79,17 @@ test("主进程 app-updater.ts：autoDownload=false + 启动检查受暂缓门�
   assert.match(s, /snoozeAppUpdate[\s\S]*?writeSnooze/, "snoozeAppUpdate 应持久化暂缓");
 });
 
-test("主进程 app-updater.ts：换装真静默（/S 零 UI，装完 --force-run 自动拉起）", () => {
+test("主进程 app-updater.ts：换装带可见进度（--updated 自动跳页 + 自动拉起新版）", () => {
   const s = mainSrc("app-updater.ts");
-  // R63：此前无 /S 会弹 NSIS 向导要求用户点击完成；现全程零 UI。
-  // --force-run 是装完自动拉起新版的关键（installSection.nsh：ONE_CLICK + isForceRun → doStartApp），
-  // 顺序无语义约束，但参数三件套缺一不可（gotcha #91 同族：静默开关被吃即回退交互向导）。
-  assert.match(s, /spawn\(installerPath, \["\/S", "--updated", "--force-run"\]/, "spawn 安装器应带 /S 真静默");
+  // R86：弃用 /S 全静默（本机实测静默换装 10.5 分钟零 UI，用户无从判断进度）。
+  // 非 /S + --updated：installer.nsh / 模板 skipPageIfUpdated 把 Welcome/Finish/
+  // 目录/安装模式页全部跳过，只剩单页安装进度窗口；装完 onFinishPagePre 自动
+  // 拉起新版并退出安装器。参数缺一不可：丢 --updated 会回退完整向导。
+  assert.match(s, /spawn\(installerPath, \["--updated", "--force-run"\]/, "spawn 安装器应带 --updated（可见进度换装）");
+  assert.doesNotMatch(s, /spawn\(installerPath, \["\/S"/, "不应再出现 /S 全静默 spawn（零 UI 不可感知）");
   assert.match(s, /quitAndInstall\(true, true\)/, "回退路径应 isSilent=true");
-  assert.doesNotMatch(s, /spawn\(installerPath, \["--updated"/, "不应再出现非静默 spawn 形态");
+  // R86：禁用差分下载（GitHub CDN Range 请求弱网下高失败率，失败即双份流量）
+  assert.match(s, /disableDifferentialDownload = true/, "应禁用差分下载");
 });
 
 test("主进程 about.ts：download/snooze/clear-snooze 通道均校验 sender", () => {

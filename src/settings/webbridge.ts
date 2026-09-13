@@ -27,6 +27,7 @@ import {
   installForDefaultBrowser,
   isBrowserInstalled,
   isExtensionBlocklisted,
+  isExtensionPresentInAnyProfile,
   killBackgroundProcesses,
   type DefaultBrowserResult,
   type ExtensionSpec,
@@ -45,6 +46,7 @@ import { loadRemotePins } from "../webbridge-pins";
 import {
   applyWebbridgeUpdate,
   checkWebbridgeUpdate,
+  fetchWebbridgeDaemonStatus,
   getWebbridgeVersionStatus,
   runWebbridgeExclusive,
   WebbridgeBusyError,
@@ -289,20 +291,32 @@ export function registerWebbridgeIpc(opts: SettingsIpcOptions): void {  // ─�
   //   - settings 高级页面也不应报"需要修复"（已通过 precheck 简化处理）
   // 退化场景（默认浏览器变成非 Chrome/Edge、binary/skill 被人删了）罕见，pill 隐藏即可——
   // settings 高级页面会通过另一条 precheck 路径暴露这些真坏的状态。
+  //
+  // R86 误报修复（每次启动都弹 pill / 偶发连不上）：
+  //   1. daemon /status 的 extension_version 非空 = 扩展此刻真实连着 daemon——
+  //      这是最权威的「已连接」信号，直接判不可见（Secure Preferences 是磁盘快照，
+  //      浏览器运行期间懒刷新，按它判定会误报）
+  //   2. 磁盘判定升级为全 profile 扫描（isExtensionPresentInAnyProfile）——
+  //      常用 profile 是 "Profile 1/2" 的用户以前永远判 false
   ipcMain.handle("settings:webbridge-needs-repair", async (event) => {
     if (!assertTrustedIpcSender(event, "settings:webbridge-needs-repair")) throw new Error("IPC sender not trusted");
     try {
       if (getCurrentBrowserMode() !== "webbridge") {
         return { success: true, data: { visible: false, defaultBrowser: null } };
       }
+      // 活连接短路：daemon 上报扩展版本 = 扩展已启用并连接，无论磁盘状态如何
+      const daemon = await fetchWebbridgeDaemonStatus({ dataDir: resolveWebbridgeDataDir() });
+      if (daemon?.extensionVersion) {
+        return { success: true, data: { visible: false, defaultBrowser: null } };
+      }
       // pill 可见性 = CryoClaw 组件是否健康 + 用户是否真的启用了扩展
       //   1) 三组件（binary/skill/extension）任一缺 → pill 显示让用户修
-      //   2) 三组件都健康但 presentInChrome=false（用户没在浏览器点"启用扩展"）→ pill 仍显示
+      //   2) 三组件都健康但扩展未启用（用户没在浏览器点"启用扩展"）→ pill 仍显示
       //      —— External JSON 写完只是"我们这边装好了"，必须等用户在浏览器里启用才算真正连接
       const extId = readWebbridgeExtensionId();
       // 单一默认浏览器策略：先解析默认浏览器，precheck 与后续状态查询都只对默认浏览器
       // 查进程（与 settings:webbridge-status 同策略，避免 Win 下 tasklist 被 Defender
-      // 实时扫描拖慢、每 30s pill 轮询多花 2 次进程枚举）。
+      // 实时扫描拖慢、pill 判定多花 2 次进程枚举）。
       const def = await getDefaultBrowser();
       const pre = await getWebbridgePrecheck({
         binaryPath: resolveWebbridgeBinaryPath(),
@@ -323,17 +337,16 @@ export function registerWebbridgeIpc(opts: SettingsIpcOptions): void {  // ─�
           data: { visible: true, defaultBrowser: pre.defaultBrowser },
         };
       }
-      // 三组件健康——再看用户是否真的启用了扩展
+      // 三组件健康——再看用户是否真的启用了扩展（全 profile）
       const defBrowser = pre.defaultBrowser;
       if (!defBrowser || !extId) {
         return { success: true, data: { visible: false, defaultBrowser: defBrowser } };
       }
-      const states = await getExtensionStates(specFromExtId(extId), {
-        processExec: DEFAULT_PROCESS_EXEC,
-        processCheckBrowserId: defBrowser.id,
-      });
-      const enabled = states.find((s) => s.browserId === defBrowser.id)
-        ?.presentInChrome === true;
+      const defTarget = BROWSER_TARGETS.find((t) => t.id === defBrowser.id);
+      if (!defTarget) {
+        return { success: true, data: { visible: false, defaultBrowser: defBrowser } };
+      }
+      const enabled = await isExtensionPresentInAnyProfile(defTarget, extId);
       return {
         success: true,
         data: { visible: !enabled, defaultBrowser: defBrowser },
@@ -342,11 +355,20 @@ export function registerWebbridgeIpc(opts: SettingsIpcOptions): void {  // ─�
       // 异常吞没问题（R79 修复）：webbridge 模式下 precheck 抛错意味着组件状态
       // 未知——按“可能坏了”处理显示 pill（宁可让用户点一次修复），只在明确
       // 非 webbridge 模式时才隐藏；模式本身读不出来时也倾向显示。
+      // 例外：daemon 活连接可证伪「未连接」——异常态下也不再打扰已连通的用户。
       let visible = true;
       try {
         visible = detectBrowserMode(readUserConfig()) === "webbridge";
       } catch {
         visible = true;
+      }
+      if (visible) {
+        try {
+          const daemon = await fetchWebbridgeDaemonStatus({ dataDir: resolveWebbridgeDataDir() });
+          if (daemon?.extensionVersion) visible = false;
+        } catch {
+          // daemon 探测失败维持原判定
+        }
       }
       return {
         success: true,
@@ -459,13 +481,11 @@ export function registerWebbridgeIpc(opts: SettingsIpcOptions): void {  // ─�
       const pre = await runDefaultBrowserPrecheck(def, extId, binaryPath);
 
       if (pre.ok) {
-        // 三组件都健康——再看用户是否真的启用了扩展
-        const states = await getExtensionStates(specFromExtId(extId), {
-          processExec: DEFAULT_PROCESS_EXEC,
-          processCheckBrowserId: def.target.id,
-        });
-        const enabled = states.find((s) => s.browserId === def.target.id)
-          ?.presentInChrome === true;
+        // 三组件都健康——再看用户是否真的启用了扩展（全 profile，与 needs-repair
+        // 同口径：常用 profile 是 "Profile 1/2" 的用户不能只看 Default）
+        const enabled = extId
+          ? await isExtensionPresentInAnyProfile(def.target, extId)
+          : false;
         if (enabled) {
           return { success: true, code: "ALREADY_OK" };
         }

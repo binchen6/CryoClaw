@@ -90,6 +90,8 @@ const ZH_ENGLISH_ALLOWLIST = new Set([
   "settings.channels.qqbot.appId",
   "settings.channels.qqbot.clientSecret",
   "setup.provider.apiKey",
+  // 记忆设置：API Key 为通用技术名词（与 setup.provider.apiKey 同族）
+  "settings.memory.search.apiKey",
   "setup.provider.label.moonshot",
   "setup.provider.label.anthropic",
   "setup.provider.label.openai",

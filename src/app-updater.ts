@@ -86,6 +86,13 @@ export function getAppUpdateState(): AppUpdateState {
 /** 触发一次检查；失败只记日志，error 事件负责推进状态机。 */
 export function checkAppUpdate(): void {
   if (!state.supported) return;
+  // 下载中/已下载时拒绝并发检查：checkForUpdates 会重发 update-available 把
+  // 状态机打回 available，清掉进行中的进度（R86 实测：下载启动 100ms 后一次
+  // 渲染层 check 请求把进度条打断，用户误以为下载卡死而重启应用）。
+  if (state.status === "downloading" || state.status === "downloaded") {
+    log.info(`[app-updater] 当前状态为 ${state.status}，忽略并发检查请求`);
+    return;
+  }
   void autoUpdater.checkForUpdates().catch((err) => {
     log.warn(`[app-updater] 检查更新失败: ${formatUpdaterError(err)}`);
     // checkForUpdates 直接 reject 时 error 事件可能未触发，兜底推进状态机保证可重试
@@ -99,6 +106,10 @@ export function downloadAppUpdate(): void {
     throw new Error("当前没有可下载的更新");
   }
   log.info(`[app-updater] 用户确认下载更新 ${state.version}`);
+  // 立即推进到 downloading（进度 0%）：electron-updater 首个 download-progress
+  // 事件前有数秒静默期（latest.yml 解析、缓存目录清理、连接建立），期间弹窗
+  // 若停在 available 态，用户看不到任何下载迹象（R86 实测差分路径静默 6s+）。
+  publish({ type: "download-start" });
   void autoUpdater.downloadUpdate().catch((err) => {
     log.warn(`[app-updater] 下载更新失败: ${formatUpdaterError(err)}`);
     publish({ type: "error", message: formatUpdaterError(err) });
@@ -158,15 +169,19 @@ export function quitAndInstallAppUpdate(): void {
   // 实测发现 electron-updater 内部 spawn 的 NSIS 安装器在真实 app 上下文中
   // 会于 ~37s 后静默死亡（uninstall/copy 阶段之前），而手动 spawn
   // （detached + stdio:ignore + unref）同参数同 exe 换装全部成功。
-  // /S 真静默（R63：此前无 /S 会弹安装器向导要求用户点击）：
-  // customInit 杀进程、customInstallMode 复用安装模式在 /S 下照常执行，
-  // --force-run 装完自动拉起新版（installSection.nsh：ONE_CLICK + isForceRun），
-  // 全程零 UI；appRunning/appCannotBeClosed 弹窗均带 /SD 旗标，静默不阻塞。
+  // 非 /S 模式：安装器只显示单页安装进度窗口（更新场景 Welcome/Finish/目录/
+  //   安装模式页均被 installer.nsh / 模板 skipPageIfUpdated 跳过，装完由
+  //   onFinishPagePre 自动拉起新版并退出）。R63 的「无 /S 弹向导要求点击」
+  //   发生在这些跳页宏补齐之前，现已不成立。
+  // R86 弃用 /S 全静默：静默换装在本机实测耗时 10.5 分钟且零 UI，用户无从
+  //   判断进度，误以为更新器卡死未退出；可见进度窗口让等待可感知。
+  // customInit 杀进程、customInstallMode 复用安装模式在更新模式下照常执行，
+  //   appRunning/appCannotBeClosed 弹窗均带 /SD 旗标兜底。
   const installerPath = getPendingInstallerPath();
   if (installerPath) {
-    log.info(`[app-updater] 启动静默安装器: ${installerPath}`);
+    log.info(`[app-updater] 启动安装器（带进度窗口）: ${installerPath}`);
     try {
-      const child = spawn(installerPath, ["/S", "--updated", "--force-run"], {
+      const child = spawn(installerPath, ["--updated", "--force-run"], {
         detached: true,
         stdio: "ignore",
       });
@@ -175,6 +190,7 @@ export function quitAndInstallAppUpdate(): void {
       app.quit();
       return;
     } catch (err) {
+      installInFlight = false;
       log.warn(`[app-updater] 自启动安装器失败，回退 quitAndInstall: ${formatUpdaterError(err)}`);
     }
   } else {
@@ -206,6 +222,13 @@ export function initAppUpdater(deps: Deps): void {
   autoUpdater.autoInstallOnAppQuit = false;
   // 不使用 web installer（静默 NSIS 换装），消除 electron-updater 启动警告
   autoUpdater.disableWebInstaller = true;
+  // 禁用差分（blockmap）下载：GitHub Releases CDN 的分段 Range 请求在弱网下
+  // 极不稳定——R86 实测两次差分分别以 ERR_CONNECTION_RESET 和 sha512 校验
+  // 不匹配告终，且每次失败都已付出几十 MB 流量才回退全量（76MB 差分 + 193MB
+  // 全量双份代价）。全量单连接下载本身支持断点续传，进度事件也更平滑
+  // （差分在本地复制旧块阶段不发任何进度）。安装器仍照常发布 .blockmap，
+  // 不影响其他渠道。
+  autoUpdater.disableDifferentialDownload = true;
   // 内部日志转发到 app.log
   autoUpdater.logger = {
     info: (msg) => log.info(`[app-updater] ${msg}`),

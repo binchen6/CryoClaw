@@ -203,3 +203,41 @@ test("[mac] isExtensionPresentInChrome: disable_reasons=[] → true，非空数�
   write([]); assert.equal(await isExtensionPresentInChrome(chrome, EXT), true);
   write(["user_action"]); assert.equal(await isExtensionPresentInChrome(chrome, EXT), false);
 }));
+
+// ── R86：多 profile 扫描（pill 每次启动误报的根因修复）──
+import { isExtensionPresentInAnyProfile, listProfileSubdirs } from "./browser";
+
+function writeSecurePrefs(profileDir: string, entry: unknown) {
+  fs.mkdirSync(profileDir, { recursive: true });
+  fs.writeFileSync(path.join(profileDir, "Secure Preferences"), JSON.stringify({ extensions: { settings: { [EXT]: entry } } }));
+}
+
+test("listProfileSubdirs: Local State info_cache 优先；缺失时退化为目录名规则；兜底 Default", withFakeHome((home) => {
+  const ud = path.join(home, chrome.userDataDirWin);
+  // 1) 无任何数据 → 兜底 ["Default"]
+  assert.deepEqual(listProfileSubdirs(chrome), ["Default"]);
+  // 2) 只有目录（无 Local State）→ 正则匹配 Default / Profile N
+  fs.mkdirSync(path.join(ud, "Default"), { recursive: true });
+  fs.mkdirSync(path.join(ud, "Profile 1"), { recursive: true });
+  fs.mkdirSync(path.join(ud, "System Profile"), { recursive: true });
+  fs.mkdirSync(path.join(ud, "NotAProfile"), { recursive: true });
+  assert.deepEqual(listProfileSubdirs(chrome).sort(), ["Default", "Profile 1"]);
+  // 3) Local State info_cache 是权威来源（含未按规则命名的自定义目录）
+  fs.writeFileSync(path.join(ud, "Local State"), JSON.stringify({
+    profile: { info_cache: { "Default": {}, "Profile 9": {}, "Custom Dir": {} } },
+  }));
+  assert.deepEqual(listProfileSubdirs(chrome).sort(), ["Custom Dir", "Default", "Profile 9"]);
+}));
+
+test("isExtensionPresentInAnyProfile: 扩展装在非 Default profile 也能判定启用", withFakeHome(async (home) => {
+  const ud = path.join(home, chrome.userDataDirWin);
+  // Default 无扩展条目；Profile 1 里已启用 → true（旧 isExtensionPresentInChrome 会漏判）
+  fs.mkdirSync(path.join(ud, "Default"), { recursive: true });
+  fs.writeFileSync(path.join(ud, "Default", "Secure Preferences"), JSON.stringify({ extensions: { settings: {} } }));
+  writeSecurePrefs(path.join(ud, "Profile 1"), { disable_reasons: [] });
+  assert.equal(await isExtensionPresentInChrome(chrome, EXT), false, "旧实现只看 Default");
+  assert.equal(await isExtensionPresentInAnyProfile(chrome, EXT), true, "新实现覆盖全部 profile");
+  // 全部 disabled → false
+  writeSecurePrefs(path.join(ud, "Profile 1"), { disable_reasons: ["user_action"] });
+  assert.equal(await isExtensionPresentInAnyProfile(chrome, EXT), false);
+}));

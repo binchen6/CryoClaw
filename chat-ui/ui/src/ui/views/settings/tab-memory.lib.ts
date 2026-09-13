@@ -28,7 +28,9 @@ export type MemorySearchSource = "memory" | "sessions";
 export type DreamingStorageMode = "inline" | "separate" | "both";
 export type ActiveMemoryMode = "escalate" | "always" | "off";
 
-/** memory.search.provider 白名单（"none" = 禁用 embedding，仅关键词检索） */
+/** memory.search.provider 白名单（"none" = 禁用 embedding，仅关键词检索）。
+ *  此外内核接受任意 openai-compatible 的 models.providers key 作为 provider
+ *  （baseUrl 自动回落该 provider 配置），UI 层下拉据此追加「已配置的服务商」。 */
 export const MEMORY_SEARCH_PROVIDERS = [
   "openai", "openai-compatible", "gemini", "voyage", "mistral", "bedrock",
   "deepinfra", "github-copilot", "lmstudio", "ollama", "local", "none",
@@ -57,11 +59,23 @@ export interface SessionMemoryView {
 
 export interface MemorySearchView {
   enabled: boolean;
-  provider: MemorySearchProvider;
+  /** 内置白名单值，或任意 openai-compatible 的 models.providers key */
+  provider: string;
   /** embedding 模型名；空 = 未配置 */
   model: string;
   /** memory.search.remote.baseUrl（仅展示；显式输入或 Kimi 一键时才写回） */
   baseUrl: string;
+  /**
+   * memory.search.remote.apiKey 现值（config.get 脱敏快照里的原样值，可能是
+   * __OPENCLAW_REDACTED__ 哨兵或 proxy-managed 占位）。仅供 UI 判断「已设置」，
+   * 保存语义见 apiKeyInput。
+   */
+  apiKey: string;
+  /**
+   * apiKey 保存语义：null = 不改动（透传 draft 里的现值，脱敏哨兵由内核还原）；
+   * "" = 清除；非空 = 写入新值。
+   */
+  apiKeyInput: string | null;
   rememberAcrossConversations: boolean;
   sources: MemorySearchSource[];
   maxResults: number;
@@ -117,11 +131,12 @@ function normalizeCitationMode(value: unknown): MemoryCitationMode {
   return value === "on" || value === "off" ? value : "auto";
 }
 
-function normalizeProvider(value: unknown): MemorySearchProvider {
+function normalizeProvider(value: unknown): string {
+  // 白名单值原样放行；其他非空值视为 openai-compatible 的 models.providers key
+  // （内核 isOpenAICompatibleMemoryProvider 解析），避免把用户选的自定义服务商
+  // 静默归一成 openai；仅空值/非字符串回落默认
   const v = String(value ?? "").trim();
-  return (MEMORY_SEARCH_PROVIDERS as readonly string[]).includes(v)
-    ? (v as MemorySearchProvider)
-    : MEMORY_SEARCH_DEFAULTS.provider;
+  return v || MEMORY_SEARCH_DEFAULTS.provider;
 }
 
 function normalizeSources(value: unknown): MemorySearchSource[] {
@@ -210,6 +225,8 @@ export function extractMemoryView(
     provider: normalizeProvider(ms.provider),
     model: normalizeString(ms.model),
     baseUrl: typeof remote.baseUrl === "string" ? remote.baseUrl : "",
+    apiKey: typeof remote.apiKey === "string" ? remote.apiKey : "",
+    apiKeyInput: null,
     rememberAcrossConversations: ms.rememberAcrossConversations === true,
     sources: normalizeSources(ms.sources),
     maxResults: normalizeNumber(ms.query && isRecord(ms.query) ? (ms.query as Record<string, unknown>).maxResults : undefined,
@@ -311,11 +328,27 @@ export function applyMemorySave(
     const model = view.search.model.trim();
     if (model) search.model = model;
     else delete search.model;
-    // remote.baseUrl 仅在用户显式输入时写回；清空 = 移除自定义端点（回落 provider 默认）
-    if (view.search.baseUrl.trim()) {
-      ensureRecord(search, "remote").baseUrl = view.search.baseUrl.trim();
-    } else if (isRecord(search.remote)) {
-      delete (search.remote as Record<string, unknown>).baseUrl;
+    // remote 三段语义（baseUrl / apiKey / 其他 headers 等未知字段原样保留）：
+    // - baseUrl：显式输入才写回；清空 = 移除自定义端点（回落 provider 默认）
+    // - apiKeyInput：null 不改动（draft 里的脱敏哨兵透传，内核写侧自动还原）；
+    //   "" 清除；非空写入。openai-compatible 提供商（含 models.providers key）
+    //   内核侧 key 可选——未填时回落该 provider 自身的鉴权配置
+    const baseUrl = view.search.baseUrl.trim();
+    const apiKeyInput = view.search.apiKeyInput;
+    const existingRemote = isRecord(search.remote)
+      ? (search.remote as Record<string, unknown>)
+      : null;
+    if (baseUrl || apiKeyInput != null || existingRemote) {
+      const remote: Record<string, unknown> = existingRemote ? { ...existingRemote } : {};
+      if (baseUrl) remote.baseUrl = baseUrl;
+      else delete remote.baseUrl;
+      if (apiKeyInput != null) {
+        const key = apiKeyInput.trim();
+        if (key) remote.apiKey = key;
+        else delete remote.apiKey;
+      }
+      if (Object.keys(remote).length > 0) search.remote = remote;
+      else if (existingRemote) delete search.remote;
     }
   }
   search.rememberAcrossConversations = view.search.rememberAcrossConversations === true;

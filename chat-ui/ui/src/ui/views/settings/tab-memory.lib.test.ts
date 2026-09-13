@@ -175,6 +175,70 @@ function testApplyManualProviderKeepsUserValues() {
   assert.equal(ms.query.minScore, 0.6);
 }
 
+function testApplyApiKeyThreeState() {
+  // 1) apiKeyInput=null：不改动——draft 里已有 key（含脱敏哨兵）原样透传
+  const draft1: Record<string, unknown> = {
+    memory: { search: { remote: { apiKey: "__OPENCLAW_REDACTED__", baseUrl: "http://x/v1" } } },
+  };
+  const view1 = baseView();
+  view1.search.baseUrl = "http://y/v1";
+  applyMemorySave(draft1, view1);
+  const r1 = (draft1.memory as any).search.remote;
+  assert.equal(r1.apiKey, "__OPENCLAW_REDACTED__", "apiKeyInput=null 时哨兵透传（内核写侧还原）");
+  assert.equal(r1.baseUrl, "http://y/v1");
+
+  // 2) apiKeyInput 非空：写入新值
+  const draft2: Record<string, unknown> = {};
+  const view2 = baseView();
+  view2.search.apiKeyInput = "sk-new";
+  applyMemorySave(draft2, view2);
+  assert.equal((draft2.memory as any).search.remote.apiKey, "sk-new");
+
+  // 3) apiKeyInput=""：清除已有 key；baseUrl 也为空时 remote 整体移除（不残留空对象）
+  const draft3: Record<string, unknown> = {
+    memory: { search: { remote: { apiKey: "__OPENCLAW_REDACTED__", baseUrl: "http://x/v1" } } },
+  };
+  const view3 = baseView();
+  view3.search.apiKeyInput = "";
+  applyMemorySave(draft3, view3);
+  assert.equal((draft3.memory as any).search.remote, undefined, "remote 清空后整体移除");
+
+  // 3b) apiKeyInput="" 但保留 baseUrl：只清 key，不动其他字段
+  const draft3b: Record<string, unknown> = {
+    memory: { search: { remote: { apiKey: "__OPENCLAW_REDACTED__", baseUrl: "http://x/v1", headers: { a: "1" } } } },
+  };
+  const view3b = baseView();
+  view3b.search.apiKeyInput = "";
+  view3b.search.baseUrl = "http://x/v1";
+  applyMemorySave(draft3b, view3b);
+  const r3b = (draft3b.memory as any).search.remote;
+  assert.equal("apiKey" in r3b, false, "apiKeyInput='' 清除 apiKey");
+  assert.equal(r3b.baseUrl, "http://x/v1", "baseUrl 不受影响");
+  assert.deepEqual(r3b.headers, { a: "1" }, "未知字段保留");
+}
+
+function testApplyCustomProviderKeyPassthrough() {
+  // provider = models.providers key（如 deepseek）：原样写入，不归一成 openai
+  const draft: Record<string, unknown> = {};
+  const view = baseView();
+  view.search.provider = "deepseek";
+  view.search.model = "bge-m3";
+  view.search.apiKeyInput = "sk-x";
+  applyMemorySave(draft, view);
+  const ms = (draft.memory as any).search;
+  assert.equal(ms.provider, "deepseek");
+  assert.equal(ms.remote.apiKey, "sk-x");
+}
+
+function testExtractCustomProviderAndApiKey() {
+  const view = extractMemoryView({
+    memory: { search: { provider: "deepseek", remote: { apiKey: "__OPENCLAW_REDACTED__" } } },
+  } as any);
+  assert.equal(view.search.provider, "deepseek", "自定义 provider key 提取时不被归一");
+  assert.equal(view.search.apiKey, "__OPENCLAW_REDACTED__");
+  assert.equal(view.search.apiKeyInput, null);
+}
+
 function testApplyEmptyBaseUrlAndModelClearFields() {
   const draft: Record<string, unknown> = {
     memory: { search: { provider: "openai", model: "old-model", remote: { baseUrl: "http://old/v1" } } },
@@ -185,7 +249,7 @@ function testApplyEmptyBaseUrlAndModelClearFields() {
   applyMemorySave(draft, view);
   const ms = (draft.memory as any).search;
   assert.equal("model" in ms, false, "空 model 删除字段");
-  assert.equal("baseUrl" in ms.remote, false, "空 baseUrl 删除字段");
+  assert.equal(ms.remote, undefined, "空 baseUrl + 无其他 remote 字段时整体移除（R86：不再残留空对象）");
 }
 
 function testApplyDisabledSearchKeepsEmbeddingConfig() {
@@ -346,6 +410,9 @@ function main() {
   testApplyKimiProxyInjection();
   testApplyKimiProxyMergesExistingRemote();
   testApplyManualProviderKeepsUserValues();
+  testApplyApiKeyThreeState();
+  testApplyCustomProviderKeyPassthrough();
+  testExtractCustomProviderAndApiKey();
   testApplyEmptyBaseUrlAndModelClearFields();
   testApplyDisabledSearchKeepsEmbeddingConfig();
   testApplySessionMemoryPassthrough();

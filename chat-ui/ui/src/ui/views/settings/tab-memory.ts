@@ -20,6 +20,9 @@ import { loadMemoryStatus, type MemoryStatus } from "../../controllers/memory.ts
 import { t, tWithDetail } from "../../i18n.ts";
 import * as ipc from "../../data/ipc-bridge.ts";
 import { getConfigSnapshot, getCachedConfigSnapshot } from "../../controllers/config.ts";
+import { renderModelOptionsGrouped } from "../../components/model-options.ts";
+import { loadModelOrg } from "./model-org.lib.ts";
+import type { ConfiguredModel } from "../../ui-types.ts";
 import "../../components/toggle-switch.ts";
 import "../../components/message-box.ts";
 import { runConfigPatch } from "./tab-patch.ts";
@@ -45,6 +48,11 @@ function createMemoryState() {
     msProvider: "openai" as string,
     msModel: "",
     msBaseUrl: "",
+    // apiKey：msApiKey 只存用户输入（未触碰为空串）；msApiKeyHas = 配置里已有密钥
+    // （脱敏快照回传哨兵/占位）；msApiKeyClear = 用户显式要求清除已保存密钥
+    msApiKey: "",
+    msApiKeyHas: false,
+    msApiKeyClear: false,
     msRemember: false,
     msSources: ["memory"] as MemorySearchSource[],
     msMaxResults: String(MEMORY_SEARCH_DEFAULTS.maxResults),
@@ -98,6 +106,9 @@ function applyViewToState(view: MemorySettingsView) {
   s.msProvider = view.search.provider;
   s.msModel = view.search.model;
   s.msBaseUrl = view.search.baseUrl;
+  s.msApiKey = "";
+  s.msApiKeyHas = view.search.apiKey.length > 0;
+  s.msApiKeyClear = false;
   s.msRemember = view.search.rememberAcrossConversations;
   s.msSources = [...view.search.sources];
   s.msMaxResults = String(view.search.maxResults);
@@ -143,9 +154,12 @@ function buildSaveView(): MemorySettingsView {
   };
   view.search = {
     enabled: s.msEnabled,
-    provider: s.msProvider as MemorySettingsView["search"]["provider"],
+    provider: s.msProvider,
     model: s.msModel,
     baseUrl: s.msBaseUrl,
+    // 三态：显式清除 > 新输入 > 不改动（null，draft 现值透传）
+    apiKeyInput: s.msApiKeyClear ? "" : (s.msApiKey.trim() || null),
+    apiKey: "",
     rememberAcrossConversations: s.msRemember,
     sources: s.msSources.length > 0 ? s.msSources : ["memory"],
     maxResults: parseNumberOr(s.msMaxResults, MEMORY_SEARCH_DEFAULTS.maxResults),
@@ -239,6 +253,117 @@ function textField(label: string, value: string, onInput: (v: string) => void, o
   `;
 }
 
+/**
+ * 已配置的服务商（models.providers）里可作联想服务的 key：
+ * 内核 isOpenAICompatibleMemoryProvider 只接受 api=openai-completions/openai-responses
+ * 或带 baseUrl 的 provider key，其余（如 anthropic）选了也无法工作——过滤掉。
+ * 与内置白名单重名的也排除（避免下拉重复项）。
+ */
+function customEmbeddingProviderKeys(): string[] {
+  const snap = getCachedConfigSnapshot();
+  const raw = snap?.config as Record<string, unknown> | null | undefined;
+  const providers = raw?.models && typeof raw.models === "object"
+    ? (raw.models as Record<string, unknown>).providers : undefined;
+  if (!providers || typeof providers !== "object" || Array.isArray(providers)) return [];
+  const builtin = new Set<string>(MEMORY_SEARCH_PROVIDERS);
+  return Object.entries(providers as Record<string, unknown>)
+    .filter(([, v]) => {
+      if (!v || typeof v !== "object" || Array.isArray(v)) return false;
+      const p = v as { api?: unknown; baseUrl?: unknown };
+      const api = typeof p.api === "string" ? p.api : "";
+      const hasBaseUrl = typeof p.baseUrl === "string" && p.baseUrl.trim() !== "";
+      return api === "openai-completions" || api === "openai-responses" || hasBaseUrl;
+    })
+    .map(([k]) => k)
+    .filter((k) => !builtin.has(k));
+}
+
+/** 模型下拉：选项为已配置模型（provider/model 组合键），空值 = 跟随默认模型 */
+function modelSelectField(label: string, value: string, models: ConfiguredModel[], onChange: (v: string) => void, opts?: { hint?: string }) {
+  // 当前值不在已配置模型中：先按裸 id / 组合键后缀匹配（R82 及更早保存的是裸 id），
+  // 仍匹配不到则追加为额外选项——避免打开页面即静默改写/丢失存量值
+  const known = models.some(m => m.key === value);
+  const bareMatch = !known && value ? models.find(m => m.key.endsWith(`/${value}`)) : undefined;
+  const selectedKey = known ? value : bareMatch?.key ?? value;
+  const extraOption = !known && !bareMatch && value
+    ? html`<option value=${value} selected>${value}</option>`
+    : nothing;
+  return html`
+    <div class="oc-settings__form-group">
+      <label class="oc-settings__label">${label}</label>
+      <select class="oc-settings__select" .value=${selectedKey}
+        @change=${(e: Event) => { onChange((e.target as HTMLSelectElement).value); }}>
+        <option value="" ?selected=${!selectedKey}>${t("settings.memory.followDefaultModel")}</option>
+        ${renderModelOptionsGrouped(models, loadModelOrg(), selectedKey || undefined)}
+        ${extraOption}
+      </select>
+      ${opts?.hint ? html`<div class="oc-settings__field-hint">${opts.hint}</div>` : nothing}
+    </div>
+  `;
+}
+
+/** 联想服务提供商下拉：内置白名单 + 已配置的服务商（openai-compatible）分组 */
+function customEmbeddingProviders(state: AppViewState, manualEdit: () => void) {
+  const customKeys = customEmbeddingProviderKeys();
+  // 当前值是 provider key 但不在快照里（provider 已被删除等）→ 追加额外选项防丢失
+  const orphan = s.msProvider && !MEMORY_SEARCH_PROVIDERS.includes(s.msProvider as never)
+    && !customKeys.includes(s.msProvider)
+    ? html`<option value=${s.msProvider} selected>${s.msProvider}</option>`
+    : nothing;
+  return html`
+    <div class="oc-settings__form-group">
+      <label class="oc-settings__label">${t("settings.memory.search.provider")}</label>
+      <select class="oc-settings__select" .value=${s.msProvider}
+        @change=${(e: Event) => { s.msProvider = (e.target as HTMLSelectElement).value; manualEdit(); state.requestUpdate(); }}>
+        ${MEMORY_SEARCH_PROVIDERS.map(p => html`<option value=${p} ?selected=${p === s.msProvider}>${p}</option>`)}
+        ${customKeys.length > 0 ? html`
+          <optgroup label=${t("settings.memory.search.customProvidersGroup")}>
+            ${customKeys.map(k => html`<option value=${k} ?selected=${k === s.msProvider}>${k}</option>`)}
+          </optgroup>`
+          : nothing}
+        ${orphan}
+      </select>
+      <div class="oc-settings__field-hint">${t("settings.memory.search.providerHint")}</div>
+    </div>
+  `;
+}
+
+/** 联想服务 API Key：password 输入 + 已保存密钥的清除/撤销（manualEdit 见调用方注入） */
+function apiKeyField(state: AppViewState, manualEdit: () => void) {
+  const disabled = s.msProvider === "none" || s.msProvider === "local";
+  if (disabled) return nothing;
+  const input = html`
+    <input class="oc-settings__input" type="password" autocomplete="off" .value=${s.msApiKey}
+      placeholder=${s.msApiKeyHas && !s.msApiKeyClear
+        ? t("settings.memory.search.apiKeySavedPlaceholder")
+        : t("settings.memory.search.apiKeyPlaceholder")}
+      @input=${(e: Event) => {
+        s.msApiKey = (e.target as HTMLInputElement).value;
+        // 清除挂起时输入新 key = 用户改主意：撤销清除，以新值为准
+        if (s.msApiKeyClear && s.msApiKey.trim()) s.msApiKeyClear = false;
+        manualEdit();
+        state.requestUpdate();
+      }} />
+  `;
+  return html`
+    <div class="oc-settings__form-group">
+      <label class="oc-settings__label">${t("settings.memory.search.apiKey")}</label>
+      ${input}
+      ${s.msApiKeyClear
+        ? html`
+          <div class="oc-settings__field-hint">${t("settings.memory.search.apiKeyClearPending")}
+            <button type="button" class="btn btn--sm" @click=${() => { s.msApiKeyClear = false; state.requestUpdate(); }}>${t("settings.memory.search.apiKeyUndoClear")}</button>
+          </div>`
+        : s.msApiKeyHas
+          ? html`<div class="oc-settings__field-hint">
+              <button type="button" class="btn btn--sm" @click=${() => { s.msApiKeyClear = true; s.msApiKey = ""; manualEdit(); state.requestUpdate(); }}>${t("settings.memory.search.apiKeyClear")}</button>
+            </div>`
+          : nothing}
+      <div class="oc-settings__field-hint">${t("settings.memory.search.apiKeyHint")}</div>
+    </div>
+  `;
+}
+
 function segmented<T extends string>(
   options: Array<{ value: T; label: string }>,
   selected: T,
@@ -322,20 +447,14 @@ function renderMainMemoryCard(state: AppViewState) {
             (v) => toggleSource("sessions", v))}
           <div class="oc-settings__field-hint">${t("settings.memory.search.sourcesHint")}</div>
         </div>
-        <div class="oc-settings__form-group">
-          <label class="oc-settings__label">${t("settings.memory.search.provider")}</label>
-          <select class="oc-settings__select" .value=${s.msProvider}
-            @change=${(e: Event) => { s.msProvider = (e.target as HTMLSelectElement).value; manualEdit(); state.requestUpdate(); }}>
-            ${MEMORY_SEARCH_PROVIDERS.map(p => html`<option value=${p}>${p}</option>`)}
-          </select>
-          <div class="oc-settings__field-hint">${t("settings.memory.search.providerHint")}</div>
-        </div>
+        ${customEmbeddingProviders(state, manualEdit)}
         ${textField(t("settings.memory.search.model"), s.msModel,
           (v) => { s.msModel = v; manualEdit(); state.requestUpdate(); },
           { hint: t("settings.memory.search.modelHint"), placeholder: KIMI_EMBEDDING_MODEL })}
         ${textField(t("settings.memory.search.baseUrl"), s.msBaseUrl,
           (v) => { s.msBaseUrl = v; manualEdit(); state.requestUpdate(); },
           { hint: t("settings.memory.search.baseUrlHint"), placeholder: "https://api.example.com/v1" })}
+        ${apiKeyField(state, manualEdit)}
         <div class="oc-settings__form-group">
           <label class="oc-settings__label">${t("settings.memory.search.maxResults")}</label>
           <input class="oc-settings__input" type="number" min="1" max="50" .value=${s.msMaxResults}
@@ -357,7 +476,7 @@ function renderMainMemoryCard(state: AppViewState) {
         ${toggle(t("settings.memory.session.llmSlug"), s.smLlmSlug,
           (v) => { s.smLlmSlug = v; state.requestUpdate(); },
           t("settings.memory.session.llmSlugHint"))}
-        ${textField(t("settings.memory.session.model"), s.smModel,
+        ${modelSelectField(t("settings.memory.session.model"), s.smModel, state.configuredModels,
           (v) => { s.smModel = v; state.requestUpdate(); },
           { hint: t("settings.memory.session.modelHint") })}
       </details>
@@ -413,7 +532,7 @@ function renderDreamingCard(state: AppViewState) {
           (v) => { s.dmDeep = v; state.requestUpdate(); }, t("settings.memory.dreaming.deepHint"))}
         ${toggle(t("settings.memory.dreaming.rem"), s.dmRem,
           (v) => { s.dmRem = v; state.requestUpdate(); }, t("settings.memory.dreaming.remHint"))}
-        ${textField(t("settings.memory.dreaming.model"), s.dmModel,
+        ${modelSelectField(t("settings.memory.dreaming.model"), s.dmModel, state.configuredModels,
           (v) => { s.dmModel = v; state.requestUpdate(); },
           { hint: t("settings.memory.dreaming.modelHint") })}
       </details>
@@ -454,7 +573,7 @@ function renderActiveMemoryCard(state: AppViewState) {
         (v) => { s.amMode = v; state.requestUpdate(); },
       )}
     </div>`,
-    textField(t("settings.memory.active.model"), s.amModel,
+    modelSelectField(t("settings.memory.active.model"), s.amModel, state.configuredModels,
       (v) => { s.amModel = v; state.requestUpdate(); },
       { hint: t("settings.memory.active.modelHint") }),
   );

@@ -30,9 +30,12 @@ export function renderUpdateAvailableDialog(state: AppViewState) {
   const updateNowDisabled = updateDownloadInFlight && !failed;
 
   const fmtMB = (n: number) => (n / 1048576).toFixed(1);
-  const progressLine = us.progress
-    ? `${us.progress.percent.toFixed(0)}% · ${fmtMB(us.progress.transferred)} / ${fmtMB(us.progress.total)} MB`
-    : "";
+  // total 为 0 是 download-start 的占位进度（electron-updater 首个真实进度前），
+  // 此时只显示「下载中」不带数字，避免 "0.0 / 0.0 MB" 的误导
+  const progressLine =
+    us.progress && us.progress.total > 0
+      ? `${us.progress.percent.toFixed(0)}% · ${fmtMB(us.progress.transferred)} / ${fmtMB(us.progress.total)} MB`
+      : "";
 
   return html`
     <div class="cc-dialog-overlay" role="dialog" aria-modal="true" tabindex="-1" @click=${() => !downloading && close()}>

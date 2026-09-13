@@ -43,6 +43,7 @@ export type AppUpdateEvent =
   | { type: "checking" }
   | { type: "available"; version: string; releaseNotes?: { zh?: string; en?: string } | null }
   | { type: "not-available" }
+  | { type: "download-start" }
   | { type: "progress"; percent: number; bytesPerSecond: number; transferred: number; total: number }
   | { type: "downloaded" }
   | { type: "error"; message: string };
@@ -76,6 +77,12 @@ export function reduceAppUpdateState(state: AppUpdateState, event: AppUpdateEven
       };
     case "not-available":
       return { ...state, status: "not-available", version: null, releaseNotes: null, progress: null, error: null };
+    case "download-start":
+      // 用户确认下载：立即进入 downloading（0% 占位），消除 electron-updater
+      // 首个 progress 事件前数秒静默期的「无任何下载迹象」观感；非 available
+      // 态（重复触发）原样忽略
+      if (state.status !== "available") return state;
+      return { ...state, status: "downloading", progress: { percent: 0, bytesPerSecond: 0, transferred: 0, total: 0 }, error: null };
     case "progress": {
       // autoDownload=true 时 available 后随即开始下载；其他状态下忽略游离进度事件
       if (state.status !== "available" && state.status !== "downloading") return state;

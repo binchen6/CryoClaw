@@ -83,3 +83,25 @@ test("游离 progress 事件被忽略（idle/checking 态不改变）", () => {
   assert.equal(next.status, "idle");
   assert.equal(next.progress, null);
 });
+
+test("download-start：available 态立即转 downloading（0% 占位进度）", () => {
+  let s = reduceAppUpdateState(idleState(), { type: "available", version: "1.1.0" });
+  s = reduceAppUpdateState(s, { type: "download-start" });
+  assert.equal(s.status, "downloading");
+  assert.deepEqual(s.progress, { percent: 0, bytesPerSecond: 0, transferred: 0, total: 0 });
+
+  // 后续真实 progress 事件覆盖占位进度
+  s = reduceAppUpdateState(s, { type: "progress", percent: 12.5, bytesPerSecond: 2048, transferred: 10, total: 80 });
+  assert.equal(s.progress?.percent, 12.5);
+});
+
+test("download-start：非 available 态（重复触发/游离）被忽略", () => {
+  const idle = idleState();
+  assert.equal(reduceAppUpdateState(idle, { type: "download-start" }).status, "idle");
+
+  let s = reduceAppUpdateState(idle, { type: "available", version: "1.1.0" });
+  s = reduceAppUpdateState(s, { type: "download-start" });
+  s = reduceAppUpdateState(s, { type: "download-start" });
+  assert.equal(s.status, "downloading");
+  assert.deepEqual(s.progress, { percent: 0, bytesPerSecond: 0, transferred: 0, total: 0 });
+});

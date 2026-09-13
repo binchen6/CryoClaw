@@ -684,3 +684,33 @@ export async function maybeAutoCheckWebbridgeUpdate(): Promise<void> {
     log.info(`[webbridge-update] 自动检查失败（忽略）: ${err instanceof Error ? err.message : String(err)}`);
   }
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// daemon 保活（R86）
+// ═══════════════════════════════════════════════════════════════════
+
+/**
+ * gateway ready 后调用：webbridge 模式下确保 daemon 在运行。
+ * 背景：daemon 平时由 AI 技能按需启动，应用侧从不拉起——重启电脑 / daemon 崩溃 /
+ * 换装中断后，浏览器扩展一直连不上（用户看到「无法连接到已安装插件的浏览器」），
+ * 直到某次技能调用把它救活。此处启动时探测一次 /status，未运行则 detached 拉起。
+ * 幂等：已在运行不重复启动。永不抛错。
+ * 返回 true = 本次确实拉起了 daemon（调用方可延迟广播 state-changed 让 pill 重判）。
+ */
+export async function ensureWebbridgeDaemonRunning(): Promise<boolean> {
+  try {
+    const { readUserConfig } = require("./provider-config") as typeof import("./provider-config");
+    const { detectBrowserMode } = require("./browser") as typeof import("./browser");
+    if (detectBrowserMode(readUserConfig()) !== "webbridge") return false;
+  } catch {
+    return false;
+  }
+  const binaryPath = resolveWebbridgeBinaryPath();
+  if (!fs.existsSync(binaryPath)) return false;
+  const dataDir = resolveWebbridgeDataDir();
+  const status = await fetchWebbridgeDaemonStatus({ dataDir });
+  if (status?.running) return false;
+  log.info("[webbridge-update] daemon 未运行，启动时拉起（webbridge 模式保活）");
+  startDaemonDetached(binaryPath);
+  return true;
+}
