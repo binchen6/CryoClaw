@@ -1,5 +1,12 @@
 [
   {
+    "version": "2026.914.1",
+    "notes": {
+      "zh": "实时思考区滚动方向调整：折叠单行条带由横向滚动改为垂直向上滚动（上下滚动）——最新思考文本在单行窗口内持续向上流动，两侧渐隐改为上下渐隐；系统「减弱动态效果」开启时静止并钉住最新输出；展开态正文保持限高滚动并自动滚到最新。其余体验不变：默认折叠单行、点击展开完整推理。经全量测试（1150 用例）与 CDP 实测（动画激活、单行窗口 15px、内容纵向滚动、全程保持折叠）验证。",
+      "en": "Live-thinking ticker direction change: the collapsed single-line strip now scrolls vertically upward (top-to-bottom flow) instead of horizontally - the latest thinking text streams upward through the one-line window, with top/bottom edge fades; it stays static and pinned to the newest output when the OS prefers reduced motion; the expanded view keeps its height-capped auto-scroll-to-latest behavior. Everything else is unchanged: collapsed single line by default, click to expand full reasoning. Verified by the full test suite (1150 cases) and live CDP checks (animation active, 15px single-line window, vertical overflow scrolling, collapsed throughout)."
+    }
+  },
+  {
     "version": "2026.914.0",
     "notes": {
       "zh": "实时思考区体验优化 + 全项目审查清理。① 实时思考区改为默认折叠单行：思考进行中在「思考中」标签旁以单行滚动条带持续展示最新思考输出（无缝 marquee 滚动动画，两侧渐隐，系统开启「减弱动态效果」时自动静止），点击可展开完整推理内容，展开态自动滚动到最新——既保留实时可见性又不打断对话阅读。② 全项目代码审查：消除本轮引入的两处重复代码（阶段标签文案提取为共享函数、用量页日期范围计算复用纯函数库），jscpd 重复行进一步下降；全量测试与类型检查通过，桌面与窄窗口（900px）双布局探针确认聊天页与设置各页零横向溢出。经全量测试（1150 用例）与 CDP 实测（思考区全程折叠 29 采样帧、滚动动画激活、tail 持续更新）验证。",

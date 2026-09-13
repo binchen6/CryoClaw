@@ -456,6 +456,12 @@
 - **工具链坑（一次性，未入 gotchas）**：CDP 协议 id 必须为数字，字符串 id（"m1"）被浏览器静默忽略导致 evaluate 永不返回。
 - **验证**：全量 1150 pass / 0 fail（vitest 181 + node 207 + chat-ui 681 + scripts 81）；thinkingTail 代理对边界 3 用例（对齐切点/内部切点/短文本）。
 
+### R90.1 · 思考区条带滚动方向横改竖（完成，随 v2026.914.1 发版）
+
+用户反馈调整：折叠单行条带的滚动由横向 marquee 改为**垂直向上滚动**（上下滚动）。
+- 纯 CSS 改动：ticker 窗口从「宽度裁剪 + translateX」改为「高度 1.4em 裁剪 + tail 文本 pre-wrap 换行成列 + 双拷贝纵向堆叠 translate(-50%) 循环」，上下渐隐 mask；reduced-motion 静止时 transform 钉住列尾（translateY(calc(-100% + 1.4em))）保证可见的是最新输出。markup/JS 零改动（双拷贝结构复用）。
+- 验证：chat-ui 681 + 全量 1150 pass；CDP 实测 animationName=chat-thinking-scroll-up、单行窗口高 15px、内容纵向溢出（滚动中）、全程折叠。
+
 ## 📦 发版与实测经验（套路已验证多次）
 
 

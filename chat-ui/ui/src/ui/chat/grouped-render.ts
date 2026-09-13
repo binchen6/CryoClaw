@@ -173,10 +173,10 @@ export function renderReadingIndicatorGroup(
   `;
 }
 
-// R90 实时思考区（默认折叠）：summary 单行展示最新思考输出（tail 提取 + 无缝
-// marquee 滚动动画，css 沿 transform 合成层动画不触发重排；prefers-reduced-motion
-// 时静止）；展开后正文限高滚动，最新内容自动滚底（cc-chat-stream updated 钩子驱动）。
-// 正文走纯文本绑定（高频帧免 markdown 解析开销）。
+// R90 实时思考区（默认折叠）：summary 单行窗口展示最新思考输出（tail 提取 +
+// 无缝垂直向上滚动动画，css 沿 transform 合成层动画不触发重排；prefers-reduced-motion
+// 时静止并钉住列尾）；展开后正文限高滚动，最新内容自动滚底（cc-chat-stream updated
+// 钩子驱动）。正文走纯文本绑定（高频帧免 markdown 解析开销）。
 const LIVE_THINKING_TAIL_CHARS = 160;
 
 export function thinkingTail(thinking: string): string {
