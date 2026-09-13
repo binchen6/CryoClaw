@@ -402,6 +402,35 @@ export function deriveOverridesFromEntry(entry: unknown): {
   };
 }
 
+/** 内核对目录外（gateway 目录查不到的）自定义模型的 maxTokens 缺省值 */
+export const MODELS_ADD_DEFAULT_MAX_TOKENS = 8192;
+/** reasoning 模型输出预算的安全下限：低于该值长任务思维链易耗尽预算被截断 */
+export const REASONING_MIN_SAFE_MAX_TOKENS = 16384;
+
+/**
+ * reasoning 输出预算守卫（2026.9.12 deepseek-flash=8192 事故）：reasoning 模型的
+ * 思维链计入 max_tokens 输出预算，上限过小时长任务推理未完即被截断，内核按
+ * reasoning-only 重试 2 次后报 "Agent couldn't generate a response"。
+ * 显式值非法（≤0/非数字）与留空同处理，与 buildOverridesFromCaps 的归一化一致。
+ * 留空时目录内模型继承目录上限（models.list 公开投影不含 maxTokens，UI 不可见，
+ * 交由内核）；目录外自定义模型走内核 8192 缺省 → 需要警告。
+ */
+export function resolveReasoningBudgetWarning(params: {
+  reasoning: boolean;
+  maxTokensRaw: string;
+  inGatewayCatalog: boolean;
+}): { effectiveMaxTokens: number; source: "explicit" | "kernel-default" } | null {
+  if (!params.reasoning) return null;
+  const raw = params.maxTokensRaw.trim();
+  const explicit = raw ? Number(raw) : Number.NaN;
+  if (Number.isFinite(explicit) && explicit > 0) {
+    const floor = Math.floor(explicit);
+    return floor >= REASONING_MIN_SAFE_MAX_TOKENS ? null : { effectiveMaxTokens: floor, source: "explicit" };
+  }
+  if (params.inGatewayCatalog) return null;
+  return { effectiveMaxTokens: MODELS_ADD_DEFAULT_MAX_TOKENS, source: "kernel-default" };
+}
+
 /** 从动态目录条目构造模型 entry（携带内核归一化元数据 + 可选能力覆盖） */
 export function buildModelEntry(
   catalogProvider: string | null,

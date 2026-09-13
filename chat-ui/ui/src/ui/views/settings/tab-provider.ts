@@ -35,6 +35,7 @@ import {
   groupProvidersFromConfig, readFallbacks, reorderIds, applyIdOrder,
   resolveAddTarget as resolveAddTargetFor, buildModelEntry, applyKimiCodeLinkage,
   formatContextWindow, applyCapabilityOverrides, deriveOverridesFromEntry,
+  resolveReasoningBudgetWarning,
   AUTH_PROXY_API_KEY_SENTINEL,
   type AddSelection,
   type ProviderGroup, type GroupedProvider, type ProviderModelEntry, type ProviderGroupId,
@@ -763,6 +764,19 @@ function buildOverridesFromCaps(caps: CapsDraft, forAdd: boolean) {
   };
 }
 
+/** reasoning 输出预算守卫：显式小值或目录外模型留空（内核 8192 缺省）时生成确认文案 */
+function reasoningBudgetWarningText(providerKey: string, modelId: string, caps: CapsDraft): string | null {
+  const cp = catalogProviderForKey(providerKey);
+  const inCatalog = cp ? !!getCachedGatewayModelEntries()?.[cp]?.some((m) => m.id === modelId) : false;
+  const hit = resolveReasoningBudgetWarning({
+    reasoning: caps.reasoning,
+    maxTokensRaw: caps.maxTokens,
+    inGatewayCatalog: inCatalog,
+  });
+  if (!hit) return null;
+  return t("settings.provider.reasoningMaxTokensWarning").replace("{n}", String(hit.effectiveMaxTokens));
+}
+
 async function handleAddToGroupSave(state: AppViewState) {
   if (s.saving || s.busy) return;
   const providerKey = s.addToProviderKey;
@@ -781,6 +795,9 @@ async function handleAddToGroupSave(state: AppViewState) {
     state.requestUpdate();
     return;
   }
+
+  const addBudgetWarning = s.addCaps ? reasoningBudgetWarningText(providerKey, modelId, s.addCaps) : null;
+  if (addBudgetWarning && !(await showConfirm(state, addBudgetWarning))) return;
 
   s.saving = true;
   s.error = null;
@@ -842,6 +859,8 @@ function cancelModelEdit(state: AppViewState) {
 async function handleModelEditSave(entry: ProviderModelEntry, state: AppViewState) {
   if (s.editSaving || s.busy || !s.editDraft) return;
   const providerKey = s.editingProviderKey;
+  const editBudgetWarning = reasoningBudgetWarningText(providerKey, entry.id, s.editDraft);
+  if (editBudgetWarning && !(await showConfirm(state, editBudgetWarning))) return;
   const overrides = buildOverridesFromCaps(s.editDraft, false);
   s.editSaving = true;
   s.error = null;

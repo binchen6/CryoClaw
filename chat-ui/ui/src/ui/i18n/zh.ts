@@ -737,6 +737,7 @@ export const zhDict: Record<string, string> = {
   "settings.provider.caps.contextWindow": "上下文窗口（tokens）",
   "settings.provider.caps.maxTokens": "最大输出 tokens",
   "settings.provider.caps.inheritHint": "留空 = 继承默认",
+  "settings.provider.reasoningMaxTokensWarning": "该模型已开启 Reasoning，但生效的输出上限较小（{n}）。思维链会占用输出预算：上限过低时，长任务可能推理未完即被截断，报「Agent couldn't generate a response. Please try again.」。建议设为 32768 以上。仍要保存吗？",
   "settings.provider.caps.modalities": "输入模态",
   "settings.provider.caps.image": "图像",
   "settings.provider.caps.video": "视频",

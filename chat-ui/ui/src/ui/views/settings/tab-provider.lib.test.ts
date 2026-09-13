@@ -8,6 +8,9 @@ import {
   readFallbacks,
   reorderIds,
   resolveGroupId,
+  resolveReasoningBudgetWarning,
+  MODELS_ADD_DEFAULT_MAX_TOKENS,
+  REASONING_MIN_SAFE_MAX_TOKENS,
   AUTH_PROXY_API_KEY_SENTINEL,
 } from "./tab-provider.lib.ts";
 
@@ -180,6 +183,22 @@ function testDeriveOverridesFromEntry() {
   assert.deepEqual(bare.thinkingLevels, []);
 }
 
+function testResolveReasoningBudgetWarning() {
+  // 未开启 reasoning：一律不警告
+  assert.equal(resolveReasoningBudgetWarning({ reasoning: false, maxTokensRaw: "8192", inGatewayCatalog: false }), null);
+  // 显式小值：警告并回显生效值
+  assert.deepEqual(resolveReasoningBudgetWarning({ reasoning: true, maxTokensRaw: "8192", inGatewayCatalog: true }), { effectiveMaxTokens: 8192, source: "explicit" });
+  // 显式值达到安全下限：不警告
+  assert.equal(resolveReasoningBudgetWarning({ reasoning: true, maxTokensRaw: String(REASONING_MIN_SAFE_MAX_TOKENS), inGatewayCatalog: false }), null);
+  // 留空 + 目录内模型：继承目录上限（UI 不可见），不警告
+  assert.equal(resolveReasoningBudgetWarning({ reasoning: true, maxTokensRaw: "", inGatewayCatalog: true }), null);
+  // 留空 + 目录外自定义模型：内核 8192 缺省 → 警告（2026.9.12 deepseek-flash 事故）
+  assert.deepEqual(resolveReasoningBudgetWarning({ reasoning: true, maxTokensRaw: "", inGatewayCatalog: false }), { effectiveMaxTokens: MODELS_ADD_DEFAULT_MAX_TOKENS, source: "kernel-default" });
+  // 显式值非法（≤0/非数字）与留空同处理
+  assert.deepEqual(resolveReasoningBudgetWarning({ reasoning: true, maxTokensRaw: "0", inGatewayCatalog: false }), { effectiveMaxTokens: MODELS_ADD_DEFAULT_MAX_TOKENS, source: "kernel-default" });
+  assert.deepEqual(resolveReasoningBudgetWarning({ reasoning: true, maxTokensRaw: "abc", inGatewayCatalog: false }), { effectiveMaxTokens: MODELS_ADD_DEFAULT_MAX_TOKENS, source: "kernel-default" });
+}
+
 function main() {
   testResolveGroupId();
   testGroupProvidersFromConfig();
@@ -190,6 +209,7 @@ function main() {
   testGroupProvidersCapabilities();
   testApplyCapabilityOverrides();
   testDeriveOverridesFromEntry();
+  testResolveReasoningBudgetWarning();
   console.log("tab-provider lib tests passed");
 }
 

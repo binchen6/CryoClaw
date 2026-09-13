@@ -700,6 +700,7 @@ export const enDict: Record<string, string> = {
   "settings.provider.caps.contextWindow": "Context window (tokens)",
   "settings.provider.caps.maxTokens": "Max output tokens",
   "settings.provider.caps.inheritHint": "Empty = inherit default",
+  "settings.provider.reasoningMaxTokensWarning": "Reasoning is enabled but the effective max output tokens is small ({n}). Thinking consumes the output budget — with a low cap, long tasks may be truncated mid-reasoning and fail with \"Agent couldn't generate a response. Please try again.\" Consider 32768 or higher. Save anyway?",
   "settings.provider.caps.modalities": "Input modalities",
   "settings.provider.caps.image": "Image",
   "settings.provider.caps.video": "Video",
