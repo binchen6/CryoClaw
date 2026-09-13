@@ -65,6 +65,23 @@ export class CcChatStream extends LitElement {
     return CcChatStream.VISUAL_PROPS.some((name) => changed.has(name));
   }
 
+  // R90：实时思考区展开时正文自动滚底——每帧新思考文本到达后把 scrollTop 钉在
+  // scrollHeight，用户手动上滚查看早前内容时不强制拉回（仅在有新帧时贴底一次，
+  // 与聊天线程的贴底语义不同：思考区是只读流水，钉底体验优先）。
+  protected updated(changed: Map<PropertyKey, unknown>): void {
+    if (!changed.has("thinkingStream")) {
+      return;
+    }
+    const details = this.querySelector<HTMLDetailsElement>("details.chat-thinking-live");
+    if (!details?.open) {
+      return;
+    }
+    const body = details.querySelector<HTMLElement>(".chat-thinking-live__text");
+    if (body) {
+      body.scrollTop = body.scrollHeight;
+    }
+  }
+
   render() {
     if (this.stream === null && this.thinkingStream === null && this.narrationText === null) {
       return nothing;

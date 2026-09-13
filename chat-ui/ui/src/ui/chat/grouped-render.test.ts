@@ -197,3 +197,33 @@ test("折叠 tool 消息（带文本）：body 内的 markdown 文本同样延�
     "tool 消息 body 占位容器应保留",
   );
 });
+
+// ── R90 实时思考区折叠单行 tail 提取 ──
+test("thinkingTail：短文本原样返回", async () => {
+  const { thinkingTail } = await import("./grouped-render.ts");
+  assert.equal(thinkingTail("短的思考"), "短的思考");
+  assert.equal(thinkingTail(""), "");
+});
+
+test("thinkingTail：超长文本取末尾 160 字符且不切断代理对", async () => {
+  const { thinkingTail } = await import("./grouped-render.ts");
+  const bmp = "a".repeat(300);
+  const tail = thinkingTail(bmp);
+  assert.equal(tail.length, 160);
+  assert.ok(bmp.endsWith(tail));
+  // 切点落在高代理上（偶偏移）：160 units 恰好是完整 emoji 对，首字符为合法高代理
+  const aligned = "x".repeat(300) + "👍".repeat(100);
+  const tail2 = thinkingTail(aligned);
+  assert.equal(tail2.length, 160);
+  assert.ok(aligned.endsWith(tail2));
+  const first2 = tail2.codePointAt(0)!;
+  assert.ok(!(first2 >= 0xdc00 && first2 <= 0xdfff), "首字符不得是孤立低代理");
+  // 切点落在低代理上（emoji 对内部）：丢弃该残缺字符 → 长度 159、仍是原文后缀、首字符合法
+  // （160 偶数窗口在完整对序列上恒切偶偏移，末尾补 1 个 BMP 字符使切点推进对内部）
+  const odd = "x".repeat(300) + "👍".repeat(100) + "ⓐ";
+  const tail3 = thinkingTail(odd);
+  assert.equal(tail3.length, 159);
+  assert.ok(odd.endsWith(tail3));
+  const first3 = tail3.codePointAt(0)!;
+  assert.ok(!(first3 >= 0xdc00 && first3 <= 0xdfff), "修正后首字符仍不得是孤立低代理");
+});

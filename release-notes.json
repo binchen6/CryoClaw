@@ -1,5 +1,12 @@
 [
   {
+    "version": "2026.914.0",
+    "notes": {
+      "zh": "实时思考区体验优化 + 全项目审查清理。① 实时思考区改为默认折叠单行：思考进行中在「思考中」标签旁以单行滚动条带持续展示最新思考输出（无缝 marquee 滚动动画，两侧渐隐，系统开启「减弱动态效果」时自动静止），点击可展开完整推理内容，展开态自动滚动到最新——既保留实时可见性又不打断对话阅读。② 全项目代码审查：消除本轮引入的两处重复代码（阶段标签文案提取为共享函数、用量页日期范围计算复用纯函数库），jscpd 重复行进一步下降；全量测试与类型检查通过，桌面与窄窗口（900px）双布局探针确认聊天页与设置各页零横向溢出。经全量测试（1150 用例）与 CDP 实测（思考区全程折叠 29 采样帧、滚动动画激活、tail 持续更新）验证。",
+      "en": "Live-thinking region UX polish plus a project-wide review cleanup. (1) The live thinking region now defaults to a collapsed single line: while the model is reasoning, the newest thinking output continuously streams through a one-line marquee next to the \"Thinking\" label (seamless scroll animation with edge fades, automatically static when the OS prefers reduced motion); click to expand the full reasoning, and the expanded view auto-scrolls to the latest output. (2) Project-wide review: removed the two duplication blocks introduced last round (shared phase-status label helper; usage tab now reuses the pure date-range library), shrinking the jscpd footprint; full tests and type checks pass, and layout probes on desktop and a 900px viewport confirm zero horizontal overflow across the chat view and settings pages. Verified by the full test suite (1150 cases) and live CDP checks (collapsed across 29 sampled frames, marquee active, tail continuously updating)."
+    }
+  },
+  {
     "version": "2026.913.3",
     "notes": {
       "zh": "流式输出大版本：思考过程实时流式 + 工具间解说实时流式 + 输出自愈强化 + 仪表盘适配 + 用量页重构 + 多项修复。① 思考过程支持流式输出——模型推理内容现在随生成实时显示在聊天中（可折叠、自动滚动），不再等回复结束才出现。② 修复中途消息输出的流式输出——工具调用之间的解说文本此前要等整轮结束才显示，现在与官方网页端一致实时流式呈现并按时间序冻结进对话时间线（基于对网关内核 2026.9.3 preamble 事件机制的取证）。③ 输出自愈强化——流式帧丢失（序列号断档/断线重连收养）后，后续帧以网关附带的全量快照自动纠偏（对齐官方合并算法），不再把增量追加在坏基线上；新增对网关 seq-gap 错误事件的消费，触发静默历史对齐。④ 修复点击文件卡片无反应——主进程把 shell.openPath 的失败返回串转为拒绝（此前文件不存在/无关联程序时点击零反馈）；聊天文件卡片与主进程安全白名单两侧清单对齐并加一致性守卫测试，代码类文件点击自动降级为「在文件夹中定位」。⑤ 适配内核仪表盘（board）功能——会话带仪表盘时聊天页自动出现可折叠仪表盘面板，widget 经网关票据化 URL 安全渲染，board.changed 事件实时刷新。⑥ 「会话用量」重构为「用量」——参照官方 /usage 页：今天/近7天/近30天/全部范围切换、总Token/总成本/会话数/消息数指标卡、每日活动堆叠图、模型/服务商用量分布、会话明细（含成本列）。⑦ 修复输入框模型显示空白——内核会话行的裸模型 id（无服务商前缀）现在会解析回完整键名显示，未知模型补动态选项不再匹配失败；思考强度档位解析同步改用会话实际生效模型。⑧ 执行权限挡位对齐最新内核（2026.9.3 五档：deny/allowlist/ask/auto/full），设置页高级 tab 提供完整五档。经全量测试（1148 用例）与 CDP 实测验证。",

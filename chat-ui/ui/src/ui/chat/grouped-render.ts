@@ -141,18 +141,23 @@ function extractImagesUncached(message: unknown): ImageBlock[] {
   return images;
 }
 
+// 阶段感知提示文案（读取指示/实时思考区共用）：工具执行中显示友好工具类型名
+// （R85：原始内部名经 resolveToolDisplay 本地化，如 anysearch__search → 搜索）；
+// 等待子代理显示等待文案；否则「思考中」。
+function phaseStatusLabel(activeToolName?: string | null, subagentWaiting?: boolean) {
+  return activeToolName
+    ? t("chat.phaseTool").replace("{name}", resolveToolDisplay({ name: activeToolName }).label)
+    : subagentWaiting
+      ? t("chat.subagent.waiting")
+      : t("chat.phaseThinking");
+}
+
 export function renderReadingIndicatorGroup(
   assistant?: AssistantIdentity,
   activeToolName?: string | null,
   subagentWaiting?: boolean,
 ) {
-  // 阶段感知提示：工具执行中显示友好工具类型名（R85：原始内部名经
-  // resolveToolDisplay 本地化，如 anysearch__search → 搜索）；等待子代理显示等待文案；否则「思考中」
-  const label = activeToolName
-    ? t("chat.phaseTool").replace("{name}", resolveToolDisplay({ name: activeToolName }).label)
-    : subagentWaiting
-      ? t("chat.subagent.waiting")
-      : t("chat.phaseThinking");
+  const label = phaseStatusLabel(activeToolName, subagentWaiting);
   return html`
     <div class="chat-group assistant">
       ${renderAvatar("assistant", assistant)}
@@ -168,16 +173,43 @@ export function renderReadingIndicatorGroup(
   `;
 }
 
-// R88 实时思考区（默认展开、限高滚动）：与 renderThinkingCollapsed 同构但
-// summary 带 live 打点动画，正文走纯文本绑定（高频帧免 markdown 解析开销）。
+// R90 实时思考区（默认折叠）：summary 单行展示最新思考输出（tail 提取 + 无缝
+// marquee 滚动动画，css 沿 transform 合成层动画不触发重排；prefers-reduced-motion
+// 时静止）；展开后正文限高滚动，最新内容自动滚底（cc-chat-stream updated 钩子驱动）。
+// 正文走纯文本绑定（高频帧免 markdown 解析开销）。
+const LIVE_THINKING_TAIL_CHARS = 160;
+
+export function thinkingTail(thinking: string): string {
+  if (thinking.length <= LIVE_THINKING_TAIL_CHARS) {
+    return thinking;
+  }
+  // 尾部截取后修正代理对边界（首字符若是低代理则丢弃，避免渲染出残缺字形）
+  let tail = thinking.slice(-LIVE_THINKING_TAIL_CHARS);
+  const first = tail.charCodeAt(0);
+  if (first >= 0xdc00 && first <= 0xdfff) {
+    tail = tail.slice(1);
+  }
+  return tail;
+}
+
 function renderLiveThinkingBlock(thinking: string) {
+  const tail = thinkingTail(thinking);
+  const tickerOn = tail.trim().length > 0;
   return html`
-    <details class="chat-thinking-collapse chat-thinking-live" open>
+    <details class="chat-thinking-collapse chat-thinking-live">
       <summary class="chat-thinking-summary">
         <span class="chat-reading-indicator__dots" aria-hidden="true">
           <span></span><span></span><span></span>
         </span>
         <span class="chat-thinking-summary__label">${t("chat.phaseThinking")}</span>
+        ${tickerOn
+          ? html`<span class="chat-thinking-ticker" aria-hidden="true">
+              <span class="chat-thinking-ticker__track"
+                ><span class="chat-thinking-ticker__copy">${tail}</span
+                ><span class="chat-thinking-ticker__copy">${tail}</span
+              ></span>
+            </span>`
+          : nothing}
       </summary>
       <div class="chat-thinking chat-thinking-live__text">${thinking}</div>
     </details>
@@ -192,11 +224,7 @@ export function renderLiveThinkingGroup(
   activeToolName?: string | null,
   subagentWaiting?: boolean,
 ) {
-  const label = activeToolName
-    ? t("chat.phaseTool").replace("{name}", resolveToolDisplay({ name: activeToolName }).label)
-    : subagentWaiting
-      ? t("chat.subagent.waiting")
-      : t("chat.phaseThinking");
+  const label = phaseStatusLabel(activeToolName, subagentWaiting);
   const hasThinking = (thinkingStream ?? "").trim().length > 0;
   const hasNarration = (narrationText ?? "").trim().length > 0;
   return html`

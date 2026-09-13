@@ -447,6 +447,15 @@
 - **审查补漏**：会话切换清 chatThinkingStream/chatNarrationText（session-transition，防跨会话残留）；注释引用改名清理。
 - **验证**：全量 1148 pass / 0 fail（vitest 181 + node 207 + chat-ui 679 + scripts 81）；CDP 实测（用量 tab DOM 断言、模型选择器选中项、思考流式采样、聊天发送链路）；CDP 探针脚本坑（CDP id 必须数字）未入 gotchas（一次性工具）。
 
+### R90 · 实时思考区折叠单行 + 滚动动画 + 全项目审查清理（完成，随 v2026.914.0 发版）
+
+用户闲时任务批次：实时思考区默认折叠单行展示最新思考输出 + 滚动动画 + 全项目全方位审查优化 + UI 布局优化 + 固定发版流程。
+- **实时思考区折叠单行**：details 默认收起；summary 在「思考中」标签后追加单行 ticker——thinkingTail 取末尾 160 字符（代理对边界修正：切点落在低代理上时丢弃残缺字符），双拷贝 + translateX(-50%) 无缝 marquee（14s linear 循环，transform 合成层动画不触发重排），两侧 mask 渐隐；prefers-reduced-motion 时静止。展开态正文（220px 限高滚动）由 cc-chat-stream updated 钩子在新帧到达时自动滚底。CDP 实证：全程折叠 29 采样帧 / ticker 每帧有内容 / marquee 激活 / tail 持续更新。
+- **审查清理（jscpd 驱动）**：两处本轮引入的生产重复消除——grouped-render 的阶段标签三元式（reading indicator 与 live thinking 共用）提取 phaseStatusLabel；tab-usage 的日期范围计算删除本地副本、直接复用 lib 的 resolveUsageRange（单测钉住语义）。jscpd 新文件生产克隆 0、总重复行 963→938。
+- **UI 布局探针**：CDP 驱动（横向溢出 = scrollWidth-clientWidth + 越界元素定位）——聊天视图 + 设置五个 tab（用量/模型/外观/高级/审批）桌面宽度全 0；900px 窄视口聊天/用量亦 0 溢出。
+- **工具链坑（一次性，未入 gotchas）**：CDP 协议 id 必须为数字，字符串 id（"m1"）被浏览器静默忽略导致 evaluate 永不返回。
+- **验证**：全量 1150 pass / 0 fail（vitest 181 + node 207 + chat-ui 681 + scripts 81）；thinkingTail 代理对边界 3 用例（对齐切点/内部切点/短文本）。
+
 ## 📦 发版与实测经验（套路已验证多次）
 
 

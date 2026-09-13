@@ -12,6 +12,7 @@ import {
   mapSessionsUsage,
   mapUsageCost,
   mapUsageStatus,
+  resolveUsageRange,
   resolveUsageSessionDisplayLabel,
   sharePercent,
   topRows,
@@ -43,7 +44,7 @@ const s = {
 async function load(state: AppViewState) {
   if (!state.client || !state.connected) return;
   const seq = ++s.loadSeq;
-  const { startDate, endDate } = resolveRangeDates();
+  const { startDate, endDate } = resolveUsageRange(s.range);
   s.loadingState = "loading";
   state.requestUpdate();
   try {
@@ -66,25 +67,6 @@ async function load(state: AppViewState) {
     s.error = String(err);
   }
   state.requestUpdate();
-}
-
-// 范围档位 → 请求日期边界（本地时区；lib 里的 resolveUsageRange 有单测钉住同语义）
-function resolveRangeDates(): { startDate: string; endDate: string } {
-  const now = new Date();
-  const endDate = toIsoDate(now);
-  if (s.range === "today") return { startDate: endDate, endDate };
-  if (s.range === "all") return { startDate: "2000-01-01", endDate };
-  const days = s.range === "7d" ? 6 : 29;
-  const start = new Date(now);
-  start.setDate(start.getDate() - days);
-  return { startDate: toIsoDate(start), endDate };
-}
-
-function toIsoDate(d: Date): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
 }
 
 export function resetUsageTab() {

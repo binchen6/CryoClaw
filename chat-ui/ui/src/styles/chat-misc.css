@@ -70,6 +70,43 @@
   color: var(--text-muted);
 }
 
+/* R90 默认折叠：summary 单行 tail 滚动条（无缝 marquee） */
+.chat-thinking-live .chat-thinking-summary {
+  width: 100%;
+  min-width: 0;
+}
+.chat-thinking-ticker {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  white-space: pre;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  /* 两侧渐隐：滚动进出不生硬 */
+  mask-image: linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent);
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent);
+}
+.chat-thinking-ticker__track {
+  display: inline-flex;
+  white-space: pre;
+  will-change: transform;
+  animation: chat-thinking-marquee 14s linear infinite;
+}
+.chat-thinking-ticker__copy {
+  flex-shrink: 0;
+  /* 两份 tail 之间的间隔（seamless -50% 循环的半个周期单位） */
+  padding-right: 3em;
+}
+@keyframes chat-thinking-marquee {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .chat-thinking-ticker__track {
+    animation: none;
+  }
+}
+
 .chat-thinking-live[open] .chat-thinking-live__text {
   max-height: 220px;
   overflow-y: auto;

@@ -1,6 +1,6 @@
 {
   "name": "cryoclaw",
-  "version": "2026.913.3",
+  "version": "2026.914.0",
   "private": true,
   "description": "CryoClaw desktop app — cross-platform Electron shell for openclaw",
   "main": "dist/main.js",
