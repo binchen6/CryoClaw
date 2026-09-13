@@ -1,5 +1,12 @@
 [
   {
+    "version": "2026.913.0",
+    "notes": {
+      "zh": "QA 修复批次（三项实拍问题 + 全面审查）：① 全应用按钮样式退化根因修复——样式文件一条注释结尾多写了一个斜杠，打包后把按钮基础样式规则变成非法选择器被浏览器静默丢弃，所有按钮退化成原生外观；现修复并新增构建期+单测双防线（CSS 选择器含游离斜杠即构建失败），删除类按钮红色对比度同步加深。② 对话页工具调用卡片现在显示工具类型：修复内置工具图标因配置键名不匹配而全部丢失的问题，所有工具类型改为中文友好名（如「执行命令」「读取文件」），插件/MCP 工具显示「类型 · 来源」徽标（如 搜索 · anysearch）而不是内部原始名，回复前的「调用工具…」提示同步。③ 记忆设置页为新手重排：会话记忆与智能联想合并为「记住对话内容」主卡、技术参数收进高级折叠区、「记忆固化（Dreaming）」更名「自动整理记忆」并把定时输入换成常用时间下拉，全部文案通俗化。经三轮代码审查（自查+独立盲审+复核）与全量测试（670 UI 用例等）验证。",
+      "en": "QA fix batch (three field-reported issues plus a full review): (1) Fixed the root cause of every button across the app degrading to native browser styling - a stray extra slash after a CSS comment terminator turned the base button rule into an invalid selector that browsers silently dropped in the packaged bundle; fixed, with new build-time + unit-test guards that fail the build on any stray slash in a CSS selector, and destructive buttons got a stronger red for contrast. (2) Chat tool-call cards now show the tool type: fixed built-in tool icons never rendering due to a config key-name mismatch, all tool types get friendly localized names (e.g. \"Run command\", \"Read file\"), and plugin/MCP tools display a \"type - source\" badge (e.g. Search - anysearch) instead of raw internal names; the \"calling tool...\" indicator before replies matches. (3) The memory settings page was reorganized for non-technical users: session memory and smart recall merged into a single \"Remember conversations\" card with technical parameters tucked into Advanced sections, \"Dreaming\" renamed \"Auto-tidy memories\" with a preset schedule dropdown replacing the raw cron input, and all copy rewritten in plain language. Verified via three review rounds (self + independent + recheck) and the full test suite (670 UI cases etc.)."
+    }
+  },
+  {
     "version": "2026.912.5",
     "notes": {
       "zh": "界面一致性批次：① 布尔开关统一到 oc-toggle-switch 组件——「终端命令」一行此前与同页其他开关用的是两套手搓实现（视觉细节易漂移、键盘语义重复维护），组件新增富文本标签插槽后完成迁移，同页三种开关视觉完全一致；② 设置页 8 个标签页的页面级描述文字从表单提示级的弱灰提升为次级文字色（暗色主题下原对比度仅约 4.2:1，整页导读不该这么弱），表单内提示保持原样。",
