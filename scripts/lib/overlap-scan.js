@@ -5,9 +5,15 @@
 // display:none / visibility:hidden / position:fixed，于是把这些被裁掉的文本算成
 // "压住输入框的重叠"，连续两次把发版门禁判红（截图目视无任何重叠）。
 //
-// 现按**可见矩形**判定：元素矩形与所有裁剪祖先（overflow != visible，含 auto/scroll）
-// 求交，得到实际可见区域；可见区不足 5×5 的元素整体跳过，重叠也按可见区计算。
+// 现按**可见矩形**判定：元素矩形与所有裁剪祖先（overflow != visible）求交，得到
+// 实际可见区域；可见区不足 5×5 的元素整体跳过，重叠也按可见区计算。
 // 只丢弃不可见部分的相交，可见元素的重叠照旧上报（门禁能力不变）。
+//
+// R85 修复的同类假阳性：关闭的 <details>（如设置页「高级设置」折叠区）在新
+// Chromium 里内容**不绘制、不可命中**，但布局盒仍保留、getBoundingClientRect
+// 返回真实坐标（content-visibility:hidden 只跳过绘制）。这些"幽灵盒子"与后续
+// 卡片假性相交，把记忆设置页判红。凡最近 details 祖先未展开的元素一律跳过——
+// 用户看不到它们，与 display:none 同一判据。
 "use strict";
 
 /**
@@ -22,6 +28,8 @@ function overlapCheckExpr(opts = {}) {
   if (document.querySelector('.cc-dialog-overlay, [role="dialog"][aria-modal="true"]')) return "[]";
   const scope = document.querySelector('.oc-settings-content') || document.body;
   const customAncestor = (e) => { let n = e; while (n && n !== document.body) { if (n.tagName.includes('-')) return n; n = n.parentElement; } return null; };
+  // 关闭 details 内的元素不可见（不绘制/不可命中），跳过（R85 假阳性修复）
+  const inClosedDetails = (e) => { let n = e; while (n && n !== document.body) { if (n.tagName === 'DETAILS' && !n.open) return true; n = n.parentElement; } return false; };
   // 可见矩形：与所有裁剪祖先（overflow != visible）求交${viewportOnly ? "，并与视口求交" : ""}
   const visibleRect = (el) => {
     const base = el.getBoundingClientRect();
@@ -47,6 +55,7 @@ function overlapCheckExpr(opts = {}) {
     return r;
   };
   const els = [...scope.querySelectorAll('*')].filter(e => {
+    if (inClosedDetails(e)) return false;
     const base = e.getBoundingClientRect();
     if (base.width < 5 || base.height < 5) return false;
     if (e.children.length > 0) return false;
