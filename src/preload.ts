@@ -113,6 +113,15 @@ contextBridge.exposeInMainWorld("cryoclaw", {
   // 主窗左侧栏 pill 点击时调用：清 blocklist + 写 External JSON（仅当浏览器已关闭）
   settingsWebbridgePillRepair: () =>
     ipcRenderer.invoke("settings:webbridge-pill-repair"),
+  // WebBridge 版本状态（安装版本 / 来源 / daemon 运行态 / 更新信号）
+  settingsWebbridgeVersionStatus: () =>
+    ipcRenderer.invoke("settings:webbridge-version-status"),
+  // 检查更新；params.autoUpdate 传 boolean 时只写自动更新开关
+  settingsWebbridgeUpdateCheck: (params?: Record<string, unknown>) =>
+    ipcRenderer.invoke("settings:webbridge-update-check", params),
+  // 立即更新：下载新二进制 → 钉定校验 → 换装 → 按需重启 daemon
+  settingsWebbridgeUpdateApply: () =>
+    ipcRenderer.invoke("settings:webbridge-update-apply"),
   settingsGetCliStatus: () => ipcRenderer.invoke("settings:get-cli-status"),
   settingsInstallCli: () => ipcRenderer.invoke("settings:install-cli"),
   settingsUninstallCli: () => ipcRenderer.invoke("settings:uninstall-cli"),

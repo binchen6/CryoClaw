@@ -95,6 +95,15 @@ function createAdvancedState() {
     lastPrecheck: null as ipc.WebbridgePrecheckData | null,
     // 修复 modal 可见性 + 视图状态
     repairModal: null as RepairModalState,
+    // ── WebBridge 版本卡片（R79）──
+    wbVersion: null as ipc.WebbridgeVersionStatus | null,
+    wbVersionLoading: false,
+    wbCheckBusy: false,
+    wbApplyBusy: false,
+    wbAutoUpdateSaving: false,
+    wbAutoUpdate: true,
+    wbVersionMessage: null as string | null,
+    wbVersionMessageKind: "info" as "info" | "error",
   };
 }
 
@@ -132,6 +141,7 @@ async function init(state: AppViewState) {
     // 当前已是 webbridge → 后台跑一次 precheck 看是否需要显示 health link
     if (s.browserMode === "webbridge") {
       void refreshWebbridgeHealth(state);
+      void loadWebbridgeVersion(state);
     }
   } catch (e: any) {
     // 拉取失败时 state 仍是默认值；禁止保存（见 loadFailed 注释）并把错误显示出来。
@@ -192,9 +202,104 @@ async function refreshWebbridgeHealth(state: AppViewState) {
       s.webbridgeHealthBroken = false;
     }
   } catch {
-    s.webbridgeHealthBroken = false;
+    // precheck IPC 失败（R79 修复）：mode 仍是 webbridge 时组件状态未知，
+    // 不能显示「健康」掩盖真实损坏——按 broken 处理，让用户走修复入口。
+    s.webbridgeHealthBroken = true;
+    s.lastPrecheck = null;
   }
   state.requestUpdate();
+}
+
+// ── WebBridge 版本卡片（R79）：状态拉取 / 检查更新 / 立即更新 / 自动更新开关 ──
+
+async function loadWebbridgeVersion(state: AppViewState) {
+  s.wbVersionLoading = true;
+  state.requestUpdate();
+  try {
+    const st = await ipc.settingsWebbridgeVersionStatus();
+    s.wbVersion = st;
+    s.wbAutoUpdate = st.autoUpdate !== false;
+  } catch (e: any) {
+    s.wbVersionMessage = tWithDetail("settings.advanced.wbUpdateFailed", e?.message);
+    s.wbVersionMessageKind = "error";
+  } finally {
+    s.wbVersionLoading = false;
+    state.requestUpdate();
+  }
+}
+
+function setWbVersionMessage(message: string | null, kind: "info" | "error" = "info") {
+  s.wbVersionMessage = message;
+  s.wbVersionMessageKind = kind;
+}
+
+async function onWbCheckUpdate(state: AppViewState) {
+  if (s.wbCheckBusy || s.wbApplyBusy) return;
+  s.wbCheckBusy = true;
+  setWbVersionMessage(null);
+  state.requestUpdate();
+  try {
+    const res = await ipc.settingsWebbridgeUpdateCheck();
+    await loadWebbridgeVersion(state);
+    if (res.updateAvailable) {
+      setWbVersionMessage(
+        t("settings.advanced.wbUpdateAvailable") +
+          (res.updateAvailable.latest ? `（${res.updateAvailable.latest}）` : ""),
+      );
+    } else {
+      setWbVersionMessage(t("settings.advanced.wbUpdateUpToDate"));
+    }
+  } catch (e: any) {
+    setWbVersionMessage(tWithDetail("settings.advanced.wbUpdateFailed", e?.message), "error");
+  } finally {
+    s.wbCheckBusy = false;
+    state.requestUpdate();
+  }
+}
+
+async function onWbApplyUpdate(state: AppViewState) {
+  if (s.wbApplyBusy || s.wbCheckBusy) return;
+  s.wbApplyBusy = true;
+  setWbVersionMessage(null);
+  state.requestUpdate();
+  try {
+    const res = await ipc.settingsWebbridgeUpdateApply();
+    if (res.success) {
+      await loadWebbridgeVersion(state);
+      setWbVersionMessage(t("settings.advanced.wbUpdateDone"));
+    } else if (res.code === "WEBBRIDGE_BUSY") {
+      setWbVersionMessage(t("settings.advanced.wbUpdateBusy"), "error");
+    } else if (res.code === "PIN_STALE" || isWebbridgePinStaleError(res.message)) {
+      // 钉定校验失败对用户不可操作（消息含内部哈希）→ 提示升级应用
+      setWbVersionMessage(t("settings.advanced.wbRepairPinStale"), "error");
+    } else {
+      setWbVersionMessage(
+        t("settings.advanced.wbUpdateFailed") + (res.message ? `: ${res.message}` : ""),
+        "error",
+      );
+    }
+  } catch (e: any) {
+    setWbVersionMessage(tWithDetail("settings.advanced.wbUpdateFailed", e?.message), "error");
+  } finally {
+    s.wbApplyBusy = false;
+    state.requestUpdate();
+  }
+}
+
+async function onWbAutoUpdateToggle(state: AppViewState, checked: boolean) {
+  if (s.wbAutoUpdateSaving) return;
+  s.wbAutoUpdateSaving = true;
+  s.wbAutoUpdate = checked;
+  state.requestUpdate();
+  try {
+    // 通过 update-check channel 传参写 .update-check.json 的 autoUpdate
+    await ipc.settingsWebbridgeUpdateCheck({ autoUpdate: checked });
+  } catch {
+    s.wbAutoUpdate = !checked;
+  } finally {
+    s.wbAutoUpdateSaving = false;
+    state.requestUpdate();
+  }
 }
 
 // 用户切到非 webbridge → 直接接受；切到 webbridge → 跑 precheck，失败弹 modal 并回滚 radio
@@ -330,6 +435,14 @@ async function onRepairConfirm(state: AppViewState) {
     } else if (res.code === "DEFAULT_BROWSER_UNSUPPORTED") {
       // 修复中默认浏览器变了 → 切到 unsupported 视图
       s.repairModal = { view: "default-unsupported" };
+    } else if (res.code === "WEBBRIDGE_BUSY") {
+      // F4 并发锁：另一项 WebBridge 操作（更新/后台任务）在跑
+      s.repairModal = {
+        ...m,
+        saving: false,
+        message: t("settings.advanced.wbUpdateBusy"),
+        messageKind: "error",
+      };
     } else {
       s.repairModal = {
         ...m,
@@ -467,6 +580,63 @@ function renderRepairModal(state: AppViewState) {
   `;
 }
 
+// WebBridge 版本卡片：版本号 + 安装来源 + daemon 状态 + 检查/立即更新 + 自动更新开关。
+// 仅 webbridge 模式下渲染（其它模式没有 WebBridge 组件在维护）。
+function renderWebbridgeVersionCard(state: AppViewState) {
+  const v = s.wbVersion;
+  const versionText = !v
+    ? t("settings.advanced.wbVersionUnknown")
+    : v.installed
+      ? (v.installedVersion ?? t("settings.advanced.wbVersionUnknown"))
+      : t("settings.advanced.wbVersionNotInstalled");
+  const sourceText = v?.installSource === "adopted"
+    ? t("settings.advanced.wbVersionSourceAdopted")
+    : t("settings.advanced.wbVersionSourceCryoclaw");
+  return html`
+    <div class="oc-settings__form-group">
+      <label class="oc-settings__label">${t("settings.advanced.wbVersionTitle")}</label>
+      <div class="oc-settings__hint oc-m-0 oc-mb-8" style="font-family:var(--font-meta)">
+        ${v && !v.installed
+          ? t("settings.advanced.wbVersionNotInstalled")
+          : html`
+            ${t("settings.advanced.wbVersionLabel")}: ${versionText}
+            · ${sourceText}
+            · ${v?.daemonRunning
+              ? t("settings.advanced.wbVersionDaemonRunning")
+              : t("settings.advanced.wbVersionDaemonStopped")}
+          `}
+      </div>
+      ${v?.updateAvailable
+        ? html`<div class="oc-settings__hint oc-mb-8">
+            ${t("settings.advanced.wbUpdateAvailable")}${v.updateAvailable.latest ? `（${v.updateAvailable.latest}）` : ""}
+          </div>`
+        : nothing}
+      <oc-toggle-switch .label=${t("settings.advanced.wbVersionAutoUpdate")} .checked=${s.wbAutoUpdate}
+        .disabled=${s.wbAutoUpdateSaving}
+        @change=${(e: CustomEvent) => { void onWbAutoUpdateToggle(state, e.detail.checked); }}
+      ></oc-toggle-switch>
+      ${s.wbVersionMessage
+        ? html`<div class="oc-settings__hint oc-mt-4" style=${s.wbVersionMessageKind === "error" ? "color:var(--danger)" : ""}>
+            ${s.wbVersionMessage}
+          </div>`
+        : nothing}
+      <div class="oc-settings__btn-row">
+        <button class="oc-settings__btn oc-settings__btn--compact" ?disabled=${s.wbCheckBusy || s.wbApplyBusy || s.wbVersionLoading}
+          @click=${() => { void onWbCheckUpdate(state); }}>
+          ${s.wbCheckBusy ? t("settings.advanced.wbUpdateChecking") : t("settings.advanced.wbUpdateCheck")}
+        </button>
+        ${v?.updateAvailable
+          ? html`<button class="oc-settings__btn oc-settings__btn--compact oc-settings__btn--primary"
+              ?disabled=${s.wbCheckBusy || s.wbApplyBusy}
+              @click=${() => { void onWbApplyUpdate(state); }}>
+              ${s.wbApplyBusy ? t("settings.advanced.wbUpdateApplying") : t("settings.advanced.wbUpdateApply")}
+            </button>`
+          : nothing}
+      </div>
+    </div>
+  `;
+}
+
 export function renderTabAdvanced(state: AppViewState) {
   if (!s.initialized) init(state);
 
@@ -596,6 +766,8 @@ export function renderTabAdvanced(state: AppViewState) {
             >${t("settings.advanced.wbHealthBroken")}</a>`
           : nothing}
       </div>
+
+      ${s.browserMode === "webbridge" ? renderWebbridgeVersionCard(state) : nothing}
 
       <div class="oc-settings__form-group">
         <oc-toggle-switch .label=${t("settings.advanced.imessage")} .checked=${s.imessageEnabled}

@@ -48,6 +48,7 @@ import {
   runWebbridgeSetupTask,
 } from "./webbridge";
 import { readWebbridgeExtensionId } from "./constants";
+import { runWebbridgeExclusive, WebbridgeBusyError } from "./webbridge-update";
 
 interface SetupIpcDeps {
   windowManager: WindowManager;
@@ -511,7 +512,10 @@ export function registerSetupIpc(deps: SetupIpcDeps): void {
       // fire-and-forget——Setup 已结束，主窗已打开，不阻塞用户。
       // 下载失败时会降级到 openclaw 模式并通过 onBrowserModeChanged 触发 gateway 重启；
       // 失败状态由主窗左侧栏的"WebBridge 插件需要修复"提示通知用户。
-      runWebbridgeSetupTask({
+      // F4 并发护栏：与 settings 修复 / 版本换装共用同一把独占锁——锁忙时
+      // 跳过本次后台任务（用户多半已手动触发过修复/更新，无需重复安装）。
+      runWebbridgeExclusive(() =>
+        runWebbridgeSetupTask({
         installer: () => installWebbridge(),
         // Pre-step：用户之前从 chrome://extensions UI 删过扩展时，extId 会落到
         // Preferences.extensions.external_uninstalls 黑名单，之后写 External Extensions JSON
@@ -583,7 +587,8 @@ export function registerSetupIpc(deps: SetupIpcDeps): void {
           info: (msg) => log.info(msg),
           error: (msg) => log.error(msg),
         },
-      })
+      }),
+      )
         .then((summary) => {
           analytics.track("webbridge_setup_task", {
             outcome: summary.outcome,
@@ -599,6 +604,11 @@ export function registerSetupIpc(deps: SetupIpcDeps): void {
           broadcastWebbridgeStateChanged();
         })
         .catch((err) => {
+          if (err instanceof WebbridgeBusyError) {
+            log.info("[setup] webbridge 后台任务跳过：另一项 WebBridge 操作进行中（修复/更新已在跑）");
+            broadcastWebbridgeStateChanged();
+            return;
+          }
           log.error(
             `[setup] webbridge background task 意外异常: ${err?.message ?? err}`,
           );

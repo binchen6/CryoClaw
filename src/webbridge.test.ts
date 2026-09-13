@@ -11,7 +11,10 @@ import {
   getWebbridgePrecheck,
   installWebbridge,
   installWebbridgeSkill,
+  isValidWebbridgeVersion,
   readCacheManifest,
+  renameWithRetry,
+  resolveWebbridgeVersion,
   runWebbridgeSetupTask,
   verifyWebbridgeBinarySha256,
   writeCacheManifest,
@@ -352,4 +355,387 @@ test("verifyWebbridgeBinarySha256：远端清单命中即放行；都不匹配�
   );
   assert.equal(fs.existsSync(bin), false, "fail closed 删除产物");
   fs.rmSync(dir, { recursive: true, force: true });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// R79：版本串校验 / 本地复用 / 离线 skip / 文件锁重试 / 并发锁 / 更新管线
+// ═══════════════════════════════════════════════════════════════════
+
+// HEAD/GET 都计数的 CDN fixture（checkWebbridgeUpdate 测缓存门控用）
+function startCdnEx(
+  body: Buffer,
+  etag: string,
+): Promise<{ url: string; close: () => Promise<void>; headCalls: () => number; getCalls: () => number }> {
+  return new Promise((resolve) => {
+    let headCalls = 0;
+    let getCalls = 0;
+    const s = http.createServer((req, res) => {
+      if (req.method === "HEAD") {
+        headCalls++;
+        res.writeHead(200, { ETag: etag, "Content-Length": String(body.length) });
+        res.end();
+      } else {
+        getCalls++;
+        res.writeHead(200, { "Content-Length": String(body.length) });
+        res.end(body);
+      }
+    });
+    s.listen(0, "127.0.0.1", () => {
+      const a = s.address();
+      if (!a || typeof a === "string") throw new Error("no addr");
+      resolve({
+        url: `http://127.0.0.1:${a.port}`,
+        close: () => new Promise((r) => s.close(() => r())),
+        headCalls: () => headCalls,
+        getCalls: () => getCalls,
+      });
+    });
+  });
+}
+
+const DEAD_CDN = "http://127.0.0.1:1"; // 立刻 ECONNREFUSED（非 transient，不重试）
+
+test("版本串校验：isValidWebbridgeVersion 白名单；非法 KIMI_WEBBRIDGE_VERSION 回退 latest", () => {
+  assert.equal(isValidWebbridgeVersion("latest"), true);
+  assert.equal(isValidWebbridgeVersion("1.2.3"), true);
+  assert.equal(isValidWebbridgeVersion("v2.0.9-rc.1"), true);
+  assert.equal(isValidWebbridgeVersion("2026.9.10"), true);
+  assert.equal(isValidWebbridgeVersion("../etc/passwd"), false);
+  assert.equal(isValidWebbridgeVersion("a/b"), false);
+  assert.equal(isValidWebbridgeVersion("a?x=1"), false);
+  assert.equal(isValidWebbridgeVersion(""), false);
+  assert.equal(isValidWebbridgeVersion("  "), false);
+
+  const prev = process.env.KIMI_WEBBRIDGE_VERSION;
+  try {
+    process.env.KIMI_WEBBRIDGE_VERSION = "../../evil";
+    assert.equal(resolveWebbridgeVersion(), "latest", "非法环境变量必须回退 latest（防 URL path 注入）");
+    process.env.KIMI_WEBBRIDGE_VERSION = "1.2.3";
+    assert.equal(resolveWebbridgeVersion(), "1.2.3");
+  } finally {
+    if (prev === undefined) delete process.env.KIMI_WEBBRIDGE_VERSION;
+    else process.env.KIMI_WEBBRIDGE_VERSION = prev;
+  }
+});
+
+test("F1 本地复用：sha 命中钉定 → skip 不触网，保留旧 manifest 的 etag", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "wb-reuse-"));
+  const bin = path.join(dir, "bin/kimi-webbridge");
+  fs.mkdirSync(path.dirname(bin), { recursive: true });
+  fs.writeFileSync(bin, Buffer.from("known-good-binary"));
+  const binSha = sha256File(bin);
+  writeCacheManifest(dir, {
+    version: "1.0.0", etag: '"v1"', lastModified: null, contentLength: 42, sha256: "0".repeat(64),
+  });
+  try {
+    const res = await installWebbridge({
+      dataDir: dir, binaryPath: bin, platform: "darwin", arch: "arm64",
+      cdnBaseUrl: DEAD_CDN, // 不可达——命中钉定必须连 HEAD 都不发
+      expectedSha256: binSha,
+    });
+    assert.equal(res.skipped, true);
+    assert.equal(res.adopted ?? false, false);
+    const m = readCacheManifest(dir);
+    assert.equal(m?.etag, '"v1"', "复用路径保留旧 etag（更新检查比对用）");
+    assert.equal(m?.version, "1.0.0");
+    assert.equal(m?.sha256, binSha);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("F1 本地复用：用户自装二进制（无 manifest）+ 版本探测成功 → 采纳", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "wb-adopt-"));
+  const bin = path.join(dir, "bin/kimi-webbridge");
+  fs.mkdirSync(path.dirname(bin), { recursive: true });
+  fs.writeFileSync(bin, Buffer.from("user-installed-newer-binary"));
+  const binSha = sha256File(bin);
+  try {
+    const res = await installWebbridge({
+      dataDir: dir, binaryPath: bin, platform: "darwin", arch: "arm64",
+      cdnBaseUrl: DEAD_CDN,            // 探测采纳路径不触网
+      expectedSha256: "a".repeat(64),  // 不命中 → 走探测
+      versionProbe: async () => "2.0.9",
+    });
+    assert.equal(res.skipped, true);
+    assert.equal(res.adopted, true);
+    assert.equal(res.version, "2.0.9");
+    const m = readCacheManifest(dir);
+    assert.equal(m?.version, "2.0.9");
+    assert.equal(m?.adopted, true);
+    assert.equal(m?.sha256, binSha);
+    assert.equal(m?.etag, null);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("F1 本地复用：探测失败（二进制可疑）→ 落回正常下载替换", async () => {
+  const body = Buffer.alloc(512, 0x55);
+  const bodySha = createHash("sha256").update(body).digest("hex");
+  const { url, close } = await startCdn(body, '"v2"');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "wb-probe-fail-"));
+  const bin = path.join(dir, "bin/kimi-webbridge");
+  fs.mkdirSync(path.dirname(bin), { recursive: true });
+  fs.writeFileSync(bin, Buffer.from("corrupt-or-unknown-binary"));
+  try {
+    const res = await installWebbridge({
+      dataDir: dir, binaryPath: bin, platform: "darwin", arch: "arm64",
+      cdnBaseUrl: url,
+      expectedSha256: bodySha,
+      versionProbe: async () => null, // 探测失败 = 二进制不可信/损坏
+    });
+    assert.equal(res.installed, true, "探测失败必须走下载替换");
+    assert.equal(sha256File(bin), bodySha);
+  } finally {
+    await close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("F1 离线：HEAD 失败但 manifest.sha256 与磁盘一致 → skip 继续流程", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "wb-offline-"));
+  const bin = path.join(dir, "bin/kimi-webbridge");
+  fs.mkdirSync(path.dirname(bin), { recursive: true });
+  fs.writeFileSync(bin, Buffer.from("last-installed-by-cryoclaw"));
+  writeCacheManifest(dir, {
+    version: "1", etag: '"v1"', lastModified: null, contentLength: 3, sha256: sha256File(bin),
+  });
+  try {
+    const res = await installWebbridge({
+      dataDir: dir, binaryPath: bin, platform: "darwin", arch: "arm64",
+      cdnBaseUrl: DEAD_CDN,
+      expectedSha256: "", // 无钉定可用（离线拉不到远端清单的场景）
+      versionProbe: async () => null,
+    });
+    assert.equal(res.skipped, true, "离线 + 本地可信 → 不再因断网失败");
+    assert.equal(res.offline, true);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("F1 离线：本地无二进制 → 维持抛错（setup 降级 openclaw 的既有语义）", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "wb-offline-empty-"));
+  try {
+    await assert.rejects(
+      installWebbridge({
+        dataDir: dir, binaryPath: path.join(dir, "bin/kimi-webbridge"),
+        platform: "darwin", arch: "arm64", cdnBaseUrl: DEAD_CDN,
+        expectedSha256: "", versionProbe: async () => null,
+      }),
+    );
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("rename 重试：EPERM 文件锁错误按退避重试后成功；非锁错误不重试", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "wb-rename-"));
+  const a = path.join(dir, "a");
+  const b = path.join(dir, "b");
+  fs.writeFileSync(a, "payload");
+  // 必须 patch 真实 fs 模块（require("fs")）——TS 的 `import * as fs` 经
+  // __importStar 生成 getter-only 的命名空间副本，且 webbridge.js 内部持有
+  // 自己的副本；副本的 getter 会对真实模块做活查找，patch 真身两边都生效。
+  const realFs = require("fs") as typeof import("fs");
+  const orig = realFs.renameSync;
+  let calls = 0;
+  realFs.renameSync = ((oldPath: fs.PathLike, newPath: fs.PathLike) => {
+    calls++;
+    if (calls === 1) {
+      const e = new Error("sync rename EPERM") as NodeJS.ErrnoException;
+      e.code = "EPERM";
+      throw e;
+    }
+    return orig.call(realFs, oldPath, newPath);
+  }) as typeof realFs.renameSync;
+  try {
+    await renameWithRetry(a, b);
+    assert.equal(calls, 2, "第一次 EPERM 后必须重试");
+    assert.equal(fs.existsSync(b), true);
+    assert.equal(fs.existsSync(a), false);
+  } finally {
+    realFs.renameSync = orig;
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+
+  // 非锁错误（如 ENOENT）必须立即抛出不重试
+  await assert.rejects(renameWithRetry(path.join(dir, "missing"), path.join(dir, "dest")));
+});
+
+test("并发锁互斥（F4）：busy 时立即拒绝 WEBBRIDGE_BUSY，结束后放行", async () => {
+  const wu = await import("./webbridge-update");
+  let release!: () => void;
+  const gate = new Promise<void>((r) => { release = r; });
+  const first = wu.runWebbridgeExclusive(async () => {
+    await gate;
+    return "first";
+  });
+  assert.equal(wu.isWebbridgeExclusiveBusy(), true);
+  await assert.rejects(
+    () => wu.runWebbridgeExclusive(async () => "second"),
+    (err: unknown) =>
+      err instanceof wu.WebbridgeBusyError &&
+      (err as { code?: string }).code === "WEBBRIDGE_BUSY",
+  );
+  release();
+  assert.equal(await first, "first");
+  assert.equal(wu.isWebbridgeExclusiveBusy(), false, "任务结束必须释放锁");
+  assert.equal(await wu.runWebbridgeExclusive(async () => "third"), "third");
+});
+
+test("version status 解析（F2）：manifest + daemon /status 聚合；latest 别名回退 daemon 版本", async () => {
+  const wu = await import("./webbridge-update");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "wb-status-"));
+  const bin = path.join(dir, "bin/kimi-webbridge");
+  fs.mkdirSync(path.dirname(bin), { recursive: true });
+  fs.writeFileSync(bin, Buffer.from("binary"));
+  try {
+    writeCacheManifest(dir, { version: "2.0.9", etag: '"e"', lastModified: null, contentLength: 1, sha256: sha256File(bin) });
+    const st = await wu.getWebbridgeVersionStatus({
+      dataDir: dir,
+      binaryPath: bin,
+      daemonStatus: {
+        running: true, version: "2.0.9", extensionVersion: "2.0.9",
+        updateAvailable: { current: "2.0.9", latest: "2.1.0" }, versionMismatch: false,
+      },
+    });
+    assert.equal(st.installed, true);
+    assert.equal(st.installedVersion, "2.0.9");
+    assert.equal(st.installSource, "cryoclaw");
+    assert.equal(st.daemonRunning, true);
+    assert.equal(st.daemonVersion, "2.0.9");
+    assert.equal(st.extensionVersion, "2.0.9");
+    assert.equal(st.updateAvailable?.latest, "2.1.0");
+    assert.equal(st.autoUpdate, true, "autoUpdate 缺省 true");
+
+    // adopted 来源
+    writeCacheManifest(dir, { version: "3.0.0", etag: null, lastModified: null, contentLength: null, sha256: sha256File(bin), adopted: true });
+    const adopted = await wu.getWebbridgeVersionStatus({ dataDir: dir, binaryPath: bin, daemonStatus: null });
+    assert.equal(adopted.installSource, "adopted");
+    assert.equal(adopted.daemonRunning, false);
+    assert.equal(adopted.updateAvailable, null);
+
+    // manifest version 是 "latest" 别名（无信息量）→ 回退 daemon 上报版本
+    writeCacheManifest(dir, { version: "latest", etag: '"x"', lastModified: null, contentLength: null });
+    const aliased = await wu.getWebbridgeVersionStatus({
+      dataDir: dir, binaryPath: bin,
+      daemonStatus: { running: true, version: "2.1.0", extensionVersion: null, updateAvailable: null, versionMismatch: false },
+    });
+    assert.equal(aliased.installedVersion, "2.1.0");
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("checkWebbridgeUpdate（F2）：daemon /status 权威；daemon 没跑 → ETag 比对；24h 缓存门控", async () => {
+  const wu = await import("./webbridge-update");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "wb-check-"));
+  try {
+    // daemon 在跑：update_available 直接采信
+    writeCacheManifest(dir, { version: "2.0.9", etag: '"v1"', lastModified: null, contentLength: null });
+    const byDaemon = await wu.checkWebbridgeUpdate({
+      dataDir: dir, force: true,
+      daemonStatus: { running: true, version: "2.0.9", extensionVersion: "2.0.9", updateAvailable: { current: "2.0.9", latest: "2.1.0" }, versionMismatch: false },
+    });
+    assert.equal(byDaemon.source, "daemon");
+    assert.equal(byDaemon.updateAvailable?.latest, "2.1.0");
+
+    // daemon 没跑：ETag 与 manifest 不同 = 可能有更新
+    const cdn = await startCdnEx(Buffer.alloc(64, 0x66), '"v2"');
+    try {
+      const byEtag = await wu.checkWebbridgeUpdate({
+        dataDir: dir, force: true, daemonStatus: null, cdnBaseUrl: cdn.url,
+      });
+      assert.equal(byEtag.source, "etag");
+      assert.ok(byEtag.updateAvailable, "etag 变化应报告可能有更新");
+      assert.equal(byEtag.etag, '"v2"');
+      assert.equal(cdn.headCalls(), 1);
+
+      // 24h 内不 force → 直接回缓存，不再 HEAD
+      const cached = await wu.checkWebbridgeUpdate({ dataDir: dir, daemonStatus: null, cdnBaseUrl: cdn.url });
+      assert.equal(cached.source, "cache");
+      assert.equal(cdn.headCalls(), 1, "24h 内不重复 HEAD");
+
+      // ETag 一致 → 无更新
+      writeCacheManifest(dir, { version: "2.0.9", etag: '"v2"', lastModified: null, contentLength: null });
+      const same = await wu.checkWebbridgeUpdate({
+        dataDir: dir, force: true, daemonStatus: null, cdnBaseUrl: cdn.url,
+      });
+      assert.equal(same.updateAvailable, null);
+    } finally {
+      await cdn.close();
+    }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("applyWebbridgeUpdate（F3）：pin 不匹配 → 保留旧版本不替换（pin-stale）", async () => {
+  const wu = await import("./webbridge-update");
+  const newBody = Buffer.alloc(256, 0x77);
+  const { url, close } = await startCdn(newBody, '"v2"');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "wb-apply-stale-"));
+  const bin = path.join(dir, "bin/kimi-webbridge");
+  fs.mkdirSync(path.dirname(bin), { recursive: true });
+  const oldContent = Buffer.from("old-known-good-binary");
+  fs.writeFileSync(bin, oldContent);
+  writeCacheManifest(dir, { version: "1.0.0", etag: '"v1"', lastModified: null, contentLength: null, sha256: sha256File(bin) });
+  let broadcasts = 0;
+  wu.setWebbridgeStateChangedBroadcastForTests(() => { broadcasts++; });
+  try {
+    const res = await wu.applyWebbridgeUpdate({
+      dataDir: dir, binaryPath: bin, platform: "darwin", arch: "arm64", cdnBaseUrl: url,
+      remotePinsProvider: async () => ({ "kimi-webbridge-darwin-arm64": "f".repeat(64) }), // 与新产物不符
+      fetchDaemonStatus: async () => null,
+      installSkill: async () => ({ success: true, output: "" }),
+    });
+    assert.equal(res.ok, false);
+    assert.equal((res as { reason: string }).reason, "pin-stale");
+    assert.equal(fs.readFileSync(bin).equals(oldContent), true, "更新失败必须保留旧版本");
+    assert.equal(fs.readdirSync(path.dirname(bin)).length, 1, "不留 tmp 残留");
+    assert.equal(readCacheManifest(dir)?.etag, '"v1"', "manifest 不动");
+    assert.equal(broadcasts, 0, "失败路径不广播状态变化");
+  } finally {
+    wu.setWebbridgeStateChangedBroadcastForTests(null);
+    await close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("applyWebbridgeUpdate（F3）：pin 命中 → 换装 + manifest + skill 刷新 + 广播", async () => {
+  const wu = await import("./webbridge-update");
+  const newBody = Buffer.alloc(256, 0x88);
+  const newSha = createHash("sha256").update(newBody).digest("hex");
+  const { url, close } = await startCdn(newBody, '"v2"');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "wb-apply-ok-"));
+  const bin = path.join(dir, "bin/kimi-webbridge");
+  fs.mkdirSync(path.dirname(bin), { recursive: true });
+  fs.writeFileSync(bin, Buffer.from("old-binary"));
+  writeCacheManifest(dir, { version: "1.0.0", etag: '"v1"', lastModified: null, contentLength: null, sha256: sha256File(bin) });
+  let broadcasts = 0;
+  let skillCalls = 0;
+  wu.setWebbridgeStateChangedBroadcastForTests(() => { broadcasts++; });
+  try {
+    const res = await wu.applyWebbridgeUpdate({
+      dataDir: dir, binaryPath: bin, platform: "darwin", arch: "arm64", cdnBaseUrl: url,
+      remotePinsProvider: async () => ({ "kimi-webbridge-darwin-arm64": newSha }),
+      fetchDaemonStatus: async () => null, // daemon 未运行 → 不重启
+      installSkill: async (bp) => { skillCalls++; assert.equal(bp, bin); return { success: true, output: "" }; },
+    });
+    assert.equal(res.ok, true);
+    assert.equal(fs.readFileSync(bin).equals(newBody), true, "新二进制已换装");
+    const m = readCacheManifest(dir);
+    assert.equal(m?.etag, '"v2"');
+    assert.equal(m?.sha256, newSha);
+    assert.equal(m?.adopted ?? false, false);
+    assert.equal(skillCalls, 1, "换装后必须刷新 skill");
+    assert.equal(broadcasts, 1, "换装成功必须广播 state-changed");
+    assert.equal((res as { daemonRestarted: boolean }).daemonRestarted, false);
+  } finally {
+    wu.setWebbridgeStateChangedBroadcastForTests(null);
+    await close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });

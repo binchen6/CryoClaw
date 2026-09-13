@@ -124,7 +124,7 @@ type CryoClawBridge = {
   // pill 点击时主动修复（清 blocklist + 写 External JSON），需要浏览器关闭
   settingsWebbridgePillRepair?: () => Promise<{
     success: boolean;
-    code?: "READY" | "ALREADY_OK" | "BROWSER_RUNNING" | "DEFAULT_BROWSER_UNSUPPORTED" | "FAILED";
+    code?: "READY" | "ALREADY_OK" | "BROWSER_RUNNING" | "DEFAULT_BROWSER_UNSUPPORTED" | "FAILED" | "WEBBRIDGE_BUSY";
     browserName?: string;
     message?: string;
     includesExtension?: boolean;
@@ -909,6 +909,12 @@ export class OpenClawApp extends LitElement {
           this.webbridgePillModal = { kind: "browser-running", browserName };
         } else if (r?.code === "DEFAULT_BROWSER_UNSUPPORTED") {
           this.webbridgePillModal = { kind: "unsupported" };
+        } else if (r?.code === "WEBBRIDGE_BUSY") {
+          // F4 并发锁：另一项 WebBridge 操作（修复/更新）在跑——提示稍后再点
+          this.webbridgePillModal = {
+            kind: "failed",
+            message: t("settings.advanced.wbUpdateBusy"),
+          };
         } else {
           this.webbridgePillModal = {
             kind: "failed",

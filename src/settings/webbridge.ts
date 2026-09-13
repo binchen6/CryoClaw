@@ -1,6 +1,6 @@
 /**
- * Settings: WebBridge（status / precheck / needs-repair / repair-and-enable /
- * pill-repair / install-extensions / clean-blocklist）+ 默认浏览器查询。
+ * Settings: WebBridge（precheck / needs-repair / repair-and-enable / pill-repair /
+ * 版本状态与更新）+ 默认浏览器查询。
  */
 import { app, ipcMain, shell } from "electron";
 import * as os from "os";
@@ -42,6 +42,14 @@ import {
   type SetupTaskSummary,
 } from "../webbridge";
 import { loadRemotePins } from "../webbridge-pins";
+import {
+  applyWebbridgeUpdate,
+  checkWebbridgeUpdate,
+  getWebbridgeVersionStatus,
+  runWebbridgeExclusive,
+  WebbridgeBusyError,
+  writeUpdateCheckState,
+} from "../webbridge-update";
 import { readUserConfig, writeUserConfig } from "../provider-config";
 import { assertTrustedIpcSender } from "../ipc-sender-guard";
 import * as log from "../logger";
@@ -167,7 +175,8 @@ const runSelectiveWebbridgeRepair = async (
     await loadRemotePins({ dataDir: resolveWebbridgeDataDir() }).catch(() => ({ pins: null }))
   ).pins;
   return runWebbridgeSetupTask({
-    installer: () => installWebbridge({ force: false }),
+    // remotePins 注入（R79 去重）：installWebbridge 内部不再重复拉取一次
+    installer: () => installWebbridge({ force: false, remotePins }),
     installExtensions: async () => {
       const spec = resolveWebbridgeExtensionSpec();
       if (!spec) {
@@ -330,9 +339,18 @@ export function registerWebbridgeIpc(opts: SettingsIpcOptions): void {  // ─�
         data: { visible: !enabled, defaultBrowser: defBrowser },
       };
     } catch (err: any) {
+      // 异常吞没问题（R79 修复）：webbridge 模式下 precheck 抛错意味着组件状态
+      // 未知——按“可能坏了”处理显示 pill（宁可让用户点一次修复），只在明确
+      // 非 webbridge 模式时才隐藏；模式本身读不出来时也倾向显示。
+      let visible = true;
+      try {
+        visible = detectBrowserMode(readUserConfig()) === "webbridge";
+      } catch {
+        visible = true;
+      }
       return {
         success: true,
-        data: { visible: false, defaultBrowser: null },
+        data: { visible, defaultBrowser: null },
         message: err?.message,
       };
     }
@@ -343,6 +361,9 @@ export function registerWebbridgeIpc(opts: SettingsIpcOptions): void {  // ─�
   ipcMain.handle("settings:webbridge-repair-and-enable", async (event) => {
     if (!assertTrustedIpcSender(event, "settings:webbridge-repair-and-enable")) throw new Error("IPC sender not trusted");
     try {
+      // F4 并发护栏：与 pill-repair / setup 后台任务 / 版本换装共用同一把独占锁，
+      // 防止两条安装路径并发写二进制 / 扩展 JSON。
+      return await runWebbridgeExclusive(async () => {
       // 0. 默认浏览器必须是 Chrome/Edge，不然没法修
       const def = await getDefaultBrowser();
       if (!def) {
@@ -399,7 +420,15 @@ export function registerWebbridgeIpc(opts: SettingsIpcOptions): void {  // ─�
         pre.missing.extension,
       );
       return { success: true, data: summary, openedBrowser };
+      });
     } catch (err: any) {
+      if (err instanceof WebbridgeBusyError) {
+        return {
+          success: false,
+          code: "WEBBRIDGE_BUSY",
+          message: "正在进行另一项 WebBridge 操作，请稍后再试。",
+        };
+      }
       return { success: false, message: err.message || String(err) };
     }
   });
@@ -417,6 +446,8 @@ export function registerWebbridgeIpc(opts: SettingsIpcOptions): void {  // ─�
   ipcMain.handle("settings:webbridge-pill-repair", async (event) => {
     if (!assertTrustedIpcSender(event, "settings:webbridge-pill-repair")) throw new Error("IPC sender not trusted");
     try {
+      // F4 并发护栏：同 repair-and-enable（另一条安装路径不可并发）
+      return await runWebbridgeExclusive(async () => {
       const def = await getDefaultBrowser();
       if (!def) {
         return { success: false, code: "DEFAULT_BROWSER_UNSUPPORTED" };
@@ -505,11 +536,60 @@ export function registerWebbridgeIpc(opts: SettingsIpcOptions): void {  // ─�
         browserRunning: false,
         openedBrowser,
       };
+      });
     } catch (err: any) {
+      if (err instanceof WebbridgeBusyError) {
+        return { success: false, code: "WEBBRIDGE_BUSY" };
+      }
       return {
         success: false,
         code: "FAILED",
         message: err?.message || String(err),
       };
     }
-  });  // ── 清理 Chrome external_uninstalls 黑名单（用户 UI 卸载过 → 阻断 External Extensions JSON 安装） ──}
+  });
+
+  // ── WebBridge 版本状态：安装版本 / 来源 / daemon 运行态 / 更新信号（F5） ──
+  ipcMain.handle("settings:webbridge-version-status", async (event) => {
+    if (!assertTrustedIpcSender(event, "settings:webbridge-version-status")) throw new Error("IPC sender not trusted");
+    try {
+      return { success: true, data: await getWebbridgeVersionStatus() };
+    } catch (err: any) {
+      return { success: false, message: err.message || String(err) };
+    }
+  });
+
+  // ── 检查更新 / 写自动更新开关（F5）──
+  // params.autoUpdate 为 boolean 时只写 .update-check.json 的开关（设置页 toggle）；
+  // 缺省时执行一次强制检查（daemon /status 优先，否则 CDN ETag 比对）。
+  ipcMain.handle("settings:webbridge-update-check", async (event, params?: { autoUpdate?: boolean }) => {
+    if (!assertTrustedIpcSender(event, "settings:webbridge-update-check")) throw new Error("IPC sender not trusted");
+    try {
+      if (params && typeof params.autoUpdate === "boolean") {
+        writeUpdateCheckState(resolveWebbridgeDataDir(), { autoUpdate: params.autoUpdate });
+        return { success: true, data: await getWebbridgeVersionStatus() };
+      }
+      return { success: true, data: await checkWebbridgeUpdate({ force: true }) };
+    } catch (err: any) {
+      return { success: false, message: err.message || String(err) };
+    }
+  });
+
+  // ── 立即更新：下载新二进制 → 钉定校验 → 换装 → 按需重启 daemon + 刷新 skill（F5）──
+  ipcMain.handle("settings:webbridge-update-apply", async (event) => {
+    if (!assertTrustedIpcSender(event, "settings:webbridge-update-apply")) throw new Error("IPC sender not trusted");
+    try {
+      const result = await applyWebbridgeUpdate();
+      if (result.ok) {
+        return { success: true, data: result };
+      }
+      return {
+        success: false,
+        code: result.reason === "pin-stale" ? "PIN_STALE" : result.reason === "busy" ? "WEBBRIDGE_BUSY" : "UPDATE_FAILED",
+        message: result.message ?? result.reason,
+      };
+    } catch (err: any) {
+      return { success: false, message: err.message || String(err) };
+    }
+  });
+}

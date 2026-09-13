@@ -1,7 +1,6 @@
 // webbridge.ts — daemon 下载缓存 / setup 编排 / 状态聚合 / precheck
 // 合并自原 webbridge-installer.ts + webbridge-setup-task.ts + webbridge-status.ts
 import * as fs from "fs";
-import * as os from "os";
 import * as path from "path";
 import * as http from "http";
 import * as https from "https";
@@ -11,6 +10,7 @@ import { URL } from "url";
 import {
   readWebbridgeCrxMetadata,
   resolveWebbridgeCrxPath,
+  resolveWebbridgeDataDir,
 } from "./constants";
 import { loadRemotePins } from "./webbridge-pins";
 import type {
@@ -60,9 +60,68 @@ function safeResolveWebbridgePinFilename(): string | null {
   }
 }
 
-function sha256FileSync(filePath: string): string {
+export function sha256FileSync(filePath: string): string {
   const { createHash } = require("crypto") as typeof import("crypto");
   return createHash("sha256").update(fs.readFileSync(filePath)).digest("hex");
+}
+
+// ── Windows 文件锁重试（R79）──
+// daemon 进程运行时，对二进制的 rename / unlink 会间歇性 EPERM/EBUSY
+// （Defender 扫描 + Go 进程自身句柄）。固定 3 次退避重试（500ms/1s/2s）。
+const FILE_LOCK_RETRY_DELAYS_MS = [500, 1000, 2000];
+
+function isFileLockError(err: unknown): boolean {
+  const code = (err as NodeJS.ErrnoException | null)?.code;
+  return code === "EPERM" || code === "EBUSY" || code === "EACCES" || code === "ENOTEMPTY";
+}
+
+/** rename 带文件锁退避重试（daemon 持锁换装二进制的统一入口）。 */
+export async function renameWithRetry(src: string, dest: string): Promise<void> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      fs.renameSync(src, dest);
+      return;
+    } catch (err) {
+      if (attempt >= FILE_LOCK_RETRY_DELAYS_MS.length || !isFileLockError(err)) {
+        throw err;
+      }
+      await sleep(FILE_LOCK_RETRY_DELAYS_MS[attempt]);
+    }
+  }
+}
+
+// 同步 sleep：verifyWebbridgeBinarySha256 是同步 fail-closed 路径（测试直接
+// assert.throws），删除被锁产物时的短暂阻塞可接受；Node 主线程允许 Atomics.wait。
+function sleepSync(ms: number): void {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+/** 强删文件带文件锁退避重试；非锁错误或重试耗尽时抛出（由调用方决断）。 */
+function rmForceWithLockRetry(filePath: string): void {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      fs.rmSync(filePath, { force: true });
+      return;
+    } catch (err) {
+      if (attempt >= FILE_LOCK_RETRY_DELAYS_MS.length || !isFileLockError(err)) {
+        throw err;
+      }
+      sleepSync(FILE_LOCK_RETRY_DELAYS_MS[attempt]);
+    }
+  }
+}
+
+// fail-closed 删除产物；删除本身被文件锁挡住时把清理失败信息附在校验错误上
+// （不能吞掉校验错误——那是拒绝执行未校验产物的核心语义）。
+function failClosedDelete(binaryPath: string, err: Error): never {
+  try {
+    rmForceWithLockRetry(binaryPath);
+  } catch (cleanupErr) {
+    err.message += `\n（且清理落盘产物失败: ${
+      cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr)
+    }——可能 daemon 正在运行，请先停止后重试）`;
+  }
+  throw err;
 }
 
 /**
@@ -87,10 +146,12 @@ export function verifyWebbridgeBinarySha256(
   const remote = extraPins?.[filename] ?? null;
   const pin = embedded ?? remote;
   if (!pin) {
-    fs.rmSync(binaryPath, { force: true });
-    throw new Error(
-      `webbridge 二进制缺少 sha256 钉定（${filename}）——拒绝执行未校验的下载产物；` +
-        `请更新 WEBBRIDGE_BINARY_SHA256_PINS 或设置 KIMI_WEBBRIDGE_SKIP_PIN=1 排障`,
+    failClosedDelete(
+      binaryPath,
+      new Error(
+        `webbridge 二进制缺少 sha256 钉定（${filename}）——拒绝执行未校验的下载产物；` +
+          `请更新 WEBBRIDGE_BINARY_SHA256_PINS 或设置 KIMI_WEBBRIDGE_SKIP_PIN=1 排障`,
+      ),
     );
   }
   const actual = sha256FileSync(binaryPath);
@@ -98,19 +159,32 @@ export function verifyWebbridgeBinarySha256(
   const okRemote =
     !okEmbedded && remote !== null && actual.toLowerCase() === remote.toLowerCase();
   if (!okEmbedded && !okRemote) {
-    fs.rmSync(binaryPath, { force: true });
-    throw new Error(
-      `webbridge 二进制 sha256 校验失败: ${filename}\n  expected ${pin}` +
-        `${remote && remote !== pin ? `\n  remote   ${remote}` : ""}\n  actual   ${actual}` +
-        `\n（上游 latest 内容已变化或传输被污染；升级需更新钉定表）`,
+    failClosedDelete(
+      binaryPath,
+      new Error(
+        `webbridge 二进制 sha256 校验失败: ${filename}\n  expected ${pin}` +
+          `${remote && remote !== pin ? `\n  remote   ${remote}` : ""}\n  actual   ${actual}` +
+          `\n（上游 latest 内容已变化或传输被污染；升级需更新钉定表）`,
+      ),
     );
   }
 }
 
+// 版本串白名单（R79）：版本会直接拼进 CDN URL path——KIMI_WEBBRIDGE_VERSION
+// 来自环境变量，未校验时 "../.." / "a/b?x=" 之类能构造 path traversal 或注入
+// query。只允许字母数字开头的 [A-Za-z0-9._-]，长度 ≤64。
+const WEBBRIDGE_VERSION_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+
+/** 版本串是否合法（"latest" / 语义化版本 / 构建 tag 形态）。 */
+export function isValidWebbridgeVersion(version: string): boolean {
+  return WEBBRIDGE_VERSION_PATTERN.test(version.trim());
+}
+
 export function resolveWebbridgeVersion(override?: string): string {
-  if (override) return override;
-  const env = process.env.KIMI_WEBBRIDGE_VERSION?.trim();
-  if (env) return env;
+  const candidate = (override ?? process.env.KIMI_WEBBRIDGE_VERSION ?? "").trim();
+  if (candidate && isValidWebbridgeVersion(candidate)) return candidate;
+  // 非法值（含未设置）静默回退 latest：环境变量是排障用途，不该有能力让
+  // 下载 URL 指向任意路径。
   return "latest";
 }
 
@@ -119,6 +193,10 @@ export interface CacheManifest {
   etag: string | null;
   lastModified: string | null;
   contentLength: number | null;
+  /** 本地落盘二进制的 sha256（R79 本地复用 / 离线 skip 判定）；旧 manifest 无此字段为 null。 */
+  sha256?: string | null;
+  /** true = 沿用了用户自行安装的二进制（版本探测采纳），不是 CryoClaw 下载的产物。 */
+  adopted?: boolean;
 }
 
 const CACHE_FILE_NAME = ".download-cache.json";
@@ -134,6 +212,8 @@ export function readCacheManifest(dataDir: string): CacheManifest | null {
       lastModified: parsed.lastModified ?? null,
       contentLength:
         typeof parsed.contentLength === "number" ? parsed.contentLength : null,
+      sha256: typeof parsed.sha256 === "string" ? parsed.sha256 : null,
+      adopted: parsed.adopted === true,
     };
   } catch {
     return null;
@@ -344,19 +424,21 @@ export function downloadToFile(
               fail(closeErr);
               return;
             }
-            try {
-              fs.renameSync(tmpPath, dest);
-            } catch (err) {
-              fail(err as Error);
-              return;
-            }
-            onProgress?.({
-              downloaded,
-              total,
-              pct: total ? 100 : null,
-            });
-            settled = true;
-            resolve();
+            // R79：rename 带文件锁退避重试——目标二进制被运行中的 daemon 持有
+            // （Windows EPERM/EBUSY）时不再一次定生死。
+            renameWithRetry(tmpPath, dest).then(
+              () => {
+                if (settled) return;
+                onProgress?.({
+                  downloaded,
+                  total,
+                  pct: total ? 100 : null,
+                });
+                settled = true;
+                resolve();
+              },
+              (err: Error) => fail(err),
+            );
           });
         });
 
@@ -403,6 +485,13 @@ export interface InstallOptions {
   maxRetries?: number;
   /** 期望的 sha256（hex）。缺省 = 按文件名取内置钉定表；空串 = 跳过（测试 fixture）。 */
   expectedSha256?: string;
+  /**
+   * 远端钉定清单（R79 去重）：调用方已经 loadRemotePins 过时注入，命中即不再
+   * 重复拉取（修复路径原先会拉两次）。undefined = 按生产逻辑自行加载。
+   */
+  remotePins?: Record<string, string> | null;
+  /** 本地二进制版本探测注入（测试 fixture；生产用 probeWebbridgeBinaryVersion）。 */
+  versionProbe?: (binaryPath: string) => Promise<string | null>;
 }
 
 export interface InstallResult {
@@ -411,6 +500,10 @@ export interface InstallResult {
   version: string;
   binaryPath: string;
   etag: string | null;
+  /** skipped=true 且沿用用户自装二进制（版本探测采纳）。 */
+  adopted?: boolean;
+  /** skipped=true 且因离线（HEAD 失败）复用本地可信二进制。 */
+  offline?: boolean;
 }
 
 const DEFAULT_MAX_RETRIES = 2;
@@ -427,17 +520,9 @@ function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-// 解析默认路径——延迟到调用时，避免 import 期就触碰 process.env
-// 兜底 os.homedir()：HOME/USERPROFILE 在 CI / sandbox 下可能没设置，
-// 没有兜底时 path.join("", ".kimi-webbridge") 会落成相对路径，
-// 让 binary 下载到当前工作目录。
-function resolveDefaultDataDir(): string {
-  const home =
-    (process.platform === "win32" ? process.env.USERPROFILE : process.env.HOME) ||
-    os.homedir();
-  return path.join(home, ".kimi-webbridge");
-}
-
+// 解析默认路径——统一收敛到 constants.resolveWebbridgeDataDir（R79）：
+// 此前本模块自带的 homedir 解析与 constants 顺序不一致（多一层 || HOME 兜底），
+// 从 Git Bash / MSYS 启动时 skill 探测根与二进制落盘根可能分裂。
 function resolveDefaultBinaryPath(dataDir: string): string {
   const exe = process.platform === "win32" ? "kimi-webbridge.exe" : "kimi-webbridge";
   return path.join(dataDir, "bin", exe);
@@ -445,7 +530,7 @@ function resolveDefaultBinaryPath(dataDir: string): string {
 
 // HEAD 也走 transient 重试 —— 没有这个的话，install 路径在网络抖一下就直接
 // 降级到 openclaw，而下载阶段的重试根本没机会触发。同样的指数退避策略。
-async function httpHeadWithRetry(
+export async function httpHeadWithRetry(
   url: string,
   maxRetries: number,
 ): Promise<HeadResult> {
@@ -464,10 +549,70 @@ async function httpHeadWithRetry(
   throw lastErr;
 }
 
+// 下载 + transient 重试（installWebbridge 与 webbridge-update 的换装管线共用）。
+export async function downloadToFileWithRetry(
+  url: string,
+  dest: string,
+  maxRetries: number,
+  onProgress?: ProgressHandler,
+): Promise<void> {
+  let lastErr: unknown = null;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      await downloadToFile(url, dest, onProgress);
+      return;
+    } catch (err) {
+      lastErr = err;
+      if (attempt === maxRetries || !isTransientError(err)) {
+        throw err;
+      }
+      await sleep(RETRY_BASE_DELAY_MS * Math.pow(3, attempt));
+    }
+  }
+  throw lastErr;
+}
+
+/**
+ * 探测本地二进制版本（F1 采纳判定的健康检查，只跑只读子命令）：
+ *   1. `<binary> --version`（Go CLI 惯例；SKILL.md 未 documenting 但常见）
+ *   2. `<binary> status` → daemon 在跑时 /status JSON 里有 version 字段
+ * 两者都拿不到版本号 → 返回 null（调用方按"二进制可疑"走下载替换）。
+ */
+export async function probeWebbridgeBinaryVersion(
+  binaryPath: string,
+  deps: { execFileAsync?: ExecFileAsync } = {},
+): Promise<string | null> {
+  const execFileAsync = deps.execFileAsync ?? DEFAULT_EXEC_FILE;
+  const VERSION_RE = /\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?/;
+  try {
+    const { stdout } = await execFileAsync(binaryPath, ["--version"], {
+      timeout: 10_000,
+      windowsHide: true,
+    });
+    const m = String(stdout).match(VERSION_RE);
+    if (m) return m[0];
+  } catch {
+    // --version 不被支持（老版本二进制）→ 试 status
+  }
+  try {
+    const { stdout } = await execFileAsync(binaryPath, ["status"], {
+      timeout: 10_000,
+      windowsHide: true,
+    });
+    const parsed = JSON.parse(String(stdout)) as { version?: unknown; running?: unknown };
+    if (parsed?.running === true && typeof parsed.version === "string" && parsed.version.trim()) {
+      return parsed.version.trim();
+    }
+  } catch {
+    // daemon 没跑 / 输出不可解析 → null
+  }
+  return null;
+}
+
 export async function installWebbridge(
   options: InstallOptions = {},
 ): Promise<InstallResult> {
-  const dataDir = options.dataDir ?? resolveDefaultDataDir();
+  const dataDir = options.dataDir ?? resolveWebbridgeDataDir();
   const binaryPath = options.binaryPath ?? resolveDefaultBinaryPath(dataDir);
   const platform = options.platform ?? process.platform;
   const arch = options.arch ?? process.arch;
@@ -477,15 +622,125 @@ export async function installWebbridge(
   const url = `${base}/${version}/releases/${filename}`;
   const maxRetries = options.maxRetries ?? DEFAULT_MAX_RETRIES;
 
-  // HEAD 拿 ETag（同时作为版本探测；404/403 会在这里直接抛出，transient 错误自动重试）
-  const head = await httpHeadWithRetry(url, maxRetries);
-
-  // 远端可更新钉定清单（R68）：只在生产路径（未显式传入 fixture 期望值）加载，
-  // 保证测试不触网；拉取失败返回 null，回退内置表。
+  // 远端可更新钉定清单（R68）：调用方注入优先（修复路径已拉过，R79 去重）；
+  // 只在生产路径（未显式传入 fixture 期望值）自动加载，保证测试不触网；
+  // 拉取失败返回 null，回退内置表。
   const remotePins =
-    options.expectedSha256 === undefined
-      ? (await loadRemotePins({ dataDir }).catch(() => ({ pins: null, source: null }))).pins
-      : null;
+    options.remotePins !== undefined
+      ? options.remotePins
+      : options.expectedSha256 === undefined
+        ? (await loadRemotePins({ dataDir }).catch(() => ({ pins: null, source: null }))).pins
+        : null;
+
+  // 当前文件名的有效钉定（embedded + remote；fixture 语义与下载路径一致：
+  // 未给 = 内置 pin；空串 = 显式跳过）
+  const pinsForFilename = (): { embedded: string | null; remote: string | null } => ({
+    embedded:
+      options.expectedSha256 === undefined
+        ? resolveWebbridgeBinaryPin(filename)
+        : options.expectedSha256 || null,
+    remote:
+      options.expectedSha256 === undefined
+        ? remotePins?.[filename] ?? null
+        : null,
+  });
+
+  const shaOfBinary = (p: string): string | null => {
+    try {
+      return sha256FileSync(p).toLowerCase();
+    } catch {
+      return null;
+    }
+  };
+
+  // ── F1 本地复用（R79）：目标二进制已存在时优先复用，不再无条件打网络 ──
+  // 覆盖三类场景：① 用户自行安装（同路径有二进制但无 CryoClaw manifest）——
+  // 命中钉定或版本探测健康 → 采纳，省 10MB 下载；② 上游重建 latest 后本地
+  // 产物仍与（远端）钉定一致 → 免 HEAD 直接复用；③ 离线（HEAD 失败）→ 本地
+  // 可信即继续流程，setup 不再因断网降级 openclaw。
+  if (!options.force && fs.existsSync(binaryPath)) {
+    const prevManifest = readCacheManifest(dataDir);
+    const actual = shaOfBinary(binaryPath);
+    const { embedded, remote } = pinsForFilename();
+    const pinHit =
+      actual !== null &&
+      ((embedded !== null && actual === embedded.toLowerCase()) ||
+        (remote !== null && actual === remote.toLowerCase()));
+    if (pinHit) {
+      // 磁盘产物与当前钉定一致 = 已是已知安全版本（ETag 命中路径之外的
+      // 第三条 skip 路径）；保留旧 manifest 的 etag 供更新检查比对。
+      writeCacheManifest(dataDir, {
+        version: prevManifest?.version || version,
+        etag: prevManifest?.etag ?? null,
+        lastModified: prevManifest?.lastModified ?? null,
+        contentLength: prevManifest?.contentLength ?? null,
+        sha256: actual,
+        adopted: false,
+      });
+      return {
+        installed: false,
+        skipped: true,
+        version,
+        binaryPath,
+        etag: prevManifest?.etag ?? null,
+      };
+    }
+    // sha 未命中任何钉定（用户自装了更新版本？）→ 只读版本探测：
+    // 能输出版本号 = 可执行且健康 → 采纳本机安装，跳过下载；
+    // 探测失败（二进制损坏/不可执行）→ 落到正常下载替换路径。
+    if (actual !== null) {
+      const probed = await (options.versionProbe ?? probeWebbridgeBinaryVersion)(binaryPath);
+      if (probed) {
+        writeCacheManifest(dataDir, {
+          version: probed,
+          etag: null,
+          lastModified: null,
+          contentLength: null,
+          sha256: actual,
+          adopted: true,
+        });
+        return {
+          installed: false,
+          skipped: true,
+          adopted: true,
+          version: probed,
+          binaryPath,
+          etag: null,
+        };
+      }
+    }
+  }
+
+  // HEAD 拿 ETag（同时作为版本探测；404/403 会在这里直接抛出，transient 错误自动重试）。
+  // 离线兜底（F1）：HEAD 彻底失败但本地二进制可信（钉定命中，或上次 manifest
+  // 记录的 sha256 与当前一致）→ skip 下载继续流程；本地完全无二进制 → 维持
+  // 现状抛错（setup 降级 openclaw）。
+  let head: HeadResult;
+  try {
+    head = await httpHeadWithRetry(url, maxRetries);
+  } catch (err) {
+    if (fs.existsSync(binaryPath)) {
+      const actual = shaOfBinary(binaryPath);
+      const { embedded, remote } = pinsForFilename();
+      const manifest = readCacheManifest(dataDir);
+      const trusted =
+        actual !== null &&
+        ((embedded !== null && actual === embedded.toLowerCase()) ||
+          (remote !== null && actual === remote.toLowerCase()) ||
+          (manifest?.sha256 && actual === manifest.sha256.toLowerCase()));
+      if (trusted) {
+        return {
+          installed: false,
+          skipped: true,
+          offline: true,
+          version,
+          binaryPath,
+          etag: manifest?.etag ?? null,
+        };
+      }
+    }
+    throw err;
+  }
 
   if (!options.force) {
     const cache = readCacheManifest(dataDir);
@@ -528,22 +783,8 @@ export async function installWebbridge(
     }
   }
 
-  // 下载（重试 transient 错误）
-  let lastErr: unknown = null;
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    try {
-      await downloadToFile(url, binaryPath, options.onProgress);
-      lastErr = null;
-      break;
-    } catch (err) {
-      lastErr = err;
-      if (attempt === maxRetries || !isTransientError(err)) {
-        throw err;
-      }
-      await sleep(RETRY_BASE_DELAY_MS * Math.pow(3, attempt));
-    }
-  }
-  if (lastErr) throw lastErr;
+  // 下载（重试 transient 错误；rename 阶段的文件锁错误在 downloadToFile 内重试）
+  await downloadToFileWithRetry(url, binaryPath, maxRetries, options.onProgress);
 
   // 供应链钉定：下载产物过 sha256 校验才允许落盘执行（fail closed，详见
   // verifyWebbridgeBinarySha256 注释）。CDN 只暴露 latest，必须内容级校验；
@@ -559,6 +800,8 @@ export async function installWebbridge(
     etag: head.etag,
     lastModified: head.lastModified,
     contentLength: head.contentLength,
+    sha256: sha256FileSync(binaryPath),
+    adopted: false,
   });
 
   return {
@@ -937,13 +1180,13 @@ export async function installWebbridgeSkill(
 
 // ───────────────────────── Precheck ─────────────────────────
 
-// 平台优先序对齐 constants.resolveWebbridgeDataDir（Win: USERPROFILE 优先）：
-// 从 Git Bash / MSYS（设了 HOME）启动时，HOME 优先会把 skill 探测指到与
-// 二进制落盘目录不同的根，precheck 恒报 missing.skill
-function home(): string {
-  return (process.platform === "win32" ? process.env.USERPROFILE : process.env.HOME)
-    || process.env.HOME
-    || os.homedir();
+// skill 探测根（~/.agents/skills/kimi-webbridge）：与二进制落盘根
+// （constants.resolveWebbridgeDataDir = ~/.kimi-webbridge）同源推导（R79）。
+// 此前本模块自带的 home() 比 constants 多一层 `|| process.env.HOME` 兜底，
+// 从 Git Bash / MSYS（设了 POSIX 形态 HOME）启动时两套解析会分裂——
+// skill 探测指错根，precheck 恒报 missing.skill。
+function skillPathsRoot(): string {
+  return path.dirname(resolveWebbridgeDataDir());
 }
 
 // CryoClaw 只关心自己的 OpenClaw runtime（~/.agents/skills/kimi-webbridge）。
@@ -953,7 +1196,7 @@ function home(): string {
 export const KIMI_WEBBRIDGE_SKILL_PATHS: string[] = [];
 function skillPaths(): string[] {
   if (KIMI_WEBBRIDGE_SKILL_PATHS.length === 0) {
-    KIMI_WEBBRIDGE_SKILL_PATHS.push(path.join(home(), ".agents", "skills", "kimi-webbridge"));
+    KIMI_WEBBRIDGE_SKILL_PATHS.push(path.join(skillPathsRoot(), ".agents", "skills", "kimi-webbridge"));
   }
   return KIMI_WEBBRIDGE_SKILL_PATHS;
 }

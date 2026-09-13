@@ -158,6 +158,9 @@
 | `settingsGetDefaultBrowserName()` | `settings:get-default-browser-name` | invoke |
 | `settingsWebbridgeNeedsRepair()` | `settings:webbridge-needs-repair` | invoke（左侧栏 pill） |
 | `settingsWebbridgePillRepair()` | `settings:webbridge-pill-repair` | invoke（pill 点击修复） |
+| `settingsWebbridgeVersionStatus()` | `settings:webbridge-version-status` | invoke（版本状态：安装版本/来源/daemon 运行态/更新信号，R79） |
+| `settingsWebbridgeUpdateCheck(params?)` | `settings:webbridge-update-check` | invoke（检查更新；`params.autoUpdate` 传 boolean 时只写自动更新开关，R79） |
+| `settingsWebbridgeUpdateApply()` | `settings:webbridge-update-apply` | invoke（下载新二进制 → 钉定校验 → 换装 → 按需重启 daemon，R79） |
 | `settingsExportDiagnostics()` | `settings:export-diagnostics` | invoke（脱敏诊断包导出） |
 | `settingsSaveAdvanced(params)` | `settings:save-advanced` | invoke |
 | `settingsGetCliStatus()` | `settings:get-cli-status` | invoke |

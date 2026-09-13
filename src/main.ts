@@ -60,6 +60,7 @@ import { startTokenRefresh, stopTokenRefresh, loadOAuthToken } from "./kimi-oaut
 import { initKernelUpdater, getKernelUpdateState, checkKernelUpdate, runKernelUpdate, runKernelRollback, isKernelBelowMinSupported, terminateKernelUpdaterForQuit } from "./kernel-updater";
 import { isAutoKernelUpgradeBackoffActive, recordAutoKernelUpgradeFailure, clearAutoKernelUpgradeBackoff } from "./auto-kernel-upgrade-backoff";
 import { initAppUpdater, quitAndInstallAppUpdate } from "./app-updater";
+import { maybeAutoCheckWebbridgeUpdate } from "./webbridge-update";
 import { startGatewayControlServer, stopGatewayControlServer } from "./gateway-control-server";
 import { migrateOpenclawConfigForKernelUpgrade } from "./openclaw-config-migration";
 import { assertTrustedIpcSender } from "./ipc-sender-guard";
@@ -163,6 +164,9 @@ const gateway = new GatewayProcess({
           });
         }
       }
+      // WebBridge 更新静默检查（R79 F2）：webbridge 模式 + 距上次检查 >24h 才动，
+      // 内部全 catch 不抛错——绝不阻塞/拖挂 gateway 启动路径。
+      void maybeAutoCheckWebbridgeUpdate();
     }
   },
   // 非预期退出 → 有界自动重启（R71）。此前崩溃后无人重启，用户会一直停在

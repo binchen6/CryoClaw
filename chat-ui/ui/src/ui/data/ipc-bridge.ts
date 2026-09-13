@@ -98,7 +98,8 @@ export interface WebbridgePrecheckData {
 export type WebbridgeRepairCode =
   | "DEFAULT_BROWSER_UNSUPPORTED"
   | "BROWSER_RUNNING"
-  | "REPAIR_FAILED";
+  | "REPAIR_FAILED"
+  | "WEBBRIDGE_BUSY";
 
 export interface WebbridgeRepairResult {
   success: boolean;
@@ -107,6 +108,37 @@ export interface WebbridgeRepairResult {
   message?: string;
   openedBrowser?: boolean;
   data?: unknown;
+}
+
+// WebBridge 版本状态（settings:webbridge-version-status）
+export interface WebbridgeVersionStatus {
+  installed: boolean;
+  installedVersion: string | null;
+  installSource: "cryoclaw" | "adopted" | null;
+  daemonRunning: boolean;
+  daemonVersion: string | null;
+  extensionVersion: string | null;
+  updateAvailable: { current: string | null; latest: string | null } | null;
+  autoUpdate: boolean;
+  lastCheckedAt: string | null;
+  checkedAt: string;
+}
+
+// 检查更新结果（settings:webbridge-update-check；autoUpdate 传参时返回版本状态）
+export interface WebbridgeUpdateCheckResult {
+  checkedAt: string;
+  source: "daemon" | "etag" | "cache" | "offline";
+  updateAvailable: { current: string | null; latest: string | null } | null;
+  etag: string | null;
+  error?: string;
+}
+
+// 立即更新结果（settings:webbridge-update-apply）
+export interface WebbridgeUpdateApplyResult {
+  success: boolean;
+  code?: "WEBBRIDGE_BUSY" | "PIN_STALE" | "UPDATE_FAILED";
+  message?: string;
+  data?: { from: string | null; to: string | null; etag: string | null; daemonRestarted: boolean };
 }
 
 export interface CliStatus {
@@ -307,6 +339,9 @@ interface CryoClawBridgeExtended {
       settingsWebbridgePrecheck?: () => Promise<any>;
       settingsWebbridgeRepairAndEnable?: () => Promise<any>;
       settingsGetDefaultBrowserName?: () => Promise<any>;
+      settingsWebbridgeVersionStatus?: () => Promise<any>;
+      settingsWebbridgeUpdateCheck?: (params?: Record<string, unknown>) => Promise<any>;
+      settingsWebbridgeUpdateApply?: () => Promise<any>;
       // Settings: Backup
       settingsListConfigBackups?: () => Promise<any>;
       settingsExportOpenclawState?: () => Promise<any>;
@@ -625,7 +660,7 @@ export async function settingsUninstallCli(): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// Settings: WebBridge (3)
+// Settings: WebBridge (6)
 // ---------------------------------------------------------------------------
 
 // 切换到 webbridge 模式前的 precheck（read-only）。返回缺失项 + 默认浏览器信息。
@@ -646,6 +681,33 @@ export async function settingsGetDefaultBrowserName(): Promise<{ id: string; nam
   return unwrapData<{ id: string; name: string } | null>(
     await oc().settingsGetDefaultBrowserName(),
   );
+}
+
+// WebBridge 版本状态：安装版本 / 安装来源 / daemon 运行态 / 更新信号 / autoUpdate 开关
+export async function settingsWebbridgeVersionStatus(): Promise<WebbridgeVersionStatus> {
+  return unwrapData<WebbridgeVersionStatus>(
+    await oc().settingsWebbridgeVersionStatus(),
+  );
+}
+
+// 检查更新（daemon /status 优先，否则 CDN ETag 比对）。
+// params.autoUpdate 传 boolean 时只写自动更新开关，返回的是最新版本状态。
+export async function settingsWebbridgeUpdateCheck(
+  params?: { autoUpdate?: boolean },
+): Promise<WebbridgeUpdateCheckResult | WebbridgeVersionStatus> {
+  const r = await oc().settingsWebbridgeUpdateCheck(params) as {
+    success?: boolean;
+    data?: WebbridgeUpdateCheckResult | WebbridgeVersionStatus;
+    message?: string;
+  };
+  if (r?.success && r.data) return r.data;
+  throw new Error(r?.message || "webbridge update check failed");
+}
+
+// 立即更新：下载新二进制 → 钉定校验 → 换装 → 按需重启 daemon。失败不抛异常，返回结构化 code。
+export async function settingsWebbridgeUpdateApply(): Promise<WebbridgeUpdateApplyResult> {
+  const result = (await oc().settingsWebbridgeUpdateApply()) as WebbridgeUpdateApplyResult;
+  return result ?? { success: false, message: "no response" };
 }
 
 // ---------------------------------------------------------------------------
