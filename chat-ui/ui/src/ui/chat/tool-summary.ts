@@ -41,7 +41,7 @@ export function summarizeToolCards(toolCards: readonly ToolCard[]): ToolSummary 
     const display = resolveToolDisplay({ name, args: callWithArgs?.args });
     return {
       totalTools,
-      label: display.label,
+      label: display.source ? `${display.label} · ${display.source}` : display.label,
       detail: formatToolDetail(display),
       isSingle: true,
       hasError,
@@ -49,10 +49,15 @@ export function summarizeToolCards(toolCards: readonly ToolCard[]): ToolSummary 
     };
   }
 
+  // R85：名单同样走友好名（`anysearch__search` → `搜索`），用户不再面对内部命名
+  const displayNames = names.map((name) => {
+    const display = resolveToolDisplay({ name });
+    return display.source ? `${display.label} · ${display.source}` : display.label;
+  });
   const label =
-    names.length <= 3
-      ? names.join(", ")
-      : `${names.slice(0, 2).join(", ")} +${names.length - 2} more`;
+    displayNames.length <= 3
+      ? displayNames.join(", ")
+      : `${displayNames.slice(0, 2).join(", ")} +${displayNames.length - 2} more`;
   return { totalTools, label, isSingle: false, hasError, status };
 }
 

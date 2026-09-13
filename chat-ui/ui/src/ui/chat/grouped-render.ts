@@ -30,6 +30,7 @@ import type { ChatAttachment } from "../ui-types.ts";
 import { chatTextEnhanceRef } from "./code-block-enhance.ts";
 import { extractToolCards, renderToolCardSidebar } from "./tool-cards.ts";
 import { summarizeToolCards } from "./tool-summary.ts";
+import { resolveToolDisplay } from "../tool-display.ts";
 import { t } from "../i18n.ts";
 import "../components/managed-image.ts";
 
@@ -145,9 +146,10 @@ export function renderReadingIndicatorGroup(
   activeToolName?: string | null,
   subagentWaiting?: boolean,
 ) {
-  // 阶段感知提示：工具执行中显示工具名（mono）；等待子代理显示等待文案；否则「思考中」
+  // 阶段感知提示：工具执行中显示友好工具类型名（R85：原始内部名经
+  // resolveToolDisplay 本地化，如 anysearch__search → 搜索）；等待子代理显示等待文案；否则「思考中」
   const label = activeToolName
-    ? t("chat.phaseTool").replace("{name}", activeToolName)
+    ? t("chat.phaseTool").replace("{name}", resolveToolDisplay({ name: activeToolName }).label)
     : subagentWaiting
       ? t("chat.subagent.waiting")
       : t("chat.phaseThinking");

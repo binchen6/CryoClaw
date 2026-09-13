@@ -2,96 +2,143 @@
   "version": 1,
   "fallback": {
     "icon": "puzzle",
-    "detailKeys": ["path", "command", "query", "url"]
+    "detailKeys": [
+      "path",
+      "command",
+      "query",
+      "url"
+    ]
   },
   "tools": {
     "read": {
       "icon": "file-text",
       "title": "Read",
       "label": "read",
-      "detailKeys": ["path"],
-      "langFrom": ["path"]
+      "detailKeys": [
+        "path"
+      ],
+      "langFrom": [
+        "path"
+      ]
     },
     "write": {
       "icon": "file-plus",
       "title": "Write",
       "label": "write",
-      "detailKeys": ["path"],
-      "langFrom": ["path"]
+      "detailKeys": [
+        "path"
+      ],
+      "langFrom": [
+        "path"
+      ]
     },
     "edit": {
       "icon": "file-edit",
       "title": "Edit",
       "label": "edit",
-      "detailKeys": ["path"],
-      "langFrom": ["path"]
+      "detailKeys": [
+        "path"
+      ],
+      "langFrom": [
+        "path"
+      ]
     },
     "apply_patch": {
       "icon": "file-edit",
       "title": "Apply Patch",
       "label": "apply_patch",
-      "detailKeys": ["path"],
-      "langFrom": ["path"]
+      "detailKeys": [
+        "path"
+      ],
+      "langFrom": [
+        "path"
+      ]
     },
     "exec": {
       "icon": "terminal",
       "title": "Execute",
       "label": "exec",
-      "detailKeys": ["command", "cmd"]
+      "detailKeys": [
+        "command",
+        "cmd"
+      ]
     },
     "process": {
       "icon": "cpu",
       "title": "Process",
       "label": "process",
-      "detailKeys": ["command"]
+      "detailKeys": [
+        "command"
+      ]
     },
     "update_plan": {
       "icon": "list",
       "title": "Update Plan",
       "label": "update_plan",
-      "detailKeys": ["explanation"]
+      "detailKeys": [
+        "explanation"
+      ]
     },
     "web_search": {
       "icon": "search",
       "title": "Web Search",
       "label": "web_search",
-      "detailKeys": ["query", "q"]
+      "detailKeys": [
+        "query",
+        "q"
+      ]
     },
     "web_fetch": {
       "icon": "globe",
       "title": "Web Fetch",
       "label": "web_fetch",
-      "detailKeys": ["url"]
+      "detailKeys": [
+        "url"
+      ]
     },
     "memory_search": {
       "icon": "database",
       "title": "Memory Search",
       "label": "memory_search",
-      "detailKeys": ["query"]
+      "detailKeys": [
+        "query"
+      ]
     },
     "memory_get": {
       "icon": "database",
       "title": "Memory Get",
       "label": "memory_get",
-      "detailKeys": ["path", "key"]
+      "detailKeys": [
+        "path",
+        "key"
+      ]
     },
     "browser": {
       "icon": "monitor",
       "title": "Browser",
       "label": "browser",
-      "detailKeys": ["url", "action"]
+      "detailKeys": [
+        "url",
+        "action"
+      ]
     },
     "message": {
-      "icon": "message-circle",
+      "icon": "message-plus",
       "title": "Message",
       "label": "message",
-      "detailKeys": ["to", "channel"]
+      "detailKeys": [
+        "to",
+        "channel"
+      ]
     },
     "image": {
       "icon": "image",
       "title": "Image",
       "label": "image",
-      "detailKeys": ["path", "url"]
+      "detailKeys": [
+        "path",
+        "url"
+      ]
     },
     "sessions_list": {
       "icon": "list",
@@ -102,13 +149,17 @@
       "icon": "clock",
       "title": "Sessions History",
       "label": "sessions_history",
-      "detailKeys": ["key"]
+      "detailKeys": [
+        "key"
+      ]
     },
     "sessions_send": {
       "icon": "send",
       "title": "Sessions Send",
       "label": "sessions_send",
-      "detailKeys": ["key"]
+      "detailKeys": [
+        "key"
+      ]
     },
     "sessions_spawn": {
       "icon": "git-branch",

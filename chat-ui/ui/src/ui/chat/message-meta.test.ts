@@ -1,6 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
+// label 断言依赖 en 字典：单测进程共享 locale 模块状态，显式钉住防其它文件污染
+import { setLocale } from "../i18n/index.ts";
+setLocale("en");
+
 import {
   extractMessageModel,
   extractMessageUsage,
@@ -114,7 +118,8 @@ test("tool summary：≤3 个工具名全列", () => {
     card("call", "write"),
   ]);
   assert.equal(totalTools, 2);
-  assert.equal(label, "read, write");
+  // R85：名单走 i18n 友好名（node 测试默认 locale=en）
+  assert.equal(label, "Read file, Write file");
 });
 
 test("tool summary：>3 个工具名折叠为前 2 个 + 「+N more」", () => {
@@ -124,7 +129,8 @@ test("tool summary：>3 个工具名折叠为前 2 个 + 「+N more」", () => {
     card("call", "c"),
     card("call", "d"),
   ]);
-  assert.equal(label, "a, b +2 more");
+  // 未映射单词名 prettify 首字母大写
+  assert.equal(label, "A, B +2 more");
 });
 
 test("tool summary：call/result 成对时总数取大者不重复计数", () => {
@@ -143,5 +149,5 @@ test("tool summary：同名工具去重", () => {
     card("call", "exec"),
     card("result", "exec"),
   ]);
-  assert.equal(label, "exec");
+  assert.equal(label, "Run command");
 });

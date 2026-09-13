@@ -10,7 +10,7 @@
      组件私有 BEM 类；恢复时从 git 历史取回并先补消费方）。
    全部走 design tokens，零硬编码色值，双主题由 token 层适配。
    层叠位置：base.css 之后、各视图样式之前，视图样式可覆盖本文件。
-   ========================================================================== *//
+   ========================================================================== */
 
 /* ── 按钮（.btn：32px 高、radius-8、weight-500；默认 hairline 描边） ── */
 .btn {
@@ -80,15 +80,18 @@
   border-color: transparent;
 }
 
-/* danger：destructive subtle 底 + 语义文字 */
+/* danger：destructive 语义底 + 语义文字。
+   R85：QA 反馈旧版 8% 红底太浅、按钮存在感弱——底色提到 10% 并补
+   28% 语义描边，hover 加深；明暗主题共用同一 color-mix 配方。 */
 .btn.danger {
-  background: var(--danger-subtle);
-  border-color: transparent;
+  background: color-mix(in srgb, var(--destructive) 10%, transparent);
+  border-color: color-mix(in srgb, var(--destructive) 28%, transparent);
   color: var(--danger);
 }
 
 .btn.danger:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--destructive) 18%, transparent);
+  background: color-mix(in srgb, var(--destructive) 16%, transparent);
+  border-color: color-mix(in srgb, var(--destructive) 38%, transparent);
 }
 
 .btn--sm {

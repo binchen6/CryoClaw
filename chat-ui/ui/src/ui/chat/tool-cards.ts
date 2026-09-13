@@ -407,9 +407,12 @@ export function renderToolCardSidebar(card: ToolCard, onOpenSidebar?: (content: 
       }
     >
       <div class="chat-tool-card__header">
-        <div class="chat-tool-card__title">
+        <div class="chat-tool-card__title" title=${display.name}>
           <span class="chat-tool-card__icon">${icons[display.icon]}</span>
           <span>${display.label}</span>
+          ${display.source
+            ? html`<span class="chat-tool-card__source">${display.source}</span>`
+            : nothing}
         </div>
         <div class="chat-tool-card__meta">
           ${diffBadge}

@@ -234,10 +234,11 @@ focus-visible = `--focus-ring`；disabled = opacity 0.5。
 |---|---|---|
 | `.btn.primary` | 主操作（每屏至多一个） | `--accent` 实心 + `--text-on-accent`，hover `--accent-hover` |
 | `.btn`（默认） | 次操作 | `--bg-elevated` + hairline 描边 |
-| `.btn.danger` | 破坏性操作 | `--danger-subtle` 底 + `--danger` 文字，无边框 |
+| `.btn.danger` | 破坏性操作 | R85 起：`color-mix(destructive 10%)` 底 + `28%` 语义描边 + `--danger` 文字（旧版 8% 无边框太浅）；hover 加深至 16%/38% |
 
 修饰：`.btn--sm`（高 28、padding 10、字号 `--text-sm`）。
 （R75：零引用的 `cc-btn` kit 与 `.btn.secondary`/`.btn.ghost` 已从 primitives.css 删除。）
+（R85 教训：CSS 块注释结尾禁止多写斜杠——游离 `/` 会污染下一条选择器被浏览器静默丢弃，构建期校验 `assertCssSelectorsValid` + `css-syntax-qa.test.ts` 双防线拦截，详见 gotchas #105。）
 
 ### 5.2 表单控件
 

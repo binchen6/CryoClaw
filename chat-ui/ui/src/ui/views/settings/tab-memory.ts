@@ -1,17 +1,18 @@
 /**
- * Settings: Memory Tab — 内核 2026.9.3 记忆配置全景。
+ * Settings: Memory Tab — R85 通俗化信息架构。
  *
- * 卡片信息架构：
- * 1. 会话记忆（hooks.internal.entries["session-memory"]）
- * 2. 语义记忆检索（根级 memory.search；Kimi 一键 = provider=openai + bge_m3_embed + 本地代理）
- * 3. 记忆引用（memory.citations：auto/on/off）
- * 4. 记忆固化 Dreaming（plugins.entries["memory-core"].config.dreaming）
- * 5. 主动记忆（plugins.entries["active-memory"]，entry 存在才显示）
- * 6. 运行状态（gateway RPC doctor.memory.status）
+ * 小白友好三卡 + 状态（内核 2026.9.3 记忆配置全景不变，只是收进抽屉）：
+ * 1. 记住对话内容（session-memory hook + memory.search 合并主卡；Kimi 一键）
+ *    — 技术项（provider/model/baseUrl/阈值/来源/归档参数）全部收进「高级设置」
+ * 2. 自动整理记忆（plugins.entries["memory-core"].config.dreaming）
+ *    — cron 输入换成常用时间下拉（每天 3 点/4 点/每 12h/6h/自定义），自定义才露出 cron
+ * 3. 回复中标注记忆来源（memory.citations）
+ * 4. 主动记忆（plugins.entries["active-memory"]，entry 存在才显示）
+ * 5. 记忆现状（gateway RPC doctor.memory.status）
  *
  * 配置读写走 config.get 快照 + 单次 config.patch（memory + hooks + plugins 三域
  * 合并在同一 patch，见 tab-memory.lib.ts / tab-patch.ts）；运行状态走 gateway RPC，
- * 与配置读写互不阻塞。
+ * 与配置读写互不阻塞。lib 层（状态字段/patch 语义）与 R82 完全一致，仅展示重排。
  */
 import { html, nothing } from "lit";
 import type { AppViewState } from "../../app-view-state.ts";
@@ -24,7 +25,7 @@ import "../../components/message-box.ts";
 import { runConfigPatch } from "./tab-patch.ts";
 import {
   applyMemorySave, extractMemoryView, KIMI_EMBEDDING_MODEL, MEMORY_SEARCH_PROVIDERS,
-  MEMORY_SEARCH_DEFAULTS, SESSION_MEMORY_DEFAULTS,
+  MEMORY_SEARCH_DEFAULTS, SESSION_MEMORY_DEFAULTS, DREAMING_DEFAULT_FREQUENCY,
   type ActiveMemoryMode, type MemoryCitationMode, type MemorySearchSource, type MemorySettingsView,
 } from "./tab-memory.lib.ts";
 import { initChannelTabOnce } from "./tab-channels-shared.ts";
@@ -266,23 +267,9 @@ function card(titleKey: string, descKey: string, ...children: unknown[]) {
 
 /* ── 卡片 ── */
 
-function renderSessionMemoryCard(state: AppViewState) {
-  return card("settings.memory.session.title", "settings.memory.session.desc",
-    toggle(t("settings.memory.autoSave"), s.smEnabled,
-      (v) => { s.smEnabled = v; state.requestUpdate(); }),
-    textField(t("settings.memory.session.messages"), s.smMessages,
-      (v) => { s.smMessages = v; state.requestUpdate(); },
-      { type: "number", min: 1, hint: t("settings.memory.session.messagesHint") }),
-    toggle(t("settings.memory.session.llmSlug"), s.smLlmSlug,
-      (v) => { s.smLlmSlug = v; state.requestUpdate(); },
-      t("settings.memory.session.llmSlugHint")),
-    textField(t("settings.memory.session.model"), s.smModel,
-      (v) => { s.smModel = v; state.requestUpdate(); },
-      { hint: t("settings.memory.session.modelHint") }),
-  );
-}
-
-function renderSearchCard(state: AppViewState) {
+// 主卡：会话记忆 + 智能联想合并。两个大白话开关置顶；
+// Kimi 一键紧随其后；全部技术参数（provider/model/阈值/来源/归档）收进「高级设置」。
+function renderMainMemoryCard(state: AppViewState) {
   // 手动改 provider/model = 放弃一键预置，按用户值保存
   const manualEdit = () => { if (s.kimiApply) s.kimiApply = false; };
   const kimiArea = s.isKimiCodeConfigured
@@ -313,38 +300,42 @@ function renderSearchCard(state: AppViewState) {
     state.requestUpdate();
   };
 
-  return card("settings.memory.embedding", "settings.memory.search.desc",
-    toggle(t("settings.memory.search.enable"), s.msEnabled,
-      (v) => { s.msEnabled = v; if (!v) s.kimiApply = false; state.requestUpdate(); }),
+  return card("settings.memory.main.title", "settings.memory.main.desc",
+    toggle(t("settings.memory.autoSave"), s.smEnabled,
+      (v) => { s.smEnabled = v; state.requestUpdate(); },
+      t("settings.memory.autoSaveHint")),
+    toggle(t("settings.memory.smartRecall"), s.msEnabled,
+      (v) => { s.msEnabled = v; if (!v) s.kimiApply = false; state.requestUpdate(); },
+      t("settings.memory.smartRecallHint")),
     kimiArea,
     html`
-      <div class="oc-settings__form-group">
-        <label class="oc-settings__label">${t("settings.memory.search.provider")}</label>
-        <select class="oc-settings__select" .value=${s.msProvider}
-          @change=${(e: Event) => { s.msProvider = (e.target as HTMLSelectElement).value; manualEdit(); state.requestUpdate(); }}>
-          ${MEMORY_SEARCH_PROVIDERS.map(p => html`<option value=${p}>${p}</option>`)}
-        </select>
-      </div>
-    `,
-    textField(t("settings.memory.search.model"), s.msModel,
-      (v) => { s.msModel = v; manualEdit(); state.requestUpdate(); },
-      { hint: t("settings.memory.search.modelHint"), placeholder: KIMI_EMBEDDING_MODEL }),
-    toggle(t("settings.memory.search.remember"), s.msRemember,
-      (v) => { s.msRemember = v; state.requestUpdate(); },
-      t("settings.memory.search.rememberHint")),
-    html`
-      <div class="oc-settings__form-group">
-        <label class="oc-settings__label">${t("settings.memory.search.sources")}</label>
-        ${toggle(t("settings.memory.search.sourceMemory"), s.msSources.includes("memory"),
-          (v) => toggleSource("memory", v))}
-        ${toggle(t("settings.memory.search.sourceSessions"), s.msSources.includes("sessions"),
-          (v) => toggleSource("sessions", v))}
-        <div class="oc-settings__field-hint">${t("settings.memory.search.sourcesHint")}</div>
-      </div>
-    `,
-    html`
       <details class="oc-settings__details-advanced">
-        <summary>${t("settings.memory.search.advanced")}</summary>
+        <summary>${t("settings.memory.advanced")}</summary>
+        ${toggle(t("settings.memory.search.remember"), s.msRemember,
+          (v) => { s.msRemember = v; state.requestUpdate(); },
+          t("settings.memory.search.rememberHint"))}
+        <div class="oc-settings__form-group">
+          <label class="oc-settings__label">${t("settings.memory.search.sources")}</label>
+          ${toggle(t("settings.memory.search.sourceMemory"), s.msSources.includes("memory"),
+            (v) => toggleSource("memory", v))}
+          ${toggle(t("settings.memory.search.sourceSessions"), s.msSources.includes("sessions"),
+            (v) => toggleSource("sessions", v))}
+          <div class="oc-settings__field-hint">${t("settings.memory.search.sourcesHint")}</div>
+        </div>
+        <div class="oc-settings__form-group">
+          <label class="oc-settings__label">${t("settings.memory.search.provider")}</label>
+          <select class="oc-settings__select" .value=${s.msProvider}
+            @change=${(e: Event) => { s.msProvider = (e.target as HTMLSelectElement).value; manualEdit(); state.requestUpdate(); }}>
+            ${MEMORY_SEARCH_PROVIDERS.map(p => html`<option value=${p}>${p}</option>`)}
+          </select>
+          <div class="oc-settings__field-hint">${t("settings.memory.search.providerHint")}</div>
+        </div>
+        ${textField(t("settings.memory.search.model"), s.msModel,
+          (v) => { s.msModel = v; manualEdit(); state.requestUpdate(); },
+          { hint: t("settings.memory.search.modelHint"), placeholder: KIMI_EMBEDDING_MODEL })}
+        ${textField(t("settings.memory.search.baseUrl"), s.msBaseUrl,
+          (v) => { s.msBaseUrl = v; manualEdit(); state.requestUpdate(); },
+          { hint: t("settings.memory.search.baseUrlHint"), placeholder: "https://api.example.com/v1" })}
         <div class="oc-settings__form-group">
           <label class="oc-settings__label">${t("settings.memory.search.maxResults")}</label>
           <input class="oc-settings__input" type="number" min="1" max="50" .value=${s.msMaxResults}
@@ -358,11 +349,73 @@ function renderSearchCard(state: AppViewState) {
           <div class="oc-settings__field-hint">${t("settings.memory.search.minScoreHint")}</div>
         </div>
         <div class="oc-settings__form-group">
-          <label class="oc-settings__label">${t("settings.memory.search.baseUrl")}</label>
-          <input class="oc-settings__input" .value=${s.msBaseUrl} placeholder="https://api.example.com/v1"
-            @input=${(e: Event) => { s.msBaseUrl = (e.target as HTMLInputElement).value; manualEdit(); state.requestUpdate(); }} />
-          <div class="oc-settings__field-hint">${t("settings.memory.search.baseUrlHint")}</div>
+          <label class="oc-settings__label">${t("settings.memory.session.messages")}</label>
+          <input class="oc-settings__input" type="number" min="1" .value=${s.smMessages}
+            @input=${(e: Event) => { s.smMessages = (e.target as HTMLInputElement).value; state.requestUpdate(); }} />
+          <div class="oc-settings__field-hint">${t("settings.memory.session.messagesHint")}</div>
         </div>
+        ${toggle(t("settings.memory.session.llmSlug"), s.smLlmSlug,
+          (v) => { s.smLlmSlug = v; state.requestUpdate(); },
+          t("settings.memory.session.llmSlugHint"))}
+        ${textField(t("settings.memory.session.model"), s.smModel,
+          (v) => { s.smModel = v; state.requestUpdate(); },
+          { hint: t("settings.memory.session.modelHint") })}
+      </details>
+    `,
+  );
+}
+
+/* ── 自动整理：常用时间下拉 + 自定义 cron 兜底 ── */
+
+const FREQ_PRESETS: ReadonlyArray<{ value: string; key: string }> = [
+  { value: DREAMING_DEFAULT_FREQUENCY, key: "settings.memory.dreaming.freqDaily3" },
+  { value: "0 4 * * *", key: "settings.memory.dreaming.freqDaily4" },
+  { value: "0 */12 * * *", key: "settings.memory.dreaming.freq12h" },
+  { value: "0 */6 * * *", key: "settings.memory.dreaming.freq6h" },
+];
+const FREQ_CUSTOM = "__custom__";
+
+function renderDreamingCard(state: AppViewState) {
+  const isPreset = FREQ_PRESETS.some(p => p.value === s.dmFrequency.trim());
+  return card("settings.memory.dreaming.title", "settings.memory.dreaming.desc",
+    toggle(t("settings.memory.dreaming.enable"), s.dmEnabled,
+      (v) => { s.dmEnabled = v; state.requestUpdate(); }),
+    html`
+      <div class="oc-settings__form-group">
+        <label class="oc-settings__label">${t("settings.memory.dreaming.frequency")}</label>
+        <select class="oc-settings__select" .value=${isPreset ? s.dmFrequency.trim() : FREQ_CUSTOM}
+          @change=${(e: Event) => {
+            const v = (e.target as HTMLSelectElement).value;
+            if (v !== FREQ_CUSTOM) {
+              s.dmFrequency = v;
+            } else if (isPreset || !s.dmFrequency.trim()) {
+              s.dmFrequency = ""; // 首次切自定义留空，露出 placeholder 提示
+            }
+            state.requestUpdate();
+          }}>
+          ${FREQ_PRESETS.map(p => html`<option value=${p.value}>${t(p.key)}</option>`)}
+          <option value=${FREQ_CUSTOM}>${t("settings.memory.dreaming.freqCustom")}</option>
+        </select>
+        ${!isPreset ? html`
+          <input class="oc-settings__input" style="margin-top: var(--spacer-8)" .value=${s.dmFrequency}
+            placeholder=${DREAMING_DEFAULT_FREQUENCY}
+            @input=${(e: Event) => { s.dmFrequency = (e.target as HTMLInputElement).value; state.requestUpdate(); }} />
+          <div class="oc-settings__field-hint">${t("settings.memory.dreaming.freqCustomHint")}</div>
+        ` : nothing}
+      </div>
+    `,
+    html`
+      <details class="oc-settings__details-advanced">
+        <summary>${t("settings.memory.dreaming.advanced")}</summary>
+        ${toggle(t("settings.memory.dreaming.light"), s.dmLight,
+          (v) => { s.dmLight = v; state.requestUpdate(); }, t("settings.memory.dreaming.lightHint"))}
+        ${toggle(t("settings.memory.dreaming.deep"), s.dmDeep,
+          (v) => { s.dmDeep = v; state.requestUpdate(); }, t("settings.memory.dreaming.deepHint"))}
+        ${toggle(t("settings.memory.dreaming.rem"), s.dmRem,
+          (v) => { s.dmRem = v; state.requestUpdate(); }, t("settings.memory.dreaming.remHint"))}
+        ${textField(t("settings.memory.dreaming.model"), s.dmModel,
+          (v) => { s.dmModel = v; state.requestUpdate(); },
+          { hint: t("settings.memory.dreaming.modelHint") })}
       </details>
     `,
   );
@@ -381,30 +434,6 @@ function renderCitationsCard(state: AppViewState) {
         (v) => { s.citations = v; state.requestUpdate(); },
       )}
     </div>`,
-  );
-}
-
-function renderDreamingCard(state: AppViewState) {
-  return card("settings.memory.dreaming.title", "settings.memory.dreaming.desc",
-    toggle(t("settings.memory.dreaming.enable"), s.dmEnabled,
-      (v) => { s.dmEnabled = v; state.requestUpdate(); }),
-    textField(t("settings.memory.dreaming.frequency"), s.dmFrequency,
-      (v) => { s.dmFrequency = v; state.requestUpdate(); },
-      { hint: t("settings.memory.dreaming.frequencyHint"), placeholder: "0 3 * * *" }),
-    textField(t("settings.memory.dreaming.model"), s.dmModel,
-      (v) => { s.dmModel = v; state.requestUpdate(); },
-      { hint: t("settings.memory.dreaming.modelHint") }),
-    html`
-      <details class="oc-settings__details-advanced">
-        <summary>${t("settings.memory.dreaming.advanced")}</summary>
-        ${toggle(t("settings.memory.dreaming.light"), s.dmLight,
-          (v) => { s.dmLight = v; state.requestUpdate(); }, t("settings.memory.dreaming.lightHint"))}
-        ${toggle(t("settings.memory.dreaming.deep"), s.dmDeep,
-          (v) => { s.dmDeep = v; state.requestUpdate(); }, t("settings.memory.dreaming.deepHint"))}
-        ${toggle(t("settings.memory.dreaming.rem"), s.dmRem,
-          (v) => { s.dmRem = v; state.requestUpdate(); }, t("settings.memory.dreaming.remHint"))}
-      </details>
-    `,
   );
 }
 
@@ -485,10 +514,9 @@ export function renderTabMemory(state: AppViewState) {
       <h2 class="oc-settings__section-title">${t("settings.memory.title")}</h2>
       <p class="oc-settings__page-desc">${t("settings.memory.desc")}</p>
 
-      ${renderSessionMemoryCard(state)}
-      ${renderSearchCard(state)}
-      ${renderCitationsCard(state)}
+      ${renderMainMemoryCard(state)}
       ${renderDreamingCard(state)}
+      ${renderCitationsCard(state)}
       ${renderActiveMemoryCard(state)}
 
       <div class="oc-settings__card">

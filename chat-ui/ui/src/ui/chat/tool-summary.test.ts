@@ -1,6 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
+// label 断言依赖 en 字典：单测进程共享 locale 模块状态，显式钉住防其它文件污染
+import { setLocale } from "../i18n/index.ts";
+setLocale("en");
+
 import { resolveActiveToolName, summarizeToolCards } from "./tool-summary.ts";
 import type { ToolCard } from "../types/chat-types.ts";
 
@@ -16,7 +20,8 @@ test("tool summary：单工具显示显示名 + 参数详情（路径）", () =>
     card("result", "read"),
   ]);
   assert.equal(s.isSingle, true);
-  assert.equal(s.label, "read");
+  // R85：label 走 i18n 友好名（测试环境 locale=en）
+  assert.equal(s.label, "Read file");
   assert.equal(s.detail, "src/main.ts");
   assert.equal(s.totalTools, 1);
 });
@@ -24,7 +29,7 @@ test("tool summary：单工具显示显示名 + 参数详情（路径）", () =>
 test("tool summary：单工具无参数时无详情", () => {
   const s = summarizeToolCards([card("call", "exec")]);
   assert.equal(s.isSingle, true);
-  assert.equal(s.label, "exec");
+  assert.equal(s.label, "Run command");
   assert.equal(s.detail, undefined);
 });
 
@@ -37,7 +42,7 @@ test("tool summary：多工具走计数 + 名单，非单工具", () => {
   const s = summarizeToolCards([card("call", "read"), card("call", "write")]);
   assert.equal(s.isSingle, false);
   assert.equal(s.detail, undefined);
-  assert.equal(s.label, "read, write");
+  assert.equal(s.label, "Read file, Write file");
 });
 
 // ── resolveActiveToolName ──

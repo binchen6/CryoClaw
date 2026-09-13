@@ -32,6 +32,14 @@ export const icons = {
   fileText: renderIcon(
     '<path d="M13.5 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8.5z"/><path d="M13.5 3v5.5H19"/><path d="M9 13h6"/><path d="M9 16.5h6"/>',
   ),
+  // 新建文件（write）：文档轮廓 + 中部加号（R85 补齐 tool-display.json 引用）
+  filePlus: renderIcon(
+    '<path d="M13.5 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8.5z"/><path d="M13.5 3v5.5H19"/><path d="M12 11.5v6"/><path d="M9 14.5h6"/>',
+  ),
+  // 编辑文件（edit/apply_patch）：文档轮廓 + 左下铅笔（R85 补齐）
+  fileEdit: renderIcon(
+    '<path d="M13.5 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8.5z"/><path d="M13.5 3v5.5H19"/><path d="m8.5 19 2.8-.7 5.6-5.6-2.1-2.1-5.6 5.6z"/>',
+  ),
   zap: renderIcon('<path d="M13 2.5 4.5 13.5H11l-1 8 8.5-11H12z"/>'),
   monitor: renderIcon(
     '<rect x="2.5" y="4" width="19" height="12.5" rx="2"/><path d="M8.5 20.5h7"/><path d="M12 16.5v4"/>',

@@ -76,3 +76,6 @@ chat-ui/ui/.test-dist/
 # 本地未跟踪目录（驱动残留/文档生成物，勿提交）
 NVIDIA Corporation/
 repowiki/
+
+# playwright-cli 会话产物（截图/快照/控制台日志）
+**/.playwright-cli/

@@ -255,10 +255,11 @@ opacity 0.5.
 |---|---|---|
 | `.btn.primary` | Primary action (at most one per screen) | solid `--accent` + `--text-on-accent`, hover `--accent-hover` |
 | `.btn` (default) | Secondary | `--bg-elevated` + hairline border |
-| `.btn.danger` | Destructive | `--danger-subtle` background + `--danger` text, borderless |
+| `.btn.danger` | Destructive | since R85: `color-mix(destructive 10%)` background + 28% semantic border + `--danger` text (the old 8% borderless tint was too faint); hover deepens to 16%/38% |
 
 Modifier: `.btn--sm` (height 28, padding 10, font `--text-sm`).
 (R75: the zero-reference `cc-btn` kit plus `.btn.secondary`/`.btn.ghost` were removed from primitives.css.)
+(R85 lesson: never append an extra slash after a CSS block comment terminator — the stray slash contaminates the next selector and browsers silently drop the rule; build-time `assertCssSelectorsValid` + `css-syntax-qa.test.ts` guard it, see gotchas #105.)
 
 ### 5.2 Form controls
 

@@ -1,4 +1,6 @@
 import type { IconName } from "./icons.ts";
+import { icons } from "./icons.ts";
+import { t } from "./i18n.ts";
 import rawConfig from "./tool-display.json" with { type: "json" };
 
 type ToolDisplayActionSpec = {
@@ -27,6 +29,8 @@ export type ToolDisplay = {
   icon: IconName;
   title: string;
   label: string;
+  /** 插件/MCP 来源（`anysearch__search` → "anysearch"；映射过的内核工具无此项） */
+  source?: string;
   verb?: string;
   detail?: string;
 };
@@ -34,6 +38,67 @@ export type ToolDisplay = {
 const TOOL_DISPLAY_CONFIG = rawConfig as ToolDisplayConfig;
 const FALLBACK = TOOL_DISPLAY_CONFIG.fallback ?? { icon: "puzzle" };
 const TOOL_MAP = TOOL_DISPLAY_CONFIG.tools ?? {};
+
+// R85：图标键名解析。tool-display.json 历史上写的是短横线风格（file-text），
+// 而 icons.ts 的键是驼峰（fileText）——不匹配时 icons[key] 为 undefined，
+// 内核工具（read/write/exec…）的图标全部渲染为空。这里统一转驼峰并校验存在性，
+// 非法名回落 puzzle，杜绝"静默空图标"。
+const ICON_KEYS = new Set<string>(Object.keys(icons));
+function resolveIconName(raw: string | undefined): IconName {
+  if (!raw) {
+    return "puzzle";
+  }
+  const camel = raw.replace(/-([a-z])/g, (_, c: string) => c.toUpperCase());
+  return (ICON_KEYS.has(camel) ? camel : "puzzle") as IconName;
+}
+
+// 未映射工具按「动词段」推断图标：`anysearch__search` 的 search 段 → 搜索图标。
+// 只覆盖高频动词；未命中回落 puzzle（与映射工具的 FALLBACK 一致）。
+const VERB_ICON: Record<string, string> = {
+  search: "search", query: "search", find: "search", grep: "search",
+  fetch: "globe", extract: "globe", crawl: "globe", scrape: "globe",
+  navigate: "monitor", page: "monitor", screenshot: "monitor",
+  read: "fileText", cat: "fileText",
+  write: "edit", edit: "edit", update: "edit", patch: "edit", create: "edit",
+  exec: "terminal", run: "terminal", shell: "terminal", bash: "terminal", command: "terminal",
+  delete: "trash", remove: "trash",
+  list: "list", ls: "list",
+  memory: "database",
+  send: "send", notify: "send", message: "send",
+  schedule: "clock", cron: "clock",
+  image: "image", draw: "image",
+  git: "gitBranch", diff: "diff",
+  deploy: "play", build: "play",
+};
+
+// R85：工具类型友好名。两类输入都走 i18n（tool.label.*）：
+//   1. tool-display.json 映射过的内核工具（read/exec/web_search…）
+//   2. 未映射插件/MCP 工具的「动词段」（anysearch__search → search 段）
+// 字典未覆盖时回落调用方给的英文兜底，保证任何工具都有可读标签。
+function localizedToolLabel(labelKey: string, fallback: string): string {
+  const i18nKey = `tool.label.${labelKey}`;
+  const localized = t(i18nKey);
+  return localized === i18nKey ? fallback : localized;
+}
+
+// `前缀__动词` 形态拆解（内核插件与 MCP 的命名约定：mcp__server__tool）。
+// 返回 [动词段(小写), 来源展示名]；非该形态返回 null。
+// 两段的 `mcp__x` 拆不出有意义的来源（只剩协议前缀），按未限定名处理。
+function splitQualifiedToolName(name: string): [string, string] | null {
+  const segments = name.split("__").map((s) => s.trim()).filter(Boolean);
+  if (segments.length < 2) {
+    return null;
+  }
+  const verb = segments[segments.length - 1].toLowerCase();
+  const sourceParts = segments[0].toLowerCase() === "mcp" && segments.length > 2
+    ? segments.slice(1, -1)
+    : segments.slice(0, -1);
+  const source = sourceParts.join("__");
+  if (!source || source.toLowerCase() === "mcp") {
+    return null;
+  }
+  return [verb, source];
+}
 
 function normalizeToolName(name?: string): string {
   return (name ?? "tool").trim();
@@ -166,9 +231,16 @@ export function resolveToolDisplay(params: {
   const name = normalizeToolName(params.name);
   const key = name.toLowerCase();
   const spec = TOOL_MAP[key];
-  const icon = (spec?.icon ?? FALLBACK.icon ?? "puzzle") as IconName;
+  // R85：未映射的 `插件__动词` 名按动词段解析（label/icon 都吃动词段推断），
+  // 来源段进 display.source 由渲染层做小徽标，用户不再面对 anysearch__search 这类内部名。
+  const qualified = spec ? null : splitQualifiedToolName(name);
+  const labelKey = qualified?.[0] ?? key;
+  const icon = resolveIconName(spec?.icon ?? VERB_ICON[labelKey]);
   const title = spec?.title ?? defaultTitle(name);
-  const label = spec?.label ?? name;
+  const label = localizedToolLabel(
+    labelKey,
+    spec?.label ?? (qualified ? defaultTitle(labelKey) : defaultTitle(name)),
+  );
   const actionRaw =
     params.args && typeof params.args === "object"
       ? ((params.args as Record<string, unknown>).action as string | undefined)
@@ -203,6 +275,7 @@ export function resolveToolDisplay(params: {
     icon,
     title,
     label,
+    ...(qualified?.[1] ? { source: qualified[1] } : {}),
     verb,
     detail,
   };

@@ -732,3 +732,12 @@
 - **页面级描述可读性**：8 个设置 tab 的标题下导读段沿用 `.oc-settings__hint`（--text-muted；暗色 #71717a on #101012 ≈ 4.2:1）。新增 `.oc-settings__page-desc`（--text-secondary ≈ 7:1），appearance/advanced/approvals/backup/channels/info/mcp-hooks/memory 八页迁移；表单内部 hint 不变（层级语义保留）。
 - **有意不动**：导航分组小标题维持 --text-muted 小字距样式（对齐系统侧栏惯例的设计语言，文档明示）；时间戳 --text-muted（设计决定）。
 - **验证**：全量 1078 pass / 0 fail；chat-ui typecheck 通过；四套 CDP 冒烟全绿 + 高级设置页截图复核开关视觉一致。
+
+### R85 · QA 实拍三连修（按钮全灭根因 / 工具类型显示 / 记忆页通俗化）+ 三轮审查
+
+- **审查方法**：用户实拍 QA 截图（模型页/MCP 页按钮退化成原生样式）入手——先静态排查（.btn 规则、token、类名引用均正常），再起 dev 实例 + 无头 Playwright 连真实网关取证：注入测试按钮读 computed style 发现 `radius:0 / display:inline-block / UA 默认边框`，遍历 CSSOM 证实 `.btn` 基础规则整条丢失而伪类规则存活 → 定位到构建产物中 `/ .btn{…}` 非法选择器 → 回溯源码 primitives.css 头注释结尾多写的一个斜杠。
+- **修复 1（按钮全灭）**：primitives.css:13 注释定界符修复；构建期新增 `assertCssSelectorsValid` vite 插件（产物 CSS 选择器含 `/` 即 fail，at-rule 取末段 + 剥引号属性值豁免 `a[href^="https://"]` 类合法形态）+ 源码级 `css-syntax-qa.test.ts`（注释配对 + 同构扫描）双防线；顺带 `.btn.danger` 从 8% 无边框提到 10% 底 + 28% 语义描边（QA 同批反馈对比度低）。教训沉淀 gotchas #105。
+- **修复 2（工具调用不显示工具类型）**：两个叠加缺陷——① tool-display.json 图标键是短横线（file-text）而 icons.ts 键是驼峰（fileText），`icons[key]` 静默 undefined → 内核工具图标全空；② 未映射插件/MCP 工具（anysearch__search）label 直接用内部原始名。重构 `resolveToolDisplay`：图标键统一转驼峰 + 存在性校验（非法回落 puzzle）、新增 filePlus/fileEdit 图标补齐 write/edit/apply_patch、label 走 i18n（`tool.label.*` 31 键 zh/en 对齐，read→读取文件/exec→执行命令）、`前缀__动词` 名拆解出友好类型名 + `source` 来源徽标（卡片 `.chat-tool-card__source` 小胶囊 + 摘要行 `label · source`）、流式"调用工具 X…"指示器同步友好名。`mcp__server__tool` 三段名正确取 server 段；两段 `mcp__x` 不显示无意义 "mcp" 徽标。
+- **修复 3（记忆页小白友好）**：tab-memory.ts 展示层重排（lib 层状态机/patch 语义逐字节不变，独立审查证实）——会话记忆+语义检索合并为「记住对话内容」主卡（两个大白话开关置顶，provider/model/baseUrl/阈值/来源/归档参数全部收进高级折叠）；「记忆固化（Dreaming）」更名「自动整理记忆」，cron 裸输入换常用时间下拉（每天 3/4 点、每 12/6 小时、自定义才露 cron）；全部术语通俗化（语义检索→智能联想相关记忆、短期记忆条目→零散记忆、72 键 zh/en 重写且键集对齐）。
+- **代码审查（三轮）**：① 自查（removed i18n key 引用扫描、短横线图标残留扫描、circular import 核实）；② 独立盲审（4 个 P3：4 工具图标仍落 puzzle、`mcp__x` 无意义徽标、CSS 守卫引号误报潜力、变更集卫生/.gitignore 前导 TAB）全部修复；③ 复核轮 4/4 PASS + 双 tsc 零错误。
+- **验证**：全量 chat-ui 670 pass / 0 fail（新增 tool-display.test.ts 5 用例 + css-syntax-qa 1 用例，受 label 影响的 message-meta/tool-summary 断言更新并钉住 locale）；vitest + node + scripts 全绿；无头浏览器实测：`.btn` computed style 恢复 32px/8px/500，工具卡图标齐亮 + 中文类型名 + anysearch 来源徽标，记忆页 5 卡结构 + 频率下拉生效，MCP 页 8 个按钮 28px/8px/语义色正常。

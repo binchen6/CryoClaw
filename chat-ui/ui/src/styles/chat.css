@@ -1065,6 +1065,21 @@ img.chat-avatar {
   color: var(--text-secondary);
 }
 
+/* R85：插件/MCP 工具来源徽标（anysearch__search 的 anysearch 段），
+   弱化为小号 muted 胶囊——类型名为主，来源为辅 */
+.chat-tool-card__source {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 var(--spacer-6);
+  border-radius: var(--radius-pill);
+  background: var(--bg-muted);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  line-height: 1;
+  white-space: nowrap;
+}
+
 .chat-tool-card__icon {
   display: inline-flex;
   align-items: center;
