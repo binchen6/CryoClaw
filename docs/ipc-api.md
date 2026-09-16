@@ -201,6 +201,7 @@
 | `skillStoreInstall(params?)` | `skill-store:install` | invoke |
 | `skillStoreUninstall(params?)` | `skill-store:uninstall` | invoke |
 | `skillStoreListInstalled()` | `skill-store:list-installed` | invoke |
+| `skillStoreDetail(params?)` | `skill-store:detail` | invoke |
 
 ## 插件管理页（extensions 视图）
 
@@ -210,6 +211,10 @@
 | `pluginStoreSearch(params?)` | `plugin-store:search` | invoke |
 | `pluginStoreInstall(params?)` | `plugin-store:install` | invoke |
 | `pluginStoreUninstall(params?)` | `plugin-store:uninstall` | invoke |
+| `pluginStoreCheckUpdates()` | `plugin-store:check-updates` | invoke |
+| `pluginStoreUpdate(params?)` | `plugin-store:update` | invoke |
+| `pluginStoreDetail(params?)` | `plugin-store:detail` | invoke |
+| `pluginStoreMarketBrowse(params?)` | `plugin-store:market-browse` | invoke |
 
 ## Chat UI
 

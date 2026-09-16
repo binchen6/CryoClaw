@@ -56,6 +56,7 @@ docs/research/
 docs/progress/
 
 # 打包/调试残留日志（不可提交）
+.dev-app.log
 /*stage3*.log
 /*.stage3*.log
 /debug-*.log

@@ -350,3 +350,5 @@ Things that are easy to get wrong or forget when working on CryoClaw.
 
 
 108. **Electron shell.openPath 失败时 resolve 出错误串而非 reject——"打开文件零反馈"的经典根因。** 主进程 `app:open-path` 原样返回 `shell.openPath(path)`（Promise<string>：成功 ""、失败错误串），渲染层 `await ipc.openPath()` 的 catch 永远不触发——文件被删/被移/无关联程序时点击文件卡片毫无反应、无 toast、无闪红（v2026.913.3 修复：主进程检查返回串非空即 reject）。另有配套坑：聊天 UI 的 FILE_CARD_EXTS 与主进程 SAFE_OPEN_EXTS 是两份清单，渲染层给 .py/.js/.ts/.yml 等渲染了卡片、点击必被主进程白名单拒绝——现已对齐（chat-ui/src/safe-open.ts 副本 + media-enhance.sync.test.ts 两侧一致性守卫），白名单外扩展名点击直接降级为「在文件夹中定位」。判别：文件卡片点击"无反应"先查主进程日志有没有 reject 记录，再查两侧白名单是否漂移。
+
+109. **Vite manualChunks 把 CSS 模块划进按需 JS chunk 时，Rollup 会为样式生成静态 facade import，把整个 chunk 反向拖进 HTML 的 modulepreload。** 2026.9.16 实例（R91 性能批次）：为让 hljs/katex 只在动态 import 时加载，把 `node_modules/katex` 划进 `vendor-katex` chunk——但规则同时命中了 `katex/dist/katex.min.css`（CSS 也是模块图一员），产物 HTML 里出现 `<link rel=modulepreload vendor-katex.js>` + 静态 `<link rel=stylesheet vendor-katex.css>`，261KB JS 恢复成每次窗口创建必载，与拆分初衷相反。修复：manualChunks 开头把 `id.endsWith(".css")` 一律钉回 `vendor-misc`（CSS 随主样式静态加载，JS chunk 保持纯动态）。判别：拆 chunk 后看 `dist/index.html` 的 modulepreload 清单是否出现了本应动态的 chunk 名。
