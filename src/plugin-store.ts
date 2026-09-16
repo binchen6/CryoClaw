@@ -374,10 +374,18 @@ async function fetchMarketGroups(limit: number): Promise<Array<{ category: strin
 
 // market-browse 主体：HTTP 聚合；HTTP 全灭时回退内核 CLI 搜索前 3 个关键词
 // （CLI 搜索不带 family 维度，结果同样映射进分类聚合）。
+// HTTP 段加总截止（R91 实测）：断网时 28 路请求各自 15s 超时 + CLI 回退挂到
+// 90s 会把浏览页 spinner 拖到 80s+——竞速截止让 UI 尽快进入可重试的失败态
+const MARKET_BROWSE_HTTP_DEADLINE_MS = 30_000;
+
 async function browsePluginMarket(limit: number): Promise<MarketBrowseItem[]> {
   let groups: Array<{ category: string; items: ScoredMarketPlugin[] }>;
   try {
-    groups = await fetchMarketGroups(limit);
+    groups = await Promise.race([
+      fetchMarketGroups(limit),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("market browse http deadline exceeded")), MARKET_BROWSE_HTTP_DEADLINE_MS)),
+    ]);
   } catch (err) {
     log.info(`[plugin-store] market-browse http failed, falling back to cli: ${err instanceof Error ? err.message : String(err)}`);
     const keywordList: Array<{ category: string; keyword: string }> = [];
