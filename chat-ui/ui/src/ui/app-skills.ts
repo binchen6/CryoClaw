@@ -5,9 +5,15 @@
 
 import { html, nothing } from "lit";
 import { t } from "./i18n.ts";
-import { renderSkillStoreView, skillAvatarColor, type SkillStoreState } from "./skill-store-view.ts";
+import { renderSkillStoreView, skillAvatarColor, type SkillStoreState, type SkillItem } from "./skill-store-view.ts";
 import { selectVisibleInstalledSkills } from "./skill-visibility.ts";
 import { showToast } from "./app-toast.ts";
+import { openSkillDetail } from "./views/ext-detail.ts";
+import {
+  buildRecommendations,
+  skillToMarketItem,
+  type SkillStoreItem,
+} from "./market/market-recommend.ts";
 import "./components/toggle-switch.ts";
 import type { SkillStatusEntry } from "./types.ts";
 import {
@@ -42,6 +48,72 @@ let skillStoreDataLoaded = false;
 // 商店请求代次守卫：排序/搜索快速切换时旧响应晚到会整体覆写当前列表与
 // nextCursor（展示错误排序/旧结果，分页游标错配）。发起前自增，写回前比对。
 let storeRequestToken = 0;
+
+// ── 技能推荐（R91）：已装技能名 token 作为个性化 hints ──
+// 停用词：技能名/渠道名里高频出现、无个性化区分度的通用词
+const SKILL_HINT_STOPWORDS = new Set([
+  "skill", "skills", "tool", "tools", "agent", "assistant", "helper", "utils",
+  "for", "with", "cli", "api", "docs", "doc", "guide", "openclaw", "clawhub",
+]);
+
+function deriveSkillHints(installed: string[]): string[] {
+  const tokens = new Set<string>();
+  for (const name of installed) {
+    for (const token of name.toLowerCase().split(/[^a-z0-9\u4e00-\u9fff]+/)) {
+      if (token.length >= 3 && !SKILL_HINT_STOPWORDS.has(token)) tokens.add(token);
+    }
+  }
+  return [...tokens];
+}
+
+/** 商店"为你推荐"栏：排除已安装，个性化加权 + 排序 + 类目多样化，取前 4 */
+function renderSkillRecommendations(state: AppViewState): typeof nothing | ReturnType<typeof html> {
+  const pool = skillStoreState.skills.filter((s) => s.slug && !skillStoreState.installedSlugs.has(s.slug));
+  if (pool.length < 3) return nothing;
+  const recs = buildRecommendations(
+    pool.map((s) => skillToMarketItem(s as SkillStoreItem)),
+    { hints: deriveSkillHints([...skillStoreState.installedSlugs]), limit: 4 },
+  );
+  if (recs.length < 3) return nothing;
+  // slug → 原始条目回查（点击打开详情需要完整 SkillItem）
+  const bySlug = new Map(pool.map((s) => [s.slug, s]));
+  return html`
+    <section class="skill-store__recommend">
+      <div class="skill-store__recommend-title">
+        ${t("skillStore.recommended")}
+        <span class="skill-store__recommend-hint">${t("skillStore.recommendedHint")}</span>
+      </div>
+      <div class="skill-store__recommend-row">
+        ${recs.map((item) => {
+          const skill = bySlug.get(item.name);
+          if (!skill) return nothing;
+          const installing = skillStoreState.installingSlugs.has(skill.slug);
+          const letter = (skill.name || skill.slug || "?").charAt(0).toUpperCase();
+          return html`
+            <div class="skill-store__recommend-card" @click=${() => openSkillDetail(state, skill)}>
+              <span class="skill-store__card-icon" style="background: ${skillAvatarColor(skill.slug)}; color: var(--text-on-accent);">
+                <span class="skill-store__card-letter">${letter}</span>
+              </span>
+              <span class="skill-store__recommend-info">
+                <span class="skill-store__recommend-name">${skill.name}</span>
+                <span class="skill-store__recommend-desc">${clamp(skill.description, 80)}</span>
+              </span>
+              <button
+                class="skill-store__btn skill-store__btn--install"
+                type="button"
+                ?disabled=${installing}
+                @click=${(e: Event) => {
+                  e.stopPropagation();
+                  void installSkillFromStore(state, skill.slug);
+                }}
+              >${installing ? t("skillStore.installing") : t("skillStore.install")}</button>
+            </div>
+          `;
+        })}
+      </div>
+    </section>
+  `;
+}
 
 // 加载技能列表（初次或切换排序时调用）
 async function loadSkillStoreData(state: AppViewState, append = false) {
@@ -453,10 +525,14 @@ export function renderSkillsView(state: AppViewState) {
         <!-- 标签页内容 -->
         ${skillsSubTab === "installed"
           ? renderInstalledSkillsView(state)
-          : renderSkillStoreView(skillStoreState, {
-              onInstall: (slug) => void installSkillFromStore(state, slug),
-              onUninstall: (slug) => void uninstallSkillFromStore(state, slug),
-            })
+          : html`
+              ${renderSkillRecommendations(state)}
+              ${renderSkillStoreView(skillStoreState, {
+                onInstall: (slug) => void installSkillFromStore(state, slug),
+                onUninstall: (slug) => void uninstallSkillFromStore(state, slug),
+                onOpenDetail: (skill: SkillItem) => openSkillDetail(state, skill),
+              })}
+            `
         }
       </section>
     </div>

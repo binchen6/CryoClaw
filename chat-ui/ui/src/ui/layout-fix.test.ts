@@ -37,13 +37,19 @@ test("视图 CSS 不得自带标题栏让位（壳层统一占位）", () => {
   }
 });
 
-test("design-tokens：--ext-column / --chat-column / --page-column 内容列 token 存在且流式（R84）", () => {
+test("design-tokens：--ext-column / --chat-column / --page-column 内容列 token 存在且流式（R84/R91）", () => {
   const dt = readFileSync(new URL("../../../../../../shared/design-tokens.css", import.meta.url), "utf8");
   // R84：内容列从固定像素改为 min(<百分比>, <可读性上限>) 流式列，
   // 随窗口伸缩铺满 ~92%，仅超宽窗口收束
-  assert.match(dt, /--ext-column:\s*min\(\s*92%,\s*\d+px\s*\)/, "缺扩展视图流式内容列 token");
+  assert.match(dt, /--ext-column:\s*min\(\s*9[0-9]%,\s*\d+px\s*\)/, "缺扩展视图流式内容列 token");
   assert.match(dt, /--chat-column:\s*min\(\s*92%,\s*\d+px\s*\)/, "缺聊天流式阅读列 token");
   assert.match(dt, /--page-column:\s*min\(\s*92%,\s*\d+px\s*\)/, "缺设置/任务页流式内容列 token");
+  // R91：扩展视图（技能/插件/市场）内容列要求占窗口 ≥85%——
+  // 百分比 ≥92% 且上限 ≥2000px（常见 1920/2560 宽窗口下实际占比 ≥85%）
+  const ext = dt.match(/--ext-column:\s*min\(\s*(9[0-9])%,\s*(\d+)px\s*\)/);
+  assert.ok(ext, "缺 --ext-column token");
+  assert.ok(Number(ext[1]) >= 92, "--ext-column 百分比过低（R91 ≥85% 占窗要求）");
+  assert.ok(Number(ext[2]) >= 2000, "--ext-column 上限过低（宽屏下占窗不足 85%）");
 });
 
 // R58b：线程尾部内联卡（子代理等待卡）必须与历史消息共用 --chat-column 居中列，

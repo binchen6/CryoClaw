@@ -120,6 +120,152 @@
   box-shadow: var(--focus-ring);
 }
 
+/* ── R92：搜索输入（工具行，防抖 200ms 客户端过滤） ── */
+.ts-search {
+  height: 32px;
+  width: 220px;
+  padding: 0 var(--spacer-12);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-8);
+  background: var(--bg-input);
+  color: var(--text);
+  font-size: var(--text-sm);
+  font-family: inherit;
+  outline: none;
+  transition: border-color var(--duration-fast) var(--ease-standard),
+    box-shadow var(--duration-fast) var(--ease-standard);
+}
+
+.ts-search:focus {
+  border-color: var(--border-focus);
+  box-shadow: var(--focus-ring);
+}
+
+/* ── R92：统计条（4 枚状态 chip，点击联动状态分组过滤） ── */
+.ts-stats {
+  display: flex;
+  align-items: center;
+  gap: var(--spacer-8);
+  flex-wrap: wrap;
+}
+
+.ts-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacer-6);
+  padding: var(--spacer-4) var(--spacer-12);
+  border: var(--hairline);
+  border-radius: var(--radius-pill);
+  background: var(--card);
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: var(--text-sm);
+  cursor: pointer;
+  transition: color var(--duration-fast) var(--ease-standard),
+    background var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard);
+}
+
+.ts-chip:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+.ts-chip:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.ts-chip--on {
+  background: var(--accent-subtle);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* chip 内状态点：复用 ts-dot 语义色，缩到 6px 并抹平行内边距 */
+.ts-chip .ts-dot {
+  width: 6px;
+  height: 6px;
+  margin-top: 0;
+}
+
+.ts-chip--on .ts-dot {
+  animation: none;
+}
+
+.ts-chip__count {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 var(--spacer-4);
+  border-radius: var(--radius-pill);
+  background: var(--bg-muted);
+  color: var(--text-muted);
+  font-family: var(--font-meta);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-semibold);
+  line-height: 18px;
+  text-align: center;
+}
+
+.ts-chip--on .ts-chip__count {
+  background: var(--accent);
+  color: var(--text-on-accent);
+}
+
+/* ── R92：自动刷新开关（iOS 式开关，工具行内与 32px 控件同高） ── */
+.ts-autorefresh {
+  display: inline-flex;
+  align-items: center;
+}
+
+/* ── R92：错误条（load 失败 callout + 重试按钮） ── */
+.ts-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacer-12);
+  flex-wrap: wrap;
+}
+
+.ts-error__text {
+  min-width: 0;
+  word-break: break-word;
+}
+
+/* ── R92：失败详情展开态（解除 2 行 clamp，保留换行） + 展开/收起按钮 ── */
+.ts-row__detail--full {
+  display: block;
+  -webkit-line-clamp: unset;
+  white-space: pre-wrap;
+}
+
+.ts-detail-toggle {
+  align-self: flex-start;
+  border: none;
+  padding: 0;
+  background: transparent;
+  color: var(--accent);
+  font-family: inherit;
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+
+.ts-detail-toggle:hover {
+  text-decoration: underline;
+}
+
+.ts-detail-toggle:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+  border-radius: var(--radius-6);
+}
+
+/* ── R92：最近完成「显示全部」按钮行 ── */
+.ts-recent-more {
+  display: flex;
+  justify-content: center;
+}
+
 /* 分组小节：大写小字标签（同 cc-panel 组标签语言） */
 .ts-section {
   display: flex;
@@ -323,6 +469,20 @@
   .ts-layout {
     padding-left: var(--spacer-12);
     padding-right: var(--spacer-12);
+  }
+  /* R92：统计条 chip 换行铺满；工具行堆叠为单列（搜索/下拉/开关/按钮各占整行） */
+  .ts-stats {
+    gap: var(--spacer-6);
+  }
+  .ts-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .ts-toolbar > * {
+    width: 100%;
+  }
+  .ts-search {
+    width: 100%;
   }
 }
 

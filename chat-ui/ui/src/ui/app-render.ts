@@ -48,6 +48,7 @@ import { renderKernelAutoUpgradeBanner } from "./views/kernel-auto-upgrade-banne
 import { CRYOCLAW_VIEW_META, type CryoClawViewId } from "./views/registry.ts";
 import { renderRestartGatewayDialog } from "./views/restart-gateway-dialog.ts";
 import { renderConfirmDialog } from "./views/confirm-dialog.ts";
+import { renderExtDetailDialog } from "./views/ext-detail.ts";
 import { renderSettingsView } from "./views/settings/settings-view.ts";
 import { renderSetupView } from "./views/setup/setup-view.ts";
 import { renderSharePrompt } from "./views/share-prompt.ts";
@@ -65,10 +66,16 @@ declare global {
       skillStoreInstall?: (params?: Record<string, unknown>) => Promise<any>;
       skillStoreUninstall?: (params?: Record<string, unknown>) => Promise<any>;
       skillStoreListInstalled?: () => Promise<any>;
+      skillStoreDetail?: (params?: Record<string, unknown>) => Promise<any>;
       pluginStoreList?: () => Promise<any>;
       pluginStoreSearch?: (params?: Record<string, unknown>) => Promise<any>;
       pluginStoreInstall?: (params?: Record<string, unknown>) => Promise<any>;
       pluginStoreUninstall?: (params?: Record<string, unknown>) => Promise<any>;
+      // 插件更新/详情/市场浏览（R91）
+      pluginStoreCheckUpdates?: () => Promise<any>;
+      pluginStoreUpdate?: (params?: Record<string, unknown>) => Promise<any>;
+      pluginStoreDetail?: (params?: Record<string, unknown>) => Promise<any>;
+      pluginStoreMarketBrowse?: (params?: Record<string, unknown>) => Promise<any>;
       workspaceSetRoot?: (root: string) => Promise<any>;
       workspaceOpenFolder?: (filePath: string) => Promise<any>;
       workspaceListDir?: (dirPath: string) => Promise<any>;
@@ -417,6 +424,7 @@ export function renderApp(state: AppViewState) {
       ${renderGatewayUrlConfirmation(state)}
       ${renderRestartGatewayDialog(state)}
       ${renderConfirmDialog(state)}
+      ${renderExtDetailDialog(state)}
       ${renderSharePrompt(state)}
       ${renderReleaseNotesModal(state)}
       ${renderUpdateAvailableDialog(state)}

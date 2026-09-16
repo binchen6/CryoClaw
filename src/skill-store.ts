@@ -17,8 +17,19 @@ import { assertTrustedIpcSender } from "./ipc-sender-guard";
 import { readCryoclawConfig, writeCryoclawConfig } from "./cryoclaw-config";
 import { readBuildConfigClawhubRegistry } from "./build-config";
 
-// 构建时通过 build-config.json 注入的默认 registry，未配置则回退硬编码值
-const DEFAULT_REGISTRY = readBuildConfigClawhubRegistry() || "https://clawhub.ai";
+// 构建时通过 build-config.json 注入的默认 registry，未配置则回退硬编码值。
+// R91 起延迟求值：build-config 在求值时会调用 Electron app 对象，而本模块的
+// 纯函数（validateSkillSlug 等）需要在 node --test（无 Electron 运行时，require
+// "electron" 只得到二进制路径字符串）下可导入测试；首次使用时求值并缓存，
+// 生产行为不变。jsonGet 同时导出给 plugin-store 复用（ClawHub 同源 HTTP 守卫
+// 只维护一份，避免两处实现漂移）。
+let defaultRegistryCache: string | null = null;
+function defaultRegistry(): string {
+  if (defaultRegistryCache === null) {
+    defaultRegistryCache = readBuildConfigClawhubRegistry() || "https://clawhub.ai";
+  }
+  return defaultRegistryCache;
+}
 const FETCH_TIMEOUT_MS = 15_000;
 const SKILL_STORE_CONFIG = "skill-store.json";
 
@@ -130,7 +141,7 @@ function registryUrl(): string {
   if (custom.trim()) {
     return custom.trim().replace(/\/+$/, "");
   }
-  return DEFAULT_REGISTRY;
+  return defaultRegistry();
 }
 
 // ── HTTP 请求封装 ──
@@ -141,7 +152,9 @@ function registryUrl(): string {
 // timeout 只是 socket 空闲超时，缓慢滴流不会触发）。
 const JSON_GET_MAX_BYTES = 8 * 1024 * 1024;
 
-function jsonGet<T>(url: string): Promise<T> {
+// R91 起导出：plugin-store 的 market-browse 也访问 ClawHub 公开 API，复用同一份
+// 超时 / 8MB 上限 / 状态码守卫实现，避免安全约束在两个文件里各自演化。
+export function jsonGet<T>(url: string): Promise<T> {
   debugLog(`GET ${url}`);
   const startMs = Date.now();
   return new Promise((resolve, reject) => {
@@ -312,8 +325,9 @@ function execClawhub(args: string[]): Promise<{ stdout: string; stderr: string }
 
 // 安全面：slug 必须是合法的技能标识符，不接受 -- 开头的 flag 或路径分隔符
 // 防止参数注入（如 --registry=...）与路径穿越（如 ../foo）
+// R91 起导出：skill-store:detail handler 复用，且作为纯校验函数供 node:test 覆盖
 const SKILL_SLUG_RE = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/;
-function validateSkillSlug(slug: string): { ok: true } | { ok: false; error: string } {
+export function validateSkillSlug(slug: string): { ok: true } | { ok: false; error: string } {
   if (!slug) return { ok: false, error: "slug 不能为空" };
   if (slug.startsWith("-")) return { ok: false, error: "slug 不能以 - 开头" };
   if (!SKILL_SLUG_RE.test(slug)) return { ok: false, error: "slug 格式非法" };
@@ -445,5 +459,22 @@ export function registerSkillStoreIpc(): void {
     const installed = listInstalledSkills();
     debugLog(`ipc list-installed → [${installed.join(", ")}]`);
     return { success: true, data: installed };
+  });
+
+  // R91：技能详情。getSkillDetail 早已存在但未暴露；slug 先走 validateSkillSlug
+  // （防 flag 注入 / 路径穿越），失败直接拒绝而不是带进 URL。
+  ipcMain.handle("skill-store:detail", async (event, params) => {
+    if (!assertTrustedIpcSender(event, "skill-store:detail")) throw new Error("IPC sender not trusted");
+    const slug = typeof params?.slug === "string" ? params.slug.trim() : "";
+    const check = validateSkillSlug(slug);
+    if (!check.ok) return { success: false, message: check.error };
+    debugLog(`ipc detail slug=${slug}`);
+    try {
+      const detail = await getSkillDetail(slug);
+      return { success: true, data: detail };
+    } catch (err: any) {
+      debugLog(`ipc detail → error: ${err?.message}`);
+      return { success: false, message: err?.message ?? String(err) };
+    }
   });
 }

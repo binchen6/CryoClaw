@@ -77,3 +77,48 @@ test("settings：extensions 分组与死键清理彻底", () => {
     assert.ok(!en.includes(key), `en.ts 应删除死键 ${key}`);
   }
 });
+
+// ── R91 扩展页增强：插件更新 / 详情 / 市场发现 / 技能推荐 ──
+
+test("R91 tab-plugins：检查更新 + 单项/全部更新 + 重启网关接线", () => {
+  const s = stripComments(src("views/settings/tab-plugins.ts"));
+  assert.match(s, /pluginStoreCheckUpdates/, "缺少检查更新 IPC 调用");
+  assert.match(s, /pluginStoreUpdate\(/, "缺少更新 IPC 调用");
+  assert.match(s, /restartGateway\?\.\(\)/, "更新后缺少重启网关入口");
+  assert.match(s, /updatable/, "缺少可更新列表状态");
+});
+
+test("R91 tab-plugins：市场浏览 + 推荐算法接入", () => {
+  const s = stripComments(src("views/settings/tab-plugins.ts"));
+  assert.match(s, /pluginStoreMarketBrowse/, "缺少市场浏览 IPC");
+  assert.match(s, /buildRecommendations/, "市场浏览未接推荐算法");
+  assert.match(s, /rankMarket/, "市场浏览未接评分排序");
+  assert.match(s, /ext\.market\.recommended/, "缺少为你推荐 rail 文案");
+  assert.match(s, /openPluginDetail/, "缺少插件详情入口");
+});
+
+test("R91 ext-detail：插件/技能详情对话框 + 请求代次守卫", () => {
+  const s = stripComments(src("views/ext-detail.ts"));
+  assert.match(s, /pluginStoreDetail/, "插件详情未走 IPC");
+  assert.match(s, /skillStoreDetail/, "技能详情未走 IPC");
+  assert.match(s, /detailToken/, "缺少请求代次守卫");
+  assert.match(s, /toSanitizedMarkdownHtml/, "readme 未走净化 Markdown 链路");
+  const render = stripComments(src("app-render.ts"));
+  assert.match(render, /renderExtDetailDialog\(state\)/, "对话框未挂到应用根");
+});
+
+test("R91 app-skills：技能推荐 rail + 详情回调", () => {
+  const s = stripComments(src("app-skills.ts"));
+  assert.match(s, /buildRecommendations/, "技能商店未接推荐算法");
+  assert.match(s, /skillToMarketItem/, "技能条目未映射为市场核心类型");
+  assert.match(s, /openSkillDetail/, "缺少技能详情入口");
+  assert.match(s, /skillStore\.recommended/, "缺少推荐 rail 文案键");
+});
+
+test("R91 skills.css：市场网格 + 详情对话框样式落地（全 token）", () => {
+  const css = readFileSync(new URL("../../../../src/styles/skills.css", import.meta.url), "utf8");
+  assert.match(css, /\.ext-market__grid\s*\{/, "缺少市场网格样式");
+  assert.match(css, /\.ext-detail__dialog\s*\{/, "缺少详情对话框样式");
+  assert.match(css, /\.skill-store__recommend-card\s*\{/, "缺少技能推荐卡样式");
+  assert.match(css, /repeat\(auto-fill, minmax\(340px, 1fr\)\)/, "技能列表未网格化");
+});

@@ -1,6 +1,8 @@
 /**
  * 技能管理视图：搜索栏 + 排序栏 + 技能卡片列表 + 加载更多。
  * 已安装技能排在前面，未安装技能排在后面。
+ * R91：卡片可点开详情对话框（ClawHub detail，含 readme）；
+ *      列表容器升级为响应式网格（宽屏多列，占满 --ext-column）。
  */
 import { html, nothing } from "lit";
 import { t } from "./i18n.ts";
@@ -31,6 +33,8 @@ export type SkillStoreState = {
 export type SkillStoreCallbacks = {
   onInstall: (slug: string) => void;
   onUninstall: (slug: string) => void;
+  /** R91：点卡片名打开详情（缺省不渲染详情按钮） */
+  onOpenDetail?: (skill: SkillItem) => void;
 };
 
 // 字母头像颜色表（根据 slug 哈希取色）。
@@ -64,11 +68,11 @@ function renderSkillCard(
   skill: SkillItem,
   installed: boolean,
   installing: boolean,
-  onInstall: () => void,
-  onUninstall: () => void,
+  callbacks: SkillStoreCallbacks,
 ) {
   const letter = (skill.name || skill.slug || "?").charAt(0).toUpperCase();
   const bgColor = skillAvatarColor(skill.slug);
+  const openDetail = callbacks.onOpenDetail;
   return html`
     <div class="skill-store__card">
       <div class="skill-store__card-header">
@@ -77,7 +81,25 @@ function renderSkillCard(
           <span class="skill-store__card-letter">${letter}</span>
         </div>
         <div class="skill-store__card-info">
-          <div class="skill-store__card-name">${skill.name}</div>
+          <div class="skill-store__card-name-row">
+            ${openDetail
+              ? html`<button
+                  class="skill-store__card-name-btn"
+                  type="button"
+                  title=${t("skillStore.detail")}
+                  @click=${() => openDetail(skill)}
+                >${skill.name}</button>`
+              : html`<div class="skill-store__card-name">${skill.name}</div>`}
+            ${openDetail
+              ? html`<button
+                  class="skill-store__detail-btn"
+                  type="button"
+                  title=${t("skillStore.detail")}
+                  aria-label=${t("skillStore.detail")}
+                  @click=${() => openDetail(skill)}
+                ><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button>`
+              : nothing}
+          </div>
           <div class="skill-store__card-meta">
             ${skill.version ? html`v${skill.version}` : nothing}
             ${skill.downloads > 0 ? html`<span class="skill-store__card-downloads">${formatDownloads(skill.downloads)} ${t("skillStore.downloads")}</span>` : nothing}
@@ -89,7 +111,7 @@ function renderSkillCard(
                 <button
                   class="skill-store__btn skill-store__btn--installed"
                   type="button"
-                  @click=${onUninstall}
+                  @click=${() => callbacks.onUninstall(skill.slug)}
                   ?disabled=${installing}
                 >${t("skillStore.uninstall")}</button>
               `
@@ -97,7 +119,7 @@ function renderSkillCard(
                 <button
                   class="skill-store__btn skill-store__btn--install"
                   type="button"
-                  @click=${onInstall}
+                  @click=${() => callbacks.onInstall(skill.slug)}
                   ?disabled=${installing}
                 >${installing ? t("skillStore.installing") : t("skillStore.install")}</button>
               `}
@@ -138,8 +160,7 @@ export function renderSkillStoreView(
           skill,
           state.installedSlugs.has(skill.slug),
           state.installingSlugs.has(skill.slug),
-          () => callbacks.onInstall(skill.slug),
-          () => callbacks.onUninstall(skill.slug),
+          callbacks,
         ),
       )}
     </div>

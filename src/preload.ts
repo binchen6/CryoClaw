@@ -163,6 +163,9 @@ contextBridge.exposeInMainWorld("cryoclaw", {
     ipcRenderer.invoke("skill-store:uninstall", params),
   skillStoreListInstalled: () =>
     ipcRenderer.invoke("skill-store:list-installed"),
+  // R91：技能详情（readme/tags 等全量字段）
+  skillStoreDetail: (params?: Record<string, unknown>) =>
+    ipcRenderer.invoke("skill-store:detail", params),
 
   // 插件管理页（R8）
   pluginStoreList: () =>
@@ -173,6 +176,15 @@ contextBridge.exposeInMainWorld("cryoclaw", {
     ipcRenderer.invoke("plugin-store:install", params),
   pluginStoreUninstall: (params?: Record<string, unknown>) =>
     ipcRenderer.invoke("plugin-store:uninstall", params),
+  // R91：检查更新（dry-run）/ 执行更新 / 插件详情 / 市场分类浏览
+  pluginStoreCheckUpdates: () =>
+    ipcRenderer.invoke("plugin-store:check-updates"),
+  pluginStoreUpdate: (params?: Record<string, unknown>) =>
+    ipcRenderer.invoke("plugin-store:update", params),
+  pluginStoreDetail: (params?: Record<string, unknown>) =>
+    ipcRenderer.invoke("plugin-store:detail", params),
+  pluginStoreMarketBrowse: (params?: Record<string, unknown>) =>
+    ipcRenderer.invoke("plugin-store:market-browse", params),
 
   // 工作空间文件操作
   workspaceSetRoot: (root: string) =>
