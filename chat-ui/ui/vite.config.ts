@@ -58,12 +58,21 @@ function assertCssSelectorsValid(): Plugin {
 // 把重量级第三方库拆成独立 chunk：首帧只需解析 entry + 用到的 vendor，
 // 复用度高的 vendor 走浏览器缓存（file:// 下同 app 内每次启动仍是本地磁盘读取，
 // 但拆分让主 chunk 更小、解析更快，且构建告警阈值不再误报业务代码体积）。
+// R91 性能审查：hljs/katex 从 vendor-misc 再拆出——两者在源码里全是动态
+// import（code-block-enhance / math-enhance 按需加载），合在 vendor-misc 会被
+// modulepreload 在每次窗口创建时强制加载（katex 对纯文本会话永远用不到）。
 function vendorChunks(id: string): string | undefined {
   if (!id.includes("node_modules")) return undefined;
+  // CSS 模块一律随 vendor-misc（历史行为）：把 katex.min.css 划进 vendor-katex
+  // 会让 Rollup 为样式生成静态 facade import，反向把 JS chunk 拖进 HTML 的
+  // modulepreload——与"动态按需加载"的初衷相悖
+  if (id.endsWith(".css")) return "vendor-misc";
   if (id.includes("node_modules/lit") || id.includes("node_modules/@lit")) return "vendor-lit";
   if (id.includes("node_modules/marked")) return "vendor-marked";
   if (id.includes("node_modules/dompurify")) return "vendor-dompurify";
   if (id.includes("node_modules/@noble")) return "vendor-noble";
+  if (id.includes("node_modules/highlight.js") || id.includes("node_modules/@highlightjs")) return "vendor-hljs";
+  if (id.includes("node_modules/katex")) return "vendor-katex";
   return "vendor-misc";
 }
 
