@@ -219,7 +219,8 @@ function renderPluginDetail(report: PluginInspectReport): TemplateResult {
           kind: str(cap.kind) ?? "?",
           ids: strArray(cap.ids),
         }))
-        .filter((cap) => cap.ids.length > 0 || true)
+        // 只展示有具体 id 的能力行：空 id 的“注册型”能力对用户无信息量
+        .filter((cap) => cap.ids.length > 0)
     : [];
   const customHooks = Array.isArray(report.customHooks)
     ? (report.customHooks as InspectEntry[]).map((h) => str(h.name) ?? "?")

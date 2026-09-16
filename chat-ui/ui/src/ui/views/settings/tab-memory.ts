@@ -223,7 +223,7 @@ async function loadDreams(state: AppViewState, force = false) {
 
 async function toggleMemoryExpand(state: AppViewState, id: string) {
   if (s.wsExpandedId === id) {
-    s.wsExpandedId = null; s.wsExpandedContent = null;
+    s.wsExpandedId = null; s.wsExpandedContent = null; s.wsExpandedLoading = false;
     state.requestUpdate();
     return;
   }
@@ -246,7 +246,7 @@ async function toggleMemoryExpand(state: AppViewState, id: string) {
 
 async function toggleDreamExpand(state: AppViewState, index: number) {
   if (s.dreamExpandedIndex === index) {
-    s.dreamExpandedIndex = null; s.dreamExpandedBody = null;
+    s.dreamExpandedIndex = null; s.dreamExpandedBody = null; s.dreamExpandedLoading = false;
     state.requestUpdate();
     return;
   }

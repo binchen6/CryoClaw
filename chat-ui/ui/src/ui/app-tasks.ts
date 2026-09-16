@@ -40,6 +40,13 @@ function runTasksAutoRefreshTick() {
   if (!state) {
     return;
   }
+  // 条件 a) 自愈复核（R91 三审）：applySettings 直写视图（bindAppNavigation /
+  // URL 注入）不经过 setCryoClawView，leave hook 不会触发——ticker 在此
+  // 自查当前视图，已切走即自停，防 30s 轮询泄漏为常驻
+  if (state.settings.cryoclawView !== "tasks") {
+    stopTasksAutoRefresh();
+    return;
+  }
   void loadTasks(state); // 与 onRefresh 同一数据路径（tasks.list 全量拉取）
   // tick 顺带 requestUpdate 一次：进行中任务耗时（taskDurationMs 基于
   // Date.now()）随 tick 滚动，不另开 1s 定时器

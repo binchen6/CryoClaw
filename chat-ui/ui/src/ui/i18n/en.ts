@@ -213,6 +213,7 @@ export const enDict: Record<string, string> = {
   "ext.market.loadFailed": "Failed to load the market",
   "ext.market.retry": "Retry",
   "ext.market.empty": "No plugins found",
+  "ext.market.verified": "Verified",
   "ext.market.updateAvailable": "Update available",
   "ext.market.browseHint": "Search ClawHub plugins, or browse the picks below",
 

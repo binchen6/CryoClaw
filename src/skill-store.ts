@@ -139,7 +139,16 @@ export function writeSkillStoreRegistry(url: string): void {
 function registryUrl(): string {
   const custom = readSkillStoreRegistry();
   if (custom.trim()) {
-    return custom.trim().replace(/\/+$/, "");
+    // 读侧 scheme 复核（R91 三审）：写入侧已限 https/回环 http，但手改
+    // cryoclaw.config.json / legacy skill-store.json 可绕过——技能清单与
+    // readme 是引导 agent 行为的内容源，非回环明文 http 在读侧同样拒绝
+    try {
+      const parsed = new URL(custom.trim());
+      const isLoopback = ["localhost", "127.0.0.1", "[::1]"].includes(parsed.hostname);
+      if (parsed.protocol === "https:" || (parsed.protocol === "http:" && isLoopback)) {
+        return custom.trim().replace(/\/+$/, "");
+      }
+    } catch { /* 非法 URL 回退默认源 */ }
   }
   return defaultRegistry();
 }
@@ -410,15 +419,27 @@ function listInstalledSkills(): string[] {
 
 // 注册技能商店相关 IPC handler
 export function registerSkillStoreIpc(): void {
+  // 列表缓存（R91 性能审查）：list 是纯读 HTTP（sort+limit+cursor 键控），
+  // 排序切换/重进商店 tab 不应重付网络往返；install/uninstall 主动失效
+  const SKILL_LIST_CACHE_TTL_MS = 5 * 60_000;
+  const skillListCache = new Map<string, { at: number; result: ListResult }>();
+
   ipcMain.handle("skill-store:list", async (_event, params) => {
     if (!assertTrustedIpcSender(_event, "skill-store:list")) throw new Error("IPC sender not trusted");
     debugLog(`ipc list sort=${params?.sort} limit=${params?.limit} cursor=${params?.cursor ?? "none"}`);
+    const cacheKey = JSON.stringify([params?.sort ?? "", params?.limit ?? "", params?.cursor ?? ""]);
+    const cached = skillListCache.get(cacheKey);
+    if (cached && Date.now() - cached.at < SKILL_LIST_CACHE_TTL_MS) {
+      debugLog(`ipc list → cache hit (${cached.result.skills?.length ?? 0} skills)`);
+      return { success: true, data: cached.result };
+    }
     try {
       const result = await listSkills({
         sort: params?.sort,
         limit: params?.limit,
         cursor: params?.cursor,
       });
+      skillListCache.set(cacheKey, { at: Date.now(), result });
       debugLog(`ipc list → ${result.skills?.length ?? 0} skills`);
       return { success: true, data: result };
     } catch (err: any) {
@@ -445,6 +466,7 @@ export function registerSkillStoreIpc(): void {
     if (!assertTrustedIpcSender(_event, "skill-store:install")) throw new Error("IPC sender not trusted");
     debugLog(`ipc install slug=${params?.slug}`);
     const result = await installSkill(params?.slug ?? "");
+    if (result.success) skillListCache.clear();
     debugLog(`ipc install → ${result.success ? "ok" : result.message}`);
     return result;
   });
@@ -453,6 +475,7 @@ export function registerSkillStoreIpc(): void {
     if (!assertTrustedIpcSender(_event, "skill-store:uninstall")) throw new Error("IPC sender not trusted");
     debugLog(`ipc uninstall slug=${params?.slug}`);
     const result = await uninstallSkill(params?.slug ?? "");
+    if (result.success) skillListCache.clear();
     debugLog(`ipc uninstall → ${result.success ? "ok" : result.message}`);
     return result;
   });

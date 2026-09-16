@@ -1509,7 +1509,11 @@ function runQuitTeardown(): void {
   void analytics.shutdown();
 }
 
-app.on("before-quit", () => {
+// 二段退出标志（R91 三审）：before-quit 拦截首轮以等 gateway 停稳后再清理，
+// preventDefault 后主动 app.quit() 会再触发一次 before-quit——该标志放行第二轮
+let quitCleanupProceeding = false;
+
+app.on("before-quit", (event) => {
   // 退出序列开始：禁止崩溃自动重启再拉起网关（R71），并取消待执行的崩溃重启定时器
   isQuitting = true;
   if (crashRestartTimer) {
@@ -1525,20 +1529,22 @@ app.on("before-quit", () => {
   windowManager.destroy();
   stopAuthProxy();
   stopGatewayControlServer().catch(() => {});
-  // 清理临时缓存（gateway 已停，内核临时目录安全可删；用户配置/会话历史在
-  // ~/.openclaw 下不在清理范围）。同步执行保证退出前完成；内部全 try/catch。
-  // R91 审查修复：清理动作移入 stop().finally()——stop 在 Windows 上要等
-  // taskkill+exit（最长 5s），先行删除会在 gateway 仍在解包插件时删掉在用目录，
-  // 且将死的 gateway 可能在锁文件删除后重建造成残留
-  gateway.stop()
-    .catch(() => {})
-    .finally(() => {
-      try {
-        cleanGatewayLockFiles();
-        runQuitCleanup();
-      } catch {}
-      // diagLog 已改 WriteStream 异步缓冲，退出前 flush 落盘（带超时，不阻塞退出）
-      closeDiagLogStream().catch(() => {});
-    });
+  // R91 三审：Electron 不会等 before-quit 里的未决 Promise——直接挂异步清理
+  // 会在 Windows 上（stop 最长 5s）被退出序列截断。首轮拦截退出，等 gateway
+  // 停稳后再删临时目录/锁文件（此时内核解包目录安全可删），然后放行二次退出。
+  if (!quitCleanupProceeding) {
+    quitCleanupProceeding = true;
+    event.preventDefault();
+    gateway.stop()
+      .catch(() => {})
+      .finally(() => {
+        try {
+          cleanGatewayLockFiles();
+          runQuitCleanup();
+        } catch {}
+        // diagLog 已改 WriteStream 异步缓冲，退出前 flush 落盘（带超时，不阻塞退出）
+        closeDiagLogStream().catch(() => {}).finally(() => app.quit());
+      });
+  }
 });
 

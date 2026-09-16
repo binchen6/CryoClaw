@@ -213,6 +213,7 @@ export const zhDict: Record<string, string> = {
   "ext.market.loadFailed": "市场加载失败",
   "ext.market.retry": "重试",
   "ext.market.empty": "没有找到相关插件",
+  "ext.market.verified": "已验证",
   "ext.market.updateAvailable": "可更新",
   "ext.market.browseHint": "输入关键词搜索 ClawHub 插件，或浏览下方推荐",
 

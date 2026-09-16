@@ -32,14 +32,23 @@ import { jsonGet, readSkillStoreRegistry } from "./skill-store";
 
 const EXEC_TIMEOUT_MS = 90_000;
 const MAX_BUFFER = 8 * 1024 * 1024;
-// 清单缓存（R17 性能）：内核 CLI 全量加载约 15s，缓存 60s 避免重复进入设置页重付；
-// install/uninstall 后主动失效。
-const LIST_CACHE_TTL_MS = 60_000;
+// 清单缓存（R17 立项，R91 性能审查放宽）：内核 CLI 全量加载约 15s，60s TTL
+// 只覆盖快速来回切换；install/uninstall/update 均主动失效，TTL 提到 10 分钟
+// 不影响正确性，重进扩展页不再重付冷启成本。
+const LIST_CACHE_TTL_MS = 10 * 60_000;
 let listCache: { at: number; plugins: InstalledPlugin[] } | null = null;
 
 function invalidatePluginListCache() {
   listCache = null;
+  // 市场浏览缓存同点失效：安装/卸载/更新会改变 installed 集合与推荐排除集
+  marketBrowseCache = null;
 }
+
+// 市场浏览缓存（R91 性能审查）：单次浏览并发 14+ 路 HTTP（分类×关键词×family），
+// 前端每次重进扩展页→市场 tab 都会重发全量请求；5 分钟 TTL + limit 键控，
+// 安装/卸载/更新时经 invalidatePluginListCache 一并失效
+const MARKET_BROWSE_CACHE_TTL_MS = 5 * 60_000;
+let marketBrowseCache: { at: number; limit: number; items: MarketBrowseItem[] } | null = null;
 
 export type InstalledPlugin = {
   id: string;
@@ -306,7 +315,18 @@ function mapSearchResponse(parsed: unknown): ScoredMarketPlugin[] {
 const DEFAULT_CLAWHUB_API_BASE = "https://clawhub.ai";
 function marketApiBase(): string {
   const custom = readSkillStoreRegistry().trim();
-  if (custom) return custom.replace(/\/+$/, "");
+  if (custom) {
+    // 读侧 scheme 复核（R91 三审）：写入咽喉点（writeSkillStoreRegistry）已限
+    // https/回环 http，但用户手改 sidecar 文件可绕过——registry 是市场清单的
+    // 下载源（内容会引导 agent 行为），非回环 http 在读侧同样拒绝并回退官方源
+    try {
+      const parsed = new URL(custom);
+      const isLoopback = ["localhost", "127.0.0.1", "[::1]"].includes(parsed.hostname);
+      if (parsed.protocol === "https:" || (parsed.protocol === "http:" && isLoopback)) {
+        return custom.replace(/\/+$/, "");
+      }
+    } catch { /* 非法 URL 同样回退默认源 */ }
+  }
   return DEFAULT_CLAWHUB_API_BASE;
 }
 
@@ -545,8 +565,13 @@ export function registerPluginStoreIpc(): void {
     const limit = typeof params?.limit === "number" && params.limit > 0
       ? Math.min(Math.floor(params.limit), MARKET_BROWSE_MAX_LIMIT)
       : MARKET_BROWSE_DEFAULT_LIMIT;
+    if (marketBrowseCache && marketBrowseCache.limit === limit
+        && Date.now() - marketBrowseCache.at < MARKET_BROWSE_CACHE_TTL_MS) {
+      return { success: true, data: { items: marketBrowseCache.items, fetchedAt: marketBrowseCache.at } };
+    }
     try {
       const items = await browsePluginMarket(limit);
+      marketBrowseCache = { at: Date.now(), limit, items };
       return { success: true, data: { items, fetchedAt: Date.now() } };
     } catch (err: any) {
       log.info(`[plugin-store] market-browse failed: ${err?.message ?? err}`);

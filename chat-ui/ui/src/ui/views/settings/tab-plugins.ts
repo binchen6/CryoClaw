@@ -160,7 +160,7 @@ async function togglePluginEnabled(state: AppViewState, plugin: InstalledPluginV
 }
 
 async function uninstallPlugin(state: AppViewState, plugin: InstalledPluginView) {
-  if (!window.cryoclaw?.pluginStoreUninstall || s.busyName) return;
+  if (!window.cryoclaw?.pluginStoreUninstall || s.busyName || s.updatingId || s.updatingAll) return;
   const confirmed = await showConfirm(
     state,
     t("settings.plugins.uninstallConfirm").replace("{name}", plugin.name),
@@ -294,7 +294,9 @@ async function checkUpdates(state: AppViewState) {
 
 async function runUpdate(state: AppViewState, id?: string) {
   if (!window.cryoclaw?.pluginStoreUpdate) return;
-  if (id ? s.updatingId || s.updatingAll : s.updatingAll || s.updatingId) return;
+  // 互斥守卫（R91 三审 P1）：更新与安装/卸载都会让内核 CLI 改写同一插件
+  // 状态目录，必须全量互斥——三处流的 busy 标记彼此可见
+  if (s.busyName || s.updatingId || s.updatingAll) return;
   if (id) {
     s.updatingId = id;
   } else {
@@ -455,7 +457,7 @@ function renderMarketCard(state: AppViewState, item: MarketPluginView) {
 }
 
 async function installFromMarket(state: AppViewState, plugin: MarketPluginView) {
-  if (!window.cryoclaw?.pluginStoreInstall || s.busyName) return;
+  if (!window.cryoclaw?.pluginStoreInstall || s.busyName || s.updatingId || s.updatingAll) return;
   // 冲突检测（R17）：市场包的运行时 id 可能与已安装插件相同，安装会覆盖既有插件
   const collision = plugin.runtimeId
     ? s.installed.find((p) => p.id === plugin.runtimeId)

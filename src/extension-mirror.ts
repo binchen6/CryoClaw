@@ -77,21 +77,25 @@ function readPluginEntrySig(dir: string): string | null {
   }
 }
 
-/** 递归复制目录（保留文件权限），dest 已存在则覆盖各文件 */
-function copyDirSync(src: string, dest: string): void {
-  fs.mkdirSync(dest, { recursive: true });
-  for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
+/** 递归复制目录（保留文件权限），dest 已存在则覆盖各文件。
+ *  R91 性能审查：改异步（fs.promises）——同步复制发生在 gateway spawn 前的
+ *  启动链上，Windows + Defender 下整目录 node_modules 复制会卡主进程 JS 线程
+ *  1-10s，期间所有 ipcMain handler 无响应；异步化让事件循环持续可服务。 */
+const fsp = fs.promises;
+async function copyDir(src: string, dest: string): Promise<void> {
+  await fsp.mkdir(dest, { recursive: true });
+  for (const entry of await fsp.readdir(src, { withFileTypes: true })) {
     const s = path.join(src, entry.name);
     const d = path.join(dest, entry.name);
     if (entry.isDirectory()) {
-      copyDirSync(s, d);
+      await copyDir(s, d);
     } else if (entry.isSymbolicLink()) {
       const real = fs.realpathSync(s);
-      fs.copyFileSync(real, d);
-      try { fs.chmodSync(d, fs.statSync(real).mode); } catch {}
+      await fsp.copyFile(real, d);
+      try { await fsp.chmod(d, (await fsp.stat(real)).mode); } catch {}
     } else {
-      fs.copyFileSync(s, d);
-      try { fs.chmodSync(d, fs.statSync(s).mode); } catch {}
+      await fsp.copyFile(s, d);
+      try { await fsp.chmod(d, (await fsp.stat(s)).mode); } catch {}
     }
   }
 }
@@ -130,8 +134,8 @@ function removeRetiredOrphans(userDir: string): ReconcileOutcome[] {
   return outcomes;
 }
 
-/** 同步单个 plugin（mirror → user dir） */
-function reconcileOne(pluginId: string, mirrorDir: string, userDir: string): ReconcileOutcome {
+/** 同步单个 plugin（mirror → user dir）——复制走异步 copyDir，其余判定保持同步读 */
+async function reconcileOne(pluginId: string, mirrorDir: string, userDir: string): Promise<ReconcileOutcome> {
   const src = path.join(mirrorDir, pluginId);
   const dest = path.join(userDir, pluginId);
 
@@ -147,7 +151,7 @@ function reconcileOne(pluginId: string, mirrorDir: string, userDir: string): Rec
   // 全新安装
   if (!destExists) {
     try {
-      copyDirSync(src, dest);
+      await copyDir(src, dest);
       return { pluginId, action: "installed", toVersion: mirrorVersion };
     } catch (err) {
       return { pluginId, action: "failed", error: (err as Error).message };
@@ -172,7 +176,7 @@ function reconcileOne(pluginId: string, mirrorDir: string, userDir: string): Rec
   // 留下残缺的扩展目录，导致依赖该目录的 channel 在 config 校验阶段被拒（gotcha #41）。
   const tmp = `${dest}.cryoclaw-tmp-${process.pid}-${Date.now()}`;
   try {
-    copyDirSync(src, tmp);
+    await copyDir(src, tmp);
     fs.rmSync(dest, { recursive: true, force: true });
     fs.renameSync(tmp, dest);
     return { pluginId, action: "upgraded", fromVersion: destVersion, toVersion: mirrorVersion };
@@ -221,7 +225,7 @@ export async function reconcileExtensionsOnAppLaunch(): Promise<void> {
   const outcomes: ReconcileOutcome[] = [];
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
-    outcomes.push(reconcileOne(entry.name, mirrorDir, userDir));
+    outcomes.push(await reconcileOne(entry.name, mirrorDir, userDir));
   }
   outcomes.push(...removeRetiredOrphans(userDir));
 

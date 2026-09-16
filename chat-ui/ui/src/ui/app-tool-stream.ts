@@ -16,6 +16,9 @@ const TOOL_STREAM_LIMIT = 50;
 // （数百次工具调用）的消息条目会随调用次数线性累积且每个节流帧都重建摊平，
 // 流式期间渐进卡顿；超限丢弃最旧段（终态后历史刷新会完整回归）。
 const EVICTED_SEGMENTS_LIMIT = 150;
+// 淘汰段单段字符上限（R91 性能审查）：只限段数不限长度时，150 × 数十 KB 的
+// 长解说段可常驻数 MB；截断无信息丢失（终态后历史刷新完整回归）
+const EVICTED_SEGMENT_CHAR_LIMIT = 12_000;
 const TOOL_STREAM_THROTTLE_MS = 80;
 const TOOL_OUTPUT_CHAR_LIMIT = 120_000;
 
@@ -250,7 +253,12 @@ function trimToolStream(host: ToolStreamHost) {
     for (const seg of [entry?.narrationSegment, entry?.leadingSegment]) {
       if (seg && seg.text.trim().length > 0) {
         // 把这条 entry 上的 leading 文本搬到 sticky 列表，渲染时仍能看到（顺序在最前面）。
-        host.evictedLeadingSegments.push(seg);
+        // 超长段截断（R91）：sticky 列表只为保时间线可读，整段内容终态后由历史回归
+        host.evictedLeadingSegments.push(
+          seg.text.length > EVICTED_SEGMENT_CHAR_LIMIT
+            ? { ...seg, text: truncateText(seg.text, EVICTED_SEGMENT_CHAR_LIMIT).text }
+            : seg,
+        );
         if (host.evictedLeadingSegments.length > EVICTED_SEGMENTS_LIMIT) {
           host.evictedLeadingSegments.splice(
             0,

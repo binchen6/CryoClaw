@@ -36,6 +36,8 @@ try {
 const MAX_DIAG_LOG_SIZE = 5 * 1024 * 1024;
 const DIAG_ROTATION_CHECK_INTERVAL = 1000;
 let diagWriteCount = 0;
+// 系统守护进程清理的会话级一次性标记（见 doStart 内注释，R91 性能审查）
+let gatewayDaemonCleanupDone = false;
 // 轮转窗口（对齐 logger.ts）：end+close 异步完成后才截断，期间 diagLog 不重建流
 let diagRotationInProgress = false;
 
@@ -253,8 +255,15 @@ export class GatewayProcess {
     try {
       await this.cleanStaleLockfile();
 
-      // 卸载 OpenClaw 系统守护进程 + 清理 tmpdir 锁文件，防止杀进程后被自动重启
-      await uninstallGatewayDaemon();
+      // 卸载 OpenClaw 系统守护进程 + 清理 tmpdir 锁文件，防止杀进程后被自动重启。
+      // 每应用会话只执行一次（R91 性能审查）：Windows 上串行跑 2 次 schtasks、
+      // macOS 上 2 次 launchctl bootout，任务不存在时也要付 0.3-1.2s 的 spawn
+      // 成本——该清理只针对历史安装残留，会话内重复执行无额外收益，却出现在
+      // 每次 start（启动/设置重启/崩溃自重启）的串行关键路径上。
+      if (!gatewayDaemonCleanupDone) {
+        await uninstallGatewayDaemon();
+        gatewayDaemonCleanupDone = true;
+      }
 
       // 启动前探测端口，若有旧 gateway 则自动停止
       const portBusy = await this.probeHealth();
@@ -544,13 +553,16 @@ export class GatewayProcess {
     if (childPid <= 0) return false;
 
     const deadline = Date.now() + timeoutMs;
+    // R91 性能审查：前 5s 用 150ms 快轮询（探测是 2s 超时的本地 http.get，
+    // CPU 成本可忽略），就绪推送平均提前 ~175ms；之后退回 500ms 常规节奏
+    const fastDeadline = Date.now() + 5_000;
     while (Date.now() < deadline) {
       if (!this.isChildAlive(childPid)) {
         diagLog(`health check aborted: child exited pid=${childPid}`);
         return false;
       }
       if (await this.probeHealth()) return true;
-      await sleep(HEALTH_POLL_INTERVAL_MS);
+      await sleep(Date.now() < fastDeadline ? 150 : HEALTH_POLL_INTERVAL_MS);
     }
     return false;
   }
