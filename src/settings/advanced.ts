@@ -98,9 +98,20 @@ export function registerAdvancedIpc(opts: SettingsIpcOptions): void {
           }
 
           const config = readUserConfig();
+          // R91 审查修复：只有浏览器模式/Profile 实际变化才触发 gateway 重启——
+          // launchAtLogin 与 ClawHub registry 均与 gateway 无关，无条件重启会把
+          // 活跃聊天流切断一轮 800ms 防抖重启
+          const prevMode = detectBrowserMode(config);
+          const prevProfile =
+            (typeof config?.browser?.defaultProfile === "string"
+              ? config.browser.defaultProfile
+              : "") || "openclaw";
+          let browserConfigChanged = false;
           if (coercedMode) {
+            browserConfigChanged = coercedMode !== prevMode;
             Object.assign(config, applyBrowserModeConfig(config, coercedMode));
           } else if (typeof browserProfile === "string" && browserProfile) {
+            browserConfigChanged = browserProfile !== prevProfile;
             // 老前端兼容：直接传 profile 名（"openclaw" / "user" / "chrome" / 自定义）。
             // 走 main 分支的 normalize：旧名 "chrome" → "user"，并清掉 driver:"extension" 残留。
             config.browser ??= {};
@@ -124,7 +135,9 @@ export function registerAdvancedIpc(opts: SettingsIpcOptions): void {
             writeSkillStoreRegistry(clawHubRegistry);
           }
 
-          opts.requestGatewayRestart?.();
+          if (browserConfigChanged) {
+            opts.requestGatewayRestart?.();
+          }
           return { success: true };
         } catch (err: any) {
           return { success: false, message: err.message || String(err) };

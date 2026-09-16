@@ -76,18 +76,24 @@ function handleRequest(
     return;
   }
 
-  const token = resolveToken(route);
+  // R91 审查修复：逐请求验证 key —— 设置页/向导验证 kimi-code 时通过该头携带
+  // 待验 key，代理仅对本请求生效；不再走 setProxyAccessToken 全局劫持（旧做法
+  // 会让验证期间经代理的在途生产流量全部带错误凭据 401）
+  const verifyKeyHeader = clientReq.headers["x-cryoclaw-verify-key"];
+  const verifyKey = typeof verifyKeyHeader === "string" ? verifyKeyHeader.trim() : "";
+  const token = verifyKey || resolveToken(route);
   if (!token) {
     clientRes.writeHead(401, { "Content-Type": "text/plain" });
     clientRes.end("No access token available");
     return;
   }
 
-  // 复制原始请求头，替换鉴权相关字段
+  // 复制原始请求头，替换鉴权相关字段（内部验证头不透传上游）
   const headers: http.OutgoingHttpHeaders = { ...clientReq.headers };
   headers["host"] = UPSTREAM_HOST;
   headers["x-api-key"] = token;
   headers["authorization"] = `Bearer ${token}`;
+  delete headers["x-cryoclaw-verify-key"];
 
   // 删除可能干扰上游的 hop-by-hop 头
   delete headers["connection"];

@@ -574,6 +574,10 @@ export class OpenClawApp extends LitElement {
   private appNavigateCleanup: (() => void) | null = null;
   private gatewayReadyCleanup: (() => void) | null = null;
   private webbridgeStateCleanup: (() => void) | null = null;
+  // R91 审查修复：webbridge 修复轮询的 interval/timeout 句柄——原先直接丢弃，
+  // 组件重挂载（dev 热重载/未来重构）会叠加新 interval 且断开后不清
+  private webbridgeRepairPollTimeout: number | null = null;
+  private webbridgeRepairPollInterval: number | null = null;
   private appUpdateStateCleanup: (() => void) | null = null;
   private kernelUpdateProgressCleanup: (() => void) | null = null;
   // done 态横幅的自动清除计时器（新事件到达时重置）
@@ -774,6 +778,15 @@ export class OpenClawApp extends LitElement {
     this.gatewayReadyCleanup = null;
     this.webbridgeStateCleanup?.();
     this.webbridgeStateCleanup = null;
+    // R91 审查修复：webbridge 修复轮询句柄对称清理
+    if (this.webbridgeRepairPollTimeout !== null) {
+      clearTimeout(this.webbridgeRepairPollTimeout);
+      this.webbridgeRepairPollTimeout = null;
+    }
+    if (this.webbridgeRepairPollInterval !== null) {
+      clearInterval(this.webbridgeRepairPollInterval);
+      this.webbridgeRepairPollInterval = null;
+    }
     this.appUpdateStateCleanup?.();
     this.appUpdateStateCleanup = null;
     this.kernelUpdateProgressCleanup?.();
@@ -957,13 +970,15 @@ export class OpenClawApp extends LitElement {
   }
 
   private bindWebbridgeRepairPoll() {
+    // 幂等守卫（R91 审查修复）：重挂载时不再叠加新轮询
+    if (this.webbridgeRepairPollInterval) return;
     // 延迟 1.5s 再跑首轮（R77）：needs-repair 检查在主进程侧要拉默认浏览器
     // （reg.exe）+ 扩展状态（tasklist），纯信息性 pill 不值得挤占首屏路径
-    window.setTimeout(() => void this.runWebbridgeRepairTick(), 1500);
+    this.webbridgeRepairPollTimeout = window.setTimeout(() => void this.runWebbridgeRepairTick(), 1500);
     // pill 可见期间的 30s 自愈轮询（R86）：扩展启用/daemon 连接都是外部异步事件
     // （浏览器启用弹窗、扩展重连），主进程广播覆盖不到全部时机——pill 显示时
     // 周期复判，消失即停（隐藏态零开销，避免常态 tasklist 枚举）。
-    window.setInterval(() => {
+    this.webbridgeRepairPollInterval = window.setInterval(() => {
       if (this.webbridgeRepairVisible) void this.runWebbridgeRepairTick();
     }, 30_000);
   }

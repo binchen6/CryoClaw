@@ -306,6 +306,9 @@ function execClawhub(args: string[]): Promise<{ stdout: string; stderr: string }
       env: {
         ...process.env,
         ...resolveNodeExtraEnv(),
+        // 显式对齐 gateway spawn 的状态目录（R91 审查修复）：HOME 歧义时
+        // clawhub 会解析到另一个 ~/.openclaw，安装/卸载落错目录
+        OPENCLAW_STATE_DIR: resolveUserStateDir(),
         PATH: envPath,
       },
       windowsHide: true,

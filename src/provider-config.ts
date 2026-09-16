@@ -228,12 +228,15 @@ export function verifyGoogle(apiKey: string): Promise<void> {
 }
 
 // Kimi Code 验证：始终通过本地 auth proxy（proxy 自动注入 OAuth token）
-export function verifyKFC(proxyPort: number, modelID?: string): Promise<void> {
+export function verifyKFC(proxyPort: number, modelID?: string, verifyKey?: string): Promise<void> {
   return jsonRequest(`http://127.0.0.1:${proxyPort}/coding/v1/messages`, {
     method: "POST",
     headers: {
       "anthropic-version": "2023-06-01",
       "content-type": "application/json",
+      // R91：逐请求验证 key —— 代理对该头优先于全局 token，验证不再劫持
+      // 在途生产流量的凭据
+      ...(verifyKey ? { "x-cryoclaw-verify-key": verifyKey } : {}),
     },
     body: JSON.stringify({
       model: modelID || "kimi-for-coding",
@@ -404,6 +407,8 @@ type VerifyProviderParams = {
   secret?: string;
   customPreset?: string;
   proxyPort?: number;
+  /** kimi-code 验证专用（R91）：经本地代理时逐请求携带，取代全局 token 劫持 */
+  proxyVerifyKey?: string;
 };
 
 export type VerifyProviderResult = {
@@ -464,6 +469,10 @@ export async function resolveVerifiedImageSupport(
     modelID: params.modelID,
     apiKey: params.apiKey,
     request: deps.request ?? jsonRequest,
+    // R91：kimi-code 图像探测走本地代理时同样逐请求携带验证 key
+    ...(params.proxyVerifyKey && probeConfig.baseURL?.startsWith("http://127.0.0.1")
+      ? { extraHeaders: { "x-cryoclaw-verify-key": params.proxyVerifyKey } }
+      : {}),
   });
   // 探测不确定时返回 undefined：渲染层回退到 models.list 目录的 input 能力判断
   // （旧路径的 CLI model-catalog 兜底已随 R4 退役）
@@ -505,7 +514,7 @@ export async function verifyProvider(
       case "moonshot":
         if (subPlatform === "kimi-code") {
           if (!proxyPort || proxyPort <= 0) throw new Error("Kimi Code auth proxy not running");
-          await verifyKFC(proxyPort, modelID);
+          await verifyKFC(proxyPort, modelID, params.proxyVerifyKey);
         } else {
           await verifyMoonshot(apiKey!, subPlatform);
         }

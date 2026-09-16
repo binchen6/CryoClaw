@@ -3,7 +3,7 @@
  * pairing store / alias store / rejected store 均为 sidecar 文件，属主进程职责。
  */
 import { ipcMain } from "electron";
-import { spawn } from "child_process";
+import { spawn, execFileSync } from "child_process";
 import * as path from "path";
 import * as fs from "fs";
 import {
@@ -452,6 +452,9 @@ async function runGatewayCli(args: string[]): Promise<CliRunResult> {
         ...resolveNodeExtraEnv(),
         // 统一关闭入口二次 respawn，保证所有短命 CLI 子命令都静默运行
         OPENCLAW_NO_RESPAWN: "1",
+        // 显式对齐 gateway spawn 的状态目录（R91 审查修复）：HOME 歧义时
+        // pairing CLI 会读写另一个 ~/.openclaw，配对操作落错目录
+        OPENCLAW_STATE_DIR: resolveUserStateDir(),
         PATH: envPath,
         FORCE_COLOR: "0",
       },
@@ -462,8 +465,16 @@ async function runGatewayCli(args: string[]): Promise<CliRunResult> {
     let stdout = "";
     let stderr = "";
     const timeout = setTimeout(() => {
-      // 兑底 kill：不 await 结果，让 close 事件自然触发 resolve
-      child.kill();
+      // 兑底 kill（R91 审查修复：杀整棵树——Windows 上 child.kill 只杀直接
+      // 子进程，openclaw CLI 再 spawn 的孙进程会变孤儿继续占 CPU）；不 await
+      // 结果，让 close 事件自然触发 resolve
+      if (child.pid != null) {
+        if (process.platform === "win32") {
+          try { execFileSync("taskkill", ["/PID", String(child.pid), "/T", "/F"], { stdio: "ignore" }); } catch { /* 已退出 */ }
+        } else {
+          try { child.kill("SIGKILL"); } catch { /* 已退出 */ }
+        }
+      }
     }, 90_000);
     child.stdout?.on("data", (chunk: Buffer) => {
       stdout += chunk.toString();

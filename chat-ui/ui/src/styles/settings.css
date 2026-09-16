@@ -2396,7 +2396,8 @@
 }
 .oc-memory-stat__value {
   font-family: var(--font-meta);
-  font-size: 20px;
+  /* R91 审查修复：全库唯一裸字号改走 token（--heading-lg = 20px） */
+  font-size: var(--heading-lg);
   font-variant-numeric: tabular-nums;
   color: var(--text);
   line-height: 1.2;

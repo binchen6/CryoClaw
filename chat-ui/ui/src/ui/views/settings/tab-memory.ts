@@ -229,13 +229,18 @@ async function toggleMemoryExpand(state: AppViewState, id: string) {
   }
   s.wsExpandedId = id; s.wsExpandedContent = null; s.wsExpandedLoading = true;
   state.requestUpdate();
+  // 迟到守卫（R91 审查修复）：快速 展开 A→收起→展开 B 时，A 的慢响应晚到
+  // 会把正文写进 B 的展开面板；await 返回（含失败）先确认仍展开同一 id
   try {
-    s.wsExpandedContent = await ipc.memoryReadEntry(id);
+    const content = await ipc.memoryReadEntry(id);
+    if (s.wsExpandedId === id) s.wsExpandedContent = content;
   } catch {
-    s.wsExpandedContent = null;
+    if (s.wsExpandedId === id) s.wsExpandedContent = null;
   } finally {
-    s.wsExpandedLoading = false;
-    state.requestUpdate();
+    if (s.wsExpandedId === id) {
+      s.wsExpandedLoading = false;
+      state.requestUpdate();
+    }
   }
 }
 
@@ -247,13 +252,17 @@ async function toggleDreamExpand(state: AppViewState, index: number) {
   }
   s.dreamExpandedIndex = index; s.dreamExpandedBody = null; s.dreamExpandedLoading = true;
   state.requestUpdate();
+  // 迟到守卫（同 toggleMemoryExpand）
   try {
-    s.dreamExpandedBody = await ipc.memoryReadDream(index);
+    const body = await ipc.memoryReadDream(index);
+    if (s.dreamExpandedIndex === index) s.dreamExpandedBody = body;
   } catch {
-    s.dreamExpandedBody = null;
+    if (s.dreamExpandedIndex === index) s.dreamExpandedBody = null;
   } finally {
-    s.dreamExpandedLoading = false;
-    state.requestUpdate();
+    if (s.dreamExpandedIndex === index) {
+      s.dreamExpandedLoading = false;
+      state.requestUpdate();
+    }
   }
 }
 

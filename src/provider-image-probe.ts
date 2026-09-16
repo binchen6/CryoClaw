@@ -17,6 +17,9 @@ export interface ImageProbeParams {
   apiKey?: string;
   auth: ImageProbeAuth;
   request: JsonRequest;
+  /** 额外请求头（R91）：kimi-code 验证经本地代理时携带逐请求验证 key，
+   *  替代旧的全局 token 劫持（劫持窗口内生产流量会 401） */
+  extraHeaders?: Record<string, string>;
 }
 
 const UA_ANTHROPIC = "Anthropic/JS 0.73.0";
@@ -92,6 +95,7 @@ function isExplicitImageUnsupported(code: number | undefined, message: string): 
 
 export async function probeImageSupport(params: ImageProbeParams): Promise<ImageProbeOutcome> {
   const { apiType, baseURL, modelID, apiKey, auth, request } = params;
+  const extraHeaders = params.extraHeaders ?? {};
   if (!baseURL) return errorOutcome("Image capability probe requires Base URL");
   if (!modelID) return errorOutcome("Image capability probe requires Model ID");
 
@@ -106,7 +110,7 @@ export async function probeImageSupport(params: ImageProbeParams): Promise<Image
 
       await request(resolveAnthropicMessagesUrl(baseURL), {
         method: "POST",
-        headers,
+        headers: { ...extraHeaders, ...headers },
         body: JSON.stringify({
           model: modelID,
           max_tokens: 1,
@@ -131,7 +135,7 @@ export async function probeImageSupport(params: ImageProbeParams): Promise<Image
 
       await request(`${baseURL.replace(/\/$/, "")}/chat/completions`, {
         method: "POST",
-        headers,
+        headers: { ...extraHeaders, ...headers },
         body: JSON.stringify({
           model: modelID,
           messages: [{
@@ -155,7 +159,7 @@ export async function probeImageSupport(params: ImageProbeParams): Promise<Image
 
       await request(`${baseURL.replace(/\/+$/, "")}/v1/responses`, {
         method: "POST",
-        headers,
+        headers: { ...extraHeaders, ...headers },
         body: JSON.stringify({
           model: modelID,
           max_output_tokens: 1,

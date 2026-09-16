@@ -19,9 +19,8 @@ import {
   MIN_ENV_KEY_LENGTH,
 } from "./setup-env-detect";
 import { installCli, uninstallCli } from "./cli-integration";
-import { saveKimiSearchConfig, ensureMemorySearchProxyConfig, readKimiApiKey } from "./kimi-config";
-import { startAuthProxy, setProxyAccessToken, getProxyPort } from "./kimi-auth-proxy";
-import { loadOAuthToken } from "./kimi-oauth";
+import { saveKimiSearchConfig, ensureMemorySearchProxyConfig } from "./kimi-config";
+import { startAuthProxy, getProxyPort } from "./kimi-auth-proxy";
 import {
   detectExistingInstallation,
   killPortProcess,
@@ -285,23 +284,17 @@ export function registerSetupIpc(deps: SetupIpcDeps): void {
   ipcMain.handle("setup:verify-key", async (_event, params) => {
     if (!assertTrustedIpcSender(_event, "setup:verify-key")) throw new Error("IPC sender not trusted");
     const provider = typeof params?.provider === "string" ? params.provider : "";
-    // kimi-code 验证前：确保 proxy 已启动并持有最新 token
-    const verifyHijackedProxy = params?.subPlatform === "kimi-code" && params?.apiKey;
-    if (verifyHijackedProxy) {
+    // kimi-code 验证前：确保 proxy 已启动；待验 key 通过逐请求头携带
+    // （R91：取代全局 token 劫持，同 settings:verify-key）
+    let verifyParams = params;
+    if (params?.subPlatform === "kimi-code" && params?.apiKey) {
       if (getProxyPort() <= 0) {
         await startAuthProxy();
       }
-      setProxyAccessToken(params.apiKey);
+      verifyParams = { ...params, proxyVerifyKey: params.apiKey };
     }
-    try {
-      return await runTrackedSetupAction("verify_key", { provider }, async () =>
-        verifyProvider({ ...params, proxyPort: getProxyPort() }));
-    } finally {
-      // 验证结束（含失败）后恢复代理 token 为当前生效凭据（同 settings:verify-key）
-      if (verifyHijackedProxy) {
-        setProxyAccessToken(loadOAuthToken()?.access_token || readKimiApiKey());
-      }
-    }
+    return await runTrackedSetupAction("verify_key", { provider }, async () =>
+      verifyProvider({ ...verifyParams, proxyPort: getProxyPort() }));
   });
 
   // ── 保存配置到 ~/.openclaw/openclaw.json ──

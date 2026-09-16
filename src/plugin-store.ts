@@ -27,7 +27,7 @@ import { execFile } from "child_process";
 import * as path from "path";
 import * as log from "./logger";
 import { assertTrustedIpcSender } from "./ipc-sender-guard";
-import { resolveGatewayEntry, resolveNodeBin, resolveNodeExtraEnv, resolveUserBinDir } from "./constants";
+import { resolveGatewayEntry, resolveNodeBin, resolveNodeExtraEnv, resolveUserBinDir, resolveUserStateDir } from "./constants";
 import { jsonGet, readSkillStoreRegistry } from "./skill-store";
 
 const EXEC_TIMEOUT_MS = 90_000;
@@ -80,7 +80,10 @@ function execKernelCli(args: string[]): Promise<string> {
       {
         timeout: EXEC_TIMEOUT_MS,
         maxBuffer: MAX_BUFFER,
-        env: { ...process.env, ...resolveNodeExtraEnv(), PATH: envPath },
+        // OPENCLAW_STATE_DIR 显式对齐 gateway spawn（R91 审查修复）：Windows 上
+        // HOME/USERPROFILE 可能指向不同路径（Git Bash 会设 POSIX 形态 HOME），
+        // 缺省时内核 CLI 会解析到另一个 ~/.openclaw，插件操作落错状态目录
+        env: { ...process.env, ...resolveNodeExtraEnv(), OPENCLAW_STATE_DIR: resolveUserStateDir(), PATH: envPath },
         windowsHide: true,
       },
       (err, stdout, stderr) => {

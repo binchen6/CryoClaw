@@ -803,11 +803,19 @@ async function ensureAuthProxy(): Promise<void> {
     setProxySearchDedicatedKey(searchKey || "");
 
     // 启动代理（优先历史端口）
-    const preferredPort = parseProxyPortFromConfig();
-    const actualPort = await startAuthProxy(preferredPort > 0 ? preferredPort : undefined);
-
-    // 同步 config（仅端口变化时写入）
-    ensureProxyConfig(actualPort);
+    // R91 审查修复：代理已在监听时跳过重建——startAuthProxy 会先 close 所有
+    // 连接再重新 listen，多余的 gateway:start 触发（syncGatewayRuntimeConfigFromDisk
+    // 前置调用本函数）会强断在途的 embedding/search 长连接；token 已在上方
+    // 原地更新进内存，无需重启即可生效
+    const runningPort = getProxyPort();
+    if (runningPort > 0) {
+      ensureProxyConfig(runningPort);
+    } else {
+      const preferredPort = parseProxyPortFromConfig();
+      const actualPort = await startAuthProxy(preferredPort > 0 ? preferredPort : undefined);
+      // 同步 config（仅端口变化时写入）
+      ensureProxyConfig(actualPort);
+    }
   } catch (err: any) {
     log.error(`[auth-proxy] ensureAuthProxy failed: ${err.message}`);
   }
@@ -973,9 +981,15 @@ ipcMain.handle("clipboard:read-file-paths", (event) => {
     if (process.platform === "win32") {
       const buf = clipboard.readBuffer("FileNameW");
       if (!buf?.length) return [];
-      // Windows FileNameW 是 UTF-16LE 以 null 结尾的路径
-      const raw = buf.toString("utf16le").replace(/\0+$/, "");
-      return raw ? [raw] : [];
+      // Windows FileNameW：UTF-16LE、NUL 分隔的多文件列表、双 NUL 结尾。
+      // R91 审查修复：多文件复制时内嵌 \0 必须按分隔符拆分，否则返回单条
+      // 带 NUL 的不存在路径，粘贴多文件附件失效
+      const paths = buf
+        .toString("utf16le")
+        .split("\0")
+        .map((p) => p.trim())
+        .filter((p) => p.length > 0);
+      return paths;
     }
     return [];
   } catch {
@@ -1511,14 +1525,20 @@ app.on("before-quit", () => {
   windowManager.destroy();
   stopAuthProxy();
   stopGatewayControlServer().catch(() => {});
-  gateway.stop().catch(() => {});
   // 清理临时缓存（gateway 已停，内核临时目录安全可删；用户配置/会话历史在
   // ~/.openclaw 下不在清理范围）。同步执行保证退出前完成；内部全 try/catch。
-  try {
-    cleanGatewayLockFiles();
-    runQuitCleanup();
-  } catch {}
-  // diagLog 已改 WriteStream 异步缓冲，退出前 flush 落盘（带超时，不阻塞退出）
-  closeDiagLogStream().catch(() => {});
+  // R91 审查修复：清理动作移入 stop().finally()——stop 在 Windows 上要等
+  // taskkill+exit（最长 5s），先行删除会在 gateway 仍在解包插件时删掉在用目录，
+  // 且将死的 gateway 可能在锁文件删除后重建造成残留
+  gateway.stop()
+    .catch(() => {})
+    .finally(() => {
+      try {
+        cleanGatewayLockFiles();
+        runQuitCleanup();
+      } catch {}
+      // diagLog 已改 WriteStream 异步缓冲，退出前 flush 落盘（带超时，不阻塞退出）
+      closeDiagLogStream().catch(() => {});
+    });
 });
 

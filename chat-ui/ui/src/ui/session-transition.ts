@@ -2,6 +2,7 @@ import type { ChatState } from "./controllers/chat.ts";
 import { resetProgressCardForSession, type ProgressCardHost } from "./controllers/progress-card.ts";
 import { resetBoardForSession, type BoardHost } from "./controllers/board.ts";
 import { clearReconnectOrphanRun } from "./stream-recovery.ts";
+import { removePendingSessionLabel } from "./session-pending.ts";
 import type { UiSettings } from "./storage.ts";
 
 export type SessionTransitionHost = ChatState & {
@@ -75,6 +76,12 @@ export function applySessionKeyTransition(
     }
   } else {
     sessionDraftSnapshots.delete(host.sessionKey);
+  }
+  // R91 审查修复：被放弃的「新会话」pending label 切走即清——该会话无任何
+  // 消息时 label 永不会被 final 事件消费，不清会一直以幽灵行注入侧边栏
+  // （每轮 sessions.list 刷新都重插入），且 Map 无上界
+  if ((host.chatMessages?.length ?? 0) === 0 && !host.chatMessage && host.chatAttachments.length === 0) {
+    removePendingSessionLabel(host.sessionKey);
   }
   const savedSnapshot = sessionDraftSnapshots.get(trimmed);
   sessionDraftSnapshots.delete(trimmed);

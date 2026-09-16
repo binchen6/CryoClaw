@@ -116,6 +116,11 @@ export class GatewayProcess {
   // 世代计数器：每次 spawn 递增，exit handler 只处理同代进程的退出
   private generation = 0;
 
+  // R91 审查修复：spawn 失败（ENOENT/EACCES 等）可能不派发 exit——
+  // 记录已按 error 事件处理过的世代，exit 晚到时只清句柄不重复转移状态机
+  // （否则 onCrash 双触发会排两个重启）
+  private spawnErrorGen: number | null = null;
+
   constructor(opts: GatewayOptions) {
     // 与 setPort 同口径的范围校验：越界端口会让 probeHealth 的 http.get 同步抛错
     this.port =
@@ -307,9 +312,29 @@ export class GatewayProcess {
     });
     const childPid = this.proc.pid ?? -1;
 
-    // 捕获 spawn 错误（如二进制不可执行）
+    // 捕获 spawn 错误（如二进制不可执行）。
+    // R91 审查修复：spawn 失败时 exit 事件可能不派发，状态机若不在此同步转移，
+    // starting 路径的 stop() 会对死句柄白等 5s（3 轮重试共 ~15s 才弹失败提示）。
     this.proc.on("error", (err) => {
       diagLog(`spawn error: ${err.message}`);
+      if (gen !== this.generation || this.spawnErrorGen === gen) return;
+      this.spawnErrorGen = gen;
+      if (this.state === "stopping") {
+        // stop() 在等 exit 落定：直接落定 stopped（与 exit handler 的 stopping
+        // 分支同一转移，幂等），不触发 onCrash（主动停止不是崩溃）
+        this.proc = null;
+        this.setState("stopped");
+        return;
+      }
+      if (this.state === "starting" || this.state === "running") {
+        // 与 exit handler 的 starting/running 分支同构：视同崩溃退出
+        this.lastCrashTime = Date.now();
+        this.setState("stopped");
+        this.proc = null;
+        this.onCrash?.({ code: null, signal: null });
+        return;
+      }
+      this.proc = null;
     });
 
     // 转发日志（同时写入诊断文件）
@@ -328,7 +353,13 @@ export class GatewayProcess {
     this.proc.on("exit", (code, signal) => {
       diagLog(`child exit: code=${code} signal=${signal} gen=${gen} currentGen=${this.generation} prevState=${this.state}`);
       if (gen !== this.generation) {
-        diagLog(`SKIP: 旧世代 exit 事件 (gen=${gen}, current=${this.generation})，不影响状态机`);
+        diagLog("SKIP: 旧世代 exit 事件 (gen=" + gen + ", current=" + this.generation + ")，不影响状态机");
+        return;
+      }
+      if (this.spawnErrorGen === gen) {
+        // R91：该世代的 spawn error 已完成状态转移（exit 可能晚到也可能不来），只清句柄
+        diagLog("SKIP: 该世代 spawn error 已处理，exit 仅清句柄");
+        this.proc = null;
         return;
       }
       if (this.state === "stopping") {

@@ -12,7 +12,6 @@ import {
   readKimiApiKey,
 } from "../kimi-config";
 import { startAuthProxy, setProxyAccessToken, setProxySearchDedicatedKey, getProxyPort } from "../kimi-auth-proxy";
-import { loadOAuthToken } from "../kimi-oauth";
 import { SHARE_COPY_PAYLOAD } from "../share-copy";
 import { assertTrustedIpcSender } from "../ipc-sender-guard";
 import { runTrackedSettingsAction } from "./tracked";
@@ -22,25 +21,18 @@ export function registerVerifyIpc(): void {
   ipcMain.handle("settings:verify-key", async (_event, params) => {
     if (!assertTrustedIpcSender(_event, "settings:verify-key")) throw new Error("IPC sender not trusted");
     const provider = typeof params?.provider === "string" ? params.provider : "";
-    // kimi-code 验证前：确保 proxy 已启动并持有最新 token
-    const verifyHijackedProxy = params?.subPlatform === "kimi-code" && params?.apiKey;
-    if (verifyHijackedProxy) {
+    // kimi-code 验证前：确保 proxy 已启动；待验 key 通过逐请求头携带
+    // （R91：取代旧的全局 setProxyAccessToken 劫持——劫持窗口内经代理的
+    // 在途生产流量会全部 401，最长 ~15s）
+    let verifyParams = params;
+    if (params?.subPlatform === "kimi-code" && params?.apiKey) {
       if (getProxyPort() <= 0) {
         await startAuthProxy();
       }
-      setProxyAccessToken(params.apiKey);
+      verifyParams = { ...params, proxyVerifyKey: params.apiKey };
     }
-    try {
-      return await runTrackedSettingsAction("verify_key", { provider }, async () =>
-        verifyProvider({ ...params, proxyPort: getProxyPort() }));
-    } finally {
-      // 验证结束（含失败）后恢复代理 token 为当前生效凭据（OAuth > 手动 key，
-      // 同 main.ts ensureAuthProxy 的解析式）：验证用的手输 key 不得永久劫持
-      // 正在服务运行中 gateway 的代理流量（否则失败验证会让主模型全线 401）
-      if (verifyHijackedProxy) {
-        setProxyAccessToken(loadOAuthToken()?.access_token || readKimiApiKey());
-      }
-    }
+    return await runTrackedSettingsAction("verify_key", { provider }, async () =>
+      verifyProvider({ ...verifyParams, proxyPort: getProxyPort() }));
   });
 
   // ── 写入 Kimi Code 手动 API Key（sidecar + 注入 auth proxy；config 只写 proxy-managed 占位符） ──
