@@ -183,6 +183,9 @@ export const zhDict: Record<string, string> = {
   "ext.detail.compatibility": "兼容性",
   "ext.detail.notFound": "未找到该插件",
   "ext.detail.loadFailed": "加载详情失败",
+  "ext.detail.package": "包名",
+  "ext.detail.downloads": "下载量",
+  "ext.detail.translate": "用 Agent 翻译简介",
 
   // 扩展 · 技能详情（R91）
   "skillStore.detail": "详情",
@@ -214,6 +217,7 @@ export const zhDict: Record<string, string> = {
   "ext.market.retry": "重试",
   "ext.market.empty": "没有找到相关插件",
   "ext.market.verified": "已验证",
+  "ext.market.showMore": "显示更多",
   "ext.market.updateAvailable": "可更新",
   "ext.market.browseHint": "输入关键词搜索 ClawHub 插件，或浏览下方推荐",
 

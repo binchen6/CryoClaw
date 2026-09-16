@@ -26,7 +26,7 @@ import {
 } from "./tab-plugins.lib.ts";
 import { showConfirm } from "../confirm-dialog.ts";
 import { showToast } from "../../app-toast.ts";
-import { openPluginDetail } from "../ext-detail.ts";
+import { openPluginDetail, openMarketPackageDetail } from "../ext-detail.ts";
 import {
   buildRecommendations,
   inferCategory,
@@ -70,6 +70,8 @@ const s = {
   browseItems: [] as MarketBrowseItemView[],
   browseLoaded: false,
   browseCategory: "all",
+  // 发现区渐进展示条数（R92 排版修复）：默认 24，显示更多步进 +24
+  discoverCount: 24,
   // 正在安装/卸载的插件名（同一时刻只允许一个操作）
   busyName: null as string | null,
   // 正在切换启用的插件 id
@@ -99,6 +101,7 @@ export function resetPluginsView() {
   s.browseItems = [];
   s.browseLoaded = false;
   s.browseCategory = "all";
+  s.discoverCount = 24;
   s.busyName = null;
   s.togglingId = null;
   s.checkingUpdates = false;
@@ -358,8 +361,22 @@ function installedNameSet(installed: InstalledPluginView[]): Set<string> {
     names.add(p.id);
     names.add(p.id.toLowerCase());
     names.add(p.name.toLowerCase());
+    // 规范化形态（R92 排版审查修复）：官方包名（@openclaw/deepseek-plugin）与
+    // 运行时 id（deepseek）不同名，直接比对会让已装插件仍出现在推荐位——
+    // 去掉 @scope/ 与常见 -plugin/-openclaw-plugin 尾巴后再入集合
+    names.add(normalizeMarketName(p.id));
+    names.add(normalizeMarketName(p.name));
   }
   return names;
+}
+
+/** 包名 → 规范化 id：去 @scope/、去 -plugin 类后缀、小写（匹配已装运行时 id） */
+function normalizeMarketName(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/^@[^/]+\//, "")
+    .replace(/[-_]?openclaw[-_]?plugin$/, "")
+    .replace(/[-_]?plugin$/, "");
 }
 
 // ── 渲染 ──
@@ -421,14 +438,24 @@ function renderInstalledRow(state: AppViewState, plugin: InstalledPluginView) {
 }
 
 function isMarketItemInstalled(item: MarketPluginView): boolean {
-  return s.installed.some((p) => p.id === item.name || p.id === item.runtimeId || p.name.toLowerCase() === item.name.toLowerCase());
+  // R92：加规范化形态比对——官方包名（@openclaw/deepseek-plugin）与运行时 id
+  // （deepseek）不同名，裸比对会让已装插件在市场仍显示可安装
+  const normalized = normalizeMarketName(item.name);
+  return s.installed.some((p) =>
+    p.id === item.name
+    || p.id === item.runtimeId
+    || p.name.toLowerCase() === item.name.toLowerCase()
+    || normalizeMarketName(p.id) === normalized
+    || normalizeMarketName(p.name) === normalized);
 }
 
 function renderMarketCard(state: AppViewState, item: MarketPluginView) {
   const installed = isMarketItemInstalled(item);
   const busy = s.busyName === item.name;
+  // R92：整卡可点开详情（ClawHub package API）；安装按钮 stopPropagation 不冒泡
+  const openDetail = () => openMarketPackageDetail(state, { name: item.name, displayName: item.displayName });
   return html`
-    <div class="ext-market__card">
+    <div class="ext-market__card ext-market__card--clickable" role="button" tabindex="0" @click=${openDetail} @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openDetail(); } }}>
       <div class="ext-market__card-head">
         <span class="ext-market__name">${item.displayName ?? item.name}</span>
         ${item.isOfficial ? html`<span class="oc-tag oc-tag--accent">${t("settings.plugins.official")}</span>` : nothing}
@@ -442,7 +469,7 @@ function renderMarketCard(state: AppViewState, item: MarketPluginView) {
           ? html`<span>${t("settings.plugins.downloads").replace("{n}", String(item.downloads))}</span>` : nothing}
         ${item.ownerHandle ? html`<span>@${item.ownerHandle}</span>` : nothing}
       </div>
-      <div class="ext-market__card-actions">
+      <div class="ext-market__card-actions" @click=${(e: Event) => e.stopPropagation()}>
         ${installed
           ? html`<span class="oc-plugins__installed-badge">${t("settings.plugins.installedBadge")}</span>`
           : html`<button
@@ -525,7 +552,9 @@ function renderMarketBrowse(state: AppViewState) {
   const hints = deriveHints(s.installed);
   const pool: Array<MarketBrowseItemView & { score?: { total: number } }> = s.browseItems;
   const recommendations = buildRecommendations(pool, { excludeNames: exclude, hints, limit: 6 });
-  const trending = diversifyByCategory(rankMarket(pool)).slice(0, 8);
+  // R92 排版修复：热门 rail 排除推荐已展示的包（否则同一张卡在两行里连刷两遍）
+  const recNames = new Set(recommendations.map((r) => r.name));
+  const trending = diversifyByCategory(rankMarket(pool.filter((p) => !recNames.has(p.name)))).slice(0, 8);
 
   const filtered = s.browseCategory === "all"
     ? pool
@@ -543,6 +572,12 @@ function renderMarketBrowse(state: AppViewState) {
     </section>
   `;
 
+  // 发现区渐进展示（R92 排版修复）：聚合池可达数百条，一次全渲染既是卡片墙
+  // 也是 DOM 负担；默认 24 张 +「显示更多」步进，分类切换时复位
+  const DISCOVER_PAGE = 24;
+  const discoverAll = diversifyByCategory(rankMarket(filtered));
+  const discoverVisible = discoverAll.slice(0, s.discoverCount);
+
   return html`
     ${recommendations.length >= 3 ? rail(recommendations, "ext.market.recommended", "ext.market.recommendedHint") : nothing}
     ${trending.length > 0 ? rail(trending, "ext.market.trending") : nothing}
@@ -550,7 +585,7 @@ function renderMarketBrowse(state: AppViewState) {
       <button
         class="ext-market__chip ${s.browseCategory === "all" ? "active" : ""}"
         type="button"
-        @click=${() => { s.browseCategory = "all"; state.requestUpdate(); }}
+        @click=${() => { s.browseCategory = "all"; s.discoverCount = 24; state.requestUpdate(); }}
       >${t("ext.market.category.all")}</button>
       ${CATEGORY_ORDER.map((cat) => {
         const count = pool.filter((item) => {
@@ -562,18 +597,27 @@ function renderMarketBrowse(state: AppViewState) {
           <button
             class="ext-market__chip ${s.browseCategory === cat ? "active" : ""}"
             type="button"
-            @click=${() => { s.browseCategory = cat; state.requestUpdate(); }}
+            @click=${() => { s.browseCategory = cat; s.discoverCount = DISCOVER_PAGE; state.requestUpdate(); }}
           >${categoryLabel(cat)} <span class="ext-market__chip-count">${count}</span></button>
         `;
       })}
     </div>
-    ${filtered.length > 0
+    ${discoverAll.length > 0
       ? html`
         <section class="ext-market__section">
           <h3 class="ext-market__section-title">${s.browseCategory === "all" ? t("ext.market.discover") : categoryLabel(s.browseCategory)}</h3>
           <div class="ext-market__grid">
-            ${diversifyByCategory(rankMarket(filtered)).map((item) => renderMarketCard(state, item))}
+            ${discoverVisible.map((item) => renderMarketCard(state, item))}
           </div>
+          ${discoverAll.length > discoverVisible.length
+            ? html`<div class="ext-market__more">
+                <button
+                  class="btn btn--sm"
+                  type="button"
+                  @click=${() => { s.discoverCount += DISCOVER_PAGE; state.requestUpdate(); }}
+                >${t("ext.market.showMore")}（${discoverAll.length - discoverVisible.length}）</button>
+              </div>`
+            : nothing}
         </section>
       `
       : html`<div class="oc-settings__hint">${t("ext.market.empty")}</div>`}

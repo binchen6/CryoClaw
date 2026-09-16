@@ -185,6 +185,8 @@ contextBridge.exposeInMainWorld("cryoclaw", {
     ipcRenderer.invoke("plugin-store:detail", params),
   pluginStoreMarketBrowse: (params?: Record<string, unknown>) =>
     ipcRenderer.invoke("plugin-store:market-browse", params),
+  pluginStoreMarketDetail: (params?: Record<string, unknown>) =>
+    ipcRenderer.invoke("plugin-store:market-detail", params),
 
   // 工作空间文件操作
   workspaceSetRoot: (root: string) =>

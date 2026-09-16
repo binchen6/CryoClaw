@@ -183,6 +183,9 @@ export const enDict: Record<string, string> = {
   "ext.detail.compatibility": "Compatibility",
   "ext.detail.notFound": "Plugin not found",
   "ext.detail.loadFailed": "Failed to load details",
+  "ext.detail.package": "Package",
+  "ext.detail.downloads": "Downloads",
+  "ext.detail.translate": "Translate with Agent",
 
   // Extensions · Skill details (R91)
   "skillStore.detail": "Details",
@@ -214,6 +217,7 @@ export const enDict: Record<string, string> = {
   "ext.market.retry": "Retry",
   "ext.market.empty": "No plugins found",
   "ext.market.verified": "Verified",
+  "ext.market.showMore": "Show more",
   "ext.market.updateAvailable": "Update available",
   "ext.market.browseHint": "Search ClawHub plugins, or browse the picks below",
 

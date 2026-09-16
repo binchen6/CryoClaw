@@ -163,6 +163,8 @@ const JSON_GET_MAX_BYTES = 8 * 1024 * 1024;
 
 // R91 起导出：plugin-store 的 market-browse 也访问 ClawHub 公开 API，复用同一份
 // 超时 / 8MB 上限 / 状态码守卫实现，避免安全约束在两个文件里各自演化。
+// R92：非 2xx 时错误对象附带 statusCode/bodyText——409 AMBIGUOUS_SKILL_SLUG 的
+// 歧义清单就在 body 里，调用方需要读到它做自动消歧。
 export function jsonGet<T>(url: string): Promise<T> {
   debugLog(`GET ${url}`);
   const startMs = Date.now();
@@ -172,8 +174,25 @@ export function jsonGet<T>(url: string): Promise<T> {
     const req = mod.get(url, { timeout: FETCH_TIMEOUT_MS }, (res) => {
       if (res.statusCode && (res.statusCode < 200 || res.statusCode >= 300)) {
         debugLog(`GET ${url} → ${res.statusCode} (${Date.now() - startMs}ms)`);
-        res.resume();
-        reject(new Error(`HTTP ${res.statusCode}`));
+        // 非 2xx 也读回 body（限 64KB）再 reject：409 等业务错误的信息在 body
+        const errChunks: Buffer[] = [];
+        let errBytes = 0;
+        res.on("data", (chunk: Buffer) => {
+          errBytes += chunk.length;
+          if (errBytes > 64 * 1024) { res.destroy(); return; }
+          errChunks.push(chunk);
+        });
+        res.on("end", () => {
+          const err = new Error(`HTTP ${res.statusCode}`) as Error & { statusCode?: number; bodyText?: string };
+          err.statusCode = res.statusCode ?? 0;
+          err.bodyText = Buffer.concat(errChunks).toString("utf-8");
+          reject(err);
+        });
+        res.on("error", () => {
+          const err = new Error(`HTTP ${res.statusCode}`) as Error & { statusCode?: number };
+          err.statusCode = res.statusCode ?? 0;
+          reject(err);
+        });
         return;
       }
       const chunks: Buffer[] = [];
@@ -235,7 +254,7 @@ function mapItem(raw: any): SkillSummary {
 
 // ── API 调用 ──
 
-// 获取精选技能列表（分页）
+// 获取精选技能列表（分页）；主源网络失败回退国内镜像（browse 模拟）
 async function listSkills(opts: {
   sort?: string;
   limit?: number;
@@ -247,39 +266,170 @@ async function listSkills(opts: {
   if (opts.sort) params.set("sort", opts.sort);
   if (opts.limit) params.set("limit", String(opts.limit));
   if (opts.cursor) params.set("cursor", opts.cursor);
-  const raw = await jsonGet<any>(`${base}/api/v1/skills?${params}`);
-  const items = Array.isArray(raw.items) ? raw.items : Array.isArray(raw.skills) ? raw.skills : [];
+  try {
+    const raw = await jsonGet<any>(`${base}/api/v1/skills?${params}`);
+    const items = Array.isArray(raw.items) ? raw.items : Array.isArray(raw.skills) ? raw.skills : [];
+    return {
+      skills: items.map(mapItem),
+      nextCursor: raw.nextCursor ?? null,
+    };
+  } catch (err) {
+    if (!isNetworkFailure(err) || opts.cursor) throw err;
+    // 镜像无浏览端点：用 search 关键词聚合模拟（无分页游标，一次拉满）
+    debugLog(`list 主源失败，回退国内镜像聚合: ${(err as Error).message}`);
+    const wanted = Math.max(opts.limit ?? 20, 40);
+    const settled = await Promise.allSettled(
+      MIRROR_BROWSE_KEYWORDS.map((kw) =>
+        jsonGet<any>(`${CN_SKILL_MIRROR}/api/v1/search?q=${encodeURIComponent(kw)}&limit=${wanted}`)),
+    );
+    const bySlug = new Map<string, any>();
+    for (const r of settled) {
+      if (r.status !== "fulfilled") continue;
+      const items = Array.isArray(r.value.results) ? r.value.results : [];
+      for (const item of items) {
+        const slug = typeof item?.slug === "string" ? item.slug : "";
+        if (slug && !bySlug.has(slug)) bySlug.set(slug, item);
+      }
+    }
+    const all = [...bySlug.values()].map(mapItem);
+    // 本地排序模拟服务端 sort：downloads 降序 / updated 降序 / trending 沿用命中序
+    const sorted = opts.sort === "downloads"
+      ? all.sort((a, b) => b.downloads - a.downloads)
+      : opts.sort === "updated"
+        ? all.sort((a, b) => Date.parse(b.updatedAt || "") - Date.parse(a.updatedAt || ""))
+        : all;
+    return { skills: sorted.slice(0, opts.limit ?? 20), nextCursor: null };
+  }
+}
+
+// ── 国内镜像 fallback（R92）──
+// 官方中国镜像（火山引擎/字节跳动支持，mirror-cn.clawhub.com 302 指向）。
+// 实测 API 面是子集：/api/v1/search 与 /api/v1/skills/<slug>?owner= 可用，
+// /api/v1/skills（浏览）与 packages 系列接口不可用（空 Result）——浏览 fallback
+// 用 search 跑关键词聚合模拟。
+const CN_SKILL_MIRROR = "https://cn.clawhub-mirror.com";
+
+// 镜像 browse fallback 的关键词（聚合去重后本地排序，模拟官方 trending 列表）
+const MIRROR_BROWSE_KEYWORDS = ["tool", "search", "web", "agent", "code", "automation", "data"];
+
+// 主源网络类失败（超时/连接错误/5xx）才走镜像；4xx 是业务错误，换源无意义
+function isNetworkFailure(err: unknown): boolean {
+  const e = err as { statusCode?: number; message?: string };
+  if (typeof e.statusCode === "number") return e.statusCode >= 500;
+  const msg = String(e?.message ?? err);
+  return /timeout|ENOTFOUND|ECONNREFUSED|ECONNRESET|EAI_AGAIN|network|socket/i.test(msg);
+}
+
+// 镜像 search/detail 与主源同构；detail 信封不同（{skill, latestVersion, owner, history}）
+function mapMirrorDetail(raw: any): SkillDetail {
+  const s = (raw && typeof raw.skill === "object" && raw.skill) ? raw.skill : raw;
   return {
-    skills: items.map(mapItem),
-    nextCursor: raw.nextCursor ?? null,
+    ...mapItem({ ...s, owner: raw?.owner?.handle ?? raw?.owner?.ownerHandle ?? s.owner }),
+    // 镜像详情无 readme（实测），留空——UI 对空 readme 自然隐藏说明区
+    readme: s.readme ?? "",
+    author: raw?.owner?.handle ?? raw?.owner?.ownerHandle ?? s.owner ?? "",
+    tags: Array.isArray(s.tags) ? s.tags.filter((t: unknown): t is string => typeof t === "string") : [],
   };
 }
 
-// 搜索技能（不限 highlighted，搜全量）
+// 主源与镜像的 detail 信封同构（实测：{ skill, owner, metadata?, latestVersion? }），
+// 平铺响应作兼容回退。ClawHub API 不提供 readme；安装/配置说明在 metadata.setup。
+export function normalizeSkillDetail(raw: any): SkillDetail {
+  const s = (raw && typeof raw.skill === "object" && raw.skill) ? raw.skill : raw;
+  const ownerHandle = raw?.owner?.handle ?? raw?.owner?.ownerHandle ?? s.owner ?? "";
+  return {
+    ...mapItem({ ...s, owner: ownerHandle }),
+    readme: s.readme ?? (typeof raw?.metadata?.setup === "string" ? raw.metadata.setup : ""),
+    author: ownerHandle,
+    tags: Array.isArray(s.tags) ? s.tags.filter((t: unknown): t is string => typeof t === "string") : [],
+  };
+}
+
+// 搜索技能（不限 highlighted，搜全量）；主源网络失败回退国内镜像
 async function searchSkills(opts: {
   q: string;
   limit?: number;
 }): Promise<{ skills: SkillSummary[] }> {
-  const base = registryUrl();
   const params = new URLSearchParams();
   params.set("q", opts.q);
   if (opts.limit) params.set("limit", String(opts.limit));
-  const raw = await jsonGet<any>(`${base}/api/v1/search?${params}`);
-  // 搜索接口返回 results 数组，兼容 items/skills 回退
-  const items = Array.isArray(raw.results) ? raw.results : Array.isArray(raw.items) ? raw.items : [];
-  return { skills: items.map(mapItem) };
+  try {
+    const raw = await jsonGet<any>(`${registryUrl()}/api/v1/search?${params}`);
+    // 搜索接口返回 results 数组，兼容 items/skills 回退
+    const items = Array.isArray(raw.results) ? raw.results : Array.isArray(raw.items) ? raw.items : [];
+    return { skills: items.map(mapItem) };
+  } catch (err) {
+    if (!isNetworkFailure(err)) throw err;
+    debugLog(`search 主源失败，回退国内镜像: ${(err as Error).message}`);
+    const raw = await jsonGet<any>(`${CN_SKILL_MIRROR}/api/v1/search?${params}`);
+    const items = Array.isArray(raw.results) ? raw.results : Array.isArray(raw.items) ? raw.items : [];
+    return { skills: items.map(mapItem) };
+  }
 }
 
-// 获取技能详情
-async function getSkillDetail(slug: string): Promise<SkillDetail> {
+// 409 AMBIGUOUS_SKILL_SLUG 的歧义清单解析（纯函数，单测覆盖）：
+// body 形如 {"code":"AMBIGUOUS_SKILL_SLUG","matches":[{"ownerHandle":"x",...}]}
+export function parseSlugMatches(bodyText: string | undefined): string[] {
+  if (!bodyText) return [];
+  try {
+    const parsed = JSON.parse(bodyText) as { code?: unknown; matches?: unknown };
+    if (parsed.code !== "AMBIGUOUS_SKILL_SLUG" || !Array.isArray(parsed.matches)) return [];
+    return parsed.matches
+      .map((m) => (m && typeof m === "object" ? (m as Record<string, unknown>).ownerHandle : null))
+      .filter((o): o is string => typeof o === "string" && Boolean(o.trim()));
+  } catch {
+    return [];
+  }
+}
+
+// 获取技能详情（R92：多作者 slug 消歧 + 镜像 fallback）。
+// ClawHub 的 slug 不全局唯一：同名技能挂在不同作者下时 detail 返回
+// 409 AMBIGUOUS_SKILL_SLUG，需带 ?owner=<ownerHandle> 消歧。列表条目自带
+// author 的场景由前端直传 owner；否则从 409 body 的 matches 里取第一个重试。
+async function getSkillDetail(slug: string, owner?: string): Promise<SkillDetail> {
   const base = registryUrl();
-  const raw = await jsonGet<any>(`${base}/api/v1/skills/${encodeURIComponent(slug)}`);
-  return {
-    ...mapItem(raw),
-    readme: raw.readme ?? "",
-    author: raw.author ?? raw.owner ?? "",
-    tags: Array.isArray(raw.tagsList) ? raw.tagsList : [],
+  const fetchDetail = async (ownerParam?: string): Promise<SkillDetail> => {
+    const qs = ownerParam ? `?owner=${encodeURIComponent(ownerParam)}` : "";
+    const raw = await jsonGet<any>(`${base}/api/v1/skills/${encodeURIComponent(slug)}${qs}`);
+    return normalizeSkillDetail(raw);
   };
+  try {
+    return await fetchDetail(owner);
+  } catch (err) {
+    const e = err as { statusCode?: number; bodyText?: string };
+    if (e.statusCode === 409) {
+      const candidates = owner ? [owner] : [];
+      const matches = parseSlugMatches(e.bodyText);
+      for (const m of matches) if (!candidates.includes(m)) candidates.push(m);
+      for (const candidate of candidates) {
+        try {
+          return await fetchDetail(candidate);
+        } catch { /* 试下一个候选 */ }
+      }
+      throw new Error(`技能「${slug}」存在多个同名版本，未能确定作者（候选：${(matches.length ? matches : candidates).join(", ")}）`);
+    }
+    if (isNetworkFailure(err)) {
+      debugLog(`detail 主源失败，回退国内镜像: ${(err as Error).message}`);
+      // 镜像详情信封不同且无 readme；owner 缺省时同样先试 409 消歧
+      const qs = owner ? `?owner=${encodeURIComponent(owner)}` : "";
+      try {
+        const raw = await jsonGet<any>(`${CN_SKILL_MIRROR}/api/v1/skills/${encodeURIComponent(slug)}${qs}`);
+        return normalizeSkillDetail(raw);
+      } catch (err2) {
+        const e2 = err2 as { statusCode?: number; bodyText?: string };
+        if (e2.statusCode === 409) {
+          for (const candidate of parseSlugMatches(e2.bodyText)) {
+            try {
+              const raw = await jsonGet<any>(`${CN_SKILL_MIRROR}/api/v1/skills/${encodeURIComponent(slug)}?owner=${encodeURIComponent(candidate)}`);
+              return normalizeSkillDetail(raw);
+            } catch { /* 试下一个候选 */ }
+          }
+        }
+        throw err2;
+      }
+    }
+    throw err;
+  }
 }
 
 // ── clawhub CLI 调用 ──
@@ -494,9 +644,11 @@ export function registerSkillStoreIpc(): void {
     const slug = typeof params?.slug === "string" ? params.slug.trim() : "";
     const check = validateSkillSlug(slug);
     if (!check.ok) return { success: false, message: check.error };
-    debugLog(`ipc detail slug=${slug}`);
+    // owner 可选：列表条目自带的作者 handle，直传可省一次 409 往返
+    const owner = typeof params?.owner === "string" && params.owner.trim() ? params.owner.trim() : undefined;
+    debugLog(`ipc detail slug=${slug} owner=${owner ?? "none"}`);
     try {
-      const detail = await getSkillDetail(slug);
+      const detail = await getSkillDetail(slug, owner);
       return { success: true, data: detail };
     } catch (err: any) {
       debugLog(`ipc detail → error: ${err?.message}`);

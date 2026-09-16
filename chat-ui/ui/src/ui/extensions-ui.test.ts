@@ -122,3 +122,44 @@ test("R91 skills.css：市场网格 + 详情对话框样式落地（全 token）
   assert.match(css, /\.skill-store__recommend-card\s*\{/, "缺少技能推荐卡样式");
   assert.match(css, /repeat\(auto-fill, minmax\(340px, 1fr\)\)/, "技能列表未网格化");
 });
+
+// ── R92：市场排版修复 + 详情/翻译/镜像接线 ──
+
+test("R92 tab-plugins：市场卡片详情入口 + 渐进展示 + 规范化已装匹配", () => {
+  const s = stripComments(src("views/settings/tab-plugins.ts"));
+  assert.match(s, /openMarketPackageDetail/, "市场卡片未接详情对话框");
+  assert.match(s, /normalizeMarketName/, "缺少包名规范化（官方包名≠运行时 id 的已装匹配）");
+  assert.match(s, /discoverCount/, "发现区缺少渐进展示状态");
+  assert.match(s, /ext\.market\.showMore/, "缺少显示更多文案键");
+  // 推荐 rail 与热门 rail 去重
+  assert.match(s, /recNames/, "热门 rail 未排除推荐已展示条目");
+});
+
+test("R92 ext-detail：市场包详情 + 翻译按钮 + owner 消歧透传", () => {
+  const s = stripComments(src("views/ext-detail.ts"));
+  assert.match(s, /pluginStoreMarketDetail/, "市场包详情未走 IPC");
+  assert.match(s, /chatMessage = prompt/, "翻译按钮未预填聊天输入框");
+  assert.match(s, /setCryoClawView\(state, \"chat\"\)/, "翻译未切回对话视图");
+  assert.match(s, /owner: skill\.author/, "技能详情未透传 owner（409 消歧）");
+});
+
+test("R92 主进程：skill detail owner 参数 + 市场详情 IPC + 镜像 fallback", () => {
+  const skill = stripComments(readFileSync(new URL("../../../../../../src/skill-store.ts", import.meta.url), "utf8"));
+  assert.match(skill, /AMBIGUOUS_SKILL_SLUG/, "缺少 409 歧义解析");
+  // 注意：断言用常量名而非域名——stripComments 会把 "https://…" 的 // 后半段当行注释剥掉
+  assert.match(skill, /CN_SKILL_MIRROR/, "缺少国内镜像 fallback 常量");
+  assert.match(skill, /parseSlugMatches/, "缺少歧义清单纯函数");
+  const plugin = stripComments(readFileSync(new URL("../../../../../../src/plugin-store.ts", import.meta.url), "utf8"));
+  assert.match(plugin, /plugin-store:market-detail/, "缺少市场详情 IPC 通道");
+  assert.match(plugin, /encodeURIComponent\(name\)/, "市场详情包名未编码（@scope 会被路径切分）");
+});
+
+test("R92 skills.css：可点卡片 / 按钮沉底 / 三行简介 / 显示更多", () => {
+  const css = readFileSync(new URL("../../../../src/styles/skills.css", import.meta.url), "utf8");
+  assert.match(css, /\.ext-market__card--clickable/, "缺可点卡片样式");
+  assert.match(css, /\.ext-market__more\s*\{/, "缺显示更多样式");
+  const actions = css.match(/\.ext-market__card-actions\s*\{[^}]*\}/)?.[0] ?? "";
+  assert.match(actions, /margin-top:\s*auto/, "按钮未沉底对齐（基线漂移）");
+  const summary = css.match(/\.ext-market__summary\s*\{[^}]*\}/)?.[0] ?? "";
+  assert.match(summary, /min-height/, "简介未定三行最小高（卡片塌陷）");
+});

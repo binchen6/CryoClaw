@@ -886,6 +886,12 @@
 /* ── 插件市场发现：分区 + 网格卡片 + 分类 chips ── */
 .ext-market__section {
   margin-bottom: var(--spacer-20);
+  padding-bottom: var(--spacer-16);
+  border-bottom: var(--hairline);
+}
+
+.ext-market__section:last-child {
+  border-bottom: none;
 }
 
 .ext-market__section-title {
@@ -920,7 +926,8 @@
   gap: var(--spacer-6);
   border: var(--hairline);
   border-radius: var(--radius-12);
-  padding: var(--spacer-14);
+  /* R92 排版修复：内边距 14→16，简介不再贴边；flex 列 + actions 沉底统一基线 */
+  padding: var(--spacer-16);
   background: var(--card);
   box-shadow: var(--shadow-xs);
   transition: border-color var(--duration-fast) var(--ease-standard),
@@ -961,6 +968,8 @@
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
+  /* R92：定最小三行高，避免短简介卡片塌陷导致按钮基线上跳 */
+  min-height: calc(var(--text-sm) * 1.5 * 3);
 }
 
 .ext-market__meta {
@@ -974,8 +983,11 @@
 
 .ext-market__card-actions {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
-  margin-top: var(--spacer-4);
+  /* R92 排版修复：margin-top auto 沉底——简介行数不同时按钮/已装徽标基线一致 */
+  margin-top: auto;
+  padding-top: var(--spacer-8);
 }
 
 /* 分类 chips：muted 胶囊轨道，激活 accent */
@@ -1162,6 +1174,37 @@
 .ext-detail__readme pre {
   max-width: 100%;
   overflow-x: auto;
+}
+
+
+/* ── R92 市场排版补丁 ── */
+/* 可点卡片：整卡开详情（键盘可达），hover 提示可点 */
+.ext-market__card--clickable {
+  cursor: pointer;
+}
+
+.ext-market__card--clickable:hover {
+  border-color: var(--accent);
+}
+
+.ext-market__card--clickable:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: var(--focus-ring);
+}
+
+/* 显示更多：居中弱化的步进入口 */
+.ext-market__more {
+  display: flex;
+  justify-content: center;
+  margin-top: var(--spacer-12);
+}
+
+/* 详情 head 的翻译按钮与关闭钮并排 */
+.ext-detail__head-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacer-8);
 }
 
 /* 窄窗（≤768px）：市场网格与推荐 rail 回落单列 */

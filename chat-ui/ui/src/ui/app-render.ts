@@ -76,6 +76,7 @@ declare global {
       pluginStoreUpdate?: (params?: Record<string, unknown>) => Promise<any>;
       pluginStoreDetail?: (params?: Record<string, unknown>) => Promise<any>;
       pluginStoreMarketBrowse?: (params?: Record<string, unknown>) => Promise<any>;
+      pluginStoreMarketDetail?: (params?: Record<string, unknown>) => Promise<any>;
       workspaceSetRoot?: (root: string) => Promise<any>;
       workspaceOpenFolder?: (filePath: string) => Promise<any>;
       workspaceListDir?: (dirPath: string) => Promise<any>;

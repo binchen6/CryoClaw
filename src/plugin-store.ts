@@ -586,4 +586,24 @@ export function registerPluginStoreIpc(): void {
       return { success: false, message: err?.message ?? String(err) };
     }
   });
+
+  // 市场包详情（R92）：ClawHub /api/v1/packages/<name> → { package, owner } 信封。
+  // 包名含 @scope（如 @openclaw/brave-plugin），必须整体 encodeURIComponent。
+  ipcMain.handle("plugin-store:market-detail", async (event, params) => {
+    if (!assertTrustedIpcSender(event, "plugin-store:market-detail")) throw new Error("IPC sender not trusted");
+    const name = typeof params?.name === "string" ? params.name.trim() : "";
+    if (!isValidPluginName(name)) return { success: false, message: "invalid package name" };
+    try {
+      const raw = await jsonGet<unknown>(`${marketApiBase()}/api/v1/packages/${encodeURIComponent(name)}`);
+      // 信封 { package, owner } 宽松校验：package 缺失视为未找到
+      const env = raw as { package?: unknown; owner?: unknown };
+      if (!env || typeof env !== "object" || !env.package || typeof env.package !== "object") {
+        return { success: false, message: "package not found" };
+      }
+      return { success: true, data: env };
+    } catch (err: any) {
+      log.info(`[plugin-store] market-detail ${name} failed: ${err?.message ?? err}`);
+      return { success: false, message: err?.message ?? String(err) };
+    }
+  });
 }

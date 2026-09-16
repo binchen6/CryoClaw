@@ -6,6 +6,7 @@
 // handler 的 IPC 接线（assertTrustedIpcSender）由 ipc-sender-guard.test.ts 覆盖，
 // 这里只钉纯逻辑，保证 node --test 下可无 Electron 运行时运行。
 import test from "node:test";
+import { parseSlugMatches } from "./skill-store";
 import assert from "node:assert/strict";
 import {
   stripAnsiCodes,
@@ -191,4 +192,19 @@ test("validateSkillSlug：拒绝空 / flag 开头 / 非法字符，接受常规 
   assert.equal(validateSkillSlug("has space").ok, false);
   assert.equal(validateSkillSlug("web-search.v2").ok, true);
   assert.equal(validateSkillSlug("memory-dreams").ok, true);
+});
+
+
+test("parseSlugMatches：解析 AMBIGUOUS_SKILL_SLUG 的候选作者", () => {
+  const body = JSON.stringify({ code: "AMBIGUOUS_SKILL_SLUG", matches: [
+    { ownerHandle: "steipete", slug: "sonoscli" },
+    { ownerHandle: "other", slug: "sonoscli" },
+  ]});
+  assert.deepEqual(parseSlugMatches(body), ["steipete", "other"]);
+});
+
+test("parseSlugMatches：非歧义 body / 坏 JSON / 空输入返回空", () => {
+  assert.deepEqual(parseSlugMatches(JSON.stringify({ code: "OTHER" })), []);
+  assert.deepEqual(parseSlugMatches("not json"), []);
+  assert.deepEqual(parseSlugMatches(undefined), []);
 });
