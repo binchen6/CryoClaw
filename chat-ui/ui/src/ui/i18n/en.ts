@@ -160,6 +160,7 @@ export const enDict: Record<string, string> = {
   "ext.plugins.updateDone": "Updated. Restart the gateway to apply",
   "ext.plugins.restartGateway": "Restart gateway",
   "ext.plugins.checkFailed": "Failed to check for updates",
+  "ext.plugins.checkPartialFailed": "Some plugins could not be checked (network unreachable): {ids}",
 
   // Extensions · Detail page (R91)
   "ext.detail.close": "Close",

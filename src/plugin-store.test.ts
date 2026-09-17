@@ -1,5 +1,6 @@
 // plugin-store.test.ts — R91 新增纯函数的单元测试（node:test，无 IO）：
 //   - stripAnsiCodes / parseUpdateOutcomes：内核 `plugins update` 人类可读输出解析
+//     （R93 增补 `Failed to check` 行与 comparePluginVersions）
 //   - extractJsonPayload：`plugins inspect --json` 混警告行时的 JSON 提取
 //   - mergeMarketResults：market-browse 多路搜索结果的去重合并与分类标注
 //   - isValidPluginName / validateSkillSlug：handler 咽喉点的参数校验
@@ -14,6 +15,7 @@ import {
   extractJsonPayload,
   mergeMarketResults,
   isValidPluginName,
+  comparePluginVersions,
   PLUGIN_MARKET_CATEGORY_KEYWORDS,
 } from "./plugin-store.ts";
 import { validateSkillSlug } from "./skill-store.ts";
@@ -101,6 +103,52 @@ test("parseUpdateOutcomes：CRLF 换行与行首尾空白容忍", () => {
   assert.deepEqual(res.updatable, [
     { id: "foo", currentVersion: "1.0.0", nextVersion: "1.1.0", action: "update" },
   ]);
+});
+
+// ── parseUpdateOutcomes：Failed to check 行（R93，ClawHub 不可达时内核逐插件报告）──
+
+test("parseUpdateOutcomes：Failed to check 行解析出 failed 清单（真实 undici 超时串）", () => {
+  const out = [
+    "Checking updates for 3 tracked plugins...",
+    "Failed to check holo-wechat-mp: fetch failed | Connect Timeout Error (attempted address: clawhub.ai:443, timeout: 10000ms) | UND_ERR_CONNECT_TIMEOUT (ClawHub clawhub:holo-wechat-mp).",
+    'Failed to check hook pack "my-hook-pack": request timeout.',
+  ].join("\n");
+  const res = parseUpdateOutcomes(out);
+  assert.deepEqual(res.failed, [
+    {
+      id: "holo-wechat-mp",
+      reason: "fetch failed | Connect Timeout Error (attempted address: clawhub.ai:443, timeout: 10000ms) | UND_ERR_CONNECT_TIMEOUT (ClawHub clawhub:holo-wechat-mp)",
+    },
+    { id: "my-hook-pack", reason: "request timeout" },
+  ]);
+  // failed 行不混进 updatable / upToDateIds
+  assert.deepEqual(res.updatable, []);
+  assert.deepEqual(res.upToDateIds, []);
+  assert.equal(res.sawNoTracked, false);
+});
+
+test("parseUpdateOutcomes：Failed 行与 Would update 行混合（部分插件检查成功）", () => {
+  const res = parseUpdateOutcomes(
+    "Would update tavily: 1.0.0 -> 1.1.0.\nFailed to check holo-wechat-mp: fetch failed.",
+  );
+  assert.deepEqual(res.updatable, [
+    { id: "tavily", currentVersion: "1.0.0", nextVersion: "1.1.0", action: "update" },
+  ]);
+  assert.deepEqual(res.failed, [{ id: "holo-wechat-mp", reason: "fetch failed" }]);
+});
+
+// ── comparePluginVersions（R93：HTTP 回退的版本比对）──
+
+test("comparePluginVersions：数字段数值比较 + 段数不等 + 预发布段", () => {
+  assert.ok(comparePluginVersions("1.10.0", "1.9.0") > 0, "1.10.0 > 1.9.0（数值而非字典序）");
+  assert.ok(comparePluginVersions("1.0.0", "1.0.0") === 0);
+  assert.ok(comparePluginVersions("0.9", "0.9.1") < 0, "纯数字额外段：段多者更高");
+  assert.ok(comparePluginVersions("2.0.0-beta.1", "2.0.0-beta.2") < 0);
+  assert.ok(comparePluginVersions("2026.9.3", "2026.10.0") < 0);
+  // R93 审查修复：预发布 < 正式版（semver 语义，此前 localeCompare 会反转）
+  assert.ok(comparePluginVersions("1.0.0-rc1", "1.0.0") < 0, "预发布低于正式版");
+  assert.ok(comparePluginVersions("1.0.0", "1.0.0-rc1") > 0);
+  assert.ok(comparePluginVersions("1.0.0-beta", "1.0.0-alpha.2") > 0, "预发布标识按码点序");
 });
 
 // ── extractJsonPayload ──────────────────────────────────────────────

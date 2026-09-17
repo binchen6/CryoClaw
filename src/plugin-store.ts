@@ -13,8 +13,9 @@
  *   - `plugins uninstall <id> --force`（免交互卸载）
  *   - `plugins update --dry-run --all`（R91）：stdout 为人类可读文本（无 --json，含 ANSI
  *     色码），关键行：`Would update <id>: <cur> -> <next>.` / `Would downgrade ...` /
- *     `<id> is up to date (<cur>).` / `No tracked plugins or hook packs to update.`；
- *     hook pack 行的 id 用引号包裹：`Would update hook pack "<id>": cur -> next.`
+ *     `<id> is up to date (<cur>).` / `No tracked plugins or hook packs to update.` /
+ *     `Failed to check <id>: <reason>.`（R93：ClawHub 不可达时逐插件报告，主进程
+ *     HTTP 回退接管这些 id）；hook pack 行的 id 用引号包裹：`Would update hook pack "<id>": cur -> next.`
  *   - `plugins update [--all] <id> --acknowledge-install-policy-warning`（R91）：成功尾部
  *     打印 `Restart the gateway to load plugins and hooks.`；实际执行行是
  *     `Updated <id>: cur -> next.` / `Downgraded ...`。注意不传 --accept-capabilities
@@ -28,7 +29,10 @@ import * as path from "path";
 import * as log from "./logger";
 import { assertTrustedIpcSender } from "./ipc-sender-guard";
 import { resolveGatewayEntry, resolveNodeBin, resolveNodeExtraEnv, resolveUserBinDir, resolveUserStateDir } from "./constants";
-import { jsonGet, readSkillStoreRegistry } from "./skill-store";
+import { CN_CLAWHUB_MIRROR, isNetworkFailure, jsonGet, readSkillStoreRegistry } from "./skill-store";
+import { readBuildConfigClawhubRegistry } from "./build-config";
+import { readCryoclawConfig, writeCryoclawConfig } from "./cryoclaw-config";
+import { readUserConfig, writeUserConfig } from "./provider-config";
 
 const EXEC_TIMEOUT_MS = 90_000;
 const MAX_BUFFER = 8 * 1024 * 1024;
@@ -77,7 +81,18 @@ export type MarketPlugin = {
   verificationTier?: string;
 };
 
-// 执行内核 CLI（ELECTRON_RUN_AS_NODE + openclaw.mjs），返回 stdout
+// 执行内核 CLI（ELECTRON_RUN_AS_NODE + openclaw.mjs），返回 stdout。
+// R93：--no-deprecation —— Electron 43 已知 bug（electron#47390）在 asar 内 stat
+// 转换时使用已弃用的 fs.Stats 构造器，导致 CryoClaw Helper 子进程刷 DEP0180 警告；
+// 内核是 vendored 依赖，其弃用告警不可行动，直接静音。
+// R93：非零退出码的失败输出（如 `plugins update --dry-run` 在 ClawHub 不可达时
+// exit 1，`Failed to check <id>: …` 行全在 stderr）会以带 .stdout/.stderr 附件的
+// Error reject——check-updates 需要解析这些行做 HTTP 回退，其他调用方只读
+// message 不受影响。
+// 注：不透传 OPENCLAW_CLAWHUB_URL——实测内核插件命令调用 clawhub-client 时显式
+// 传入 baseUrl（显式参优先于 env），env 对 update/search/install 不生效；若某些
+// 路径生效，把用户配的 skills-only 镜像（无 packages API）路由给内核反而会弄坏
+// 安装/更新。Electron 侧 marketApiBase() 与内核各走各的默认源。
 function execKernelCli(args: string[]): Promise<string> {
   const nodeBin = resolveNodeBin();
   const entry = resolveGatewayEntry();
@@ -85,7 +100,7 @@ function execKernelCli(args: string[]): Promise<string> {
   return new Promise((resolve, reject) => {
     execFile(
       nodeBin,
-      [entry, ...args],
+      ["--no-deprecation", entry, ...args],
       {
         timeout: EXEC_TIMEOUT_MS,
         maxBuffer: MAX_BUFFER,
@@ -97,7 +112,10 @@ function execKernelCli(args: string[]): Promise<string> {
       },
       (err, stdout, stderr) => {
         if (err) {
-          reject(new Error(String(stderr ?? "").trim() || err.message));
+          const rejection = new Error(String(stderr ?? "").trim() || err.message) as Error & { stdout?: string; stderr?: string };
+          rejection.stdout = String(stdout ?? "");
+          rejection.stderr = String(stderr ?? "");
+          reject(rejection);
           return;
         }
         resolve(String(stdout ?? ""));
@@ -134,10 +152,18 @@ export type ParsedPluginUpdateOutput = {
   appliedLines: string[];
   /** `xxx is up to date (yyy).` 命中的条目 id（用于区分"检查成功但无更新"与"输出不可解析"） */
   upToDateIds: string[];
+  /** `Failed to check xxx: <reason>` 命中的条目（R93：内核内 HTTP 失败，如 ClawHub 连接超时） */
+  failed: PluginUpdateFailure[];
   /** 出现 `No tracked plugins or hook packs to update.`（空结果，非错误） */
   sawNoTracked: boolean;
   /** 出现 `Restart the gateway`（内核提示需重启网关才能加载新插件） */
   sawRestartHint: boolean;
+};
+
+/** dry-run 里检查失败的条目（网络类失败时由 Electron 侧 HTTP 回退接管） */
+export type PluginUpdateFailure = {
+  id: string;
+  reason: string;
 };
 
 // 剥离内核 CLI stdout 里的 ANSI 转义序列（颜色码等）。CLI 无 --json 的人类可读
@@ -152,6 +178,12 @@ export function stripAnsiCodes(text: string): string {
 const WOULD_LINE_RE = /^Would (update|downgrade) (?:hook pack )?"?([^"\s:]+)"?: (\S+) -> (\S+)$/;
 const APPLIED_LINE_RE = /^(Updated|Downgraded) (?:hook pack )?"?([^"\s:]+)"?: (\S+) -> (\S+)$/;
 const UP_TO_DATE_LINE_RE = /^(?:hook pack )?"?([^"\s:]+)"? is up to date \(([^)]*)\)\.?$/;
+// R93：内核逐插件报告的检查失败（reason 含超时/HTTP 错误串，可含冒号与句点，
+// id 之后整段吞掉，行尾句号剥除）。实测形态：
+//   `Failed to check holo-wechat-mp: fetch failed | Connect Timeout Error
+//    (attempted address: clawhub.ai:443, timeout: 10000ms) | UND_ERR_CONNECT_TIMEOUT
+//    (ClawHub clawhub:holo-wechat-mp).`
+const FAILED_CHECK_LINE_RE = /^Failed to check (?:hook pack )?"?([^"\s:]+)"?: (.*?)(?:\.)?$/;
 const NO_TRACKED_MARK = "No tracked plugins or hook packs";
 const RESTART_HINT_MARK = "Restart the gateway";
 
@@ -172,6 +204,7 @@ export function parseUpdateOutcomes(rawStdout: string): ParsedPluginUpdateOutput
     applied: [],
     appliedLines: [],
     upToDateIds: [],
+    failed: [],
     sawNoTracked: clean.includes(NO_TRACKED_MARK),
     sawRestartHint: clean.includes(RESTART_HINT_MARK),
   };
@@ -193,7 +226,12 @@ export function parseUpdateOutcomes(rawStdout: string): ParsedPluginUpdateOutput
       continue;
     }
     m = UP_TO_DATE_LINE_RE.exec(line);
-    if (m) result.upToDateIds.push(m[1]);
+    if (m) {
+      result.upToDateIds.push(m[1]);
+      continue;
+    }
+    m = FAILED_CHECK_LINE_RE.exec(line);
+    if (m) result.failed.push({ id: m[1], reason: m[2].trim() });
   }
   return result;
 }
@@ -311,8 +349,18 @@ function mapSearchResponse(parsed: unknown): ScoredMarketPlugin[] {
 }
 
 // ClawHub 公开 API 基址：与技能商店共用同一个 registry 设置（用户可配本地镜像，
-// 同一 ClawHub 后端），未配置回退官方域名。
+// 同一 ClawHub 后端），未配置回退官方域名。R93：默认链对齐 skill-store 的
+// registryUrl()——同样纳入构建期 CRYOCLAW_CLAWHUB_REGISTRY 注入（此前 plugin-store
+// 硬编码官方域名，构建期镜像在该页面不生效）。默认值与 skill-store 一样延迟求值：
+// build-config 求值依赖 Electron app 对象，本模块纯函数需可在 node --test 下导入。
 const DEFAULT_CLAWHUB_API_BASE = "https://clawhub.ai";
+let marketDefaultBaseCache: string | null = null;
+function marketDefaultBase(): string {
+  if (marketDefaultBaseCache === null) {
+    marketDefaultBaseCache = readBuildConfigClawhubRegistry() || DEFAULT_CLAWHUB_API_BASE;
+  }
+  return marketDefaultBaseCache;
+}
 function marketApiBase(): string {
   const custom = readSkillStoreRegistry().trim();
   if (custom) {
@@ -327,7 +375,7 @@ function marketApiBase(): string {
       }
     } catch { /* 非法 URL 同样回退默认源 */ }
   }
-  return DEFAULT_CLAWHUB_API_BASE;
+  return marketDefaultBase();
 }
 
 // market-browse 的 limit 边界：默认 20、上限 30（与 ClawHub 分页上限对齐，
@@ -340,8 +388,13 @@ const MARKET_FALLBACK_KEYWORDS = 3;
 
 // 按分类聚合市场条目：对每个分类的每个关键词 × 每个 family（code-plugin /
 // bundle-plugin）发一次 HTTP 搜索。任一请求失败只丢弃自身（浏览页宁可少一类
-// 也不能整页报错）；全部失败由调用方回退 CLI。
-async function fetchMarketGroups(limit: number): Promise<Array<{ category: string; items: ScoredMarketPlugin[] }>> {
+// 也不能整页报错）；全部失败由调用方回退 CLI。R93：基址参数化——主源与
+// 国内镜像共用同一聚合逻辑（镜像当前无 packages 接口、404 快速失败，保留
+// 探测以待镜像补齐后自动生效）。
+async function fetchMarketGroups(
+  limit: number,
+  base: string = marketApiBase(),
+): Promise<Array<{ category: string; items: ScoredMarketPlugin[] }>> {
   const families = ["code-plugin", "bundle-plugin"];
   const requests: Array<{ category: string; keyword: string; family: string }> = [];
   for (const [category, keywords] of Object.entries(PLUGIN_MARKET_CATEGORY_KEYWORDS)) {
@@ -354,7 +407,7 @@ async function fetchMarketGroups(limit: number): Promise<Array<{ category: strin
   const settled = await Promise.allSettled(
     requests.map(async (req) => {
       const url =
-        `${marketApiBase()}/api/v1/packages/search?q=${encodeURIComponent(req.keyword)}` +
+        `${base}/api/v1/packages/search?q=${encodeURIComponent(req.keyword)}` +
         `&family=${req.family}&limit=${limit}`;
       return { category: req.category, items: mapSearchResponse(await jsonGet<unknown>(url)) };
     }),
@@ -399,8 +452,23 @@ async function browsePluginMarket(limit: number): Promise<MarketBrowseItem[]> {
       })),
     );
     groups = settled.filter((r) => r.status === "fulfilled").map((r) => (r as PromiseFulfilledResult<{ category: string; items: ScoredMarketPlugin[] }>).value);
+    if (groups.length === 0 && isNetworkFailure(err)) {
+      // R93：CLI 也全灭且主源是网络类失败 → 末级试探国内镜像的 packages 接口。
+      // 当前镜像（cn.clawhub-mirror.com，火山引擎）只有 skills 系列接口，packages
+      // 404 秒回；保留这层探测，镜像补齐 packages 后断网浏览自动恢复。
+      try {
+        groups = await fetchMarketGroups(limit, CN_CLAWHUB_MIRROR);
+        if (groups.length > 0) log.info(`[plugin-store] market-browse recovered via CN mirror (${groups.length} groups)`);
+      } catch { /* 镜像无 packages 接口或不可达：落入最终报错 */ }
+    }
     if (groups.length === 0) {
-      throw new Error("plugin market browse failed (http and cli fallback)");
+      // R93：报错附可行动指引——直接透传 undici 超时串（Connect Timeout Error …
+      // clawhub.ai:443）用户无从下手；镜像 Registry 入口在 设置→高级。
+      const reason = (err instanceof Error ? err.message : String(err)).slice(0, 160);
+      throw new Error(
+        `无法加载插件市场：无法连接 ClawHub——HTTP 与 CLI 回退均失败（${reason}）。` +
+        "请检查网络或代理后重试；也可在 设置 → 高级 配置可达的 ClawHub Registry 地址（需完整支持插件 packages API）。",
+      );
     }
   }
   return mergeMarketResults(groups);
@@ -437,6 +505,170 @@ async function searchMarketPlugins(query: string, limit: number): Promise<Scored
   // R91：改走 mapSearchResponse（保留 score/updatedAt），与 market-browse 的
   // HTTP 路径共用一份字段映射，避免两处实现对 ClawHub 字段集各自漂移
   return mapSearchResponse(JSON.parse(out));
+}
+
+// ── R93：check-updates 的 Electron 侧 HTTP 回退 ──
+// 内核 CLI 的 dry-run 在 ClawHub 不可达时逐插件打印 `Failed to check <id>: …`
+// （连接超时 10s × N 个插件，全程走内核硬编码的 clawhub.ai）。这里在主进程
+// 用 marketApiBase()（用户可配镜像/构建期注入）重查这些 id：detail 端点拿
+// latestVersion，与本地 installed version 比对，拼回与内核 dry-run 同形的
+// updatable 条目，让"检查更新"在官方源不可达时仍能出结果。
+
+// 数字感知的版本比较（semver / 预发布 / 日期版均可）。规则：
+//   - 数字段按数值比较（1.10.0 > 1.9.0），非数字段按码点序；
+//   - 公共段全等时：额外段纯数字的一侧更高（0.9 < 0.9.1），含预发布标识的
+//     一侧更低（1.0.0-rc1 < 1.0.0，semver 语义）。
+export function comparePluginVersions(a: string, b: string): number {
+  const isNumeric = (s: string) => /^\d+$/.test(s);
+  const split = (v: string) => v.trim().split(/[.-]/).filter(Boolean);
+  const sa = split(a);
+  const sb = split(b);
+  const common = Math.min(sa.length, sb.length);
+  for (let i = 0; i < common; i++) {
+    const x = sa[i];
+    const y = sb[i];
+    const xNum = isNumeric(x);
+    const yNum = isNumeric(y);
+    if (xNum && yNum) {
+      const nx = Number(x);
+      const ny = Number(y);
+      if (nx !== ny) return nx - ny;
+      continue;
+    }
+    if (xNum !== yNum) return xNum ? -1 : 1; // 数字段 < 标识段
+    if (x !== y) return x < y ? -1 : 1; // 码点序，避免 locale 漂移
+  }
+  if (sa.length === sb.length) return 0;
+  // 一侧多出的段：纯数字 → 更高（0.9 < 0.9.1）；含预发布标识 → 更低（1.0.0 < 1.0.0-rc1 反转）
+  const extras = sa.length > sb.length ? sa.slice(sb.length) : sb.slice(sa.length);
+  const extrasNumeric = extras.every(isNumeric);
+  return sa.length > sb.length
+    ? (extrasNumeric ? 1 : -1)
+    : (extrasNumeric ? -1 : 1);
+}
+
+// ClawHub detail 信封 { package: { latestVersion?, version? } } → 最新版本号
+function extractLatestVersion(raw: unknown): string | null {
+  const pkg = (raw as { package?: Record<string, unknown> } | null)?.package;
+  if (!pkg || typeof pkg !== "object") return null;
+  for (const key of ["latestVersion", "version"]) {
+    const v = pkg[key];
+    if (typeof v === "string" && v.trim()) return v.trim();
+  }
+  return null;
+}
+
+async function checkUpdatesViaHttp(
+  ids: readonly string[],
+): Promise<{ updatable: PluginUpdateEntry[]; stillFailed: PluginUpdateFailure[]; upToDateIds: string[] }> {
+  let installed: InstalledPlugin[] = [];
+  try {
+    installed = await listInstalledPlugins();
+  } catch (err) {
+    log.info(`[plugin-store] update http fallback: plugins list unavailable: ${err instanceof Error ? err.message : String(err)}`);
+  }
+  const versionById = new Map(installed.filter((p) => p.version).map((p) => [p.id, p.version as string]));
+  const settled = await Promise.allSettled(
+    ids.map(async (id): Promise<PluginUpdateEntry | { id: string; reason: string }> => {
+      const currentVersion = versionById.get(id);
+      if (!currentVersion) return { id, reason: "本地版本未知（plugins list 无该条目）" };
+      const raw = await jsonGet<unknown>(`${marketApiBase()}/api/v1/packages/${encodeURIComponent(id)}`);
+      const latest = extractLatestVersion(raw);
+      if (!latest) return { id, reason: "registry 返回无 latestVersion" };
+      const cmp = comparePluginVersions(latest, currentVersion);
+      if (cmp === 0) return { id, reason: "__up_to_date__" };
+      return { id, currentVersion, nextVersion: latest, action: cmp > 0 ? "update" : "downgrade" };
+    }),
+  );
+  const updatable: PluginUpdateEntry[] = [];
+  const stillFailed: PluginUpdateFailure[] = [];
+  const upToDateIds: string[] = [];
+  for (const [idx, r] of settled.entries()) {
+    if (r.status === "rejected") {
+      const err = r.reason as { statusCode?: number; message?: string };
+      // ids 从内核 Failed 行来，逐 id 归属失败原因（404 = 市场无此包，其余为网络/源错误）
+      stillFailed.push({
+        id: ids[idx] ?? "?",
+        reason: err.statusCode ? `HTTP ${err.statusCode}` : String(err?.message ?? r.reason).slice(0, 120),
+      });
+      continue;
+    }
+    const v = r.value as PluginUpdateEntry & { reason?: string };
+    if (v.reason === "__up_to_date__") {
+      upToDateIds.push(v.id);
+      continue;
+    }
+    if (v.reason) {
+      stillFailed.push({ id: v.id, reason: v.reason });
+      continue;
+    }
+    updatable.push(v);
+  }
+  return { updatable, stillFailed, upToDateIds };
+}
+
+// R93：重装恢复暂存的插件 config。市场包名与运行时 id 可不同
+// （@wecom/wecom-openclaw-plugin ↔ wecom-openclaw-plugin），匹配以「安装后的
+// 插件 id ∈ 暂存 key」为准，其次用市场包名 / 去 scope 包名兜底。
+// 一次恢复所有命中的暂存条目（历史暂存可能在任意一次重装时一并找回）：
+//   - entry 已有非空 config 时不覆盖（内核/用户刚写的新配置优先于旧暂存）；
+//   - entry.enabled === false 时不翻回 true（用户可能刚显式禁用过）。
+// 两个文件各一次原子写（openclaw.json + cryoclaw.config.json）。任何失败只记
+// 日志——恢复是锦上添花，不能让安装结果翻车。
+async function restoreStashedPluginConfig(marketName: string): Promise<string[] | null> {
+  let stash: Record<string, unknown> | null = null;
+  try {
+    stash = readCryoclawConfig()?.savedPluginConfigs ?? null;
+  } catch {
+    return null;
+  }
+  if (!stash || Object.keys(stash).length === 0) return null;
+
+  let installed: InstalledPlugin[] = [];
+  try {
+    installed = await listInstalledPlugins();
+  } catch (err) {
+    log.info(`[plugin-store] stash restore: plugins list unavailable: ${err instanceof Error ? err.message : String(err)}`);
+    return null;
+  }
+  const hasStash = (key: string) => Object.prototype.hasOwnProperty.call(stash!, key)
+    && stash![key] !== null && typeof stash![key] === "object";
+  const unscopedName = marketName.replace(/^@[^/]+\//, "");
+  // 候选 id：安装后的插件 id（精确）+ 市场包名兜底（本次安装可能尚未进 list）
+  const candidates = new Set<string>();
+  for (const p of installed) if (hasStash(p.id)) candidates.add(p.id);
+  for (const key of [marketName, unscopedName]) if (hasStash(key)) candidates.add(key);
+  if (candidates.size === 0) return null;
+
+  try {
+    const config = readUserConfig();
+    const entries = (config.plugins ??= {}).entries ??= {};
+    const restored: string[] = [];
+    for (const id of candidates) {
+      const saved = stash![id];
+      const existing = typeof entries[id] === "object" && entries[id] !== null ? entries[id] : {};
+      const existingHasConfig = existing.config && typeof existing.config === "object" && Object.keys(existing.config).length > 0;
+      entries[id] = {
+        ...existing,
+        ...(existing.enabled === false ? {} : { enabled: true }),
+        ...(existingHasConfig ? {} : { config: saved }),
+      };
+      if (!existingHasConfig) restored.push(id);
+    }
+    writeUserConfig(config);
+
+    const cryoclaw = readCryoclawConfig();
+    if (cryoclaw?.savedPluginConfigs) {
+      for (const id of candidates) delete cryoclaw.savedPluginConfigs[id];
+      if (Object.keys(cryoclaw.savedPluginConfigs).length === 0) delete cryoclaw.savedPluginConfigs;
+      writeCryoclawConfig(cryoclaw);
+    }
+    log.info(`[plugin-store] stash restore: ${restored.join(", ")} config recovered after reinstall`);
+    return restored;
+  } catch (err) {
+    log.warn(`[plugin-store] stash restore failed: ${err instanceof Error ? err.message : String(err)}`);
+    return null;
+  }
 }
 
 // 注册插件管理页 IPC handler
@@ -483,6 +715,14 @@ export function registerPluginStoreIpc(): void {
       if (stdout.includes("differs from npm package name") || stdout.includes("Removed previous plugin install")) {
         warning = "Plugin runtime id collided with an already-installed plugin; the previous install was replaced.";
       }
+      // R93：重装恢复——迁移把"不可解析插件"的 config 暂存到 cryoclaw.config.json
+      // 并删除了 openclaw.json 条目（消内核 disabled-but-config 警告）；重装成功后
+      // 在此恢复。失败只记日志，不影响安装结果。
+      const restored = await restoreStashedPluginConfig(name);
+      if (restored && restored.length > 0) {
+        const note = `已恢复此前保存的插件配置（${restored.join(", ")}）`;
+        warning = warning ? `${warning} ${note}` : note;
+      }
       return { success: true, ...(warning ? { warning } : {}) };
     } catch (err: any) {
       log.info(`[plugin-store] install ${name} failed: ${err?.message ?? err}`);
@@ -507,17 +747,61 @@ export function registerPluginStoreIpc(): void {
   // R91：检查插件更新（dry-run，不落盘）。stdout 为人类可读文本，靠
   // parseUpdateOutcomes 解析；无可识别行且非 "No tracked" 视为解析失败而不是
   // 空结果（否则内核报错会被静默当成"全部最新"误导用户）。
+  // R93：内核在 ClawHub 不可达时逐插件打 `Failed to check <id>: …` 且整体
+  // exit 1（Failed 行在 stderr）——exec 拒绝时解析附件里的 Failed 行，交由
+  // Electron 侧 HTTP（marketApiBase，用户可配镜像）回退重查；回退后仍失败才
+  // 报错，报错文案带网络/镜像配置指引而非裸 undici 超时串。
   ipcMain.handle("plugin-store:check-updates", async (event) => {
     if (!assertTrustedIpcSender(event, "plugin-store:check-updates")) throw new Error("IPC sender not trusted");
+    let stdout = "";
+    let execFailure: (Error & { stdout?: string; stderr?: string }) | null = null;
     try {
-      const stdout = await execKernelCli(["plugins", "update", "--dry-run", "--all"]);
-      const parsed = parseUpdateOutcomes(stdout);
-      if (!parsed.sawNoTracked && parsed.updatable.length === 0 && parsed.upToDateIds.length === 0) {
+      stdout = await execKernelCli(["plugins", "update", "--dry-run", "--all"]);
+    } catch (err) {
+      execFailure = err as Error & { stdout?: string; stderr?: string };
+    }
+    try {
+      // 内核 exit 1 时结果行在 stderr（console.error），stdout 里可能有进度文本
+      const combined = execFailure
+        ? `${stdout}\n${execFailure.stderr ?? ""}\n${execFailure.stdout ?? ""}`
+        : stdout;
+      const parsed = parseUpdateOutcomes(combined);
+      let updatable = parsed.updatable;
+      let failed = parsed.failed;
+      if (failed.length > 0) {
+        log.info(`[plugin-store] check-updates kernel-side failures: ${failed.map((f) => f.id).join(",")} — trying http fallback`);
+        const http = await checkUpdatesViaHttp(failed.map((f) => f.id));
+        updatable = updatable.concat(http.updatable);
+        failed = http.stillFailed;
+        // 回退判为 up-to-date 的也算"检查成功"信号（否则全失败场景会被误报成
+        // 输出不可解析）
+        parsed.upToDateIds.push(...http.upToDateIds);
+      }
+      const sawAnySignal = parsed.sawNoTracked || updatable.length > 0 || parsed.upToDateIds.length > 0;
+      if (!sawAnySignal && failed.length === 0) {
+        if (execFailure) {
+          return { success: false, message: stripAnsiCodes(execFailure.message).slice(0, 300) || "插件更新检查失败" };
+        }
         const snippet = stripAnsiCodes(stdout).trim().slice(0, 200);
         return { success: false, message: `无法解析 plugins update --dry-run 输出：${snippet || "(empty)"}` };
       }
+      if (failed.length > 0) {
+        const failedIds = failed.map((f) => f.id).join(", ");
+        if (!sawAnySignal) {
+          // 全部失败：官方源（或用户配置源）不可达——给出可行动指引
+          return {
+            success: false,
+            message:
+              `无法连接 ClawHub 检查插件更新（${failedIds}）。` +
+              "请检查网络或代理后重试；也可在 设置 → 高级 配置可达的 ClawHub Registry 地址。",
+          };
+        }
+        // 部分失败：已拿到的结果照常返回，失败清单附带透出
+        log.info(`[plugin-store] check-updates partial failures after http fallback: ${failed.map((f) => `${f.id}(${f.reason})`).join(",")}`);
+        return { success: true, data: { updatable, checkedAt: Date.now(), failed: failed.map((f) => f.id) } };
+      }
       // 只返回有更新的条目；"No tracked" / 全部 up to date 都落成空数组
-      return { success: true, data: { updatable: parsed.updatable, checkedAt: Date.now() } };
+      return { success: true, data: { updatable, checkedAt: Date.now() } };
     } catch (err: any) {
       log.info(`[plugin-store] check-updates failed: ${err?.message ?? err}`);
       return { success: false, message: err?.message ?? String(err) };
@@ -589,12 +873,30 @@ export function registerPluginStoreIpc(): void {
 
   // 市场包详情（R92）：ClawHub /api/v1/packages/<name> → { package, owner } 信封。
   // 包名含 @scope（如 @openclaw/brave-plugin），必须整体 encodeURIComponent。
+  // R93：网络类失败回退国内镜像——镜像当前无 packages 接口（404 快速失败），
+  // 此时透传"主源不可达"的可行动信息而非误导性的 HTTP 404；4xx 业务错误不换源。
   ipcMain.handle("plugin-store:market-detail", async (event, params) => {
     if (!assertTrustedIpcSender(event, "plugin-store:market-detail")) throw new Error("IPC sender not trusted");
     const name = typeof params?.name === "string" ? params.name.trim() : "";
     if (!isValidPluginName(name)) return { success: false, message: "invalid package name" };
+    const detailPath = `/api/v1/packages/${encodeURIComponent(name)}`;
     try {
-      const raw = await jsonGet<unknown>(`${marketApiBase()}/api/v1/packages/${encodeURIComponent(name)}`);
+      let raw: unknown;
+      try {
+        raw = await jsonGet<unknown>(`${marketApiBase()}${detailPath}`);
+      } catch (err) {
+        if (!isNetworkFailure(err)) throw err;
+        log.info(`[plugin-store] market-detail ${name} primary failed, trying CN mirror: ${err instanceof Error ? err.message : String(err)}`);
+        try {
+          raw = await jsonGet<unknown>(`${CN_CLAWHUB_MIRROR}${detailPath}`);
+        } catch {
+          // 镜像无 packages 接口或不可达：原始网络错误更能指导用户（检查网络/代理）
+          throw new Error(
+            `无法连接 ClawHub 获取插件详情（${err instanceof Error ? err.message : String(err)}）。` +
+            "请检查网络或代理后重试。",
+          );
+        }
+      }
       // 信封 { package, owner } 宽松校验：package 缺失视为未找到
       const env = raw as { package?: unknown; owner?: unknown };
       if (!env || typeof env !== "object" || !env.package || typeof env.package !== "object") {

@@ -290,8 +290,12 @@ export class GatewayProcess {
     // 递增世代，标记本次 spawn 的身份
     const gen = ++this.generation;
 
-    // 不传 --port 和 --bind，让 gateway 自行从配置文件/环境变量解析
-    const args = [entry, "gateway", "run"];
+    // 不传 --port 和 --bind，让 gateway 自行从配置文件/环境变量解析。
+    // --no-deprecation（R93）：Electron 43 已知 bug（electron#47390）——asar 内
+    // stat 转换使用已弃用的 fs.Stats 构造器，gateway（ELECTRON_RUN_AS_NODE）每轮
+    // 扫描 asar 内插件清单都会刷 DEP0180 警告污染 gateway.log；内核是 vendored
+    // 依赖，其弃用告警不可行动，直接静音。
+    const args = ["--no-deprecation", entry, "gateway", "run"];
     diagLog(`spawn: ${nodeBin} ${args.join(" ")} (gen=${gen})`);
 
     this.proc = spawn(nodeBin, args, {

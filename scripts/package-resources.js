@@ -2704,6 +2704,19 @@ async function packGatewayAsar(gatewayDir, targetBase, platform, arch) {
   // asar 打包前执行 koffi 平台裁剪（asar 内文件不可修改）
   pruneKoffiPlatforms(gatewayDir, platform, arch);
 
+  // R93：合成 image-generation-core 的最小插件清单。上游 openclaw（2026.9.3 实测）
+  // 把这个共享运行时库放在 dist/extensions/ 下但不带 openclaw.plugin.json，内核
+  // manifest-metadata-scan 对每个子目录都尝试读清单，缺失即每次启动告警
+  // "Ignoring unreadable plugin manifest"。合成 {id, enabledByDefault:false}：
+  // 实验验证 plugins list 输出零变化（内核消费方只读 providers/modelCatalog 等
+  // 字段，全空即无贡献），仅消告警。上游若原生带上清单则跳过（不覆盖）。
+  const igcDir = path.join(gatewayDir, "node_modules", "openclaw", "dist", "extensions", "image-generation-core");
+  const igcManifest = path.join(igcDir, "openclaw.plugin.json");
+  if (fs.existsSync(igcDir) && !fs.existsSync(igcManifest)) {
+    fs.writeFileSync(igcManifest, JSON.stringify({ id: "image-generation-core", enabledByDefault: false }, null, 2) + "\n");
+    log("已合成 image-generation-core/openclaw.plugin.json（消内核 manifest-scan 告警）");
+  }
+
   // 补丁 boundary-file-read：让 asar 内路径绕过 O_NOFOLLOW / realpathSync 校验
   patchAsarBoundaryCheck(gatewayDir);
 
@@ -2761,6 +2774,8 @@ function verifyAsarContents(asarPath) {
     "/node_modules/openclaw/openclaw.mjs",
     "/node_modules/openclaw/dist/entry.js",
     "/node_modules/clawhub/bin/clawdhub.js",
+    // R93：合成清单必须落进 asar（缺失会让内核每轮启动刷 manifest-scan 告警）
+    "/node_modules/openclaw/dist/extensions/image-generation-core/openclaw.plugin.json",
   ];
 
   const missing = required.filter((f) => !files.has(f));

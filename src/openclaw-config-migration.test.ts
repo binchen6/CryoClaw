@@ -47,6 +47,25 @@ vi.mock("./provider-config", () => ({
   },
 }));
 
+// R93：cryoclaw.config.json（savedPluginConfigs 暂存 + 一次性修复门控）的受控 mock
+const mockCryoclaw: {
+  config: any;
+  writeShouldThrow: boolean;
+} = {
+  config: null,
+  writeShouldThrow: false,
+};
+
+vi.mock("./cryoclaw-config", () => ({
+  readCryoclawConfig: () => mockCryoclaw.config,
+  writeCryoclawConfig: (cfg: any) => {
+    if (mockCryoclaw.writeShouldThrow) {
+      throw new Error("cryoclaw write failed (test)");
+    }
+    mockCryoclaw.config = cfg;
+  },
+}));
+
 vi.mock("./logger", () => ({
   info: vi.fn(),
   warn: vi.fn(),
@@ -69,6 +88,8 @@ beforeEach(() => {
   mockState.currentConfig = {};
   mockState.writeCount = 0;
   mockState.writeShouldThrow = false;
+  mockCryoclaw.config = null;
+  mockCryoclaw.writeShouldThrow = false;
 });
 
 afterEach(() => {
@@ -555,9 +576,11 @@ test("2026.7 不动 qqbot allowFrom 通配符", async () => {
   expect(mockState.writeCount).toBe(0);
 });
 
-// ── 2026.8: 未安装的启用插件降级为禁用（plugin verification failed 防线）──
+// ── 2026.8: 未安装的启用插件降级（plugin verification failed 防线）──
+// R93 语义：不可解析条目的 config 暂存到 cryoclaw.config.json 后整条删除
+// （内核对 disabled+config 残留有常驻告警且无用户侧抑制开关）。
 
-test("2026.8: enabled 但未安装的插件条目降级为禁用", async () => {
+test("2026.8: enabled 但未安装的插件条目摘除并暂存 config", async () => {
   writeKernelVersion("2026.8.2");
   fs.mkdirSync(path.join(mockState.gatewayPkgDir, "dist", "extensions", "kimi"), { recursive: true });
   const weixinDir = path.join(mockState.userStateDir, "extensions", "openclaw-weixin");
@@ -567,7 +590,7 @@ test("2026.8: enabled 但未安装的插件条目降级为禁用", async () => {
     plugins: { entries: {
       kimi: { enabled: true },                 // bundled → 不动
       "openclaw-weixin": { enabled: true },    // 状态目录已安装 → 不动
-      tavily: { enabled: true, config: { webSearch: { apiKey: "x" } } }, // 未安装 → 禁用
+      tavily: { enabled: true, config: { webSearch: { apiKey: "x" } } }, // 未安装 → 暂存+删除
       "memory-lancedb": { enabled: false },    // 本就禁用 → 不动
     } },
     tools: { updatePlan: true },
@@ -577,10 +600,126 @@ test("2026.8: enabled 但未安装的插件条目降级为禁用", async () => {
   const entries = mockState.currentConfig.plugins.entries;
   expect(entries.kimi.enabled).toBe(true);
   expect(entries["openclaw-weixin"].enabled).toBe(true);
-  expect(entries.tavily.enabled).toBe(false);
-  expect(entries.tavily.config.webSearch.apiKey).toBe("x"); // 配置本体保留
+  expect(entries.tavily).toBeUndefined(); // 条目删除（不再触发内核 disabled-but-config 告警）
   expect(entries["memory-lancedb"].enabled).toBe(false);
+  // config 暂存进 cryoclaw.config.json（mock 捕获），重装后由 plugin-store 恢复
+  expect(mockCryoclaw.config?.savedPluginConfigs?.tavily).toEqual({ webSearch: { apiKey: "x" } });
   expect(mockState.writeCount).toBe(1);
+});
+
+test("2026.8: npm/projects 受管安装的插件可解析（tavily 误禁根因回归）", async () => {
+  writeKernelVersion("2026.8.2");
+  // `plugins install clawhub:tavily` 的落点：npm/projects/<proj>/node_modules/<pkg>/
+  const projDir = path.join(
+    mockState.userStateDir, "npm", "projects", "openclaw-tavily-plugin-8ad843922d",
+  );
+  const pkgDir = path.join(projDir, "node_modules", "@openclaw", "tavily-plugin");
+  fs.mkdirSync(pkgDir, { recursive: true });
+  fs.writeFileSync(path.join(pkgDir, "openclaw.plugin.json"), JSON.stringify({ id: "tavily" }));
+  fs.writeFileSync(path.join(projDir, "package.json"), JSON.stringify({ dependencies: { "@openclaw/tavily-plugin": "1.0.0" } }));
+  mockState.currentConfig = {
+    plugins: { entries: { tavily: { enabled: true, config: { webSearch: { apiKey: "k" } } } } },
+    tools: { updatePlan: true },
+  };
+  const { migrateOpenclawConfigForKernelUpgrade } = await import("./openclaw-config-migration");
+  migrateOpenclawConfigForKernelUpgrade();
+  expect(mockState.currentConfig.plugins.entries.tavily.enabled).toBe(true);
+  expect(mockState.writeCount).toBe(0);
+});
+
+test("2026.8: 一次性修复历史误禁（enabled:false + config + npm 可解析 → 恢复）", async () => {
+  writeKernelVersion("2026.8.2");
+  const pkgDir = path.join(
+    mockState.userStateDir, "npm", "projects", "openclaw-tavily-plugin-8ad843922d",
+    "node_modules", "@openclaw", "tavily-plugin",
+  );
+  fs.mkdirSync(pkgDir, { recursive: true });
+  fs.writeFileSync(path.join(pkgDir, "openclaw.plugin.json"), JSON.stringify({ id: "tavily" }));
+  fs.writeFileSync(path.join(pkgDir, "package.json"), "{}");
+  fs.writeFileSync(path.join(mockState.userStateDir, "npm", "projects", "openclaw-tavily-plugin-8ad843922d", "package.json"),
+    JSON.stringify({ dependencies: { "@openclaw/tavily-plugin": "1.0.0" } }));
+  mockState.currentConfig = {
+    plugins: { entries: { tavily: { enabled: false, config: { webSearch: { apiKey: "k" } } } } },
+    tools: { updatePlan: true },
+  };
+  const { migrateOpenclawConfigForKernelUpgrade } = await import("./openclaw-config-migration");
+  migrateOpenclawConfigForKernelUpgrade();
+  expect(mockState.currentConfig.plugins.entries.tavily.enabled).toBe(true);
+  expect(mockState.writeCount).toBe(1);
+  // 门控落盘：第二次运行不再翻动显式禁用
+  mockState.currentConfig.plugins.entries.tavily.enabled = false;
+  migrateOpenclawConfigForKernelUpgrade();
+  expect(mockState.currentConfig.plugins.entries.tavily.enabled).toBe(false);
+});
+
+test("2026.8: channel 插件的显式禁用不被一次性修复翻回（误启 bot 风险）", async () => {
+  writeKernelVersion("2026.8.2");
+  const projDir = path.join(mockState.userStateDir, "npm", "projects", "wecom-wecom-openclaw-plugin-18f843d908");
+  const pkgDir = path.join(projDir, "node_modules", "@wecom", "wecom-openclaw-plugin");
+  fs.mkdirSync(pkgDir, { recursive: true });
+  fs.writeFileSync(path.join(pkgDir, "openclaw.plugin.json"), JSON.stringify({ id: "wecom-openclaw-plugin", channels: ["wecom"] }));
+  fs.writeFileSync(path.join(projDir, "package.json"), JSON.stringify({ dependencies: { "@wecom/wecom-openclaw-plugin": "1.0.0" } }));
+  mockState.currentConfig = {
+    plugins: { entries: { "wecom-openclaw-plugin": { enabled: false, config: { corpId: "x" } } } },
+    tools: { updatePlan: true },
+  };
+  const { migrateOpenclawConfigForKernelUpgrade } = await import("./openclaw-config-migration");
+  migrateOpenclawConfigForKernelUpgrade();
+  expect(mockState.currentConfig.plugins.entries["wecom-openclaw-plugin"].enabled).toBe(false);
+  expect(mockState.writeCount).toBe(0); // 无变更不写盘
+});
+
+test("2026.8: 暂存写失败时回滚条目删除（key 绝不两边都没有）", async () => {
+  writeKernelVersion("2026.8.2");
+  mockCryoclaw.writeShouldThrow = true;
+  mockState.currentConfig = {
+    plugins: { entries: { tavily: { enabled: true, config: { webSearch: { apiKey: "x" } } } } },
+    tools: { updatePlan: true },
+  };
+  const { migrateOpenclawConfigForKernelUpgrade } = await import("./openclaw-config-migration");
+  migrateOpenclawConfigForKernelUpgrade();
+  // 条目回滚：仍存在且 enabled 保持 true、config 保留（下轮迁移重试）
+  const entry = mockState.currentConfig.plugins.entries.tavily;
+  expect(entry.enabled).toBe(true);
+  expect(entry.config.webSearch.apiKey).toBe("x");
+  expect(mockState.writeCount).toBe(0);
+});
+
+test("2026.8: cryoclaw.config.json 存在但损坏 → 降级为禁用语义（不写 sidecar）", async () => {
+  writeKernelVersion("2026.8.2");
+  // sidecar 存在但不可解析（readCryoclawConfig mock 返回 null + 真实文件存在）
+  fs.writeFileSync(path.join(mockState.userStateDir, "cryoclaw.config.json"), "{corrupt json");
+  mockState.currentConfig = {
+    plugins: { entries: { tavily: { enabled: true, config: { webSearch: { apiKey: "x" } } } } },
+    tools: { updatePlan: true },
+  };
+  const { migrateOpenclawConfigForKernelUpgrade } = await import("./openclaw-config-migration");
+  migrateOpenclawConfigForKernelUpgrade();
+  // 降级：条目保留、置 disabled、config 本体不动；sidecar 未被写（用户设置保住）
+  const entry = mockState.currentConfig.plugins.entries.tavily;
+  expect(entry).toBeDefined();
+  expect(entry.enabled).toBe(false);
+  expect(entry.config.webSearch.apiKey).toBe("x");
+  expect(mockCryoclaw.config).toBeNull();
+  expect(mockState.writeCount).toBe(1);
+});
+
+test("2026.8: npm/projects 扫描硬失败 → 降级为禁用语义（读不到 ≠ 没安装）", async () => {
+  writeKernelVersion("2026.8.2");
+  // 用同名文件堵住 projects 目录本身 → readdirSync 得到 ENOTDIR（非 ENOENT）
+  // 注：堵塞路径的父组件在 Windows 上返回 ENOENT，必须堵目标目录本身
+  fs.mkdirSync(path.join(mockState.userStateDir, "npm"), { recursive: true });
+  fs.writeFileSync(path.join(mockState.userStateDir, "npm", "projects"), "");
+  mockState.currentConfig = {
+    plugins: { entries: { tavily: { enabled: true, config: { webSearch: { apiKey: "x" } } } } },
+    tools: { updatePlan: true },
+  };
+  const { migrateOpenclawConfigForKernelUpgrade } = await import("./openclaw-config-migration");
+  migrateOpenclawConfigForKernelUpgrade();
+  const entry = mockState.currentConfig.plugins.entries.tavily;
+  expect(entry).toBeDefined();
+  expect(entry.enabled).toBe(false);
+  expect(entry.config.webSearch.apiKey).toBe("x");
 });
 
 test("2026.8: mirror 中的插件不降级（reconcile 稍后会装回状态目录）", async () => {
@@ -644,7 +783,7 @@ test("2026.8: plugins.slots 引用未安装插件时摘除槽位", async () => {
 // openclaw.plugin.json + skills/，内核每轮 "Repaired missing configured plugin"
 // 写入不持久 → convergence refusal 死循环，gateway 永不 ready。
 
-test("2026.8: 纯技能插件（目录在但无 package.json 无 dist/）降级为禁用", async () => {
+test("2026.8: 纯技能插件（目录在但无 package.json 无 dist/）条目摘除并暂存", async () => {
   writeKernelVersion("2026.8.2");
   const holoDir = path.join(mockState.userStateDir, "extensions", "holo-wechat-mp");
   fs.mkdirSync(path.join(holoDir, "skills"), { recursive: true });
@@ -655,8 +794,9 @@ test("2026.8: 纯技能插件（目录在但无 package.json 无 dist/）降级�
   };
   const { migrateOpenclawConfigForKernelUpgrade } = await import("./openclaw-config-migration");
   migrateOpenclawConfigForKernelUpgrade();
-  expect(mockState.currentConfig.plugins.entries["holo-wechat-mp"].enabled).toBe(false);
-  expect(mockState.currentConfig.plugins.entries["holo-wechat-mp"].config.keep).toBe(1); // 配置本体保留
+  // R93：条目删除（disabled+config 残留会触发内核常驻告警与 repair 死循环）
+  expect(mockState.currentConfig.plugins.entries["holo-wechat-mp"]).toBeUndefined();
+  expect(mockCryoclaw.config?.savedPluginConfigs?.["holo-wechat-mp"]).toEqual({ keep: 1 }); // config 暂存保留
   expect(mockState.writeCount).toBe(1);
 });
 

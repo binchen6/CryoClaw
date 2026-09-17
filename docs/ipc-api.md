@@ -211,7 +211,7 @@
 | `pluginStoreSearch(params?)` | `plugin-store:search` | invoke |
 | `pluginStoreInstall(params?)` | `plugin-store:install` | invoke |
 | `pluginStoreUninstall(params?)` | `plugin-store:uninstall` | invoke |
-| `pluginStoreCheckUpdates()` | `plugin-store:check-updates` | invoke |
+| `pluginStoreCheckUpdates()` | `plugin-store:check-updates` | invoke（R93：内核 exit 1 / Failed 行在 stderr 时经 Electron 侧 HTTP 回退；`data.failed` 为回退后仍查不到的插件 id 清单） |
 | `pluginStoreUpdate(params?)` | `plugin-store:update` | invoke |
 | `pluginStoreDetail(params?)` | `plugin-store:detail` | invoke |
 | `pluginStoreMarketBrowse(params?)` | `plugin-store:market-browse` | invoke |

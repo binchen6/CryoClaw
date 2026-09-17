@@ -21,6 +21,14 @@ export interface CryoclawConfig {
     port?: number;
     token?: string;
   };
+  // R93：openclaw-config-migration 把"不可解析插件"的 plugins.entries.<id> 暂存
+  // 到此（key = 插件运行时 id，value = 原 entry 的 config 本体），并在
+  // plugin-store 重装成功后恢复回 openclaw.json。避免内核对
+  // "disabled but config is present" 的常驻告警，同时保住用户的 API key。
+  savedPluginConfigs?: Record<string, unknown>;
+  // R93 一次性门控：历史版本误禁的 npm-可解析插件条目只在首个 R93 版本启动时
+  // 恢复一次，之后用户的显式 enabled:false 不再被迁移翻动。
+  mistakenPluginDisableRepairDone?: boolean;
 }
 
 // 四种归属状态

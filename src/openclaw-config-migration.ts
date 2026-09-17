@@ -12,6 +12,8 @@ import * as fs from "fs";
 import * as path from "path";
 import { resolveGatewayPackageDir, resolveUserStateDir, resolveExtensionsMirrorDir } from "./constants";
 import { readUserConfig, writeUserConfig } from "./provider-config";
+import { readCryoclawConfig, writeCryoclawConfig } from "./cryoclaw-config";
+import { scanNpmProjectPlugins } from "./plugin-install-roots";
 import * as log from "./logger";
 
 // 规则列表，后续按需追加。
@@ -214,30 +216,49 @@ function migrateQQBotAllowFromWildcard(config: any): boolean {
   return changed;
 }
 
-/** ≥2026.8：插件验证收紧——enabled 但既非内核 bundled 也未装进状态目录
- * extensions/ 的插件会让 gateway 启动时 "plugin verification failed" 拒绝就绪
- * （典型：official external plugins tavily/volcengine/xiaomi 的 capability consent）。
- * 把这类条目降级为 enabled:false（保留配置本体，用户之后在扩展商店重装即可）。
- * 只动 enabled===true 的条目；本就 disabled 的残留不阻断启动。
+/** ≥2026.8：插件验证收紧——enabled 但不可解析的插件会让 gateway 启动时
+ * "plugin verification failed" 拒绝就绪（典型：official external plugins
+ * tavily/volcengine/xiaomi 的 capability consent）。
  *
- * 已安装但无可运行载荷（目录在、却没有 package.json 也没有 dist/）同样降级：
+ * R93 语义修订：
+ *   1. resolvable 集合补上 `~/.openclaw/npm/projects/`（内核受管 ClawHub/npm
+ *      安装根）。此前只查 extensions/ 目录，把市场安装的插件（tavily 等）
+ *      误判为不可用并禁用其条目——内核随之每次启动告警
+ *      "plugin disabled (disabled in config) but config is present"。
+ *   2. 确认不可解析的条目：config 暂存到 cryoclaw.config.json
+ *      savedPluginConfigs.<id> 后整个删除（而非 enabled:false 保留 config）。
+ *      内核对"disabled + config 残留"有常驻告警且无用户侧抑制开关
+ *      （suppressDisabledConfigWarning 只认内核内置 compat provider）。
+ *      暂存数据在插件市场重装成功后由 plugin-store 恢复（restoreStashedPluginConfig）。
+ *      暂存写失败时回滚内存删除（绝不出现"两边都没有"的 key 丢失）。
+ *   3. 一次性修复（mistakenPluginDisableRepairDone 门控）：历史版本误禁的
+ *      enabled:false && config 非空 && npm-可解析 条目恢复 enabled:true。
+ *      仅限非 channel 插件——channel 插件（wecom 等机器人渠道）用户可能经
+ *      UI 开关显式禁用（关掉必须静默的 bot），自动翻回 enabled 会造成真实
+ *      业务事故；channel 语义来自 npm 清单的 channels 字段。
+ *   4. 降级模式（R93 审查）：安装根读取硬失败（EBUSY/杀软锁，非 ENOENT）或
+ *      cryoclaw.config.json 存在但损坏时，放弃本轮 stash+删除（会误删已安装
+ *      插件的条目 / 覆盖损坏文件），退回旧语义（enabled:false 保留 config）。
+ *
+ * 已安装但无可运行载荷（目录在、却没有 package.json 也没有 dist/）同样处理：
  * 典型是 ClawHub 安装的纯技能插件（只有 openclaw.plugin.json + skills/）。
  * 内核 2026.8.2 对这类插件每轮启动都 "Repaired missing configured plugin"，
  * 修复写入不持久 → startup 收敛检测到输入变化 → 拒绝 ready 死循环
  * （v2026.904.1 生产事故根因之二，holo-wechat-mp 案例）。 */
-function migrateUnavailablePluginEntries(config: any): string[] {
+function migrateUnavailablePluginEntries(config: any): PluginEntryMigration {
+  const empty: PluginEntryMigration = { stashed: [], removedSlots: [], repaired: [], downgraded: [] };
   const entries = config?.plugins?.entries;
-  if (!entries || typeof entries !== "object") return [];
-  const listDirs = (dir: string): Set<string> => {
+  if (!entries || typeof entries !== "object") return empty;
+  // 三态目录读取：null = 不存在（合法）；Set = 成功；抛 = 硬失败
+  const listDirs = (dir: string): Set<string> | null => {
+    let raw: fs.Dirent[];
     try {
-      return new Set(
-        fs.readdirSync(dir, { withFileTypes: true })
-          .filter((d) => d.isDirectory())
-          .map((d) => d.name),
-      );
-    } catch {
-      return new Set();
+      raw = fs.readdirSync(dir, { withFileTypes: true });
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") return null;
+      throw err;
     }
+    return new Set(raw.filter((d) => d.isDirectory()).map((d) => d.name));
   };
   // 目录内存在 package.json 或 dist/ 视为有可运行载荷
   const hasRunnablePayload = (dir: string): boolean => {
@@ -248,36 +269,146 @@ function migrateUnavailablePluginEntries(config: any): string[] {
       return false;
     }
   };
-  const bundled = listDirs(path.join(resolveGatewayPackageDir(), "dist", "extensions"));
+  const stateDir = resolveUserStateDir();
+  // 安装根逐个读取：单根硬失败不让整轮崩掉——记为 null（未知），其余根的
+  // 信息照常参与判定；任一根硬失败即整体进入"降级模式"（见下）。
+  let anyRootFailure = false;
+  const safeListDirs = (dir: string): Set<string> | null => {
+    try {
+      return listDirs(dir);
+    } catch (err) {
+      anyRootFailure = true;
+      log.warn(`[migrate] 安装根读取失败（${(err as Error).message}），本轮按未知处理`);
+      return null;
+    }
+  };
+  const bundled = safeListDirs(path.join(resolveGatewayPackageDir(), "dist", "extensions"));
   // 安装包内置 mirror（wecom/weixin 等 channel plugin 的来源）：启动期 reconcile 会
   // 把它复制进状态目录。迁移先于 reconcile 运行时必须把 mirror 视为可解析，
   // 否则状态目录被清（杀软/误删）后，一轮启动会把渠道插件条目永久禁用
-  const mirrored = listDirs(resolveExtensionsMirrorDir());
-  const stateExtDir = path.join(resolveUserStateDir(), "extensions");
-  const installed = listDirs(stateExtDir);
-  // bundled 由内核发行物保证格式，不做载荷判定；状态目录里的才查
+  const mirrored = safeListDirs(resolveExtensionsMirrorDir());
+  const installed = safeListDirs(path.join(stateDir, "extensions"));
+  const npmScan = scanNpmProjectPlugins(stateDir);
+  if (!npmScan.ok) {
+    anyRootFailure = true;
+    log.warn("[migrate] npm/projects 扫描硬失败，本轮按未知处理");
+  }
+  const npmManaged = npmScan.ok ? npmScan.plugins : new Map<string, { channels: string[] }>();
+  // 未知根（null）按"不可解析"参与判定——只在降级模式里用于禁用（不删除）
   const resolvable = (id: string): boolean =>
-    bundled.has(id) || mirrored.has(id) || (installed.has(id) && hasRunnablePayload(path.join(stateExtDir, id)));
-  const disabled: string[] = [];
+    (bundled?.has(id) ?? false)
+    || (mirrored?.has(id) ?? false)
+    || npmManaged.has(id)
+    || ((installed?.has(id) ?? false) && hasRunnablePayload(path.join(stateDir, "extensions", id)));
+
+  // cryoclaw.config.json 存在但解析失败（截断/损坏）→ 本轮不写该文件（防把
+  // updateChannel 等用户设置冲掉），同样进入降级模式
+  const cryoclawConfig = readCryoclawConfig();
+  const sidecarCorrupt = cryoclawConfig === null && fs.existsSync(path.join(stateDir, "cryoclaw.config.json"));
+  if (sidecarCorrupt) {
+    anyRootFailure = true;
+    log.warn("[migrate] cryoclaw.config.json 存在但不可解析，本轮退回禁用语义（不写 sidecar）");
+  }
+  const degraded = anyRootFailure;
+
+  const repairDone = cryoclawConfig?.mistakenPluginDisableRepairDone === true;
+
+  // 一次性修复：仅非 channel 的 npm 受管插件（channel 插件的显式禁用可能是
+  // 用户的业务决策，不自动翻回；见函数头注释 3）。降级模式下 npm 信息可能
+  // 不完整，跳过修复（下轮再试）。
+  const repaired: string[] = [];
+  if (!repairDone && !degraded && npmScan.ok) {
+    for (const [id, entry] of Object.entries(entries)) {
+      const e = entry as any;
+      if (!e || e.enabled !== false) continue;
+      const info = npmManaged.get(id);
+      if (!info || info.channels.length > 0) continue;
+      if (!e.config || typeof e.config !== "object" || Object.keys(e.config).length === 0) continue;
+      e.enabled = true;
+      repaired.push(id);
+    }
+  }
+
+  // 降级模式（R92 及之前的语义）：不可解析的 enabled 条目只置 enabled:false
+  // 保留 config 本体——此时无法安全判断"真的没装"（读失败 ≠ 没安装），
+  // 保留条目比删除稳妥（内核 disabled 告警可容忍，key 丢失不可容忍）。
+  if (degraded) {
+    const disabled: string[] = [];
+    for (const [id, entry] of Object.entries(entries)) {
+      const e = entry as any;
+      if (!e || e.enabled !== true) continue;
+      if (resolvable(id)) continue;
+      e.enabled = false;
+      disabled.push(id);
+    }
+    if (disabled.length > 0) log.warn(`[migrate] 降级语义：以下插件条目置为禁用（不删条目）: ${disabled.join(", ")}`);
+    // 修复动作保留（只动 enabled，无数据丢失风险）
+    return { stashed: [], removedSlots: [], repaired, downgraded: disabled };
+  }
+
+  // 不可解析的 enabled 条目：暂存 config → 删除条目。
+  // __proto__/constructor/prototype 做 stash key 会写坏对象原型（JSON.stringify
+  // 静默丢弃 → 条目删了暂存没落盘），这类 id 直接跳过（保留条目）。
+  const UNSAFE_KEYS = new Set(["__proto__", "constructor", "prototype"]);
+  const stashed: string[] = [];
+  const removedSlots: string[] = [];
+  let stashDirty = false;
+  const stash = cryoclawConfig ?? {};
+  const removedEntries = new Map<string, any>();
   for (const [id, entry] of Object.entries(entries)) {
     const e = entry as any;
     if (!e || e.enabled !== true) continue;
-    if (resolvable(id)) continue;
-    e.enabled = false;
-    disabled.push(id);
+    if (resolvable(id) || UNSAFE_KEYS.has(id)) continue;
+    if (e.config !== undefined && e.config !== null) {
+      stash.savedPluginConfigs ??= {};
+      // 已有暂存不覆盖（保留最早一份，含用户手改）
+      if (!Object.prototype.hasOwnProperty.call(stash.savedPluginConfigs, id)) {
+        stash.savedPluginConfigs[id] = e.config;
+      }
+      stashDirty = true;
+    }
+    removedEntries.set(id, entry);
+    delete entries[id];
+    stashed.push(id);
   }
   // plugins.slots.* 引用不可解析插件同样 fail-closed（plugin not found），一并摘除
+  const removedSlotAssignments: Array<[string, string]> = [];
   const slots = config.plugins?.slots;
   if (slots && typeof slots === "object") {
     for (const [slot, pluginId] of Object.entries(slots)) {
       if (typeof pluginId === "string" && !resolvable(pluginId)) {
+        removedSlotAssignments.push([slot, slots[slot] as string]);
         delete slots[slot];
-        if (!disabled.includes(pluginId)) disabled.push(pluginId);
+        removedSlots.push(pluginId);
       }
     }
   }
-  return disabled;
+  // 暂存落盘 + 一次性修复门控落盘。写失败时回滚全部内存删除（key 两边都有，
+  // 下轮迁移重试），绝不落盘"两边都没有"的删除。
+  if (stashDirty || !repairDone) {
+    if (!repairDone) stash.mistakenPluginDisableRepairDone = true;
+    try {
+      writeCryoclawConfig(stash);
+    } catch (err) {
+      log.error(`[migrate] savedPluginConfigs 暂存写入失败，回滚本轮条目删除: ${(err as Error).message}`);
+      for (const [id, entry] of removedEntries) entries[id] = entry;
+      for (const [slot, pluginId] of removedSlotAssignments) config.plugins.slots[slot] = pluginId;
+      if (repaired.length > 0) {
+        // 修复动作保留（只动 enabled，无数据丢失风险），门控下轮重试
+        return { stashed: [], removedSlots: [], repaired, downgraded: [] };
+      }
+      return empty;
+    }
+  }
+  if (repaired.length > 0) {
+    log.info(`[migrate] 恢复曾被误禁用的已安装插件条目: ${repaired.join(", ")}`);
+  }
+  return { stashed, removedSlots, repaired, downgraded: [] };
 }
+
+// 降级模式的返回会带 downgraded（被置为 enabled:false 的 id），调用方据此
+// 判定配置有变更需要落盘。
+type PluginEntryMigration = { stashed: string[]; removedSlots: string[]; repaired: string[]; downgraded: string[] };
 
 export function migrateOpenclawConfigForKernelUpgrade(): void {
   try {
@@ -306,8 +437,11 @@ export function migrateOpenclawConfigForKernelUpgrade(): void {
     const migratedPlanTool = migratePlanTool(config, atLeast2026_8);
     const migratedMemorySearch = migrateMemorySearchLocation(config, atLeast2026_8);
     const migratedQQBot = atLeast2026_8 ? migrateQQBotAllowFromWildcard(config) : false;
-    const disabledPlugins = atLeast2026_8 ? migrateUnavailablePluginEntries(config) : [];
-    if (removed.length === 0 && !migratedAliases && !migratedExecMode && !migratedPlanTool && !migratedMemorySearch && !migratedQQBot && disabledPlugins.length === 0) return;
+    const pluginEntries = atLeast2026_8
+      ? migrateUnavailablePluginEntries(config)
+      : { stashed: [], removedSlots: [], repaired: [], downgraded: [] };
+    const pluginEntryChanged = pluginEntries.stashed.length > 0 || pluginEntries.removedSlots.length > 0 || pluginEntries.repaired.length > 0 || pluginEntries.downgraded.length > 0;
+    if (removed.length === 0 && !migratedAliases && !migratedExecMode && !migratedPlanTool && !migratedMemorySearch && !migratedQQBot && !pluginEntryChanged) return;
     writeUserConfig(config);
     const parts: string[] = [];
     if (removed.length > 0) parts.push(`移除: ${removed.join(", ")}`);
@@ -316,7 +450,9 @@ export function migrateOpenclawConfigForKernelUpgrade(): void {
     if (migratedPlanTool) parts.push(atLeast2026_8 ? "planTool 开关已落位 tools.updatePlan" : "planTool 开关已落位 tools.experimental.planTool");
     if (migratedMemorySearch) parts.push(atLeast2026_8 ? "memorySearch 已迁移到根级 memory.search" : "memory.search 已回迁至 agents.defaults.memorySearch");
     if (migratedQQBot) parts.push("channels.qqbot.allowFrom 通配符 * 已按 2026.8 契约清除");
-    if (disabledPlugins.length > 0) parts.push(`不可用（未安装或无可运行载荷）的启用插件已降级为禁用: ${disabledPlugins.join(", ")}`);
+    if (pluginEntries.repaired.length > 0) parts.push(`恢复曾被误禁用的已安装插件条目: ${pluginEntries.repaired.join(", ")}`);
+    if (pluginEntries.stashed.length > 0) parts.push(`不可用（未安装或无可运行载荷）的插件条目已摘除（config 已暂存，重装后自动恢复）: ${pluginEntries.stashed.join(", ")}`);
+    if (pluginEntries.removedSlots.length > 0) parts.push(`引用不可用插件的 slots 已摘除: ${pluginEntries.removedSlots.join(", ")}`);
     log.info(`[migrate] 已适配新内核配置，${parts.join("；")}`);
   } catch (err: any) {
     // 迁移失败不阻塞启动，但必须留痕（此前静默吞错，出问题无从排查）

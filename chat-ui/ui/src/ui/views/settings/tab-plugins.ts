@@ -79,6 +79,8 @@ const s = {
   // 插件更新（R91）
   checkingUpdates: false,
   updatable: [] as PluginUpdateView[],
+  // R93：check-updates 部分失败（HTTP 回退后仍查不到的插件）非阻塞提示
+  checkNotice: null as string | null,
   updatingId: null as string | null,
   updatingAll: false,
   needsRestart: false,
@@ -106,6 +108,7 @@ export function resetPluginsView() {
   s.togglingId = null;
   s.checkingUpdates = false;
   s.updatable = [];
+  s.checkNotice = null;
   s.updatingId = null;
   s.updatingAll = false;
   s.needsRestart = false;
@@ -274,6 +277,7 @@ async function checkUpdates(state: AppViewState) {
   if (!window.cryoclaw?.pluginStoreCheckUpdates || s.checkingUpdates) return;
   s.checkingUpdates = true;
   s.error = null;
+  s.checkNotice = null;
   state.requestUpdate();
   try {
     const result = await window.cryoclaw.pluginStoreCheckUpdates();
@@ -284,6 +288,11 @@ async function checkUpdates(state: AppViewState) {
           return typeof e.id === "string" && typeof e.currentVersion === "string" && typeof e.nextVersion === "string";
         },
       );
+      // R93：部分插件在内核 + HTTP 回退后仍查不到（多为网络不可达）——非阻塞提示
+      const failed = result.data.failed;
+      if (Array.isArray(failed) && failed.length > 0) {
+        s.checkNotice = t("ext.plugins.checkPartialFailed").replace("{ids}", failed.filter((f: unknown): f is string => typeof f === "string").join(", "));
+      }
     } else {
       s.error = result?.message ?? t("ext.plugins.checkFailed");
     }
@@ -757,6 +766,7 @@ export function renderPluginsView(state: AppViewState) {
       </div>
 
       <oc-message-box .message=${s.error ?? ""} .type=${"error"} .visible=${!!s.error}></oc-message-box>
+      ${s.checkNotice ? html`<p class="oc-settings__hint">${s.checkNotice}</p>` : nothing}
       <oc-message-box .message=${s.successMsg ?? ""} .type=${"success"} .visible=${!!s.successMsg}></oc-message-box>
     </div>
   `;

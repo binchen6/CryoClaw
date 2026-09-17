@@ -160,6 +160,7 @@ export const zhDict: Record<string, string> = {
   "ext.plugins.updateDone": "更新完成，重启网关后生效",
   "ext.plugins.restartGateway": "重启网关",
   "ext.plugins.checkFailed": "检查更新失败",
+  "ext.plugins.checkPartialFailed": "部分插件未能检查更新（网络不可达）：{ids}",
 
   // 扩展 · 详情页（R91）
   "ext.detail.close": "关闭",

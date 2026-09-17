@@ -28,6 +28,7 @@ import {
   resolveUserExtensionsDir,
   resolveUserStateDir,
 } from "./constants";
+import { listNpmProjectPluginIds } from "./plugin-install-roots";
 import { syncOpenClawStateAfterWrite } from "./openclaw-health-state";
 import * as log from "./logger";
 
@@ -135,13 +136,38 @@ function removeRetiredOrphans(userDir: string): ReconcileOutcome[] {
 }
 
 /** 同步单个 plugin（mirror → user dir）——复制走异步 copyDir，其余判定保持同步读 */
-async function reconcileOne(pluginId: string, mirrorDir: string, userDir: string): Promise<ReconcileOutcome> {
+async function reconcileOne(
+  pluginId: string,
+  mirrorDir: string,
+  userDir: string,
+  userInstalledIds?: ReadonlySet<string>,
+): Promise<ReconcileOutcome> {
   const src = path.join(mirrorDir, pluginId);
   const dest = path.join(userDir, pluginId);
 
   // mirror 必须存在 — 上层枚举的就是 mirror 子目录，理论上一定有；防御性检查
   if (!fs.existsSync(src)) {
     return { pluginId, action: "failed", error: `mirror source missing: ${src}` };
+  }
+
+  // R93：用户已从市场安装同 id 插件（npm/projects 受管安装）时，用户副本优先。
+  // 内核 manifest-registry 对两个安装根的同 id 插件报 "duplicate plugin id
+  // detected" 且 npm 副本在运行时胜出——镜像副本留着只会刷警告、挡更新
+  // （镜像副本不在受管清单里，plugins update 不覆盖它）。此分支：
+  //   - dest 已存在（历史 reconcile 产物）→ 删除，让位给用户安装；
+  //   - dest 不存在 → 跳过，不再铺新的。
+  // 用户之后卸载市场版时，下一轮启动 reconcile 会自动铺回镜像副本（自愈）。
+  if (userInstalledIds?.has(pluginId)) {
+    if (fs.existsSync(dest)) {
+      try {
+        fs.rmSync(dest, { recursive: true, force: true });
+        log.info(`[ext-mirror] ${pluginId}: user-installed copy detected (npm project), removing mirrored copy`);
+        return { pluginId, action: "removed" };
+      } catch (err) {
+        return { pluginId, action: "failed", error: (err as Error).message };
+      }
+    }
+    return { pluginId, action: "skipped" };
   }
 
   const mirrorVersion = readPluginVersion(src);
@@ -223,9 +249,13 @@ export async function reconcileExtensionsOnAppLaunch(): Promise<void> {
   }
 
   const outcomes: ReconcileOutcome[] = [];
+  // R93：用户经市场安装（npm/projects 受管）的插件运行时 id 集合——这些 id 下
+  // 镜像让位（reconcileOne 内处理），消 duplicate plugin id 警告。枚举失败按
+  // 空集合处理（维持旧行为，绝不因读取失败阻断 reconcile）。
+  const userInstalledIds = listNpmProjectPluginIds(resolveUserStateDir());
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
-    outcomes.push(await reconcileOne(entry.name, mirrorDir, userDir));
+    outcomes.push(await reconcileOne(entry.name, mirrorDir, userDir, userInstalledIds));
   }
   outcomes.push(...removeRetiredOrphans(userDir));
 
@@ -235,7 +265,9 @@ export async function reconcileExtensionsOnAppLaunch(): Promise<void> {
     .map((o) => {
       if (o.action === "skipped") return `${o.pluginId}=skip(${o.toVersion ?? "?"})`;
       if (o.action === "upgraded") return `${o.pluginId}=${o.fromVersion ?? "?"}→${o.toVersion ?? "?"}`;
-      if (o.action === "removed") return `${o.pluginId}=removed(retired)`;
+      if (o.action === "removed") return userInstalledIds.has(o.pluginId)
+        ? `${o.pluginId}=removed(user-installed)`
+        : `${o.pluginId}=removed(retired)`;
       return `${o.pluginId}=install(${o.toVersion ?? "?"})`;
     })
     .join(" ");

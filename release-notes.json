@@ -1,5 +1,12 @@
 [
   {
+    "version": "2026.917.0",
+    "notes": {
+      "zh": "插件链路五连修：① 检查更新在 ClawHub 不可达时不再报裸超时——解析内核逐插件失败行并经主进程 HTTP 回退重查（用户可配 Registry），部分失败非阻塞提示；② 插件市场打开失败的报错改为可行动指引（网络/代理/Registry 配置），并保留国内镜像末级回退通道（镜像补齐 packages API 后自动生效）；③ 消除每次启动的 image-generation-core 插件清单告警（上游共享库缺 manifest，打包期合成最小清单）；④ 静音 Electron 43 已知 bug 导致的 fs.Stats DEP0180 弃用警告刷屏；⑤ 修复用户市场安装插件与内置镜像副本的重复插件 id 告警（用户副本优先、自动让位），并修复 tavily 等市场插件被误禁用 + \"disabled but config is present\" 常驻告警（config 暂存重装自动恢复，误禁条目一次性修复）。全量 1225 测试通过。",
+      "en": "Plugin pipeline five-fix release: (1) update checks no longer surface raw timeout noise when ClawHub is unreachable — per-plugin kernel failure lines are parsed and retried via main-process HTTP (user-configurable registry), with non-blocking partial-failure notices; (2) plugin market load failures now return actionable guidance (network/proxy/registry) and keep a last-ditch CN-mirror path that activates automatically once the mirror ships the packages API; (3) silenced the recurring image-generation-core manifest warning (upstream shared runtime lib ships without a plugin manifest; we synthesize a minimal one at package time); (4) muted the Electron 43 fs.Stats DEP0180 deprecation-warning spam (known framework bug); (5) fixed duplicate-plugin-id warnings when a market-installed plugin collides with the mirrored copy (user install wins, mirror yields), and fixed market plugins like tavily being wrongly disabled with the persistent \"disabled but config is present\" warning (configs are stashed and auto-restalled on reinstall, plus a one-time repair of previously mis-disabled entries). 1225 tests green."
+    }
+  },
+  {
     "version": "2026.916.1",
     "notes": {
       "zh": "扩展体验五连修与增强：① 技能详情 409 修复——ClawHub 的技能 slug 不全局唯一（同名技能挂不同作者下时详情接口返回 409 AMBIGUOUS_SKILL_SLUG），现在自动解析歧义清单并按作者重试（列表自带作者直传省一跳），主源与国内镜像的响应信封统一适配，说明文档回退安装配置说明；② 插件市场排版重做——发现区改为渐进展示（默认 24 张 + 显示更多，替代原 300+ 卡片墙），同一行卡片的安装按钮/已安装徽标底边对齐，简介统一三行截断、卡片间距加大、区块间加分隔线，热门位不再与推荐位重复，已安装识别修复（官方包名 @openclaw/xxx-plugin 与运行时 id xxx 规范化匹配，已装插件不再出现在推荐位）；③ 插件市场卡片现在可点开详情页（包名/作者/下载量/更新时间/标签，来自 ClawHub 包详情接口）；④ 技能商店与详情新增国内官方镜像自动回退（cn.clawhub-mirror.com，火山引擎/字节跳动支持）——主源网络失败时列表/搜索/详情自动切换镜像，国内弱网不再白屏；⑤ 详情页新增「用 Agent 翻译简介」一键把英文简介/说明组装成翻译提示词填入聊天输入框，用应用内已有模型即时中文化。经全量测试（1209 用例）与 CDP 实机验证（409 消歧、镜像断网回退 E2E、市场排版基线对齐、翻译预填全通过）。",

@@ -280,7 +280,7 @@ async function listSkills(opts: {
     const wanted = Math.max(opts.limit ?? 20, 40);
     const settled = await Promise.allSettled(
       MIRROR_BROWSE_KEYWORDS.map((kw) =>
-        jsonGet<any>(`${CN_SKILL_MIRROR}/api/v1/search?q=${encodeURIComponent(kw)}&limit=${wanted}`)),
+        jsonGet<any>(`${CN_CLAWHUB_MIRROR}/api/v1/search?q=${encodeURIComponent(kw)}&limit=${wanted}`)),
     );
     const bySlug = new Map<string, any>();
     for (const r of settled) {
@@ -306,14 +306,16 @@ async function listSkills(opts: {
 // 官方中国镜像（火山引擎/字节跳动支持，mirror-cn.clawhub.com 302 指向）。
 // 实测 API 面是子集：/api/v1/search 与 /api/v1/skills/<slug>?owner= 可用，
 // /api/v1/skills（浏览）与 packages 系列接口不可用（空 Result）——浏览 fallback
-// 用 search 跑关键词聚合模拟。
-const CN_SKILL_MIRROR = "https://cn.clawhub-mirror.com";
+// 用 search 跑关键词聚合模拟。R93 起 plugin-store 复用同一镜像常量做市场
+// 浏览/详情的末级回退（当前镜像无 packages 接口，保留探测以待镜像补齐）。
+export const CN_CLAWHUB_MIRROR = "https://cn.clawhub-mirror.com";
 
 // 镜像 browse fallback 的关键词（聚合去重后本地排序，模拟官方 trending 列表）
 const MIRROR_BROWSE_KEYWORDS = ["tool", "search", "web", "agent", "code", "automation", "data"];
 
-// 主源网络类失败（超时/连接错误/5xx）才走镜像；4xx 是业务错误，换源无意义
-function isNetworkFailure(err: unknown): boolean {
+// 主源网络类失败（超时/连接错误/5xx）才走镜像；4xx 是业务错误，换源无意义。
+// R93 起导出：plugin-store 的市场浏览/更新检查回退用同一判定，避免两处漂移。
+export function isNetworkFailure(err: unknown): boolean {
   const e = err as { statusCode?: number; message?: string };
   if (typeof e.statusCode === "number") return e.statusCode >= 500;
   const msg = String(e?.message ?? err);
@@ -361,7 +363,7 @@ async function searchSkills(opts: {
   } catch (err) {
     if (!isNetworkFailure(err)) throw err;
     debugLog(`search 主源失败，回退国内镜像: ${(err as Error).message}`);
-    const raw = await jsonGet<any>(`${CN_SKILL_MIRROR}/api/v1/search?${params}`);
+    const raw = await jsonGet<any>(`${CN_CLAWHUB_MIRROR}/api/v1/search?${params}`);
     const items = Array.isArray(raw.results) ? raw.results : Array.isArray(raw.items) ? raw.items : [];
     return { skills: items.map(mapItem) };
   }
@@ -413,14 +415,14 @@ async function getSkillDetail(slug: string, owner?: string): Promise<SkillDetail
       // 镜像详情信封不同且无 readme；owner 缺省时同样先试 409 消歧
       const qs = owner ? `?owner=${encodeURIComponent(owner)}` : "";
       try {
-        const raw = await jsonGet<any>(`${CN_SKILL_MIRROR}/api/v1/skills/${encodeURIComponent(slug)}${qs}`);
+        const raw = await jsonGet<any>(`${CN_CLAWHUB_MIRROR}/api/v1/skills/${encodeURIComponent(slug)}${qs}`);
         return normalizeSkillDetail(raw);
       } catch (err2) {
         const e2 = err2 as { statusCode?: number; bodyText?: string };
         if (e2.statusCode === 409) {
           for (const candidate of parseSlugMatches(e2.bodyText)) {
             try {
-              const raw = await jsonGet<any>(`${CN_SKILL_MIRROR}/api/v1/skills/${encodeURIComponent(slug)}?owner=${encodeURIComponent(candidate)}`);
+              const raw = await jsonGet<any>(`${CN_CLAWHUB_MIRROR}/api/v1/skills/${encodeURIComponent(slug)}?owner=${encodeURIComponent(candidate)}`);
               return normalizeSkillDetail(raw);
             } catch { /* 试下一个候选 */ }
           }
@@ -452,7 +454,10 @@ function execClawhub(args: string[]): Promise<{ stdout: string; stderr: string }
   const workdir = workspaceDir();
 
   // 构建完整参数：node clawhub-entry --workdir <workdir> --registry <registry> --no-input <args>
-  const fullArgs = [clawhubEntry, "--workdir", workdir, "--registry", registry, "--no-input", ...args];
+  // --no-deprecation（R93）：Electron 43 已知 bug（electron#47390）——asar 内 stat
+  // 转换用了已弃用的 fs.Stats 构造器，ELECTRON_RUN_AS_NODE 子进程会刷 DEP0180 警告；
+  // clawhub 是 vendored 依赖，其弃用告警不可行动，直接静音。
+  const fullArgs = ["--no-deprecation", clawhubEntry, "--workdir", workdir, "--registry", registry, "--no-input", ...args];
   debugLog(`exec: ${nodeBin} ${fullArgs.join(" ")}`);
 
   return new Promise((resolve, reject) => {

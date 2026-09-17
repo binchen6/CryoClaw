@@ -147,7 +147,8 @@ test("R92 主进程：skill detail owner 参数 + 市场详情 IPC + 镜像 fall
   const skill = stripComments(readFileSync(new URL("../../../../../../src/skill-store.ts", import.meta.url), "utf8"));
   assert.match(skill, /AMBIGUOUS_SKILL_SLUG/, "缺少 409 歧义解析");
   // 注意：断言用常量名而非域名——stripComments 会把 "https://…" 的 // 后半段当行注释剥掉
-  assert.match(skill, /CN_SKILL_MIRROR/, "缺少国内镜像 fallback 常量");
+  // R93：常量更名为 CN_CLAWHUB_MIRROR（plugin-store 复用同一镜像）
+  assert.match(skill, /CN_CLAWHUB_MIRROR/, "缺少国内镜像 fallback 常量");
   assert.match(skill, /parseSlugMatches/, "缺少歧义清单纯函数");
   const plugin = stripComments(readFileSync(new URL("../../../../../../src/plugin-store.ts", import.meta.url), "utf8"));
   assert.match(plugin, /plugin-store:market-detail/, "缺少市场详情 IPC 通道");
