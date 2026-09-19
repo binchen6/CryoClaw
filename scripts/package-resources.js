@@ -1204,6 +1204,10 @@ function installDependencies(opts, gatewayDir) {
       NODE_ENV: "production",
       npm_config_os: opts.platform,
       npm_config_cpu: opts.arch,
+      // R96：Step 1.5 的 .npmrc 写在 runtimeDir，而 npm 的 cwd 是 gatewayDir，
+      // 按其配置查找规则不会命中（per-project→用户→全局→内置默认 npmjs.org）。
+      // 显式注入镜像 registry：国内弱网/代理下直连 npmjs.org 会拖垮构建。
+      npm_config_registry: "https://registry.npmmirror.com",
       // 避免 node-llama-cpp 在 cross-build 时执行 postinstall 下载/本地编译
       NODE_LLAMA_CPP_SKIP_DOWNLOAD: "true",
     },

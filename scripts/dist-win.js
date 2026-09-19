@@ -84,7 +84,8 @@ run("npm", ["run", "build"], commonEnv);
 // tsc --incremental 不校验产物存在性：stale tsbuildinfo + 被清空的 dist 会让
 // 构建静默产出残缺产物，直到用户安装后主进程 require 崩溃才暴露。这里按
 // "src 每个非测试模块 ↔ dist 同名 .js"逐一断言，任一缺失即硬失败。
-// R96：递归收集（src/settings/ 等子目录模块也在断言范围，原顶层 readdir 会漏检）。
+// R96：递归收集（src/settings/ 等子目录模块也在断言范围，原顶层 readdir 会漏检）；
+// 排除面与 tsconfig.json 的 exclude 对齐（*.test.ts / *.spec.ts / src/test-support）。
 {
   const srcDir = path.join(root, "src");
   const distDir = path.join(root, "dist");
@@ -93,7 +94,7 @@ run("npm", ["run", "build"], commonEnv);
   (function collect(dir) {
     for (const entry of fsMod.readdirSync(dir, { withFileTypes: true })) {
       if (entry.isDirectory()) {
-        collect(path.join(dir, entry.name));
+        if (entry.name !== "test-support") collect(path.join(dir, entry.name));
       } else if (entry.name.endsWith(".ts") && !/\.(test|spec)\.ts$/.test(entry.name)) {
         expected.push(path.relative(srcDir, path.join(dir, entry.name)));
       }
