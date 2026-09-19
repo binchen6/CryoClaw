@@ -67,6 +67,22 @@
   color: var(--accent);
   font-weight: var(--weight-semibold);
 }
+
+/* R94：当前项左侧 2px 指示条（与 rail / 会话面板的当前态语言一致） */
+.oc-settings-nav-item {
+  position: relative;
+}
+.oc-settings-nav-item--active::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 2px;
+  height: 16px;
+  border-radius: var(--radius-full);
+  background: var(--accent);
+}
 .oc-settings-nav-item:focus-visible {
   outline: none;
   box-shadow: var(--focus-ring);
@@ -81,7 +97,8 @@
   position: relative;
 }
 .oc-settings-content > * {
-  max-width: var(--page-column);
+  /* R94：内容列并入统一宽档 --content-wide（1200px 帽；窄窗仍随 92% 伸缩） */
+  max-width: var(--content-wide);
   width: 100%;
   margin-left: auto;
   margin-right: auto;
@@ -400,9 +417,6 @@
   white-space: pre-line;
 }
 
-/* 通用旋转动画（provider OAuth / 刷新按钮共用） */
-@keyframes oc-setup-spin { to { transform: rotate(360deg); } }
-
 /* ============================================
    浮层：modal（z-index ≥1000 契约不动）
    ============================================ */
@@ -577,12 +591,8 @@
   background: var(--ok-subtle);
 }
 .oc-settings-pairing__spinner {
-  animation: oc-settings-pairing-spin 0.85s linear infinite;
-}
-@keyframes oc-settings-pairing-spin {
-  to { transform: rotate(360deg); }
-}
-.oc-settings-pairing__section {
+  animation: oc-spin 0.85s linear infinite;
+}.oc-settings-pairing__section {
   display: flex;
   flex-direction: column;
   gap: var(--spacer-6);
@@ -1112,7 +1122,7 @@
   border: 2px solid var(--border);
   border-top-color: var(--accent);
   border-radius: var(--radius-pill);
-  animation: oc-setup-spin 0.6s linear infinite;
+  animation: oc-spin 0.6s linear infinite;
 }
 .oc-provider-link {
   font-size: var(--heading-xs);
@@ -1340,7 +1350,7 @@
   background: var(--bg-hover);
 }
 .oc-provider-usage-refresh:disabled { cursor: progress; opacity: 0.7; }
-.oc-provider-usage-refresh.is-loading svg { animation: oc-setup-spin 0.8s linear infinite; }
+.oc-provider-usage-refresh.is-loading svg { animation: oc-spin 0.8s linear infinite; }
 .oc-provider-usage {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -1414,8 +1424,8 @@
 }
 .oc-usage__range--active {
   background: var(--brand-50, rgba(42, 137, 221, 0.12));
-  border-color: var(--brand-500, #2a89dd);
-  color: var(--brand-600, #1a6fd0);
+  border-color: var(--brand-500);
+  color: var(--brand-600);
 }
 .oc-usage__range--refresh {
   margin-left: auto;
@@ -1437,8 +1447,8 @@
   background: var(--bg-elevated);
 }
 .oc-usage__stat-value {
-  font-size: var(--heading-lg, 22px);
-  font-weight: var(--weight-semibold, 600);
+  font-size: var(--heading-lg);
+  font-weight: var(--weight-semibold);
   color: var(--text);
   font-variant-numeric: tabular-nums;
 }
@@ -1475,7 +1485,7 @@
   display: flex;
   height: 10px;
   min-width: 0;
-  border-radius: var(--radius-4, 4px);
+  border-radius: var(--radius-4);
   overflow: hidden;
   background: var(--glass-sm);
 }
@@ -1484,10 +1494,10 @@
   height: 100%;
 }
 .oc-usage__bar-in {
-  background: var(--brand-500, #2a89dd);
+  background: var(--brand-500);
 }
 .oc-usage__bar-out {
-  background: var(--accent-2, #38bdf8);
+  background: var(--accent-2);
 }
 .oc-usage__bar-cache {
   background: var(--glass-md);
@@ -1550,14 +1560,14 @@
   flex: 1 1 0;
   height: 8px;
   min-width: 0;
-  border-radius: var(--radius-4, 4px);
+  border-radius: var(--radius-4);
   background: var(--glass-sm);
   overflow: hidden;
 }
 .oc-usage__top-bar i {
   display: block;
   height: 100%;
-  background: var(--brand-500, #2a89dd);
+  background: var(--brand-500);
   border-radius: inherit;
 }
 .oc-usage__top-tokens {
@@ -1599,14 +1609,14 @@
   flex: 1 1 0;
   height: 8px;
   min-width: 0;
-  border-radius: var(--radius-4, 4px);
+  border-radius: var(--radius-4);
   background: var(--glass-sm);
   overflow: hidden;
 }
 .oc-usage__provider-bar i {
   display: block;
   height: 100%;
-  background: var(--brand-500, #2a89dd);
+  background: var(--brand-500);
   border-radius: inherit;
 }
 .oc-usage__provider-pct {
@@ -2416,12 +2426,12 @@
   font-size: var(--text-sm);
 }
 .oc-memory-badge--ok {
-  background: color-mix(in srgb, var(--ok, #3fb950) 16%, transparent);
-  color: var(--ok, #3fb950);
+  background: color-mix(in srgb, var(--ok) 16%, transparent);
+  color: var(--ok);
 }
 .oc-memory-badge--warn {
-  background: color-mix(in srgb, var(--warn, #d29922) 16%, transparent);
-  color: var(--warn, #d29922);
+  background: color-mix(in srgb, var(--warn) 16%, transparent);
+  color: var(--warn);
 }
 
 /* 召回测试 */
@@ -2506,10 +2516,10 @@
   margin-top: var(--spacer-8);
   padding: var(--spacer-8);
   font-size: var(--text-sm);
-  color: var(--warn, #d29922);
-  border: 1px solid color-mix(in srgb, var(--warn, #d29922) 40%, transparent);
+  color: var(--warn);
+  border: 1px solid color-mix(in srgb, var(--warn) 40%, transparent);
   border-radius: var(--radius-8);
-  background: color-mix(in srgb, var(--warn, #d29922) 8%, transparent);
+  background: color-mix(in srgb, var(--warn) 8%, transparent);
 }
 
 /* 记忆分页：工具栏 + 列表 */
@@ -2549,7 +2559,7 @@
 .oc-memory-item__kind {
   flex: none;
   padding: 0 var(--spacer-6);
-  font-size: var(--text-xs, 11px);
+  font-size: var(--text-xs);
   border-radius: 999px;
   border: var(--hairline);
   color: var(--text-muted);
@@ -2640,7 +2650,7 @@
 }
 
 /* 危险区 */
-.oc-memory-danger { border-color: color-mix(in srgb, var(--danger, #f85149) 35%, transparent); }
+.oc-memory-danger { border-color: color-mix(in srgb, var(--danger) 35%, transparent); }
 .oc-memory-danger__item {
   display: flex;
   align-items: center;
@@ -2649,7 +2659,7 @@
   flex-wrap: wrap;
   margin-top: var(--spacer-12);
   padding: var(--spacer-12);
-  border: 1px solid color-mix(in srgb, var(--danger, #f85149) 25%, transparent);
+  border: 1px solid color-mix(in srgb, var(--danger) 25%, transparent);
   border-radius: var(--radius-8);
   font-size: var(--text-sm);
 }

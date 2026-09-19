@@ -6,7 +6,7 @@
  *   2. storage.ts：无（union 从本文件导入，自动生效；若允许 URL 注入需加 INJECTABLE_VIEWS）
  *   3. app-render.ts：renderActiveView 的 switch 加渲染分支
  *
- * 2026.9 提案 A 重写：图标轨（cc-rail）常驻所有视图（setup 除外），
+ * 2026.9 提案 A 重写：图标轨（oc-rail）常驻所有视图（setup 除外），
  * 原「全页视图隐藏侧边栏 + 标题栏返回按钮」模型废弃（titlebarBack 删除），
  * meta 只保留 fullpage（仅 setup 全屏向导）与上下文栏标题 key。
  */

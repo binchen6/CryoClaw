@@ -238,6 +238,7 @@ export const zhDict: Record<string, string> = {
   "workspace.fileTooLarge": "文件过大，无法预览",
   "workspace.noPreview": "无法预览此文件类型",
   "workspace.selectFile": "选择一个文件来预览",
+  "workspace.selectFileHint": "从左侧面板选择文件，支持文本、代码与 Markdown 预览",
 
   "settings.save": "保存",
   "settings.showPassword": "显示密码",

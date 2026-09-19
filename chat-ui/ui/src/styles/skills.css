@@ -12,26 +12,9 @@
 /* ── 技能商店 ── */
 
 .skill-store {
-  max-width: 720px;
-  margin: 0 auto;
-  /* 壳层标题栏已统一占位 44px（2026.9 提案 A），顶部只留内容呼吸 */
-  padding: var(--spacer-24) var(--spacer-16);
-}
-
-.skill-store__header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: var(--spacer-20);
-}
-
-.skill-store__title {
-  font-family: var(--font-display);
-  font-size: var(--heading-md);
-  font-weight: var(--weight-semibold);
-  letter-spacing: var(--tracking-tight);
-  margin: 0;
-  color: var(--text-strong);
+  /* R94：解除 720px 内容帽（原设置页遗留，宽屏下右侧空出约 34% 排水沟）——
+     列宽由 .skills-scroll 的 --ext-column 统一收束，卡片网格自适应铺满 */
+  padding: var(--spacer-24) var(--page-gutter);
 }
 
 .skill-store__toolbar {
@@ -441,31 +424,7 @@
   flex-shrink: 0;
 }
 
-/* 已安装技能：卸载垃圾桶按钮 */
-.skill-card__uninstall {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  border: none;
-  border-radius: var(--radius-8);
-  background: none;
-  color: var(--text-muted);
-  cursor: pointer;
-  transition: color var(--duration-fast) var(--ease-standard),
-    background var(--duration-fast) var(--ease-standard);
-}
-
-.skill-card__uninstall:hover:not(:disabled) {
-  color: var(--danger);
-  background: var(--danger-subtle);
-}
-
-.skill-card__uninstall:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
+/* 已安装技能：卸载按钮 R94 收编为 .icon-btn--danger（primitives.css） */
 
 /* ==========================================================================
    扩展视图（技能/插件双 tab）—— 下划线指示器 tab 栏（accent 激活态），
@@ -669,7 +628,7 @@
 /* 更新弹窗：暂缓面板（预设按钮 + 自定义天数） */
 .update-snooze-panel {
   border: 1px solid var(--border-default, var(--border));
-  border-radius: var(--radius-md, 8px);
+  border-radius: var(--radius-md);
   padding: var(--spacer-12);
   display: flex;
   flex-direction: column;
@@ -862,26 +821,7 @@
   text-underline-offset: var(--spacer-4);
 }
 
-.skill-store__detail-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  flex-shrink: 0;
-  border: none;
-  border-radius: var(--radius-6);
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-  transition: color var(--duration-fast) var(--ease-standard),
-    background var(--duration-fast) var(--ease-standard);
-}
-
-.skill-store__detail-btn:hover {
-  color: var(--accent);
-  background: var(--bg-muted);
-}
+/* 详情小按钮 R94 收编为 .icon-btn--xs（primitives.css） */
 
 /* ── 插件市场发现：分区 + 网格卡片 + 分类 chips ── */
 .ext-market__section {

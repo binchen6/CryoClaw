@@ -6,6 +6,7 @@
  */
 import { html, nothing } from "lit";
 import { t } from "./i18n.ts";
+import { icons } from "./icons.ts";
 
 export type SkillItem = {
   slug: string;
@@ -92,12 +93,12 @@ function renderSkillCard(
               : html`<div class="skill-store__card-name">${skill.name}</div>`}
             ${openDetail
               ? html`<button
-                  class="skill-store__detail-btn"
+                  class="icon-btn icon-btn--xs"
                   type="button"
                   title=${t("skillStore.detail")}
                   aria-label=${t("skillStore.detail")}
                   @click=${() => openDetail(skill)}
-                ><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button>`
+                >${icons.info}</button>`
               : nothing}
           </div>
           <div class="skill-store__card-meta">

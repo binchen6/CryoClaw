@@ -5,8 +5,8 @@ import { customElement } from "lit/decorators.js";
  * A draggable divider for resizable split views.
  * Dispatches 'resize' events with { splitRatio: number } detail.
  */
-@customElement("resizable-divider")
-export class ResizableDivider extends LitElement {
+@customElement("oc-resizable-divider")
+export class OcResizableDivider extends LitElement {
   static properties = {
     splitRatio: { type: Number },
     minRatio: { type: Number },
@@ -117,6 +117,6 @@ export class ResizableDivider extends LitElement {
 
 declare global {
   interface HTMLElementTagNameMap {
-    "resizable-divider": ResizableDivider;
+    "oc-resizable-divider": OcResizableDivider;
   }
 }

@@ -71,10 +71,10 @@ async function waitForPageTarget(port, timeoutMs) {
   const dialogCount = () => cdp.evaluate(`document.querySelectorAll('[role="dialog"][aria-modal="true"]').length`);
 
   // 逐视图：点击 rail 项 + 视图内安全交互
-  const railCount = await cdp.evaluate("document.querySelectorAll('.cc-rail__item').length");
+  const railCount = await cdp.evaluate("document.querySelectorAll('.oc-rail__item').length");
   for (let i = 0; i < railCount; i++) {
-    const label = await cdp.evaluate(`(document.querySelectorAll('.cc-rail__item')[${i}].getAttribute('aria-label') || 'rail-'+${i})`);
-    await cdp.evaluate(`document.querySelectorAll('.cc-rail__item')[${i}].click()`);
+    const label = await cdp.evaluate(`(document.querySelectorAll('.oc-rail__item')[${i}].getAttribute('aria-label') || 'rail-'+${i})`);
+    await cdp.evaluate(`document.querySelectorAll('.oc-rail__item')[${i}].click()`);
     await sleep(1200);
     // 视图内安全交互：打开并关闭任何出现的弹层菜单
     const before = await dialogCount();
@@ -84,8 +84,8 @@ async function waitForPageTarget(port, timeoutMs) {
   }
 
   // 设置页：14 tab 巡览后，验证「恢复出厂」确认框的 Escape 语义
-  const settingsIdx = await cdp.evaluate(`[...document.querySelectorAll('.cc-rail__item')].findIndex(e => /settings|设置/i.test(e.getAttribute('aria-label')||e.title||e.textContent))`);
-  await cdp.evaluate(`document.querySelectorAll('.cc-rail__item')[${settingsIdx}].click()`);
+  const settingsIdx = await cdp.evaluate(`[...document.querySelectorAll('.oc-rail__item')].findIndex(e => /settings|设置/i.test(e.getAttribute('aria-label')||e.title||e.textContent))`);
+  await cdp.evaluate(`document.querySelectorAll('.oc-rail__item')[${settingsIdx}].click()`);
   await sleep(1500);
   const tabCount = await cdp.evaluate("document.querySelectorAll('.oc-settings-nav-item').length");
   for (let i = 0; i < tabCount; i++) {
@@ -127,7 +127,7 @@ async function waitForPageTarget(port, timeoutMs) {
   }
 
   // 确认危险操作未执行：应用仍在运行、网关仍在线（页面未重载）
-  const stillAlive = await cdp.evaluate("document.querySelectorAll('.cc-rail__item').length >= 5");
+  const stillAlive = await cdp.evaluate("document.querySelectorAll('.oc-rail__item').length >= 5");
   // 设置页「搜索」tab 会触发热应用重启（by design）；轮询等网关恢复，最多 30s
   let gatewayOk = false;
   for (let i = 0; i < 10 && !gatewayOk; i++) {

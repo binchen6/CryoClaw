@@ -1,9 +1,11 @@
 /* ==========================================================================
-   styles/utilities.css — 间距/布局原子工具类（P5 新增）
-   用途：收敛视图 TS 中的间距类内联 style（style="margin-top:12px" 等），
-   值全部走 --spacer 阶梯；功能性布局（尺寸/颜色/定位）不适用本文件。
-   命名：oc-m{t|b|l|r}-{spacer 值}、oc-p-{n}、oc-gap-{n}、oc-flex / oc-flex-col、
-   oc-items-{start}、oc-justify-{end}、oc-ml-auto
+   styles/utilities.css — 原子工具类（P5 新增，R95 扩充）
+   用途：收敛视图 TS 中的内联 style（间距、布局、静态文字色/字号），
+   值全部走令牌（--spacer / --text-* / --danger 等）；
+   动态计算值（width:${pct}%、JS 算出的色值）不适用本文件，保留内联。
+   命名：oc-m{t|b|l|r}-{spacer 值}、oc-p-{n}、oc-gap-{n}、oc-flex / oc-flex-col / oc-flex-1、
+   oc-items-{start|center}、oc-justify-end、oc-ml-auto、oc-hidden、
+   oc-text-{center|danger|secondary|accent|sm|xs}、oc-font-meta
    （R75 死值清理：只保留有 TS 引用的条目；恢复某档位时按本命名法补一行即可）
    层叠顺序由 hub styles.css 的 @import 顺序决定，勿单独调整
    ========================================================================== */
@@ -11,8 +13,12 @@
 /* flex 骨架 */
 .oc-flex { display: flex }
 .oc-flex-col { display: flex; flex-direction: column }
+.oc-flex-1 { flex: 1; min-width: 0 }
+.oc-flex-shrink-0 { flex-shrink: 0 }
 .oc-items-start { align-items: flex-start }
+.oc-items-center { align-items: center }
 .oc-justify-end { justify-content: flex-end }
+.oc-hidden { display: none }
 
 /* 间隙（gap 同时适用 flex/grid） */
 .oc-gap-6 { gap: var(--spacer-6) }
@@ -38,3 +44,12 @@
 
 /* 内边距 */
 .oc-p-16 { padding: var(--spacer-16) }
+
+/* 文字原子（R95：收敛静态 color/font-size 内联） */
+.oc-text-center { text-align: center }
+.oc-text-danger { color: var(--danger) }
+.oc-text-secondary { color: var(--text-secondary) }
+.oc-text-accent { color: var(--accent) }
+.oc-text-sm { font-size: var(--text-sm) }
+.oc-text-xs { font-size: var(--text-xs) }
+.oc-font-meta { font-family: var(--font-meta) }

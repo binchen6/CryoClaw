@@ -238,6 +238,7 @@ export const enDict: Record<string, string> = {
   "workspace.fileTooLarge": "File too large to preview",
   "workspace.noPreview": "Cannot preview this file type",
   "workspace.selectFile": "Select a file to preview",
+  "workspace.selectFileHint": "Pick a file from the left panel — text, code and Markdown preview supported",
 
   "settings.save": "Save",
   "settings.showPassword": "Show password",

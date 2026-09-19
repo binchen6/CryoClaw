@@ -396,7 +396,46 @@ function renderTasksRuns(props: TasksProps) {
           <h2 class="ts-title panel__title">${t("tasks.title")}</h2>
           <p class="ts-sub panel__subtitle">${t("tasks.subtitle")}</p>
         </div>
-        <div class="ts-toolbar panel__actions">
+        <div class="panel__actions">
+          <span class="ts-autorefresh">
+            <oc-toggle-switch
+              .checked=${props.autoRefresh}
+              .label=${t("tasks.autoRefresh")}
+              @change=${(e: CustomEvent) =>
+                props.onAutoRefreshChange(Boolean((e.detail as { checked?: boolean } | null)?.checked))}
+            ></oc-toggle-switch>
+          </span>
+          <button
+            class="btn"
+            type="button"
+            ?disabled=${props.loading}
+            @click=${props.onRefresh}
+          >
+            ${props.loading ? icons.loader : icons.refreshCw}
+            ${t("tasks.refresh")}
+          </button>
+        </div>
+      </div>
+
+      ${props.error
+        ? html`<div class="callout danger ts-error">
+            <span class="ts-error__text">${props.error}</span>
+            <button
+              class="btn btn--sm"
+              type="button"
+              ?disabled=${props.loading}
+              @click=${props.onRefresh}
+            >
+              ${icons.refreshCw}
+              ${t("tasks.retry")}
+            </button>
+          </div>`
+        : nothing}
+
+      ${renderStatsBar(props, stats)}
+
+      <!-- R94：筛选控件从页头下沉为独立工具行（页头只留标题与两个主操作） -->
+      <div class="ts-toolbar panel__toolbar">
           <input
             class="ts-search"
             type="text"
@@ -441,42 +480,7 @@ function renderTasksRuns(props: TasksProps) {
           >
             ${STATUS_OPTIONS.map((status) => html`<option value=${status}>${statusLabel(status)}</option>`)}
           </select>
-          <span class="ts-autorefresh">
-            <oc-toggle-switch
-              .checked=${props.autoRefresh}
-              .label=${t("tasks.autoRefresh")}
-              @change=${(e: CustomEvent) =>
-                props.onAutoRefreshChange(Boolean((e.detail as { checked?: boolean } | null)?.checked))}
-            ></oc-toggle-switch>
-          </span>
-          <button
-            class="btn"
-            type="button"
-            ?disabled=${props.loading}
-            @click=${props.onRefresh}
-          >
-            ${props.loading ? icons.loader : icons.refreshCw}
-            ${t("tasks.refresh")}
-          </button>
-        </div>
       </div>
-
-      ${props.error
-        ? html`<div class="callout danger ts-error">
-            <span class="ts-error__text">${props.error}</span>
-            <button
-              class="btn btn--sm"
-              type="button"
-              ?disabled=${props.loading}
-              @click=${props.onRefresh}
-            >
-              ${icons.refreshCw}
-              ${t("tasks.retry")}
-            </button>
-          </div>`
-        : nothing}
-
-      ${renderStatsBar(props, stats)}
 
       ${flatMode
         ? visible.length === 0
@@ -488,7 +492,17 @@ function renderTasksRuns(props: TasksProps) {
                 ${activeTasks.length > 0 ? html`<span class="ts-count">${activeTasks.length}</span>` : nothing}
               </h3>
               ${activeTasks.length === 0
-                ? html`<p class="ts-empty panel__empty">${t("tasks.noActive")}</p>`
+                ? html`<div class="empty-state">
+                    <span class="empty-state__icon">${icons.activity}</span>
+                    <div class="empty-state__title">${t("tasks.noActive")}</div>
+                    <div class="empty-state__actions">
+                      <button
+                        class="btn btn--sm"
+                        type="button"
+                        @click=${() => props.onOpenCronTab()}
+                      >${t("tasks.viewCronJob")}</button>
+                    </div>
+                  </div>`
                 : html`<div class="ts-list">${activeTasks.map((task) => renderTaskRow(props, task))}</div>`}
             </section>
             <section class="ts-section">

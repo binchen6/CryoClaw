@@ -59,7 +59,7 @@ function extractToolCardsUncached(message: unknown): ToolCard[] {
       // R52 T4：call 内容块上的 diffStat（app-tool-stream 注入：input_delta 实时值 /
       // result 终态值），运行中与完成态都可显示 +a/-r 徽标
       const diffStat = parseDiffStat(item.diffStat);
-      // R83：result 载荷并入 call 块（app-tool-stream 流式 / cc-chat-history 历史合并，
+      // R83：result 载荷并入 call 块（app-tool-stream 流式 / oc-chat-history 历史合并，
       // 字段形态与 toolResult block 对齐）——一张卡同时携带输入（args）与输出（text）。
       // 空字符串也是有效输出（完成态），不能因 falsy 丢失
       const text = typeof item.text === "string" ? item.text : undefined;

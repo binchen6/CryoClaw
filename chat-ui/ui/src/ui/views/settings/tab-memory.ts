@@ -22,7 +22,7 @@ import * as ipc from "../../data/ipc-bridge.ts";
 import type { MemoryWorkspaceList, MemoryRecallData, MemoryReindexData, DreamListEntry } from "../../data/ipc-bridge.ts";
 import { getConfigSnapshot, getCachedConfigSnapshot } from "../../controllers/config.ts";
 import { formatRelativeTimestamp } from "../../format.ts";
-import { renderModelOptionsGrouped } from "../../components/model-options.ts";
+import { renderModelOptionsGrouped } from "../../model-options.ts";
 import { loadModelOrg } from "./model-org.lib.ts";
 import { showConfirm } from "../confirm-dialog.ts";
 import type { ConfiguredModel } from "../../ui-types.ts";
@@ -1108,7 +1108,7 @@ function renderDreamingCard(state: AppViewState) {
           <option value=${FREQ_CUSTOM}>${t("settings.memory.dreaming.freqCustom")}</option>
         </select>
         ${!isPreset ? html`
-          <input class="oc-settings__input" style="margin-top: var(--spacer-8)" .value=${s.dmFrequency}
+          <input class="oc-settings__input oc-mt-8" .value=${s.dmFrequency}
             placeholder=${DREAMING_DEFAULT_FREQUENCY}
             @input=${(e: Event) => { s.dmFrequency = (e.target as HTMLInputElement).value; state.requestUpdate(); }} />
           <div class="oc-settings__field-hint">${t("settings.memory.dreaming.freqCustomHint")}</div>

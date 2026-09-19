@@ -478,7 +478,7 @@ export function renderStep2(state: AppViewState, goToStep: (step: number) => voi
       ` : nothing}
 
       ${(!isOAuth || (isOAuth && !s.oauthSuccess)) ? html`
-        <div class="oc-setup-form-group" style="${isOAuth ? 'display:none' : ''}">
+        <div class="oc-setup-form-group${isOAuth ? " oc-hidden" : ""}">
           <label class="oc-setup-label">${t("setup.provider.apiKey")}</label>
           <oc-password-input .value=${s.apiKey} .placeholder=${getPlaceholder()}
             @input=${(e: CustomEvent) => { s.apiKey = e.detail.value; state.requestUpdate(); }}
@@ -553,7 +553,7 @@ function renderOAuthSection(state: AppViewState, goToStep: (step: number) => voi
           <span>${t("setup.provider.oauth.success")}</span>
         </div>
       ` : html`
-        <div class="oc-mt-24 oc-mb-24" style="text-align:center">
+        <div class="oc-mt-24 oc-mb-24 oc-text-center">
           <button class="btn primary" @click=${() => handleOAuthLogin(state, goToStep)}>
             ${t("setup.provider.oauth.login")}
           </button>

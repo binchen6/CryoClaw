@@ -595,7 +595,7 @@ function renderWebbridgeVersionCard(state: AppViewState) {
   return html`
     <div class="oc-settings__form-group">
       <label class="oc-settings__label">${t("settings.advanced.wbVersionTitle")}</label>
-      <div class="oc-settings__hint oc-m-0 oc-mb-8" style="font-family:var(--font-meta)">
+      <div class="oc-settings__hint oc-font-meta oc-m-0 oc-mb-8">
         ${v && !v.installed
           ? t("settings.advanced.wbVersionNotInstalled")
           : html`
@@ -694,7 +694,7 @@ export function renderTabAdvanced(state: AppViewState) {
       <div class="oc-settings__form-group">
         <label class="oc-settings__label">${t("settings.advanced.sandboxMode")}</label>
         ${!s.dockerAvailable ? html`
-          <div class="oc-settings__hint oc-mb-6" style="color:var(--danger)">
+          <div class="oc-settings__hint oc-text-danger oc-mb-6">
             ⚠ ${t("settings.advanced.sandboxDockerMissing")}
           </div>
         ` : nothing}

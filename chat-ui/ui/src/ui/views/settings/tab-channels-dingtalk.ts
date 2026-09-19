@@ -86,7 +86,7 @@ export function renderChannelDingtalk(state: AppViewState) {
   return html`
     <div class="oc-settings__section">
       <div class="oc-flex oc-items-start oc-justify-end oc-mb-8">
-        <div class="oc-flex oc-gap-12" style="flex-shrink:0">
+        <div class="oc-flex oc-flex-shrink-0 oc-gap-12">
           <a class="oc-settings__link" href="#" @click=${(e: Event) => { e.preventDefault(); ipc.openExternal("https://oneclaw.cn/docs/tutorials/dingtalk.html"); }}>${t("settings.channels.dingtalk.setupGuide")} &rarr;</a>
           <a class="oc-settings__link" href="#" @click=${(e: Event) => { e.preventDefault(); ipc.openExternal("https://open-dev.dingtalk.com/fe/app"); }}>${t("settings.channels.dingtalk.openConsole")} &rarr;</a>
         </div>

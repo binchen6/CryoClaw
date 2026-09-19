@@ -79,7 +79,7 @@ const STYLE_FILES = readdirSync(new URL("../../../../src/styles", import.meta.ur
 test("标题栏高度走 --titlebar-h token 且为契约层 100", () => {
   const titlebar = rule(css("shell.css"), ".cryoclaw-titlebar");
   assert.match(titlebar, /height:\s*var\(--titlebar-h\)/, "titlebar 高度应走 token");
-  assert.match(titlebar, /z-index:\s*100/, "titlebar 应为契约层 100");
+  assert.match(titlebar, /z-index:\s*var\(--z-contextbar\)/, "titlebar 应走 z 令牌（--z-contextbar=100）");
   assert.match(titlebar, /-webkit-app-region:\s*drag/, "titlebar 应为 drag 区");
 });
 
@@ -100,12 +100,12 @@ test("registry：fullpage 仅 setup，titlebarBack 已删除", () => {
   assert.ok(!/titlebarBack/.test(r), "titlebarBack 应已删除（rail 提供全局导航）");
 });
 
-test("app-render：壳结构（cc-rail 常驻 + cc-session-panel 仅 chat + 上下文栏）", () => {
+test("app-render：壳结构（oc-rail 常驻 + oc-session-panel 仅 chat + 上下文栏）", () => {
   const s = uiSrc("app-render.ts");
-  assert.match(s, /<cc-rail\s/, "renderApp 应装配 <cc-rail>");
-  assert.match(s, /import "\.\/components\/cc-rail\.ts"/, "缺少 cc-rail 注册导入");
-  assert.match(s, /<cc-session-panel\s/, "renderApp 应装配 <cc-session-panel>");
-  assert.match(s, /import "\.\/components\/cc-session-panel\.ts"/, "缺少 cc-session-panel 注册导入");
+  assert.match(s, /<oc-rail\s/, "renderApp 应装配 <oc-rail>");
+  assert.match(s, /import "\.\/components\/oc-rail\.ts"/, "缺少 oc-rail 注册导入");
+  assert.match(s, /<oc-session-panel\s/, "renderApp 应装配 <oc-session-panel>");
+  assert.match(s, /import "\.\/components\/oc-session-panel\.ts"/, "缺少 oc-session-panel 注册导入");
   // 会话面板仅在 chat 视图且未折叠时渲染
   assert.match(s, /cryoclawView !== "chat" \|\| panelCollapsed/, "会话面板应仅在 chat 视图且未折叠时渲染");
   // 上下文栏在标题栏内
@@ -131,7 +131,7 @@ test("drag 区容器声明（图标轨/会话面板/标题栏）", () => {
   const shell = css("shell.css");
   const panel = css("session-panel.css");
   const drag = new Set([...appRegionSelectors(shell, "drag"), ...appRegionSelectors(panel, "drag")]);
-  for (const cls of [".cryoclaw-titlebar", ".cc-rail", ".cc-panel", ".cc-panel__header"]) {
+  for (const cls of [".cryoclaw-titlebar", ".oc-rail", ".oc-panel", ".oc-panel__header"]) {
     assert.ok(drag.has(cls), `${cls} 应为 drag 区`);
   }
 });
@@ -139,16 +139,21 @@ test("drag 区容器声明（图标轨/会话面板/标题栏）", () => {
 test("drag 区内全部可交互元素均有 no-drag", () => {
   const shell = css("shell.css");
   const panel = css("session-panel.css");
-  const noDrag = new Set([...appRegionSelectors(shell, "no-drag"), ...appRegionSelectors(panel, "no-drag")]);
-  // [元素类, 覆盖来源（自身或祖先容器类）]，结构依据 cc-rail.ts / cc-session-panel.ts / app-render.ts
+  const primitives = css("primitives.css");
+  const noDrag = new Set([
+    ...appRegionSelectors(shell, "no-drag"),
+    ...appRegionSelectors(panel, "no-drag"),
+    ...appRegionSelectors(primitives, "no-drag"),
+  ]);
+  // [元素类, 覆盖来源（自身或祖先容器类）]，结构依据 oc-rail.ts / oc-session-panel.ts / app-render.ts
   const pairs: Array<[el: string, via: string]> = [
-    [".cc-rail__item", ".cc-rail__item"], // 图标轨全部按钮
+    [".oc-rail__item", ".oc-rail__item"], // 图标轨全部按钮
     [".cc-contextbar__toggle", ".cc-contextbar__toggle"], // 上下文栏面板开关
     [".cc-contextbar__title", ".cc-contextbar__title"], // 标题文本（选择不拖拽）
-    [".cc-panel__icon-btn", ".cc-panel__icon-btn"], // 面板头按钮（新会话/更多/归档）
-    [".cc-panel__more-menu", ".cc-panel__more-menu"], // 「更多」菜单
-    [".cc-panel__search", ".cc-panel__search"], // 搜索区
-    [".cc-panel__list", ".cc-panel__list"], // 会话列表（含项/菜单，祖先覆盖）
+    [".icon-btn", ".icon-btn"], // 面板头按钮（R94 收编全局原语，primitives.css 内置 no-drag）
+    [".oc-panel__more-menu", ".oc-panel__more-menu"], // 「更多」菜单
+    [".oc-panel__search", ".oc-panel__search"], // 搜索区
+    [".oc-panel__list", ".oc-panel__list"], // 会话列表（含项/菜单，祖先覆盖）
     [".cryoclaw-panel-resize", ".cryoclaw-panel-resize"], // 调宽手柄
   ];
   for (const [el, via] of pairs) {
@@ -208,13 +213,13 @@ test("壳层（shell/session-panel）规则无写死色值", () => {
     ["shell.css", ".cryoclaw-shell"],
     ["shell.css", ".cryoclaw-titlebar"],
     ["shell.css", ".cc-contextbar__toggle"],
-    ["shell.css", ".cc-rail"],
-    ["shell.css", ".cc-rail__item"],
+    ["shell.css", ".oc-rail"],
+    ["shell.css", ".oc-rail__item"],
     ["shell.css", ".cryoclaw-panel-resize"],
-    ["session-panel.css", "cc-session-panel"],
-    ["session-panel.css", ".cc-panel"],
-    ["session-panel.css", ".cc-panel__session-item"],
-    ["session-panel.css", ".cc-panel__search-input"],
+    ["session-panel.css", "oc-session-panel"],
+    ["session-panel.css", ".oc-panel"],
+    ["session-panel.css", ".oc-panel__session-item"],
+    ["session-panel.css", ".oc-panel__search-input"],
   ];
   for (const [file, frag] of targets) {
     const block = blockContaining(css(file), frag);

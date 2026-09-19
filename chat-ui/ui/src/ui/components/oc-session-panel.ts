@@ -8,7 +8,7 @@ import { groupSidebarSessions } from "../sidebar-grouping.ts";
 
 // CryoClaw 会话面板组件（2026.9 提案 A 重写，前身 cc-sidebar）。
 // 旧 280px 侧边栏（品牌区+会话列表+底部图标轨）拆分：导航与状态入口迁往
-// cc-rail 图标轨，本组件只保留 chat 视图内的会话面板——
+// oc-rail 图标轨，本组件只保留 chat 视图内的会话面板——
 // 面板头（新会话/「更多」菜单）、会话列表标题行（归档切换）、搜索、
 // 会话列表（置顶+时间分组/「⋯」管理菜单/内联重命名）。
 //
@@ -21,8 +21,8 @@ import { groupSidebarSessions } from "../sidebar-grouping.ts";
 // - 会话「⋯」菜单与「更多」菜单开关态为模块级状态，由 bump() 驱动组件更新；
 // - 无 shadow DOM：全局样式（styles/session-panel.css）与 document 级菜单
 //   测量/外部关闭依赖扁平 DOM。
-@customElement("cc-session-panel")
-export class CcSessionPanel extends LitElement {
+@customElement("oc-session-panel")
+export class OcSessionPanel extends LitElement {
   static properties = {
     props: { attribute: false },
   };
@@ -121,7 +121,7 @@ export class CcSessionPanel extends LitElement {
 
 declare global {
   interface HTMLElementTagNameMap {
-    "cc-session-panel": CcSessionPanel;
+    "oc-session-panel": OcSessionPanel;
   }
 }
 
@@ -185,7 +185,7 @@ function startInlineRename(
 ) {
   const input = document.createElement("input");
   input.type = "text";
-  input.className = "cc-panel__session-edit";
+  input.className = "oc-panel__session-edit";
   input.value = currentLabel;
   let saved = false;
   const finish = () => {
@@ -241,7 +241,7 @@ function openSessionMenu(key: string, requestUpdate: () => void) {
   requestAnimationFrame(() => {
     if (sessionMenuKey !== key || sessionMenuOutsideCloser) return;
     sessionMenuOutsideCloser = (ev: MouseEvent) => {
-      const root = (ev.target as HTMLElement).closest?.(".cc-panel__session-menu-wrap");
+      const root = (ev.target as HTMLElement).closest?.(".oc-panel__session-menu-wrap");
       if (!root) {
         closeSessionMenu(requestUpdate);
       }
@@ -252,11 +252,11 @@ function openSessionMenu(key: string, requestUpdate: () => void) {
   // 渲染后测量：菜单距窗口底部不足时向上翻转展开（菜单只向下弹会在列表底部被裁）。
   requestAnimationFrame(() => {
     if (sessionMenuKey !== key) return;
-    const menu = document.querySelector(".cc-panel__session-menu");
+    const menu = document.querySelector(".oc-panel__session-menu");
     if (!menu) return;
     const rect = menu.getBoundingClientRect();
     if (rect.bottom > window.innerHeight - 8) {
-      menu.classList.add("cc-panel__session-menu--up");
+      menu.classList.add("oc-panel__session-menu--up");
     }
   });
 }
@@ -274,7 +274,7 @@ function closeMoreMenu(requestUpdate: () => void) {
   requestUpdate();
 }
 
-function toggleMoreMenu(host: CcSessionPanel) {
+function toggleMoreMenu(host: OcSessionPanel) {
   if (moreMenuOpen) {
     closeMoreMenu(host.bump);
     return;
@@ -285,7 +285,7 @@ function toggleMoreMenu(host: CcSessionPanel) {
   requestAnimationFrame(() => {
     if (!moreMenuOpen || moreMenuOutsideCloser) return;
     moreMenuOutsideCloser = (ev: MouseEvent) => {
-      const root = (ev.target as HTMLElement).closest?.(".cc-panel__more-wrap");
+      const root = (ev.target as HTMLElement).closest?.(".oc-panel__more-wrap");
       if (!root) closeMoreMenu(host.bump);
     };
     document.addEventListener("click", moreMenuOutsideCloser);
@@ -311,7 +311,7 @@ function resetMenuState() {
 
 // 单个会话项（正常/归档/搜索/分组渲染共用）：名称行 + 「⋯」管理菜单
 function renderSessionItem(
-  host: CcSessionPanel,
+  host: OcSessionPanel,
   props: SessionPanelProps,
   s: SessionPanelSessionOption,
 ) {
@@ -321,7 +321,7 @@ function renderSessionItem(
   const deleting = props.isDeletingSession(s.key);
   return html`
     <div
-      class="cc-panel__session-item ${isActive ?"active" : ""} ${menuOpen ? "menu-open" : ""} ${s.archived ? "is-archived" : ""}"
+      class="oc-panel__session-item ${isActive ?"active" : ""} ${menuOpen ? "menu-open" : ""} ${s.archived ? "is-archived" : ""}"
       role="button"
       tabindex="0"
       aria-current=${isActive ? "true" : nothing}
@@ -329,12 +329,12 @@ function renderSessionItem(
       @keydown=${activateOnKeydown(() => props.onSelectSession(s.key))}
     >
       <span
-        class="cc-panel__session-name"
+        class="oc-panel__session-name"
         title=${s.label}
-      >${s.unread ? html`<span class="cc-panel__unread-dot" aria-label=${t("sidebar.unread")}></span>` : nothing}${s.label}${s.pinned ? html`<span class="cc-panel__session-pin" aria-label=${t("sidebar.pinned")}>${icons.pin}</span>` : nothing}${s.worktreeBranch ? html`<span class="cc-panel__session-worktree" title=${s.worktreeBranch}>${icons.gitBranch}${s.worktreeBranch}</span>` : nothing}</span>
-      <span class="cc-panel__session-menu-wrap">
+      >${s.unread ? html`<span class="oc-panel__unread-dot" aria-label=${t("sidebar.unread")}></span>` : nothing}${s.label}${s.pinned ? html`<span class="oc-panel__session-pin" aria-label=${t("sidebar.pinned")}>${icons.pin}</span>` : nothing}${s.worktreeBranch ? html`<span class="oc-panel__session-worktree" title=${s.worktreeBranch}>${icons.gitBranch}${s.worktreeBranch}</span>` : nothing}</span>
+      <span class="oc-panel__session-menu-wrap">
         <button
-          class="cc-panel__session-action ${menuOpen ?"is-open" : ""} ${deleting ? "is-loading" : ""}"
+          class="oc-panel__session-action ${menuOpen ?"is-open" : ""} ${deleting ? "is-loading" : ""}"
           type="button"
           aria-disabled=${deleting ? "true" : "false"}
           aria-busy=${deleting ? "true" : "false"}
@@ -356,57 +356,57 @@ function renderSessionItem(
         </button>
         ${menuOpen
           ? html`
-            <div class="cc-panel__session-menu" role="menu" @click=${(e: Event) => e.stopPropagation()}>
+            <div class="oc-panel__session-menu" role="menu" @click=${(e: Event) => e.stopPropagation()}>
               ${!s.archived
                 ? html`
-                  <button class="cc-panel__session-menu-item" type="button" role="menuitem"
+                  <button class="oc-panel__session-menu-item" type="button" role="menuitem"
                     @click=${() => { closeSessionMenu(host.bump); props.onTogglePin(s.key, !s.pinned); }}>
-                    <span class="cc-panel__session-menu-icon">${s.pinned ? icons.pinActive : icons.pin}</span>
+                    <span class="oc-panel__session-menu-icon">${s.pinned ? icons.pinActive : icons.pin}</span>
                     <span>${s.pinned ? t("sidebar.unpinSession") : t("sidebar.pinSession")}</span>
                   </button>
-                  <button class="cc-panel__session-menu-item" type="button" role="menuitem"
+                  <button class="oc-panel__session-menu-item" type="button" role="menuitem"
                     @click=${() => { closeSessionMenu(host.bump); props.onToggleUnread(s.key, !s.unread); }}>
-                    <span class="cc-panel__session-menu-icon">${s.unread ? icons.eye : icons.eyeOff}</span>
+                    <span class="oc-panel__session-menu-icon">${s.unread ? icons.eye : icons.eyeOff}</span>
                     <span>${s.unread ? t("sidebar.markRead") : t("sidebar.markUnread")}</span>
                   </button>
-                  <button class="cc-panel__session-menu-item" type="button" role="menuitem"
+                  <button class="oc-panel__session-menu-item" type="button" role="menuitem"
                     @click=${(e: Event) => {
                       closeSessionMenu(host.bump);
-                      const item = (e.currentTarget as HTMLElement).closest(".cc-panel__session-item")!;
-                      const span = item.querySelector(".cc-panel__session-name") as HTMLSpanElement;
+                      const item = (e.currentTarget as HTMLElement).closest(".oc-panel__session-item")!;
+                      const span = item.querySelector(".oc-panel__session-name") as HTMLSpanElement;
                       startInlineRename(span, s.key, s.label, props.onRenameSession, props.requestUpdate);
                     }}>
-                    <span class="cc-panel__session-menu-icon">${icons.edit}</span>
+                    <span class="oc-panel__session-menu-icon">${icons.edit}</span>
                     <span>${t("sidebar.rename")}</span>
                   </button>
                   ${!isMain
                     ? html`
-                      <button class="cc-panel__session-menu-item" type="button" role="menuitem"
+                      <button class="oc-panel__session-menu-item" type="button" role="menuitem"
                         @click=${() => { closeSessionMenu(host.bump); props.onSetArchived(s.key, true); }}>
-                        <span class="cc-panel__session-menu-icon">${icons.archive}</span>
+                        <span class="oc-panel__session-menu-icon">${icons.archive}</span>
                         <span>${t("sidebar.archiveSession")}</span>
                       </button>
-                      <button class="cc-panel__session-menu-item cc-panel__session-menu-item--danger" type="button" role="menuitem"
+                      <button class="oc-panel__session-menu-item oc-panel__session-menu-item--danger" type="button" role="menuitem"
                         ?disabled=${props.activeTaskSessions.has(s.key)}
                         title=${props.activeTaskSessions.has(s.key) ? t("sidebar.deleteBlockedByTask") : ""}
                         @click=${() => { closeSessionMenu(host.bump); props.onDeleteSession(s.key); }}>
-                        <span class="cc-panel__session-menu-icon">${icons.trash}</span>
+                        <span class="oc-panel__session-menu-icon">${icons.trash}</span>
                         <span>${t("sidebar.delete")}</span>
                       </button>
                     `
                     : nothing}
                 `
                 : html`
-                  <button class="cc-panel__session-menu-item" type="button" role="menuitem"
+                  <button class="oc-panel__session-menu-item" type="button" role="menuitem"
                     @click=${() => { closeSessionMenu(host.bump); props.onSetArchived(s.key, false); }}>
-                    <span class="cc-panel__session-menu-icon">${icons.archiveRestore}</span>
+                    <span class="oc-panel__session-menu-icon">${icons.archiveRestore}</span>
                     <span>${t("sidebar.restoreSession")}</span>
                   </button>
-                  <button class="cc-panel__session-menu-item cc-panel__session-menu-item--danger" type="button" role="menuitem"
+                  <button class="oc-panel__session-menu-item oc-panel__session-menu-item--danger" type="button" role="menuitem"
                     ?disabled=${props.activeTaskSessions.has(s.key)}
                     title=${props.activeTaskSessions.has(s.key) ? t("sidebar.deleteBlockedByTask") : ""}
                     @click=${() => { closeSessionMenu(host.bump); props.onDeleteSession(s.key); }}>
-                    <span class="cc-panel__session-menu-icon">${icons.trash}</span>
+                    <span class="oc-panel__session-menu-icon">${icons.trash}</span>
                     <span>${t("sidebar.delete")}</span>
                   </button>
                 `}
@@ -419,14 +419,14 @@ function renderSessionItem(
 }
 
 // 会话面板模板主体：面板头（标题 + 新会话/「更多」菜单）+ 归档切换 + 搜索 + 会话列表。
-function renderPanelInner(host: CcSessionPanel, props: SessionPanelProps) {
+function renderPanelInner(host: OcSessionPanel, props: SessionPanelProps) {
   return html`
-    <aside class="cc-panel" aria-label=${t("sidebar.agent")}>
-      <div class="cc-panel__header">
-        <span class="cc-panel__title">${props.showArchived ? t("sidebar.archivedSessions") : t("sidebar.agent")}</span>
-        <div class="cc-panel__actions">
+    <aside class="oc-panel" aria-label=${t("sidebar.agent")}>
+      <div class="oc-panel__header">
+        <span class="oc-panel__title">${props.showArchived ? t("sidebar.archivedSessions") : t("sidebar.agent")}</span>
+        <div class="oc-panel__actions">
           <button
-            class="cc-panel__icon-btn"
+            class="icon-btn icon-btn--sm"
             type="button"
             @click=${props.onNewChat}
             data-tooltip=${t("sidebar.newChat")}
@@ -436,9 +436,9 @@ function renderPanelInner(host: CcSessionPanel, props: SessionPanelProps) {
             ${icons.messagePlus}
           </button>
           ${props.gitAvailable === true
-            ? html`<div class="cc-panel__more-wrap">
+            ? html`<div class="oc-panel__more-wrap">
               <button
-                class="cc-panel__icon-btn ${moreMenuOpen ?"is-open" : ""}"
+                class="icon-btn icon-btn--sm ${moreMenuOpen ?"is-open" : ""}"
                 type="button"
                 aria-haspopup="menu"
                 aria-expanded=${moreMenuOpen ? "true" : "false"}
@@ -451,8 +451,8 @@ function renderPanelInner(host: CcSessionPanel, props: SessionPanelProps) {
                 }}
               >${icons.moreHorizontal}</button>
               ${moreMenuOpen
-                ? html`<div class="cc-panel__more-menu" role="menu" @click=${(e: Event) => e.stopPropagation()}>
-                    <button class="cc-panel__more-item" type="button" role="menuitem"
+                ? html`<div class="oc-panel__more-menu" role="menu" @click=${(e: Event) => e.stopPropagation()}>
+                    <button class="oc-panel__more-item" type="button" role="menuitem"
                       data-tooltip=${t("sidebar.newWorktreeChatHint")}
                       data-tooltip-wide="true"
                       @click=${() => { closeMoreMenu(host.bump); props.onNewWorktreeChat(); }}>
@@ -463,7 +463,7 @@ function renderPanelInner(host: CcSessionPanel, props: SessionPanelProps) {
             </div>`
             : nothing}
           <button
-            class="cc-panel__icon-btn ${props.showArchived ?"active" : ""}"
+            class="icon-btn icon-btn--sm ${props.showArchived ?"active" : ""}"
             type="button"
             @click=${() => {
               closeSessionMenu(host.bump);
@@ -479,9 +479,9 @@ function renderPanelInner(host: CcSessionPanel, props: SessionPanelProps) {
       </div>
 
       <!-- 会话搜索（客户端过滤，正常/归档视图通用） -->
-      <div class="cc-panel__search">
+      <div class="oc-panel__search">
         <input
-          class="cc-panel__search-input"
+          class="oc-panel__search-input"
           type="search"
           .value=${host.searchDraft ?? props.sessionSearch}
           placeholder=${t("sidebar.searchSessions")}
@@ -491,9 +491,9 @@ function renderPanelInner(host: CcSessionPanel, props: SessionPanelProps) {
       </div>
 
       <!-- 会话列表 -->
-      <div class="cc-panel__list">
+      <div class="oc-panel__list">
         ${props.sessionOptions.length === 0
-          ? html`<div class="cc-panel__empty">${props.showArchived ? t("sidebar.noArchivedSessions") : t("sidebar.noSessions")}</div>`
+          ? html`<div class="oc-panel__empty">${props.showArchived ? t("sidebar.noArchivedSessions") : t("sidebar.noSessions")}</div>`
           : nothing}
         ${props.showArchived || props.sessionSearch.trim()
           ? // 归档视图 / 搜索态：平铺列表，便于扫读
@@ -501,7 +501,7 @@ function renderPanelInner(host: CcSessionPanel, props: SessionPanelProps) {
           : // 正常视图：置顶 + 时间分组
             groupSidebarSessions(props.sessionOptions).map(
               (group) => html`
-                <div class="cc-panel__group-label">${t(group.labelKey)}</div>
+                <div class="oc-panel__group-label">${t(group.labelKey)}</div>
                 ${repeat(group.items, (s) => s.key, (s) => renderSessionItem(host, props, s))}
               `,
             )}

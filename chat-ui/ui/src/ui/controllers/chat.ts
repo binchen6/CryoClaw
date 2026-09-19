@@ -272,7 +272,7 @@ function adoptInFlightRunFromHistory(
     return false;
   }
   state.chatRunId = runId;
-  // 空文本 → 流式气泡降级为思考/工具阶段指示（cc-chat-stream 语义），同样标志 run 活跃
+  // 空文本 → 流式气泡降级为思考/工具阶段指示（oc-chat-stream 语义），同样标志 run 活跃
   state.chatStream = typeof snapshot.text === "string" ? snapshot.text : "";
   state.chatStreamFrozenPrefix = "";
   state.chatStreamStartedAt =

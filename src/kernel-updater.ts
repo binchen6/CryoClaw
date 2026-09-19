@@ -207,6 +207,9 @@ export async function checkKernelUpdate(): Promise<KernelUpdateState> {
   if (running) return getKernelUpdateState();
   if (!isKernelUpdaterAvailable()) return getKernelUpdateState();
   const events = await runUpdater(["--check"], () => {});
+  // 探测期间编排可能已开跑（running 翻转）：此时读到的版本可能是换装中途态，
+  // 丢弃本次结果，保持缓存状态不被污染。
+  if (running) return getKernelUpdateState();
   const state = events.find((e) => e.type === "state");
   if (state && state.type === "state") {
     lastCheck = {

@@ -124,8 +124,9 @@ function extractTarGzArchive(archivePath, destDir) {
       continue;
     }
     if (header.typeflag === "1" || header.typeflag === "2") {
-      // 硬链接/符号链接：记录后统一实体化（拒绝指向包外的链接）
-      symlinks.push({ relPath: rel, linkname: header.linkname });
+      // 硬链接/符号链接：记录后统一实体化（拒绝指向包外的链接）。
+      // tar 规范：硬链接('1') linkname 相对归档根；符号链接('2')相对条目所在目录。
+      symlinks.push({ relPath: rel, linkname: header.linkname, hard: header.typeflag === "1" });
       continue;
     }
     if (header.typeflag === "0" || header.typeflag === "\0" || header.typeflag === "7") {
@@ -136,8 +137,10 @@ function extractTarGzArchive(archivePath, destDir) {
   }
 
   // 符号链接实体化：只允许指向包内条目（复制目标内容为普通文件）
-  for (const { relPath, linkname } of symlinks) {
-    const targetRel = safeEntryRelPath(path.posix.join(path.posix.dirname(relPath), linkname));
+  for (const { relPath, linkname, hard } of symlinks) {
+    // 硬链接基准归档根（linkname 常带前导 /，剥掉再校验）；符号链接基准条目目录
+    const rawTarget = hard ? String(linkname).replace(/^\/+/, "") : path.posix.join(path.posix.dirname(relPath), linkname);
+    const targetRel = safeEntryRelPath(rawTarget);
     const targetAbs = path.join(destDir, ...targetRel.split("/"));
     ensureWithinDest(destDir, targetAbs);
     if (fs.existsSync(targetAbs) && fs.statSync(targetAbs).isFile()) {

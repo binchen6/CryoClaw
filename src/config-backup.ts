@@ -1,5 +1,6 @@
 import * as fs from "fs";
 import * as path from "path";
+import * as log from "./logger";
 import {
   resolveConfigBackupDir,
   resolveLastKnownGoodConfigPath,
@@ -130,25 +131,32 @@ export function restoreUserConfigBackup(fileName: string): void {
 }
 
 // 记录“最近一次可启动”的配置快照，供启动失败时一键回退。
+// best-effort 语义：快照写失败（杀软文件锁/磁盘满等）不得让调用方
+// （ensureGatewayRunning 启动成功路径，位于其 per-attempt try 之外）整体失败。
 export function recordLastKnownGoodConfigSnapshot(): void {
   const configPath = resolveUserConfigPath();
   const raw = readValidConfigRaw(configPath);
   if (!raw) return;
 
-  const stateDir = resolveUserStateDir();
-  fs.mkdirSync(stateDir, { recursive: true });
-  const snapshotPath = resolveLastKnownGoodConfigPath();
+  try {
+    const stateDir = resolveUserStateDir();
+    fs.mkdirSync(stateDir, { recursive: true });
+    const snapshotPath = resolveLastKnownGoodConfigPath();
 
-  if (fs.existsSync(snapshotPath)) {
-    try {
-      const prevRaw = fs.readFileSync(snapshotPath, "utf-8");
-      if (prevRaw === raw) return;
-    } catch {
-      // ignore
+    if (fs.existsSync(snapshotPath)) {
+      try {
+        const prevRaw = fs.readFileSync(snapshotPath, "utf-8");
+        if (prevRaw === raw) return;
+      } catch {
+        // ignore
+      }
     }
-  }
 
-  fs.writeFileSync(snapshotPath, raw, "utf-8");
+    fs.writeFileSync(snapshotPath, raw, "utf-8");
+  } catch (err) {
+    // 快照不可用只影响“一键回退”，下次启动成功会再尝试刷新
+    log.warn(`记录最近可用配置快照失败（忽略）: ${err instanceof Error ? err.message : String(err)}`);
+  }
 }
 
 // 一键恢复“最近一次可启动”快照，恢复前同样备份当前配置。

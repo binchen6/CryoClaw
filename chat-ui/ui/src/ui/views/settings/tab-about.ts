@@ -258,7 +258,7 @@ function renderAppUpdateCard(state: AppViewState) {
             </div>`
           : ""}
         ${us.status === "error"
-          ? html`<div style="color:var(--danger)">${tWithDetail("settings.about.appUpdateError", us.error)}</div>`
+          ? html`<div class="oc-text-danger">${tWithDetail("settings.about.appUpdateError", us.error)}</div>`
           : ""}
         <div class="oc-flex oc-gap-8 oc-mt-4">
           <button class="btn btn--sm" ?disabled=${checking || downloading} @click=${() => handleAppUpdateCheck(state)}>${checking ? t("settings.about.appUpdateChecking") : us.status === "error" ? t("settings.about.appUpdateRetry") : t("settings.about.appUpdateCheck")}</button>
@@ -273,8 +273,8 @@ function renderAppUpdateCard(state: AppViewState) {
             : ""}
         </div>
         ${formatSnoozeUntil(us.snoozedUntil)
-          ? html`<div class="oc-flex oc-gap-8 oc-mt-4" style="align-items:center">
-              <span style="color:var(--text-secondary)">${t("appUpdate.snoozedHint")}: ${formatSnoozeUntil(us.snoozedUntil)}</span>
+          ? html`<div class="oc-flex oc-items-center oc-gap-8 oc-mt-4">
+              <span class="oc-text-secondary">${t("appUpdate.snoozedHint")}: ${formatSnoozeUntil(us.snoozedUntil)}</span>
               <button class="btn btn--sm" @click=${() => handleAppUpdateClearSnooze(state)}>${t("appUpdate.resumeCheck")}</button>
             </div>`
           : ""}
@@ -284,12 +284,12 @@ function renderAppUpdateCard(state: AppViewState) {
                 <div class="oc-settings-progress">
                   <div class="oc-settings-progress__bar" style="width:${us.progress.percent}%"></div>
                 </div>
-                <div class="oc-mt-4" style="color:var(--text-secondary)">${tWithDetail("settings.about.appUpdateDownloading", us.progress.percent.toFixed(1))}%</div>
+                <div class="oc-mt-4 oc-text-secondary">${tWithDetail("settings.about.appUpdateDownloading", us.progress.percent.toFixed(1))}%</div>
               </div>
             `
           : ""}
         ${s.appUpdateMsg
-          ? html`<div style="${s.appUpdateMsg.ok ? "" : "color:var(--danger)"}">${s.appUpdateMsg.text}</div>`
+          ? html`<div class=${s.appUpdateMsg.ok ? "" : "oc-text-danger"}>${s.appUpdateMsg.text}</div>`
           : ""}
       </div>
     </div>
@@ -316,7 +316,7 @@ function renderKernelCard(state: AppViewState) {
         <div><strong>${t("settings.about.kernelCurrent")}</strong>: ${ks.current ?? "-"}</div>
         <div><strong>${t("settings.about.kernelLatest")}</strong>: ${ks.latest ?? t("settings.about.kernelLatestNotChecked")}</div>
         ${ks.checkError
-          ? html`<div style="color:var(--danger)">${tWithDetail("settings.about.kernelCheckFailed", ks.checkError)}</div>`
+          ? html`<div class="oc-text-danger">${tWithDetail("settings.about.kernelCheckFailed", ks.checkError)}</div>`
           : ""}
         <div class="oc-flex oc-gap-8 oc-mt-4">
           <button class="btn btn--sm" ?disabled=${disabled} @click=${() => handleKernelCheck(state)}>${t("settings.about.kernelCheck")}</button>
@@ -333,12 +333,12 @@ function renderKernelCard(state: AppViewState) {
                 <div class="oc-settings-progress">
                   <div class="oc-settings-progress__bar" style="width:${s.progress.pct}%"></div>
                 </div>
-                <div class="oc-mt-4" style="color:var(--text-secondary)">${s.progress.pct}% · ${kernelUpdateStepMessage(s.progress)}</div>
+                <div class="oc-mt-4 oc-text-secondary">${s.progress.pct}% · ${kernelUpdateStepMessage(s.progress)}</div>
               </div>
             `
           : ""}
         ${s.resultMsg
-          ? html`<div style="${s.resultMsg.ok ? "" : "color:var(--danger)"}">${s.resultMsg.text}</div>`
+          ? html`<div class=${s.resultMsg.ok ? "" : "oc-text-danger"}>${s.resultMsg.text}</div>`
           : ""}
       </div>
     </div>

@@ -14,7 +14,7 @@ export interface PairingPanelState {
 }
 
 export interface PairingPanelOptions {
-  extraApproved?: { kind: string; id: string; onRemove: () => void }[];
+  extraApproved?: { kind: string; id: string; name?: string; onRemove: () => void }[];
   onAddGroup?: () => void;
 }
 
@@ -171,7 +171,7 @@ export function renderPairingPanel(
               aria-label=${t("settings.channels.pairing.approve")}>${approving ? spinnerIcon : checkIcon}</button>
           </div>
         `;
-        }) : html`<div style="font-size:12px;color:var(--text-secondary)">${t("settings.channels.pairing.empty")}</div>`}
+        }) : html`<div class="oc-text-sm oc-text-secondary">${t("settings.channels.pairing.empty")}</div>`}
       </div>
 
       <!-- Approved -->
@@ -179,18 +179,18 @@ export function renderPairingPanel(
         <div class="oc-settings__label">${t("settings.channels.pairing.approved")}</div>
         ${allApproved.length ? allApproved.map(entry => html`
           <div class="oc-settings-pairing__item">
-            <span style="font-size:11px;color:var(--text-secondary)">${entry.kind}</span>
-            <span class="oc-settings-pairing__name">${(entry as any).name || entry.id}</span>
+            <span class="oc-text-xs oc-text-secondary">${entry.kind}</span>
+            <span class="oc-settings-pairing__name">${entry.name || entry.id}</span>
             <button class="oc-settings-pairing__icon-btn oc-settings-pairing__icon-btn--danger oc-ml-auto"
               @click=${entry.onRemove}
               data-tooltip=${t("settings.channels.pairing.remove")}
               data-tooltip-pos="left"
               aria-label=${t("settings.channels.pairing.remove")}>${trashIcon}</button>
           </div>
-        `) : html`<div style="font-size:12px;color:var(--text-secondary)">${t("settings.channels.pairing.approvedEmpty")}</div>`}
+        `) : html`<div class="oc-text-sm oc-text-secondary">${t("settings.channels.pairing.approvedEmpty")}</div>`}
       </div>
 
-      ${panelErrors.get(platform) ? html`<div style="color:var(--danger);font-size:12px">${panelErrors.get(platform)}</div>` : nothing}
+      ${panelErrors.get(platform) ? html`<div class="oc-text-danger oc-text-sm">${panelErrors.get(platform)}</div>` : nothing}
     </div>
   `;
 }

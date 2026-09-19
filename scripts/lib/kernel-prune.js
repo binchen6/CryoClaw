@@ -233,7 +233,7 @@ module.exports = function createKernelPrune(fs) {
               try {
                 const bytes = fs.statSync(full).size;
                 fs.unlinkSync(full);
-                stats.removedDirs += 1;
+                stats.removedFiles += 1;
                 stats.bytes += bytes;
               } catch { /* 占用等场景静默跳过 */ }
             }

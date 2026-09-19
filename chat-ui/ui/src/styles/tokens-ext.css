@@ -18,9 +18,9 @@
   --toggle-knob: #ffffff;
   --radius: var(--radius-sm);
   --radius-full: var(--radius-pill);
-  /* 会话面板（cc-session-panel）默认宽度；用户拖宽后由 :root 内联覆盖 */
+  /* 会话面板（oc-session-panel）默认宽度；用户拖宽后由 :root 内联覆盖 */
   --panel-width: 264px;
-  /* 图标轨（cc-rail）宽度：所有视图（除 setup）常驻 */
+  /* 图标轨（oc-rail）宽度：所有视图（除 setup）常驻 */
   --rail-width: 60px;
   /* 沉浸式标题栏/上下文栏高度：壳层统一占位，视图内容从 44px 下缘开始，
      视图自身禁止再做顶部让位 */
@@ -28,6 +28,23 @@
   --theme-switch-x: 50%;
   --theme-switch-y: 50%;
   --focus-ring: 0 0 0 2px var(--bg), 0 0 0 4px var(--ring);
+
+  /* ── 布局令牌（2026.9 R94 布局统一重设计） ──
+     内容列两档：表单/阅读型 vs 列表/卡片区；视图专用列宽
+     （--chat-column / --ext-column / --page-column）保留兼容，新代码用本组 */
+  --content-form: 720px;
+  --content-wide: 1200px;
+  /* 内容区左右留白（800px 及以下窗口收为 16px，见文件末 media query；R95：--page-header-h 随 .page-header 死类一并移除） */
+  --page-gutter: 32px;
+  /* z-index 层级契约（design-guidelines §4.4）：视图内菜单/气泡 ≤60（裸值），
+     以下各档一律引用变量，禁止新增其他值 */
+  --z-contextbar: 100;
+  /* 内核横幅：低于模态遮罩、高于内容的有意例外档（shell.css 有注释钉住） */
+  --z-banner: 900;
+  --z-dialog: 1000;
+  /* 全屏预览/自定义 tooltip 等置顶层：低于 toast */
+  --z-topmost: 10000;
+  --z-toast: 10001;
 }
 
 /* Chat UI 扩展变量 — 浅色（默认，data-theme 未设置时的首帧值） */
@@ -144,5 +161,12 @@
     --focus-glow: 0 0 0 2px var(--bg), 0 0 0 4px var(--ring), 0 0 20px var(--accent-glow);
     --grid-line: rgba(255, 255, 255, 0.04);
     --shadow-glow: 0 0 30px var(--accent-glow);
+  }
+}
+
+/* 窄窗留白收敛（布局用宽度 media query，与主题双通道无关） */
+@media (max-width: 800px) {
+  :root {
+    --page-gutter: 16px;
   }
 }

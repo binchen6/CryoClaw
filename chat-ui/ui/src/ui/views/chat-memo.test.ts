@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-// views/chat.ts 经 components（managed-image / resizable-divider）注册自定义元素，
+// views/chat.ts 经 components（managed-image / oc-resizable-divider）注册自定义元素，
 // node 环境无 customElements，动态导入前打桩（lit 本体在 node 可正常加载）。
 const g = globalThis as Record<string, unknown>;
 g.customElements ??= {
@@ -56,7 +56,7 @@ test("memo：messages 数组重赋值后重新计算", () => {
 });
 
 test("memo：stream 文本每帧变化不再 invalidate 历史 memo（R41 Task 10）", () => {
-  // 新契约：流式气泡由 <cc-chat-stream> 独立渲染，stream/streamStartedAt 不再是比较键：
+  // 新契约：流式气泡由 <oc-chat-stream> 独立渲染，stream/streamStartedAt 不再是比较键：
   // 每帧 delta 不应触发 ≤200 条历史的全量重建（旧行为是每帧重算，R41 前钉的就是它）
   const messages = [{ role: "user", content: "hello", timestamp: 1 }];
   const first = buildChatItemsMemoized(

@@ -15,8 +15,8 @@ import { renderLiveThinkingGroup, renderReadingIndicatorGroup, renderStreamingGr
 // 事件回调以属性传入。注意 buildChatProps 每帧构造新闭包，回调属性每帧 identity 变化，
 // 但 shouldUpdate 只按视觉属性放行——属性赋值本身不受 shouldUpdate 影响（Lit 只跳过
 // render），事件触发时经 this.onXxx 调用拿到的始终是最新闭包，不会有旧引用问题。
-@customElement("cc-chat-stream")
-export class CcChatStream extends LitElement {
+@customElement("oc-chat-stream")
+export class OcChatStream extends LitElement {
   static properties = {
     stream: { type: String },
     thinkingStream: { type: String },
@@ -62,7 +62,7 @@ export class CcChatStream extends LitElement {
   ] as const;
 
   shouldUpdate(changed: Map<PropertyKey, unknown>): boolean {
-    return CcChatStream.VISUAL_PROPS.some((name) => changed.has(name));
+    return OcChatStream.VISUAL_PROPS.some((name) => changed.has(name));
   }
 
   // R90：实时思考区展开时正文自动滚底——每帧新思考文本到达后把 scrollTop 钉在
@@ -118,6 +118,6 @@ export class CcChatStream extends LitElement {
 
 declare global {
   interface HTMLElementTagNameMap {
-    "cc-chat-stream": CcChatStream;
+    "oc-chat-stream": OcChatStream;
   }
 }

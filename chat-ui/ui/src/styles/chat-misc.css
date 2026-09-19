@@ -121,7 +121,7 @@
 
 .chat-thinking-live .chat-thinking-live__text {
   font-size: var(--text-sm);
-  line-height: var(--leading-relaxed, 1.6);
+  line-height: var(--leading-relaxed);
   color: var(--text-muted);
   white-space: pre-wrap;
   word-break: break-word;
@@ -130,7 +130,7 @@
 
 .chat-stream-narration {
   font-size: var(--text-sm);
-  line-height: var(--leading-relaxed, 1.6);
+  line-height: var(--leading-relaxed);
   color: var(--text-muted);
   white-space: pre-wrap;
   word-break: break-word;

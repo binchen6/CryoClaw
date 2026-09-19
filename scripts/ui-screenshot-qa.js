@@ -134,15 +134,15 @@ async function main() {
     await sleep(500);
   }
 
-  const railCount = await cdp.evaluate("document.querySelectorAll('.cc-rail__item').length");
-  const railLabels = await cdp.evaluate(`[...document.querySelectorAll('.cc-rail__item')].map((e,i)=>i+':'+(e.getAttribute('aria-label')||e.title||('rail'+i)))`);
+  const railCount = await cdp.evaluate("document.querySelectorAll('.oc-rail__item').length");
+  const railLabels = await cdp.evaluate(`[...document.querySelectorAll('.oc-rail__item')].map((e,i)=>i+':'+(e.getAttribute('aria-label')||e.title||('rail'+i)))`);
 
   // 场景组 1：主视图 × 宽度 × 主题（light 优先，dark 抽 chat+settings）
   console.log("[ui-qa] 主视图巡览");
   await setTheme("light");
   for (let i = 0; i < railCount; i++) {
     const label = (railLabels[i] || `rail${i}`).split(":").pop().replace(/\s+/g, "_");
-    await cdp.evaluate(`document.querySelectorAll('.cc-rail__item')[${i}].click()`);
+    await cdp.evaluate(`document.querySelectorAll('.oc-rail__item')[${i}].click()`);
     await sleep(1200);
     await setViewport(1440);
     await shot(`view_${label}_1440_light`);
@@ -153,7 +153,7 @@ async function main() {
   await setTheme("dark");
   for (const idx of [0, railCount - 1]) {
     const label = (railLabels[idx] || `rail${idx}`).split(":").pop().replace(/\s+/g, "_");
-    await cdp.evaluate(`document.querySelectorAll('.cc-rail__item')[${idx}].click()`);
+    await cdp.evaluate(`document.querySelectorAll('.oc-rail__item')[${idx}].click()`);
     await sleep(1000);
     await setViewport(1440);
     await shot(`view_${label}_1440_dark`);
@@ -162,8 +162,8 @@ async function main() {
 
   // 场景组 2：设置页全 tab（light 1440）
   console.log("[ui-qa] 设置页 tab 巡览");
-  const settingsIdx = await cdp.evaluate(`[...document.querySelectorAll('.cc-rail__item')].findIndex(e => /settings|设置/i.test(e.getAttribute('aria-label')||e.title||e.textContent))`);
-  await cdp.evaluate(`document.querySelectorAll('.cc-rail__item')[${settingsIdx}].click()`);
+  const settingsIdx = await cdp.evaluate(`[...document.querySelectorAll('.oc-rail__item')].findIndex(e => /settings|设置/i.test(e.getAttribute('aria-label')||e.title||e.textContent))`);
+  await cdp.evaluate(`document.querySelectorAll('.oc-rail__item')[${settingsIdx}].click()`);
   await sleep(1200);
   await setViewport(1440);
   const tabCount = await cdp.evaluate("document.querySelectorAll('.oc-settings-nav-item').length");
@@ -180,11 +180,11 @@ async function main() {
   await cdp.send("Page.navigate", { url });
   await sleep(7000);
   await setViewport(1440);
-  await cdp.evaluate(`document.querySelectorAll('.cc-rail__item')[0].click()`);
+  await cdp.evaluate(`document.querySelectorAll('.oc-rail__item')[0].click()`);
   await sleep(1000);
   await shot("view_chat_1440_light_en");
-  const s2 = await cdp.evaluate(`[...document.querySelectorAll('.cc-rail__item')].findIndex(e => /settings|设置/i.test(e.getAttribute('aria-label')||e.title||e.textContent))`);
-  await cdp.evaluate(`document.querySelectorAll('.cc-rail__item')[${s2}].click()`);
+  const s2 = await cdp.evaluate(`[...document.querySelectorAll('.oc-rail__item')].findIndex(e => /settings|设置/i.test(e.getAttribute('aria-label')||e.title||e.textContent))`);
+  await cdp.evaluate(`document.querySelectorAll('.oc-rail__item')[${s2}].click()`);
   await sleep(1000);
   await shot("settings_first_1440_en");
 

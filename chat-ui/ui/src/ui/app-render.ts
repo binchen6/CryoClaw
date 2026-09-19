@@ -2,7 +2,7 @@
  * CryoClaw custom app-render.ts
  * Replaces the upstream 13-tab dashboard with the CryoClaw shell.
  *
- * 2026.9 提案 A 重写：壳层 = cc-rail 图标轨（常驻）+ cc-session-panel 会话面板
+ * 2026.9 提案 A 重写：壳层 = oc-rail 图标轨（常驻）+ oc-session-panel 会话面板
  * （仅 chat 视图，可折叠/可拖宽）+ 上下文栏（.cryoclaw-titlebar 44px：面板开关 +
  * 视图/会话标题）+ 内容区。各视图的渲染与逻辑在 app-chat-props / app-skills /
  * app-cron / app-tasks / app-session-actions / app-view-switch / app-toast；
@@ -38,8 +38,8 @@ import { icons } from "./icons.ts";
 import { resolveMainSessionKey } from "./session-visibility.ts";
 // 图标轨 / 会话面板独立组件：流式帧等根组件高频更新不再重求值这两棵模板树
 // （props 数据字段比较 + 组件级 bump 纪元，见各自文件头契约）
-import "./components/cc-rail.ts";
-import "./components/cc-session-panel.ts";
+import "./components/oc-rail.ts";
+import "./components/oc-session-panel.ts";
 import { renderChat } from "./views/chat.ts";
 import { renderGatewayUrlConfirmation } from "./views/gateway-url-confirmation.ts";
 import { renderReleaseNotesModal } from "./views/release-notes-modal.ts";
@@ -103,7 +103,7 @@ function openSettingsView(state: AppViewState, tabHint: string | null = null) {
 }
 
 // 会话面板右缘拖拽调宽：mousemove 高频期直写 DOM 宽度，松手才持久化。
-// buttons === 0 补偿：窗口外释放鼠标时 mouseup 不派发（同 resizable-divider 模式）。
+// buttons === 0 补偿：窗口外释放鼠标时 mouseup 不派发（同 oc-resizable-divider 模式）。
 const PANEL_WIDTH_MIN = 220;
 const PANEL_WIDTH_MAX = 420;
 
@@ -143,7 +143,7 @@ function startPanelResize(e: MouseEvent, state: AppViewState) {
   e.preventDefault();
   const startX = e.clientX;
   // 起始宽度用实测值：未自定义（0 哨兵）时以 CSS 默认宽度为基准。
-  const hostEl = document.querySelector("cc-session-panel") as HTMLElement | null;
+  const hostEl = document.querySelector("oc-session-panel") as HTMLElement | null;
   const startW =
     state.settings.sidebarWidth > 0
       ? state.settings.sidebarWidth
@@ -157,7 +157,7 @@ function startPanelResize(e: MouseEvent, state: AppViewState) {
       return;
     }
     moved = true;
-    const host = document.querySelector("cc-session-panel") as HTMLElement | null;
+    const host = document.querySelector("oc-session-panel") as HTMLElement | null;
     if (host) host.style.width = `${clampPanelWidth(startW + (ev.clientX - startX))}px`;
   };
   const onUp = () => {
@@ -167,7 +167,7 @@ function startPanelResize(e: MouseEvent, state: AppViewState) {
     document.body.style.userSelect = "";
     // 零位移按压不固化宽度：保住 0 哨兵
     if (!moved) return;
-    const host = document.querySelector("cc-session-panel") as HTMLElement | null;
+    const host = document.querySelector("oc-session-panel") as HTMLElement | null;
     const w = host
       ? clampPanelWidth(host.getBoundingClientRect().width)
       : clampPanelWidth(startW);
@@ -178,7 +178,7 @@ function startPanelResize(e: MouseEvent, state: AppViewState) {
 }
 
 // sessionOptions 由装配层 memo：数据源（sessionsResult/worktrees/sessionKey 等）
-// 不变时引用稳定，<cc-session-panel> 的 shouldUpdate 按引用比较才有效。
+// 不变时引用稳定，<oc-session-panel> 的 shouldUpdate 按引用比较才有效。
 let sessionOptionsMemo: {
   sessionsResult: AppViewState["sessionsResult"];
   worktrees: AppViewState["worktrees"];
@@ -333,7 +333,7 @@ export function renderApp(state: AppViewState) {
     >
       ${chatFocus || meta.fullpage
         ? nothing
-        : html`<cc-rail
+        : html`<oc-rail
             .props=${{
               activeView: cryoclawView,
               tasksRunningCount: state.tasks.filter((task) => isActiveTask(task)).length,
@@ -357,10 +357,10 @@ export function renderApp(state: AppViewState) {
               },
               onOpenWebUI: () => void handleOpenWebUI(state),
               onReconnect: () => handleReconnect(state),
-            }}></cc-rail>`}
+            }}></oc-rail>`}
       ${chatFocus || meta.fullpage || cryoclawView !== "chat" || panelCollapsed
         ? nothing
-        : html`<cc-session-panel
+        : html`<oc-session-panel
             style=${state.settings.sidebarWidth > 0 ? `width: ${state.settings.sidebarWidth}px` : nothing}
             .props=${{
               currentSessionKey,
@@ -403,7 +403,7 @@ export function renderApp(state: AppViewState) {
               },
               isDeletingSession: (key: string) => isDeletingSession(key),
               requestUpdate: () => state.requestUpdate(),
-            }}></cc-session-panel>
+            }}></oc-session-panel>
           <div
             class="cryoclaw-panel-resize"
             @mousedown=${(e: MouseEvent) => startPanelResize(e, state)}

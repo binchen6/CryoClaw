@@ -5,6 +5,7 @@
 
 import { html, nothing } from "lit";
 import { t } from "./i18n.ts";
+import { icons } from "./icons.ts";
 import { renderSkillStoreView, skillAvatarColor, type SkillStoreState, type SkillItem } from "./skill-store-view.ts";
 import { selectVisibleInstalledSkills } from "./skill-visibility.ts";
 import { showToast } from "./app-toast.ts";
@@ -352,12 +353,13 @@ function renderInstalledSkillsView(state: AppViewState) {
                     ${skill.source !== "openclaw-bundled"
                       ? html`
                         <button
-                          class="skill-card__uninstall"
+                          class="icon-btn icon-btn--danger"
                           type="button"
                           title="${t("skillStore.uninstall")}"
+                          aria-label="${t("skillStore.uninstall")}"
                           ?disabled=${isBusy}
                           @click=${() => void uninstallLocalSkill(state, key)}
-                        ><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg></button>`
+                        >${icons.trash}</button>`
                       : nothing}
                     <oc-toggle-switch
                       .checked=${!skill.disabled}
@@ -414,11 +416,7 @@ export function renderSkillsView(state: AppViewState) {
       }
     }}>
       <section class="skill-store">
-        <div class="skill-store__header panel__header">
-          <h2 class="skill-store__title panel__title">${t("skillStore.title")}</h2>
-        </div>
-
-        <!-- 标签栏 + 右侧操作区 -->
+        <!-- 标签栏 + 右侧操作区（R94 砍级：原「技能」H2 与 ext-tabs 重复，已移除） -->
         <div class="skills-tab-bar">
           <button
             class="skills-tab-btn ${skillsSubTab === "installed" ? "active" : ""}"

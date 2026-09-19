@@ -1,6 +1,6 @@
 /**
  * 工作区页（R42 第二期，2026.9 视觉重写）—— IDE 式融合：左导航（仓库选择/文件树/
- * Git 变更节点/Worktrees 区块）+ resizable-divider 拖拽分隔 + 右主区
+ * Git 变更节点/Worktrees 区块）+ oc-resizable-divider 拖拽分隔 + 右主区
  * （文件预览：面包屑 + 内容 | Git 面板 slot）。纯渲染，状态在 controllers/workspace.ts
  * 与 app state；git/worktrees 内容以 slot 注入。
  */
@@ -15,7 +15,7 @@ import {
 import { t, tWithDetail } from "../i18n.ts";
 import { icons } from "../icons.ts";
 import { activateOnKeydown } from "../a11y.ts";
-import "../components/resizable-divider.ts";
+import "../components/oc-resizable-divider.ts";
 
 export type WorkspaceViewOptions = {
   gitSlot: TemplateResult;
@@ -91,11 +91,11 @@ export function renderWorkspaceView(state: AppViewState, opts: WorkspaceViewOpti
         <div class="wk-nav__node ${ws.mode ==="files" ? "active" : ""}" role="button" tabindex="0" @click=${opts.onOpenFiles} @keydown=${activateOnKeydown(opts.onOpenFiles)}>
           ${icons.folder}<span>${t("workspace.files")}</span>
           <span class="wk-nav__node-actions">
-            <button class="wk-nav__icon-btn" type="button"
+            <button class="icon-btn icon-btn--xs" type="button"
               data-tooltip=${t("workspace.refresh")} aria-label=${t("workspace.refresh")}
               @click=${(e: Event) => { e.stopPropagation(); opts.onRefreshFiles(); }}
             >${icons.refreshCw}</button>
-            <button class="wk-nav__icon-btn" type="button"
+            <button class="icon-btn icon-btn--xs" type="button"
               data-tooltip=${t("workspace.openRoot")} aria-label=${t("workspace.openRoot")}
               @click=${(e: Event) => { e.stopPropagation(); opts.onOpenRootFolder(); }}
             >${icons.folderOpen}</button>
@@ -114,7 +114,7 @@ export function renderWorkspaceView(state: AppViewState, opts: WorkspaceViewOpti
                     @keydown=${activateOnKeydown(() => openWorkspaceDirectory(state, item))}>
                     <span class="wk-nav__item-icon">${item.isDir ? icons.folder : icons.fileText}</span>
                     <span class="wk-nav__item-name" title=${item.name}>${item.name}</span>
-                    <button class="wk-nav__item-action" type="button"
+                    <button class="icon-btn icon-btn--xs wk-nav__item-action" type="button"
                       data-tooltip=${t("workspace.openFolder")} aria-label=${t("workspace.openFolder")}
                       @click=${(e: Event) => { e.stopPropagation(); opts.onOpenItemFolder(item.path); }}
                     >${icons.folderOpen}</button>
@@ -128,12 +128,12 @@ export function renderWorkspaceView(state: AppViewState, opts: WorkspaceViewOpti
           ${opts.worktreesSlot}
         </section>
       </aside>
-      <resizable-divider
+      <oc-resizable-divider
         .splitRatio=${navSplitRatio}
         .minRatio=${0.16}
         .maxRatio=${0.45}
         @resize=${handleNavResize}
-      ></resizable-divider>
+      ></oc-resizable-divider>
       <section class="wk-main">
         ${ws.mode === "git" ? opts.gitSlot : html`
           <div class="wk-preview">
@@ -150,9 +150,10 @@ export function renderWorkspaceView(state: AppViewState, opts: WorkspaceViewOpti
                         ? html`<div class="wk-preview__placeholder">${t("workspace.loading")}</div>`
                         : html`<div class="wk-preview__placeholder">${t("workspace.noPreview")}</div>`}
               </div>`
-            : html`<div class="wk-preview__empty panel__empty">
-                <span class="panel__empty-icon wk-preview__empty-icon">${icons.fileText}</span>
-                <span>${t("workspace.selectFile")}</span>
+            : html`<div class="empty-state">
+                <span class="empty-state__icon">${icons.fileText}</span>
+                <div class="empty-state__title">${t("workspace.selectFile")}</div>
+                <div class="empty-state__desc">${t("workspace.selectFileHint")}</div>
               </div>`}
           </div>`}
       </section>

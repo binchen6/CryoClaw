@@ -14,7 +14,7 @@ g.window ??= {
   Element: class {},
 };
 
-const { buildChatItemsMemoized } = await import("./cc-chat-history.ts");
+const { buildChatItemsMemoized } = await import("./oc-chat-history.ts");
 
 // ── R83：历史 toolResult 消息合并进 assistant toolCall 内容块 ──
 // 一次工具调用在 transcript 里是两条消息（assistant toolCall block + toolResult），

@@ -41,7 +41,7 @@ export function renderUpdateAvailableDialog(state: AppViewState) {
     <div class="cc-dialog-overlay" role="dialog" aria-modal="true" tabindex="-1" @click=${() => !downloading && close()}>
       <div class="cc-dialog release-notes-dialog update-available-dialog" @click=${(e: Event) => e.stopPropagation()}>
         <div class="cc-dialog__head">
-          <div style="flex: 1; min-width: 0;">
+          <div class="oc-flex-1">
             <div class="cc-dialog__title">${t("appUpdate.dialogTitle")}</div>
             <div class="cc-dialog__subtitle">v${us.currentVersion} → v${us.version}</div>
           </div>
@@ -59,14 +59,14 @@ export function renderUpdateAvailableDialog(state: AppViewState) {
                 <div class="oc-settings-progress">
                   <div class="oc-settings-progress__bar" style="width:${us.progress?.percent ?? 0}%"></div>
                 </div>
-                <div class="oc-mt-4" style="color:var(--text-secondary)">${t("appUpdate.downloading")} ${progressLine}</div>
+                <div class="oc-mt-4 oc-text-secondary">${t("appUpdate.downloading")} ${progressLine}</div>
               `
             : nothing}
           ${downloaded
             ? html`<div class="release-notes-entry"><div class="release-notes-entry-content">${t("appUpdate.downloadedHint")}</div></div>`
             : nothing}
           ${failed
-            ? html`<div style="color:var(--danger)">${tWithDetail("settings.about.appUpdateError", us.error ?? "")}</div>`
+            ? html`<div class="oc-text-danger">${tWithDetail("settings.about.appUpdateError", us.error ?? "")}</div>`
             : nothing}
           ${state.updateSnoozeOpen
             ? html`

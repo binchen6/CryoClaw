@@ -3,9 +3,9 @@
  * 无分组/全部未分组时退化为扁平 option 列表（与旧行为完全一致）。
  */
 import { html, type TemplateResult } from "lit";
-import { t } from "../i18n.ts";
-import { bucketModelsByOrg, type ModelOrgState } from "../views/settings/model-org.lib.ts";
-import type { ConfiguredModel } from "../ui-types.ts";
+import { t } from "./i18n.ts";
+import { bucketModelsByOrg, type ModelOrgState } from "./views/settings/model-org.lib.ts";
+import type { ConfiguredModel } from "./ui-types.ts";
 
 export interface ModelOptionItem {
   key: string;

@@ -7,20 +7,20 @@ import { unsafeSVG } from "lit/directives/unsafe-svg.js";
 
 // 品牌标：与 chat-ui favicon 同源（assets/cryoclaw-favicon.svg），内联避免资产
 // URL 导入（测试 tsconfig 不含 vite/client 类型；file:// 打包也无额外请求）。
-const BRAND_MARK_SVG = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 120 120"><defs><linearGradient id="cc-rail-brand-g" x1="0%" x2="100%" y1="0%" y2="100%"><stop offset="0%" stop-color="#4ba4e6"/><stop offset="100%" stop-color="#1a6fd0"/></linearGradient></defs><path fill="url(#cc-rail-brand-g)" d="M60 10c-30 0-45 25-45 45s15 40 30 45v10h10v-10s5 2 10 0v10h10v-10c15-5 30-25 30-45S90 10 60 10"/><path fill="url(#cc-rail-brand-g)" d="M20 45C5 40 0 50 5 60s15 5 20-5c3-7 0-10-5-10"/><path fill="url(#cc-rail-brand-g)" d="M100 45c15-5 20 5 15 15s-15 5-20-5c-3-7 0-10 5-10"/><path stroke="#2a89dd" stroke-linecap="round" stroke-width="3" d="M45 15Q35 5 30 8m45 7Q85 5 90 8"/><circle cx="45" cy="35" r="6" fill="#0f2a4e"/><circle cx="75" cy="35" r="6" fill="#0f2a4e"/><circle cx="46" cy="34" r="2.5" fill="#d8ebfb"/><circle cx="76" cy="34" r="2.5" fill="#d8ebfb"/></svg>`;
+const BRAND_MARK_SVG = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 120 120"><defs><linearGradient id="oc-rail-brand-g" x1="0%" x2="100%" y1="0%" y2="100%"><stop offset="0%" stop-color="#4ba4e6"/><stop offset="100%" stop-color="#1a6fd0"/></linearGradient></defs><path fill="url(#oc-rail-brand-g)" d="M60 10c-30 0-45 25-45 45s15 40 30 45v10h10v-10s5 2 10 0v10h10v-10c15-5 30-25 30-45S90 10 60 10"/><path fill="url(#oc-rail-brand-g)" d="M20 45C5 40 0 50 5 60s15 5 20-5c3-7 0-10-5-10"/><path fill="url(#oc-rail-brand-g)" d="M100 45c15-5 20 5 15 15s-15 5-20-5c-3-7 0-10 5-10"/><path stroke="#2a89dd" stroke-linecap="round" stroke-width="3" d="M45 15Q35 5 30 8m45 7Q85 5 90 8"/><circle cx="45" cy="35" r="6" fill="#0f2a4e"/><circle cx="75" cy="35" r="6" fill="#0f2a4e"/><circle cx="46" cy="34" r="2.5" fill="#d8ebfb"/><circle cx="76" cy="34" r="2.5" fill="#d8ebfb"/></svg>`;
 
 // CryoClaw 图标轨组件（2026.9 提案 A 重写）。
 // 取代旧 cc-sidebar 底部图标轨 + 品牌区：60px 窄轨常驻所有视图（setup 向导除外），
 // 承担全局视图导航（chat/tasks/workspace/extensions/settings）与状态入口
 // （webbridge 修复、完整版网页/重连 + 错误徽标、设置角标）。
 //
-// 契约（与 cc-session-panel 相同）：
+// 契约（与 oc-session-panel 相同）：
 // - 全部业务状态归 OpenClawApp，本组件只接单属性 props、无自有业务状态；
 // - 回调每帧新闭包（renderApp 字面量构造），不得进 shouldUpdate 比较清单，
 //   事件触发经 this.props 拿最新对象；
 // - 无 shadow DOM：全局样式（styles/shell.css）与 tooltip/徽标定位依赖扁平 DOM。
-@customElement("cc-rail")
-export class CcRail extends LitElement {
+@customElement("oc-rail")
+export class OcRail extends LitElement {
   static properties = {
     props: { attribute: false },
   };
@@ -57,7 +57,7 @@ export class CcRail extends LitElement {
 
 declare global {
   interface HTMLElementTagNameMap {
-    "cc-rail": CcRail;
+    "oc-rail": OcRail;
   }
 }
 
@@ -119,7 +119,7 @@ function railItem(
   const active = opts.view != null && props.activeView === opts.view;
   return html`
     <button
-      class="cc-rail__item ${active ?"active" : ""} ${opts.extraClass ?? ""}"
+      class="oc-rail__item ${active ?"active" : ""} ${opts.extraClass ?? ""}"
       type="button"
       @click=${opts.onClick}
       aria-current=${active ? "page" : nothing}
@@ -136,7 +136,7 @@ function railItem(
 function renderRailInner(props: RailProps) {
   const hasErrors = props.errors.length > 0;
   const errorBadge = hasErrors
-    ? html`<span class="cc-rail__badge" title=${props.errors.join("\n")}>${props.errors.length}</span>`
+    ? html`<span class="oc-rail__badge" title=${props.errors.join("\n")}>${props.errors.length}</span>`
     : nothing;
   const settingsTooltip = props.settingsUpdateBadge
     ? t("sidebar.updateBadgeTooltip")
@@ -145,12 +145,12 @@ function renderRailInner(props: RailProps) {
       : t("sidebar.settings");
 
   return html`
-    <nav class="cc-rail" aria-label=${t("rail.nav")}>
-      <div class="cc-rail__brand" aria-hidden="true">
-        <span class="cc-rail__brand-mark">${unsafeSVG(BRAND_MARK_SVG)}</span>
+    <nav class="oc-rail" aria-label=${t("rail.nav")}>
+      <div class="oc-rail__brand" aria-hidden="true">
+        <span class="oc-rail__brand-mark">${unsafeSVG(BRAND_MARK_SVG)}</span>
       </div>
 
-      <div class="cc-rail__nav">
+      <div class="oc-rail__nav">
         ${railItem(props, {
           view: "chat",
           label: t("rail.chat"),
@@ -164,7 +164,7 @@ function renderRailInner(props: RailProps) {
           onClick: () => props.onOpenTasks(),
           badge:
             props.tasksRunningCount > 0
-              ? html`<span class="cc-rail__badge">${props.tasksRunningCount}</span>`
+              ? html`<span class="oc-rail__badge">${props.tasksRunningCount}</span>`
               : nothing,
         })}
         ${railItem(props, {
@@ -181,18 +181,18 @@ function renderRailInner(props: RailProps) {
         })}
       </div>
 
-      <span class="cc-rail__spacer"></span>
+      <span class="oc-rail__spacer"></span>
 
-      <div class="cc-rail__footer">
+      <div class="oc-rail__footer">
         ${props.webbridgeRepairVisible
           ? railItem(props, {
               label: t("sidebar.webbridgeRepairNeeded"),
               icon: props.webbridgeRepairChecking ? icons.loader : icons.wrench,
               onClick: () => props.onWebbridgeRepairClick(),
-              extraClass: "cc-rail__item--webbridge-repair",
+              extraClass: "oc-rail__item--webbridge-repair",
             })
           : nothing}
-        <span class="cc-rail__error-wrap">
+        <span class="oc-rail__error-wrap">
           ${props.connected
             ? railItem(props, {
                 label: t("sidebar.fullUI"),
@@ -205,11 +205,11 @@ function renderRailInner(props: RailProps) {
                 icon: icons.refreshCw,
                 onClick: () => props.onReconnect(),
                 badge: errorBadge,
-                extraClass: "cc-rail__item--disconnected",
+                extraClass: "oc-rail__item--disconnected",
               })}
           ${hasErrors
-            ? html`<div class="cc-rail__error-popup">
-                ${props.errors.map((msg) => html`<div class="cc-rail__error-item">${msg}</div>`)}
+            ? html`<div class="oc-rail__error-popup">
+                ${props.errors.map((msg) => html`<div class="oc-rail__error-item">${msg}</div>`)}
               </div>`
             : nothing}
         </span>
@@ -220,7 +220,7 @@ function renderRailInner(props: RailProps) {
           onClick: () => props.onOpenSettings(),
           badge:
             props.settingsBadge || props.settingsUpdateBadge
-              ? html`<span class="cc-rail__dot"></span>`
+              ? html`<span class="oc-rail__dot"></span>`
               : nothing,
         })}
       </div>

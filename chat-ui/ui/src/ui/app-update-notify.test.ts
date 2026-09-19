@@ -1,12 +1,12 @@
 // 守护回归（源码审计，同 i18n.test.ts / app-session-actions.test.ts 模式）：
 // P1「软件更新策略与进度提示」的 UI 接线。重 UI 模块（app.ts /
-// components/cc-sidebar.ts / tab-about.ts）在 node 下不可导入（顶层 new CSSStyleSheet() 等），只能钉源码。
+// components/oc-rail.ts / tab-about.ts）在 node 下不可导入（顶层 new CSSStyleSheet() 等），只能钉源码。
 //
 // 钉住的不变量：
 // - app.ts 全局订阅 app:update-state（onAppUpdateState），断开时清理；
 //   downloaded 态弹带 action 的 toast（appUpdateQuitAndInstall 重启），角标驱动 appUpdateBadge
 // - app-render.ts 把 appUpdateBadge 传给 sidebar，并渲染 toast action 按钮
-// - components/cc-sidebar.ts 设置入口渲染更新角标（rail-dot 圆点，R42 第二期图标轨化）
+// - components/oc-rail.ts 设置入口渲染更新角标（rail-dot 圆点，R42 第二期图标轨化）
 // - tab-about.ts 渲染 releaseNotes / error 详情 / 重试按钮 / 查看更新日志入口
 // - app-toast.ts 支持 action（getToastAction）且带 action 时不自动消失
 import test from "node:test";
@@ -41,10 +41,10 @@ test("app-render.ts：sidebar 收到 settingsUpdateBadge，toast 渲染 action �
   assert.match(s, /getToastAction\(\)/, "应读取 toast action");
 });
 
-test("cc-rail：设置入口渲染更新角标", () => {
-  const s = src("components/cc-rail.ts");
+test("oc-rail：设置入口渲染更新角标", () => {
+  const s = src("components/oc-rail.ts");
   // 关联断言：徽标（微信/更新）必须驱动 rail-dot 圆点渲染，防止退化为各自独立的存在性检查
-  assert.match(s, /props\.settingsBadge \|\| props\.settingsUpdateBadge[\s\S]{0,100}?cc-rail__dot/, "更新/微信徽标应驱动 rail-dot 圆点");
+  assert.match(s, /props\.settingsBadge \|\| props\.settingsUpdateBadge[\s\S]{0,100}?oc-rail__dot/, "更新/微信徽标应驱动 rail-dot 圆点");
 });
 
 test("tab-about.ts：releaseNotes / error 详情 / 重试 / 查看更新日志", () => {

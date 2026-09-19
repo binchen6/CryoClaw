@@ -196,5 +196,10 @@ const isMain =
     : invokedPath === selfPath);
 
 if (isMain) {
-  runGatewayCtl(process.argv.slice(2)).then((code) => process.exit(code));
+  runGatewayCtl(process.argv.slice(2))
+    .then((code) => process.exit(code))
+    .catch((err) => {
+      console.error(`[gateway-ctl] unexpected failure: ${err instanceof Error ? err.stack : String(err)}`);
+      process.exit(1);
+    });
 }

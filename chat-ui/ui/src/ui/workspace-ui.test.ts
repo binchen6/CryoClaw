@@ -1,6 +1,6 @@
 // 守护回归（源码审计，R42 第二期 T5 合并 git-ui.test.ts / worktrees-ui.test.ts 后的最终形态）：
 // Task 3「工作区页整合（IDE 式：文件树 + Git 变更 + Worktrees）」+ git/worktrees 接线钉点。
-// 重 UI 模块（app.ts / components/cc-sidebar.ts / app-render.ts / views/workspace.ts）在
+// 重 UI 模块（app.ts / components/oc-rail.ts / app-render.ts / views/workspace.ts）在
 // node 下不可导入，只能钉源码；纯逻辑由 controllers/workspace.test.ts /
 // controllers/git.test.ts / controllers/worktrees.test.ts 覆盖。
 //
@@ -14,7 +14,7 @@
 // - app-chat-props.ts：file-changes「在 git 中查看」→ 工作区页 git 模式
 // - views/worktrees.ts / views/git.ts：compact / embedded 变体
 // - app.ts：git 面板响应式状态字段 + gitDetect 探测绑定
-// - 会话 worktree 徽标 / 「更多」菜单按 gitAvailable 门控（cc-sidebar）
+// - 会话 worktree 徽标 / 「更多」菜单按 gitAvailable 门控（oc-session-panel）
 // - app-session-actions.ts：sessions.create {worktree:true} 新建 + 删除附带 worktrees.remove
 // - app-gateway.ts：onHello 后拉 worktrees.list（徽标数据源）
 // - 主进程：preload git* bridge 五通道 + gitDetect / git-ipc sender 校验 + 白名单 cwd 守卫 /
@@ -89,7 +89,7 @@ test("app.ts：git 面板响应式状态字段", () => {
   }
 });
 
-test("file-changes 面板「在 git 中查看」链接接线（app-chat-props / chat.ts / cc-chat-history / grouped-render）", () => {
+test("file-changes 面板「在 git 中查看」链接接线（app-chat-props / chat.ts / oc-chat-history / grouped-render）", () => {
   const chatProps = src("app-chat-props.ts");
   assert.match(chatProps, /gitAvailable: state\.gitAvailable/, "缺少 gitAvailable prop");
   assert.match(chatProps, /onOpenGitView: \(\) => openWorkspaceView\(state, "git"\)/, "缺少 onOpenGitView prop");
@@ -97,10 +97,10 @@ test("file-changes 面板「在 git 中查看」链接接线（app-chat-props / 
   const chat = src("views/chat.ts");
   assert.match(chat, /closest\("\.chat-git-view-link"\)/, "线程点击委托缺少 git 链接分支");
   assert.match(chat, /props\.onOpenGitView\?\.\(\)/, "git 链接点击应调 onOpenGitView");
-  // R41 Task 11：历史列表迁入 <cc-chat-history>，外层改为向组件透传 gitAvailable 属性
+  // R41 Task 11：历史列表迁入 <oc-chat-history>，外层改为向组件透传 gitAvailable 属性
   assert.match(chat, /\.gitAvailable=\$\{props\.gitAvailable\}/, "历史组件装配缺少 gitAvailable 透传");
-  const history = src("components/cc-chat-history.ts");
-  assert.match(history, /gitAvailable: this\.gitAvailable/, "group opts 缺少 gitAvailable（cc-chat-history）");
+  const history = src("components/oc-chat-history.ts");
+  assert.match(history, /gitAvailable: this\.gitAvailable/, "group opts 缺少 gitAvailable（oc-chat-history）");
 
   const grouped = src("chat/grouped-render.ts");
   assert.match(grouped, /class="chat-git-view-link"/, "file-changes 缺少「在 git 中查看」链接");
@@ -207,9 +207,9 @@ test("views/git.ts：无可用仓库时空态提示", () => {
   assert.ok(en.includes('"git.noRepos"'), "en.ts 缺 git.noRepos");
 });
 
-test("cc-session-panel：会话 worktree 徽标 + 「更多」菜单按 gitAvailable 门控", () => {
-  const s = src("components/cc-session-panel.ts");
-  assert.match(s, /cc-panel__session-worktree/, "缺少会话 worktree 徽标");
+test("oc-session-panel：会话 worktree 徽标 + 「更多」菜单按 gitAvailable 门控", () => {
+  const s = src("components/oc-session-panel.ts");
+  assert.match(s, /oc-panel__session-worktree/, "缺少会话 worktree 徽标");
   assert.match(s, /s\.worktreeBranch/, "徽标应渲染分支名");
   assert.match(s, /props\.gitAvailable === true/, "无 git 时「更多」菜单整体应隐藏（降级）");
   assert.match(s, /t\("sidebar\.newWorktreeChat"\)/, "缺少新建入口文案");

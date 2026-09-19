@@ -20,7 +20,7 @@ export function renderReleaseNotesModal(state: AppViewState) {
     <div class="cc-dialog-overlay" role="dialog" aria-modal="true" @click=${handleDismiss} tabindex="-1">
       <div class="cc-dialog release-notes-dialog" @click=${(e: Event) => e.stopPropagation()}>
         <div class="cc-dialog__head">
-          <div style="flex: 1; min-width: 0;">
+          <div class="oc-flex-1">
             <div class="cc-dialog__title">${t("releaseNotes.title")}</div>
             <div class="cc-dialog__subtitle">${t("releaseNotes.currentVersion")} ${currentVersion}</div>
           </div>

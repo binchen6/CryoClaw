@@ -28,7 +28,7 @@ the current code; the sources of truth are `shared/design-tokens.css`,
    button/card/dialog styles.
 4. **No `text-transform: uppercase`**: labels render as written — respect brand casing and
    CJK text. Exception: session-panel group labels
-   (`cc-panel__group-label`) keep the component contract's uppercase + caps tracking.
+   (`oc-panel__group-label`) keep the component contract's uppercase + caps tracking.
 5. **Boolean settings always use the iOS-style Switch** (`<oc-toggle-switch>`, label left,
    switch right) — not radio buttons or checkboxes.
 6. **Default action buttons align right**: dialog footers and settings button rows use
@@ -175,7 +175,7 @@ scale (check the file for the live set; dead classes are pruned). Functional sty
 ```
 ┌────────┬──────────────┬──────────────────────────────────┐
 │        │              │  .cryoclaw-titlebar (44px, drag)   │
-│ cc-rail│cc-session-   │  = context bar: panel toggle +     │
+│ oc-rail│oc-session-   │  = context bar: panel toggle +     │
 │ (60px) │panel(264px,  │    session name / view title       │
 │ always │collapsible/  ├──────────────────────────────────┤
 │  on)   │resizable)    │  .cryoclaw-content                 │
@@ -184,21 +184,21 @@ scale (check the file for the live set; dead classes are pruned). Functional sty
 └────────┴──────────────┴──────────────────────────────────┘
 ```
 
-### 4.1 cc-rail icon rail (`shell.css`)
+### 4.1 oc-rail icon rail (`shell.css`)
 
 - Width `--rail-width` (60px), present in every view except the setup fullpage wizard;
   the whole rail is a drag region, every interactive item is `no-drag`.
 - Top to bottom: brand mark (drag area) → chat / tasks (running-task count badge) /
-  workspace / extensions → flexible spacer (`cc-rail__spacer`) → webbridge repair
+  workspace / extensions → flexible spacer (`oc-rail__spacer`) → webbridge repair
   (conditional, warn color) → full web version / reconnect (destructive color + error
-  badge when disconnected; hovering pops up the `cc-rail__error-popup` error list) →
-  settings (with dot badge `cc-rail__dot`).
+  badge when disconnected; hovering pops up the `oc-rail__error-popup` error list) →
+  settings (with dot badge `oc-rail__dot`).
 - Item spec: 40×40, radius-10, 20px icons; default `--text-muted`, hover shows
   `--bg-hover` tint, active = `--accent` text + `--accent-subtle` background.
-- The numeric badge `cc-rail__badge` (accent background, destructive when disconnected)
-  and the dot badge `cc-rail__dot` are among the few legitimate pill-radius uses.
+- The numeric badge `oc-rail__badge` (accent background, destructive when disconnected)
+  and the dot badge `oc-rail__dot` are among the few legitimate pill-radius uses.
 
-### 4.2 cc-session-panel session panel (`session-panel.css`)
+### 4.2 oc-session-panel session panel (`session-panel.css`)
 
 - **Shown only in the chat view**; the `navCollapsed` setting now means "session panel
   collapsed". The collapse/expand button sits at the left of the context bar

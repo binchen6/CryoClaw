@@ -45,7 +45,7 @@ import {
   reorderOrgGroups, assignModelToGroup, pruneModelOrgAssignments, generateOrgGroupId,
   type ModelOrgState,
 } from "./model-org.lib.ts";
-import { renderModelOptionsGrouped } from "../../components/model-options.ts";
+import { renderModelOptionsGrouped } from "../../model-options.ts";
 import { deriveUsageView, formatResetText, type UsageLabels } from "./tab-provider-usage.lib.ts";
 
 /** 编辑器可选思考档位（off/on 为基础开关、adaptive 为 provider 专有，不暴露） */

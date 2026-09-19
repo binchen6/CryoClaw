@@ -1460,6 +1460,11 @@ app.whenReady().then(async () => {
       await showMainWindow("setup");
       break;
   }
+}).catch((err) => {
+  // 启动体异常不得静默吞掉：跳过的后半段（失败恢复开窗/自动内核升级/earlyWindow）
+  // 需要兜底，否则用户面对无窗口假死进程。
+  log.error(`[startup] app.whenReady 启动链异常: ${err instanceof Error ? err.stack : String(err)}`);
+  openRecoverySettings(`startup-error: ${err instanceof Error ? err.message : String(err)}`);
 });
 
 // ── 二次启动 → 聚焦已有窗口 ──

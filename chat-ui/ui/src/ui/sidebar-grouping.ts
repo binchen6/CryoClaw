@@ -1,8 +1,8 @@
 /**
  * 会话列表分组（Codex threads 风）：置顶优先，其余按更新时间分时间组。
- * 纯函数模块，独立可测（<cc-session-panel> 渲染层只负责消费分组结果）。
+ * 纯函数模块，独立可测（<oc-session-panel> 渲染层只负责消费分组结果）。
  */
-import type { SessionPanelSessionOption } from "./components/cc-session-panel.ts";
+import type { SessionPanelSessionOption } from "./components/oc-session-panel.ts";
 
 export type SidebarSessionGroup = {
   /** i18n key（sidebar.groupPinned / groupToday / groupYesterday / groupLast7Days / groupOlder） */

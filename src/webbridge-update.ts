@@ -497,6 +497,25 @@ async function applyWebbridgeUpdateLocked(
     };
   }
 
+  // 3.5 内容级幂等：CDN HEAD 不回 ETag（或 ETag 变化但内容未变）时，上方 ETag
+  // 短路不会命中；下载后比对 sha256，内容未变则丢弃 tmp 直接幂等返回——
+  // 避免每 24h 自动检查都白白停/启 daemon（打断浏览器扩展连接）。
+  if (oldManifest?.sha256) {
+    const tmpSha = sha256FileSync(tmpPath);
+    if (tmpSha === oldManifest.sha256 && oldManifest.sha256 === sha256FileSync(binaryPath)) {
+      try {
+        fs.rmSync(tmpPath, { force: true });
+      } catch {}
+      return {
+        ok: true,
+        from: oldManifest.version || null,
+        to: oldManifest.version || null,
+        etag: head.etag ?? null,
+        daemonRestarted: false,
+      };
+    }
+  }
+
   // 4. 换文件前处理文件锁：daemon 在跑先 stop（等 5s）
   if (daemonWasRunning) {
     await stopDaemonAndWait(binaryPath, dataDir);

@@ -1,5 +1,5 @@
-// 守护回归（源码审计，同 cc-chat-stream.test.ts 模式，R41 Task 11）：
-// 抽取 <cc-chat-history> 组件隔离历史列表重渲染是结构性优化——回退（把
+// 守护回归（源码审计，同 oc-chat-stream.test.ts 模式，R41 Task 11）：
+// 抽取 <oc-chat-history> 组件隔离历史列表重渲染是结构性优化——回退（把
 // repeat(chatItems) 塞回 renderChat 模板、或让回调/流式属性进视觉清单）会让
 // 草稿敲击、连接态、流式帧等高频更新重新全量求值 ≤200 条历史这棵最重子树，必须钉住。
 // 组件本体依赖 lit + customElements（node 下直接导入意义不大），故用源码断言。
@@ -12,10 +12,10 @@ function readSrc(rel: string): string {
   return readFileSync(new URL(`../../../../../src/ui/${rel}`, import.meta.url), "utf8");
 }
 
-const componentSrc = readSrc("components/cc-chat-history.ts");
+const componentSrc = readSrc("components/oc-chat-history.ts");
 const chatViewSrc = readSrc("views/chat.ts");
 
-test("cc-chat-history：无 shadow DOM（createRenderRoot 返回 this，复用全局样式）", () => {
+test("oc-chat-history：无 shadow DOM（createRenderRoot 返回 this，复用全局样式）", () => {
   assert.match(
     componentSrc,
     /createRenderRoot\(\)\s*\{\s*return this;/,
@@ -23,15 +23,15 @@ test("cc-chat-history：无 shadow DOM（createRenderRoot 返回 this，复用�
   );
 });
 
-test("cc-chat-history：注册为 cc-chat-history 自定义元素", () => {
+test("oc-chat-history：注册为 oc-chat-history 自定义元素", () => {
   assert.match(
     componentSrc,
-    /customElement\("cc-chat-history"\)|customElements\.define\("cc-chat-history"/,
-    "组件必须以 cc-chat-history 标签名注册",
+    /customElement\("oc-chat-history"\)|customElements\.define\("oc-chat-history"/,
+    "组件必须以 oc-chat-history 标签名注册",
   );
 });
 
-test("cc-chat-history：静态属性声明 + shouldUpdate 只按视觉属性放行", () => {
+test("oc-chat-history：静态属性声明 + shouldUpdate 只按视觉属性放行", () => {
   assert.match(componentSrc, /static properties\s*=/, "缺少静态属性声明（attribute: false 清单）");
   assert.match(componentSrc, /shouldUpdate\(/, "缺少 shouldUpdate 门控");
   const visualList = componentSrc.match(/VISUAL_PROPS\s*=\s*\[[\s\S]*?\]/)?.[0] ?? "";
@@ -57,7 +57,7 @@ test("cc-chat-history：静态属性声明 + shouldUpdate 只按视觉属性放�
   }
 });
 
-test("cc-chat-history：memo 调用点在组件内，复用 renderMessageGroup + repeat", () => {
+test("oc-chat-history：memo 调用点在组件内，复用 renderMessageGroup + repeat", () => {
   assert.match(
     componentSrc,
     /buildChatItemsMemoized\(/,
@@ -80,21 +80,21 @@ test("views/chat：renderChat 不再直接调用历史 memo（调用点已迁入
   assert.ok(!/const chatItems\b/.test(chatViewSrc), "views/chat.ts 不应再持有 chatItems 局部量");
 });
 
-test("views/chat：renderChat 装配 <cc-chat-history> 且引入组件模块", () => {
-  assert.match(chatViewSrc, /<cc-chat-history/, "renderChat 应装配 <cc-chat-history>");
+test("views/chat：renderChat 装配 <oc-chat-history> 且引入组件模块", () => {
+  assert.match(chatViewSrc, /<oc-chat-history/, "renderChat 应装配 <oc-chat-history>");
   assert.match(
     chatViewSrc,
-    /import "\.\.\/components\/cc-chat-history\.ts"/,
+    /import "\.\.\/components\/oc-chat-history\.ts"/,
     "缺少组件注册副作用导入",
   );
 });
 
 test("views/chat：装配顺序——历史组件在流式组件之前（时间线先历史后流式）", () => {
   // 用装配特征（html`<标签）定位，避开注释中的标签字样；属性绑定也是装配独有特征备用验证
-  const historyIdx = chatViewSrc.indexOf("html`<cc-chat-history");
-  const streamIdx = chatViewSrc.indexOf("html`<cc-chat-stream");
-  assert.ok(historyIdx >= 0, "缺少 <cc-chat-history> 装配");
-  assert.ok(streamIdx >= 0, "缺少 <cc-chat-stream> 装配（Task 10 产物不得丢失）");
-  assert.ok(historyIdx < streamIdx, "<cc-chat-history> 必须装配在 <cc-chat-stream> 之前");
+  const historyIdx = chatViewSrc.indexOf("html`<oc-chat-history");
+  const streamIdx = chatViewSrc.indexOf("html`<oc-chat-stream");
+  assert.ok(historyIdx >= 0, "缺少 <oc-chat-history> 装配");
+  assert.ok(streamIdx >= 0, "缺少 <oc-chat-stream> 装配（Task 10 产物不得丢失）");
+  assert.ok(historyIdx < streamIdx, "<oc-chat-history> 必须装配在 <oc-chat-stream> 之前");
   assert.match(chatViewSrc, /\.messages=\$\{props\.messages\}/, "历史组件缺少 messages 属性绑定");
 });

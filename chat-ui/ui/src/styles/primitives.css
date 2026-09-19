@@ -105,7 +105,7 @@
 .cc-dialog-overlay {
   position: fixed;
   inset: 0;
-  z-index: 1000;
+  z-index: var(--z-dialog);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -233,4 +233,176 @@
   background: var(--bg-hover);
   border-color: transparent;
   color: var(--text);
+}
+
+/* ── 图标按钮（R94 收编各视图私有 icon-btn：32px 方形、radius-8、hover 浅底） ── */
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: var(--radius-8);
+  background: transparent;
+  color: var(--text-muted);
+  font-family: inherit;
+  cursor: pointer;
+  flex-shrink: 0;
+  /* 图标按钮永远是可交互元素：壳层 drag 区内一律配 no-drag */
+  -webkit-app-region: no-drag;
+  transition: background var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out),
+    opacity var(--duration-fast) var(--ease-out);
+}
+
+.icon-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.icon-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.icon-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.icon-btn svg {
+  width: var(--icon-size-16);
+  height: var(--icon-size-16);
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.icon-btn--sm {
+  width: 28px;
+  height: 28px;
+}
+
+.icon-btn--sm svg {
+  width: var(--icon-size-14);
+  height: var(--icon-size-14);
+}
+
+/* 密排行内场景（文件树/卡片角标） */
+.icon-btn--xs {
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-6);
+}
+
+.icon-btn--xs svg {
+  width: var(--icon-size-14);
+  height: var(--icon-size-14);
+}
+
+/* 危险态图标按钮（删除类）：hover 出语义红 */
+.icon-btn--danger:hover:not(:disabled) {
+  background: var(--danger-subtle);
+  color: var(--danger);
+}
+
+/* ── 内容区页头（R94 PageHeader 规范）──
+   R95：零视图消费，按 R75 死类即删移除；恢复时按 PageHeader 规范重建
+   （子级标题 + 页面主操作，各视图不得自建第二套头部）。 */
+
+/* ── 设置行（R94：左文右控，hairline 分行；消灭 label 与控件散点） ── */
+.setting-row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacer-16);
+  padding: var(--spacer-12) 0;
+  border-bottom: var(--hairline);
+}
+
+.setting-row:last-child {
+  border-bottom: none;
+}
+
+.setting-row__text {
+  flex: 1;
+  min-width: 0;
+}
+
+.setting-row__label {
+  font-size: var(--text-base);
+  font-weight: var(--weight-medium);
+  color: var(--text-strong);
+}
+
+.setting-row__desc {
+  margin-top: var(--spacer-2);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  line-height: var(--leading-title);
+}
+
+.setting-row__control {
+  flex-shrink: 0;
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--spacer-8);
+}
+
+/* ── 空态（R94：图标 + 标题 + 说明 + 主行动；全视图共用） ── */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacer-8);
+  margin: auto;
+  padding: var(--spacer-48) var(--spacer-24);
+  max-width: 360px;
+  text-align: center;
+}
+
+.empty-state__icon {
+  width: 48px;
+  height: 48px;
+  color: var(--text-faint);
+}
+
+.empty-state__icon svg {
+  width: 100%;
+  height: 100%;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.empty-state__title {
+  font-size: var(--heading-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--text-strong);
+}
+
+.empty-state__desc {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  line-height: var(--leading-body);
+}
+
+.empty-state__actions {
+  margin-top: var(--spacer-8);
+  display: flex;
+  align-items: center;
+  gap: var(--spacer-8);
+}
+
+/* ── 通用旋转动画（R95：原 8 份私有 spin keyframes 统一） ── */
+@keyframes oc-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }

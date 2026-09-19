@@ -104,7 +104,7 @@
 }
 
 .compaction-indicator--active svg {
-  animation: compaction-spin 1s linear infinite;
+  animation: oc-spin 1s linear infinite;
 }
 
 .compaction-indicator--complete {
@@ -115,12 +115,6 @@
 .compaction-indicator--fallback {
   color: var(--warn);
   border-color: var(--warn-subtle);
-}
-
-@keyframes compaction-spin {
-  to {
-    transform: rotate(360deg);
-  }
 }
 
 /* ── 代码块 ── */
@@ -209,7 +203,7 @@
   border: var(--hairline);
   border-radius: var(--radius-12);
   box-shadow: var(--shadow-lg);
-  z-index: 10001;
+  z-index: var(--z-toast);
   pointer-events: none;
   animation: global-toast-in var(--duration-normal) var(--ease-out) forwards;
 }

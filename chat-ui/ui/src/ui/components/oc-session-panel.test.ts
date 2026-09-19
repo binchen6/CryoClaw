@@ -1,5 +1,5 @@
 // 守护回归（源码审计，2026.9 提案 A 重写版；前身 cc-sidebar.test.ts）：
-// 旧 280px 侧边栏拆分为 <cc-rail>（图标轨，常驻导航）+ <cc-session-panel>
+// 旧 280px 侧边栏拆分为 <oc-rail>（图标轨，常驻导航）+ <oc-session-panel>
 // （chat 视图会话面板）两个独立组件。抽取组件隔离重渲染是结构性优化——
 // 回退（把模板塞回 renderApp 直接求值、或让回调/每帧新字面量进比较清单）
 // 会让流式帧等高频更新重新全量重求值，必须钉住。
@@ -14,8 +14,8 @@ function readSrc(rel: string): string {
   return readFileSync(new URL(`../../../../../src/ui/${rel}`, import.meta.url), "utf8");
 }
 
-const panelSrc = readSrc("components/cc-session-panel.ts");
-const railSrc = readSrc("components/cc-rail.ts");
+const panelSrc = readSrc("components/oc-session-panel.ts");
+const railSrc = readSrc("components/oc-rail.ts");
 const appRenderSrc = readSrc("app-render.ts");
 
 // 剥掉块注释与行注释：负向断言只针对真实代码，防注释中的字样误匹配
@@ -26,8 +26,8 @@ function stripComments(src: string): string {
 // ── 共同契约（两组件同构）────────────────────────────────────
 
 for (const [name, src, tag] of [
-  ["cc-session-panel", panelSrc, "cc-session-panel"],
-  ["cc-rail", railSrc, "cc-rail"],
+  ["oc-session-panel", panelSrc, "oc-session-panel"],
+  ["oc-rail", railSrc, "oc-rail"],
 ] as const) {
   test(`${name}：无 shadow DOM（createRenderRoot 返回 this，复用全局样式）`, () => {
     assert.match(
@@ -62,9 +62,9 @@ for (const [name, src, tag] of [
   });
 }
 
-// ── cc-session-panel 专属 ────────────────────────────────────
+// ── oc-session-panel 专属 ────────────────────────────────────
 
-test("cc-session-panel：会话菜单模块态与辅助函数随迁（开关态 + document 级外部关闭注册/注销）", () => {
+test("oc-session-panel：会话菜单模块态与辅助函数随迁（开关态 + document 级外部关闭注册/注销）", () => {
   assert.match(panelSrc, /let sessionMenuKey/, "缺会话菜单模块态");
   assert.match(panelSrc, /document\.addEventListener\("click", sessionMenuOutsideCloser\)/, "缺外部关闭注册");
   assert.match(panelSrc, /document\.removeEventListener\("click", sessionMenuOutsideCloser\)/, "缺外部关闭注销");
@@ -72,27 +72,27 @@ test("cc-session-panel：会话菜单模块态与辅助函数随迁（开关态 
   assert.match(panelSrc, /bump\s*=\s*\(\)/, "缺组件级 bump 刷新触发器");
 });
 
-test("cc-session-panel：模板关键接线（搜索/归档/新会话/更多菜单/内联重命名/分组）", () => {
+test("oc-session-panel：模板关键接线（搜索/归档/新会话/更多菜单/内联重命名/分组）", () => {
   assert.match(panelSrc, /onSessionSearchChange/, "缺搜索接线");
   assert.match(panelSrc, /onToggleArchived/, "缺归档切换接线");
   assert.match(panelSrc, /props\.onNewChat/, "缺新会话接线");
   assert.match(panelSrc, /toggleMoreMenu/, "缺「更多」菜单开关");
   assert.match(panelSrc, /startInlineRename/, "缺内联重命名");
   assert.match(panelSrc, /groupSidebarSessions/, "缺置顶+时间分组");
-  assert.match(panelSrc, /cc-panel__session-edit/, "内联重命名输入框类名");
+  assert.match(panelSrc, /oc-panel__session-edit/, "内联重命名输入框类名");
 });
 
-test("cc-session-panel：disconnectedCallback 清菜单模块态", () => {
+test("oc-session-panel：disconnectedCallback 清菜单模块态", () => {
   assert.match(panelSrc, /disconnectedCallback\(\)[\s\S]{0,200}?resetMenuState\(\)/, "卸载应清菜单模块态与 document 级监听");
 });
 
-test("cc-session-panel：无 git 时「更多」菜单按钮整体隐藏（gitAvailable === true 门控）", () => {
+test("oc-session-panel：无 git 时「更多」菜单按钮整体隐藏（gitAvailable === true 门控）", () => {
   assert.match(panelSrc, /props\.gitAvailable === true\s*\?\s*html`/, "「更多」菜单应按 gitAvailable === true 门控");
 });
 
-// ── cc-rail 专属 ─────────────────────────────────────────────
+// ── oc-rail 专属 ─────────────────────────────────────────────
 
-test("cc-rail：五个导航入口 + 状态入口接线", () => {
+test("oc-rail：五个导航入口 + 状态入口接线", () => {
   for (const cb of ["onOpenChat", "onOpenTasks", "onOpenWorkspace", "onOpenExtensions", "onOpenSettings", "onOpenWebUI", "onReconnect", "onWebbridgeRepairClick"]) {
     assert.match(railSrc, new RegExp(`props\\.${cb}\\(`), `缺 ${cb} 接线`);
   }
@@ -101,18 +101,18 @@ test("cc-rail：五个导航入口 + 状态入口接线", () => {
   assert.match(railSrc, /props\.connected\s*\?/, "连接态分流（完整版网页 / 重连）");
 });
 
-test("cc-rail：errors 按内容比较（根渲染每帧新建数组，按引用比较会恒真）", () => {
+test("oc-rail：errors 按内容比较（根渲染每帧新建数组，按引用比较会恒真）", () => {
   assert.match(railSrc, /function errorsEqual\(/, "缺 errorsEqual 内容比较");
   assert.match(railSrc, /errorsEqual\(prev\.errors, next\.errors\)/, "shouldUpdate 应使用 errorsEqual");
 });
 
 // ── 装配层（app-render）──────────────────────────────────────
 
-test("app-render：装配 <cc-session-panel .props=...> 与 <cc-rail .props=...>", () => {
-  assert.match(appRenderSrc, /<cc-session-panel\s/, "renderApp 应装配 <cc-session-panel>");
-  assert.match(appRenderSrc, /<cc-rail\s/, "renderApp 应装配 <cc-rail>");
-  assert.match(appRenderSrc, /import "\.\/components\/cc-session-panel\.ts"/, "缺少面板注册副作用导入");
-  assert.match(appRenderSrc, /import "\.\/components\/cc-rail\.ts"/, "缺少图标轨注册副作用导入");
+test("app-render：装配 <oc-session-panel .props=...> 与 <oc-rail .props=...>", () => {
+  assert.match(appRenderSrc, /<oc-session-panel\s/, "renderApp 应装配 <oc-session-panel>");
+  assert.match(appRenderSrc, /<oc-rail\s/, "renderApp 应装配 <oc-rail>");
+  assert.match(appRenderSrc, /import "\.\/components\/oc-session-panel\.ts"/, "缺少面板注册副作用导入");
+  assert.match(appRenderSrc, /import "\.\/components\/oc-rail\.ts"/, "缺少图标轨注册副作用导入");
 });
 
 test("app-render：sessionOptions memo 引用稳定（防每帧新引用击穿面板隔离）", () => {

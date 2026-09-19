@@ -20,14 +20,14 @@ import {
   goalTokensLabel,
 } from "../chat/goal-display.ts";
 import type { SessionCompactionCheckpoint } from "../controllers/session-compaction.ts";
-import "../components/resizable-divider.ts";
+import "../components/oc-resizable-divider.ts";
 // 流式气泡独立组件（R41 Task 10）：chatStream 高频变化只命中组件自身重渲染，
-// 历史列表 memo 不再被每帧 invalidate（接线见 renderChat 线程尾部 <cc-chat-stream>）
-import "../components/cc-chat-stream.ts";
+// 历史列表 memo 不再被每帧 invalidate（接线见 renderChat 线程尾部 <oc-chat-stream>）
+import "../components/oc-chat-stream.ts";
 // 历史消息/工具时间线列表独立组件（R41 Task 11）：草稿敲击/连接态等高频更新不再重求值这棵最重子树，
-// 历史 memo 调用点也随之移入组件（接线见 renderChat 线程内 hero 与 <cc-chat-stream> 之间）
-import "../components/cc-chat-history.ts";
-import { renderConfiguredModelOptions } from "../components/model-options.ts";
+// 历史 memo 调用点也随之移入组件（接线见 renderChat 线程内 hero 与 <oc-chat-stream> 之间）
+import "../components/oc-chat-history.ts";
+import { renderConfiguredModelOptions } from "../model-options.ts";
 import { loadModelOrg } from "./settings/model-org.lib.ts";
 import { computeStopButtonVisible } from "./chat-stop-button-gate.ts";
 import { KNOWN_THINKING_LEVELS } from "../chat/thinking-levels.ts";
@@ -1017,7 +1017,7 @@ export function renderChat(props: ChatProps) {
 
   const splitRatio = props.splitRatio ?? 0.6;
   const sidebarOpen = Boolean(props.sidebarOpen && props.onCloseSidebar);
-  // 当前正在执行的工具（有 call 无 result），用于流式状态行的阶段提示（供 <cc-chat-stream>）
+  // 当前正在执行的工具（有 call 无 result），用于流式状态行的阶段提示（供 <oc-chat-stream>）
   const activeToolName = resolveActiveToolName(
     Array.isArray(props.toolMessages) ? props.toolMessages : [],
   );
@@ -1028,7 +1028,7 @@ export function renderChat(props: ChatProps) {
     : [];
   const subagentWaiting = subagentCards.some((c) => c.active);
   // 空会话（无历史/工具/流式/子代理卡且不在加载）：线程区显示居中 hero + starter prompts
-  // R41 Task 11：历史子树已移入 <cc-chat-history>，空判定改为直接按源数组判断——
+  // R41 Task 11：历史子树已移入 <oc-chat-history>，空判定改为直接按源数组判断——
   // buildChatItems 保证每条消息必产一个条目（message/divider）、groupMessages 不丢条目，
   // 故「两数组皆空」与原 chatItems.length === 0 语义等价（hero 与流式/子代理判定仍耦合在外层）
   const isEmptySession =
@@ -1041,6 +1041,8 @@ export function renderChat(props: ChatProps) {
     subagentCards.length === 0;
   // starter prompt chips：点击即填入并发送（与 onGoalCommand 同样的同步「先改草稿再发送」时序）
   const starterKeys = ["chat.starter1", "chat.starter2", "chat.starter3", "chat.starter4"];
+  // R94：starter 卡配图标（CryoIcons 现有件，与四条文案语义一一对应）
+  const starterIcons = [icons.terminal, icons.clock, icons.diff, icons.folder];
   const sendStarter = (text: string) => {
     if (!props.connected) return;
     props.onDraftChange(text);
@@ -1100,7 +1102,8 @@ export function renderChat(props: ChatProps) {
                     ?disabled=${!props.connected}
                     @click=${() => sendStarter(t(key))}
                   >
-                    ${t(key)}
+                    <span class="chat-hero__chip-icon" aria-hidden="true">${starterIcons[i]}</span>
+                    <span class="chat-hero__chip-text">${t(key)}</span>
                   </button>
                 `,
               )}
@@ -1109,12 +1112,12 @@ export function renderChat(props: ChatProps) {
         `
         : nothing}
       ${
-        // R41 Task 11：历史列表（repeat(chatItems) + 分组）抽为独立组件 <cc-chat-history>——
+        // R41 Task 11：历史列表（repeat(chatItems) + 分组）抽为独立组件 <oc-chat-history>——
         // 只在消息数组/工具流/可见数等视觉属性真正变化时重渲染；草稿敲击、连接态、流式帧等
         // 高频状态被组件 shouldUpdate 门控，不再重求值这棵最重子树。回调每帧新闭包但属性赋值
-        // 不受 shouldUpdate 影响，事件触发时仍拿最新闭包。装配顺序契约：历史先于 <cc-chat-stream>
+        // 不受 shouldUpdate 影响，事件触发时仍拿最新闭包。装配顺序契约：历史先于 <oc-chat-stream>
         // 与子代理卡（流式归 Task 10 组件，状态归 OpenClawApp）。
-        html`<cc-chat-history
+        html`<oc-chat-history
           .messages=${props.messages}
           .toolMessages=${props.toolMessages}
           .visibleHistoryCount=${props.visibleHistoryCount}
@@ -1125,7 +1128,7 @@ export function renderChat(props: ChatProps) {
           .onOpenSidebar=${props.onOpenSidebar}
           .onQuoteMessage=${(text: string) => handleQuoteMessage(props, text)}
           .onResendError=${props.onResendError}
-        ></cc-chat-history>`
+        ></oc-chat-history>`
       }
       ${
         // R41 Task 10：流式气泡/思考指示抽为独立组件，高频更新只命中其自身 render()；
@@ -1133,7 +1136,7 @@ export function renderChat(props: ChatProps) {
         // 降级为思考指示）。R88：思考/解说流式存在时同样挂载（组件内部渲染实时思考区）。
         // 子代理等待卡仍在其后（原「置于时间线末尾（流式气泡之后）」）。
         props.stream !== null || props.thinkingStream !== null || props.narrationText !== null
-          ? html`<cc-chat-stream
+          ? html`<oc-chat-stream
               .stream=${props.stream}
               .thinkingStream=${props.thinkingStream ?? null}
               .narrationText=${props.narrationText ?? null}
@@ -1143,7 +1146,7 @@ export function renderChat(props: ChatProps) {
               .activeToolName=${activeToolName}
               .subagentWaiting=${subagentWaiting}
               .onOpenSidebar=${props.onOpenSidebar}
-            ></cc-chat-stream>`
+            ></oc-chat-stream>`
           : nothing
       }
       ${subagentCards.length > 0 ? renderSubagentCards(subagentCards) : nothing}
@@ -1181,10 +1184,10 @@ export function renderChat(props: ChatProps) {
         ${
           sidebarOpen
             ? html`
-              <resizable-divider
+              <oc-resizable-divider
                 .splitRatio=${splitRatio}
                 @resize=${(e: CustomEvent) => props.onSplitRatioChange?.(e.detail.splitRatio)}
-              ></resizable-divider>
+              ></oc-resizable-divider>
               <div class="chat-sidebar">
                 ${renderMarkdownSidebar({
                   content: props.sidebarContent ?? null,
@@ -1618,9 +1621,9 @@ function renderSubagentCards(cards: SubagentCard[]) {
 }
 
 // R41 Task 11：历史列表构建（buildChatItems/groupMessages/messageKey）与派生 memo 已整体迁入
-// <cc-chat-history>（components/cc-chat-history.ts）——调用点随消费方移入组件，外层高频更新连
+// <oc-chat-history>（components/oc-chat-history.ts）——调用点随消费方移入组件，外层高频更新连
 // memo 比较都不再跑；此处再导出仅为保持既有导入契约（chat-memo.test.ts 仍从本模块导入）。
 export {
   buildChatItemsMemoized,
   computeSessionFileChangesMemoized,
-} from "../components/cc-chat-history.ts";
+} from "../components/oc-chat-history.ts";

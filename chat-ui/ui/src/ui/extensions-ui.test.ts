@@ -1,7 +1,7 @@
 // 守护回归（源码审计，同 workspace-ui.test.ts 模式）：
 // R42 第二期「扩展视图（技能/插件双 tab）」的接线钉点。技能视图（skills）与
 // 设置页插件 tab 整合为新视图 extensions；插件 tab 状态复位从 cleanupSettingsView
-// 迁为 extensions 视图 leave hook。重 UI 模块（app.ts / components/cc-sidebar.ts /
+// 迁为 extensions 视图 leave hook。重 UI 模块（app.ts / components/oc-rail.ts /
 // app-render.ts / app-extensions.ts）在 node 下不可导入，只能钉源码。
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -28,11 +28,11 @@ test("app-render：renderActiveView 分发 extensions + rail 接线", () => {
   const s = src("app-render.ts");
   assert.match(s, /case "extensions":\s*\n\s*return renderExtensionsView\(state\)/, "缺少渲染分支");
   assert.match(s, /onOpenExtensions: \(\) => openExtensionsView\(state\)/, "缺少 onOpenExtensions prop");
-  assert.match(s, /activeView: cryoclawView/, "应向 cc-rail 传 activeView");
+  assert.match(s, /activeView: cryoclawView/, "应向 oc-rail 传 activeView");
 });
 
-test("cc-rail：扩展导航入口", () => {
-  const s = src("components/cc-rail.ts");
+test("oc-rail：扩展导航入口", () => {
+  const s = src("components/oc-rail.ts");
   assert.match(s, /t\("sidebar\.extensions"\)/, "缺少扩展入口文案");
   assert.match(s, /props\.onOpenExtensions/, "导航项未接 onOpenExtensions");
   assert.match(s, /props\.activeView === opts\.view/, "导航项未接 active 态");

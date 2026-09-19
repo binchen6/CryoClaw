@@ -22,7 +22,7 @@ export function renderSharePrompt(state: AppViewState) {
     <div class="cc-dialog-overlay" role="dialog" aria-modal="true" aria-live="polite" tabindex="-1">
       <div class="cc-dialog cc-dialog--lg">
         <div class="cc-dialog__head">
-          <div style="flex: 1; min-width: 0;">
+          <div class="oc-flex-1">
             <div class="cc-dialog__title">${state.sharePromptTitle}</div>
             <div class="cc-dialog__subtitle">${state.sharePromptSubtitle}</div>
           </div>

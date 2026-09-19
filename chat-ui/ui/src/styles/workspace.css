@@ -1,7 +1,7 @@
 /* ==========================================================================
    styles/workspace.css — Workspace 工作区页 + 全局 fixed tooltip + WebBridge modal
    内容：全局 fixed tooltip、WebBridge 修复 modal（wb-modal，settings/webbridge 域共用），
-   以及工作区页（IDE 式：wk-* 左导航 / resizable-divider 分隔 / 右主区预览）样式。
+   以及工作区页（IDE 式：wk-* 左导航 / oc-resizable-divider 分隔 / 右主区预览）样式。
    2026.9 重写：wk-* 全面换新语言（hairline / hover --bg-hover / 当前项 accent-subtle /
    面包屑 meta 小字），全部走 design tokens。
    层叠顺序由 hub styles.css 的 @import 顺序决定，勿单独调整
@@ -21,8 +21,8 @@
   white-space: nowrap;
   pointer-events: none;
   opacity: 0;
-  transition: opacity 150ms ease;
-  z-index: 10000;
+  transition: opacity var(--duration-normal) var(--ease-standard);
+  z-index: var(--z-topmost);
 }
 
 /* WebBridge pill 修复反馈 modal — 对齐 cc-dialog 契约（overlay / radius-16 / shadow-xl） */
@@ -86,10 +86,8 @@
 .wb-modal-spinner {
   width: 16px;
   height: 16px;
-  animation: wb-modal-spin 0.85s linear infinite;
+  animation: oc-spin 0.85s linear infinite;
 }
-@keyframes wb-modal-spin { to { transform: rotate(360deg); } }
-
 .fixed-tooltip--wide {
   padding: var(--spacer-8) var(--spacer-10);
   line-height: 1.45;
@@ -113,7 +111,7 @@
   color: var(--text);
 }
 
-/* ── 左导航面板：宽由 --wk-nav-ratio 驱动（resizable-divider 拖拽写入，默认 0.26） ── */
+/* ── 左导航面板：宽由 --wk-nav-ratio 驱动（oc-resizable-divider 拖拽写入，默认 0.26） ── */
 .wk-nav {
   flex: 0 0 auto;
   width: calc(100% * var(--wk-nav-ratio, 0.26));
@@ -201,71 +199,17 @@
 }
 
 /* 24px 方形图标按钮（节点行工具） */
-.wk-nav__icon-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  padding: 0;
-  border: none;
-  border-radius: var(--radius-6);
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-  line-height: 1;
-  transition: background var(--duration-fast) var(--ease-standard),
-    color var(--duration-fast) var(--ease-standard);
-}
-.wk-nav__icon-btn:hover {
-  background: var(--bg-muted);
-  color: var(--text);
-}
-.wk-nav__icon-btn:focus-visible {
-  outline: none;
-  box-shadow: var(--focus-ring);
-}
-.wk-nav__icon-btn svg {
-  width: var(--icon-size-14);
-  height: var(--icon-size-14);
+/* R94：wk-nav 两处图标按钮收编为全局 .icon-btn（--xs 档）；
+   这里只保留「行 hover/聚焦才浮现」的视图私有行为 */
+.wk-nav__item-action {
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-standard);
 }
 
-/* 文件/目录项内联「在文件管理器中打开」按钮：默认隐藏，行 hover/聚焦浮现 */
-.wk-nav__item-action {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  width: 22px;
-  height: 22px;
-  padding: 0;
-  border: none;
-  border-radius: var(--radius-6);
-  background: transparent;
-  color: var(--text-muted);
-  opacity: 0;
-  cursor: pointer;
-  line-height: 1;
-  transition: opacity var(--duration-fast) var(--ease-standard),
-    background var(--duration-fast) var(--ease-standard),
-    color var(--duration-fast) var(--ease-standard);
-}
 .wk-nav__item:hover .wk-nav__item-action,
 .wk-nav__item:focus-within .wk-nav__item-action,
 .wk-nav__item-action:focus-visible {
   opacity: 1;
-}
-.wk-nav__item-action:hover {
-  background: var(--bg-muted);
-  color: var(--text);
-}
-.wk-nav__item-action:focus-visible {
-  outline: none;
-  box-shadow: var(--focus-ring);
-}
-.wk-nav__item-action svg {
-  width: var(--icon-size-14);
-  height: var(--icon-size-14);
 }
 
 /* 文件树（导航内唯一独立滚动区） */
@@ -427,8 +371,7 @@
   tab-size: 2;
 }
 
-.wk-preview__placeholder,
-.wk-preview__empty {
+.wk-preview__placeholder {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -437,9 +380,10 @@
   font-size: var(--text-sm);
 }
 
-.wk-preview__empty-icon svg {
-  width: 40px;
-  height: 40px;
+/* R94：空态预览改用全局 .empty-state 原语（原 wk-preview__empty 系列已删）；
+   max-width 360px 沿用原语自带值，这里只补满高布局 */
+.wk-preview > .empty-state {
+  height: 100%;
 }
 
 .wk-preview__placeholder.wk-preview__error {
@@ -530,7 +474,6 @@
   .wk-nav__node-actions,
   .wk-nav__item,
   .wk-nav__repo,
-  .wk-nav__icon-btn,
   .wk-nav__item-action {
     transition: none;
   }

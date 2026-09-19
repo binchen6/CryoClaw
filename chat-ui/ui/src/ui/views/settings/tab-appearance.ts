@@ -52,23 +52,34 @@ export function renderTabAppearance(state: AppViewState) {
       <h2 class="oc-settings__section-title">${t("settings.appearance.title")}</h2>
       <p class="oc-settings__page-desc">${t("settings.appearance.desc")}</p>
 
-      <div class="oc-settings__form-group">
-        <label class="oc-settings__label">${t("settings.appearance.theme")}</label>
-        <div class="oc-settings__radio-group">
-          ${(["system", "light", "dark"] as const).map(v => html`
-            <label class="oc-settings__radio">
-              <input type="radio" name="ap-theme" value=${v} .checked=${s.theme === v}
-                @change=${() => { s.theme = v; state.requestUpdate(); }} />
-              ${t(`theme.${v}`)}
-            </label>
-          `)}
+      <!-- R94：设置行规范化（左文右控），消灭 label 与控件散点 -->
+      <div class="setting-row">
+        <div class="setting-row__text">
+          <div class="setting-row__label">${t("settings.appearance.theme")}</div>
+        </div>
+        <div class="setting-row__control">
+          <div class="oc-settings__radio-group">
+            ${(["system", "light", "dark"] as const).map(v => html`
+              <label class="oc-settings__radio">
+                <input type="radio" name="ap-theme" value=${v} .checked=${s.theme === v}
+                  @change=${() => { s.theme = v; state.requestUpdate(); }} />
+                ${t(`theme.${v}`)}
+              </label>
+            `)}
+          </div>
         </div>
       </div>
 
-      <div class="oc-settings__form-group">
-        <oc-toggle-switch .label=${t("settings.appearance.showThinking")} .checked=${s.showThinking}
-          @change=${(e: CustomEvent) => { s.showThinking = e.detail.checked; state.requestUpdate(); }}
-        ></oc-toggle-switch>
+      <div class="setting-row">
+        <div class="setting-row__text">
+          <div class="setting-row__label">${t("settings.appearance.showThinking")}</div>
+        </div>
+        <div class="setting-row__control">
+          <oc-toggle-switch .checked=${s.showThinking}
+            aria-label=${t("settings.appearance.showThinking")}
+            @change=${(e: CustomEvent) => { s.showThinking = e.detail.checked; state.requestUpdate(); }}
+          ></oc-toggle-switch>
+        </div>
       </div>
 
       <oc-message-box .message=${s.successMsg ?? ""} .type=${"success"} .visible=${!!s.successMsg}></oc-message-box>

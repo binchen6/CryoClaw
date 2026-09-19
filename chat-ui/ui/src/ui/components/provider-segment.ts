@@ -8,8 +8,9 @@
  *   ></oc-provider-segment>
  */
 import { LitElement, html } from "lit";
-import { property } from "lit/decorators.js";
+import { customElement, property } from "lit/decorators.js";
 
+@customElement("oc-provider-segment")
 export class ProviderSegment extends LitElement {
   createRenderRoot() { return this; }
 
@@ -41,8 +42,6 @@ export class ProviderSegment extends LitElement {
     `;
   }
 }
-
-customElements.define("oc-provider-segment", ProviderSegment);
 
 const styleSheet = new CSSStyleSheet();
 styleSheet.replaceSync(/* css */`
@@ -76,6 +75,11 @@ styleSheet.replaceSync(/* css */`
   .oc-provider-seg__pill:hover:not(:disabled):not(.oc-provider-seg__pill--active) {
     color: var(--text);
     background: var(--bg-hover);
+  }
+  /* R94：补齐键盘焦点态（状态矩阵：default/hover/active/focus-visible/disabled） */
+  .oc-provider-seg__pill:focus-visible {
+    outline: none;
+    box-shadow: var(--focus-ring);
   }
   /* 选中段：accent-subtle 底 + accent 字（cc-chip--selected / 导航 active 同语言） */
   .oc-provider-seg__pill--active {

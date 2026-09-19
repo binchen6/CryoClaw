@@ -6,9 +6,10 @@
  *     @change=${(e: CustomEvent) => { e.detail.checked }}
  *   ></oc-toggle-switch>
  */
-import { LitElement, html, css, nothing } from "lit";
-import { property } from "lit/decorators.js";
+import { LitElement, html, nothing } from "lit";
+import { customElement, property } from "lit/decorators.js";
 
+@customElement("oc-toggle-switch")
 export class ToggleSwitch extends LitElement {
   createRenderRoot() { return this; }
 
@@ -56,8 +57,6 @@ export class ToggleSwitch extends LitElement {
     `;
   }
 }
-
-customElements.define("oc-toggle-switch", ToggleSwitch);
 
 const styleSheet = new CSSStyleSheet();
 styleSheet.replaceSync(/* css */`

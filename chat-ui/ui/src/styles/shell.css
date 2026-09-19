@@ -1,6 +1,6 @@
 /* ==========================================================================
    styles/shell.css — 应用壳（2026.9 提案 A 重写）
-   内容：.cryoclaw-shell 布局、cc-rail 图标轨、上下文栏（.cryoclaw-titlebar/
+   内容：.cryoclaw-shell 布局、oc-rail 图标轨、上下文栏（.cryoclaw-titlebar/
    .cc-contextbar）、会话面板调宽手柄。会话面板自身样式在 session-panel.css。
    层叠顺序由 hub styles.css 的 @import 顺序决定，勿单独调整
    ========================================================================== */
@@ -56,7 +56,7 @@
   height: var(--titlebar-h);
   flex-shrink: 0;
   position: relative;
-  z-index: 100;
+  z-index: var(--z-contextbar);
   -webkit-app-region: drag;
   display: flex;
   align-items: stretch;
@@ -132,17 +132,17 @@
 }
 
 /* ============================================
-   cc-rail 图标轨（常驻，60px）
+   oc-rail 图标轨（常驻，60px）
    ============================================ */
 
-cc-rail {
+oc-rail {
   display: block;
   width: var(--rail-width);
   flex-shrink: 0;
   height: 100vh;
 }
 
-.cc-rail {
+.oc-rail {
   width: 100%;
   height: 100%;
   display: flex;
@@ -154,7 +154,7 @@ cc-rail {
   -webkit-app-region: drag;
 }
 
-.cc-rail__brand {
+.oc-rail__brand {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -163,19 +163,19 @@ cc-rail {
   margin-bottom: var(--spacer-8);
 }
 
-.cc-rail__brand-mark {
+.oc-rail__brand-mark {
   width: 24px;
   height: 24px;
   display: block;
 }
 
-.cc-rail__brand-mark svg {
+.oc-rail__brand-mark svg {
   width: 100%;
   height: 100%;
   display: block;
 }
 
-.cc-rail__nav {
+.oc-rail__nav {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -183,7 +183,7 @@ cc-rail {
   width: 100%;
 }
 
-.cc-rail__footer {
+.oc-rail__footer {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -192,11 +192,11 @@ cc-rail {
   position: relative;
 }
 
-.cc-rail__spacer {
+.oc-rail__spacer {
   flex: 1;
 }
 
-.cc-rail__item {
+.oc-rail__item {
   position: relative;
   width: 40px;
   height: 40px;
@@ -213,17 +213,30 @@ cc-rail {
     color var(--duration-fast) var(--ease-standard);
 }
 
-.cc-rail__item:hover {
+.oc-rail__item:hover {
   color: var(--text);
   background: var(--bg-hover);
 }
 
-.cc-rail__item.active {
+.oc-rail__item.active {
   color: var(--accent);
   background: var(--accent-subtle);
 }
 
-.cc-rail__item svg {
+/* R94：当前态左侧 2px 指示条（轨内容水平居中，item 40px 宽 → 条贴轨左缘内侧） */
+.oc-rail__item.active::before {
+  content: "";
+  position: absolute;
+  left: -9px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 2px;
+  height: 20px;
+  border-radius: var(--radius-full);
+  background: var(--accent);
+}
+
+.oc-rail__item svg {
   width: 20px;
   height: 20px;
   stroke: currentColor;
@@ -233,26 +246,26 @@ cc-rail {
   stroke-linejoin: round;
 }
 
-.cc-rail__item--webbridge-repair {
+.oc-rail__item--webbridge-repair {
   color: var(--warn);
 }
 
-.cc-rail__item--webbridge-repair:hover {
+.oc-rail__item--webbridge-repair:hover {
   color: var(--warn);
   background: var(--warn-subtle);
 }
 
-.cc-rail__item--disconnected {
+.oc-rail__item--disconnected {
   color: var(--destructive);
 }
 
-.cc-rail__item--disconnected:hover {
+.oc-rail__item--disconnected:hover {
   color: var(--destructive);
   background: var(--danger-subtle);
 }
 
 /* 数字徽标（运行中任务数 / 错误数） */
-.cc-rail__badge {
+.oc-rail__badge {
   position: absolute;
   top: 2px;
   right: 0;
@@ -269,13 +282,13 @@ cc-rail {
   pointer-events: none;
 }
 
-.cc-rail__item--disconnected .cc-rail__badge {
+.oc-rail__item--disconnected .oc-rail__badge {
   background: var(--destructive);
   color: var(--text-on-accent);
 }
 
 /* 圆点角标（设置：微信/更新提示） */
-.cc-rail__dot {
+.oc-rail__dot {
   position: absolute;
   top: 6px;
   right: 6px;
@@ -288,12 +301,12 @@ cc-rail {
 }
 
 /* 错误悬浮列表：图标轨按钮右侧弹出，hover 按钮时显示（同旧 sidebar 交互） */
-.cc-rail__error-wrap {
+.oc-rail__error-wrap {
   position: relative;
   display: inline-flex;
 }
 
-.cc-rail__error-popup {
+.oc-rail__error-popup {
   display: none;
   position: absolute;
   left: calc(100% + 8px);
@@ -307,11 +320,11 @@ cc-rail {
   overflow: hidden;
 }
 
-.cc-rail__error-wrap:hover .cc-rail__error-popup {
+.oc-rail__error-wrap:hover .oc-rail__error-popup {
   display: block;
 }
 
-.cc-rail__error-item {
+.oc-rail__error-item {
   padding: var(--spacer-8) var(--spacer-12);
   font-size: var(--text-sm);
   line-height: var(--leading-title);
@@ -319,7 +332,7 @@ cc-rail {
   word-break: break-word;
 }
 
-.cc-rail__error-item + .cc-rail__error-item {
+.oc-rail__error-item + .oc-rail__error-item {
   border-top: var(--hairline);
 }
 
@@ -374,8 +387,8 @@ cc-rail {
   position: fixed;
   top: calc(var(--titlebar-h) + var(--spacer-8));
   right: var(--spacer-16);
-  /* 低于模态遮罩（1000），避免压住模态弹窗；toast（10001）不受影响 */
-  z-index: 900;
+  /* 低于模态遮罩（--z-dialog），避免压住模态弹窗；toast（--z-toast）不受影响 */
+  z-index: var(--z-banner);
   width: 320px;
   padding: var(--spacer-10) var(--spacer-12);
   border: var(--hairline);

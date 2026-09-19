@@ -68,7 +68,7 @@ export function diagnoseDialogLayering(
 
 const DEFAULT_LAYOUT_SELECTORS = [
   "main", "[role=main]", "[role=dialog]", ".cryoclaw-shell", ".cryoclaw-titlebar",
-  ".cc-rail", ".chat-thread", ".chat-compose", ".oc-modal-dialog", ".oc-settings",
+  ".oc-rail", ".chat-thread", ".chat-compose", ".oc-modal-dialog", ".oc-settings",
   "[data-layout-check]",
 ];
 

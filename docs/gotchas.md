@@ -257,7 +257,7 @@ Things that are easy to get wrong or forget when working on CryoClaw.
     白空复位规则（`:is(...)`）不得包含 `pre`——代码块格式依赖 UA `white-space: pre`，
     复位成 normal 会折叠流式期间已闭合代码块的换行/缩进（R41 终审实录）；
     ② 稳定段缓存键 = 段内容，别往键里加帧变字段（会退化回每帧全量解析的 O(n²)）。
-    渲染层已组件化：流式气泡在 `<cc-chat-stream>`、历史在 `<cc-chat-history>`、
+    渲染层已组件化：流式气泡在 `<oc-chat-stream>`、历史在 `<oc-chat-history>`、
     侧边栏在 `<cc-sidebar>`（均无 shadow DOM，shouldUpdate 白名单门控），
     改对应区域先去组件文件找。
 

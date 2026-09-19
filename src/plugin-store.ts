@@ -434,11 +434,15 @@ const MARKET_BROWSE_HTTP_DEADLINE_MS = 30_000;
 async function browsePluginMarket(limit: number): Promise<MarketBrowseItem[]> {
   let groups: Array<{ category: string; items: ScoredMarketPlugin[] }>;
   try {
+    // 竞速截止：deadline 定时器必须在 HTTP 先胜出时显式清除——race 落败分支的
+    // reject 若无人接听会升级为 unhandledRejection。
+    let deadlineTimer: NodeJS.Timeout | undefined;
     groups = await Promise.race([
       fetchMarketGroups(limit),
-      new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error("market browse http deadline exceeded")), MARKET_BROWSE_HTTP_DEADLINE_MS)),
-    ]);
+      new Promise<never>((_, reject) => {
+        deadlineTimer = setTimeout(() => reject(new Error("market browse http deadline exceeded")), MARKET_BROWSE_HTTP_DEADLINE_MS);
+      }),
+    ]).finally(() => clearTimeout(deadlineTimer));
   } catch (err) {
     log.info(`[plugin-store] market-browse http failed, falling back to cli: ${err instanceof Error ? err.message : String(err)}`);
     const keywordList: Array<{ category: string; keyword: string }> = [];

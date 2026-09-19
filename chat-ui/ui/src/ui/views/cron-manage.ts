@@ -9,7 +9,7 @@ import { formatRelativeTimestamp, formatMs } from "../format.ts";
 import { formatCronSchedule, isExpiredOneShot } from "../presenter.ts";
 import { icons } from "../icons.ts";
 import { t } from "../i18n.ts";
-import { renderConfiguredModelOptions } from "../components/model-options.ts";
+import { renderConfiguredModelOptions } from "../model-options.ts";
 import "../components/toggle-switch.ts";
 import { loadModelOrg } from "./settings/model-org.lib.ts";
 

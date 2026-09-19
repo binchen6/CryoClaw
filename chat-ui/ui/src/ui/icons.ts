@@ -58,6 +58,10 @@ export const icons = {
   warning: renderIcon(
     '<path d="M12 3.5 21.8 20H2.2z"/><path d="M12 9.5V14"/><path d="M12 17h.01"/>',
   ),
+  // 信息：外圆 + i（竖线 + 圆点，同 warning 的点画法）
+  info: renderIcon(
+    '<circle cx="12" cy="12" r="8.5"/><path d="M12 11v5"/><path d="M12 7.5h.01"/>',
+  ),
   plus: renderIcon('<path d="M12 5v14"/><path d="M5 12h14"/>'),
   arrowDown: renderIcon('<path d="M12 4v15.5"/><path d="m6 13.5 6 6 6-6"/>'),
   arrowLeft: renderIcon('<path d="M20 12H4.5"/><path d="m10.5 6-6 6 6 6"/>'),

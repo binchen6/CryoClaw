@@ -234,14 +234,14 @@ async function main() {
 
   // ---------- 场景 1：视图巡览（逐个点击 rail 项） ----------
   console.log("[场景] 视图巡览 × 宽度");
-  const railCount = await cdp.evaluate("document.querySelectorAll('.cc-rail__item').length");
+  const railCount = await cdp.evaluate("document.querySelectorAll('.oc-rail__item').length");
   const chatWidths = widths;
   const otherWidths = [Math.max(...widths), Math.min(...widths)];
   for (let i = 0; i < railCount; i++) {
     const label = await cdp.evaluate(
-      `(document.querySelectorAll('.cc-rail__item')[${i}].getAttribute('aria-label') || 'rail-' + ${i})`,
+      `(document.querySelectorAll('.oc-rail__item')[${i}].getAttribute('aria-label') || 'rail-' + ${i})`,
     );
-    await cdp.evaluate(`document.querySelectorAll('.cc-rail__item')[${i}].click()`);
+    await cdp.evaluate(`document.querySelectorAll('.oc-rail__item')[${i}].click()`);
     await sleep(1000);
     for (const width of i === 0 ? chatWidths : otherWidths) {
       await setViewport(width);

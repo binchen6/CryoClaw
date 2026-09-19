@@ -19,8 +19,8 @@ import { getLocale, t } from "../i18n.ts";
 // 2. buildChatItemsMemoized / computeSessionFileChangesMemoized 的调用点随消费方
 //    迁入本组件——状态层无关更新连「跑一遍 memo 比较」都省在组件外。
 //
-// 分工契约（同 Task 10 的 <cc-chat-stream>）：
-// - 流式气泡/思考指示归 <cc-chat-stream>（装配在本组件之后），子代理卡在更后；
+// 分工契约（同 Task 10 的 <oc-chat-stream>）：
+// - 流式气泡/思考指示归 <oc-chat-stream>（装配在本组件之后），子代理卡在更后；
 // - 全部业务状态仍归 OpenClawApp（app-*.ts 模块不动），本组件只接 props、无自有状态；
 // - 事件回调以属性传入：buildChatProps 每帧构造新闭包，回调属性每帧 identity 变化，
 //   但 shouldUpdate 只按视觉属性放行——属性赋值本身不受 shouldUpdate 影响（Lit 只
@@ -30,8 +30,8 @@ import { getLocale, t } from "../i18n.ts";
 // 无 shadow DOM：全局样式（styles/chat.css）与 .chat-thread 上的事件委托（路径链接
 // 点击/图片 lightbox 等 document 级 closest 委托）都依赖扁平 DOM；懒渲染
 // （hydrateLazyDetailsBody）是 <details> 自身 @toggle 监听 + :scope 查询，不依赖父链。
-@customElement("cc-chat-history")
-export class CcChatHistory extends LitElement {
+@customElement("oc-chat-history")
+export class OcChatHistory extends LitElement {
   static properties = {
     messages: { attribute: false },
     toolMessages: { attribute: false },
@@ -59,7 +59,7 @@ export class CcChatHistory extends LitElement {
   onResendError?: (text: string, attachments?: ChatAttachment[]) => void;
 
   // 无 shadow DOM：复用全局样式与线程级既有事件委托；自定义元素默认 display 为
-  // inline，不影响内部块级 .chat-group/.chat-divider 布局（与 cc-chat-stream 同理）。
+  // inline，不影响内部块级 .chat-group/.chat-divider 布局（与 oc-chat-stream 同理）。
   createRenderRoot() {
     return this;
   }
@@ -76,7 +76,7 @@ export class CcChatHistory extends LitElement {
   ] as const;
 
   shouldUpdate(changed: Map<PropertyKey, unknown>): boolean {
-    return CcChatHistory.VISUAL_PROPS.some((name) => changed.has(name));
+    return OcChatHistory.VISUAL_PROPS.some((name) => changed.has(name));
   }
 
   render() {
@@ -125,7 +125,7 @@ export class CcChatHistory extends LitElement {
 
 declare global {
   interface HTMLElementTagNameMap {
-    "cc-chat-history": CcChatHistory;
+    "oc-chat-history": OcChatHistory;
   }
 }
 
@@ -135,9 +135,9 @@ declare global {
 // 引用不变（状态层一律重赋值、从不原地改，见 controllers/chat.ts /
 // app-tool-stream.ts）。按数组引用 + 相关标量浅比较做 memo，全部相同直接复用。
 // R41 Task 10：stream/streamStartedAt/tasks/runActive/sessionKey 已从比较键移除——
-// 流式条目与子代理卡移出 buildChatItems（分别由 <cc-chat-stream> / renderChat
+// 流式条目与子代理卡移出 buildChatItems（分别由 <oc-chat-stream> / renderChat
 // 直接渲染），每帧的 stream delta 不再让 ≤200 条历史全量重建。
-// R41 Task 11：调用点迁入 <cc-chat-history>——外层高频更新连 memo 比较都不跑，
+// R41 Task 11：调用点迁入 <oc-chat-history>——外层高频更新连 memo 比较都不跑，
 // 组件 shouldUpdate 未放行时整棵历史子树（含 repeat）不再被求值。
 
 const CHAT_HISTORY_RENDER_LIMIT = 200;
@@ -214,7 +214,7 @@ function buildChatItems(input: ChatHistoryInput): Array<ChatItem | MessageGroup>
   }
 
   // R41 Task 10：流式气泡（含空白时的思考指示）与子代理等待卡不再进 chatItems，
-  // 改由 renderChat 线程尾部的 <cc-chat-stream> / renderSubagentCards 直接装配：
+  // 改由 renderChat 线程尾部的 <oc-chat-stream> / renderSubagentCards 直接装配：
   // 每帧的流式 delta 不再 invalidate 本 memo，历史部分流式期间保持命中。
   return groupMessages(mergeToolResultHistory(items));
 }

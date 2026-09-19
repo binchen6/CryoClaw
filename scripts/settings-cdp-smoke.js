@@ -115,10 +115,10 @@ async function main() {
   }
 
   const settingsIdx = await cdp.evaluate(
-    `[...document.querySelectorAll('.cc-rail__item')].findIndex(e => /settings|设置/i.test(e.getAttribute('aria-label')||e.title||e.textContent))`,
+    `[...document.querySelectorAll('.oc-rail__item')].findIndex(e => /settings|设置/i.test(e.getAttribute('aria-label')||e.title||e.textContent))`,
   );
   if (settingsIdx < 0) { console.error("[settings-smoke] 未找到设置入口"); cleanup(); process.exit(1); }
-  await cdp.evaluate(`document.querySelectorAll('.cc-rail__item')[${settingsIdx}].click()`);
+  await cdp.evaluate(`document.querySelectorAll('.oc-rail__item')[${settingsIdx}].click()`);
   await sleep(1500);
 
   // 跨组件叶子重叠检测（同一自定义组件内部的覆盖不算——如密码框眼睛图标悬浮输入框；

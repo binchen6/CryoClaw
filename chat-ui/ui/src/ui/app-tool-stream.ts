@@ -196,7 +196,7 @@ function buildToolCallMessage(entry: ToolStreamEntry): Record<string, unknown> {
     timestamp: entry.startedAt,
     // 尚无 result 的 call 标记为 pending → 渲染层显示「执行中」而非「已完成」。
     // result 到达后 callMessage 会被重建（块上带输出），此标记随之消失；
-    // 历史消息无此字段（历史合并见 cc-chat-history.ts::mergeToolResultHistory），不受影响。
+    // 历史消息无此字段（历史合并见 oc-chat-history.ts::mergeToolResultHistory），不受影响。
     ...(hasResult ? {} : { pending: true }),
   };
 }

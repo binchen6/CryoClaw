@@ -9,10 +9,11 @@
 /* ── Tasks（任务实时视图） ─────────────────────────────── */
 
 .ts-layout {
-  max-width: var(--page-column);
+  /* R94：内容列并入统一宽档 --content-wide（原 --page-column 1600px 过散） */
+  max-width: var(--content-wide);
   margin: 0 auto;
   /* 壳层标题栏已统一占位 44px（2026.9 提案 A），视图不再自行让位 */
-  padding: var(--spacer-16) var(--spacer-24) var(--spacer-48);
+  padding: var(--spacer-16) var(--page-gutter) var(--spacer-48);
   display: flex;
   flex-direction: column;
   gap: var(--spacer-20);
@@ -266,7 +267,7 @@
   justify-content: center;
 }
 
-/* 分组小节：大写小字标签（同 cc-panel 组标签语言） */
+/* 分组小节：大写小字标签（同 oc-panel 组标签语言） */
 .ts-section {
   display: flex;
   flex-direction: column;

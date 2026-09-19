@@ -23,7 +23,7 @@ UI 内部只用纯色 accent。浅色是默认一等主题，暗色是独立调�
    `prefers-color-scheme` 兜底）。当前全仓视图样式中已无此类块，新增即返工。
 3. **组件优先复用 `.btn` / `cc-*` 原语**（见第 5 节），不要新造按钮/卡片/弹窗样式。
 4. **不 `text-transform: uppercase`**：label 按原文显示，尊重品牌名大小写与 CJK 文本。
-   例外：会话面板分组标签（`cc-panel__group-label`）沿用组件契约的
+   例外：会话面板分组标签（`oc-panel__group-label`）沿用组件契约的
    uppercase + caps 字距样式。
 5. **布尔设置一律 iOS 风格 Switch**（`<oc-toggle-switch>`，label 左、开关右），
    不用 radio / checkbox。
@@ -165,7 +165,7 @@ R75 清理后原子类只保留现行使用的 15 个（flex 骨架 `oc-flex(-co
 ```
 ┌────────┬──────────────┬──────────────────────────────────┐
 │        │              │  .cryoclaw-titlebar (44px, drag)   │
-│ cc-rail│cc-session-   │  = 上下文栏：面板开关+会话名/      │
+│ oc-rail│oc-session-   │  = 上下文栏：面板开关+会话名/      │
 │ (60px) │panel(264px,  │    视图标题                        │
 │ 常驻)  │可折叠/可拖宽)├──────────────────────────────────┤
 │        │  仅 chat 视图│  .cryoclaw-content                 │
@@ -173,20 +173,20 @@ R75 清理后原子类只保留现行使用的 15 个（flex 骨架 `oc-flex(-co
 └────────┴──────────────┴──────────────────────────────────┘
 ```
 
-### 4.1 cc-rail 图标轨（`shell.css`）
+### 4.1 oc-rail 图标轨（`shell.css`）
 
 - 宽 `--rail-width`（60px），所有视图（除 setup 全屏向导）常驻；整轨为拖拽区，
   每个可交互项 `no-drag`。
 - 上→下顺序：品牌标（拖拽区）→ chat / tasks（带运行中任务数徽标）/ workspace /
-  extensions → 弹性间隔（`cc-rail__spacer`）→ webbridge 修复（条件出现，warn 色）→
+  extensions → 弹性间隔（`oc-rail__spacer`）→ webbridge 修复（条件出现，warn 色）→
   完整版网页/重连（断连时 destructive 色 + 错误徽标，hover 弹出
-  `cc-rail__error-popup` 错误列表）→ settings（带圆点角标 `cc-rail__dot`）。
+  `oc-rail__error-popup` 错误列表）→ settings（带圆点角标 `oc-rail__dot`）。
 - 项规格：40×40、radius-10、图标 20px；默认 `--text-muted`，hover 出 `--bg-hover`
   底，active = `--accent` 文字 + `--accent-subtle` 底。
-- 数字徽标 `cc-rail__badge`（accent 底、断连时 destructive 底）与圆点角标
-  `cc-rail__dot` 是仅有的 pill 圆角用法之一。
+- 数字徽标 `oc-rail__badge`（accent 底、断连时 destructive 底）与圆点角标
+  `oc-rail__dot` 是仅有的 pill 圆角用法之一。
 
-### 4.2 cc-session-panel 会话面板（`session-panel.css`）
+### 4.2 oc-session-panel 会话面板（`session-panel.css`）
 
 - **仅 chat 视图显示**；`navCollapsed` 设置项语义 = 「会话面板折叠」，折叠/展开
   按钮在上下文栏左侧（`cc-contextbar__toggle`）。

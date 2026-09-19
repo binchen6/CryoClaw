@@ -1,5 +1,5 @@
 // 守护回归（源码审计，2026.9 提案 A 重写版）：
-// 会话面板（cc-session-panel）支持右缘拖拽调宽（220-420 持久化）。
+// 会话面板（oc-session-panel）支持右缘拖拽调宽（220-420 持久化）。
 // 拖拽条声明 no-drag，仅 chat 视图且面板未折叠时渲染，宽度经 UiSettings 持久化。
 import test from "node:test";
 import assert from "node:assert/strict";
