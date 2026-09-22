@@ -1,5 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { writeFileAtomicSync } from "./atomic-write";
 
 const DEFAULT_PAIRING_ACCOUNT_ID = "default";
 
@@ -72,8 +73,34 @@ export function writeChannelAllowFromStoreEntries(
     channel: String(channel ?? "").trim().toLowerCase(),
     allowFrom: normalized,
   };
-  fs.writeFileSync(defaultPath, JSON.stringify(payload, null, 2), "utf-8");
+  // 授权类配置不走半截 JSON：tmp + fsync + rename 原子写，掉电/崩溃不留中间态
+  // （读侧对半截 JSON 容错为 []，静默丢失已批准用户，不可取）。
+  writeFileAtomicSync(defaultPath, JSON.stringify(payload, null, 2));
   if (fs.existsSync(legacyPath)) {
     fs.unlinkSync(legacyPath);
   }
+}
+
+// 纯函数：从 allowFrom 条目中移除指定 id（remove 流程与单测共用）。
+export function applyRemoveAllowFromEntries(entries: string[], removeIds: string[]): string[] {
+  const removeSet = new Set(
+    removeIds.map((id) => String(id ?? "").trim()).filter(Boolean),
+  );
+  if (removeSet.size === 0) return normalizeAllowFromEntries(entries);
+  return normalizeAllowFromEntries(entries).filter((entry) => !removeSet.has(entry));
+}
+
+// remove 授权的「读-改-写」：写前重读一次磁盘，在最新内容基础上应用删除。
+// 该文件同时被 gateway `openclaw pairing approve` 写入，基于旧快照覆盖会把并发
+// 批准的条目静默抹掉；重读把 lost-update 窗口缩到最小（跨进程竞态无法完全消除，
+// 这里不加锁文件——那要动 gateway 侧）。注意 remove 是删除语义，不能做并集合并，
+// 否则被移除的条目会复活。
+export function removeChannelAllowFromStoreEntries(
+  credentialsDir: string,
+  channel: string,
+  removeIds: string[],
+): void {
+  const latest = readChannelAllowFromStoreEntries(credentialsDir, channel);
+  const next = applyRemoveAllowFromEntries(latest, removeIds);
+  writeChannelAllowFromStoreEntries(credentialsDir, channel, next);
 }

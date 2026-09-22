@@ -129,7 +129,21 @@ export class GatewayBrowserClient {
     }
     this.clearReconnectTimer();
     console.info(`[gateway] websocket opening ${this.opts.url}`);
-    const ws = new WebSocket(this.opts.url);
+    // F8：URL 非法（localStorage 脏数据 / URL 参数注入）时 WebSocket 构造器同步抛
+    // SyntaxError。若无防护，异常向上打断 connectedCallback 后续全部初始化。
+    // 捕获后走与真实断开一致的错误状态通道（onClose → host.lastError）+ 退避重连。
+    let ws: WebSocket;
+    try {
+      ws = new WebSocket(this.opts.url);
+    } catch (err) {
+      console.warn("[gateway] websocket open failed (invalid url?)", err);
+      this.opts.onClose?.({
+        code: CONNECT_FAILED_CLOSE_CODE,
+        reason: `invalid gateway url: ${this.opts.url}`,
+      });
+      this.scheduleReconnect();
+      return;
+    }
     const generation = ++this.socketGeneration;
     this.ws = ws;
     this.resetHandshakeState();

@@ -43,6 +43,10 @@ export function isBackoffActive(
   backoffMs: number = AUTO_KERNEL_UPGRADE_BACKOFF_MS,
 ): boolean {
   if (!state) return false;
+  // 系统时钟回拨后 lastFailedAt 可能落在未来（写入时时钟被调到前面）：此时
+  // now - lastFailedAt 为负，退避窗口被拉长成「时钟追上 + 24h」，自动内核升级
+  // 静默停摆数天。未来时间戳视为无效记录（同 parseBackoffState 的宽容语义）。
+  if (state.lastFailedAt > now) return false;
   return now - state.lastFailedAt < backoffMs;
 }
 

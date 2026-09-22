@@ -46,6 +46,13 @@ export type BoardChangedPayload = {
   revision?: unknown;
 };
 
+// F9：board widget 渲染的 iframe sandbox 白名单值（单一事实来源，views/chat.ts 引用）。
+// 刻意不含 allow-same-origin：widget 内容来自 agent 生成（不可信输入），若与
+// allow-scripts 组合，iframe 内脚本将拥有 gateway HTTP 源的完整能力（读同源存储、
+// 调同源接口）。widget 为独立渲染（内核侧文档自带 CSP sandbox allow-scripts，
+// 不依赖同源 cookie/storage，与父窗口无 postMessage 通信），opaque origin 即可工作。
+export const BOARD_WIDGET_SANDBOX = "allow-scripts allow-forms";
+
 export function emptyBoardState(sessionKey: string | null): BoardState {
   return { sessionKey, revision: null, widgets: [], loading: false, error: null };
 }

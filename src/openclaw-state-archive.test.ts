@@ -98,6 +98,30 @@ test("应急归档滚动保留最近 2 份", async () => {
   expect(names[1].startsWith("state-pre-import-2")).toBe(true);
 });
 
+// 同一秒内连续两次导入（导入失败 → 用户立即重试）必须各留一份应急归档：
+// 秒级时间戳同名时后一次会覆盖前一次，叠加 PRE_IMPORT_BACKUP_KEEP=2 裁剪，
+// 实际恢复点反而变少。冻结 Date 到同一秒即可复现该竞态。
+test("同一秒内两次导入生成两份不同名的应急归档，不互相覆盖", async () => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  try {
+    vi.setSystemTime(new Date(2031, 0, 2, 3, 4, 5));
+    const { importOpenclawStateFromArchive } = await loadArchive();
+    const zipB = await makeImportZip({ "openclaw.json": JSON.stringify({ v: "B" }) });
+
+    await importOpenclawStateFromArchive(zipB, stateDir, backupDir);
+    await importOpenclawStateFromArchive(zipB, stateDir, backupDir);
+
+    const names = listBackups();
+    expect(names).toHaveLength(2);
+    expect(new Set(names).size).toBe(2);
+    for (const name of names) {
+      expect(name).toMatch(/^state-pre-import-20310102-030405-\d+(-\d+)?\.zip$/);
+    }
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
 test("应急归档导出失败时中止导入，状态目录原样保留", async () => {
   const { importOpenclawStateFromArchive } = await loadArchive();
   // backupDir 的父路径是普通文件 → mkdir 必失败

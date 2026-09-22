@@ -5,6 +5,9 @@
  * 差分式 asar 换装：npm 安装新版 openclaw → 从旧 asar 搬入 CryoClaw 注入物
  * （skills、dist/extensions 下新包没有的插件目录）→ 重打共享补丁 → 冒烟 →
  * 重打 gateway.asar → 备份旧 asar → 换装 → 写状态文件。
+ * 换装（rename 序列）前后落/清一份 journal，rename 被中断时下次启动据此把
+ * gateway.asar 与 gateway.asar.unpacked 成套进位（避免「新 asar + 旧 unpacked」错配）。
+ * 并发由 <backup>/update.lock 串行化（{pid,startedAt}，超时或持有者已退出即清理）。
  *
  * 运行环境：CryoClaw-CLI.exe / CryoClaw.exe + ELECTRON_RUN_AS_NODE=1（Node ≥22）。
  * 安装位置：<install>/resources/resources/updater/kernel-update.mjs，
@@ -51,11 +54,9 @@ const xfs = (() => {
 const rmRecursive = createRequire(import.meta.url)("./rm-rec.js")(xfs);
 
 // 运行时内核裁剪（kernel-prune.js）：npm 安装的新内核树是未裁剪的完整发布包，
-// 不裁剪会让升级后的 gateway.asar 比出厂版本膨胀上百 MB（ffmpeg/koffi/.map 等）。
 const { pruneGatewayTree } = createRequire(import.meta.url)("./kernel-prune.js")(xfs);
 
 // 内核稳定版策展渠道（kernel-channel.js）：openclaw 官方 npm dist-tag latest 会指向
-// 发行证据链未完成的版本（如 2026.9.1），直接当更新目标会诱导用户装非稳定内核。
 // 更新目标改为策展 stable：远程 kernel-channel.json → 内置兜底（构建期注入钉版本）。
 const kch = createRequire(import.meta.url)("./kernel-channel.js");
 
@@ -200,11 +201,14 @@ function fetchJson(url, timeoutMs = HTTP_TIMEOUT_MS) {
 
 // ── 稳定版策展渠道 ──
 // 远程策展清单（CryoClaw 仓库 kernel-channel.json）→ 构建期注入的内置兜底。
-// 国内 raw.githubusercontent.com 常不可达，jsdelivr 镜像作第二来源；两者都失败
-// 用内置兜底（= 本 app 打包时钉的内核版本，随 app 发行更新），绝不回落 npm latest。
+// 双源按序尝试：jsDelivr 第一（国内可达性优于 raw，与 src/webbridge-pins.ts 的
+// DEFAULT_PINS_URLS 同序），raw 兜底（raw 有分钟级 CDN 缓存，见 gotcha #102）。
+// 每个源固定 CHANNEL_FETCH_TIMEOUT_MS：raw 放第一顺位时，国内不可达的用户每次
+// 查询都要白等这个超时。两者都失败用内置兜底（= 本 app 打包时钉的内核版本，
+// 随 app 发行更新），绝不回落 npm latest。
 const CHANNEL_URLS = [
-  "https://raw.githubusercontent.com/binchen6/CryoClaw/main/kernel-channel.json",
   "https://fastly.jsdelivr.net/gh/binchen6/CryoClaw@main/kernel-channel.json",
+  "https://raw.githubusercontent.com/binchen6/CryoClaw/main/kernel-channel.json",
 ];
 const CHANNEL_FETCH_TIMEOUT_MS = 8_000;
 
@@ -320,29 +324,77 @@ function carryOverInjected(oldPkgDir, newPkgDir) {
 
 // ── 锁与状态 ──
 
+// 锁文件内容 {pid, startedAt}（旧格式 = 纯 PID 文本，仍兼容）。仅凭 PID 判活会在
+// Windows PID 复用下永久误判「锁忙」：持有者早已崩溃、其 PID 被无关进程复用，
+// process.kill(pid, 0) 恒成功 → 每次升级都被拒，只能手动删锁文件。
+// 超时兜底：startedAt 早于 LOCK_STALE_MS 即判死锁并清理；取值与 src/kernel-updater.ts
+// 的 UPDATOR_OVERALL_TIMEOUT_MS（updater 子进程整体看门狗，同样 15 分钟）一致——
+// 超过它，持有者一定已被看门狗杀掉，锁不可能是活的。
+const LOCK_STALE_MS = 15 * 60_000;
+
+function isPidAlive(pid) {
+  try {
+    process.kill(pid, 0); // 不抛错即存活
+    return true;
+  } catch (e) {
+    return !e || e.code !== "ESRCH"; // EPERM 等也视为存活
+  }
+}
+
+// 锁判定（纯函数，便于单测）：raw = 锁文件内容（null = 读不到）。
+// 返回 { held, pid, reason }；held=false 时调用方清理并按需重新落锁。
+// reason: empty/unreadable（无有效信息）/ expired（startedAt 超时）/ dead（PID 已退出）/ alive。
+export function evaluateLock(raw, nowMs = Date.now(), alive = isPidAlive, staleMs = LOCK_STALE_MS) {
+  if (raw == null || raw.trim() === "") return { held: false, pid: null, reason: "empty" };
+  const text = raw.trim();
+  let pid;
+  let startedAt = null;
+  if (text.startsWith("{")) {
+    let obj;
+    try {
+      obj = JSON.parse(text);
+    } catch {
+      return { held: false, pid: null, reason: "unreadable" };
+    }
+    if (!obj || typeof obj !== "object") return { held: false, pid: null, reason: "unreadable" };
+    pid = Number(obj.pid);
+    startedAt = Number(obj.startedAt);
+  } else {
+    pid = Number(text); // 旧格式：纯 PID，无 startedAt → 只按 PID 判定（向后兼容）
+  }
+  if (!Number.isFinite(pid) || pid <= 0) return { held: false, pid: null, reason: "unreadable" };
+  // 超时优先于判活：PID 存活也可能是复用（这正是本判定的目的）
+  if (Number.isFinite(startedAt) && nowMs - startedAt > staleMs) {
+    return { held: false, pid, reason: "expired" };
+  }
+  return alive(pid) ? { held: true, pid, reason: "alive" } : { held: false, pid, reason: "dead" };
+}
+
 function acquireLock() {
   xfs.mkdirSync(BACKUP_ROOT, { recursive: true });
   if (xfs.existsSync(LOCK_FILE)) {
-    let alive = false;
+    let raw = null;
     try {
-      const pid = Number(xfs.readFileSync(LOCK_FILE, "utf-8").trim());
-      if (pid) {
-        try {
-          process.kill(pid, 0); // 不抛错即存活
-          alive = true;
-        } catch (e) {
-          alive = !e || e.code !== "ESRCH"; // EPERM 等也视为存活
-        }
-      }
+      raw = xfs.readFileSync(LOCK_FILE, "utf-8");
     } catch {}
-    if (alive) fail("已有内核升级任务在进行中");
-    xfs.rmSync(LOCK_FILE, { force: true }); //  stale lock，清理
+    const verdict = evaluateLock(raw);
+    if (verdict.held) fail("已有内核升级任务在进行中");
+    try {
+      xfs.rmSync(LOCK_FILE, { force: true }); // stale lock，清理
+    } catch {}
+    if (verdict.reason === "expired") {
+      progress(
+        "lock",
+        1,
+        `清理过期的内核升级锁（PID ${verdict.pid}，已超过 ${Math.round(LOCK_STALE_MS / 60_000)} 分钟）`
+      );
+    }
   }
   // "wx" 独占创建：existsSync→writeFileSync 之间存在 TOCTOU 窗口，两个并发
   // 更新器可能同时通过检查并交错换装；EEXIST 即对手方抢先落锁
   try {
     const fd = xfs.openSync(LOCK_FILE, "wx");
-    xfs.writeSync(fd, String(process.pid), "utf-8");
+    xfs.writeSync(fd, JSON.stringify({ pid: process.pid, startedAt: Date.now() }), "utf-8");
     xfs.closeSync(fd);
   } catch (e) {
     if (e && e.code === "EEXIST") fail("已有内核升级任务在进行中");
@@ -575,7 +627,9 @@ async function cmdUpdate(tag) {
 
     progress("swap", 88, "换装新内核");
     // 同卷临时名 + rename 进位：先复制新物到 RESOURCES_DIR 下临时名，再依次 rename
-    // 旧物 → .old-<ts>、新物 → 正式名，任何一步失败都不会留下残缺的正式名文件
+    // 旧物 → .old-<ts>、新物 → 正式名，任何一步失败都不会留下残缺的正式名文件。
+    // rename 序列本身不是原子的：换装前先落 journal（原子写）记录目标版本/时间戳/进度，
+    // 崩溃后由 reconcileSwapDebris 按它把 asar 与 unpacked 成套进位（见 planSwapRecovery）。
     const ts = Date.now();
     const newAsarTmp = `${ASAR_PATH}.new-${ts}`;
     const oldAsarTmp = `${ASAR_PATH}.old-${ts}`;
@@ -583,31 +637,63 @@ async function cmdUpdate(tag) {
     const oldUnpackedTmp = `${ASAR_UNPACKED_DIR}.old-${ts}`;
     xfs.copyFileSync(newAsar, newAsarTmp);
     let unpackedStaged = false;
+    // targetVersion 取自上面已校验的新 asar 内 openclaw/package.json（== target）；
+    // journal 只作诊断记录——自愈时无法同步读取正式 asar 内的版本（asar 需要异步
+    // 解包库），成对判定因此走 ts/step/成套标志（见 planSwapRecovery 注释）。
+    const journal = {
+      targetVersion: packedVersion,
+      fromVersion: current,
+      ts,
+      step: 0,
+      stagedUnpacked: false,
+      hadOldUnpacked: xfs.existsSync(ASAR_UNPACKED_DIR),
+      timestamp: new Date().toISOString(),
+    };
     try {
       if (xfs.existsSync(packedUnpacked)) {
         xfs.cpSync(packedUnpacked, newUnpackedTmp, { recursive: true });
         unpackedStaged = true;
       }
-      renameWithLockHint(ASAR_PATH, oldAsarTmp);
+      journal.stagedUnpacked = unpackedStaged;
+      // 严格写：journal 落不下就中止换装（此时正式名还没被动过，中止比盲换安全）
+      writeSwapJournal(ASAR_PATH, journal, true);
       let asarSwapped = false;
       let unpackedSwapped = false;
       try {
+        // rename 序列（每完成一步更新 journal.step）；整段都在还原逻辑覆盖范围内，
+        // 含 step 写失败——否则「旧 asar 已挪走 + 正式名缺失」会停在残缺状态
+        renameWithLockHint(ASAR_PATH, oldAsarTmp);
+        journal.step = 1;
+        writeSwapJournal(ASAR_PATH, journal, true);
         if (xfs.existsSync(ASAR_UNPACKED_DIR)) renameWithLockHint(ASAR_UNPACKED_DIR, oldUnpackedTmp);
+        journal.step = 2;
+        writeSwapJournal(ASAR_PATH, journal, true);
         if (unpackedStaged) {
           renameWithLockHint(newUnpackedTmp, ASAR_UNPACKED_DIR);
           unpackedSwapped = true;
         }
+        journal.step = 3;
+        writeSwapJournal(ASAR_PATH, journal, true);
         renameWithLockHint(newAsarTmp, ASAR_PATH);
         asarSwapped = true;
       } catch (e) {
         // 换装中途失败：尽力按原样还原（rename 顺序倒着来）
+        let restored = true;
         try {
           if (!asarSwapped && xfs.existsSync(oldAsarTmp) && !xfs.existsSync(ASAR_PATH)) xfs.renameSync(oldAsarTmp, ASAR_PATH);
           if (unpackedSwapped) xfs.renameSync(ASAR_UNPACKED_DIR, newUnpackedTmp);
           if (xfs.existsSync(oldUnpackedTmp) && !xfs.existsSync(ASAR_UNPACKED_DIR)) xfs.renameSync(oldUnpackedTmp, ASAR_UNPACKED_DIR);
-        } catch {}
+        } catch {
+          restored = false;
+        }
+        // 还原干净才清 journal：正式名没回到成套状态时留下 journal，由下次自愈
+        // 按 ts/step 成对修复——否则可能留下「新 asar + 旧 unpacked」错配无人收场
+        if (restored) clearSwapJournal(ASAR_PATH);
         throw e;
       }
+      journal.step = 4;
+      writeSwapJournal(ASAR_PATH, journal); // 换装已完成：写失败仅让 journal 落后一步（成对判定已覆盖）
+      clearSwapJournal(ASAR_PATH);
       xfs.rmSync(oldAsarTmp, { force: true });
       rmRecursive(oldUnpackedTmp);
     } catch (e) {
@@ -745,8 +831,12 @@ async function cmdCheck() {
 // ── 换装残留自愈 ──
 // 崩溃/断电可能落在 rename 序列中间：gateway.asar 被挪去 .old-<ts> 而 .new-<ts>
 // 尚未进位（此时 asar 缺失、.new 完整——copyFileSync 完成后才会开始 rename）；
-// 或换装成功但清理未跑完（asar 健康 + .old-/.new- 残留，每份 100-200MB）。
+// 或换装成功但清理未跑完（asar 健康 + .old-/.new- 残留，每份 100-200MB）；
+// 或回退（cmdRollback）中途崩溃留下 .rbk-<ts>（旧核挪走后未清理/未还原）。
+// 有 journal（换装中断）时按 journal 成对恢复，优先整套新版、其次整套旧版；
+// 无 journal 的旧残留走下方原有逻辑。
 // 必须在持有锁时调用（并发更新器换装中途的临时物是合法存在的，不能误删）。
+// asarPath/unpackedDir 可注入（node:test 用临时目录；缺省 = 运行时安装位）。
 function listTsResidue(prefix) {
   const parent = path.dirname(prefix);
   const stem = path.basename(prefix);
@@ -762,32 +852,226 @@ function listTsResidue(prefix) {
     .map((n) => path.join(parent, n));
 }
 
-function reconcileSwapDebris(log) {
+// ── 换装 journal（rename 序列中断的成对自愈依据）──
+// rename 序列不是原子的：崩溃落在「①旧 asar 挪走、②旧 unpacked 挪走」之间时，
+// 正式名上只剩旧 unpacked，而 .new-<ts> 里躺着整套新版——只按「正式名是否存在」
+// 判断，会把 .new- 里的新 asar 单独进位，拼出「新 asar + 旧 unpacked」混版
+// （asar 内的 JS 与 unpacked 里的原生模块/扩展版本不一致，gateway 起不来）。
+// swap 前原子落一份 journal（目标版本、ts、step、成套标志），rename 每完成一步更新
+// step，全部完成后删除；下次启动自愈按它把 asar 与 unpacked 成套进位。
+function swapJournalPath(asarPath) {
+  return `${asarPath}.swap-journal.json`;
+}
+
+// strict=false 仅用于「换装已完成」的最后一次写（失败只让 journal 落后一步，
+// 成对判定已覆盖）；其余写入失败必须中止换装——没有 journal 就失去了成对自愈依据。
+// 导出便于单测（与 reconcileSwapDebris 同约定）：换装 journal 的写侧从未被单测
+// 覆盖时，写/读路径一旦漂移（文件名或字段名不一致）整个自愈会静默失效。
+export function writeSwapJournal(asarPath, journal, strict = false) {
+  const file = swapJournalPath(asarPath);
+  const tmp = `${file}.tmp`;
+  try {
+    xfs.writeFileSync(tmp, JSON.stringify(journal, null, 2), "utf-8");
+    xfs.renameSync(tmp, file);
+    return true;
+  } catch (e) {
+    try {
+      xfs.rmSync(tmp, { force: true });
+    } catch {}
+    if (strict) throw e;
+    return false;
+  }
+}
+
+function clearSwapJournal(asarPath) {
+  try {
+    xfs.rmSync(swapJournalPath(asarPath), { force: true });
+  } catch {}
+}
+
+// 内容不合法（被截断/非本格式/字段越界）时返回 null：退回无 journal 的旧逻辑，
+// 不去猜——猜错比慢一步更糟。
+export function readSwapJournal(asarPath) {
+  let j;
+  try {
+    j = JSON.parse(xfs.readFileSync(swapJournalPath(asarPath), "utf-8"));
+  } catch {
+    return null;
+  }
+  if (!j || typeof j !== "object" || Array.isArray(j)) return null;
+  const ts = Number(j.ts);
+  const step = Number(j.step);
+  if (!Number.isInteger(ts) || ts <= 0 || !Number.isInteger(step) || step < 0 || step > 4) return null;
+  return {
+    targetVersion: typeof j.targetVersion === "string" ? j.targetVersion : null,
+    ts,
+    step,
+    stagedUnpacked: j.stagedUnpacked === true,
+    hadOldUnpacked: j.hadOldUnpacked === true,
+  };
+}
+
+/**
+ * 换装中断后的成对恢复判定（纯函数：不做任何 fs 访问，输入是 journal + 在位事实表）。
+ * 角色：asar / unpacked = 正式名；newAsar / newUnpacked = 本次换装的 `.new-<ts>`
+ * （新内核）；oldAsar / oldUnpacked = 本次换装的 `.old-<ts>`（旧内核）。
+ * 返回 { action, moves }：
+ *   action = "settled"（已成对，无需动作）| "rollforward"（整套新版进位）|
+ *            "rollback"（整套旧版还原）| "unpaired"（两边都不成套，交给上层报错）
+ *   moves = [{ from, to }]：有序的符号化 rename 动作（先腾位、后进位）。
+ *
+ * 判定依据：`.new-` 残留消失只可能来自「被 rename 进位」（换装失败路径会连同 journal
+ * 一起清掉，走不到这里），所以「正式名在位 + 对应 `.new-` 残留消失」即该件已是新版；
+ * journal.step 作为下界守卫（rename 有先后：unpacked 进位必在 step≥2、asar 进位必在
+ * step≥3），step 只会滞后于磁盘最多一步（每步 rename 后都写 journal，写失败即中止换装），
+ * 滞后一步时上述下界仍成立，故不会把「已挪回的旧件」误判成新版。
+ * journal.targetVersion 只作诊断：自愈处无法同步读取正式 asar 内的版本（asar 需要异步
+ * 解包库），因此成对判定不依赖版本号，而依赖本次换装的 ts/step/成套标志。
+ */
+export function planSwapRecovery(state) {
+  const step = state.step ?? 0;
+  const stagedUnpacked = state.stagedUnpacked === true;
+  const hadOldUnpacked = state.hadOldUnpacked === true;
+  const formalAsar = state.formalAsar === true;
+  const formalUnpacked = state.formalUnpacked === true;
+  const hasNewAsar = state.newAsar === true;
+  const hasNewUnpacked = state.newUnpacked === true;
+  const hasOldAsar = state.oldAsar === true;
+  const hasOldUnpacked = state.oldUnpacked === true;
+
+  const newAsarInPlace = formalAsar && !hasNewAsar && step >= 3;
+  const newUnpackedInPlace = stagedUnpacked && formalUnpacked && !hasNewUnpacked && step >= 2;
+  const formalAsarIsOld = formalAsar && !newAsarInPlace;
+  const formalUnpackedIsOld = formalUnpacked && !newUnpackedInPlace;
+
+  // 新版已整套在位：换装其实已完成（崩溃点落在「进位完成 → 清 journal」之间）
+  if (newAsarInPlace && (!stagedUnpacked || newUnpackedInPlace)) {
+    return { action: "settled", moves: [] };
+  }
+  // 新版能凑齐一整套 → 进位（先腾开旧件占用的正式名，再按 unpacked → asar 的顺序进位）
+  const newAsarOk = newAsarInPlace || hasNewAsar;
+  const newUnpackedOk = !stagedUnpacked || newUnpackedInPlace || hasNewUnpacked;
+  if (newAsarOk && newUnpackedOk) {
+    const moves = [];
+    if (formalAsar && !newAsarInPlace) moves.push({ from: "asar", to: "oldAsar" });
+    if (stagedUnpacked && formalUnpacked && !newUnpackedInPlace) moves.push({ from: "unpacked", to: "oldUnpacked" });
+    if (stagedUnpacked && !newUnpackedInPlace) moves.push({ from: "newUnpacked", to: "unpacked" });
+    if (!newAsarInPlace) moves.push({ from: "newAsar", to: "asar" });
+    return { action: "rollforward", moves };
+  }
+  // 新版凑不齐 → 退整套旧版（只在旧版真的成套时才动）
+  const oldAsarOk = formalAsarIsOld || hasOldAsar;
+  const oldUnpackedOk = !hadOldUnpacked || formalUnpackedIsOld || hasOldUnpacked;
+  if (oldAsarOk && oldUnpackedOk) {
+    const moves = [];
+    if (hadOldUnpacked && !formalUnpackedIsOld && hasOldUnpacked) {
+      if (formalUnpacked) moves.push({ from: "unpacked", to: "newUnpacked" });
+      moves.push({ from: "oldUnpacked", to: "unpacked" });
+    }
+    if (!formalAsarIsOld && hasOldAsar) {
+      if (formalAsar) moves.push({ from: "asar", to: "newAsar" });
+      moves.push({ from: "oldAsar", to: "asar" });
+    }
+    return moves.length === 0 ? { action: "settled", moves: [] } : { action: "rollback", moves };
+  }
+  // 两边都不成套：不动任何正式名（上层按「找不到 gateway.asar」响亮报错）
+  return { action: "unpaired", moves: [] };
+}
+
+// journal 分支的执行器：把符号化动作用本次换装的 ts 落到具体路径上。
+// 任何一步前置条件不满足（源不存在 / 目标已被占）即整体放弃——半途动过正式名的
+// 现场会由下次自愈按同一 journal 重算（判定纯由磁盘状态推出，可重入）。
+function recoverSwapFromJournal(journal, asarPath, unpackedDir, log) {
+  const ts = journal.ts;
+  const p = {
+    asar: asarPath,
+    unpacked: unpackedDir,
+    newAsar: `${asarPath}.new-${ts}`,
+    oldAsar: `${asarPath}.old-${ts}`,
+    newUnpacked: `${unpackedDir}.new-${ts}`,
+    oldUnpacked: `${unpackedDir}.old-${ts}`,
+  };
+  const plan = planSwapRecovery({
+    step: journal.step,
+    stagedUnpacked: journal.stagedUnpacked,
+    hadOldUnpacked: journal.hadOldUnpacked,
+    formalAsar: xfs.existsSync(p.asar),
+    formalUnpacked: xfs.existsSync(p.unpacked),
+    newAsar: xfs.existsSync(p.newAsar),
+    newUnpacked: xfs.existsSync(p.newUnpacked),
+    oldAsar: xfs.existsSync(p.oldAsar),
+    oldUnpacked: xfs.existsSync(p.oldUnpacked),
+  });
+  log(
+    `检测到中断的换装 journal（目标 ${journal.targetVersion || "未知"}，step=${journal.step}）：成对恢复判定 ${plan.action}`
+  );
+  if (plan.action !== "rollforward" && plan.action !== "rollback") return plan.action;
+  for (const mv of plan.moves) {
+    const from = p[mv.from];
+    const to = p[mv.to];
+    if (!xfs.existsSync(from) || xfs.existsSync(to)) {
+      log(`换装成对恢复中断：${path.basename(from)} → ${path.basename(to)} 前置条件不满足，放弃本次恢复`);
+      return "aborted";
+    }
+    xfs.renameSync(from, to);
+    log(`换装成对恢复：${path.basename(from)} → ${path.basename(to)}`);
+  }
+  return plan.action;
+}
+
+export function reconcileSwapDebris(log, asarPath = ASAR_PATH, unpackedDir = ASAR_UNPACKED_DIR) {
+  // ⓪ 上一次换装留下的 journal（rename 中途崩溃）→ 按它成对进位（优先整套新版）
+  const journal = readSwapJournal(asarPath);
+  if (journal) {
+    const outcome = recoverSwapFromJournal(journal, asarPath, unpackedDir, log);
+    if (outcome === "aborted" || outcome === "unpaired") {
+      // 现场不成套：不删 journal、不清理残留，留给人工排查（上层会按缺少 asar 报错）
+      log("换装中断现场未能成对恢复，保留 journal 与残留待人工处理");
+      return;
+    }
+    clearSwapJournal(asarPath);
+  }
   // ① asar 缺失但 .new-* 已完整落盘 → roll forward（取最新一份）
-  if (!xfs.existsSync(ASAR_PATH)) {
-    const staged = listTsResidue(`${ASAR_PATH}.new-`);
+  if (!xfs.existsSync(asarPath)) {
+    const staged = listTsResidue(`${asarPath}.new-`);
     if (staged.length > 0) {
       const candidate = staged[staged.length - 1];
       // 完整性下限启发式：asar 正品 >100MB；rename 窗口里的 .new 一定是 copy 完成的
       if (xfs.statSync(candidate).size > 100 * 1024 * 1024) {
-        xfs.renameSync(candidate, ASAR_PATH);
+        xfs.renameSync(candidate, asarPath);
         log(`已将崩溃残留的 ${path.basename(candidate)} 进位为 gateway.asar`);
       }
     }
     // asar 缺失且 .old-* 存在（roll forward 不可能时）→ 还原旧版，保住可启动
-    if (!xfs.existsSync(ASAR_PATH)) {
-      const olds = listTsResidue(`${ASAR_PATH}.old-`);
+    if (!xfs.existsSync(asarPath)) {
+      const olds = listTsResidue(`${asarPath}.old-`);
       if (olds.length > 0) {
-        xfs.renameSync(olds[olds.length - 1], ASAR_PATH);
+        xfs.renameSync(olds[olds.length - 1], asarPath);
         log(`已将崩溃残留的 ${path.basename(olds[olds.length - 1])} 还原为 gateway.asar（旧版）`);
       }
     }
+    // asar 仍缺失且有 .rbk-*（cmdRollback 把旧核挪去 .rbk-<ts> 后崩溃）：成对才
+    // 还原——unpacked 正式物在位时换装进行到哪一步已不可判定，单边进位可能拼出
+    // 「旧 asar + 新 unpacked」混版；不成对则不动，走下方清理（由上层 fail 响亮报错）。
+    if (!xfs.existsSync(asarPath)) {
+      const rbkAsar = listTsResidue(`${asarPath}.rbk-`);
+      if (rbkAsar.length > 0 && !xfs.existsSync(unpackedDir)) {
+        const rbkUnp = listTsResidue(`${unpackedDir}.rbk-`);
+        xfs.renameSync(rbkAsar[rbkAsar.length - 1], asarPath);
+        log(`已将崩溃残留的 ${path.basename(rbkAsar[rbkAsar.length - 1])} 还原为 gateway.asar（回退副本）`);
+        // unpacked .rbk 同代进位；该安装本就没有 unpacked（无 .rbk 残留）时单边还原即完整
+        if (rbkUnp.length > 0) {
+          xfs.renameSync(rbkUnp[rbkUnp.length - 1], unpackedDir);
+          log(`已恢复 gateway.asar.unpacked（来自 ${path.basename(rbkUnp[rbkUnp.length - 1])}）`);
+        }
+      }
+    }
     // unpacked 同理：缺失时优先 .new-，兜底 .old-
-    if (!xfs.existsSync(ASAR_UNPACKED_DIR)) {
-      for (const prefix of [`${ASAR_UNPACKED_DIR}.new-`, `${ASAR_UNPACKED_DIR}.old-`]) {
+    if (!xfs.existsSync(unpackedDir)) {
+      for (const prefix of [`${unpackedDir}.new-`, `${unpackedDir}.old-`]) {
         const cand = listTsResidue(prefix);
         if (cand.length > 0) {
-          xfs.renameSync(cand[cand.length - 1], ASAR_UNPACKED_DIR);
+          xfs.renameSync(cand[cand.length - 1], unpackedDir);
           log(`已恢复 gateway.asar.unpacked（来自 ${path.basename(cand[cand.length - 1])}）`);
           break;
         }
@@ -796,10 +1080,12 @@ function reconcileSwapDebris(log) {
   }
   // ② 正式物健康时清掉全部换装临时残留（成功路径的正常收尾本会删它们）
   for (const prefix of [
-    `${ASAR_PATH}.new-`,
-    `${ASAR_PATH}.old-`,
-    `${ASAR_UNPACKED_DIR}.new-`,
-    `${ASAR_UNPACKED_DIR}.old-`,
+    `${asarPath}.new-`,
+    `${asarPath}.old-`,
+    `${asarPath}.rbk-`,
+    `${unpackedDir}.new-`,
+    `${unpackedDir}.old-`,
+    `${unpackedDir}.rbk-`,
   ]) {
     for (const p of listTsResidue(prefix)) {
       try {
@@ -846,4 +1132,16 @@ async function main() {
   }
 }
 
-main().catch((e) => fail("内核升级失败", e));
+// ── 入口（被 import 时不执行；node:test 直接 import 本模块测 reconcileSwapDebris）──
+
+const invokedPath = process.argv[1] ? path.resolve(process.argv[1]) : "";
+const selfPath = fileURLToPath(import.meta.url);
+const isMain =
+  invokedPath &&
+  (process.platform === "win32"
+    ? invokedPath.toLowerCase() === selfPath.toLowerCase()
+    : invokedPath === selfPath);
+
+if (isMain) {
+  main().catch((e) => fail("内核升级失败", e));
+}

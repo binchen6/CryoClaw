@@ -14,10 +14,10 @@ import {
   resolveResourcesPath,
   resolveUserStateDir,
 } from "../constants";
-import { readUserConfig, writeUserConfig } from "../provider-config";
+import { readUserConfig, readUserConfigForWrite, writeUserConfig } from "../provider-config";
 import {
   readChannelAllowFromStoreEntries as readChannelAllowFromStoreEntriesFromFs,
-  writeChannelAllowFromStoreEntries as writeChannelAllowFromStoreEntriesFromFs,
+  removeChannelAllowFromStoreEntries as removeChannelAllowFromStoreEntriesFromFs,
 } from "../channel-pairing-store";
 import { WECOM_CHANNEL_ID } from "../wecom-config";
 import { FEISHU_CHANNEL_ID } from "../feishu-config";
@@ -136,7 +136,7 @@ export function registerPairingIpc(opts: SettingsIpcOptions): void {
       return { success: false, message: "授权 ID 不能为空。" };
     }
     try {
-      const config = readUserConfig();
+      const { config, baseSnapshot } = readUserConfigForWrite();
       config.channels ??= {};
       config.channels[WECOM_CHANNEL_ID] ??= {};
 
@@ -153,11 +153,14 @@ export function registerPairingIpc(opts: SettingsIpcOptions): void {
           delete config.channels[WECOM_CHANNEL_ID].allowFrom;
         }
 
-        const nextStoreAllowFrom = readChannelAllowFromStore(WECOM_CHANNEL_ID).filter((entry) => entry !== id);
-        writeChannelAllowFromStore(WECOM_CHANNEL_ID, nextStoreAllowFrom);
+        // remove 是删除语义：写前重读磁盘 store，在最新内容上应用删除（缩小与
+        // gateway `openclaw pairing approve` 并发写的 lost-update 窗口），并原子写。
+        removeChannelAllowFromStore(WECOM_CHANNEL_ID, [id]);
       }
 
-      writeUserConfig(config);
+      // baseSnapshot：删除是按旧快照算出来的，写前比对磁盘——期间 gateway 落盘的
+      // 配对/渠道改动不能被旧快照整文件覆盖
+      writeUserConfig(config, { baseSnapshot });
       opts.requestGatewayRestart?.();
       return { success: true };
     } catch (err: any) {
@@ -224,7 +227,7 @@ export function registerPairingIpc(opts: SettingsIpcOptions): void {
     }
 
     try {
-      const config = readUserConfig();
+      const { config, baseSnapshot } = readUserConfigForWrite();
       config.channels ??= {};
       config.channels.feishu ??= {};
 
@@ -237,7 +240,7 @@ export function registerPairingIpc(opts: SettingsIpcOptions): void {
           delete config.channels.feishu.groupAllowFrom;
         }
         removeFeishuAlias("group", id);
-        writeUserConfig(config);
+        writeUserConfig(config, { baseSnapshot });
         opts.requestGatewayRestart?.();
         return { success: true };
       }
@@ -250,10 +253,10 @@ export function registerPairingIpc(opts: SettingsIpcOptions): void {
         delete config.channels.feishu.allowFrom;
       }
 
-      const nextStoreAllowFrom = readFeishuAllowFromStore().filter((entry) => entry !== id);
-      writeFeishuAllowFromStore(nextStoreAllowFrom);
+      // 与 remove-wecom-approved 同理：重读磁盘后应用删除，不做并集合并。
+      removeChannelAllowFromStore(FEISHU_CHANNEL, [id]);
       removeFeishuAlias("user", id);
-      writeUserConfig(config);
+      writeUserConfig(config, { baseSnapshot });
       opts.requestGatewayRestart?.();
       return { success: true };
     } catch (err: any) {
@@ -546,12 +549,13 @@ function readChannelAllowFromStore(channel: string): string[] {
   );
 }
 
-// 写入 pairing allowFrom store 文件（兼容保留原有字段）。
-function writeChannelAllowFromStore(channel: string, entries: string[]): void {
-  writeChannelAllowFromStoreEntriesFromFs(
+// 删除 pairing allowFrom store 条目：写前重读磁盘（见 channel-pairing-store 的说明），
+// 避免基于旧快照覆盖时抹掉 gateway 并发批准的新条目。
+function removeChannelAllowFromStore(channel: string, removeIds: string[]): void {
+  removeChannelAllowFromStoreEntriesFromFs(
     path.join(resolveUserStateDir(), "credentials"),
     channel,
-    entries,
+    removeIds,
   );
 }
 
@@ -630,11 +634,6 @@ function resolveRejectedPairingStoreFile(channel: string): string {
 // 读取飞书 allowFrom store 文件（由 openclaw pairing approve 写入）。
 function readFeishuAllowFromStore(): string[] {
   return readChannelAllowFromStore(FEISHU_CHANNEL);
-}
-
-// 写入飞书 allowFrom store 文件（兼容保留原有字段）。
-function writeFeishuAllowFromStore(entries: string[]): void {
-  writeChannelAllowFromStore(FEISHU_CHANNEL, entries);
 }
 
 // 补全授权条目的可读名称：用户/群聊优先查缓存，未命中则实时查询并回写缓存。

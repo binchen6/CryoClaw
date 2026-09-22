@@ -84,7 +84,8 @@ cryoclaw/
 │   ├── installer.nsh           # NSIS custom installer script
 │   ├── lib/                    # Shared script utilities
 │   ├── dist-all-parallel.sh    # Parallel cross-platform build
-│   └── clean.sh
+│   ├── clean.js                # npm run clean: removes build outputs only, never user data
+│   └── clean.sh                # Wipes user data (~/.openclaw + macOS app caches) for first-launch testing; asks for confirmation, --yes for non-interactive
 ├── assets/                 # Icons: .icns, .ico, .png, tray templates
 ├── docs/                   # Architecture, design guidelines, IPC/gotchas docs (index: docs/README.md)
 ├── .github/workflows/      # CI: tests.yml (full regression on push/PR)
@@ -121,7 +122,7 @@ npm run dist:mac:x64         # Same for x64
 npm run dist:win:x64         # Windows NSIS x64 (via scripts/dist-win.js — runs on macOS and Windows)
 npm run dist:win:arm64       # Windows NSIS arm64
 npm run dist:all:parallel    # Build all 4 targets in parallel
-npm run clean                # Remove all generated files
+npm run clean                # Remove all generated build outputs (never touches user data)
 ```
 
 **Isolated local startup using production config** (skip Setup):

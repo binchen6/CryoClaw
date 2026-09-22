@@ -19,6 +19,7 @@ import type {
   BrowserState,
   ExtensionSpec,
 } from "./browser";
+import type { WriteUserConfigOptions } from "./provider-config";
 
 // ═══════════════════════════════════════════════════════════════════
 // installer（CDN 下载 / ETag 缓存 / 进度 / 重试）
@@ -777,8 +778,11 @@ export async function installWebbridge(
           etag: head.etag,
         };
       }
-      // 缓存产物与钉定不符：作废缓存，继续走下载路径
-      fs.rmSync(binaryPath, { force: true });
+      // 缓存产物与钉定不符：作废缓存记录，继续走下载路径。
+      // 注意不预先删除磁盘上的二进制——downloadToFile 本身是「独立 tmp + rename
+      // 覆盖」，删除并非下载的前置条件；预先删除会让下载重试耗尽后用户机器上
+      // 原本可运行的 daemon 二进制凭空消失（update 场景的 fail-closed 语义是
+      // 「校验不过保留旧版本继续可用」，见 webbridge-update.ts 的换装管线）。
       writeCacheManifest(dataDir, { version: "", etag: null, lastModified: null, contentLength: null });
     }
   }
@@ -829,7 +833,8 @@ export interface WebbridgeSetupTaskDeps {
   installExtensions: (extId: string) => Promise<BrowserInstallSummary[]>;
   // openclaw.json 读写；DI 供测试替换
   readConfig: () => any;
-  writeConfig: (config: any) => void;
+  // opts.baseSnapshot：降级改写时把 readConfig 拿到的对象传回，写前比对磁盘
+  writeConfig: (config: any, opts?: WriteUserConfigOptions) => void;
   // Phase 2：applyBrowserModeConfig 的直接注入
   applyMode: (config: any, mode: BrowserMode) => any;
   // build-config.json 里的 ext ID；空字符串 → 严格判失败（走降级）
@@ -901,7 +906,9 @@ export async function runWebbridgeSetupTask(
       try {
         const current = deps.readConfig();
         const next = deps.applyMode(current, "openclaw");
-        deps.writeConfig(next);
+        // applyMode 返回新对象、current 未被改动，可直接作读时刻快照：窗口期内
+        // gateway 落盘的 config.patch 不会被这次降级改写用旧快照覆盖
+        deps.writeConfig(next, { baseSnapshot: current });
         deps.onConfigRewritten?.();
       } catch (rewriteErr) {
         const m =

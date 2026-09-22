@@ -52,7 +52,7 @@ import {
   WebbridgeBusyError,
   writeUpdateCheckState,
 } from "../webbridge-update";
-import { readUserConfig, writeUserConfig } from "../provider-config";
+import { readUserConfig, readUserConfigForWrite, writeUserConfig } from "../provider-config";
 import { assertTrustedIpcSender } from "../ipc-sender-guard";
 import * as log from "../logger";
 import type { SettingsIpcOptions } from "./types";
@@ -254,9 +254,9 @@ const finalizeWebbridgeRepair = async (
   opts: SettingsIpcOptions,
   includesExtension: boolean,
 ): Promise<boolean> => {
-  const config = readUserConfig();
+  const { config, baseSnapshot } = readUserConfigForWrite();
   Object.assign(config, applyBrowserModeConfig(config, "webbridge"));
-  writeUserConfig(config);
+  writeUserConfig(config, { baseSnapshot });
   opts.requestGatewayRestart?.();
   return includesExtension ? await openWebbridgeEnableGuideInBrowser() : false;
 };

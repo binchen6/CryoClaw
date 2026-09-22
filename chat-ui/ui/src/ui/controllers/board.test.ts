@@ -1,12 +1,38 @@
 // R89 Board（会话仪表盘）controller 测试：归一化 / changed 过滤 / frameOrigin。
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
+  BOARD_WIDGET_SANDBOX,
   boardChangedNeedsReload,
   boardFrameOrigin,
   emptyBoardState,
   normalizeBoardSnapshot,
 } from "./board.ts";
+
+// F9：widget iframe 的 sandbox 组合安全钉点。allow-scripts + allow-same-origin 是
+// 已知失效组合（iframe 内脚本拥有 gateway 源完整能力），board 内容来自 agent 生成
+// 属不可信输入，必须保持 opaque origin（内核侧 widget 文档自带 CSP sandbox
+// allow-scripts，不依赖同源 cookie/storage，与父窗口无 postMessage 通信）。
+test("BOARD_WIDGET_SANDBOX：不含 allow-same-origin（防沙箱失效组合）", () => {
+  assert.equal(BOARD_WIDGET_SANDBOX.includes("allow-same-origin"), false);
+  assert.equal(BOARD_WIDGET_SANDBOX.includes("allow-scripts"), true);
+  assert.equal(BOARD_WIDGET_SANDBOX.includes("allow-forms"), true);
+});
+
+test("views/chat.ts：board iframe 引用 BOARD_WIDGET_SANDBOX 常量（非内联字符串）", () => {
+  const src = readFileSync(new URL("../../../../../src/ui/views/chat.ts", import.meta.url), "utf8");
+  assert.match(
+    src,
+    /sandbox=\$\{BOARD_WIDGET_SANDBOX\}/,
+    "board iframe 的 sandbox 属性应绑定 controllers/board.ts 的常量（单一事实来源）",
+  );
+  assert.equal(
+    src.includes('sandbox="allow-scripts allow-same-origin allow-forms"'),
+    false,
+    "视图层不得再内联含 allow-same-origin 的 sandbox 字符串",
+  );
+});
 
 test("boardFrameOrigin：ws/wss → http/https，非法输入返回 null", () => {
   assert.equal(boardFrameOrigin("ws://127.0.0.1:18789"), "http://127.0.0.1:18789");

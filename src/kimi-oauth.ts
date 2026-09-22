@@ -235,24 +235,66 @@ async function pollForToken(
   throw new Error("轮询超时，请重新登录");
 }
 
-// 刷新 access_token
-export async function refreshOAuthToken(token: OAuthToken): Promise<OAuthToken> {
-  const { status, data } = await postForm("/api/oauth/token", {
+// 刷新请求依赖：postForm 可注入，单测不触网（默认走真实 HTTPS 实现）
+interface TokenRefreshDeps {
+  postForm: (
+    urlPath: string,
+    body: Record<string, string>,
+  ) => Promise<{ status: number; data: Record<string, unknown> }>;
+}
+
+// 发出刷新请求（抽离以便注入伪造的 postForm）
+function requestTokenRefresh(
+  refreshToken: string,
+  deps?: TokenRefreshDeps,
+): Promise<{ status: number; data: Record<string, unknown> }> {
+  const post = deps?.postForm ?? postForm;
+  return post("/api/oauth/token", {
     client_id: KIMI_CODE_CLIENT_ID,
     grant_type: "refresh_token",
-    refresh_token: token.refresh_token,
+    refresh_token: refreshToken,
   });
+}
+
+// 仅当磁盘上的 refresh_token 仍是本次请求所用的那个时才删除 token 文件：
+// 服务端轮换 refresh_token 时，并发刷新的后到者拿旧 token 会收 invalid_grant，
+// 若无条件删文件，会把对手方刚写入的新 token 一并删掉（用户被静默登出）
+function deleteOAuthTokenIfUnchanged(refreshToken: string): void {
+  const onDisk = loadOAuthToken();
+  if (!onDisk || onDisk.refresh_token === refreshToken) {
+    deleteOAuthToken();
+  }
+}
+
+// in-flight 去重（P0-8）：60s 定时器（checkAndRefresh）与 settings/verify 的
+// kimi:get-usage 401 重试可能同时进入刷新——二者共享同一请求，避免对同一
+// refresh_token 发两次刷新导致服务端轮换后后到者 invalid_grant
+let inflightRefresh: Promise<OAuthToken> | null = null;
+
+// 刷新 access_token
+export function refreshOAuthToken(token: OAuthToken, deps?: TokenRefreshDeps): Promise<OAuthToken> {
+  if (inflightRefresh) return inflightRefresh;
+  inflightRefresh = doRefreshOAuthToken(token, deps).finally(() => {
+    inflightRefresh = null;
+  });
+  return inflightRefresh;
+}
+
+async function doRefreshOAuthToken(token: OAuthToken, deps?: TokenRefreshDeps): Promise<OAuthToken> {
+  const { status, data } = await requestTokenRefresh(token.refresh_token, deps);
 
   if (status === 401 || status === 403) {
-    deleteOAuthToken();
+    deleteOAuthTokenIfUnchanged(token.refresh_token);
     throw new Error("Refresh token 已失效，请重新登录");
   }
 
   // invalid_grant 走 400（非 401/403）：refresh token 已被服务端作废。
   // 此前不清理 token 文件，getOAuthStatus 恒报 loggedIn，UI 一直显示
   // 「登录成功」而用量接口 401 静默失败（R58a 修复）。
+  // 删文件前重读比对 refresh_token（P0-8）：并发刷新场景下文件可能已是
+  // 对手方刚写入的新 token，不能误删
   if (status === 400 && (data as { error?: string })?.error === "invalid_grant") {
-    deleteOAuthToken();
+    deleteOAuthTokenIfUnchanged(token.refresh_token);
     throw new Error("登录已过期，请重新登录");
   }
 
@@ -260,10 +302,15 @@ export async function refreshOAuthToken(token: OAuthToken): Promise<OAuthToken> 
     throw new Error(`Token 刷新失败 (${status})`);
   }
 
+  // expires_in 缺失/非正数守卫（F6）：直接相加会得到 NaN，此后
+  // checkAndRefresh 里 NaN >= 300 恒 false，每 60s 空转打满刷新接口
+  const expiresIn = Number(data.expires_in);
   const refreshed: OAuthToken = {
     access_token: data.access_token as string,
     refresh_token: (data.refresh_token as string) ?? token.refresh_token,
-    expires_at: Math.floor(Date.now() / 1000) + (data.expires_in as number),
+    expires_at:
+      Math.floor(Date.now() / 1000) +
+      (Number.isFinite(expiresIn) && expiresIn > 0 ? expiresIn : 3600),
     scope: (data.scope as string) ?? token.scope,
     token_type: (data.token_type as string) ?? token.token_type,
   };

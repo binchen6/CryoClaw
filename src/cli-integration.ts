@@ -308,6 +308,10 @@ export function buildWinWrapperForPaths(nodeBin: string, entry: string, opts?: {
 
   const lines = [
     "@echo off",
+    // 无 BOM UTF-8：cmd.exe 按当前控制台代码页（中文系统 GBK）逐行解析批处理，
+    // 路径里的中文（如用户名「张三」）会被解码成乱码导致 if not exist 恒失败。
+    // chcp 65001 切到 UTF-8 后，后续行才能按正确编码解析（须在任何 set 行之前）。
+    "@chcp 65001 >nul",
     `REM ${CLI_MARKER} - auto-generated, do not edit`,
     "setlocal",
   ];
@@ -432,8 +436,10 @@ function resolveHomeDir(): string | null {
   return home && home.trim() ? home : null;
 }
 
-// 返回需要注入 PATH 的 shell profile 文件列表。
+// 返回需要注入 PATH 的 shell profile 文件列表（候选全集）。
 // macOS Terminal 默认读 login profiles，但 VS Code / 部分 iTerm 配置只读 interactive rc。
+// 注意：这只是候选清单，实际写入哪些文件由 resolvePosixRcTargets 决定——
+// 不存在的文件一律不新建（见该函数注释）。
 export function resolvePosixRcPathsForHome(home: string): string[] {
   return [
     path.join(home, ".zprofile"),
@@ -449,6 +455,20 @@ function resolvePosixRcPaths(): string[] {
   return resolvePosixRcPathsForHome(home);
 }
 
+// 返回实际需要注入 PATH 块的目标文件列表（导出供测试覆盖语义）：
+//   - 已存在的 rc 文件照常注入（最小意外，不改动既有 shell 启动行为）。
+//   - 不存在的 rc 文件一律跳过：新建 ~/.bash_profile 会让 bash 登录 shell 只读
+//     .bash_profile 而不再 source ~/.profile，用户原有 PATH 配置全部失效。
+//   - 四个候选都不存在时，只创建一个兜底 ~/.profile——它是所有登录 shell 的
+//     公共约定（bash/zsh 均读），不会像 .bash_profile 那样遮蔽其他 rc。
+export function resolvePosixRcTargets(): string[] {
+  const rcPaths = resolvePosixRcPaths();
+  const existing = rcPaths.filter((rcPath) => fs.existsSync(rcPath));
+  if (existing.length > 0) return existing;
+  const home = resolveHomeDir();
+  return home ? [path.join(home, ".profile")] : [];
+}
+
 // 构建 CryoClaw 管理的 rc 注入块，使用绝对路径避免与状态目录配置脱节。
 function buildRcBlock(binDir: string): string {
   const safeBinDir = escapeForPosixDoubleQuoted(binDir);
@@ -462,9 +482,10 @@ function buildRcBlock(binDir: string): string {
   ].join("\n");
 }
 
-// 检查所有目标 shell 配置文件是否都包含当前期望的 PATH 注入块。
+// 检查所有目标 rc 文件（已存在的 + 全缺时的 ~/.profile 兜底）是否都包含
+// 当前期望的 PATH 注入块。目标集合与 installCliPosix 的写入集合保持一致。
 function arePosixRcBlocksUpToDate(): boolean {
-  const rcPaths = resolvePosixRcPaths();
+  const rcPaths = resolvePosixRcTargets();
   if (rcPaths.length === 0) return false;
 
   const expectedBlock = buildRcBlock(getPosixBinDir());
@@ -656,7 +677,7 @@ async function installCliPosix(): Promise<CliResult> {
   fs.writeFileSync(wrapperPath, buildPosixWrapper(), "utf-8");
   fs.chmodSync(wrapperPath, 0o755);
 
-  const rcPaths = resolvePosixRcPaths();
+  const rcPaths = resolvePosixRcTargets();
   if (rcPaths.length === 0) {
     return { success: false, message: "Failed to resolve home directory for PATH injection." };
   }

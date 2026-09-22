@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   createInitialAppUpdateState,
   reduceAppUpdateState,
+  shouldSkipPeriodicCheck,
   type AppUpdateState,
 } from "./app-updater-state";
 
@@ -104,4 +105,28 @@ test("download-start：非 available 态（重复触发/游离）被忽略", () 
   s = reduceAppUpdateState(s, { type: "download-start" });
   assert.equal(s.status, "downloading");
   assert.deepEqual(s.progress, { percent: 0, bytesPerSecond: 0, transferred: 0, total: 0 });
+});
+
+test("周期复查守卫：活跃流程与已弹窗的 available 态都不打断", () => {
+  assert.equal(shouldSkipPeriodicCheck("checking"), true);
+  assert.equal(shouldSkipPeriodicCheck("downloading"), true);
+  assert.equal(shouldSkipPeriodicCheck("downloaded"), true);
+  // available：弹窗已弹出、用户 12h 未操作时，周期复查会经 checking 清空
+  // version/releaseNotes 再由 update-available 填回 → 弹窗闪烁 + release notes 重复拉取
+  assert.equal(shouldSkipPeriodicCheck("available"), true);
+  assert.equal(shouldSkipPeriodicCheck("idle"), false);
+  assert.equal(shouldSkipPeriodicCheck("not-available"), false);
+  assert.equal(shouldSkipPeriodicCheck("error"), false);
+});
+
+test("available 态被 checking 清空 version/releaseNotes（上条守卫要挡的原因）", () => {
+  let s = reduceAppUpdateState(idleState(), {
+    type: "available",
+    version: "1.1.0",
+    releaseNotes: { zh: "修复问题" },
+  });
+  s = reduceAppUpdateState(s, { type: "checking" });
+  assert.equal(s.status, "checking");
+  assert.equal(s.version, null);
+  assert.equal(s.releaseNotes, null);
 });

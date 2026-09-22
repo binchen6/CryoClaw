@@ -8,6 +8,7 @@ import {
   ensureWeixinPluginReady,
   isWeixinPluginBundled,
   persistWeixinLoginSuccess,
+  saveWeixinLoginResult,
   WEIXIN_CHANNEL_ID,
   WEIXIN_PLUGIN_ID,
 } from "./weixin-config";
@@ -109,4 +110,69 @@ test("ensureWeixinPluginReady 应在 reconcile 后仍缺插件时拒绝启用微
 
   assert.equal(reconciled, true);
   assert.equal(isWeixinPluginBundled(), false);
+});
+
+// L6：accounts.json 索引与 gateway 内微信插件进程共享，且由 listWeixinAccountIds() 整体
+// JSON.parse——半写/截断的索引会被 catch 吞掉返回空列表（账号文件还在但列表不展示）。
+// 因此本侧写入必须是 tmp + rename 的原子写，且写前重读磁盘。
+
+test("saveWeixinLoginResult 应原子写账号索引（不直接覆写 accounts.json）", (t) => {
+  const stateDir = setupTempStateDir(t);
+  const indexPath = path.join(stateDir, "openclaw-weixin", "accounts.json");
+
+  const writeTargets: string[] = [];
+  const renameCalls: Array<[string, string]> = [];
+  const originalWriteFileSync = (fs as any).writeFileSync;
+  const originalRenameSync = (fs as any).renameSync;
+  // 原子写内部走 openSync+writeSync(fd)+fsync+renameSync，故用 renameSync 观测落位
+  (fs as any).writeFileSync = (target: unknown, ...rest: unknown[]) => {
+    writeTargets.push(typeof target === "string" ? target : String(target));
+    return (originalWriteFileSync as (...args: unknown[]) => unknown)(target, ...rest);
+  };
+  (fs as any).renameSync = (from: string, to: string) => {
+    renameCalls.push([from, to]);
+    return (originalRenameSync as (a: string, b: string) => void)(from, to);
+  };
+  t.after(() => {
+    (fs as any).writeFileSync = originalWriteFileSync;
+    (fs as any).renameSync = originalRenameSync;
+  });
+
+  const normalizedId = saveWeixinLoginResult({
+    status: "confirmed",
+    accountId: "Bot@im.bot",
+    botToken: "token-123",
+  });
+
+  assert.equal(normalizedId, "bot-im-bot");
+  // 索引走 .tmp + rename；不得把半成品直接写到 accounts.json
+  assert.equal(writeTargets.includes(indexPath), false);
+  assert.deepEqual(
+    renameCalls.filter(([, to]) => to === indexPath),
+    [[`${indexPath}.tmp`, indexPath]],
+  );
+  assert.deepEqual(JSON.parse(fs.readFileSync(indexPath, "utf-8")), ["bot-im-bot"]);
+  assert.equal(fs.existsSync(`${indexPath}.tmp`), false);
+});
+
+test("saveWeixinLoginResult 应保留索引里插件已注册的其他账号（写前重读磁盘）", (t) => {
+  const stateDir = setupTempStateDir(t);
+  const weixinDir = path.join(stateDir, "openclaw-weixin");
+  fs.mkdirSync(weixinDir, { recursive: true });
+  // 模拟 gateway 内微信插件（registerWeixinAccountId）先写入的索引条目
+  fs.writeFileSync(
+    path.join(weixinDir, "accounts.json"),
+    JSON.stringify(["plugin-registered"]),
+    "utf-8",
+  );
+
+  assert.equal(
+    saveWeixinLoginResult({ status: "confirmed", accountId: "Bot@im.bot", botToken: "token-123" }),
+    "bot-im-bot",
+  );
+
+  assert.deepEqual(
+    JSON.parse(fs.readFileSync(path.join(weixinDir, "accounts.json"), "utf-8")),
+    ["plugin-registered", "bot-im-bot"],
+  );
 });

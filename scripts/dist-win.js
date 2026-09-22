@@ -10,6 +10,11 @@
  * 串联：npm run build → package:resources → electron-builder，
  * 并注入 .env.build / .env 与镜像/网络环境变量（与 run-with-env.js 同源逻辑）。
  * 任一步失败立即终止（非零退出码），避免半成品安装包。
+ *
+ * 注意（F17）：dist:all:parallel（scripts/dist-all-parallel.sh）是另一条打包入口，
+ * 其 win 任务虽已套 run-with-env 注入签名 env，但无本文件的产物校验门禁
+ * （PE 签名检测 / blockmap / latest.yml）。正式发版请走本脚本（dist:win），
+ * 或对并行产物人工跑同等校验。
  */
 const fs = require("fs");
 const path = require("path");

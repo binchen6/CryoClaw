@@ -52,7 +52,7 @@
 | provider 配置 | `src/provider-config.ts` / `src/settings-ipc.ts`（薄注册） | 模型读写已切内核 `config.get`/`config.patch`（chat-ui `controllers/config.ts`）；主进程仅留 verify-key 探测 + kimi-code sidecar |
 | 内核打包 | `scripts/package-resources.js` | 下载 openclaw（版本 pin）→ 6 个 asar 边界补丁（幂等，未命中 die，R25）→ gateway.asar；skills/extension 白名单裁剪 |
 | 内核升级器 | `scripts/updater/kernel-update.mjs` + `src/kernel-updater.ts` + `scripts/lib/kernel-dist-patch.js` / `kernel-prune.js` | 差分 asar 换装/回滚；注入物 `cryoclaw-*` 双名识别；编排带 15 分钟整体看门狗（R25） |
-| gateway CLI 托管 | `src/gateway-control-server.ts` + `scripts/updater/gateway-ctl.mjs` | 127.0.0.1:17893+ 递增端口；GET /gateway/status + POST /gateway/restart |
+| gateway CLI 托管 | `src/gateway-control-server.ts` + `scripts/updater/gateway-ctl.mjs` | 127.0.0.1:17893+ 递增端口；GET /gateway/status + POST /gateway/restart + **GET /webui-handoff/\<code\>**（F5：外部浏览器一次性 handoff，唯一免 Bearer 路由，code 60s TTL/用后作废） |
 | 沙盒守卫 | `src/docker-check.ts` | 启用沙盒前探测（8s 超时、60s 缓存）；不可用拒绝写入 |
 | chat-ui 视图 | `chat-ui/ui/src/ui/views/` + `controllers/` | views 纯渲染，controllers 封装 RPC |
 | 视图接线 | `app-render.ts` + `views/registry.ts` | 视图 id 唯一事实来源；**新视图接线点 3 处**（gotchas #49） |

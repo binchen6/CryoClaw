@@ -15,6 +15,7 @@
 import * as ipc from "../data/ipc-bridge.ts";
 import { t } from "../i18n.ts";
 import { showToastGlobal } from "../app-toast.ts";
+import { decodeHtmlEntities } from "./path-linker.ts";
 // 主进程 app:open-path 的安全白名单（单一事实源）：渲染层据此决定点击行为——
 // 白名单外扩展名（代码/配置等）不再尝试打开（必被主进程拒绝且 toast 报错），
 // 直接降级为「在文件夹中定位」。此前两边清单漂移（.py/.js/.ts/.yml 等有卡片但
@@ -235,16 +236,20 @@ export function renderMediaMarkers(html: string): string {
     if (!parsed) {
       return match;
     }
-    if (!isImageExt(parsed.path) && FILE_CARD_EXT_SET.has(fileExtOf(parsed.path))) {
-      return buildFileCardHtml(parsed.path, parsed.full);
+    // sanitize 后 HTML 中文本 & 已转义为 &amp;：先解码回真实路径再进属性，
+    // 否则 data-file-path/alt/src 携带字面 &amp; 导致打开损坏路径（同 path-linker）
+    const path = decodeHtmlEntities(parsed.path);
+    const full = decodeHtmlEntities(parsed.full);
+    if (!isImageExt(path) && FILE_CARD_EXT_SET.has(fileExtOf(path))) {
+      return buildFileCardHtml(path, full);
     }
-    const url = localPathToFileUrl(parsed.path);
+    const url = localPathToFileUrl(path);
     if (!url) {
       return match;
     }
     const src = escapeAttr(url);
-    const alt = escapeAttr(parsed.path);
-    return `<img class="chat-local-media" src="${src}" alt="${alt}" title="${alt}" data-media-text="${escapeAttr(parsed.full)}" loading="lazy">`;
+    const alt = escapeAttr(path);
+    return `<img class="chat-local-media" src="${src}" alt="${alt}" title="${alt}" data-media-text="${escapeAttr(full)}" loading="lazy">`;
   });
 }
 

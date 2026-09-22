@@ -33,7 +33,12 @@ export function registerAboutIpc(): void {
       const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf-8"));
       if (pkg.version) kernelVersion = pkg.version;
     } catch {}
-    const config = readUserConfig();
+    // 环境信息页是只读展示：读失败（杀软瞬时锁等）按原语义降级为空配置，
+    // 其余字段（kernelVersion/port 等）照常返回，不让整个查询 IPC 失败
+    let config: any = {};
+    try {
+      config = readUserConfig();
+    } catch {}
     const providers = (config?.models?.providers && typeof config.models.providers === "object")
       ? Object.keys(config.models.providers)
       : [];

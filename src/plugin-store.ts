@@ -32,7 +32,7 @@ import { resolveGatewayEntry, resolveNodeBin, resolveNodeExtraEnv, resolveUserBi
 import { CN_CLAWHUB_MIRROR, isNetworkFailure, jsonGet, readSkillStoreRegistry } from "./skill-store";
 import { readBuildConfigClawhubRegistry } from "./build-config";
 import { readCryoclawConfig, writeCryoclawConfig } from "./cryoclaw-config";
-import { readUserConfig, writeUserConfig } from "./provider-config";
+import { readUserConfigForWrite, writeUserConfig } from "./provider-config";
 
 const EXEC_TIMEOUT_MS = 90_000;
 const MAX_BUFFER = 8 * 1024 * 1024;
@@ -645,7 +645,7 @@ async function restoreStashedPluginConfig(marketName: string): Promise<string[] 
   if (candidates.size === 0) return null;
 
   try {
-    const config = readUserConfig();
+    const { config, baseSnapshot } = readUserConfigForWrite();
     const entries = (config.plugins ??= {}).entries ??= {};
     const restored: string[] = [];
     for (const id of candidates) {
@@ -659,7 +659,7 @@ async function restoreStashedPluginConfig(marketName: string): Promise<string[] 
       };
       if (!existingHasConfig) restored.push(id);
     }
-    writeUserConfig(config);
+    writeUserConfig(config, { baseSnapshot });
 
     const cryoclaw = readCryoclawConfig();
     if (cryoclaw?.savedPluginConfigs) {

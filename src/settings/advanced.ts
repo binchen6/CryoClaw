@@ -12,7 +12,7 @@ import {
   migrateBrowserProfileForCurrentGateway,
   normalizeRequestedBrowserProfileForSave,
 } from "../browser-profile-config";
-import { readUserConfig, writeUserConfig } from "../provider-config";
+import { readUserConfig, readUserConfigForWrite, writeUserConfig } from "../provider-config";
 import { readSkillStoreRegistry, writeSkillStoreRegistry } from "../skill-store";
 import { checkDockerAvailable } from "../docker-check";
 import { getLaunchAtLoginState, setLaunchAtLoginEnabled } from "../launch-at-login";
@@ -81,6 +81,7 @@ export function registerAdvancedIpc(opts: SettingsIpcOptions): void {
           // 扩展状态查询），若夹在 read 与 write 之间，窗口期内 gateway 落盘的
           // config.patch（渠道凭据等）会被旧快照整文件覆盖（lost update）。
           // precheck 输入全部独立读磁盘，不依赖本次将要写入的 config。
+          // 第二道防线：writeUserConfig 的 baseSnapshot 比对（见下方写入处）。
           if (coercedMode === "webbridge") {
             const pre = await runWebbridgePrecheck();
             if (!pre.ok) {
@@ -97,7 +98,7 @@ export function registerAdvancedIpc(opts: SettingsIpcOptions): void {
             }
           }
 
-          const config = readUserConfig();
+          const { config, baseSnapshot } = readUserConfigForWrite();
           // R91 审查修复：只有浏览器模式/Profile 实际变化才触发 gateway 重启——
           // launchAtLogin 与 ClawHub registry 均与 gateway 无关，无条件重启会把
           // 活跃聊天流切断一轮 800ms 防抖重启
@@ -123,8 +124,9 @@ export function registerAdvancedIpc(opts: SettingsIpcOptions): void {
           }
 
           // 配置写盘放最前：写失败时直接返回，不留「OS 设置已生效但配置没存上」
-          // 的半提交状态（launchAtLogin / registry 都是回滚代价高的外部副作用）
-          writeUserConfig(config);
+          // 的半提交状态（launchAtLogin / registry 都是回滚代价高的外部副作用）。
+          // baseSnapshot：写前比对磁盘，期间 gateway 落盘的 config.patch 不被旧快照覆盖
+          writeUserConfig(config, { baseSnapshot });
 
           if (typeof launchAtLogin === "boolean") {
             setLaunchAtLoginEnabled(app, launchAtLogin);

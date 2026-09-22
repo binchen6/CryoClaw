@@ -32,6 +32,9 @@ function defaultRegistry(): string {
 }
 const FETCH_TIMEOUT_MS = 15_000;
 const SKILL_STORE_CONFIG = "skill-store.json";
+// clawhub CLI stdout 上限（对齐 plugin-store MAX_BUFFER）：Node execFile 默认
+// maxBuffer 仅 1MB，install 等大输出命令会被 ENOBUFS 误杀（进程非零退出）
+const EXEC_MAX_BUFFER = 8 * 1024 * 1024;
 
 // 开发模式下打印网络请求日志
 const debugLog = (msg: string) => {
@@ -179,7 +182,16 @@ export function jsonGet<T>(url: string): Promise<T> {
         let errBytes = 0;
         res.on("data", (chunk: Buffer) => {
           errBytes += chunk.length;
-          if (errBytes > 64 * 1024) { res.destroy(); return; }
+          if (errBytes > 64 * 1024) {
+            // 错误体超 64KB：res.destroy() 不触发 end/error，必须先显式 reject
+            // 再销毁——否则 Promise 永久悬挂（skill-store:list 等 IPC 死转，
+            // 商店页只能重启应用）。reject 幂等，后续事件不再生效。
+            const err = new Error(`HTTP ${res.statusCode}`) as Error & { statusCode?: number };
+            err.statusCode = res.statusCode ?? 0;
+            reject(err);
+            res.destroy();
+            return;
+          }
           errChunks.push(chunk);
         });
         res.on("end", () => {
@@ -283,13 +295,25 @@ async function listSkills(opts: {
         jsonGet<any>(`${CN_CLAWHUB_MIRROR}/api/v1/search?q=${encodeURIComponent(kw)}&limit=${wanted}`)),
     );
     const bySlug = new Map<string, any>();
+    let lastFailure: unknown = null;
+    let failed = 0;
     for (const r of settled) {
-      if (r.status !== "fulfilled") continue;
+      if (r.status !== "fulfilled") {
+        failed++;
+        lastFailure = r.reason;
+        continue;
+      }
       const items = Array.isArray(r.value.results) ? r.value.results : [];
       for (const item of items) {
         const slug = typeof item?.slug === "string" ? item.slug : "";
         if (slug && !bySlug.has(slug)) bySlug.set(slug, item);
       }
+    }
+    if (failed === settled.length) {
+      // 镜像 7 路全灭时返回空成功会让 UI 误显示「商店空空如也」——对齐
+      // plugin-store fetchMarketGroups 的全灭抛错（单路失败仍只丢自身）。
+      // 全 fulfilled 但零结果是镜像真空列表，维持空成功。
+      throw lastFailure instanceof Error ? lastFailure : new Error(String(lastFailure));
     }
     const all = [...bySlug.values()].map(mapItem);
     // 本地排序模拟服务端 sort：downloads 降序 / updated 降序 / trending 沿用命中序
@@ -467,6 +491,7 @@ function execClawhub(args: string[]): Promise<{ stdout: string; stderr: string }
 
     execFile(nodeBin, fullArgs, {
       timeout: 60_000,
+      maxBuffer: EXEC_MAX_BUFFER,
       env: {
         ...process.env,
         ...resolveNodeExtraEnv(),

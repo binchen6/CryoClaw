@@ -74,6 +74,29 @@ function execNpmSync(args, opts = {}) {
   return execFileSync("node", argv, { stdio: "inherit", ...opts });
 }
 
+// 构建 npm 子进程环境（F15）：主安装与全部插件安装点统一出口。
+//   - registry：Step 1.5 的 .npmrc 写在 runtimeDir，而 npm 的 cwd 是各安装
+//     临时/gateway 目录，按其配置查找规则不会命中（per-project→用户→全局→
+//     内置默认 npmjs.org）。显式注入镜像 registry：国内弱网/代理下直连
+//     npmjs.org 会拖垮构建。调用方（extraEnv）或 shell 已显式指定
+//     npm_config_registry 时不覆盖。
+//   - PATH 前置捆绑 runtime 目录：插件传递依赖的 pre/postinstall 以裸 `node`
+//     执行并按 PATH 解析；宿主 Node 版本不满足 openclaw 引擎范围时插件装不上
+//     （Windows 上 PATH 键名大小写不敏感，沿用原有键名避免产生重复键）。
+function buildNpmEnv(targetId, extraEnv = {}) {
+  const runtimeDir = path.join(TARGETS_ROOT, targetId, "runtime");
+  const pathKey = Object.keys(process.env).find((k) => k.toLowerCase() === "path") || "PATH";
+  const env = {
+    ...process.env,
+    [pathKey]: runtimeDir + path.delimiter + (process.env[pathKey] || ""),
+    ...extraEnv,
+  };
+  if (env.npm_config_registry === undefined) {
+    env.npm_config_registry = "https://registry.npmmirror.com";
+  }
+  return env;
+}
+
 // ─── 统一路径原语（结论记录） ───
 // 曾试验以 safeResolve(root, …) 原语统一路径拼接以消除跨文件污点标记：
 // 实证无效（分析器把原语自身登记为污点汇，边界校验不被跨函数采信），
@@ -1183,10 +1206,8 @@ function installDependencies(opts, gatewayDir) {
   // --os/--cpu + npm_config_os/cpu：强制按目标平台安装，避免跨平台打包时复用宿主机原生包
   // --install-links: 对 file: 依赖做实际拷贝而非符号链接
   // --legacy-peer-deps: 防止 npm 自动安装 peerDep 拉入巨型包（如 clawdbot 205MB）
-  // PATH 前置 runtime 目录：preinstall 脚本里的裸 `node` 调用按 PATH 解析，
-  // 必须命中捆绑运行时而非宿主机 Node（Windows 上 PATH 键名大小写不敏感，
-  // 沿用原有键名避免产生重复键）。
-  const pathKey = Object.keys(process.env).find((k) => k.toLowerCase() === "path") || "PATH";
+  // env 由 buildNpmEnv 统一构建（镜像 registry + PATH 前置捆绑 runtime），
+  // NODE_LLAMA_CPP_SKIP_DOWNLOAD 避免 node-llama-cpp 在 cross-build 时执行 postinstall 下载/本地编译
   // opts.platform/arch 已被 parseArgs 白名单校验（darwin|win32 × arm64|x64）。
   // 走 execNpmSync 统一出口（宿主 node 直执捆绑 npm-cli.js + argv 白名单）。
   execNpmSync([
@@ -1198,19 +1219,12 @@ function installDependencies(opts, gatewayDir) {
     `--cpu=${opts.arch}`,
   ], {
     cwd: gatewayDir,
-    env: {
-      ...process.env,
-      [pathKey]: runtimeDir + path.delimiter + (process.env[pathKey] || ""),
+    env: buildNpmEnv(getTargetId(opts.platform, opts.arch), {
       NODE_ENV: "production",
       npm_config_os: opts.platform,
       npm_config_cpu: opts.arch,
-      // R96：Step 1.5 的 .npmrc 写在 runtimeDir，而 npm 的 cwd 是 gatewayDir，
-      // 按其配置查找规则不会命中（per-project→用户→全局→内置默认 npmjs.org）。
-      // 显式注入镜像 registry：国内弱网/代理下直连 npmjs.org 会拖垮构建。
-      npm_config_registry: "https://registry.npmmirror.com",
-      // 避免 node-llama-cpp 在 cross-build 时执行 postinstall 下载/本地编译
       NODE_LLAMA_CPP_SKIP_DOWNLOAD: "true",
-    },
+    }),
   });
 
   log("依赖安装完成，开始裁剪 node_modules...");
@@ -1908,13 +1922,12 @@ async function installNpmPackagePluginInto(plugin, pluginDir, hostNm, targetId, 
         {
           cwd: tmpDir,
           stdio: "inherit",
-          env: {
-            ...process.env,
+          env: buildNpmEnv(targetId, {
             NODE_ENV: "production",
             npm_config_os: opts.platform,
             npm_config_cpu: opts.arch,
             NODE_LLAMA_CPP_SKIP_DOWNLOAD: "true",
-          },
+          }),
         }
       );
     } catch (err) {
@@ -2034,13 +2047,12 @@ function installTgzPluginDeps(plugin, pluginDir, targetId, opts) {
         {
           cwd: depTmpDir,
           stdio: "inherit",
-          env: {
-            ...process.env,
+          env: buildNpmEnv(targetId, {
             NODE_ENV: "production",
             npm_config_os: opts.platform,
             npm_config_cpu: opts.arch,
             NODE_LLAMA_CPP_SKIP_DOWNLOAD: "true",
-          },
+          }),
         }
       );
     } catch (err) {
@@ -2068,6 +2080,7 @@ function installTgzPluginDeps(plugin, pluginDir, targetId, opts) {
           // pkg 来自插件清单声明的包名集合；opts.arch/electronVersion 为受控枚举/本仓库依赖版本
           execNpmSync(["rebuild", pkg, `--arch=${opts.arch}`, "--runtime=electron", `--target=${electronVersion}`, "--dist-url=https://electronjs.org/headers"], {
             cwd: depTmpDir,
+            env: buildNpmEnv(targetId),
           });
         } catch (err) {
           log(`⚠ ${plugin.id} native addon ${pkg} 编译失败（${opts.arch}）: ${err.message || String(err)}`);
@@ -2125,7 +2138,7 @@ function vendorOfficialPlugin(plugin, gatewayDir, targetId, opts) {
   const safeId = plugin.id.replace(/-/g, "_");
   const tmpDir = createExtractTmpDir(path.join(ROOT, ".cache"), `${targetId}_official_${safeId}`);
   try {
-    execNpmSync(["pack", spec, `--pack-destination=${tmpDir}`], { cwd: tmpDir });
+    execNpmSync(["pack", spec, `--pack-destination=${tmpDir}`], { cwd: tmpDir, env: buildNpmEnv(targetId) });
     const tgz = fs.readdirSync(tmpDir).find((f) => f.endsWith(".tgz"));
     // die = process.exit 会跳过下方 finally 的 rmDir(tmpDir)，先手动清理
     // （对齐 bundlePlugin 的 die 前 rmDir 模式），避免 .cache 泄留 _extract_tmp 目录
@@ -2753,8 +2766,9 @@ async function packGatewayAsar(gatewayDir, targetBase, platform, arch) {
   const asarSize = (fs.statSync(asarPath).size / 1048576).toFixed(1);
   log(`gateway.asar 打包完成: ${asarSize} MB`);
 
-  // 校验 asar 内关键文件
-  verifyAsarContents(asarPath);
+  // 校验 asar 内关键文件（含注入插件 manifest；win-arm64 交叉编译豁免 kimi-search，
+  // 与散文件 verifyOutput 的 crossCompileOptionalExts 口径一致）
+  verifyAsarContents(asarPath, { winArm64Cross: isWindowsArm64CrossCompile({ platform, arch }) });
 
   // 统计 unpacked 文件数
   const unpackedDir = path.join(targetBase, "gateway.asar.unpacked");
@@ -2768,8 +2782,20 @@ async function packGatewayAsar(gatewayDir, targetBase, platform, arch) {
   log("已删除 gateway/ 散文件目录");
 }
 
+// 校验 asar 内注入插件 manifest（纯函数，供 verifyAsarContents 与单测共用）。
+// files: asar.listPackage 归一化后的路径集合（反斜杠已转正斜杠、以 "/" 开头）。
+// winArm64Cross: Windows arm64 交叉编译下 kimi-search 允许缺失（含 native addon，
+// 交叉编译可能注入失败），与散文件 verifyOutput 的 crossCompileOptionalExts 口径一致；
+// 其余 8 个插件缺失必须 die——asar 模式下注入失败曾被静默吞掉绿灯出包。
+function findMissingInjectedExtensionManifests(files, winArm64Cross) {
+  return REQUIRED_OPENCLAW_INJECTED_EXTENSIONS
+    .map((relPath) => `/node_modules/openclaw/dist/extensions/${relPath.split(path.sep).join("/")}`)
+    .filter((rel) => !files.has(rel))
+    .filter((rel) => !(winArm64Cross && rel.includes("/extensions/kimi-search/")));
+}
+
 // 校验 asar 内关键入口文件存在
-function verifyAsarContents(asarPath) {
+function verifyAsarContents(asarPath, { winArm64Cross = false } = {}) {
   const asar = require("@electron/asar");
   // Windows 上 listPackage 返回反斜杠路径，统一转正斜杠再比较
   const files = new Set(asar.listPackage(asarPath).map((f) => f.replace(/\\/g, "/")));
@@ -2785,6 +2811,13 @@ function verifyAsarContents(asarPath) {
   const missing = required.filter((f) => !files.has(f));
   if (missing.length > 0) {
     die(`gateway.asar 缺少关键文件:\n${missing.map((f) => `  - ${f}`).join("\n")}`);
+  }
+
+  // 注入插件 manifest 校验（P0-11）：asar 模式下 bundleAllPlugins 的注入失败
+  // 只 log 跳过，无产物校验会静默发出缺全部 provider 插件的包
+  const missingExts = findMissingInjectedExtensionManifests(files, winArm64Cross);
+  if (missingExts.length > 0) {
+    die(`gateway.asar 缺少注入插件 manifest:\n${missingExts.map((f) => `  - ${f}`).join("\n")}`);
   }
   log(`gateway.asar 关键文件校验通过 (${files.size} 个文件)`);
 
@@ -3247,7 +3280,8 @@ function vendorKernelUpdater(targetBase) {
     fs.readFileSync(path.join(ROOT, "node_modules", "@electron", "asar", "package.json"), "utf-8")
   );
   // asarPkg.version 读自本仓库 node_modules 的 package.json（受控版本串）
-  execNpmSync(["install", `--prefix=${updaterDir}`, `@electron/asar@${asarPkg.version}`, "--omit=dev", "--no-audit", "--no-fund"], { cwd: ROOT });
+  // env 走 buildNpmEnv 统一注入镜像 registry（F15：本调用点此前裸奔 npmjs.org）
+  execNpmSync(["install", `--prefix=${updaterDir}`, `@electron/asar@${asarPkg.version}`, "--omit=dev", "--no-audit", "--no-fund"], { cwd: ROOT, env: buildNpmEnv(path.basename(targetBase)) });
 
   log(`已 vendor 内核升级器 (@electron/asar@${asarPkg.version}) → updater/`);
 }

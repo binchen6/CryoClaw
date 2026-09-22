@@ -41,7 +41,7 @@ import { renderPlanPanel } from "./plan-panel.ts";
 import type { PlanStreamState } from "../plan-stream.ts";
 import { renderProgressCard } from "./progress-card.ts";
 import type { ProgressCardState } from "../controllers/progress-card.ts";
-import type { BoardState } from "../controllers/board.ts";
+import { BOARD_WIDGET_SANDBOX, type BoardState } from "../controllers/board.ts";
 import type { FallbackNotice } from "../app-tool-stream.ts";
 
 export { computeStopButtonVisible };
@@ -582,7 +582,7 @@ function renderBoardPanel(props: ChatProps) {
               class="chat-board__frame"
               src=${widget.src}
               title=${widget.name}
-              sandbox="allow-scripts allow-same-origin allow-forms"
+              sandbox=${BOARD_WIDGET_SANDBOX}
               loading="lazy"
             ></iframe>
           </div>

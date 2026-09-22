@@ -13,6 +13,28 @@ interface ResolveTokenOptions {
 
 const FILE_ORIGIN_NULL = "null";
 
+// L15：配置缺失/损坏时随机 token 的进程内缓存。
+//
+// 背景：GatewayProcess 构造时用 persist:false 取一次 token 注入首窗 URL（T1），随后
+// syncGatewayRuntimeConfigFromDisk() 再取一次；若配置仍不存在（首启 Setup 未完成、
+// 配置被删/损坏），旧实现会随机出 T2 —— 窗口 URL 里的 T1 与 gateway 实际启动用的
+// token（OPENCLAW_GATEWAY_TOKEN）不一致，首连必 401，只能靠 gateway:ready 兜底自愈。
+//
+// 因此：所有「读不到真实 token」的分支共用同一个随机值；一旦从配置解析出真实 token，
+// 就用它覆盖缓存。令牌轮换（persist:true 写入新 token）走的是配置分支，不受影响。
+let ephemeralTokenCache: string | null = null;
+
+function resolveEphemeralToken(): string {
+  ephemeralTokenCache ??= crypto.randomBytes(16).toString("hex");
+  return ephemeralTokenCache;
+}
+
+// 记住配置里的真实 token：覆盖缓存后，后续「读不到 token」的调用也与真实 token 一致
+function rememberResolvedToken(token: string): string {
+  ephemeralTokenCache = token;
+  return token;
+}
+
 // 为 Electron file:// 页面补全 Control UI 的 null origin 白名单。
 function ensureControlUiAllowedOriginsInConfig(config: GatewayConfig): void {
   config.gateway ??= {};
@@ -64,7 +86,7 @@ export function ensureGatewayAuthTokenInConfig(config: GatewayConfig): string {
 export function resolveGatewayAuthToken(opts: ResolveTokenOptions = {}): string {
   const configPath = resolveUserConfigPath();
   if (!fs.existsSync(configPath)) {
-    return crypto.randomBytes(16).toString("hex");
+    return resolveEphemeralToken();
   }
 
   let config: GatewayConfig;
@@ -72,13 +94,13 @@ export function resolveGatewayAuthToken(opts: ResolveTokenOptions = {}): string 
     const raw = fs.readFileSync(configPath, "utf-8");
     config = JSON.parse(raw);
   } catch {
-    return crypto.randomBytes(16).toString("hex");
+    return resolveEphemeralToken();
   }
 
   // 只读模式：仅使用已有 token，避免在 Setup 判定前提前改写配置。
   if (opts.persist === false) {
     const token = typeof config.gateway?.auth?.token === "string" ? config.gateway.auth.token.trim() : "";
-    return token || crypto.randomBytes(16).toString("hex");
+    return token ? rememberResolvedToken(token) : resolveEphemeralToken();
   }
 
   const before = JSON.stringify(config);
@@ -100,5 +122,5 @@ export function resolveGatewayAuthToken(opts: ResolveTokenOptions = {}): string 
     }
   }
 
-  return token;
+  return rememberResolvedToken(token);
 }

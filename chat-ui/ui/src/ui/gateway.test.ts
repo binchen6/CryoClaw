@@ -202,10 +202,54 @@ async function testRequestTimesOutWhenGatewayNeverResponds() {
   assert.match(String(outcome), /^rejected:/, "gateway 超时后，请求应明确 reject");
 }
 
+async function testInvalidUrlDoesNotThrowAndGoesToReconnectPath() {
+  FakeWebSocket.instances = [];
+  const timers = new FakeTimers();
+  installBrowserGlobals(timers);
+
+  // F8：URL 非法（localStorage 脏数据 / URL 参数注入）时 WebSocket 构造器同步抛
+  // SyntaxError——client.start() 不得向外抛，应走 onClose 错误通道 + 退避重连。
+  class ThrowingWebSocket {
+    constructor(_url: string) {
+      throw new SyntaxError("The URL 'javascript:alert(1)' is invalid.");
+    }
+  }
+  (globalThis as Record<string, unknown>).WebSocket = ThrowingWebSocket;
+
+  const closes: Array<{ code: number; reason: string }> = [];
+  const client = new GatewayBrowserClient({
+    url: "javascript:alert(1)",
+    onClose: (info) => closes.push(info),
+  });
+  let threw = false;
+  try {
+    client.start();
+  } catch {
+    threw = true;
+  }
+  assert.equal(threw, false, "非法 URL 时 start() 不得同步抛异常");
+  assert.equal(closes.length, 1, "应经 onClose 错误通道上报一次");
+  assert.equal(closes[0]!.code, 4008, "合成关闭应使用既有 connect-failed 错误码");
+  assert.match(closes[0]!.reason, /invalid gateway url/, "关闭原因应标明 URL 非法");
+  assert.equal(
+    (timers as unknown as { tasks: Map<number, unknown> }).tasks.size,
+    1,
+    "应排一个退避重连 timer（沿用既有重连机制）",
+  );
+
+  // 重连 timer 触发后再试一次：依旧不抛、错误通道再次上报、再次排重连。
+  timers.runNext();
+  assert.equal(closes.length, 2, "退避重连再次命中非法 URL 应再次上报");
+  client.stop();
+  // 恢复默认 FakeWebSocket，避免污染同文件后续用例
+  installBrowserGlobals(timers);
+}
+
 async function main() {
   await testReconnectNowCancelsScheduledReconnect();
   await testRequestMustWaitForHelloHandshake();
   await testRequestTimesOutWhenGatewayNeverResponds();
+  await testInvalidUrlDoesNotThrowAndGoesToReconnectPath();
   console.log("gateway reconnect tests passed");
 }
 

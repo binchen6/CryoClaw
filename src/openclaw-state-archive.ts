@@ -147,13 +147,28 @@ export async function importOpenclawStateFromArchive(
 
 // 把当前状态目录导出为应急归档，返回归档路径；随后滚动清理旧归档。
 async function createPreImportEmergencyBackup(stateDir: string, backupDir: string): Promise<string> {
-  const zipPath = path.join(backupDir, `${PRE_IMPORT_BACKUP_PREFIX}${formatTimestamp(new Date())}.zip`);
+  const zipPath = buildPreImportEmergencyBackupPath(backupDir);
   await exportOpenclawStateToArchive(stateDir, zipPath);
   prunePreImportEmergencyBackups(backupDir);
   return zipPath;
 }
 
-// 文件名含秒级时间戳，字典序即时间序；只保留最近 PRE_IMPORT_BACKUP_KEEP 份
+// 归档名 = 前缀 + 秒级时间戳 + pid [+ 同秒冲突序号]。
+// 只有秒级时间戳时，同一秒内的两次生成（导入失败 → 用户立即重试）会同名互相覆盖，
+// 再叠加 PRE_IMPORT_BACKUP_KEEP 滚动裁剪，实际恢复点比预期少；pid 区分多实例，
+// 已存在的文件名再追加序号，保证同进程同秒也不会覆盖（多一个文件名就是多一个恢复点）。
+// 命名规则未改动源码时间格式（time-format.ts），后缀都在调用处拼接。
+function buildPreImportEmergencyBackupPath(backupDir: string): string {
+  const base = `${PRE_IMPORT_BACKUP_PREFIX}${formatTimestamp(new Date())}-${process.pid}`;
+  let candidate = path.join(backupDir, `${base}.zip`);
+  for (let seq = 1; fs.existsSync(candidate); seq++) {
+    candidate = path.join(backupDir, `${base}-${seq}.zip`);
+  }
+  return candidate;
+}
+
+// 文件名以秒级时间戳开头（其后是 pid 与同秒冲突序号），字典序即时间序；
+// 同一秒内的多份按 pid/序号排列，裁剪仍是最旧优先。只保留最近 PRE_IMPORT_BACKUP_KEEP 份
 function prunePreImportEmergencyBackups(backupDir: string): void {
   let names: string[];
   try {

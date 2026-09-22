@@ -138,6 +138,57 @@ function sha256File(p: string): string {
   return createHash("sha256").update(fs.readFileSync(p)).digest("hex");
 }
 
+// HEAD 正常打 ETag（让 installWebbridge 走到缓存比对分支），GET 一律 404
+// （非 2xx 且非 transient → 下载立即失败，不重试）
+function startCdnHeadOkGetFail(etag: string): Promise<{ url: string; close: () => Promise<void>; getCalls: () => number }> {
+  return new Promise((resolve) => {
+    let getCalls = 0;
+    const s = http.createServer((req, res) => {
+      if (req.method === "HEAD") {
+        res.writeHead(200, { ETag: etag, "Content-Length": "1" });
+        res.end();
+      } else {
+        getCalls++;
+        res.writeHead(404);
+        res.end();
+      }
+    });
+    s.listen(0, "127.0.0.1", () => {
+      const a = s.address(); if (!a || typeof a === "string") throw new Error("no addr");
+      resolve({
+        url: `http://127.0.0.1:${a.port}`,
+        close: () => new Promise((r) => s.close(() => r())),
+        getCalls: () => getCalls,
+      });
+    });
+  });
+}
+
+test("供应链钉定：缓存 ETag 命中但钉定失配 + 下载失败 → 磁盘上旧二进制原样保留", async () => {
+  const { url, close, getCalls } = await startCdnHeadOkGetFail('"v1"');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "wb-cache-dlfail-"));
+  const bin = path.join(dir, "bin/kimi-webbridge");
+  fs.mkdirSync(path.dirname(bin), { recursive: true });
+  const oldBody = Buffer.from("previously-working-daemon-binary");
+  fs.writeFileSync(bin, oldBody);
+  // ETag 与 HEAD 一致（缓存命中）但磁盘 sha 不等于期望钉定 → 作废缓存走下载替换
+  writeCacheManifest(dir, { version: "1.0.0", etag: '"v1"', lastModified: null, contentLength: oldBody.length });
+  try {
+    await assert.rejects(
+      installWebbridge({
+        dataDir: dir, binaryPath: bin, platform: "darwin", arch: "arm64",
+        cdnBaseUrl: url, expectedSha256: "a".repeat(64), versionProbe: async () => null,
+      }),
+      /HTTP 404/,
+    );
+    assert.ok(getCalls() >= 1, "钉定失配必须走下载路径");
+    // 下载是 tmp + rename 覆盖，预先 rmSync 不是前置条件；删掉它才不会在
+    // 下载重试耗尽后让用户机器上原本可运行的 daemon 二进制凭空消失
+    assert.equal(fs.existsSync(bin), true, "下载失败不得删除磁盘上的旧二进制");
+    assert.equal(fs.readFileSync(bin).equals(oldBody), true);
+  } finally { await close(); fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
 function setupDeps(over: Partial<WebbridgeSetupTaskDeps> = {}): WebbridgeSetupTaskDeps {
   return {
     installer: async () => ({ installed: true, skipped: false, version: "1", binaryPath: "/x/kimi", etag: null }),
@@ -737,5 +788,124 @@ test("applyWebbridgeUpdate（F3）：pin 命中 → 换装 + manifest + skill �
     wu.setWebbridgeStateChangedBroadcastForTests(null);
     await close();
     fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// ── F3 回归：daemon 在跑 + 换装失败 → 必须尽力恢复 daemon ──
+// 直接打补丁 child_process.spawn（SUT 内 require("child_process").spawn 运行时取，
+// 同一缓存模块对象，补丁可见；node:test 与 vitest 下都成立）。
+function stubDaemonSpawn(onCall: (cmd: string, args: string[], opts: unknown) => void): () => void {
+  const cp = require("child_process") as typeof import("child_process");
+  const orig = cp.spawn;
+  (cp as { spawn: unknown }).spawn = (cmd: string, args: string[], opts: unknown) => {
+    onCall(cmd, args, opts);
+    const child = { kill() {}, unref() {} } as { kill: () => void; unref: () => void; on: (e: string, cb: () => void) => unknown };
+    child.on = (evt, cb) => {
+      if (evt === "error") setTimeout(cb, 0); // spawnAndWait 等 error/exit；即时异步触发快速返回
+      return child;
+    };
+    return child;
+  };
+  return () => {
+    (cp as { spawn: unknown }).spawn = orig;
+  };
+}
+
+const RUNNING_DAEMON = {
+  running: true, version: "2.0.9", extensionVersion: "2.0.9",
+  updateAvailable: null, versionMismatch: false,
+} as const;
+
+test("applyWebbridgeUpdate（F3）：daemon 在跑 + rename 重试耗尽 → ok:false 且恢复 daemon 启动", async () => {
+  const wu = await import("./webbridge-update");
+  const newBody = Buffer.alloc(256, 0x99);
+  const newSha = createHash("sha256").update(newBody).digest("hex");
+  const { url, close } = await startCdn(newBody, '"v2"');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "wb-apply-rnfail-"));
+  const bin = path.join(dir, "bin/kimi-webbridge");
+  fs.mkdirSync(path.dirname(bin), { recursive: true });
+  // 目的地占位成非空目录 → rename 必然失败（旧二进制语义上等价于被锁死）
+  fs.mkdirSync(bin);
+  fs.writeFileSync(path.join(bin, "occupied"), "x");
+  const spawnCalls: string[][] = [];
+  const restore = stubDaemonSpawn((_cmd, args) => { spawnCalls.push(args); });
+  try {
+    const res = await wu.applyWebbridgeUpdate({
+      dataDir: dir, binaryPath: bin, platform: "darwin", arch: "arm64", cdnBaseUrl: url,
+      remotePinsProvider: async () => ({ "kimi-webbridge-darwin-arm64": newSha }),
+      fetchDaemonStatus: async () => ({ ...RUNNING_DAEMON }),
+      installSkill: async () => ({ success: true, output: "" }),
+    });
+    assert.equal(res.ok, false);
+    assert.equal((res as { reason: string }).reason, "download-failed");
+    assert.deepEqual(spawnCalls[0], ["stop"], "daemon 在跑应先 stop");
+    assert.ok(
+      spawnCalls.some((a) => a.length === 1 && a[0] === "start"),
+      `换装失败必须恢复 daemon 启动（实际 spawn 参数: ${JSON.stringify(spawnCalls)}）`,
+    );
+  } finally {
+    restore();
+    await close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("applyWebbridgeUpdate（F3）：daemon 在跑 + manifest 写盘失败 → ok:false 且恢复 daemon 启动", async () => {
+  const wu = await import("./webbridge-update");
+  const newBody = Buffer.alloc(256, 0xaa);
+  const newSha = createHash("sha256").update(newBody).digest("hex");
+  const { url, close } = await startCdn(newBody, '"v2"');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "wb-apply-mffail-"));
+  const bin = path.join(dir, "bin/kimi-webbridge");
+  fs.mkdirSync(path.dirname(bin), { recursive: true });
+  fs.writeFileSync(bin, Buffer.from("old-binary"));
+  // dataDir 占成普通文件 → rename 成功后的 writeCacheManifest 必然抛错
+  const dataAsFile = path.join(dir, "data-dir-as-file");
+  fs.writeFileSync(dataAsFile, "x");
+  const spawnCalls: string[][] = [];
+  const restore = stubDaemonSpawn((_cmd, args) => { spawnCalls.push(args); });
+  try {
+    const res = await wu.applyWebbridgeUpdate({
+      dataDir: dataAsFile, binaryPath: bin, platform: "darwin", arch: "arm64", cdnBaseUrl: url,
+      remotePinsProvider: async () => ({ "kimi-webbridge-darwin-arm64": newSha }),
+      fetchDaemonStatus: async () => ({ ...RUNNING_DAEMON }),
+      installSkill: async () => ({ success: true, output: "" }),
+    });
+    assert.equal(res.ok, false, "manifest 写盘失败应返回 ok:false（不再向上抛）");
+    assert.equal(fs.readFileSync(bin).equals(newBody), true, "rename 已成功，新二进制就位");
+    assert.ok(
+      spawnCalls.some((a) => a.length === 1 && a[0] === "start"),
+      `换装失败必须恢复 daemon 启动（实际 spawn 参数: ${JSON.stringify(spawnCalls)}）`,
+    );
+  } finally {
+    restore();
+    await close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("fetchWebbridgeDaemonStatus：version_mismatch 按布尔语义解析（false ≠ 错配）", async () => {
+  const wu = await import("./webbridge-update");
+  // 依次应答三份 /status：显式 false / 显式 true / 字段缺失
+  const bodies: Array<Record<string, unknown>> = [
+    { running: true, version_mismatch: false },
+    { running: true, version_mismatch: true },
+    { running: true },
+  ];
+  let idx = 0;
+  const server = http.createServer((_req, res) => {
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify(bodies[Math.min(idx++, bodies.length - 1)]));
+  });
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", () => r()));
+  const a = server.address();
+  if (!a || typeof a === "string") throw new Error("no addr");
+  const url = `http://127.0.0.1:${a.port}/status`;
+  try {
+    assert.equal((await wu.fetchWebbridgeDaemonStatus({ url }))?.versionMismatch, false, "显式 false 不是错配");
+    assert.equal((await wu.fetchWebbridgeDaemonStatus({ url }))?.versionMismatch, true);
+    assert.equal((await wu.fetchWebbridgeDaemonStatus({ url }))?.versionMismatch, false, "字段缺失 = 无错配");
+  } finally {
+    await new Promise<void>((r) => server.close(() => r()));
   }
 });

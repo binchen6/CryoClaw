@@ -206,12 +206,22 @@ export function applyQuestionResolution(
   return next;
 }
 
-/** question.list 全量对齐：服务端终态覆盖一切；服务端 pending 只填补缺失/覆盖本地 pending */
+/**
+ * question.list 全量对齐：服务端终态覆盖一切；服务端 pending 只填补缺失/覆盖本地 pending。
+ * P3-7：本地终态且服务端列表已不含该 id → 服务端已回收该记录，删除本地条目，
+ * 防 answered/cancelled/expired 只增不删、长跑内存单调累积。只删终态：本地
+ * pending 而服务端滞后未同步的必须保留（防误删在途问题）。
+ */
 export function reconcileQuestionsFromList(
   prompts: QuestionPrompt[],
   serverRecords: QuestionPrompt[],
 ): QuestionPrompt[] {
-  const byId = new Map(prompts.map((p) => [p.id, p]));
+  const serverById = new Map(serverRecords.map((r) => [r.id, r]));
+  const byId = new Map<string, QuestionPrompt>();
+  for (const local of prompts) {
+    if (local.status !== "pending" && !serverById.has(local.id)) continue;
+    byId.set(local.id, local);
+  }
   for (const rec of serverRecords) {
     const local = byId.get(rec.id);
     if (!local) {
@@ -226,16 +236,35 @@ export function reconcileQuestionsFromList(
   return [...byId.values()];
 }
 
-/** tick 过期清理：pending 且 expiresAtMs 已过 → 标记 expired（本地终态，等待 resolved/list 收敛） */
+/**
+ * 本地 questionPrompts 硬上限（P3-7 保险）：内核长期保留终态记录时 reconcile
+ * 删除不生效，超长按 createdAtMs 从旧到新驱逐终态条目；pending 绝不驱逐。
+ */
+const QUESTION_PROMPTS_HARD_CAP = 300;
+
+/**
+ * tick 过期清理：pending 且 expiresAtMs 已过 → 标记 expired（本地终态，等待
+ * resolved/list 收敛）；超硬上限时按 createdAtMs 从旧到新驱逐终态条目。
+ */
 export function pruneExpiredQuestions(prompts: QuestionPrompt[], now: number = Date.now()): QuestionPrompt[] {
   let changed = false;
-  const next = prompts.map((p) => {
+  let next = prompts.map((p) => {
     if (p.status === "pending" && p.expiresAtMs <= now) {
       changed = true;
       return { ...p, status: "expired" as const };
     }
     return p;
   });
+  if (next.length > QUESTION_PROMPTS_HARD_CAP) {
+    const pending = next.filter((p) => p.status === "pending");
+    const terminal = next
+      .filter((p) => p.status !== "pending")
+      .sort((a, b) => a.createdAtMs - b.createdAtMs);
+    const keepTerminal = Math.max(0, QUESTION_PROMPTS_HARD_CAP - pending.length);
+    const kept = terminal.slice(terminal.length - keepTerminal);
+    if (kept.length !== terminal.length) changed = true;
+    next = [...pending, ...kept];
+  }
   return changed ? next : prompts;
 }
 

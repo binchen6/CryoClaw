@@ -2,6 +2,7 @@
 const KEY = "openclaw.control.settings.v1";
 
 import type { ThemeMode } from "./theme.ts";
+import { isAcceptableGatewayUrl } from "./gateway-url-policy.ts";
 import { isInjectableViewId, type CryoClawViewId } from "./views/registry.ts";
 
 export type UiSettings = {
@@ -64,7 +65,13 @@ function resolveDefaultGatewayUrl(locationLike: LocationLike): string {
 export function parseUiSettings(raw: string | null, locationLike: LocationLike): UiSettings {
   const injectedGatewayUrl = resolveInjectedGatewayUrl(locationLike);
   const injectedView = resolveInjectedCryoclawView(locationLike);
-  const defaultUrl = injectedGatewayUrl ?? resolveDefaultGatewayUrl(locationLike);
+  const fallbackUrl = resolveDefaultGatewayUrl(locationLike);
+  // F8：scheme 白名单兜底——持久化或注入的 gatewayUrl 可能因脏数据/参数注入
+  // 不是合法 ws(s) 地址；非法时一律回退按当前来源推断的默认地址（恒为 ws/wss）。
+  const effectiveInjectedUrl = isAcceptableGatewayUrl(injectedGatewayUrl)
+    ? injectedGatewayUrl
+    : null;
+  const defaultUrl = effectiveInjectedUrl ?? fallbackUrl;
 
   const defaults: UiSettings = {
     gatewayUrl: defaultUrl,
@@ -89,8 +96,9 @@ export function parseUiSettings(raw: string | null, locationLike: LocationLike):
     const parsed = JSON.parse(raw) as Partial<UiSettings>;
     return {
       gatewayUrl:
-        injectedGatewayUrl ||
-        (typeof parsed.gatewayUrl === "string" && parsed.gatewayUrl.trim()
+        effectiveInjectedUrl ||
+        (typeof parsed.gatewayUrl === "string" &&
+        isAcceptableGatewayUrl(parsed.gatewayUrl)
           ? parsed.gatewayUrl.trim()
           : defaults.gatewayUrl),
       token: typeof parsed.token === "string" ? parsed.token : defaults.token,

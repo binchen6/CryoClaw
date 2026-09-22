@@ -92,3 +92,38 @@ test("readRemoteLatestVersion: 假 npm 失败时返回空串并走 logError", ()
     fs.rmSync(tmp, { recursive: true, force: true });
   }
 });
+
+test("readRemoteLatestVersion: 注入镜像 registry，调用方显式指定时不覆盖（F15）", () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "ovu-test-"));
+  const isWin = process.platform === "win32";
+  const npmName = isWin ? "npm.cmd" : "npm";
+  // 假 npm 回显收到的 npm_config_registry，作为 JSON 字符串可被解析
+  const script = isWin
+    ? "@echo off\r\necho %npm_config_registry%\r\n"
+    : "#!/bin/sh\necho \"$npm_config_registry\"\n";
+  fs.writeFileSync(path.join(tmp, npmName), script, "utf-8");
+  if (!isWin) {
+    fs.chmodSync(path.join(tmp, npmName), 0o755);
+  }
+
+  const oldPath = process.env.PATH;
+  try {
+    process.env.PATH = path.join(tmp) + path.delimiter + (oldPath ?? "");
+    // 剥离 shell 可能导出的 registry，确保测到注入默认值的路径
+    const scrubbed = { ...process.env };
+    delete scrubbed.npm_config_registry;
+    const mirrored = readRemoteLatestVersion("openclaw", { cwd: tmp, env: scrubbed, logError: () => {} });
+    assert.equal(mirrored, "https://registry.npmmirror.com", "未指定时应注入镜像 registry");
+
+    const custom = readRemoteLatestVersion("openclaw", {
+      cwd: tmp,
+      env: { ...scrubbed, npm_config_registry: "https://registry.example.com" },
+      logError: () => {},
+    });
+    assert.equal(custom, "https://registry.example.com", "调用方显式 registry 优先");
+  } finally {
+    if (oldPath === undefined) delete process.env.PATH;
+    else process.env.PATH = oldPath;
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});

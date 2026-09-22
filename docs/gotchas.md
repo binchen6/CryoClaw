@@ -42,7 +42,7 @@ Things that are easy to get wrong or forget when working on CryoClaw.
 
 20. **CLI wrapper invokes bundled Node.js.** The wrapper scripts use the real bundled Node.js binary from the app package, not the system node.
 
-21. **Token injection uses URL fragment.** Gateway auth token is passed via `#token=...` in the loaded URL, not query parameter or localStorage.
+21. **Token injection uses URL fragment.** Gateway auth token is passed via `#token=...` in the loaded URL, not query parameter or localStorage (the kernel warns on `?token=`). For the *external browser* path (`app:open-webui` in `main.ts`) the shell only ever hands a one-time handoff URL to the OS/browser (`GET /webui-handoff/<code>` on the local control server: 256-bit code, 60s TTL, single use); the 302 from there delivers the real `...#token=` URL. Caveat measured in Chromium: the browser commits the **post-redirect** URL, so what ends up in history is the tokenized landing URL, not the code URL — it is the Control UI's own `history.replaceState` (strip `#token=` at boot) that keeps it out of the recorded history, and if the page never boots the tokenized URL stays recorded. If the control server failed to bind, the fallback opens the plain URL without a token (never re-adds it to the URL).
 
 22. **Build config replaces analytics config.** `build-config.json` (renamed from `analytics-config.json`) is injected at build time and read by `build-config.ts`. Contains PostHog key, clawhub registry, and other build constants.
 
@@ -273,9 +273,9 @@ Things that are easy to get wrong or forget when working on CryoClaw.
     新增 .ps1 时用编辑器确认编码，编辑器默认「无 BOM UTF-8」会踩坑。
 76. **openclaw npm `latest` dist-tag 不可信作内核更新目标。** latest 可能指向发行证据链
     未完成的版本（2026.9.1 实例：GitHub release/ClawHub 发布链未齐即被 latest 指向）。
-    内核更新目标一律走策展渠道 `kernel-channel.json`（远程双源 raw.githubusercontent →
-    jsdelivr 镜像，构建期注入内置兜底），`kernel-update.mjs fetchStableVersion()` 绝不
-    回落 npm latest。推进 stable 需策展方确认发行证据链完整。
+    内核更新目标一律走策展渠道 `kernel-channel.json`（远程双源 jsdelivr 镜像 →
+    raw.githubusercontent 兜底，构建期注入内置兜底），`kernel-update.mjs fetchStableVersion()`
+    绝不回落 npm latest。推进 stable 需策展方确认发行证据链完整。
 77. **导入 .openclaw 归档会清空整个状态目录。** v2026.907.0 起
     `settings:import-openclaw-state` 在清空前自动把当前状态导出为应急归档
     （`%LOCALAPPDATA%\CryoClaw\import-backup`，滚动保留 2 份），解压中途失败会
@@ -339,7 +339,7 @@ Things that are easy to get wrong or forget when working on CryoClaw.
 
 101. **merge-release-yml 曾对「缺一个架构」静默放行，产出残缺 latest.yml。** 只有一个架构目录有 yml 时，合并逻辑拿单架构继续、exit 0、日志报「收集了 N 个安装包」——electron-updater 的 artifactName 带架构后缀，缺的架构用户永远收不到更新，而发版脚本全程绿灯。修复（2026.912.0）：任一目标缺 yml 即硬失败，显式 `--allow-partial` 才放行。判别：发版前把 out/release/ 清单与全部架构目录逐一对照。
 
-102. **raw.githubusercontent.com 有 CDN 缓存：推送后几分钟内仍是旧内容。** 验证仓库托管的远端清单（kernel-channel.json / webbridge-pins.json）推进时，`curl raw...` 会显示旧 manifest——更新器双源恰好先命中 raw（旧缓存），容易被误判成「推送没生效」。复核用 GitHub contents API（`gh api repos/<o>/<r>/contents/<f> --jq .content | base64 -d`）或 jsDelivr 镜像；raw 缓存通常几分钟内自行过期。
+102. **raw.githubusercontent.com 有 CDN 缓存：推送后几分钟内仍是旧内容。** 验证仓库托管的远端清单（kernel-channel.json / webbridge-pins.json）推进时，`curl raw...` 会显示旧 manifest——两个更新器都曾把 raw 放在第一顺位（命中旧缓存），容易被误判成「推送没生效」（现 kernel-update.mjs 与 webbridge-pins.ts 均为 jsDelivr 第一、raw 兜底）。复核用 GitHub contents API（`gh api repos/<o>/<r>/contents/<f> --jq .content | base64 -d`）或 jsDelivr 镜像；raw 缓存通常几分钟内自行过期。
 
 103. **npm scripts 在 Windows 上经 cmd.exe 执行：`rm -rf` 与 `FOO=bar cmd` 两种写法都直接失败。** `npm run clean`（`rm -rf ...`）在 Windows 开发机必挂（无 rm）；`dist:win:x64/arm64` 的 `CRYOCLAW_TARGET=... npm run ...` env 前缀在 cmd.exe 是非法语法（同 package-resources.js 内注过的坑）。修复（2026.912.0）：clean 改 `node scripts/clean.js`（走 lib/rm-rec，顺带避开 Node 24 Windows rmSync 静默失败），per-arch 打包改 `node scripts/dist-win.js --arch x64|arm64`（env 注入 + 产物校验都内建）。判别：新增 npm script 若含 POSIX 命令或 env 前缀，默认 Windows 不可用——抽 node 脚本。
 

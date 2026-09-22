@@ -58,10 +58,12 @@ function writeEntryDir(destDir, relPath) {
 function extractZipArchive(archivePath, destDir) {
   const zipped = unzipSync(new Uint8Array(fs.readFileSync(archivePath)));
   for (const [rawName, content] of Object.entries(zipped)) {
-    const isDir = rawName.endsWith("/") || (content && content.length === 0 && !rawName.includes("."));
     const rel = safeEntryRelPath(rawName);
     if (!rel) continue;
-    if (isDir) {
+    // 目录判定只认尾斜杠：fflate unzipSync 的目录条目本就带尾斜杠，
+    // 「无扩展名的空文件」（空 LICENSE、空 bin/foo）按旧启发式会被建成目录，
+    // 内容丢失且后续同路径写文件报 EISDIR（审计缺陷 F16）。
+    if (rawName.endsWith("/")) {
       writeEntryDir(destDir, rel);
     } else {
       writeEntryFile(destDir, rel, content);

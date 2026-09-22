@@ -9,6 +9,14 @@
  * 应用重启换 secret 后任何同步缺口都会让主模型静默 401 落入 fallback（R40 事故），
  * 维护 16 条消费路径的成本远超"本机进程白嫖 token"这一低威胁场景的收益。
  * 代理只监听 127.0.0.1，按路由表白名单转发到固定上游。
+ *
+ * 安全审计 P0-7 补充防护层（替代 path secret，堵浏览器跨站滥用）：
+ * 1. 带 sec-fetch-site/sec-fetch-mode 头的请求一律 403——这些头是浏览器自动附加的
+ *    forbidden header，恶意网页即使用 no-cors fetch 也无法剥离，而本机 Node 客户端
+ *    （内核 sidecar、主进程 fetch）不会发送；
+ * 2. Host 头白名单（127.0.0.1:<port> / localhost:<port>），其他值（DNS rebinding
+ *    把恶意域名解析到回环）一律 403；
+ * 3. OPTIONS 直接 405，不带真实 token 转发 preflight。
  */
 
 import * as http from "http";
@@ -64,6 +72,34 @@ function handleRequest(
   clientRes: http.ServerResponse,
 ): void {
   const url = clientReq.url ?? "/";
+
+  // ── 跨站/重绑定防护层（P0-7）：在 route 匹配之前拒绝 ──
+  // 1) 浏览器来源请求：sec-fetch-* 由浏览器自动附加且为 forbidden header，
+  //    恶意网页无法剥离（no-cors fetch 也会带上），本机 Node 客户端不会发送
+  if (
+    clientReq.headers["sec-fetch-site"] !== undefined ||
+    clientReq.headers["sec-fetch-mode"] !== undefined
+  ) {
+    clientRes.writeHead(403, { "Content-Type": "text/plain" });
+    clientRes.end("Forbidden");
+    return;
+  }
+
+  // 2) Host 白名单：仅允许回环字面量（node fetch/undici 自动带正确 Host）；
+  //    其他值说明是 DNS rebinding（恶意域名解析到 127.0.0.1）或直连 IP 试探
+  const hostHeader = (clientReq.headers.host ?? "").toLowerCase();
+  if (hostHeader !== `127.0.0.1:${currentPort}` && hostHeader !== `localhost:${currentPort}`) {
+    clientRes.writeHead(403, { "Content-Type": "text/plain" });
+    clientRes.end("Forbidden");
+    return;
+  }
+
+  // 3) OPTIONS preflight 直接拒绝：否则会被带真实 token 转发到状态变更端点
+  if (clientReq.method === "OPTIONS") {
+    clientRes.writeHead(405, { "Content-Type": "text/plain", Allow: "GET, POST, PUT, DELETE" });
+    clientRes.end("Method Not Allowed");
+    return;
+  }
 
   // 解析路径（去掉 query 部分用于路由匹配）
   const pathOnly = url.split("?")[0];

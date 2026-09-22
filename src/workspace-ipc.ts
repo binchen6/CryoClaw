@@ -15,16 +15,33 @@ let workspaceRoot: string | null = null;
 // 白名单与 main.ts app:open-path 共用（见 safe-open.ts）；渲染层 chat 路径链接走
 // app:open-path，不受此白名单影响。
 
-// 路径穿越校验：确保 target 在 root 内
-function isInsideRoot(target: string, root: string): boolean {
-  const resolved = path.resolve(target);
-  const resolvedRoot = path.resolve(root);
+// 平台大小写敏感性：Windows/macOS 文件系统大小写不敏感，同一真实目录可能以两种大小写
+// 形态出现（OPENCLAW_STATE_DIR 环境变量写法与实际目录不符、realpath 返回磁盘真实大小写
+// 而白名单 root 来自另一来源），大小写敏感比较会把合法路径误判为越界（用户看到
+// "Access denied"）。口径与 openclaw-state-archive-paths.ts 的 normalizeForContainment 一致。
+const CASE_INSENSITIVE_PLATFORM = process.platform === "win32" || process.platform === "darwin";
+
+// 路径穿越校验：确保 target 在 root 内。caseInsensitive 默认跟随平台（可注入供单测）。
+// 折叠不放宽拒绝方向：大小写不敏感平台上仅大小写不同的两个路径指向同一实体，
+// "仅大小写不同"的兄弟目录在该平台上不可能存在，故归一化后仍拒绝真正的越界路径。
+function isInsideRoot(target: string, root: string, caseInsensitive = CASE_INSENSITIVE_PLATFORM): boolean {
+  const resolved = normalizeForContainment(target, caseInsensitive);
+  const resolvedRoot = normalizeForContainment(root, caseInsensitive);
   return resolved === resolvedRoot || resolved.startsWith(resolvedRoot + path.sep);
 }
 
+function normalizeForContainment(input: string, caseInsensitive: boolean): string {
+  const resolved = path.resolve(input);
+  return caseInsensitive ? resolved.toLowerCase() : resolved;
+}
+
 // 多根版 containment 校验（导出供单测）：target 落在任一 root 内即通过
-export function isInsideAnyRoot(target: string, roots: readonly string[]): boolean {
-  return roots.some((root) => isInsideRoot(target, root));
+export function isInsideAnyRoot(
+  target: string,
+  roots: readonly string[],
+  caseInsensitive = CASE_INSENSITIVE_PLATFORM,
+): boolean {
+  return roots.some((root) => isInsideRoot(target, root, caseInsensitive));
 }
 
 // 允许访问的根集合：workspace 根（渲染层 set-root 设定，可能未设置）+

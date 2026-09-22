@@ -1,4 +1,4 @@
-﻿; CryoClaw NSIS 自定义钩子
+; CryoClaw NSIS 自定义钩子
 ; 功能：安装前杀进程、更新时跳过多余页面（只显示进度条）、卸载时提供 CLI 清理和用户数据删除选项
 ;
 ; 品牌位图不走本文件（命令行 -D 已定义同名宏，!define 会冲突）：
@@ -213,9 +213,14 @@
 ; ============================================================
 
 ; 卸载初始化：杀进程（与安装前逻辑相同，条件等待）
+; ⚠ 同样绝不能加 /T（树杀）：静默更新链路中旧卸载器是新安装器 spawn 的
+; 子进程（镜像名同为 CryoClaw.exe），customInit 的 taskkill 失败而
+; CryoClaw.exe 存活时，/T 会把 CryoClaw.exe 整棵子树（含新安装器与
+; 卸载器自身）级联杀掉，更新静默死亡且无日志。/IM 按镜像名已覆盖
+; 主进程/渲染/GPU/utility（理由同 customInit）。
 !macro customUnInit
   StrCpy $0 0
-  nsExec::ExecToLog 'taskkill /IM "CryoClaw.exe" /T /F'
+  nsExec::ExecToLog 'taskkill /IM "CryoClaw.exe" /F'
   Pop $1
   ${if} $1 != 128
     StrCpy $0 1

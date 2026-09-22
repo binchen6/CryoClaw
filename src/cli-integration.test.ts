@@ -10,6 +10,7 @@ import {
   hasManagedWrapper,
   inferCliEnabledPreference,
   resolvePosixRcPathsForHome,
+  resolvePosixRcTargets,
   resolveWinCliBinDirsForPaths,
   stripManagedRcBlock,
 } from "./cli-integration";
@@ -155,4 +156,50 @@ test("Windows wrapper 缺少 ctl 脚本时退回原生命令", () => {
   assert.ok(!script.includes('if /i "%~1"'));
   assert.ok(script.includes('set "OPENCLAW_NO_RESPAWN=1"'));
   assert.ok(script.includes('"%APP_NODE%" "%APP_ENTRY%" %*'));
+});
+
+test("Windows wrapper 应含 chcp 65001 保证中文路径按 UTF-8 解析（F10）", () => {
+  for (const script of [
+    buildWinWrapperForPaths("C:\\Users\\张三\\node.exe", "C:\\openclaw.mjs"),
+    buildWinWrapperForPaths("C:\\node.exe", "C:\\openclaw.mjs", {
+      updaterEntry: "C:\\res\\updater\\kernel-update.mjs",
+      gatewayCtlEntry: "C:\\res\\updater\\gateway-ctl.mjs",
+    }),
+  ]) {
+    const lines = script.split("\r\n");
+    const echoOff = lines.indexOf("@echo off");
+    const chcp = lines.indexOf("@chcp 65001 >nul");
+    const firstSet = lines.findIndex((l) => l.startsWith('set "APP_NODE='));
+    assert.ok(chcp > echoOff, "chcp 行必须在 @echo off 之后");
+    assert.ok(firstSet > chcp, "chcp 行必须在任何烘焙路径的 set 行之前");
+  }
+});
+
+// POSIX rc 目标语义（F13）：已存在文件照常注入；四个候选全缺时只兜底 ~/.profile，
+// 绝不新建 ~/.bash_profile（会让 bash 登录 shell 跳过用户已有的 ~/.profile）。
+// 用临时 HOME 驱动 resolveHomeDir，平台无关。
+test("POSIX rc 目标：不存在的文件不创建，全缺时只兜底 .profile", () => {
+  const savedHome = process.env.HOME;
+  const tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), "cryoclaw-rc-targets-"));
+  try {
+    process.env.HOME = tmpHome;
+
+    // 全缺：目标只有 ~/.profile
+    assert.deepEqual(resolvePosixRcTargets(), [path.join(tmpHome, ".profile")]);
+
+    // 只存在 .bashrc：只注入它，不创建其他三个
+    fs.writeFileSync(path.join(tmpHome, ".bashrc"), "# user config\n", "utf-8");
+    assert.deepEqual(resolvePosixRcTargets(), [path.join(tmpHome, ".bashrc")]);
+
+    // 存在多个：全部照常注入
+    fs.writeFileSync(path.join(tmpHome, ".zshrc"), "", "utf-8");
+    assert.deepEqual(resolvePosixRcTargets(), [
+      path.join(tmpHome, ".zshrc"),
+      path.join(tmpHome, ".bashrc"),
+    ]);
+  } finally {
+    if (savedHome === undefined) delete process.env.HOME;
+    else process.env.HOME = savedHome;
+    fs.rmSync(tmpHome, { recursive: true, force: true });
+  }
 });

@@ -7,7 +7,9 @@ import * as path from "path";
 import {
   createGatewayControlRequestHandler,
   ensureGatewayControlToken,
+  issueWebuiHandoffCode,
   listenWithPortRetry,
+  WEBUI_HANDOFF_PATH,
   GatewayControlDeps,
 } from "./gateway-control-server";
 
@@ -16,6 +18,8 @@ const TEST_TOKEN = "test-token-0123456789abcdef";
 interface TestResponse {
   statusCode: number;
   body: any;
+  /** 302 跳转的 Location 头（非跳转响应为 null） */
+  location: string | null;
 }
 
 function request(
@@ -39,7 +43,11 @@ function request(
           try {
             body = JSON.parse(Buffer.concat(chunks).toString("utf-8"));
           } catch {}
-          resolve({ statusCode: res.statusCode ?? 0, body });
+          resolve({
+            statusCode: res.statusCode ?? 0,
+            body,
+            location: res.headers.location ?? null,
+          });
         });
       },
     );
@@ -166,6 +174,79 @@ test("未知路径返回 404，GET restart 返回 404", async () => {
 
     const wrongMethod = await request(port, { path: "/gateway/restart", token: TEST_TOKEN });
     assert.equal(wrongMethod.statusCode, 404);
+  } finally {
+    await close();
+  }
+});
+
+// ── webui 一次性 handoff（F5）──
+
+const HANDOFF_DEPS = { getWebuiHandoffTarget: () => ({ token: "gw-token-abc", port: 18789 }) };
+
+test("webui handoff：合法 code 免 Bearer 直接 302 到带 token 的落地 URL，code 用后作废", async () => {
+  const { port, close } = await startTestServer(makeDeps(HANDOFF_DEPS));
+  try {
+    const code = issueWebuiHandoffCode();
+    // 模拟浏览器地址栏导航：不携带 Authorization 头
+    const first = await request(port, { path: `${WEBUI_HANDOFF_PATH}${code}` });
+    assert.equal(first.statusCode, 302);
+    assert.equal(
+      first.location,
+      `http://127.0.0.1:18789/#token=${encodeURIComponent("gw-token-abc")}`,
+    );
+
+    // 重放同一个 code：已作废
+    const replay = await request(port, { path: `${WEBUI_HANDOFF_PATH}${code}` });
+    assert.equal(replay.statusCode, 410);
+    assert.equal(replay.body.ok, false);
+  } finally {
+    await close();
+  }
+});
+
+test("webui handoff：过期 code 返回 410，未知/格式非法 code 返回 404", async () => {
+  const { port, close } = await startTestServer(makeDeps(HANDOFF_DEPS));
+  try {
+    // ttlMs 为负：签发即过期（等价于用户放置超过 60s 后才打开）
+    const expired = issueWebuiHandoffCode(-1);
+    const expiredRes = await request(port, { path: `${WEBUI_HANDOFF_PATH}${expired}` });
+    assert.equal(expiredRes.statusCode, 410);
+    assert.equal(expiredRes.body.error, "handoff expired");
+
+    const malformed = await request(port, { path: `${WEBUI_HANDOFF_PATH}not-a-code` });
+    assert.equal(malformed.statusCode, 404);
+
+    const unknown = await request(port, { path: `${WEBUI_HANDOFF_PATH}${"0".repeat(32)}` });
+    assert.equal(unknown.statusCode, 404);
+  } finally {
+    await close();
+  }
+});
+
+test("webui handoff：落地目标不可用时 503，且该 code 不可重放", async () => {
+  const { port, close } = await startTestServer(makeDeps({ getWebuiHandoffTarget: () => null }));
+  try {
+    const code = issueWebuiHandoffCode();
+    const res = await request(port, { path: `${WEBUI_HANDOFF_PATH}${code}` });
+    assert.equal(res.statusCode, 503);
+
+    const replay = await request(port, { path: `${WEBUI_HANDOFF_PATH}${code}` });
+    assert.equal(replay.statusCode, 410, "拿不到落地目标也必须作废 code");
+  } finally {
+    await close();
+  }
+});
+
+test("webui handoff：非 GET 方法 404 且不消费 code", async () => {
+  const { port, close } = await startTestServer(makeDeps(HANDOFF_DEPS));
+  try {
+    const code = issueWebuiHandoffCode();
+    const post = await request(port, { method: "POST", path: `${WEBUI_HANDOFF_PATH}${code}` });
+    assert.equal(post.statusCode, 404);
+
+    // code 未被 POST 分支消费，GET 仍可正常兑换
+    const get = await request(port, { path: `${WEBUI_HANDOFF_PATH}${code}` });
+    assert.equal(get.statusCode, 302);
   } finally {
     await close();
   }

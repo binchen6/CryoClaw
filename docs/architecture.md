@@ -278,7 +278,8 @@ carryOverInjected → 补丁命中校验 → 冒烟 → 重打 → 备份 → re
 
 - **策展稳定版渠道（v2026.905.0 起）**：更新目标不再取 npm `latest` dist-tag（会指向发行
   证据链未完成的版本，见 gotchas #76），改为仓库根 `kernel-channel.json` 策展清单——
-  运行时远程双源拉取（raw.githubusercontent.com → fastly.jsdelivr.net 镜像，各 8s 超时），
+  运行时远程双源拉取（fastly.jsdelivr.net 镜像 → raw.githubusercontent.com 兜底，各 8s 超时；
+  jsDelivr 在前是因为 raw 国内常不可达、且带分钟级 CDN 缓存，见 gotcha #102），
   双源失败回退到**构建期注入的内置兜底版本**（package-resources.js 复制脚本时替换
   `__CRYOCLAW_FALLBACK_STABLE__` 占位符为 `package.json` 的 `cryoclaw.openclaw` 钉版本），
   绝不回落 npm latest。`updateAvailable` 用三段数字比较：current 更高（手动 `--tag` 装过

@@ -442,6 +442,9 @@ export function migrateOpenclawConfigForKernelUpgrade(): void {
       : { stashed: [], removedSlots: [], repaired: [], downgraded: [] };
     const pluginEntryChanged = pluginEntries.stashed.length > 0 || pluginEntries.removedSlots.length > 0 || pluginEntries.repaired.length > 0 || pluginEntries.downgraded.length > 0;
     if (removed.length === 0 && !migratedAliases && !migratedExecMode && !migratedPlanTool && !migratedMemorySearch && !migratedQQBot && !pluginEntryChanged) return;
+    // 不传 baseSnapshot：本迁移在启动期/换装后连续执行，读-改-写都在同一同步段内；
+    // 且刻意摘除条目/字段（stash、deprecated 清理）只体现在待写对象上，读时刻快照
+    // 不受影响，写前比对不会因此误伤（口径见 WriteUserConfigOptions）。
     writeUserConfig(config);
     const parts: string[] = [];
     if (removed.length > 0) parts.push(`移除: ${removed.join(", ")}`);

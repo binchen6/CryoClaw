@@ -71,11 +71,12 @@ test("app-gateway.ts：setLastActiveSessionKey 仅对当前会话事件调用（
 
 test("app-gateway.ts：onHello previousClient 重连分支调度 scheduleReconnectOrphanProbe", () => {
   const s = src("app-gateway.ts");
-  // 探测调度紧跟重连读（loadChatHistory mergeIfStale）之后，仅在 previousClient 分支内：
-  // 首次连接没有「断连窗口内结束的 run」，不需要探测；onGap 耗尽软恢复路径不断连也不需要。
+  // F7 后重连读的 loadChatHistory 选项由 hasPendingSessionReset 三元决定，
+  // 探测调度仍须紧跟重连读之后、仅在 previousClient 分支内：首次连接没有
+  // 「断连窗口内结束的 run」，不需要探测；onGap 耗尽软恢复路径不断连也不需要。
   assert.match(
     s,
-    /if \(previousClient\) \{[\s\S]*?void loadChatHistory\(host as unknown as OpenClawApp, \{ mergeIfStale: true \}\);[\s\S]*?scheduleReconnectOrphanProbe\(host\);[\s\S]*?\}/,
+    /if \(previousClient\) \{[\s\S]*?void loadChatHistory\([\s\S]*?scheduleReconnectOrphanProbe\(host\);[\s\S]*?\}/,
     "onHello 的 previousClient 分支应在重连读后调用 scheduleReconnectOrphanProbe(host)",
   );
   // 顶部 import 必须引入 liveOrphanRunId（探测回调的存活检查只消费这一个 orphan API）
@@ -88,6 +89,60 @@ test("app-gateway.ts：onHello previousClient 重连分支调度 scheduleReconne
     s,
     /liveOrphanRunId[\s\S]*?\} from "\.\/stream-recovery\.ts"/,
     "stream-recovery import 列表应包含 liveOrphanRunId",
+  );
+});
+
+// ---- F7：/new、/reset 的 final 帧丢失在断连窗口 → 重连读强制替换历史 ----
+
+test("app-gateway.ts：onHello 重连分支对未消费的 pendingReset 跳过 mergeIfStale", () => {
+  const s = src("app-gateway.ts");
+  // pendingReset 未消费 = /new、/reset 已发送但终态帧丢失：内核 transcript 已被清空，
+  // 此时 mergeIfStale 的滞后兜底（内核短于本地时保留本地 + R23 空读保护）会把
+  // 旧对话/乐观写入永久留在「新会话」里。必须强制替换（传 undefined 选项）。
+  assert.match(
+    s,
+    /if \(previousClient\) \{[\s\S]*?hasPendingSessionReset\(host\.sessionKey\);[\s\S]*?reconnectReplace \? undefined : \{ mergeIfStale: true \}[\s\S]*?scheduleReconnectOrphanProbe\(host\);/,
+    "onHello 重连分支应以 hasPendingSessionReset(host.sessionKey) 判定，pendingReset 未消费时强制替换历史",
+  );
+  // 负向钉点：重连分支不得再有无条件的 mergeIfStale 重连读
+  const helloStart = s.indexOf("onHello: (hello) => {");
+  assert.notEqual(helloStart, -1, "app-gateway.ts 缺少 onHello 分支");
+  const helloEnd = s.indexOf("onClose: ({ code, reason }) => {", helloStart);
+  assert.notEqual(helloEnd, -1, "无法定位 onHello 分支边界");
+  const helloBranch = s.slice(helloStart, helloEnd);
+  assert.doesNotMatch(
+    helloBranch,
+    /void loadChatHistory\(host as unknown as OpenClawApp, \{ mergeIfStale: true \}\);/,
+    "onHello 分支不得再保留无条件的 mergeIfStale 重连读（F7 漏洞面）",
+  );
+});
+
+test("app-gateway.ts：onGap 耗尽软恢复分支同样对未消费的 pendingReset 强制替换", () => {
+  const s = src("app-gateway.ts");
+  const gapStart = s.indexOf("onGap: ({ expected, received }) => {");
+  assert.notEqual(gapStart, -1, "app-gateway.ts 缺少 onGap 分支");
+  const gapBranch = s.slice(gapStart);
+  assert.match(
+    gapBranch,
+    /hasPendingSessionReset\(host\.sessionKey\) \? undefined : \{ mergeIfStale: true \}/,
+    "onGap 软恢复的历史对齐应与重连分支一致：pendingReset 未消费时强制替换",
+  );
+});
+
+test("app-gateway.ts：hasPendingSessionReset 只读探测（重连路径不得消费标记）", () => {
+  const s = src("app-gateway.ts");
+  // 标记的生命周期仍归终态事件（final/error/aborted）与发送失败回滚消费；
+  // 重连路径只 peek——若重连分支 delete 了标记，随后到达的终态会再走
+  // mergeIfStale 滞后兜底，且失败回滚的撤销语义也被破坏。
+  assert.doesNotMatch(
+    s,
+    /consumePendingSessionReset\(host\.sessionKey\)/,
+    "host.sessionKey 维度的 reset 消费仅限终态/回滚路径，重连探测不得消费",
+  );
+  assert.match(
+    s,
+    /import \{[\s\S]*?hasPendingSessionReset[\s\S]*?\} from "\.\/session-pending\.ts"/,
+    "app-gateway.ts 应从 ./session-pending.ts 导入 hasPendingSessionReset",
   );
 });
 

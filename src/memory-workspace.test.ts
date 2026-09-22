@@ -123,6 +123,88 @@ test("removeDreamEntry 越界 index 返回 null", () => {
   expect(removeDreamEntry(DREAMS, 9)).toBeNull();
 });
 
+// F12：两条梦境同日期（精度到分钟，可重复）时，删除展示序第 0 条（最新）
+// 必须删文件中最靠后的那条；旧实现用日期文本锚点 indexOf，会删成最旧一条。
+test("removeDreamEntry 同日期两条：删最新一条，另一条完好（F12）", () => {
+  const dup = `# Dream Diary
+
+<!-- openclaw:dreaming:diary:start -->
+---
+
+*September 7, 2026 at 7:45 AM GMT+8*
+
+较早的同日期梦（应保留）。
+
+---
+
+*September 7, 2026 at 7:45 AM GMT+8*
+
+较新的同日期梦（应删除）。
+
+<!-- openclaw:dreaming:diary:end -->
+`;
+  const entries = parseDreamEntries(dup);
+  expect(entries).toHaveLength(2);
+  expect(entries[0].body).toContain("较新的同日期梦");
+
+  const next = removeDreamEntry(dup, 0);
+  expect(next).not.toBeNull();
+  expect(next!).toContain("较早的同日期梦");
+  expect(next!).not.toContain("较新的同日期梦");
+  const rest = parseDreamEntries(next!);
+  expect(rest).toHaveLength(1);
+  expect(rest[0].body).toContain("较早的同日期梦");
+});
+
+// F12：正文恰好含 *同日期文本* 时，旧锚点实现会命中正文导致删除范围错乱；
+// 区间切片按目标条目定位，与正文内容无关。
+test("removeDreamEntry 正文含撞锚文本时删除正确（F12）", () => {
+  const collide = `# Dream Diary
+
+<!-- openclaw:dreaming:diary:start -->
+---
+
+*September 6, 2026 at 12:13 PM GMT+8*
+
+第一夜梦境，引用了 *September 7, 2026 at 7:45 AM GMT+8* 的纪录。
+
+---
+
+*September 7, 2026 at 7:45 AM GMT+8*
+
+第二夜梦境。
+
+<!-- openclaw:dreaming:diary:end -->
+`;
+  const next = removeDreamEntry(collide, 0);
+  expect(next).not.toBeNull();
+  expect(next!).toContain("第一夜梦境");
+  expect(next!).not.toContain("第二夜梦境");
+  const rest = parseDreamEntries(next!);
+  expect(rest).toHaveLength(1);
+  expect(rest[0].body).toContain("第一夜梦境");
+});
+
+test("removeDreamEntry 删除唯一一条后托管区清空且标记保留", () => {
+  const single = `头
+<!-- openclaw:dreaming:diary:start -->
+---
+
+*May 3, 2026 at 9:00 AM GMT+8*
+
+唯一的梦。
+
+<!-- openclaw:dreaming:diary:end -->
+尾`;
+  const next = removeDreamEntry(single, 0);
+  expect(next).not.toBeNull();
+  expect(next!).toContain("openclaw:dreaming:diary:start");
+  expect(next!).toContain("openclaw:dreaming:diary:end");
+  expect(next!).toContain("头");
+  expect(next!).toContain("尾");
+  expect(parseDreamEntries(next!)).toHaveLength(0);
+});
+
 test("deleteDreamEntryFile 写回 + .bak 备份", () => {
   const dreamsPath = path.join(tmp, "DREAMS.md");
   fs.writeFileSync(dreamsPath, DREAMS, "utf-8");

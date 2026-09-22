@@ -27,7 +27,7 @@ import {
   reconcileQuestionsFromList,
   upsertQuestion,
 } from "./chat/question-cards.ts";
-import { consumePendingSessionReset } from "./session-pending.ts";
+import { consumePendingSessionReset, hasPendingSessionReset } from "./session-pending.ts";
 import { handleChatEvent, type ChatEventPayload } from "./controllers/chat.ts";
 import {
   addExecApproval,
@@ -66,6 +66,8 @@ import {
   isStreamStalled,
   liveOrphanRunId,
   markReconnectOrphanRun,
+  resetStreamPreAlign,
+  shouldStreamPreAlign,
 } from "./stream-recovery.ts";
 import { resolveVisibleSessionSelection } from "./session-visibility.ts";
 import {
@@ -247,19 +249,28 @@ async function loadSessionsAndReconcile(host: GatewayHost) {
 // 已结束（终态帧丢失），清本地挂起态；否则（run 仍在跑/历史滞后）保持等下轮 tick。
 const STREAM_IDLE_TIMEOUT_MS = 180_000;
 // R62 及时性预对齐：run 活跃但 45s 无流式活动（模型长思考/长工具执行）时，
-// 内核侧可能已有中间产物落盘（子代理产出、早前轮次补写）——提前做一次静默
+// 内核侧可能已有中间产物落盘（子代理产出、早前轮次补写）——提前做静默
 // mergeIfStale 对齐，不必等 180s 看门狗。对齐不改 run 态（mergeIfStale 保留
 // 本地短读），看门狗判定不受影响。
+// P3-6：实际对齐按 run 生命周期指数退避调度（首次 45s，步进翻倍封顶 5min，
+// 见 stream-recovery.shouldStreamPreAlign），修复此前「45s 后每个 30s tick
+// 全量拉历史」的缺陷；RUN_IDLE_ALIGN_MS 只是首次阈值。
 const RUN_IDLE_ALIGN_MS = 45_000;
 
 function checkStalledStream(host: GatewayHost) {
-  // 预对齐：有活跃 run、距最后流式活动 45s、且本 tick 尚未对齐过 → 静默拉一次
+  // 预对齐：有活跃 run 且距最后流式活动超阈值 → 按指数退避静默对齐（每 run
+  // 生命周期内首次 45s、之后步进翻倍封顶 5min；换 run 自动重新起算）。
+  // run 态已清（终态事件/切会话）→ 重置退避，下一 run 从首次阈值重新起算。
   const idleFor = host.chatRunId && host.chatLastActivityAt != null
     ? Date.now() - host.chatLastActivityAt
     : null;
-  if (idleFor != null && idleFor >= RUN_IDLE_ALIGN_MS) {
+  if (host.chatRunId && idleFor != null && idleFor >= RUN_IDLE_ALIGN_MS) {
     // mergeIfStale：内核快照滞后（短读）时保留本地，无倒退风险
-    void loadChatHistory(host as unknown as OpenClawApp, { mergeIfStale: true, silent: true });
+    if (shouldStreamPreAlign(host.chatRunId, idleFor, RUN_IDLE_ALIGN_MS)) {
+      void loadChatHistory(host as unknown as OpenClawApp, { mergeIfStale: true, silent: true });
+    }
+  } else if (!host.chatRunId) {
+    resetStreamPreAlign();
   }
   if (
     !isStreamStalled({
@@ -432,7 +443,17 @@ export function connectGateway(host: GatewayHost) {
       // R30：重连读改用 mergeIfStale——撞上内核滞后快照时保留本地视图防倒退，
       // 滞后收敛由延迟补拉（scheduleStaleHistoryRetry）接管。
       if (previousClient) {
-        void loadChatHistory(host as unknown as OpenClawApp, { mergeIfStale: true });
+        // F7：/new、/reset 的 final 帧丢失在断连窗口时 pendingSessionResets 未消费，
+        // 内核 transcript 已被清空——若仍走 mergeIfStale，滞后兜底（内核短于本地时
+        // 保留本地 + R23 空读保护）会把重置前/乐观写入的本地内容保留下来，旧对话
+        // 在新会话里永久残留（退避补拉预算耗尽后不再收敛，直到下一条消息）。
+        // 探测到未消费标记则强制替换（内核已清空 → 得到正确空会话）；标记不在这里
+        // 消费，留给到达的终态事件/发送失败回滚（hasPendingSessionReset 只读）。
+        const reconnectReplace = hasPendingSessionReset(host.sessionKey);
+        void loadChatHistory(
+          host as unknown as OpenClawApp,
+          reconnectReplace ? undefined : { mergeIfStale: true },
+        );
         // R41：重连读可能连续命中滞后快照（退避窗口耗尽）→ 排有限次静默探测兜底。
         // orphan 不存在（断连前无在途 run）时 liveOrphanRunId 检查会让探测直接空转返回。
         scheduleReconnectOrphanProbe(host);
@@ -517,7 +538,12 @@ export function connectGateway(host: GatewayHost) {
         markReconnectOrphanRun(host.chatRunId, host.sessionKey);
         resetChatStreamState(host as unknown as Parameters<typeof resetChatStreamState>[0]);
         resetToolStream(host as unknown as Parameters<typeof resetToolStream>[0]);
-        void loadChatHistory(host as unknown as OpenClawApp, { mergeIfStale: true });
+        // F7：与 onHello 重连分支同理——gap 窗口内丢的若是 /new、/reset 的 final 帧，
+        // pendingReset 未消费期间内核历史已被清空，必须强制替换而非 mergeIfStale。
+        void loadChatHistory(
+          host as unknown as OpenClawApp,
+          hasPendingSessionReset(host.sessionKey) ? undefined : { mergeIfStale: true },
+        );
         return;
       }
       const delay = 1000 * 2 ** gapReconnectCount;

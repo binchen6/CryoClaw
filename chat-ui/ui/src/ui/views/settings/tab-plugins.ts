@@ -87,6 +87,11 @@ const s = {
 };
 
 export function resetPluginsView() {
+  // P3-8：离开视图时使在途市场搜索/浏览请求失效——否则迟到响应落地后会把
+  // 已清空的 marketResults/browseItems 重新填回并重渲染（对照 tab-backup 的
+  // initGeneration 模式；token 判定见 searchMarket/loadMarketBrowse）
+  marketSearchToken += 1;
+  marketBrowseToken += 1;
   s.initialized = false;
   s.loading = false;
   s.error = null;

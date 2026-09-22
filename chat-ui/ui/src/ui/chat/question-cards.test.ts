@@ -131,6 +131,57 @@ test("reconcileQuestionsFromList：服务端终态收敛本地 pending，本地�
   assert.equal(byId.get("q3"), "pending", "服务端新条目并入");
 });
 
+test("reconcileQuestionsFromList：本地终态且服务端已不含 → 删除（P3-7 防长跑累积）", () => {
+  const keepPending = normalizeQuestionRecord(pendingRecord({ id: "keep-pending" }))!;
+  const keepAnswered = normalizeQuestionRecord(pendingRecord({ id: "keep-answered" }))!;
+  const dropAnswered = normalizeQuestionRecord(pendingRecord({ id: "drop-answered" }))!;
+  const dropExpired = normalizeQuestionRecord(pendingRecord({ id: "drop-expired", expiresAtMs: 1 }))!;
+  const local = [
+    keepPending,
+    { ...keepAnswered, status: "answered" as const },
+    { ...dropAnswered, status: "answered" as const },
+    { ...dropExpired, status: "expired" as const },
+  ];
+  const server = [
+    normalizeQuestionRecord(pendingRecord({ id: "keep-pending" }))!,
+    normalizeQuestionRecord(pendingRecord({ id: "keep-answered", status: "pending" }))!,
+  ];
+  const merged = reconcileQuestionsFromList(local, server);
+  const byId = new Map(merged.map((p) => [p.id, p.status]));
+  assert.equal(byId.has("drop-answered"), false, "服务端已回收的终态条目应删除");
+  assert.equal(byId.has("drop-expired"), false, "服务端已回收的 expired 条目应删除");
+  assert.equal(byId.get("keep-pending"), "pending", "两端都有的 pending 保留");
+  assert.equal(byId.get("keep-answered"), "answered", "本地终态不被服务端 pending 回退");
+  assert.deepEqual([...byId.keys()], ["keep-pending", "keep-answered"]);
+});
+
+test("pruneExpiredQuestions：超硬上限按 createdAtMs 驱逐最旧终态条目，pending 绝不驱逐", () => {
+  const mk = (id: string, status: "pending" | "answered", createdAtMs: number) => ({
+    ...normalizeQuestionRecord(
+      pendingRecord({ id, status, createdAtMs, expiresAtMs: status === "pending" ? 999_999_999 : 1 }),
+    )!,
+  });
+  // 350 条终态（createdAtMs 1..350）+ 5 条 pending，共 355 > 300
+  const prompts = [
+    ...Array.from({ length: 350 }, (_, i) => mk(`t${i + 1}`, "answered", (i + 1) * 1000)),
+    ...Array.from({ length: 5 }, (_, i) => mk(`p${i + 1}`, "pending", 400_000 + i)),
+  ];
+  const next = pruneExpiredQuestions(prompts, 5000);
+  assert.equal(next.length, 300);
+  const pendingKept = next.filter((p) => p.status === "pending");
+  assert.equal(pendingKept.length, 5, "pending 全部保留");
+  const terminalKept = next.filter((p) => p.status !== "pending");
+  assert.equal(terminalKept.length, 295, "终态只保留最新 295 条");
+  assert.equal(
+    terminalKept.every((p) => (p.createdAtMs ?? 0) >= 56_000),
+    true,
+    "被驱逐的是最旧的终态条目",
+  );
+  // 上限内无变化时返回原数组
+  const small = [mk("a1", "answered", 1000), mk("a2", "answered", 2000)];
+  assert.equal(pruneExpiredQuestions(small, 5000), small);
+});
+
 test("pruneExpiredQuestions：过期 pending 标 expired，未过期不动（引用保持）", () => {
   const p1 = normalizeQuestionRecord(pendingRecord({ id: "p1", expiresAtMs: 1000 }))!;
   const p2 = normalizeQuestionRecord(pendingRecord({ id: "p2", expiresAtMs: 9000 }))!;

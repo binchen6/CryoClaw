@@ -62,9 +62,24 @@ function compareSemver(a, b) {
 }
 
 // 查询 npm registry 上某个包的最新版本号，失败时返回空字符串。
+// F15：显式注入镜像 registry（与 package-resources.js buildNpmEnv 同源策略）——
+// npm view 的 cwd 不保证命中 .npmrc，弱网/代理下直连 npmjs.org 会拖垮构建；
+// 调用方经 options.env 显式指定 npm_config_registry 时不覆盖。
+const NPM_MIRROR_REGISTRY = "https://registry.npmmirror.com";
+
+function withMirrorRegistry(baseEnv) {
+  const env = { ...baseEnv };
+  if (env.npm_config_registry === undefined) {
+    env.npm_config_registry = NPM_MIRROR_REGISTRY;
+  }
+  return env;
+}
+
 function readRemoteLatestVersion(packageName, options = {}) {
   const cwd = typeof options.cwd === "string" && options.cwd ? options.cwd : process.cwd();
-  const env = options.env && typeof options.env === "object" ? options.env : process.env;
+  const env = withMirrorRegistry(
+    options.env && typeof options.env === "object" ? options.env : process.env
+  );
   const logError = typeof options.logError === "function" ? options.logError : null;
 
   // 包名白名单校验：npm 包名只允许 @scope/name + [A-Za-z0-9._-]。

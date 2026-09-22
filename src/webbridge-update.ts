@@ -165,7 +165,10 @@ export function fetchWebbridgeDaemonStatus(opts: {
                   latest: typeof ua.latest === "string" ? ua.latest : null,
                 }
               : null,
-            versionMismatch: parsed.version_mismatch != null,
+            // daemon /status 契约：version_mismatch 是布尔字段（缺失 = 无错配），
+            // 因此严格 === true。旧写法 `!= null` 把 daemon 明确返回的 false 也
+            // 判成错配（缺字段与 false 必须区分）。
+            versionMismatch: parsed.version_mismatch === true,
           });
         } catch {
           done(null);
@@ -521,34 +524,42 @@ async function applyWebbridgeUpdateLocked(
     await stopDaemonAndWait(binaryPath, dataDir);
   }
 
-  // 5. rename（EPERM/EBUSY 退避重试）+ chmod + 写新 manifest
+  // 5. rename（EPERM/EBUSY 退避重试）+ chmod + 写新 manifest。
+  //    daemon 已 stop：这一段里任何失败都必须先尽力恢复 daemon 再返回——否则
+  //    浏览器桥静默死亡直到下次 App 启动。binaryPath 处的二进制始终可启动：
+  //    rename 失败时是旧版仍在原位，rename 成功后是已过 pin 校验的新版，
+  //    两种情形都直接从 binaryPath 拉起。
+  let newSha: string;
   try {
     await renameWithRetry(tmpPath, binaryPath);
+    if (process.platform !== "win32") {
+      try {
+        fs.chmodSync(binaryPath, 0o755);
+      } catch {}
+    }
+    newSha = sha256FileSync(binaryPath);
+    writeCacheManifest(dataDir, {
+      version: resolveWebbridgeVersion(),
+      etag: head.etag,
+      lastModified: head.lastModified,
+      contentLength: head.contentLength,
+      sha256: newSha,
+      adopted: false,
+    });
+    writeUpdateCheckState(dataDir, { updateAvailable: null, etag: head.etag });
   } catch (err) {
     try {
       fs.rmSync(tmpPath, { force: true });
     } catch {}
+    const message = `swap failed: ${err instanceof Error ? err.message : String(err)}`;
+    restoreDaemonAfterFailedSwap(binaryPath, daemonWasRunning);
+    log.error(`[webbridge-update] 换装失败（daemon 已尽力恢复）: ${message}`);
     return {
       ok: false,
       reason: "download-failed",
-      message: `rename failed: ${err instanceof Error ? err.message : String(err)}`,
+      message,
     };
   }
-  if (process.platform !== "win32") {
-    try {
-      fs.chmodSync(binaryPath, 0o755);
-    } catch {}
-  }
-  const newSha = sha256FileSync(binaryPath);
-  writeCacheManifest(dataDir, {
-    version: resolveWebbridgeVersion(),
-    etag: head.etag,
-    lastModified: head.lastModified,
-    contentLength: head.contentLength,
-    sha256: newSha,
-    adopted: false,
-  });
-  writeUpdateCheckState(dataDir, { updateAvailable: null, etag: head.etag });
   log.info(
     `[webbridge-update] 二进制已换装: etag=${head.etag ?? "(none)"} sha256=${newSha.slice(0, 12)}…`,
   );
@@ -613,6 +624,21 @@ async function stopDaemonAndWait(binaryPath: string, dataDir: string): Promise<v
     const st = await fetchWebbridgeDaemonStatus({ dataDir });
     if (!st?.running) return;
     await new Promise((r) => setTimeout(r, 250));
+  }
+}
+
+// 换装失败后恢复 daemon：本身再包一层 try/catch——恢复启动失败必须醒目落日志，
+// 否则又是一种静默（daemon 停着，浏览器扩展连不上，用户无感知）。
+function restoreDaemonAfterFailedSwap(binaryPath: string, daemonWasRunning: boolean): void {
+  if (!daemonWasRunning) return;
+  try {
+    startDaemonDetached(binaryPath);
+  } catch (err) {
+    log.error(
+      `[webbridge-update] 换装失败且恢复 daemon 启动异常（浏览器桥将保持停止直到 App 重启）: ${
+        err instanceof Error ? err.message : String(err)
+      }`,
+    );
   }
 }
 

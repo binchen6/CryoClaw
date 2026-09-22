@@ -56,3 +56,14 @@ test("isBackoffActive：窗口内生效，窗口外/无记录不生效", () => {
     false,
   );
 });
+
+test("isBackoffActive：lastFailedAt 落在未来（时钟被回拨）视为无效记录", () => {
+  const now = 10_000_000_000;
+  const DAY = 24 * 60 * 60 * 1000;
+  // 未来 1 分钟：旧逻辑下 now - lastFailedAt 为负 → 退避窗口被拉长到「时钟追上 + 24h」
+  assert.equal(isBackoffActive({ lastFailedAt: now + 60_000, lastFailedFromVersion: null }, now), false);
+  // 未来数天：自动内核升级静默停摆数天
+  assert.equal(isBackoffActive({ lastFailedAt: now + 5 * DAY, lastFailedFromVersion: null }, now), false);
+  // 边界：正好等于 now（非未来）仍按退避窗口判定
+  assert.equal(isBackoffActive({ lastFailedAt: now, lastFailedFromVersion: null }, now), true);
+});

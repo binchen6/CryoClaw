@@ -2,7 +2,7 @@
  * Settings: 微信扫码登录（iLink HTTP API）+ 账号清除。
  */
 import { ipcMain } from "electron";
-import { readUserConfig, writeUserConfig } from "../provider-config";
+import { readUserConfigForWrite, writeUserConfig } from "../provider-config";
 import {
   ensureWeixinPluginReady,
   startWeixinQrLogin,
@@ -48,9 +48,9 @@ export function registerWeixinIpc(opts: SettingsIpcOptions): void {
       // 扫码确认成功 → 保存凭据并重启 Gateway
       if (result.status === "confirmed" && result.accountId && result.botToken) {
         await ensureWeixinPluginReady(reconcileExtensionsOnAppLaunch);
-        const config = readUserConfig();
+        const { config, baseSnapshot } = readUserConfigForWrite();
         const normalizedId = persistWeixinLoginSuccess(config, result);
-        writeUserConfig(config);
+        writeUserConfig(config, { baseSnapshot });
         opts.requestGatewayRestart?.();
         return {
           success: true,

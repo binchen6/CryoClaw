@@ -25,6 +25,7 @@ import {
   AppUpdateState,
   createInitialAppUpdateState,
   reduceAppUpdateState,
+  shouldSkipPeriodicCheck,
 } from "./app-updater-state";
 import { clearSnooze, isUpdateSnoozed, readSnooze, writeSnooze, SnoozeUntil } from "./update-snooze";
 import { fetchReleaseNotesFromGitHub } from "./app-update-release-notes";
@@ -153,6 +154,42 @@ function getPendingInstallerPath(): string | null {
 // quit-cleanup），期间 state.status 仍是 downloaded，重复触发会并发两个静默安装器
 // 互相踩踏文件（后起实例可能以退出码 2 静默退出，见 gotcha #53）。
 let installInFlight = false;
+// 安装器已 spawn 后等应用退出的兜底观察窗口：退出流程若被拦下（main.ts 的
+// before-quit 首轮 preventDefault 要等 gateway 停稳 + 清理，异常时可能一直不返回；
+// 窗口管理器 close 处理器也可能 preventDefault），installInFlight 永不复位——
+// 安装器子进程在后台等待，UI 再点「重启以更新」只命中重入守卫，用户永久卡
+// downloaded 态。will-quit 是退出序列的最后一步：本次退出尝试被拦下时它根本不
+// 触发，一旦触发即说明应用确实在退出，清掉兜底定时器即可（进程随之结束，
+// installInFlight 不再需要复位）。
+const INSTALL_EXIT_CONFIRM_TIMEOUT_MS = 30 * 1000;
+let installExitTimer: NodeJS.Timeout | null = null;
+let willQuitHookAttached = false;
+
+// 挂退出确认 + 启动 30s 兜底：超时仍未退出则复位 installInFlight 允许用户重试。
+// 重试最多让第二个安装器实例启动——NSIS 侧对已在进行中的换装会静默退出
+// （gotcha #53，退出码 2），比「永久卡 downloaded + 安装器僵尸等待」可接受。
+function armInstallExitConfirmation(): void {
+  if (!willQuitHookAttached) {
+    willQuitHookAttached = true;
+    app.once("will-quit", () => {
+      if (installExitTimer) {
+        clearTimeout(installExitTimer);
+        installExitTimer = null;
+      }
+    });
+  }
+  if (installExitTimer) clearTimeout(installExitTimer);
+  installExitTimer = setTimeout(() => {
+    installExitTimer = null;
+    if (!installInFlight) return;
+    installInFlight = false;
+    log.warn(
+      `[app-updater] 安装器已启动但应用 ${INSTALL_EXIT_CONFIRM_TIMEOUT_MS / 1000}s 内未退出（退出流程被拦截或挂住），已复位允许重试`,
+    );
+  }, INSTALL_EXIT_CONFIRM_TIMEOUT_MS);
+  // unref：兜底定时器绝不成为阻止退出的理由
+  installExitTimer.unref?.();
+}
 
 export function quitAndInstallAppUpdate(): void {
   if (installInFlight) {
@@ -186,6 +223,7 @@ export function quitAndInstallAppUpdate(): void {
         stdio: "ignore",
       });
       child.unref();
+      armInstallExitConfirmation();
       beforeQuitAndInstall?.();
       app.quit();
       return;
@@ -196,6 +234,10 @@ export function quitAndInstallAppUpdate(): void {
   } else {
     log.warn("[app-updater] 未找到 pending 安装器，回退 quitAndInstall");
   }
+  // 回退路径同样经 app.quit()（electron-updater 内部调用）落到同一条退出序列，
+  // 同样可能被 before-quit 拦下——一并挂上退出确认（此时未 spawn 自管安装器，
+  // installInFlight 若卡住用户同样无法重试）
+  armInstallExitConfirmation();
   beforeQuitAndInstall?.();
   // isSilent=true：静默换装（无安装器窗口）；forceRunAfter=true 装完自动拉起新版
   autoUpdater.quitAndInstall(true, true);
@@ -291,9 +333,11 @@ export function initAppUpdater(deps: Deps): void {
   startupTimer.unref?.();
 
   // 长开桌面场景的周期复查：每 12h 静默检查一次，确保不重启也能发现新版本。
-  // 活跃流程（checking/downloading/downloaded）不打断；暂缓期内跳过。
+  // 活跃流程（checking/downloading/downloaded）不打断；available 也不打断——
+  // 更新弹窗已弹出时再检查会让弹窗内容闪一下（checking 清空 version/releaseNotes，
+  // update-available 再填回）并重复拉 release notes。暂缓期内跳过。
   periodicTimer = setInterval(() => {
-    if (state.status === "checking" || state.status === "downloading" || state.status === "downloaded") {
+    if (shouldSkipPeriodicCheck(state.status)) {
       return;
     }
     if (isUpdateSnoozed()) {

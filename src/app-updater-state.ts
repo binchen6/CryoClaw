@@ -48,6 +48,22 @@ export type AppUpdateEvent =
   | { type: "downloaded" }
   | { type: "error"; message: string };
 
+/**
+ * 周期复查是否应跳过（app-updater.ts 的 12h setInterval 用；手动检查不受此守卫约束）。
+ * - checking/downloading/downloaded：活跃流程不打断；
+ * - available：更新弹窗已弹出也要挡——再 checkForUpdates 会先经 checking 清空
+ *   version/releaseNotes（见下方 checking 分支），随后 update-available 再填回，
+ *   用户 12h 未操作弹窗时表现为弹窗内容闪烁 + release notes 重复网络拉取。
+ */
+export function shouldSkipPeriodicCheck(status: AppUpdateStatus): boolean {
+  return (
+    status === "checking" ||
+    status === "downloading" ||
+    status === "downloaded" ||
+    status === "available"
+  );
+}
+
 export function createInitialAppUpdateState(supported: boolean, currentVersion: string): AppUpdateState {
   return {
     supported,

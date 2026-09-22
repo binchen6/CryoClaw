@@ -9,6 +9,7 @@ import {
   type Tab,
 } from "./navigation.ts";
 import { saveSettings, type UiSettings } from "./storage.ts";
+import { isAcceptableGatewayUrl } from "./gateway-url-policy.ts";
 import { applySessionKeyTransition } from "./session-transition.ts";
 import { startThemeTransition, type ThemeTransitionContext } from "./theme-transition.ts";
 import { resolveTheme, type ResolvedTheme, type ThemeMode } from "./theme.ts";
@@ -164,7 +165,10 @@ export function applySettingsFromUrl(host: SettingsHost) {
 
   if (gatewayUrlRaw != null) {
     const gatewayUrl = gatewayUrlRaw.trim();
-    if (gatewayUrl && gatewayUrl !== host.settings.gatewayUrl) {
+    // F8：scheme 白名单——javascript:/http:/畸形串不得进入确认流程（更不得落进
+    // settings.gatewayUrl 后在 connect 时让 new WebSocket 同步抛异常打断初始化）。
+    // 非法输入只清理 URL 参数，不弹确认、不改配置。
+    if (gatewayUrl && isAcceptableGatewayUrl(gatewayUrl) && gatewayUrl !== host.settings.gatewayUrl) {
       host.pendingGatewayUrl = gatewayUrl;
     }
     params.delete("gatewayUrl");

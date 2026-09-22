@@ -110,3 +110,18 @@ test("fileCard：renderMediaMarkers 分流（文件卡片 / 图片保持）", ()
   const inPre = renderMediaMarkers("<pre>MEDIA:C:\\demo\\a.pdf</pre>");
   assert.ok(!inPre.includes("chat-file-card"), "pre 内不渲染卡片");
 });
+
+test("fileCard：sanitize 后含 &amp; 的路径解码一次再进属性", () => {
+  // sanitized HTML 中文本 & 以 &amp; 实体出现（同 path-linker P0-10）
+  const cardHtml = renderMediaMarkers("<p>MEDIA:C:\\demo\\a&amp;b.xlsx</p>");
+  const m = cardHtml.match(/data-file-path="([^"]*)"/);
+  assert.ok(m, "应渲染文件卡片");
+  assert.equal(m![1], "C:\\demo\\a&amp;b.xlsx", "data-file-path 应为单重转义的真实路径");
+  assert.ok(!cardHtml.includes("&amp;amp"), "不得出现双重转义");
+
+  const imgHtml = renderMediaMarkers("<p>MEDIA:C:\\demo\\pic&amp;shot.png</p>");
+  const im = imgHtml.match(/alt="([^"]*)"/);
+  assert.ok(im, "应渲染图片");
+  assert.equal(im![1], "C:\\demo\\pic&amp;shot.png", "alt 应为单重转义的真实路径");
+  assert.ok(!imgHtml.includes("&amp;amp"));
+});

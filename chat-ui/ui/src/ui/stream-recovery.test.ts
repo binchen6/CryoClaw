@@ -8,6 +8,9 @@ import {
   isStreamStalled,
   liveOrphanRunId,
   markReconnectOrphanRun,
+  preAlignThresholdMs,
+  resetStreamPreAlign,
+  shouldStreamPreAlign,
 } from "./stream-recovery.ts";
 
 // ── orphan 快照 ──
@@ -105,4 +108,57 @@ test("恢复判定：cryoclawError 合成卡与缺时间戳条目混合仍正确
     { role: "assistant", content: [] },
   ];
   assert.equal(hasAssistantReplyAfter(messages, 4000), true);
+});
+
+// ── R62 预对齐退避（P3-6） ──
+
+test("预对齐阈值：首次 45s，步进翻倍，封顶 5min", () => {
+  assert.equal(preAlignThresholdMs(0), 45_000);
+  assert.equal(preAlignThresholdMs(1), 135_000, "45s + 90s");
+  assert.equal(preAlignThresholdMs(2), 315_000, "45s + 90s + 180s");
+  assert.equal(preAlignThresholdMs(3), 615_000, "第四步步进 360s 封顶 300s");
+  assert.equal(preAlignThresholdMs(4), 915_000, "之后每步固定 +300s");
+  assert.equal(preAlignThresholdMs(10), 2_715_000, "915s + 6×300s");
+});
+
+test("预对齐：阈值前不放行，同 run 内按退避逐个放行（修每 tick 全量拉）", () => {
+  resetStreamPreAlign();
+  // idleFor 46s：首次放行
+  assert.equal(shouldStreamPreAlign("run-1", 46_000), true);
+  // 下一个 tick（30s 后，idleFor 76s）：距上次对齐仅 30s < 90s 步进 → 不放行
+  assert.equal(shouldStreamPreAlign("run-1", 76_000), false);
+  assert.equal(shouldStreamPreAlign("run-1", 134_999), false);
+  // idleFor 达 135s（累计间隔 90s）→ 第二次放行
+  assert.equal(shouldStreamPreAlign("run-1", 135_000), true);
+  // 之后步进 180s：315s 前不放行
+  assert.equal(shouldStreamPreAlign("run-1", 300_000), false);
+  assert.equal(shouldStreamPreAlign("run-1", 315_000), true);
+});
+
+test("预对齐：新 run 自动重新起算（run 生命周期去重）", () => {
+  resetStreamPreAlign();
+  assert.equal(shouldStreamPreAlign("run-1", 46_000), true);
+  assert.equal(shouldStreamPreAlign("run-1", 200_000), true);
+  // 换 runId：首次阈值重新从 45s 起算
+  assert.equal(shouldStreamPreAlign("run-2", 46_000), true);
+  assert.equal(shouldStreamPreAlign("run-2", 76_000), false);
+});
+
+test("预对齐：resetStreamPreAlign 清空状态，下一 run 从首次阈值起算", () => {
+  resetStreamPreAlign();
+  assert.equal(shouldStreamPreAlign("run-1", 46_000), true);
+  assert.equal(shouldStreamPreAlign("run-1", 135_000), true);
+  resetStreamPreAlign();
+  assert.equal(shouldStreamPreAlign("run-1", 46_000), true, "reset 后同 runId 也重新起算");
+  resetStreamPreAlign();
+});
+
+test("预对齐：自定义 base/cap 参数透传", () => {
+  resetStreamPreAlign();
+  assert.equal(preAlignThresholdMs(0, 10_000, 15_000), 10_000);
+  assert.equal(preAlignThresholdMs(1, 10_000, 15_000), 25_000, "10s + 20s 步进封顶 15s");
+  assert.equal(preAlignThresholdMs(2, 10_000, 15_000), 40_000, "之后每步固定 +15s");
+  assert.equal(shouldStreamPreAlign("run-custom", 11_000, 10_000, 15_000), true);
+  assert.equal(shouldStreamPreAlign("run-custom", 20_000, 10_000, 15_000), false);
+  resetStreamPreAlign();
 });

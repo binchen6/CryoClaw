@@ -13,6 +13,15 @@ export function consumePendingSessionReset(key: string): boolean {
   return pendingSessionResets.delete(key);
 }
 
+// F7：只读探测（不消费）。/new、/reset 的 final 帧若丢失在断连/gap 窗口，
+// 标记会残留到重连——期间内核 transcript 已被清空，任何滞后兜底（mergeIfStale/
+// R23 空读保护）都会把重置前/乐观写入的本地内容保留下来，旧对话永久残留。
+// 探测到未消费标记的会话在重连读时必须强制替换（与终态路径一致）；
+// 标记本身仍留给到达的终态事件/发送失败回滚去消费，这里不得 delete。
+export function hasPendingSessionReset(key: string): boolean {
+  return pendingSessionResets.has(key);
+}
+
 export function removePendingSessionLabel(key: string) {
   const trimmed = key.trim();
   if (trimmed) {

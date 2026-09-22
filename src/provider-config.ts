@@ -1,12 +1,10 @@
 import * as https from "https";
 import * as http from "http";
 import * as fs from "fs";
-import * as path from "path";
 import { resolveUserConfigPath, resolveUserStateDir } from "./constants";
 import { syncOpenClawStateAfterWrite } from "./openclaw-health-state";
 import { backupCurrentUserConfig } from "./config-backup";
 import { writeFileAtomicSync } from "./atomic-write";
-import { formatTimestamp } from "./time-format";
 import { probeImageSupport, type ImageProbeAuth, type ImageProbeOutcome } from "./provider-image-probe";
 import { verifyWecom } from "./wecom-config";
 
@@ -127,9 +125,13 @@ export function readUserConfig(): any {
   let st: fs.Stats;
   try {
     st = fs.statSync(configPath);
-  } catch {
+  } catch (err: any) {
     userConfigRawCache = null;
-    return {};
+    // 文件不存在保持返回 {}（首次启动/setup 前是合法状态）；
+    // 其他 I/O 错误（Windows 杀软/索引器瞬时锁 EBUSY/EPERM/EACCES）必须抛出——
+    // 吞成 {} 会让调用方把改动合并进空对象整文件写回，providers/channels/keys 全部蒸发
+    if (err?.code === "ENOENT") return {};
+    throw new Error(`无法读取 openclaw.json（可能被杀毒软件暂时占用），请重试: ${err?.message ?? err}`);
   }
   if (
     !userConfigRawCache ||
@@ -138,28 +140,66 @@ export function readUserConfig(): any {
   ) {
     try {
       userConfigRawCache = { mtimeMs: st.mtimeMs, size: st.size, raw: fs.readFileSync(configPath, "utf-8") };
-    } catch {
-      // 读失败（瞬时占用）与旧实现同语义：返回空配置，不污染缓存
-      return {};
+    } catch (err: any) {
+      // 读失败（瞬时占用）≠ 文件不存在：同样不能吞成 {}（理由同上），不污染缓存
+      throw new Error(`无法读取 openclaw.json（可能被杀毒软件暂时占用），请重试: ${err?.message ?? err}`);
     }
   }
+  let parsed: unknown;
   try {
-    return JSON.parse(userConfigRawCache.raw);
+    parsed = JSON.parse(userConfigRawCache.raw);
   } catch {
+    // 内容损坏保持返回 {} 的原语义：由启动期 inspectUserConfigHealth 恢复流程统一处理
     return {};
   }
+  // 合法 JSON 标量/数组同样是损坏（openclaw.json 的根节点必须是对象）：返回 {} 而不是
+  // 标量——调用方 `config.models ??= {}` 会在 strict mode 抛裸 TypeError，且文案不可读。
+  // 口径对齐 cryoclaw-config.readCryoclawConfig（typeof object + !Array.isArray）。
+  return isConfigObject(parsed) ? parsed : {};
 }
 
-// 覆盖前的保险丝：磁盘上存在但不可解析的 openclaw.json 绝不能被整文件覆盖。
+// 读-改-写模式专用：返回当前配置 + 读时刻快照（深拷贝，与 config 无共享引用）。
+// 调用方拿到 config 后普遍原地改（`config.hooks ??= {}`、Object.assign…），快照必须独立，
+// 否则写前比对退化成「拿待写内容比对磁盘」，任何有意义的改动都会被误判为并发写入。
+// 快照回传给 writeUserConfig(config, { baseSnapshot })，见 WriteUserConfigOptions。
+//
+// 强制绕过原文缓存（写入是低频路径，多读一次磁盘换确定性）：缓存键控 (mtimeMs, size)，
+// 同一毫秒内同字节数的替换可能让它命中上一份原文——快照取自旧原文时，写前比对会把
+// "自己的旧读"误判成第三方写入，弹一个莫名其妙的"配置已被其他流程更新"。
+export function readUserConfigForWrite(): { config: any; baseSnapshot: any } {
+  userConfigRawCache = null;
+  const config = readUserConfig();
+  return { config, baseSnapshot: JSON.parse(JSON.stringify(config)) };
+}
+
+// 顶层类型判定：openclaw.json 根节点必须是 JSON 对象（非 null、非数组）。
+// 与 cryoclaw-config.readCryoclawConfig、extension-mirror.ensurePluginsAllow 的
+// 根节点检查同口径。
+function isConfigObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+const CONFIG_CORRUPT_MESSAGE =
+  "检测到 openclaw.json 内容损坏，已取消本次保存以保护现有配置；" +
+  "请在下次启动时通过恢复流程（一键回退上次可用配置）或设置 → 备份与恢复页恢复";
+
+// 覆盖前的保险丝：磁盘上存在但不可解析（含根节点非对象，见 isConfigObject）的
+// openclaw.json 绝不能被整文件覆盖。
 // 所有设置保存都是「readUserConfig() 改一小块 → writeUserConfig 整文件写回」，
 // 若读取瞬间文件损坏/被占用（Windows 杀软/索引器 EBUSY），调用方会把改动合并进
 // {} 空对象写回——providers/channels/keys 全部蒸发，且 backupCurrentUserConfig
 // 跳过损坏文件、.bak 又会被同步覆盖，恢复链路一并失守。此处在唯一写咽喉点拦下：
-// 把损坏文件留存为 openclaw.json.corrupt-<ts>（启动期 config-invalid-json 恢复
-// 流程与 writeConfigRaw 恢复路径不受影响，它们不经过本函数）。
-function assertExistingConfigParseable(): void {
+// 损坏文件保留原位、仅抛错拒绝本次写入。绝不能 rename 移走损坏文件——启动期
+// inspectUserConfigHealth 的恢复判定条件是「文件原位存在且内容非法」，移走后
+// 恢复入口（config-invalid-json 弹窗：一键回退 last-known-good 快照，或打开
+// 设置 → 备份与恢复页从历史备份恢复）永不触发；且 .corrupt-* 文件全代码库
+// 没有任何读取/恢复入口，等同销毁用户配置。
+//
+// 返回值同时是「写前磁盘现状」：并发写比对（assertDiskUnchangedSinceSnapshot）
+// 复用这一次读，不让同一文件在同一写路径上读两遍。
+function readExistingConfigForWrite(): { exists: boolean; config: unknown } {
   const configPath = resolveUserConfigPath();
-  if (!fs.existsSync(configPath)) return;
+  if (!fs.existsSync(configPath)) return { exists: false, config: undefined };
   let raw: string;
   try {
     raw = fs.readFileSync(configPath, "utf-8");
@@ -168,17 +208,74 @@ function assertExistingConfigParseable(): void {
     // 直接让本次保存报错，用户重试即可。
     throw new Error("无法读取 openclaw.json（可能被其他程序暂时占用），已取消本次写入以保护现有配置");
   }
+  let parsed: unknown;
   try {
-    JSON.parse(raw);
+    parsed = JSON.parse(raw);
   } catch {
-    const corruptPath = `${configPath}.corrupt-${formatTimestamp(new Date())}`;
-    try { fs.renameSync(configPath, corruptPath); } catch {}
-    throw new Error(`检测到 openclaw.json 内容损坏，已取消覆盖写入；原文件已留存为 ${path.basename(corruptPath)}`);
+    throw new Error(CONFIG_CORRUPT_MESSAGE);
   }
+  // 解析成功但根节点是标量/数组：同样按内容损坏处理（同一条错误路径）。放行的话
+  // 调用方 `config.models ??= {}` 在 strict mode 抛裸 TypeError，用户看到的是
+  // "Cannot create property"，无从判断是配置损坏。
+  if (!isConfigObject(parsed)) throw new Error(CONFIG_CORRUPT_MESSAGE);
+  return { exists: true, config: parsed };
 }
 
-export function writeUserConfig(config: any): void {
-  assertExistingConfigParseable();
+export interface WriteUserConfigOptions {
+  /**
+   * 读时刻的配置快照，必须与待写对象相互独立（用 readUserConfigForWrite 取得）。
+   * 传入后写前重读磁盘比对：磁盘相对快照已变化，说明窗口期内有第三方（gateway 内核
+   * 把前端渠道配置 config.patch 落盘、CLI 命令等）写了 openclaw.json，而本次写入是
+   * 基于旧快照的整文件覆盖——继续写会静默丢掉对方刚写入的改动（lost update），
+   * 因此抛错拒绝并让用户重试。
+   * 启动期迁移（gateway 未启动、同一流程内连续写）与纯构造新对象的路径不必传。
+   */
+  baseSnapshot?: unknown;
+}
+
+// 稳定的 JSON 序列化（递归字典序键）：只用于快照比对，键序差异不算内容变化
+function stableSerialize(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableSerialize).join(",")}]`;
+  if (value !== null && typeof value === "object") {
+    const entries = Object.entries(value as Record<string, unknown>)
+      .filter(([, v]) => v !== undefined)
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+    return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${stableSerialize(v)}`).join(",")}}`;
+  }
+  return JSON.stringify(value) ?? "null";
+}
+
+// 顶层 key 差异（用户可见的错误里带上，便于判断是谁写的）
+function describeTopLevelKeyDiff(diskValue: unknown, baseSnapshot: unknown): string {
+  if (!isConfigObject(diskValue) || !isConfigObject(baseSnapshot)) return "";
+  const diskKeys = new Set(Object.keys(diskValue));
+  const baseKeys = new Set(Object.keys(baseSnapshot));
+  const added = [...diskKeys].filter((k) => !baseKeys.has(k));
+  const missing = [...baseKeys].filter((k) => !diskKeys.has(k));
+  const parts: string[] = [];
+  if (added.length > 0) parts.push(`新增 ${added.join(", ")}`);
+  if (missing.length > 0) parts.push(`缺少 ${missing.join(", ")}`);
+  return parts.length === 0 ? "" : `（磁盘顶层字段：${parts.join("；")}）`;
+}
+
+function assertDiskUnchangedSinceSnapshot(
+  disk: { exists: boolean; config: unknown },
+  baseSnapshot: unknown,
+): void {
+  // 文件不存在 = 空配置（readUserConfig 对 ENOENT 同样给 {}），两者可直接比
+  const diskValue = disk.exists ? disk.config : {};
+  if (stableSerialize(diskValue) === stableSerialize(baseSnapshot)) return;
+  throw new Error(
+    "配置已被其他流程（如 gateway 内核）更新，已取消本次保存以免覆盖对方的改动，请重试。" +
+    describeTopLevelKeyDiff(diskValue, baseSnapshot),
+  );
+}
+
+export function writeUserConfig(config: any, opts: WriteUserConfigOptions = {}): void {
+  const disk = readExistingConfigForWrite();
+  if (opts.baseSnapshot !== undefined) {
+    assertDiskUnchangedSinceSnapshot(disk, opts.baseSnapshot);
+  }
   const stateDir = resolveUserStateDir();
   fs.mkdirSync(stateDir, { recursive: true });
   // 覆盖写入前先保留一份当前可解析配置，便于用户在设置页回退。

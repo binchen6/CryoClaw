@@ -103,3 +103,21 @@ test("listNpmProjectPluginIds：硬失败回退空集合（mirror 侧自愈语�
     fs.rmSync(state, { recursive: true, force: true });
   }
 });
+
+test("scanNpmProjectPlugins：插件清单读取遇非 ENOENT I/O 错误 = 硬失败（F11）", () => {
+  const state = makeTmpState();
+  try {
+    // 把 openclaw.plugin.json 做成目录：readFileSync 抛 EISDIR（与 EPERM/EBUSY
+    // 同类瞬时/非缺失错误）。旧实现 catch-all 把它当「不是插件」吞掉，会把
+    // 已安装插件误判不可用，导致 config-migration 误删用户插件配置。
+    const projectDir = path.join(state, "npm", "projects", "proj-locked");
+    const pkgDir = path.join(projectDir, "node_modules", "locked-plugin");
+    fs.mkdirSync(pkgDir, { recursive: true });
+    fs.writeFileSync(path.join(projectDir, "package.json"), JSON.stringify({ private: true, dependencies: { "locked-plugin": "1.0.0" } }));
+    fs.mkdirSync(path.join(pkgDir, "openclaw.plugin.json"));
+    const scan = scanNpmProjectPlugins(state);
+    assert.equal(scan.ok, false, "EISDIR 应视为硬失败而非「不是插件」");
+  } finally {
+    fs.rmSync(state, { recursive: true, force: true });
+  }
+});

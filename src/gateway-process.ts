@@ -23,6 +23,12 @@ import {
   resolveUserStateDir,
 } from "./constants";
 import { uninstallGatewayDaemon, getPortPid } from "./install-detector";
+import {
+  shouldAbortStartAfterPrestart,
+  shouldForceResetHalfDead,
+  shouldFireCrashOnStartingExit,
+  isPlausiblyOwnGatewayFromTasklist,
+} from "./gateway-lifecycle";
 
 // 诊断日志（R20 起统一写入 ~/.openclaw/logs/gateway.log；旧路径一次性迁移）
 const LOG_PATH = resolveGatewayLogPath();
@@ -181,7 +187,14 @@ export class GatewayProcess {
   // 与新进程抢端口）。在途启动期间后续调用直接复用同一 promise。
   private inflightStart: Promise<void> | null = null;
 
-  start(): Promise<void> {
+  // 监督式启动标记（P0-2）：仅监督链（main.ts ensureGatewayRunning，自带 3 次
+  // 重试与失败上报）通过 start({ supervised: true }) 置位，doStart 落定时清除。
+  // starting 阶段退出时若在监督之下则不触发 onCrash——再排一条崩溃重启链会与
+  // 监督链并发，双倍消耗崩溃预算、双恢复入口；restart 链（无重试监督，靠
+  // onCrash 恢复）不经由监督启动，标记刻意不覆盖该场景。
+  private supervisedStartActive = false;
+
+  start(opts: { supervised?: boolean } = {}): Promise<void> {
     if (this.state === "running" || this.state === "starting") return Promise.resolve();
     if (this.inflightStart) {
       // state 已是 stopped 但旧启动 promise 尚未落定 = 旧启动正在收尾
@@ -190,15 +203,17 @@ export class GatewayProcess {
       // 什么都不 spawn」——restart 链上没有重试的调用方会停在 stopped。等旧
       // promise settle（finally 先清 inflightStart）后重新进入 start()。
       if (this.state !== "stopped") return this.inflightStart;
-      return this.inflightStart.then(() => this.start());
+      return this.inflightStart.then(() => this.start(opts));
     }
-    this.inflightStart = this.doStart().finally(() => {
+    this.inflightStart = this.doStart(opts).finally(() => {
       this.inflightStart = null;
+      this.supervisedStartActive = false;
     });
     return this.inflightStart;
   }
 
-  private async doStart(): Promise<void> {
+  private async doStart(opts: { supervised?: boolean } = {}): Promise<void> {
+    this.supervisedStartActive = opts.supervised === true;
     if (this.state === "running" || this.state === "starting") return;
 
     // 前一次 stop 还未完成，等待其结束再启动
@@ -281,6 +296,14 @@ export class GatewayProcess {
       throw err;
     }
 
+    // P0-1：预启动（端口冲突路径含 10 轮 ×500ms 等待，窗口可达 20s+）期间 stop()
+    // 可能已把状态复位 stopped——调用方（退出/导入路径）已认为 gateway 停妥并继续
+    // 清空状态目录。此时再 spawn 会留下孤儿 gateway 占端口，spawn 前复查状态。
+    if (shouldAbortStartAfterPrestart(this.state)) {
+      diagLog("start aborted: stop() raced pre-start");
+      return;
+    }
+
     // 组装 PATH：用户 bin 目录 + 内嵌 runtime + officecli 优先
     const userBinDir = resolveUserBinDir();
     const runtimeDir = path.join(resolveResourcesPath(), "runtime");
@@ -340,11 +363,16 @@ export class GatewayProcess {
         return;
       }
       if (this.state === "starting" || this.state === "running") {
-        // 与 exit handler 的 starting/running 分支同构：视同崩溃退出
+        // 与 exit handler 的 starting/running 分支同构：视同崩溃退出。
+        // P0-2：监督式启动在途时不触发 onCrash（判定见 gateway-lifecycle.ts），
+        // 交由监督链的重试与失败上报处理
+        const stateAtError = this.state;
         this.lastCrashTime = Date.now();
         this.setState("stopped");
         this.proc = null;
-        this.onCrash?.({ code: null, signal: null });
+        if (shouldFireCrashOnStartingExit(stateAtError, this.supervisedStartActive)) {
+          this.onCrash?.({ code: null, signal: null });
+        }
         return;
       }
       this.proc = null;
@@ -390,7 +418,13 @@ export class GatewayProcess {
         this.lastCrashTime = Date.now();
         this.setState("stopped");
         this.proc = null;
-        this.onCrash?.({ code, signal });
+        // P0-2：监督式启动在途时不触发 onCrash——监督链（ensureGatewayRunning）
+        // 自己带 3 次重试与失败上报；restart 链等非监督启动仍靠 onCrash 恢复
+        if (shouldFireCrashOnStartingExit("starting", this.supervisedStartActive)) {
+          this.onCrash?.({ code, signal });
+        } else {
+          diagLog("SKIP: 监督式启动在途，starting 退出交由监督链重试处理，不触发崩溃重启");
+        }
         return;
       }
       this.proc = null;
@@ -422,12 +456,13 @@ export class GatewayProcess {
   // 会先等启动落定（running 或 stopped）再继续。退出/重启/IPC-stop 不传，行为不变。
   async stop(opts: { waitForStarting?: boolean } = {}): Promise<void> {
     if (this.state === "stopping") {
+      const existingStopPid = this.proc?.pid ?? 0;
       const existingStopDeadline = Date.now() + 5500;
       while (this.getState() === "stopping" && Date.now() < existingStopDeadline) {
         await sleep(100);
       }
       if (this.getState() === "stopping") {
-        await this.forceStopAfterTimeout();
+        await this.forceStopAfterTimeout(existingStopPid);
       }
       return;
     }
@@ -443,19 +478,41 @@ export class GatewayProcess {
     }
     // 防御（R64 审查 P1）：start() 在预启动步骤抛错后已复位 stopped，但历史上
     // 可能残留 "starting" + 无 proc 的半死态——此处强制复位，保证 stop 可作恢复手段。
+    // P0-1 细化：半死态若仍有在途 doStart（预启动窗口，proc 尚未赋值），强转 stopped
+    // 会让 doStart 在 stop() 返回后继续 spawn 出孤儿（退出/导入路径已认为 gateway
+    // 停妥并继续清空状态目录）。有在途启动时改按 waitForStarting 同款等待循环等其落定。
     if (this.state === "starting" && !this.proc) {
-      diagLog("stop(): 检测到无子进程的 starting 半死态，强制复位 stopped");
-      this.setState("stopped");
-      return;
+      if (shouldForceResetHalfDead(this.state, !!this.proc, !!this.inflightStart)) {
+        diagLog("stop(): 检测到无子进程且无在途启动的 starting 半死态，强制复位 stopped");
+        this.setState("stopped");
+        return;
+      }
+      diagLog("stop(): starting 半死态存在在途 doStart，等待其落定");
+      const deadline = Date.now() + HEALTH_TIMEOUT_MS + 2000;
+      while (this.state === "starting" && Date.now() < deadline) {
+        await sleep(100);
+      }
+      if (this.state === "starting" && !this.proc) {
+        // 纯预启动残留（doStart 尚未 spawn）：复位后 doStart 的预启动复查会拦截 spawn
+        diagLog("WARN: 等待在途 doStart 超时，强制复位 stopped");
+        this.setState("stopped");
+        return;
+      }
+      if (this.state === "starting") {
+        // doStart 已 spawn 但健康窗口超长：句柄仍有效，继续走下方正常停止
+        diagLog("WARN: 等待在途 doStart 超时但子进程已 spawn，继续执行停止");
+      }
     }
     if (!this.proc || this.state === "stopped") return;
 
     const pid = this.proc.pid ?? 0;
     this.setState("stopping");
 
-    // 第一步：发送终止信号（Windows 杀整棵进程树，POSIX 先 SIGTERM）
+    // 第一步：发送终止信号（Windows 杀整棵进程树，POSIX 先 SIGTERM）。
+    // P0-3：Windows 分支必须 await——此前未 await 且 killProcess 内部吞错，
+    // 5s 超时兜底又被直接跳过，进程实际还活着就已置 stopped（退出路径留孤儿）
     if (IS_WIN && pid > 0) {
-      killProcess(pid);
+      await killProcess(pid);
     } else {
       this.proc.kill("SIGTERM");
     }
@@ -466,17 +523,28 @@ export class GatewayProcess {
       await sleep(100);
     }
 
-    // 第三步：超时兜底 — POSIX 升级 SIGKILL，Windows 已经是 /F 了
+    // 第三步：超时兜底 — POSIX 升级 SIGKILL；Windows 第一步 taskkill 已 await
+    // 但仍可能失败（killProcess 吞错），用入口记录的 pid 再强杀一次（P0-3）
     if (this.getState() === "stopping") {
-      await this.forceStopAfterTimeout();
+      await this.forceStopAfterTimeout(pid);
     }
   }
 
-  private async forceStopAfterTimeout(): Promise<void> {
+  // 停止超时兜底：POSIX 升级 SIGKILL；Windows 用调用方传入的 pid 重试一次
+  // taskkill /F /T。重试仍失败时句柄已失效（exit 不会再来），状态只能置 stopped，
+  // 但进程可能仍存活——必须留下醒目 WARN（diagLog 同落 stderr 与 gateway.log，
+  // 保留此通道，不引入 logger.ts 防循环依赖）
+  private async forceStopAfterTimeout(pid: number): Promise<void> {
     diagLog("WARN: 停止超时，强制终止");
     if (this.proc && !IS_WIN) {
       this.proc.kill("SIGKILL");
       await sleep(500);
+    }
+    if (IS_WIN && pid > 0) {
+      const killed = await killProcess(pid);
+      if (!killed) {
+        diagLog(`WARN: gateway 进程可能残留 (pid=${pid})：taskkill 重试仍失败，状态置 stopped，进程可能仍占用端口`);
+      }
     }
     this.proc = null;
     this.setState("stopped");
@@ -531,10 +599,11 @@ export class GatewayProcess {
     diagLog("WARN: 强杀后端口仍被占用，继续尝试启动");
   }
 
-  // 重启：stop() 返回时进程已死，直接 start()
-  async restart(): Promise<void> {
+  // 重启：stop() 返回时进程已死，直接 start()；opts 透传——监督链的重试 restart
+  // 必须保持监督语义（P0-2），否则 starting 退出会双触发崩溃重启链
+  async restart(opts: { supervised?: boolean } = {}): Promise<void> {
     await this.stop();
-    await this.start();
+    await this.start(opts);
   }
 
   // HTTP 探测根路径（Control UI）
@@ -664,6 +733,9 @@ function isProcessAlive(pid: number): boolean {
 // 端口占用者强杀前的身份校验：Windows 上镜像名必须是本应用 gateway 的可能形态
 // （Electron 复用二进制 / CLI 二进制 / 系统 node），防止误杀恰好占了端口的无关服务。
 // 非 Windows 一律放行（ps 取名跨发行版不稳定，且 SIGKILL 不带 /T 树杀副作用）。
+// L2 修复：tasklist 失败/无结果时 fail-closed（原实现 catch 放行）——身份最无法
+// 确认的场景反而放行 taskkill /F /T 会误杀无关服务；跳过硬杀后调用方继续尝试
+// 启动，失败会显现为启动失败提示引导用户（语义正确，见 stopExistingGateway）。
 async function isPlausiblyOwnGateway(pid: number): Promise<boolean> {
   if (!IS_WIN) return true;
   try {
@@ -672,17 +744,19 @@ async function isPlausiblyOwnGateway(pid: number): Promise<boolean> {
       ["/FI", `PID eq ${pid}`, "/FO", "CSV", "/NH"],
       { timeout: 5000, windowsHide: true },
     );
-    const image = stdout.split(",")[0]?.replace(/^"|"$/g, "")?.toLowerCase() ?? "";
-    return /(?:cryoclaw|electron|node)/.test(image);
+    return isPlausiblyOwnGatewayFromTasklist(stdout);
   } catch {
-    // tasklist 失败（权限等）：宁可放行强杀，保持既有自愈行为
-    return true;
+    diagLog(`WARN: tasklist 查询 pid=${pid} 失败，身份无法确认，跳过硬杀（交由启动失败提示引导用户）`);
+    return false;
   }
 }
 
 // 强制终止外部进程（Windows 用 taskkill，POSIX 用 SIGKILL）。
 // 异步：taskkill 最长可等待 5s，同步版会冻结主进程事件循环。调用方均需 await。
-async function killProcess(pid: number): Promise<void> {  try {
+// 返回是否终止成功（P0-3：此前返回 void 且吞错，Windows 停止兜底无法区分
+// 「已杀」与「杀失败」而跳过二次终止，进程残留但状态机报 stopped）。
+async function killProcess(pid: number): Promise<boolean> {
+  try {
     if (IS_WIN) {
       await execFileAsync("taskkill", ["/PID", String(pid), "/F", "/T"], {
         timeout: 5000,
@@ -691,8 +765,10 @@ async function killProcess(pid: number): Promise<void> {  try {
     } else {
       process.kill(pid, "SIGKILL");
     }
+    return true;
   } catch (err: any) {
     diagLog(`killProcess(${pid}) 失败: ${err.message ?? err}`);
+    return false;
   }
 }
 
@@ -725,6 +801,9 @@ function ensureClawhubWrapper(nodeBin: string): void {
     const esc = (v: string) => v.replace(/%/g, "%%").replace(/"/g, '""');
     const wrapper = [
       "@echo off",
+      // 与 cli-integration.ts 的 openclaw.cmd 同理：无 BOM UTF-8 批处理在中文系统
+      // （GBK 代码页）下路径乱码，先切 UTF-8 再解析后续行。
+      "@chcp 65001 >nul",
       "REM CryoClaw clawhub CLI - auto-generated, do not edit",
       "setlocal",
       `set "APP_NODE=${esc(nodeBin)}"`,

@@ -104,6 +104,10 @@ export class WindowManager {
       webPreferences: {
         contextIsolation: true,
         nodeIntegration: false,
+        // P3-4：渲染进程沙盒。preload 只用 contextBridge / ipcRenderer / webUtils
+        // （均已列入 Electron sandboxed preload 的可用集合），无任何 Node API 依赖，
+        // 打开后渲染层拿不到 Node 内建模块与 __dirname 等宿主能力。
+        sandbox: true,
         preload: path.join(__dirname, "preload.js"),
       },
     });

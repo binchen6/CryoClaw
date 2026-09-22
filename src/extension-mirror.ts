@@ -203,12 +203,17 @@ async function reconcileOne(
   const tmp = `${dest}.cryoclaw-tmp-${process.pid}-${Date.now()}`;
   try {
     await copyDir(src, tmp);
-    fs.rmSync(dest, { recursive: true, force: true });
+    // R91 同 copyDir：升级路径上同步递归删除整棵插件目录（含 node_modules）
+    // 会卡死主进程事件循环（Windows + Defender 下数秒，所有 IPC 停摆），
+    // 删除与上方复制一致走异步。失败语义不变——reject 仍被下方 catch 收敛为
+    // action=failed（与旧 rmSync 抛错路径一致）。
+    await fsp.rm(dest, { recursive: true, force: true });
     fs.renameSync(tmp, dest);
     return { pluginId, action: "upgraded", fromVersion: destVersion, toVersion: mirrorVersion };
   } catch (err) {
-    // 失败时清理临时目录，保留旧版可用（若已被删说明删旧成功、复制失败，下次启动自愈）
-    try { fs.rmSync(tmp, { recursive: true, force: true }); } catch {}
+    // 失败时清理临时目录，保留旧版可用（若已被删说明删旧成功、复制失败，下次启动自愈）。
+    // 临时目录同样是整棵插件树，清理也走异步；best-effort，不覆盖原错误
+    await fsp.rm(tmp, { recursive: true, force: true }).catch(() => {});
     return { pluginId, action: "failed", error: (err as Error).message };
   }
 }

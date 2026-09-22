@@ -227,6 +227,12 @@
 | `getReleaseNotes(opts?)` | `app:get-release-notes` | invoke |
 | `dismissReleaseNotes(version)` | `app:dismiss-release-notes` | invoke |
 
+> `openWebUI()` 打开外部浏览器时不再把 gateway token 交给 OS/浏览器：改为打开控制服务的一次性
+> handoff URL（`GET /webui-handoff/<code>`，60s TTL、用后作废），由 302 的 Location 头把
+> `#token=` 送到真实 WebUI；控制服务未就绪时降级为不带 token 的直连 URL。
+> 注意：浏览器会提交「重定向后」的 URL（即落地 URL 仍带 token），真正把它从历史记录里清掉的是
+> Control UI 启动时的 `history.replaceState`（见 gotchas #21 实测残留面）。
+
 ## 文件操作
 
 | 方法 | IPC 通道 | 方向 |

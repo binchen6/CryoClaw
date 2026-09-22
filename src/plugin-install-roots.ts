@@ -45,13 +45,23 @@ function readDirEntries(dir: string): fs.Dirent[] | null {
   }
 }
 
-// 读 <pkg>/openclaw.plugin.json 的 { id, channels }；缺失/损坏返回 null（不是插件）
+// 读 <pkg>/openclaw.plugin.json 的 { id, channels }。
+// 三态语义（与文件头一致）：清单缺失（ENOENT）或 JSON 解析失败 → null（不是插件）；
+// EPERM/EBUSY/EISDIR 等其他 I/O 错误原样抛出，由 scanNpmProjectPlugins 聚合成
+// { ok:false } 硬失败——绝不能把「读不到」当成「没安装」（杀软瞬时锁场景）。
 function readPluginManifest(pkgDir: string): { id: string; channels: string[] } | null {
+  let raw: string;
+  try {
+    raw = fs.readFileSync(path.join(pkgDir, "openclaw.plugin.json"), "utf-8");
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return null; // 清单缺失 = 不是插件
+    throw err;
+  }
   let manifest: unknown;
   try {
-    manifest = JSON.parse(fs.readFileSync(path.join(pkgDir, "openclaw.plugin.json"), "utf-8"));
+    manifest = JSON.parse(raw);
   } catch {
-    return null;
+    return null; // 清单损坏 = 不是插件
   }
   const m = manifest as { id?: unknown; channels?: unknown };
   if (!m || typeof m !== "object" || typeof m.id !== "string" || !m.id.trim()) return null;
@@ -97,9 +107,10 @@ export function scanNpmProjectPlugins(stateDir: string): NpmProjectScan {
         : path.join(nmDir, depName);
       let manifest: { id: string; channels: string[] } | null = null;
       try {
+        // 声明了未安装（ENOENT）在 readPluginManifest 内返回 null 走到下方 continue；
+        // 此处只接 EPERM/EBUSY 等瞬时锁错误，聚合成硬失败
         manifest = readPluginManifest(pkgDir);
-      } catch (err) {
-        if ((err as NodeJS.ErrnoException).code === "ENOENT") continue; // 声明了未安装：跳过
+      } catch {
         return { ok: false };
       }
       if (!manifest) continue; // 无插件清单 = 普通依赖包（axios 等），不是插件

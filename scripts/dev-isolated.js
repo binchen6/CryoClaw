@@ -51,6 +51,34 @@ function releaseLock(lockFile) {
   try { fs.unlinkSync(lockFile); } catch {}
 }
 
+// ── .gitignore 兜底判定（导出供单测） ──
+// 判定 .gitignore 是否已按行精确覆盖 .dev-state（接受 `.dev-state/` 与 `.dev-state` 两种写法）。
+// 不能退化成子串匹配：仓库里同时存在 `.dev-state-pkg/` 行（调试/打包残留），
+// content.includes(".dev-state") 对"只含 .dev-state-pkg/ 的 .gitignore"同样为真 →
+// 误判为"已忽略"而跳过追加，而 .dev-state/ 下的 credentials/（含 API key）实际没有
+// gitignore 兜底，存在被 git add 进仓库的泄漏路径。
+function hasDevStateIgnoreEntry(content) {
+  return content.split(/\r?\n/).some((line) => {
+    const entry = line.trim();
+    return entry === ".dev-state/" || entry === ".dev-state";
+  });
+}
+
+// 把 .dev-state 加进 .gitignore（幂等）；返回是否真的追加了。
+function ensureDevStateIgnored(gitignorePath) {
+  if (!fs.existsSync(gitignorePath)) return false;
+  const content = fs.readFileSync(gitignorePath, "utf-8");
+  if (hasDevStateIgnoreEntry(content)) return false;
+  fs.appendFileSync(gitignorePath, "\n# dev 多实例隔离状态目录\n.dev-state/\n");
+  return true;
+}
+
+// 被 require（单测）时只导出上面的判定函数，不执行下方启动逻辑
+if (require.main !== module) {
+  module.exports = { hasDevStateIgnoreEntry, ensureDevStateIgnored };
+  return;
+}
+
 const cwd = process.cwd();
 const port = hashPort(cwd);
 const stateDir = path.join(cwd, ".dev-state");
@@ -67,13 +95,7 @@ process.on("SIGINT", () => process.exit(130));
 process.on("SIGTERM", () => process.exit(143));
 
 // 把 .dev-state 加进 .gitignore（幂等）
-const gitignorePath = path.join(cwd, ".gitignore");
-if (fs.existsSync(gitignorePath)) {
-  const content = fs.readFileSync(gitignorePath, "utf-8");
-  if (!content.includes(".dev-state")) {
-    fs.appendFileSync(gitignorePath, "\n# dev 多实例隔离状态目录\n.dev-state/\n");
-  }
-}
+ensureDevStateIgnored(path.join(cwd, ".gitignore"));
 
 const env = {
   ...process.env,

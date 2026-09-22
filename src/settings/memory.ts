@@ -15,7 +15,7 @@ import { assertTrustedIpcSender } from "../ipc-sender-guard";
 import {
   resolveNodeBin, resolveGatewayEntry, resolveGatewayCwd, resolveUserStateDir,
 } from "../constants";
-import { readUserConfig, writeUserConfig } from "../provider-config";
+import { readUserConfigForWrite, writeUserConfig } from "../provider-config";
 import { syncPluginAllowOnEnable } from "../kimi-config";
 import {
   listWorkspaceMemory, readWorkspaceMemoryEntry, appendMemorySection, deleteDreamEntryFile,
@@ -209,7 +209,7 @@ export function registerMemoryIpc(): void {
   ipcMain.handle("memory:repair-plugin", async (event) => {
     if (!assertTrustedIpcSender(event, "memory:repair-plugin")) throw new Error("IPC sender not trusted");
     try {
-      const config = readUserConfig();
+      const { config, baseSnapshot } = readUserConfigForWrite();
       if (!config) return fail("config unavailable");
       config.plugins ??= {};
       config.plugins.entries ??= {};
@@ -220,7 +220,7 @@ export function registerMemoryIpc(): void {
         entry.enabled = true;
       }
       syncPluginAllowOnEnable(config, "memory-core");
-      writeUserConfig(config);
+      writeUserConfig(config, { baseSnapshot });
       return data({ enabled: true });
     } catch (err: any) {
       return fail(err?.message || String(err));

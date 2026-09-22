@@ -61,9 +61,9 @@ import { initKernelUpdater, getKernelUpdateState, checkKernelUpdate, runKernelUp
 import { isAutoKernelUpgradeBackoffActive, recordAutoKernelUpgradeFailure, clearAutoKernelUpgradeBackoff } from "./auto-kernel-upgrade-backoff";
 import { initAppUpdater, quitAndInstallAppUpdate } from "./app-updater";
 import { maybeAutoCheckWebbridgeUpdate, ensureWebbridgeDaemonRunning, broadcastWebbridgeStateChanged } from "./webbridge-update";
-import { startGatewayControlServer, stopGatewayControlServer } from "./gateway-control-server";
+import { startGatewayControlServer, stopGatewayControlServer, buildWebuiHandoffUrl } from "./gateway-control-server";
 import { migrateOpenclawConfigForKernelUpgrade } from "./openclaw-config-migration";
-import { assertTrustedIpcSender } from "./ipc-sender-guard";
+import { assertTrustedIpcSender, chatUiEntryUrlPrefix, isTrustedChatUiUrl } from "./ipc-sender-guard";
 import { isSafeOpenExt } from "./safe-open";
 import { evaluateFileReadTarget, FILE_READ_MAX_BYTES, mimeTypeForPath } from "./file-read-base64";
 import { startAuthProxy, stopAuthProxy, setProxyAccessToken, setProxySearchDedicatedKey, getProxyPort } from "./kimi-auth-proxy";
@@ -155,14 +155,26 @@ const gateway = new GatewayProcess({
     tray.updateMenu();
     // gateway 就绪后立即通知 Chat UI 重连，避免盲等指数退避
     if (state === "running") {
+      const chatUiPrefix = chatUiEntryUrlPrefix();
       for (const w of BrowserWindow.getAllWindows()) {
-        if (!w.isDestroyed()) {
-          const port = gateway.getPort();
-          w.webContents.send("gateway:ready", {
-            token: gateway.getToken(),
-            gatewayUrl: `ws://127.0.0.1:${port}`,
-          });
+        if (w.isDestroyed()) {
+          continue;
         }
+        // P3-5：token 只推给可信 Chat UI 窗口（与 IPC sender 校验同一判定）。
+        // 窗口未加载出 URL（空串）时同样跳过——宁可少一次加速通知，也不把控制凭据
+        // 投递给来源不明的窗口。
+        const targetUrl = w.webContents.getURL();
+        if (!isTrustedChatUiUrl(targetUrl, chatUiPrefix)) {
+          log.warn(
+            `[gateway:ready] 跳过非可信窗口 id=${w.id} url=${log.sanitizeUrlForLog(targetUrl)}`,
+          );
+          continue;
+        }
+        const port = gateway.getPort();
+        w.webContents.send("gateway:ready", {
+          token: gateway.getToken(),
+          gatewayUrl: `ws://127.0.0.1:${port}`,
+        });
       }
       // WebBridge 更新静默检查（R79 F2）：webbridge 模式 + 距上次检查 >24h 才动，
       // 内部全 catch 不抛错——绝不阻塞/拖挂 gateway 启动路径。
@@ -397,12 +409,14 @@ async function ensureGatewayRunning(source: string): Promise<boolean> {
   for (let attempt = 1; attempt <= MAX_GATEWAY_START_ATTEMPTS; attempt++) {
     // try/catch：start/restart 内部同步 throw（如 clawhub wrapper 写盘被杀软锁定）
     // 不应打断重试链，也不应让 whenReady 启动链整体 reject（跳过失败弹窗与恢复流程）
+    // supervised: true（P0-2）——本函数自身就是带重试+失败上报的监督链，starting 阶段
+    // 子进程退出时不再触发 onCrash 崩溃重启（否则双链并发双倍消耗崩溃预算、双恢复入口）
     try {
       if (attempt === 1) {
-        await gateway.start();
+        await gateway.start({ supervised: true });
       } else {
         log.warn(`Gateway 启动重试 ${attempt}/${MAX_GATEWAY_START_ATTEMPTS}: ${source}`);
-        await gateway.restart();
+        await gateway.restart({ supervised: true });
       }
     } catch (err) {
       log.error(`Gateway 启动异常（第 ${attempt} 次尝试, ${source}）: ${err}`);
@@ -1113,11 +1127,20 @@ ipcMain.handle("app:dismiss-release-notes", (_e, version: string) => {
   }
 });ipcMain.on("app:open-webui", (event) => {
   if (!assertTrustedIpcSender(event, "app:open-webui")) return;
-  const port = gateway.getPort();
-  const token = gateway.getToken().trim();
-  // UI 端只从 URL fragment (#token=) 读取 token，不从 query param (?token=) 读取
-  const fragment = token ? `#token=${encodeURIComponent(token)}` : "";
-  shell.openExternal(`http://127.0.0.1:${port}/${fragment}`);
+  // F5：不再把 gateway token 直接交给 OS/浏览器打开（完整 URL 会进入浏览器历史，
+  // 开启历史同步即上传云端，而该 token 是本机 gateway 的全量控制凭据）。改为先跳
+  // 控制服务的一次性 handoff：shell 交给浏览器的只有 60s 内有效、用后即废的 code。
+  // 落地 URL 仍带 token（浏览器提交重定向后的 URL），由 Control UI 启动时的
+  // history.replaceState 清理——见 gateway-control-server.ts 的实测残留面说明。
+  const handoffUrl = buildWebuiHandoffUrl();
+  if (handoffUrl) {
+    shell.openExternal(handoffUrl);
+    return;
+  }
+  // 控制服务绑定失败（极罕见）时的降级：只开不带 token 的直连 URL，用户在 Control UI
+  // 的连接页手动填 token。绝不降级回「URL 带 token」的老行为——那正是本缺陷本体。
+  log.warn("[app:open-webui] 控制服务未就绪，降级为不带 token 的直连 URL");
+  shell.openExternal(`http://127.0.0.1:${gateway.getPort()}/`);
 });
 ipcMain.handle("gateway:port", (event) => {
   if (!assertTrustedIpcSender(event, "gateway:port")) throw new Error("IPC sender not trusted");
@@ -1163,6 +1186,10 @@ async function quit(): Promise<void> {
   await stopAuthProxy();
   await stopGatewayControlServer();
   windowManager.destroy();
+  // P0-1：等游离的 start/restart 操作落定再停 gateway——否则 doStart 预启动窗口
+  // 与 stop() 竞争，退出路径可能在 stop() 返回后 spawn 出孤儿 gateway 占端口
+  // （inflightGatewayOp 已 .catch 包裹必定 resolve，await 不会 reject）
+  await inflightGatewayOp;
   await gateway.stop();
   tray.destroy();
   app.quit();
@@ -1377,6 +1404,11 @@ app.whenReady().then(async () => {
       const ok = await ensureGatewayRunning("gateway-control:restart");
       if (!ok) throw new Error("Gateway 重启后未通过健康检查");
     },
+    // F5：webui handoff 的落地目标取实时值（gateway 重启会换端口/token）
+    getWebuiHandoffTarget: () => {
+      const token = gateway.getToken().trim();
+      return token ? { token, port: gateway.getPort() } : null;
+    },
   }).then((port) => {
     if (port === null) {
       log.warn("[gateway-control] 控制服务未能启动，CLI gateway 命令不可用");
@@ -1540,7 +1572,11 @@ app.on("before-quit", (event) => {
   if (!quitCleanupProceeding) {
     quitCleanupProceeding = true;
     event.preventDefault();
-    gateway.stop()
+    // P0-1：同 quit()，先等在途 start/restart（inflightGatewayOp）落定再停 gateway，
+    // 避免预启动窗口与 stop() 竞争在退出路径留下孤儿进程
+    inflightGatewayOp
+      .catch(() => {})
+      .then(() => gateway.stop())
       .catch(() => {})
       .finally(() => {
         try {

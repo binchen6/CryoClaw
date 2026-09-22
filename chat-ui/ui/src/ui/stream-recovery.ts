@@ -110,6 +110,60 @@ export function isStreamStalled(probe: StreamIdleProbe): boolean {
   return probe.now - probe.lastActivityAt > probe.idleMs;
 }
 
+// ── R62 预对齐退避（P3-6） ──
+
+/**
+ * 第 alignCount 次（0-based）预对齐相对「最后一次流式活动」的空闲阈值：
+ * 首次 baseMs，之后每次间隔翻倍、单步封顶 capMs。默认 45s → 135s(+90s)
+ * → 315s(+180s) → 615s(+300s) → 915s(+300s) → …
+ */
+export function preAlignThresholdMs(
+  alignCount: number,
+  baseMs = 45_000,
+  capMs = 300_000,
+): number {
+  let total = 0;
+  let step = baseMs;
+  for (let i = 0; i <= alignCount; i++) {
+    total += step;
+    step = Math.min(step * 2, capMs);
+  }
+  return total;
+}
+
+let preAlignRunId: string | null = null;
+let preAlignCount = 0;
+
+/** run 终态清理/切会话时重置退避状态，下一 run 从首次阈值重新起算 */
+export function resetStreamPreAlign() {
+  preAlignRunId = null;
+  preAlignCount = 0;
+}
+
+/**
+ * 本 tick 是否应做预对齐：同一 runId 内按指数退避阈值逐个放行并计数；
+ * 换 runId（uuid 唯一）自动重新起算，等价于 run 生命周期内去重。
+ * 取舍：run 期间内核可能持续落盘中间产物（子代理产出、早前轮次补写），
+ * 「只对齐一次」会漏掉后续补写；沿用每 30s ticker 全量拉又浪费带宽与渲染。
+ * 指数退避在及时性与开销间折中。
+ */
+export function shouldStreamPreAlign(
+  runId: string,
+  idleForMs: number,
+  baseMs = 45_000,
+  capMs = 300_000,
+): boolean {
+  if (preAlignRunId !== runId) {
+    preAlignRunId = runId;
+    preAlignCount = 0;
+  }
+  if (idleForMs < preAlignThresholdMs(preAlignCount, baseMs, capMs)) {
+    return false;
+  }
+  preAlignCount += 1;
+  return true;
+}
+
 // ── 滞后读恢复判定 ──
 
 /**

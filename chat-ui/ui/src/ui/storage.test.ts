@@ -36,6 +36,59 @@ test("网页场景不应静默信任 query 中的 gatewayUrl，仍应保留原�
   assert.equal(settings.gatewayUrl, "wss://persisted.example/ws");
 });
 
+test("F8：持久化的非法 gatewayUrl（脏数据/注入）应回退默认地址", () => {
+  const settings = parseUiSettings(
+    JSON.stringify({ gatewayUrl: "javascript:alert(1)" }),
+    { protocol: "file:", host: "", search: "", hash: "" },
+  );
+  assert.equal(settings.gatewayUrl, "ws://127.0.0.1:18789");
+
+  const malformed = parseUiSettings(
+    JSON.stringify({ gatewayUrl: "not a url" }),
+    { protocol: "file:", host: "", search: "", hash: "" },
+  );
+  assert.equal(malformed.gatewayUrl, "ws://127.0.0.1:18789");
+});
+
+test("F8：file 协议注入的非法 gatewayUrl 不得覆盖配置（回退默认）", () => {
+  const withoutCache = parseUiSettings(null, {
+    protocol: "file:",
+    host: "",
+    search: "?gatewayUrl=javascript%3Aalert(1)",
+    hash: "",
+  });
+  assert.equal(
+    withoutCache.gatewayUrl,
+    "ws://127.0.0.1:18789",
+    "非法注入应回退默认 loopback 而非透传",
+  );
+
+  const withValidCache = parseUiSettings(
+    JSON.stringify({ gatewayUrl: "ws://127.0.0.1:19466" }),
+    {
+      protocol: "file:",
+      host: "",
+      search: "?gatewayUrl=javascript%3Aalert(1)",
+      hash: "",
+    },
+  );
+  assert.equal(
+    withValidCache.gatewayUrl,
+    "ws://127.0.0.1:19466",
+    "非法注入被丢弃后，合法的持久化地址应保留",
+  );
+});
+
+test("F8：合法注入与持久化地址不受影响", () => {
+  const injected = parseUiSettings(null, {
+    protocol: "file:",
+    host: "",
+    search: "?gatewayUrl=ws%3A%2F%2F127.0.0.1%3A18789",
+    hash: "",
+  });
+  assert.equal(injected.gatewayUrl, "ws://127.0.0.1:18789");
+});
+
 test("file 协议下应从 URL fragment 读取首屏视图，确保 Setup 直接首帧生效", () => {
   const settings = parseUiSettings(null, {
     protocol: "file:",

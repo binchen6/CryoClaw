@@ -9,6 +9,7 @@ import {
   CUSTOM_PROVIDER_PRESETS,
   verifyProvider,
   readUserConfig,
+  readUserConfigForWrite,
   writeUserConfig,
 } from "./provider-config";
 import * as log from "./logger";
@@ -118,8 +119,8 @@ function persistSetupProviderConfig(params: {
   };
 }): void {
   const { providerKey, providerConfig, primaryModel, kimiCode } = params;
-  // 读取现有配置
-  const config = readUserConfig();
+  // 读取现有配置（baseSnapshot：写前比对磁盘，避免覆盖期间 gateway 落盘的 config.patch）
+  const { config, baseSnapshot } = readUserConfigForWrite();
 
   // 初始化嵌套结构
   config.models ??= {};
@@ -170,7 +171,7 @@ function persistSetupProviderConfig(params: {
   // Setup 完成标记仅在 Step 3（Gateway 成功启动）后写入 wizard.lastRunAt。
   delete config.wizard;
 
-  writeUserConfig(config);
+  writeUserConfig(config, { baseSnapshot });
   // 配置落盘成功后再缓存埋点上下文，避免失败时污染事件参数。
   latestSetupCompletedProps = buildSetupCompletedProps(params.trackedSource, config);
 }
@@ -414,7 +415,7 @@ export function registerSetupIpc(deps: SetupIpcDeps): void {
 
       // 写入 session-memory hook 配置
       try {
-        const config = readUserConfig();
+        const { config, baseSnapshot } = readUserConfigForWrite();
         config.hooks ??= {};
         config.hooks.internal = {
           enabled: true,
@@ -423,7 +424,7 @@ export function registerSetupIpc(deps: SetupIpcDeps): void {
             "session-memory": { enabled: sessionMemory },
           },
         };
-        writeUserConfig(config);
+        writeUserConfig(config, { baseSnapshot });
       } catch (err: any) {
         log.error(`[setup] 写入 hooks 配置失败: ${err?.message ?? err}`);
       }
@@ -431,9 +432,9 @@ export function registerSetupIpc(deps: SetupIpcDeps): void {
       // 用户在 Setup 末关闭了 WebBridge toggle → 直接写 openclaw 模式，不跑 webbridge 后台任务
       if (!enableWebbridge) {
         try {
-          const config = readUserConfig();
+          const { config, baseSnapshot } = readUserConfigForWrite();
           Object.assign(config, applyBrowserModeConfig(config, "openclaw"));
-          writeUserConfig(config);
+          writeUserConfig(config, { baseSnapshot });
           log.info("[setup] 用户禁用 WebBridge → 已写入 openclaw 模式");
         } catch (err: any) {
           log.error(`[setup] 写入 openclaw 模式失败: ${err?.message ?? err}`);
@@ -451,11 +452,11 @@ export function registerSetupIpc(deps: SetupIpcDeps): void {
 
       try {
         // gateway schema 兼容：保留 wizard.lastRunAt
-        const config = readUserConfig();
+        const { config, baseSnapshot } = readUserConfigForWrite();
         config.wizard ??= {};
         config.wizard.lastRunAt = new Date().toISOString();
         delete config.wizard.pendingAt;
-        writeUserConfig(config);
+        writeUserConfig(config, { baseSnapshot });
 
         // 写入 cryoclaw.config.json 归属标记
         markSetupComplete();

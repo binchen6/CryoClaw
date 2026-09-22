@@ -210,6 +210,12 @@ export type DreamEntry = {
   body: string;
 };
 
+// 内部定位结果：在 DreamEntry 基础上附带条目在托管区字符串中的 [start, end)
+// 字符区间（区间仅覆盖条目正文，不含两侧分隔行）。删除必须按区间切片，
+// 不能用日期文本做锚点——两条梦境同日期（精度到分钟）时锚点会命中错误条目，
+// 正文恰好含 *同日期文本* 时锚点会命中正文。
+type LocatedDreamEntry = DreamEntry & { start: number; end: number };
+
 function parseDreamDate(text: string): number | null {
   // "September 7, 2026 at 7:45 AM GMT+8" → 去掉时区尾巴与 "at" 连接词再解析
   const cleaned = text
@@ -227,55 +233,85 @@ function parseDreamDate(text: string): number | null {
  * 分隔、`*日期*` 开头的条目；返回顺序为最新在前。
  */
 export function parseDreamEntries(content: string): DreamEntry[] {
+  return locateDreamEntries(content).map(({ index, dateText, dateMs, body }) => ({
+    index, dateText, dateMs, body,
+  }));
+}
+
+// 扫描托管区并给出每条目在托管区字符串中的字符区间（start/end 为文件序，
+// 即与 parseDreamEntries 反转前的出现顺序一致）。分隔行本身不算进任何条目。
+function locateDreamEntries(content: string): LocatedDreamEntry[] {
   let zone = content;
+  let zoneOffset = 0; // zone 在 content 中的起点
   const start = content.indexOf(DREAMS_START_MARKER);
   if (start >= 0) {
     const end = content.indexOf(DREAMS_END_MARKER, start);
-    zone = end > start ? content.slice(start + DREAMS_START_MARKER.length, end) : content.slice(start + DREAMS_START_MARKER.length);
+    zoneOffset = start + DREAMS_START_MARKER.length;
+    zone = end > start ? content.slice(zoneOffset, end) : content.slice(zoneOffset);
   }
-  const rawEntries = zone
-    .split(/(?:^|\r?\n)[-]{3,}\r?\n/)
-    .map((s) => s.trim())
-    .filter((s) => s !== "");
-  const entries: DreamEntry[] = [];
-  for (const raw of rawEntries) {
-    const m = /^\*([^*]+)\*\s*\n?([\s\S]*)$/.exec(raw);
+
+  // 与旧 split(/(?:^|\r?\n)[-]{3,}\r?\n/) 等价的分段，但保留每段在 zone 中的偏移
+  const segments: Array<{ text: string; offset: number }> = [];
+  const sepRe = /(?:^|\r?\n)[-]{3,}\r?\n/g;
+  let segStart = 0;
+  for (let m = sepRe.exec(zone); m; m = sepRe.exec(zone)) {
+    segments.push({ text: zone.slice(segStart, m.index), offset: segStart });
+    segStart = m.index + m[0].length;
+  }
+  segments.push({ text: zone.slice(segStart), offset: segStart });
+
+  const entries: LocatedDreamEntry[] = [];
+  for (const seg of segments) {
+    // trim 后记录正文在 zone 中的精确区间（切掉首尾空白）
+    const leading = seg.text.length - seg.text.trimStart().length;
+    const trimmed = seg.text.trim();
+    if (trimmed === "") continue;
+    const m = /^\*([^*]+)\*\s*\n?([\s\S]*)$/.exec(trimmed);
     if (!m) continue;
     const dateText = m[1].trim();
     const body = m[2].trim();
     if (!dateText && !body) continue;
-    entries.push({ index: 0, dateText, dateMs: parseDreamDate(dateText), body });
+    entries.push({
+      index: 0,
+      dateText,
+      dateMs: parseDreamDate(dateText),
+      body,
+      start: zoneOffset + seg.offset + leading,
+      end: zoneOffset + seg.offset + leading + trimmed.length,
+    });
   }
-  // 文件内新条目追加在托管区末尾（旧在前）；展示要最新在前
+  // 文件内新条目追加在托管区末尾（旧在前）；展示要最新在前。
+  // 反转后 index 即展示序，start/end 区间不受反转影响（指向各自条目原文）。
   entries.reverse();
   return entries.map((e, i) => ({ ...e, index: i }));
 }
 
 /** 从日记内容中移除第 index 条（展示序，0 = 最新）。返回 null 表示未找到边界未改动。 */
 export function removeDreamEntry(content: string, index: number): string | null {
-  const entries = parseDreamEntries(content);
+  const entries = locateDreamEntries(content);
   const target = entries[index];
   if (!target) return null;
-  // 在托管区内按原文重新定位：以日期行为锚点，删除该条目（含其后的 --- 分隔行）
-  const start = content.indexOf(DREAMS_START_MARKER);
-  const zoneStart = start >= 0 ? start + DREAMS_START_MARKER.length : 0;
+
+  // 按目标条目的字符区间切片删除，吞掉一个相邻分隔行（优先尾部，其次头部），
+  // 避免残留空分隔段落。不使用日期文本锚点，同日期条目与正文撞锚均安全。
+  const startMarkerIdx = content.indexOf(DREAMS_START_MARKER);
+  const zoneStart = startMarkerIdx >= 0 ? startMarkerIdx + DREAMS_START_MARKER.length : 0;
   const endIdx = content.indexOf(DREAMS_END_MARKER, zoneStart);
   const zoneEnd = endIdx >= 0 ? endIdx : content.length;
-  const zone = content.slice(zoneStart, zoneEnd);
-  const anchor = `*${target.dateText}*`;
-  const a = zone.indexOf(anchor);
-  if (a < 0) return null;
-  // 条目起点：日期行所在段落（向上吞掉紧邻的分隔行）
-  let entryStart = a;
-  const before = zone.slice(0, a);
-  const sepMatch = /\n[-]{3,}\s*$/.exec(before);
-  if (sepMatch) entryStart = a - sepMatch[0].length;
-  // 条目终点：下一个分隔行或托管区末尾
-  const rest = zone.slice(a);
-  const nextSep = /\r?\n[-]{3,}\r?\n/.exec(rest);
-  const entryEnd = nextSep ? a + nextSep.index + nextSep[0].length : zoneEnd;
-  const nextZone = `${zone.slice(0, Math.max(entryStart, 0))}${zone.slice(entryEnd)}`;
-  return content.slice(0, zoneStart) + nextZone + content.slice(zoneEnd);
+
+  let entryStart = target.start;
+  let entryEnd = target.end;
+  const after = content.slice(entryEnd, zoneEnd);
+  const trailingSep = /^\s*[-]{3,}\r?\n/.exec(after);
+  if (trailingSep) {
+    entryEnd += trailingSep[0].length;
+  } else {
+    const before = content.slice(zoneStart, entryStart);
+    const leadingSep = /(?:^|\r?\n)[-]{3,}\r?\n\s*$/.exec(before);
+    if (leadingSep) entryStart -= leadingSep[0].length;
+  }
+
+  return content.slice(0, entryStart) + content.slice(entryEnd);
 }
 
 /** 删除 DREAMS.md 中第 index 条梦境（先备份 .bak）。返回是否删除成功。 */

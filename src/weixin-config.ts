@@ -2,6 +2,7 @@ import * as fs from "fs";
 import * as https from "https";
 import * as path from "path";
 import { createRequire } from "node:module";
+import { writeFileAtomicSync } from "./atomic-write";
 import { resolveGatewayPackageDir, resolveUserExtensionsDir, resolveUserStateDir } from "./constants";
 
 export const WEIXIN_PLUGIN_ID = "openclaw-weixin";
@@ -308,14 +309,23 @@ export function saveWeixinLoginResult(result: WeixinQrPollResult): string {
   fs.writeFileSync(accountPath, JSON.stringify(data, null, 2), "utf-8");
   try { fs.chmodSync(accountPath, 0o600); } catch {}
 
-  // 注册到账号索引
+  // 注册到账号索引。该索引由本进程与 gateway 内微信插件
+  // （openclaw-weixin/src/auth/accounts.ts 的 registerWeixinAccountId）共享，
+  // 两边都是 read-modify-write 且无跨进程锁：
+  //   - 读用 listWeixinAccountIds()（每次重读磁盘，不用内存态），把 read→write 窗口压到最小，
+  //     避免覆盖插件刚追加的条目；
+  //   - 写用 writeFileAtomicSync（tmp + fsync + rename），避免半写/截断的 accounts.json
+  //     落盘——此类文件会被 listWeixinAccountIds() 的 catch 吞掉后返回空列表，
+  //     表现为"账号文件还在但列表不展示"。
+  // 跨进程丢失更新的窗口无法在本侧彻底消除（插件侧写入不受本仓库控制），
+  // 但本侧不会再写出损坏或半写的索引。
   const stateDir = resolveWeixinStateDir();
   fs.mkdirSync(stateDir, { recursive: true });
 
   const indexPath = resolveAccountIndexPath();
   const existing = listWeixinAccountIds();
   if (!existing.includes(normalizedId)) {
-    fs.writeFileSync(indexPath, JSON.stringify([...existing, normalizedId], null, 2), "utf-8");
+    writeFileAtomicSync(indexPath, JSON.stringify([...existing, normalizedId], null, 2));
   }
 
   return normalizedId;
@@ -341,8 +351,8 @@ export function clearWeixinAccounts(): void {
       }
     }
   } catch {}
-  // 清空账号索引
+  // 清空账号索引（原子写：索引与微信插件共享，半写的索引会让列表整体读不出来）
   try {
-    fs.writeFileSync(indexPath, "[]", "utf-8");
+    writeFileAtomicSync(indexPath, "[]");
   } catch {}
 }

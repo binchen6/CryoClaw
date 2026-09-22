@@ -31,7 +31,7 @@ function loadPackageResourcesSandbox(options = {}) {
   const sandbox = {
     require,
     __dirname,
-    console,
+    console: options.console || console,
     process: sandboxProcess,
     exports: {},
     module: { exports: {} },
@@ -455,4 +455,119 @@ test("verifyOutput 应要求基础扩展插件存在", () => {
   );
 
   fs.rmSync(tmpRoot, { recursive: true, force: true });
+});
+
+// P0-11：asar 模式下注入插件 manifest 必须有产物校验。win-arm64 交叉编译下
+// bundleAllPlugins 的注入失败只 log 跳过，9 个注入插件全缺也会绿灯出包。
+const INJECTED_PLUGIN_IDS = [
+  "kimi-search",
+  "dingtalk-connector",
+  "feishu",
+  "qqbot",
+  "moonshot",
+  "kimi",
+  "zai",
+  "qwen",
+  "deepseek",
+];
+
+// 用真实 asar 打包一份只含校验所需文件的 fixture gateway 树。
+async function packFixtureAsar(tmpRoot, presentExtIds) {
+  const asar = require("@electron/asar");
+  const gatewayDir = path.join(tmpRoot, "gateway-src");
+  writeFixture(path.join(gatewayDir, "node_modules", "openclaw", "openclaw.mjs"), "export {};\n");
+  writeFixture(path.join(gatewayDir, "node_modules", "openclaw", "dist", "entry.js"), "module.exports = {};\n");
+  writeFixture(path.join(gatewayDir, "node_modules", "clawhub", "bin", "clawdhub.js"), "module.exports = {};\n");
+  writeFixture(
+    path.join(gatewayDir, "node_modules", "openclaw", "dist", "extensions", "image-generation-core", "openclaw.plugin.json"),
+    "{}\n"
+  );
+  for (const id of presentExtIds) {
+    writeFixture(
+      path.join(gatewayDir, "node_modules", "openclaw", "dist", "extensions", id, "openclaw.plugin.json"),
+      "{}\n"
+    );
+  }
+  const asarPath = path.join(tmpRoot, "gateway.asar");
+  await asar.createPackage(gatewayDir, asarPath);
+  return asarPath;
+}
+
+// 捕获 die() 写到 console.error 的消息（die 只打日志后 process.exit，
+// 抛出的 Error 里不含缺失详情，消息文本需从 console.error 断言）。
+function loadVerifySandbox() {
+  const errors = [];
+  const consoleShim = Object.create(console, {
+    error: { value: (...args) => errors.push(args.join(" ")) },
+  });
+  const sandbox = loadPackageResourcesSandbox({
+    console: consoleShim,
+    process: Object.assign(Object.create(process), {
+      argv: process.argv.slice(),
+      env: { ...process.env },
+      exit(code) {
+        throw new Error(`process.exit:${code}`);
+      },
+    }),
+  });
+  return { sandbox, errors };
+}
+
+test("verifyAsarContents: 9 个注入插件 manifest 齐全 → 通过", async () => {
+  const { sandbox } = loadVerifySandbox();
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "cryoclaw-asar-verify-"));
+  try {
+    const asarPath = await packFixtureAsar(tmpRoot, INJECTED_PLUGIN_IDS);
+    sandbox.verifyAsarContents(asarPath, { winArm64Cross: false });
+  } finally {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});
+
+test("verifyAsarContents: 缺任一必需插件 → 抛错且消息含插件 id", async () => {
+  for (const id of INJECTED_PLUGIN_IDS.filter((i) => i !== "kimi-search")) {
+    const { sandbox, errors } = loadVerifySandbox();
+    const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "cryoclaw-asar-verify-"));
+    try {
+      const present = INJECTED_PLUGIN_IDS.filter((i) => i !== id);
+      const asarPath = await packFixtureAsar(tmpRoot, present);
+      assert.throws(
+        () => sandbox.verifyAsarContents(asarPath, { winArm64Cross: false }),
+        /process\.exit:1/
+      );
+      assert.match(
+        errors.join("\n"),
+        new RegExp(`extensions/${id}/openclaw\\.plugin\\.json`)
+      );
+    } finally {
+      fs.rmSync(tmpRoot, { recursive: true, force: true });
+    }
+  }
+});
+
+test("verifyAsarContents: win-arm64 交叉编译仅缺 kimi-search → 豁免通过", async () => {
+  const { sandbox } = loadVerifySandbox();
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "cryoclaw-asar-verify-"));
+  try {
+    const present = INJECTED_PLUGIN_IDS.filter((i) => i !== "kimi-search");
+    const asarPath = await packFixtureAsar(tmpRoot, present);
+    sandbox.verifyAsarContents(asarPath, { winArm64Cross: true });
+
+    // 交叉编译下缺其他必需插件仍必须 die
+    const { sandbox: sandbox2, errors: errors2 } = loadVerifySandbox();
+    const present2 = INJECTED_PLUGIN_IDS.filter((i) => i !== "deepseek");
+    const tmpRoot2 = fs.mkdtempSync(path.join(os.tmpdir(), "cryoclaw-asar-verify-"));
+    try {
+      const asarPath2 = await packFixtureAsar(tmpRoot2, present2);
+      assert.throws(
+        () => sandbox2.verifyAsarContents(asarPath2, { winArm64Cross: true }),
+        /process\.exit:1/
+      );
+      assert.match(errors2.join("\n"), /extensions\/deepseek\/openclaw\.plugin\.json/);
+    } finally {
+      fs.rmSync(tmpRoot2, { recursive: true, force: true });
+    }
+  } finally {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
 });
