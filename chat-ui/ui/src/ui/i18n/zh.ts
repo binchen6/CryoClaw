@@ -851,7 +851,7 @@ export const zhDict: Record<string, string> = {
   "appUpdate.retryDownload": "重试下载",
 
   // Settings: Channels
-  "settings.channels.desc": "连接微信、飞书、企业微信、钉钉、Kimi 或 QQ，从聊天软件远程控制 CryoClaw",
+  "settings.channels.desc": "连接微信、飞书、企业微信、钉钉或 QQ，从聊天软件远程控制 CryoClaw",
   "settings.channels.enable": "启用",
   "settings.channels.weixin": "微信",
   "settings.channels.weixin.desc": "连接微信 在微信中直接与 AI 对话",

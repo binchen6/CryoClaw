@@ -812,7 +812,7 @@ export const enDict: Record<string, string> = {
   "appUpdate.retryDownload": "Retry Download",
 
   // Settings: Channels
-  "settings.channels.desc": "Connect WeChat, Feishu, WeCom, DingTalk, Kimi, or QQ to remote-control CryoClaw from chat apps",
+  "settings.channels.desc": "Connect WeChat, Feishu, WeCom, DingTalk, or QQ to remote-control CryoClaw from chat apps",
   "settings.channels.enable": "Enable",
   "settings.channels.weixin": "WeChat",
   "settings.channels.weixin.desc": "Connect WeChat to chat with AI directly",

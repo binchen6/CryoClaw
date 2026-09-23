@@ -148,7 +148,8 @@ export function registerWorkspaceIpc(): void {
     try {
       const entries = await fs.promises.readdir(target, { withFileTypes: true });
       const items = entries
-        .filter((e) => !e.name.startsWith("."))
+        // 隐藏点目录与依赖目录：预览面板面向用户产物，node_modules 展开即数千项噪音
+        .filter((e) => !e.name.startsWith(".") && e.name !== "node_modules")
         .map((e) => ({
           name: e.name,
           isDir: e.isDirectory(),

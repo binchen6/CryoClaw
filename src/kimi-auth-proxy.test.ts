@@ -45,7 +45,7 @@ function requestWithHeaders(
   });
 }
 
-test("P0-7：带 sec-fetch-site/sec-fetch-mode 头的浏览器请求 → 403", async (t) => {
+test("P0-7：带浏览器专属 Fetch Metadata 头的请求 → 403", async (t) => {
   const port = await startAuthProxy(0);
   t.after(() => stopAuthProxy());
   setProxyAccessToken("test-token");
@@ -58,12 +58,29 @@ test("P0-7：带 sec-fetch-site/sec-fetch-mode 头的浏览器请求 → 403", a
   assert.equal(
     await requestWithHeaders(port, "/coding/v1/messages", "POST", { "sec-fetch-mode": "no-cors" }),
     403,
-    "sec-fetch-mode → 403",
+    "sec-fetch-mode: no-cors → 403（纯浏览器语义）",
+  );
+  assert.equal(
+    await requestWithHeaders(port, "/coding/v1/messages", "POST", { "sec-fetch-mode": "navigate" }),
+    403,
+    "sec-fetch-mode: navigate → 403（纯浏览器语义）",
+  );
+  assert.equal(
+    await requestWithHeaders(port, "/coding/v1/messages", "POST", { "sec-fetch-dest": "empty" }),
+    403,
+    "sec-fetch-dest → 403（浏览器专属）",
   );
   assert.equal(
     await requestWithHeaders(port, "/nope", "GET", { "sec-fetch-site": "same-origin" }),
     403,
     "即便是 same-origin 也拒绝：代理只服务本机非浏览器客户端",
+  );
+  // 回归（2026.922.0 事故）：undici fetch 会按规范自动附带 sec-fetch-mode: cors，
+  // 不得被防护层误伤——404 证明穿过了防护层进入路由
+  assert.equal(
+    await requestWithHeaders(port, "/nope", "GET", { "sec-fetch-mode": "cors" }),
+    404,
+    "undici 签名（仅 sec-fetch-mode: cors）→ 放行",
   );
 });
 

@@ -11,9 +11,12 @@
  * 代理只监听 127.0.0.1，按路由表白名单转发到固定上游。
  *
  * 安全审计 P0-7 补充防护层（替代 path secret，堵浏览器跨站滥用）：
- * 1. 带 sec-fetch-site/sec-fetch-mode 头的请求一律 403——这些头是浏览器自动附加的
- *    forbidden header，恶意网页即使用 no-cors fetch 也无法剥离，而本机 Node 客户端
- *    （内核 sidecar、主进程 fetch）不会发送；
+ * 1. 带浏览器专属 Fetch Metadata 头的请求一律 403——sec-fetch-site /
+ *    sec-fetch-dest 由浏览器自动附加且为 forbidden header，恶意网页即使用
+ *    no-cors fetch 也无法剥离。注意：本机 Node 客户端用的 undici fetch 会按
+ *    fetch 规范自动附加 sec-fetch-mode: cors（但不带 site/dest），因此
+ *    sec-fetch-mode 仅当其值非 cors（navigate/no-cors 等纯浏览器语义）时才拒绝，
+ *    否则 gateway sidecar 的全部模型请求会被误伤 403（2026.922.0 回归事故）；
  * 2. Host 头白名单（127.0.0.1:<port> / localhost:<port>），其他值（DNS rebinding
  *    把恶意域名解析到回环）一律 403；
  * 3. OPTIONS 直接 405，不带真实 token 转发 preflight。
@@ -74,14 +77,20 @@ function handleRequest(
   const url = clientReq.url ?? "/";
 
   // ── 跨站/重绑定防护层（P0-7）：在 route 匹配之前拒绝 ──
-  // 1) 浏览器来源请求：sec-fetch-* 由浏览器自动附加且为 forbidden header，
-  //    恶意网页无法剥离（no-cors fetch 也会带上），本机 Node 客户端不会发送
+  // 1) 浏览器来源请求：sec-fetch-site / sec-fetch-dest 由浏览器自动附加且为
+  //    forbidden header，恶意网页无法剥离。但 undici fetch（gateway sidecar、
+  //    主进程 fetch）会按规范自动附带 sec-fetch-mode: cors，因此 mode 只在取值
+  //    为非 cors 的纯浏览器语义（navigate/no-cors 等）时才拒绝
+  const secFetchMode = clientReq.headers["sec-fetch-mode"];
   if (
     clientReq.headers["sec-fetch-site"] !== undefined ||
-    clientReq.headers["sec-fetch-mode"] !== undefined
+    clientReq.headers["sec-fetch-dest"] !== undefined ||
+    (secFetchMode !== undefined && secFetchMode !== "cors")
   ) {
+    // 响应体写清拒绝原因：排查时上游客户端会把 body 带进错误日志（2026.922.0
+    // 误伤事故中 body 只有 "Forbidden"，定位多走了大量弯路）
     clientRes.writeHead(403, { "Content-Type": "text/plain" });
-    clientRes.end("Forbidden");
+    clientRes.end("Forbidden: browser-only fetch-metadata headers rejected by kimi-auth-proxy");
     return;
   }
 
@@ -90,7 +99,7 @@ function handleRequest(
   const hostHeader = (clientReq.headers.host ?? "").toLowerCase();
   if (hostHeader !== `127.0.0.1:${currentPort}` && hostHeader !== `localhost:${currentPort}`) {
     clientRes.writeHead(403, { "Content-Type": "text/plain" });
-    clientRes.end("Forbidden");
+    clientRes.end("Forbidden: host not in loopback allowlist (kimi-auth-proxy)");
     return;
   }
 
