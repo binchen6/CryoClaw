@@ -36,7 +36,9 @@ const MAX_REDIRECTS = 3;
 export function resolvePinsUrls(): string[] {
   const override = process.env.CRYOCLAW_WEBBRIDGE_PINS_URL?.trim();
   if (override) {
-    const list = override.split(/[\s,]+/).filter(Boolean);
+    // 注释声明「仅 https」：env 覆盖来自用户环境，可能夹带 http/其他 scheme，
+    // 不过滤会被当作降级通道劫持 pins 清单
+    const list = override.split(/[\s,]+/).filter((u) => u.startsWith("https://"));
     if (list.length > 0) return list;
   }
   return DEFAULT_PINS_URLS;

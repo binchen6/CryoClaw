@@ -264,11 +264,13 @@ let commandIndex = 0;
 
 // 自适应高度（首次挂载时延迟到下一帧，确保 CSS 已应用）。
 // lit ref 回调是内联箭头函数，每次渲染 commit 都会重新执行——流式期间每帧
-// 重渲染都会调度一次 rAF 布局，而 draft 未变时高度必然不变。用 value+宽度
+// 重渲染都会调度一次 rAF 布局，而 draft 未变时高度必然不变。用 value+宽度+换行数
 // 指纹跳过冗余布局（style 类与字体均不变，指纹不变则高度不变）。
 function adjustTextareaHeight(el: HTMLTextAreaElement, deferred = false) {
   const apply = () => {
-    const fingerprint = `${el.value.length}:${el.clientWidth}`;
+    // 指纹含换行数：等长但换行数不同的 value 高度不同（scrollHeight 随 soft-wrap 变化），
+    // 只有长度+宽度会漏掉这种碰撞
+    const fingerprint = `${el.value.length}:${el.clientWidth}:${el.value.split("\n").length - 1}`;
     if (el.dataset.hAdjust === fingerprint) {
       return;
     }

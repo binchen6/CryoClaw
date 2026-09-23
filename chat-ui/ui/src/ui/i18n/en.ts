@@ -646,6 +646,7 @@ export const enDict: Record<string, string> = {
   "settings.advanced.wbUpdateAvailable": "New version available",
   "settings.advanced.wbUpdateDone": "WebBridge updated",
   "settings.advanced.wbUpdateFailed": "Update failed",
+  "settings.advanced.wbUpdateSwapFailed": "WebBridge file swap failed (the file may be locked by security software). Please try again later.",
   "settings.advanced.wbUpdateBusy": "Another WebBridge operation is in progress. Please try again later.",
 
   // Settings: Backup

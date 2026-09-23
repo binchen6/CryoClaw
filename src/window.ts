@@ -163,7 +163,8 @@ export class WindowManager {
 
     // 渲染进程崩溃 / 无响应监控（R20：崩溃自动恢复 + 防崩循环熔断）
     this.win.webContents.on("render-process-gone", (_e, details) => {
-      log.error(`render-process-gone: reason=${details.reason} exitCode=${details.exitCode}`);
+      // 日志由 main.ts web-contents-created 的全局 attachRendererDebugHandlers 负责，
+      // 这里只保留崩溃自愈动作，避免同一事件记两遍
       // clean-exit 属正常生命周期，不恢复；其余（crashed/oom/killed/launch-failed…）
       // 自动 reload 自愈。60s 滑窗内最多恢复 3 次，防崩溃-重载死循环。
       if (details.reason === "clean-exit") return;
@@ -182,21 +183,13 @@ export class WindowManager {
     this.win.webContents.on("did-start-loading", () => {
       log.info("WebContents 开始加载");
     });
-    this.win.webContents.on("did-fail-load", (_event, code, description, url, isMainFrame) => {
+    this.win.webContents.on("did-fail-load", (_event, code, _description, url, isMainFrame) => {
       if (!isMainFrame) {
         return;
       }
-      // 脱敏：入口 URL 的 query 携带 gateway token，不得明文落盘
-      log.error(
-        `WebContents 主帧加载失败: code=${code} description=${description} url=${log.sanitizeUrlForLog(url)}`,
-      );
+      // 失败日志由全局 attachRendererDebugHandlers 记录，这里只保留虚拟路径
+      // 刷新兜底动作（R59），避免同一事件记两遍
       this.recoverVirtualPathReload(code, url);
-    });
-    this.win.webContents.on("did-finish-load", () => {
-      log.info("WebContents 加载完成");
-    });
-    this.win.webContents.on("dom-ready", () => {
-      log.info("WebContents DOM 就绪");
     });
     this.win.webContents.on("did-stop-loading", () => {
       log.info("WebContents 停止加载");

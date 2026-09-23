@@ -23,7 +23,6 @@ import {
   getBrowserRunningState,
   getDefaultBrowser,
   getExtensionStates,
-  installForAllDetectedBrowsers,
   installForDefaultBrowser,
   isBrowserInstalled,
   isExtensionBlocklisted,
@@ -33,11 +32,9 @@ import {
   type ExtensionSpec,
 } from "../browser";
 import {
-  getWebbridgeInstallState,
   getWebbridgePrecheck,
   installWebbridge,
   installWebbridgeSkill,
-  readCacheManifest,
   resolveWebbridgeExtensionSpec,
   runWebbridgeSetupTask,
   type SetupTaskSummary,
@@ -605,7 +602,7 @@ export function registerWebbridgeIpc(opts: SettingsIpcOptions): void {  // â”€â
       }
       return {
         success: false,
-        code: result.reason === "pin-stale" ? "PIN_STALE" : result.reason === "busy" ? "WEBBRIDGE_BUSY" : "UPDATE_FAILED",
+        code: result.reason === "pin-stale" ? "PIN_STALE" : result.reason === "busy" ? "WEBBRIDGE_BUSY" : result.reason === "swap-failed" ? "SWAP_FAILED" : "UPDATE_FAILED",
         message: result.message ?? result.reason,
       };
     } catch (err: any) {

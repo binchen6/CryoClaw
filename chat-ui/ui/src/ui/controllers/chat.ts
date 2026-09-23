@@ -399,7 +399,12 @@ export async function sendChatMessage(
   // preserveRunState：队列「立即发送」在 run 活跃时直发 chat.send（内核注册为优先
   // followup，沿用当前 runId），不能覆盖 chatRunId/chatStream 等本轮流式状态，
   // 否则进行中的 agent 事件会因 runId 不匹配被过滤层全部丢弃。
-  opts?: { preserveRunState?: boolean },
+  opts?: {
+    preserveRunState?: boolean;
+    // out 参数：附件读取窗口内切换了会话时置 true。返回的 runId 带不出该信号，
+    // 调用方（app-chat.ts）据此跳过 last-active 写回等旧会话归属操作
+    sessionChangedDuringRead?: { value: boolean };
+  },
 ): Promise<string | null> {
   if (!state.client || !state.connected) {
     return null;
@@ -479,6 +484,9 @@ export async function sendChatMessage(
   // echo/run 态不写入——当前视图是新会话，写旧会话内容会污染其消息流与流式状态；
   // 切回原会话时由 loadChatHistory 从服务端刷新重建视图。
   const sessionChangedDuringRead = state.sessionKey !== requestSessionKey;
+  if (opts?.sessionChangedDuringRead) {
+    opts.sessionChangedDuringRead.value = sessionChangedDuringRead;
+  }
 
   // 构建用户消息内容块（用于本地 UI 显示）
   const contentBlocks: Array<{ type: string; text?: string; source?: unknown }> = [];

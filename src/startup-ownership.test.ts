@@ -1,4 +1,5 @@
 // 配置归属四态判定集成测试
+// 被测对象实际在 src/cryoclaw-config.ts（本文件仅承载用例，勿按文件名寻源）。
 import { test, expect, vi } from "vitest";
 import * as fs from "fs";
 import * as path from "path";

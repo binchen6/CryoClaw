@@ -17,6 +17,8 @@ test("formatCronSchedule：zh —— 每天/每周/每 N 分钟/every/at", () =>
   try {
     assert.equal(formatCronSchedule(job({ kind: "cron", expr: "0 3 * * *" })), "每天 03:00");
     assert.equal(formatCronSchedule(job({ kind: "cron", expr: "30 9 * * 1" })), "每周一 09:30");
+    // cron 里 0 和 7 都是周日：7 要归一为周日而不是落入「认不出保留原文」
+    assert.equal(formatCronSchedule(job({ kind: "cron", expr: "30 9 * * 7" })), "每周日 09:30");
     assert.equal(formatCronSchedule(job({ kind: "cron", expr: "*/5 * * * *" })), "每 5 分钟");
     assert.equal(
       formatCronSchedule(job({ kind: "cron", expr: "0 3 * * *", tz: "Asia/Shanghai" })),
@@ -37,6 +39,8 @@ test("formatCronSchedule：en —— Daily/Weekly/Every/Once", () => {
   try {
     assert.equal(formatCronSchedule(job({ kind: "cron", expr: "0 3 * * *" })), "Daily 03:00");
     assert.equal(formatCronSchedule(job({ kind: "cron", expr: "30 9 * * 5" })), "Weekly Fri 09:30");
+    // 7 = Sunday（与 0 同义），按 %7 归一
+    assert.equal(formatCronSchedule(job({ kind: "cron", expr: "30 9 * * 7" })), "Weekly Sun 09:30");
     assert.equal(formatCronSchedule(job({ kind: "cron", expr: "*/5 * * * *" })), "Every 5 min");
     assert.equal(
       formatCronSchedule(job({ kind: "cron", expr: "0 3 * * *", tz: "UTC" })),

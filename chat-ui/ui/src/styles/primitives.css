@@ -385,12 +385,15 @@
   font-size: var(--heading-sm);
   font-weight: var(--weight-semibold);
   color: var(--text-strong);
+  text-wrap: balance;
 }
 
 .empty-state__desc {
   font-size: var(--text-sm);
   color: var(--text-secondary);
   line-height: var(--leading-body);
+  /* 均衡折行：避免末行只剩一两个字（实测「…Markdown 预/览」断裂） */
+  text-wrap: balance;
 }
 
 .empty-state__actions {

@@ -205,10 +205,16 @@ async function pollForToken(
 
     // 授权成功
     if (data.access_token) {
+      // expires_in 缺失/非正数守卫（F6，对齐 doRefreshOAuthToken）：直接相加
+      // 会得到 NaN，此后 checkAndRefresh 里 NaN >= 300 恒 false，每 60s 空转
+      // 打满刷新接口
+      const expiresIn = Number(data.expires_in);
       return {
         access_token: data.access_token as string,
         refresh_token: data.refresh_token as string,
-        expires_at: Math.floor(Date.now() / 1000) + (data.expires_in as number),
+        expires_at:
+          Math.floor(Date.now() / 1000) +
+          (Number.isFinite(expiresIn) && expiresIn > 0 ? expiresIn : 3600),
         scope: (data.scope as string) ?? "",
         token_type: (data.token_type as string) ?? "Bearer",
       };

@@ -685,6 +685,7 @@ export const zhDict: Record<string, string> = {
   "settings.advanced.wbUpdateAvailable": "发现新版本",
   "settings.advanced.wbUpdateDone": "WebBridge 已更新",
   "settings.advanced.wbUpdateFailed": "更新失败",
+  "settings.advanced.wbUpdateSwapFailed": "WebBridge 文件换装失败（文件可能被安全软件锁定），请稍后重试",
   "settings.advanced.wbUpdateBusy": "正在进行另一项 WebBridge 操作，请稍后再试。",
 
   // Settings: Backup

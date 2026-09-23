@@ -184,7 +184,8 @@ export class GatewayProcess {
   // 串行化并发 start：入口守卫只在进入时检查一次，而 stopping 等待（≤6s）与
   // 崩溃冷却（≤5s）都在守卫之后、setState("starting") 之前 await——第二个并发
   // start 会同样穿过守卫并各自 spawn（旧世代 exit 被刻意忽略，孤儿 gateway
-  // 与新进程抢端口）。在途启动期间后续调用直接复用同一 promise。
+  // 与新进程抢端口）。下方 inflightStart 的复用即为该并发缺陷的修复：在途启动
+  // 期间后续调用直接复用同一 promise，不再重复 spawn。
   private inflightStart: Promise<void> | null = null;
 
   // 监督式启动标记（P0-2）：仅监督链（main.ts ensureGatewayRunning，自带 3 次
@@ -437,6 +438,16 @@ export class GatewayProcess {
       // R77：300→100ms——世代计数器 + isChildAlive 已是主防线，这里的等待只兜底
       // 「起即死」，缩短可直接提前 gateway:ready 推送（渲染层可提前重连）。
       await sleep(100);
+      // 状态复查：sleep(100) 窗口内 stop() 可能已把状态拨到 stopping/stopped
+      // （调用方已认为 gateway 停妥并继续后续清理），此时再 setState("running")
+      // 会把用户主动停止覆盖回运行中，随后的 exit 被误判为运行中崩溃并自动重启。
+      // 与预启动处 shouldAbortStartAfterPrestart 对称。经 getState() 读取而非
+      // this.state：TS 控制流分析在方法调用后不重置属性窄化，此处 this.state
+      // 被窄化为 stopped/stopping，直接比较会报 TS2367
+      if (this.getState() !== "starting") {
+        this.proc = null;
+        return;
+      }
       if (this.isChildAlive(childPid)) {
         diagLog("health check passed, child alive");
         this.setState("running");
@@ -447,6 +458,15 @@ export class GatewayProcess {
     } else {
       diagLog("FATAL: health check timeout");
       await this.stop();
+      // health 超时视同 starting 阶段退出：spawn 成功但 HTTP 永不就绪，此前
+      // stop() 走 stopping 分支不触发 onCrash，而 main.ts 的崩溃自重启链全靠
+      // onCrash 恢复——不补这次调用 gateway 会静默停摆。沿用与 starting 退出
+      // 相同的监督守卫（P0-2）：监督链（ensureGatewayRunning 自带重试）在途时
+      // 不重复排程崩溃重启
+      this.lastCrashTime = Date.now();
+      if (shouldFireCrashOnStartingExit("starting", this.supervisedStartActive)) {
+        this.onCrash?.({ code: null, signal: "HEALTH_TIMEOUT" });
+      }
     }
   }
 

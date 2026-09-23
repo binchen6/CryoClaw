@@ -390,7 +390,7 @@ export type WebbridgeUpdateResult =
   | { ok: true; from: string | null; to: string | null; etag: string | null; daemonRestarted: boolean }
   | {
       ok: false;
-      reason: "busy" | "not-installed" | "head-failed" | "download-failed" | "pin-stale";
+      reason: "busy" | "not-installed" | "head-failed" | "download-failed" | "pin-stale" | "swap-failed";
       message?: string;
     };
 
@@ -556,7 +556,9 @@ async function applyWebbridgeUpdateLocked(
     log.error(`[webbridge-update] 换装失败（daemon 已尽力恢复）: ${message}`);
     return {
       ok: false,
-      reason: "download-failed",
+      // 下载与校验均已成功，失败发生在 rename/chmod/写 manifest 的换装阶段——
+      // 与 download-failed 区分，便于排查文件锁（杀软/占用）类问题
+      reason: "swap-failed",
       message,
     };
   }

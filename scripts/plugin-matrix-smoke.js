@@ -128,7 +128,7 @@ function main() {
   const matrix = [];
   for (const name of [...extDirs].sort()) {
     const entry = `node_modules\\openclaw\\dist\\extensions\\${name}\\openclaw.plugin.json`;
-    const hasManifest = extFiles.some((l) => l.replace(/^[\\/]+/, "").replace(/\\/g, "\\").endsWith(`${name}\\openclaw.plugin.json`));
+    const hasManifest = extFiles.some((l) => l.replace(/^[\\/]+/, "").endsWith(`${name}\\openclaw.plugin.json`));
     let version = null;
     let manifestId = null;
     if (hasManifest) {

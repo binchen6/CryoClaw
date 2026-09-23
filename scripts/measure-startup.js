@@ -75,12 +75,12 @@ function scanLog() {
     await new Promise((r) => setTimeout(r, 250));
   }
   console.log(`RESULT gateway200Ms=${gwMs} windowShownMs=${winMs} appReadyMs=${appReadyMs}`);
-  // 清理验证实例
+  // 清理验证实例（只杀本次 spawn 的进程树——taskkill /IM 会误杀用户正在运行的实例）
   try { process.kill(child.pid); } catch {}
   setTimeout(() => {
     try {
       const { execFileSync } = require("child_process");
-      execFileSync("taskkill", ["/F", "/IM", "CryoClaw.exe", "/T"], { stdio: "ignore" });
+      execFileSync("taskkill", ["/PID", String(child.pid), "/T", "/F"], { stdio: "ignore" });
     } catch {}
     process.exit(0);
   }, 2000);

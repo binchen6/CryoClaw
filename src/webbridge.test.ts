@@ -837,7 +837,7 @@ test("applyWebbridgeUpdate（F3）：daemon 在跑 + rename 重试耗尽 → ok:
       installSkill: async () => ({ success: true, output: "" }),
     });
     assert.equal(res.ok, false);
-    assert.equal((res as { reason: string }).reason, "download-failed");
+    assert.equal((res as { reason: string }).reason, "swap-failed");
     assert.deepEqual(spawnCalls[0], ["stop"], "daemon 在跑应先 stop");
     assert.ok(
       spawnCalls.some((a) => a.length === 1 && a[0] === "start"),

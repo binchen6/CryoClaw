@@ -272,6 +272,12 @@ async function onWbApplyUpdate(state: AppViewState) {
     } else if (res.code === "PIN_STALE" || isWebbridgePinStaleError(res.message)) {
       // 钉定校验失败对用户不可操作（消息含内部哈希）→ 提示升级应用
       setWbVersionMessage(t("settings.advanced.wbRepairPinStale"), "error");
+    } else if (res.code === "SWAP_FAILED") {
+      // 换装阶段失败（文件被安全软件/占用锁定）：下载与校验其实已成功，提示重试即可
+      setWbVersionMessage(
+        t("settings.advanced.wbUpdateSwapFailed") + (res.message ? `: ${res.message}` : ""),
+        "error",
+      );
     } else {
       setWbVersionMessage(
         t("settings.advanced.wbUpdateFailed") + (res.message ? `: ${res.message}` : ""),

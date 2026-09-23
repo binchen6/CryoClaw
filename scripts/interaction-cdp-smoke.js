@@ -9,62 +9,32 @@
  * 退出码：renderer 异常 > 0 或任一硬断言失败 → 1。
  * 用法：node scripts/interaction-cdp-smoke.js [--exe <CryoClaw.exe>] [--port 9330]
  */
+const fs = require("fs");
 const path = require("path");
-const httpClient = require("http");
-const { spawn, execFileSync } = require("child_process");
+const {
+  arg, sleep, launch, waitForPageTarget, waitForGateway, connect,
+  waitForAppReady, waitForSettle, setViewport, uniqueExceptionLines,
+} = require("./lib/cdp-harness.js");
 
 const root = path.resolve(__dirname, "..");
-const arg = (name, fallback) => { const i = process.argv.indexOf(name); return i >= 0 ? process.argv[i + 1] : fallback; };
-const exe = arg("--exe", null) || path.join(root, "out", "win32-x64", "win-unpacked", "CryoClaw.exe");
-const debugPort = Number(arg("--port", "9330"));
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-
-function httpGetJson(url) {
-  return new Promise((resolve, reject) => {
-    const req = httpClient.get(url, { timeout: 5000 }, (res) => { let b = ""; res.on("data", (c) => (b += c)); res.on("end", () => { try { resolve({ body: JSON.parse(b) }); } catch { resolve({ body: null }); } }); });
-    req.on("timeout", () => req.destroy(new Error("timeout")));
-    req.on("error", reject);
-  });
-}
-class Cdp {
-  constructor(ws) {
-    this.ws = ws; this.nextId = 1; this.pending = new Map(); this.exceptions = []; this.consoleErrors = [];
-    ws.addEventListener("message", (ev) => {
-      const m = JSON.parse(ev.data);
-      if (m.id && this.pending.has(m.id)) { const { resolve, reject } = this.pending.get(m.id); this.pending.delete(m.id); if (m.error) reject(new Error(m.error.message)); else resolve(m.result); return; }
-      if (m.method === "Runtime.exceptionThrown") this.exceptions.push(m.params.exceptionDetails?.exception?.description || m.params.exceptionDetails?.text || "unknown");
-      if (m.method === "Runtime.consoleAPICalled" && m.params.type === "error") this.consoleErrors.push((m.params.args || []).map((a) => a.value ?? a.description ?? "").join(" "));
-    });
-  }
-  send(method, params = {}) { const id = this.nextId++; return new Promise((res, rej) => { this.pending.set(id, { resolve: res, reject: rej }); this.ws.send(JSON.stringify({ id, method, params })); }); }
-  async evaluate(e) { const r = await this.send("Runtime.evaluate", { expression: e, returnByValue: true }); if (r.exceptionDetails) throw new Error(JSON.stringify(r.exceptionDetails)); return r.result.value; }
-  async pressEscape() {
-    await this.send("Input.dispatchKeyEvent", { type: "rawKeyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 27 });
-    await this.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 27 });
-  }
-}
-async function waitForPageTarget(port, timeoutMs) {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    try { const { body } = await httpGetJson(`http://127.0.0.1:${port}/json/list`); const p = (body || []).find((t) => t.type === "page" && t.url.startsWith("file://")); if (p && p.webSocketDebuggerUrl) return p; } catch {}
-    await sleep(1000);
-  }
-  return null;
+const exe = arg(process.argv, "--exe", null) || path.join(root, "out", "win32-x64", "win-unpacked", "CryoClaw.exe");
+const debugPort = Number(arg(process.argv, "--port", "9330"));
+if (!fs.existsSync(exe)) {
+  console.error(`[interaction-smoke] 未找到可执行文件: ${exe}`);
+  process.exit(2);
 }
 
 (async () => {
-  const child = spawn(exe, [`--remote-debugging-port=${debugPort}`], { cwd: path.dirname(exe), windowsHide: true, stdio: "ignore" });
-  const cleanup = () => { try { execFileSync("taskkill", ["/PID", String(child.pid), "/T", "/F"], { stdio: "ignore" }); } catch {} };
-  process.on("exit", cleanup);
+  const { cleanup } = launch(exe, debugPort);
   const page = await waitForPageTarget(debugPort, 90_000);
   if (!page) { console.error("no page target"); cleanup(); process.exit(1); }
-  const ws = new WebSocket(page.webSocketDebuggerUrl);
-  await new Promise((res, rej) => { ws.addEventListener("open", res); ws.addEventListener("error", rej); });
-  const cdp = new Cdp(ws);
-  await cdp.send("Runtime.enable");
-  await sleep(20000); // 等网关就绪（冷启动约 12s），否则「连接失败」弹窗会挡住审查
-  await cdp.send("Emulation.setDeviceMetricsOverride", { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
-  await sleep(1000);
+  const { ws, cdp } = await connect(page);
+  await waitForAppReady(cdp);
+  // 等网关就绪（冷启动约 12s），否则「连接失败」弹窗会挡住审查
+  const gatewayOk0 = await waitForGateway("http://127.0.0.1:18789/", 60_000, 3000);
+  if (!gatewayOk0) console.log("WARN  网关 60s 未就绪，后续步骤可能受连接弹窗干扰");
+  await setViewport(cdp, 1440);
+  await waitForSettle(cdp, 600);
 
   const steps = [];
   const step = (name, ok, detail = "") => { steps.push({ name, ok, detail }); console.log(`${ok ? "PASS" : "FAIL"}  ${name}${detail ? " — " + detail : ""}`); };
@@ -75,23 +45,22 @@ async function waitForPageTarget(port, timeoutMs) {
   for (let i = 0; i < railCount; i++) {
     const label = await cdp.evaluate(`(document.querySelectorAll('.oc-rail__item')[${i}].getAttribute('aria-label') || 'rail-'+${i})`);
     await cdp.evaluate(`document.querySelectorAll('.oc-rail__item')[${i}].click()`);
-    await sleep(1200);
-    // 视图内安全交互：打开并关闭任何出现的弹层菜单
+    await waitForSettle(cdp, 800);
     const before = await dialogCount();
-    // 侧栏会话行 / 工作区节点 / git 行的键盘可达性：Tab 不应抛异常，直接触发一次 keydown Enter 到首个 role=button 行（若存在）
+    // 侧栏会话行 / 工作区节点 / git 行的键盘可达性：统计 role=button 行数
     const rows = await cdp.evaluate(`document.querySelectorAll('[role="button"][tabindex="0"]').length`);
     step(`view ${label}: 渲染 + ${rows} 个键盘可达行 (${before} 弹窗)`, cdp.exceptions.length === 0, `exceptions=${cdp.exceptions.length}`);
   }
 
-  // 设置页：14 tab 巡览后，验证「恢复出厂」确认框的 Escape 语义
+  // 设置页：全 tab 巡览后，验证「恢复出厂」确认框的 Escape 语义
   const settingsIdx = await cdp.evaluate(`[...document.querySelectorAll('.oc-rail__item')].findIndex(e => /settings|设置/i.test(e.getAttribute('aria-label')||e.title||e.textContent))`);
   await cdp.evaluate(`document.querySelectorAll('.oc-rail__item')[${settingsIdx}].click()`);
-  await sleep(1500);
+  await waitForSettle(cdp, 1000);
   const tabCount = await cdp.evaluate("document.querySelectorAll('.oc-settings-nav-item').length");
   for (let i = 0; i < tabCount; i++) {
     const label = await cdp.evaluate(`document.querySelectorAll('.oc-settings-nav-item')[${i}].textContent.trim()`);
     await cdp.evaluate(`document.querySelectorAll('.oc-settings-nav-item')[${i}].click()`);
-    await sleep(700);
+    await waitForSettle(cdp, 500);
     if (cdp.exceptions.length > 0) step(`settings tab ${label}`, false, cdp.exceptions[0].slice(0, 80));
   }
   step(`settings: ${tabCount} 个 tab 巡览无渲染异常`, cdp.exceptions.length === 0, `exceptions=${cdp.exceptions.length}`);
@@ -104,7 +73,7 @@ async function waitForPageTarget(port, timeoutMs) {
     if (t) t.click();
     return !!t;
   })()`);
-  await sleep(1200);
+  await waitForSettle(cdp, 800);
   const opened = await cdp.evaluate(`(() => {
     const btns = [...document.querySelectorAll('button')];
     const target = btns.find(b => /重置配置|恢复出厂|reset config|factory reset/i.test(b.textContent || '') && !b.disabled);
@@ -129,15 +98,15 @@ async function waitForPageTarget(port, timeoutMs) {
   // 确认危险操作未执行：应用仍在运行、网关仍在线（页面未重载）
   const stillAlive = await cdp.evaluate("document.querySelectorAll('.oc-rail__item').length >= 5");
   // 设置页「搜索」tab 会触发热应用重启（by design）；轮询等网关恢复，最多 30s
-  let gatewayOk = false;
-  for (let i = 0; i < 10 && !gatewayOk; i++) {
-    gatewayOk = await new Promise((r) => { const q = httpClient.get("http://127.0.0.1:18789/", { timeout: 4000 }, (s) => { s.resume(); r(s.statusCode === 200); }); q.on("error", () => r(false)); });
-    if (!gatewayOk) await sleep(3000);
-  }
+  const gatewayOk = await waitForGateway("http://127.0.0.1:18789/", 30_000, 3000);
   step("取消后应用与网关均未受影响", stillAlive && gatewayOk, `rail=${stillAlive} gateway200=${gatewayOk}`);
 
   const failed = steps.filter((x) => !x.ok);
   console.log("\n摘要:", JSON.stringify({ steps: steps.length, failed: failed.map((f) => f.name), rendererExceptions: cdp.exceptions.length, consoleErrors: cdp.consoleErrors.length }, null, 1));
+  if (cdp.exceptions.length) {
+    for (const line of uniqueExceptionLines(cdp)) console.error("  renderer: " + line);
+  }
+  ws.close();
   cleanup();
   process.exit(failed.length === 0 && cdp.exceptions.length === 0 ? 0 : 1);
 })().catch((e) => { console.error(e); process.exit(1); });

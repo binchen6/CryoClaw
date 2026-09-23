@@ -1608,6 +1608,27 @@ function resolvePluginSource(plugin) {
 
 // 下载（或复用缓存）插件 tgz。带 sha256 钉定的插件在两条路径上都强制校验
 // （供应链守卫：CDN/缓存被篡改时在此硬失败，不得进入安装包）。
+// sha256 钉定校验：ensurePluginArchive 的下载/缓存路径与 bundlePlugin 的
+// 缓存损坏重下路径共用（重下的包不过校验会让供应链守卫在该路径失效）。
+function verifyPluginArchiveSha256(plugin, source) {
+  if (!plugin.sha256) return;
+  // 自定义 URL（urlEnv 覆盖，通常为升级前试装新版本）不套用默认产物的钉定值
+  if (source.sourceURL !== plugin.defaultURL) {
+    log(`WARN: ${plugin.id} 使用自定义 URL，跳过 sha256 钉定校验`);
+    return;
+  }
+  const { createHash } = require("crypto");
+  const actual = createHash("sha256").update(fs.readFileSync(source.archivePath)).digest("hex");
+  if (actual.toLowerCase() !== plugin.sha256.toLowerCase()) {
+    safeUnlink(source.archivePath);
+    die(
+      `${plugin.id} 插件包 sha256 校验失败:\n  expected ${plugin.sha256}\n  actual   ${actual}\n` +
+        "（CDN 产物变更或缓存被篡改；若为正常版本升级，请同步更新 BUNDLED_PLUGINS 的 sha256 钉定值）",
+    );
+  }
+  log(`${plugin.id} sha256 钉定校验通过`);
+}
+
 async function ensurePluginArchive(plugin) {
   const source = resolvePluginSource(plugin);
   const { archivePath } = source;
@@ -1617,33 +1638,14 @@ async function ensurePluginArchive(plugin) {
     return source;
   }
 
-  const verifySha256 = () => {
-    if (!plugin.sha256) return;
-    // 自定义 URL（urlEnv 覆盖，通常为升级前试装新版本）不套用默认产物的钉定值
-    if (source.sourceURL !== plugin.defaultURL) {
-      log(`WARN: ${plugin.id} 使用自定义 URL，跳过 sha256 钉定校验`);
-      return;
-    }
-    const { createHash } = require("crypto");
-    const actual = createHash("sha256").update(fs.readFileSync(archivePath)).digest("hex");
-    if (actual.toLowerCase() !== plugin.sha256.toLowerCase()) {
-      safeUnlink(archivePath);
-      die(
-        `${plugin.id} 插件包 sha256 校验失败:\n  expected ${plugin.sha256}\n  actual   ${actual}\n` +
-          "（CDN 产物变更或缓存被篡改；若为正常版本升级，请同步更新 BUNDLED_PLUGINS 的 sha256 钉定值）",
-      );
-    }
-    log(`${plugin.id} sha256 钉定校验通过`);
-  };
-
   if (source.forceRefresh || !fs.existsSync(archivePath)) {
     log(`下载 ${plugin.id} 插件包: ${source.sourceURL}`);
     safeUnlink(archivePath);
     await downloadFileWithFallback([source.sourceURL], archivePath);
-    verifySha256();
+    verifyPluginArchiveSha256(plugin, source);
   } else {
     log(`使用缓存的 ${plugin.id} 包: ${path.relative(ROOT, archivePath)}`);
-    verifySha256();
+    verifyPluginArchiveSha256(plugin, source);
   }
 
   return source;
@@ -2212,6 +2214,8 @@ async function bundlePlugin(plugin, gatewayDir, targetId, opts) {
         ensureDir(tmpDir);
         safeUnlink(source.archivePath);
         await downloadFileWithFallback([source.sourceURL], source.archivePath);
+        // 重下的包必须重过 sha256 钉定校验，否则供应链守卫在此路径失效
+        verifyPluginArchiveSha256(plugin, source);
         continue;
       }
       rmDir(tmpDir);

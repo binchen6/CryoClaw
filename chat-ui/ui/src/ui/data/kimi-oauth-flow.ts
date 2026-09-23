@@ -23,6 +23,9 @@ export async function runKimiOAuthLogin(
   st.oauthNoMembership = false;
   st.error = null;
   state.requestUpdate();
+  // onLoggedIn 调用移出 try：catch 只归 IPC 连接/调用错误为 connection，
+  // 回调自身的抛错不应被误报为连接错误
+  let accessToken: string | null = null;
   try {
     const result = await ipc.kimiOAuthLogin();
     if (!result.success) {
@@ -31,10 +34,12 @@ export async function runKimiOAuthLogin(
       state.requestUpdate();
       return;
     }
-    await onLoggedIn(result.accessToken ?? null);
+    accessToken = result.accessToken ?? null;
   } catch (e: any) {
     st.error = t("setup.error.connection") + (e?.message ?? "");
     st.oauthLoading = false;
     state.requestUpdate();
+    return;
   }
+  await onLoggedIn(accessToken);
 }

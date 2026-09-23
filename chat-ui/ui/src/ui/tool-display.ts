@@ -299,7 +299,11 @@ function shortenHomeInString(input: string): string {
   if (!input) {
     return input;
   }
-  return input.replace(/\/Users\/[^/]+/g, "~").replace(/\/home\/[^/]+/g, "~");
+  return input
+    .replace(/\/Users\/[^/]+/g, "~")
+    .replace(/\/home\/[^/]+/g, "~")
+    // 主平台是 Windows：C:\Users\xxx 形态也缩写（注意正则里的反斜杠要二次转义）
+    .replace(/[A-Za-z]:\\Users\\[^\\/]+/g, "~");
 }
 
 // ── R52 T4：工具输出语言推断 ──

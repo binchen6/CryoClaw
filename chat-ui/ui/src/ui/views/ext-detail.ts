@@ -442,7 +442,8 @@ function renderSkillDetail(meta: ExtDetail & { kind: "skill" }, data: SkillDetai
 export function renderExtDetailDialog(state: AppViewState) {
   if (!detail) return nothing;
   const title = detail.title;
-  const sub = detail.kind === "market-package" ? detail.key : detail.key;
+  // market-package 与 ext 两种 kind 目前共用 key 作副标题，不做分支
+  const sub = detail.key;
   // 翻译入口只在拿到数据后出现（loading/错误态没有可翻内容）
   const canTranslate = !loading && !error;
   return html`

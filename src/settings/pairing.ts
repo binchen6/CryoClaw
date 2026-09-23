@@ -127,7 +127,9 @@ export function registerPairingIpc(opts: SettingsIpcOptions): void {
     } catch (err: any) {
       return { success: false, message: err.message || String(err) };
     }
-  });  // ── 添加企业微信群白名单条目 ──  // ── 删除企业微信已授权用户/群聊 ──
+  });
+
+  // ── 删除企业微信已授权用户/群聊 ──
   ipcMain.handle("settings:remove-wecom-approved", async (_event, params) => {
     if (!assertTrustedIpcSender(_event, "settings:remove-wecom-approved")) throw new Error("IPC sender not trusted");
     const kind = params?.kind === "group" ? "group" : "user";
@@ -217,7 +219,9 @@ export function registerPairingIpc(opts: SettingsIpcOptions): void {
     } catch (err: any) {
       return { success: false, message: err.message || String(err) };
     }
-  });  // ── 删除飞书已授权条目（用户/群聊） ──
+  });
+
+  // ── 删除飞书已授权条目（用户/群聊） ──
   ipcMain.handle("settings:remove-feishu-approved", async (_event, params) => {
     if (!assertTrustedIpcSender(_event, "settings:remove-feishu-approved")) throw new Error("IPC sender not trusted");
     const kind = String(params?.kind ?? "").trim().toLowerCase() === "group" ? "group" : "user";

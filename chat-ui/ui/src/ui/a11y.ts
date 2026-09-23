@@ -17,9 +17,3 @@ export function activateOnKeydown(activate: () => void): (e: KeyboardEvent) => v
     }
   };
 }
-
-/** 可交互行的公共无障碍属性（lit 属性模板用）。 */
-export const interactiveRowAttrs = {
-  role: "button" as const,
-  tabindex: "0" as const,
-};

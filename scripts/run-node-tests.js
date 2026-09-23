@@ -2,31 +2,24 @@
 // 排除走 vitest 的文件（它们 import "vitest"，node:test 跑不了）。
 "use strict";
 
-const { readdirSync } = require("fs");
+const { readdirSync, readFileSync } = require("fs");
 const { basename, join, resolve } = require("path");
 const { spawnSync } = require("child_process");
 const rmRecursive = require("./lib/rm-rec")();
 
-// 与 vitest.config.ts 的 include 保持一致
-const VITEST_FILES = new Set([
-  "docker-check",
-  "kimi-config",
-  "kernel-updater",
-  "cryoclaw-config",
-  "openclaw-config-migration",
-  "openclaw-health-state",
-  "startup-ownership",
-  "skill-store-registry",
-  "skill-store",
-  "provider-config-cache",
-  "config-backup",
-  "openclaw-state-archive",
-  "openclaw-state-import-lifecycle",
-  "gateway-lifecycle",
-  "analytics",
-  "memory-workspace",
-  "wecom-config",
-]);
+// vitest 排除清单从 vitest.config.ts 的 include 自动派生——此前是手工同步的双份清单，
+// 新增 vitest 测试只改 config 就会让同名产物被 node --test 误跑（import "vitest" 即炸）。
+function loadVitestFiles() {
+  const configPath = join(resolve(__dirname, ".."), "vitest.config.ts");
+  const src = readFileSync(configPath, "utf8");
+  const names = [...src.matchAll(/src\/([\w/-]+)\.test\.ts/g)].map((m) => basename(m[1]));
+  if (names.length === 0) {
+    console.error("[run-node-tests] 无法从 vitest.config.ts 解析 include 清单（格式变了？）");
+    process.exit(1);
+  }
+  return new Set(names);
+}
+const VITEST_FILES = loadVitestFiles();
 
 const root = resolve(__dirname, "..");
 const dir = join(root, ".test-dist");

@@ -93,7 +93,12 @@ export const startThemeTransition = ({
         applyTheme();
       });
       if (transition?.finished) {
-        void transition.finished.finally(() => cleanupThemeTransition(root));
+        // finished 在过渡被 skip 时以 AbortError reject：用 then 的双回调做清理，
+        // finally 会把 rejection 原样抛成 unhandled rejection
+        transition.finished.then(
+          () => cleanupThemeTransition(root),
+          () => cleanupThemeTransition(root),
+        );
       } else {
         cleanupThemeTransition(root);
       }

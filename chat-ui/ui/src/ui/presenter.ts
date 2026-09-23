@@ -31,8 +31,9 @@ function humanizeCronExpr(expr: string, tz: string | undefined, zh: boolean): st
     const time = /^\d{1,2}$/.test(min) && /^\d{1,2}$/.test(hour) ? `${pad2(hour)}:${pad2(min)}` : null;
     if (time && dom === "*" && mon === "*") {
       if (dow === "*") return zh ? `每天 ${time}${tzSuffix}` : `Daily ${time}${tzSuffix}`;
-      if (/^[0-6]$/.test(dow)) {
-        const day = Number(dow);
+      // cron 里 0 和 7 都是周日：允许 0-7，按 %7 归一取星期名
+      if (/^[0-7]$/.test(dow)) {
+        const day = Number(dow) % 7;
         return zh
           ? `每周${ZH_WEEKDAYS[day]} ${time}${tzSuffix}`
           : `Weekly ${EN_WEEKDAYS[day]} ${time}${tzSuffix}`;

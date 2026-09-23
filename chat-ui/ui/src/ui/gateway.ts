@@ -227,7 +227,14 @@ export class GatewayBrowserClient {
     });
 
     if (isSecureContext) {
-      deviceIdentity = await loadOrCreateDeviceIdentity();
+      try {
+        deviceIdentity = await loadOrCreateDeviceIdentity();
+      } catch (err) {
+        // 前置步骤失败与 connect 请求失败同路径：关 socket 触发重连调度——
+        // 否则 socket 停在 OPEN 但握手永不完成，且不会有任何重连兜底
+        this.failPendingConnect(ws, generation, err);
+        return;
+      }
       const storedToken = loadDeviceAuthToken({
         deviceId: deviceIdentity.deviceId,
         role,
@@ -266,7 +273,13 @@ export class GatewayBrowserClient {
         token: authToken ?? null,
         nonce,
       });
-      const signature = await signDevicePayload(deviceIdentity.privateKey, payload);
+      let signature: string;
+      try {
+        signature = await signDevicePayload(deviceIdentity.privateKey, payload);
+      } catch (err) {
+        this.failPendingConnect(ws, generation, err);
+        return;
+      }
       device = {
         id: deviceIdentity.deviceId,
         publicKey: deviceIdentity.publicKey,
@@ -331,6 +344,16 @@ export class GatewayBrowserClient {
         }
         ws.close(CONNECT_FAILED_CLOSE_CODE, "connect failed");
       });
+  }
+
+  // 握手前置步骤（设备身份创建/签名）失败：与 connect 请求失败一致地关 socket，
+  // 让 onclose 走既有重连调度（见 sendConnect 尾部 catch）
+  private failPendingConnect(ws: WebSocket, generation: number, err: unknown) {
+    if (!this.isActiveSocket(ws, generation)) {
+      return;
+    }
+    console.error("[gateway] connect precondition failed", err);
+    ws.close(CONNECT_FAILED_CLOSE_CODE, "connect failed");
   }
 
   private handleMessage(ws: WebSocket, generation: number, raw: string) {

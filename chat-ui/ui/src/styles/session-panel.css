@@ -160,10 +160,19 @@ oc-session-panel {
   font-size: var(--text-sm);
   white-space: nowrap;
   overflow: hidden;
-  text-overflow: ellipsis;
   display: inline-flex;
   align-items: center;
   gap: var(--spacer-6);
+}
+
+/* 省略号只能落在独立的文本载体上：inline-flex 容器的 flex 格式化上下文会让
+   text-overflow 失效（实测会话 ID 被硬切断、无 …），故 label 单独包一层。 */
+.oc-panel__session-label {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .oc-panel__unread-dot {

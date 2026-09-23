@@ -209,11 +209,6 @@ export class TrayManager {
     this.tray.setContextMenu(menu);
   }
 
-  // 更新托盘 tooltip（用于显示下载进度等临时状态）
-  setTooltip(text: string): void {
-    this.tray?.setToolTip(text);
-  }
-
   destroy(): void {
     if (this.onNativeThemeUpdated) {
       nativeTheme.removeListener("updated", this.onNativeThemeUpdated);

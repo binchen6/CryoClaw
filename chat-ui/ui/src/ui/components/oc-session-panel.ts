@@ -331,7 +331,7 @@ function renderSessionItem(
       <span
         class="oc-panel__session-name"
         title=${s.label}
-      >${s.unread ? html`<span class="oc-panel__unread-dot" aria-label=${t("sidebar.unread")}></span>` : nothing}${s.label}${s.pinned ? html`<span class="oc-panel__session-pin" aria-label=${t("sidebar.pinned")}>${icons.pin}</span>` : nothing}${s.worktreeBranch ? html`<span class="oc-panel__session-worktree" title=${s.worktreeBranch}>${icons.gitBranch}${s.worktreeBranch}</span>` : nothing}</span>
+      >${s.unread ? html`<span class="oc-panel__unread-dot" aria-label=${t("sidebar.unread")}></span>` : nothing}<span class="oc-panel__session-label">${s.label}</span>${s.pinned ? html`<span class="oc-panel__session-pin" aria-label=${t("sidebar.pinned")}>${icons.pin}</span>` : nothing}${s.worktreeBranch ? html`<span class="oc-panel__session-worktree" title=${s.worktreeBranch}>${icons.gitBranch}${s.worktreeBranch}</span>` : nothing}</span>
       <span class="oc-panel__session-menu-wrap">
         <button
           class="oc-panel__session-action ${menuOpen ?"is-open" : ""} ${deleting ? "is-loading" : ""}"

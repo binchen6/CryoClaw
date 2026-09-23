@@ -211,7 +211,3 @@ export const icons = {
 } as const;
 
 export type IconName = keyof typeof icons;
-
-export function icon(name: IconName): TemplateResult {
-  return icons[name];
-}

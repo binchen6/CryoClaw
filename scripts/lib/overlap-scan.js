@@ -54,6 +54,9 @@ function overlapCheckExpr(opts = {}) {
     }` : ""}
     return r;
   };
+  // 首个 filter pass 已算过 visibleRect，缓存进 Map 供双重循环复用——
+  // 否则 O(n²) 配对里每对都沿祖先链重跑 getComputedStyle，设置页会卡 renderer 数秒。
+  const rectCache = new Map();
   const els = [...scope.querySelectorAll('*')].filter(e => {
     if (inClosedDetails(e)) return false;
     const base = e.getBoundingClientRect();
@@ -62,7 +65,9 @@ function overlapCheckExpr(opts = {}) {
     const cs = getComputedStyle(e);
     if (cs.position === 'fixed' || cs.visibility === 'hidden' || cs.display === 'none') return false;
     const vr = visibleRect(e);
-    return !!vr && vr.width >= 5 && vr.height >= 5;
+    if (!vr || vr.width < 5 || vr.height < 5) return false;
+    rectCache.set(e, vr);
+    return true;
   });
   const bad = [];
   for (let i = 0; i < els.length; i++) {
@@ -70,8 +75,7 @@ function overlapCheckExpr(opts = {}) {
       if (els[i].contains(els[j]) || els[j].contains(els[i])) continue;
       const ca = customAncestor(els[i]), cb = customAncestor(els[j]);
       if (ca && ca === cb) continue;
-      const a = visibleRect(els[i]), b = visibleRect(els[j]);
-      if (!a || !b) continue;
+      const a = rectCache.get(els[i]), b = rectCache.get(els[j]);
       const xo = Math.min(a.right, b.right) - Math.max(a.left, b.left);
       const yo = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
       if (xo > 8 && yo > 6) {

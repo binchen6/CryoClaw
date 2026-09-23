@@ -231,6 +231,8 @@ export function applyTaskEvent(
 
 // 在途刷新期间若再被请求刷新（如 task 事件触发），置脏标记并在完成后补跑一轮：
 // 否则旧请求晚到的响应会整体覆盖事件增量（列表陈旧最长一个 ticker 周期）。
+// chat-ui 按单 app 实例设计：模块级瞬态变量依赖单挂载前提（sessions.ts 已改用
+// WeakMap keyed by state；若未来出现多实例需求，这里需同样改造）
 let tasksRefreshPending = false;
 
 export async function loadTasks(state: TasksState) {

@@ -32,8 +32,9 @@ export function resolveGatewayPort(): number {
 
 // ── 健康检查 ──
 
-// Windows 冷启动：Defender 实时扫描 + ASAR 内 ESM/jiti 转译导致模块加载 30-80s。
-// 热重启（上一个实例刚退出）场景下 80s 加载 + 5s 初始化 ≈ 85s，90s 超时余量不足。
+// Windows 冷启动：Defender 实时扫描 + ASAR 内 ESM/jiti 转译导致模块加载 30-80s，
+// 热重启（上一个实例刚退出）场景下 80s 加载 + 5s 初始化 ≈ 85s 会顶穿 90s 上限——
+// 故 Windows 取 180s、其余平台 90s。
 export const HEALTH_TIMEOUT_MS = process.platform === "win32" ? 180_000 : 90_000;
 export const HEALTH_POLL_INTERVAL_MS = 500;
 

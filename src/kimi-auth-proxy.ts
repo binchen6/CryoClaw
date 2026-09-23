@@ -33,6 +33,7 @@ let server: http.Server | null = null;
 let currentPort = -1;
 let currentAccessToken = "";
 let kimiSearchDedicatedKey = "";
+let inflightStart: Promise<number> | null = null;
 
 // 上游基地址
 const UPSTREAM_HOST = "api.kimi.com";
@@ -204,11 +205,22 @@ function tryListen(
   return new Promise((resolve, reject) => {
     let idx = 0;
 
+    // listen 成功后的统一收尾：移除一次性 error 监听（retry 用），改挂运行期
+    // error 日志监听——否则 promise settle 后第一次运行期错误被静默吞，
+    // 第二次直接 uncaughtException 崩主进程
+    const onListenSuccess = (): void => {
+      srv.removeAllListeners("error");
+      srv.on("error", (err) => {
+        log.error(`[auth-proxy] 服务运行错误: ${err?.message ?? err}`);
+      });
+    };
+
     const attempt = (): void => {
       if (idx >= candidates.length) {
         // 所有候选端口耗尽，让 OS 动态分配
         srv.once("error", reject);
         srv.listen(0, "127.0.0.1", () => {
+          onListenSuccess();
           const addr = srv.address() as net.AddressInfo;
           resolve(addr.port);
         });
@@ -230,12 +242,7 @@ function tryListen(
       });
 
       srv.listen(port, "127.0.0.1", () => {
-        srv.removeAllListeners("error");
-        // listen 成功后的运行期错误只记日志（对齐 gateway-control-server 模式：
-        // retry 监听器已摘除，不补挂的话 error 事件无监听器会直接抛崩主进程）
-        srv.on("error", (err) => {
-          log.error(`[auth-proxy] 服务运行错误: ${err?.message ?? err}`);
-        });
+        onListenSuccess();
         const addr = srv.address() as net.AddressInfo;
         resolve(addr.port);
       });
@@ -248,7 +255,18 @@ function tryListen(
 // ────────────────────────────── 公开接口 ──────────────────────────────
 
 // 启动代理，返回实际监听端口（excludePort 用于避让 gateway 端口）
-export async function startAuthProxy(preferredPort?: number, excludePort?: number): Promise<number> {
+export function startAuthProxy(preferredPort?: number, excludePort?: number): Promise<number> {
+  // in-flight 去重（对齐 kimi-oauth.ts inflightRefresh 模式）：currentPort 在
+  // tryListen resolve 后才赋值，两个调用方并发进入会各建 server，先建者泄漏为
+  // 永远关不掉的活体代理——并发调用复用同一 promise
+  if (inflightStart) return inflightStart;
+  inflightStart = doStartAuthProxy(preferredPort, excludePort).finally(() => {
+    inflightStart = null;
+  });
+  return inflightStart;
+}
+
+async function doStartAuthProxy(preferredPort?: number, excludePort?: number): Promise<number> {
   if (server) {
     log.warn("[auth-proxy] 代理已在运行，先停止旧实例");
     await stopAuthProxy();

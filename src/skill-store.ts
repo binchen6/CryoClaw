@@ -209,6 +209,10 @@ export function jsonGet<T>(url: string): Promise<T> {
       }
       const chunks: Buffer[] = [];
       let totalBytes = 0;
+      // 超 8MB 后 req.destroy()，在途的 socket error 事件（如 ECONNRESET）在
+      // reject 已发生后再无监听器会走 uncaughtException——补一个空监听即可
+      // （promise 已 settle，重入 reject 幂等无副作用）
+      res.on("error", () => {});
       res.on("data", (chunk: Buffer) => {
         totalBytes += chunk.length;
         if (totalBytes > JSON_GET_MAX_BYTES) {
@@ -642,7 +646,8 @@ export function registerSkillStoreIpc(): void {
       debugLog(`ipc search → error: ${err?.message}`);
       return { success: false, message: err?.message ?? String(err) };
     }
-  });  ipcMain.handle("skill-store:install", async (_event, params) => {
+  });
+  ipcMain.handle("skill-store:install", async (_event, params) => {
     if (!assertTrustedIpcSender(_event, "skill-store:install")) throw new Error("IPC sender not trusted");
     debugLog(`ipc install slug=${params?.slug}`);
     const result = await installSkill(params?.slug ?? "");

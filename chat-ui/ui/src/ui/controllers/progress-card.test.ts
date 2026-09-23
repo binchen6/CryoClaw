@@ -399,8 +399,15 @@ test("app-gateway.ts：progressCard.changed 事件分支失效重拉 + onHello �
   );
   assert.match(
     s,
-    /onHello[\s\S]*?void loadTasks\(host as unknown as OpenClawApp\);[\s\S]*?void loadProgressCard\(host as unknown as OpenClawApp\);/,
-    "onHello 应在 loadTasks 后重拉当前会话 Progress Card（断连窗口事件已丢失）",
+    /onHello[\s\S]*?void loadProgressCard\(host as unknown as OpenClawApp\);/,
+    "onHello 应重拉当前会话 Progress Card（断连窗口事件已丢失）",
+  );
+  // sessions/tasks 不再在 onHello 显式拉取（会与 ticker 首帧重复打两份全量 RPC），
+  // 由下方 startTicker() 的首帧 runAllHandlers 统一覆盖
+  assert.match(
+    s,
+    /sessions\/tasks 不在此显式拉取[\s\S]*?startTicker\(\);/,
+    "onHello 的 sessions/tasks 应由 ticker 首帧统一覆盖（消重后仍保持首帧完整）",
   );
 });
 

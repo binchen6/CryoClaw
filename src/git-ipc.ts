@@ -8,9 +8,11 @@
 // 错误协议（渲染层据此降级）：
 // - git 不存在 → { success:false, error:"no-git" }
 // - cwd 不在白名单 → { success:false, error:"denied" }
+// - cwd 不存在或不是目录 → { success:false, error:"not-found", message: 路径 }
 // - 非 git 仓库 → { success:false, error:"not-a-repo" }
 // - 其余 git 失败 → { success:false, error:"git-error", message: stderr 截断 }
 import { ipcMain } from "electron";
+import * as fs from "fs";
 import { assertTrustedIpcSender } from "./ipc-sender-guard";
 import { detectGitCached } from "./git-detector";
 import { resolveAllowedDir } from "./workspace-ipc";
@@ -40,7 +42,7 @@ type Guarded =
   | { ok: true; dir: string }
   | { ok: false; resp: { success: false; error: string; message?: string } };
 
-// 公共守卫链：sender 可信 → git 可用 → cwd ∈ 白名单根
+// 公共守卫链：sender 可信 → git 可用 → cwd ∈ 白名单根 → cwd 真实存在且为目录
 async function guardGitOp(
   event: Electron.IpcMainInvokeEvent,
   channel: string,
@@ -55,6 +57,20 @@ async function guardGitOp(
   if (!dir) {
     log.error(`[git-ipc] ${channel} 拒绝白名单外 cwd: ${String(cwd).slice(0, 200)}`);
     return { ok: false, resp: { success: false, error: "denied" } };
+  }
+  // cwd 不存在（或不是目录）时 execFile 的 spawn 阶段就抛 ENOENT，与「git 二进制
+  // 消失」的 ENOENT 无法区分，会被 gitCatchResp 误归为 no-git、误导用户「请安装
+  // Git」——在守卫层提前拦截，返回独立错误码并带路径信息（渲染层未知错误码走
+  // generic 兜底，直接展示 message）
+  let stat: fs.Stats | null = null;
+  try {
+    stat = fs.statSync(dir);
+  } catch {
+    stat = null;
+  }
+  if (!stat?.isDirectory()) {
+    log.error(`[git-ipc] ${channel} cwd 不存在或不是目录: ${dir.slice(0, 200)}`);
+    return { ok: false, resp: { success: false, error: "not-found", message: `目录不存在: ${dir}` } };
   }
   return { ok: true, dir };
 }

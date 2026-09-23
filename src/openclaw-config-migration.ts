@@ -143,7 +143,10 @@ function migratePlanTool(config: any, atLeast2026_8: boolean): boolean {
   }
   if (typeof tools.updatePlan === "boolean") {
     const experimental = (tools.experimental ??= {});
-    if (typeof experimental === "object" && experimental.planTool === undefined) {
+    // experimental 为非对象标量（如字符串）时搬迁会被下方 typeof 检查跳过，
+    // 此时不能无条件 delete——否则 updatePlan 被静默丢弃，用户设置丢失
+    if (typeof experimental !== "object") return changed;
+    if (experimental.planTool === undefined) {
       experimental.planTool = tools.updatePlan;
     }
     delete tools.updatePlan;

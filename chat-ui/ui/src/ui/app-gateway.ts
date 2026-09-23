@@ -464,8 +464,8 @@ export function connectGateway(host: GatewayHost) {
       void loadAgents(host as unknown as OpenClawApp);
       // 渠道元数据（cron 表单的渠道下拉依赖 channelsSnapshot.channelMeta）
       void loadChannels(host as unknown as OpenClawApp, false);
-      void loadSessionsAndReconcile(host);
-      void loadTasks(host as unknown as OpenClawApp);
+      // sessions/tasks 不在此显式拉取：下方 startTicker() 的首帧 runAllHandlers 会执行
+      // 同名 tick handler，显式再拉一次会让每次重连各多打两份全量 RPC
       // R61 问答卡片：重连后 question.list 全量对齐（断连窗口内的 resolved 事件已丢）
       void reconcileQuestionPrompts(host);
       // Progress Card：重连后重拉当前会话卡片（断连窗口内的 changed 事件已丢失）

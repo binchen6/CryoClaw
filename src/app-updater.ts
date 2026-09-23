@@ -61,9 +61,13 @@ function publish(event: AppUpdateEvent): void {
   pushFn?.(snapshotState());
 }
 
-// 输出快照：合并暂缓状态（非状态机字段，每次现算保证推送/拉取一致）
+// 输出快照：合并暂缓状态（非状态机字段，每次现算保证推送/拉取一致）。
+// snooze 走进程内缓存而非每次 readSnooze() 的同步读盘——download-progress 每秒
+// 数次 publish，热路径上反复 readFileSync 没有收益（snooze 只会被本模块的
+// snooze/clear/init 三个入口改动，三者均同步维护缓存）
+let cachedSnoozeUntil: SnoozeUntil | null = null;
 function snapshotState(): AppUpdateState {
-  return { ...state, snoozedUntil: readSnooze()?.until ?? null };
+  return { ...state, snoozedUntil: cachedSnoozeUntil };
 }
 
 // 从 app 根目录 release-notes.json 按版本号取更新说明（缺失时返回 null，不阻断更新流程）
@@ -120,6 +124,7 @@ export function downloadAppUpdate(): void {
 /** 设置更新提示暂缓（until: epoch ms 或 "forever"），并推送最新快照。 */
 export function snoozeAppUpdate(until: SnoozeUntil): void {
   writeSnooze(until);
+  cachedSnoozeUntil = until;
   log.info(`[app-updater] 更新提示暂缓: ${until === "forever" ? "永久" : `至 ${new Date(until).toISOString()}`}`);
   pushFn?.(snapshotState());
 }
@@ -127,6 +132,7 @@ export function snoozeAppUpdate(until: SnoozeUntil): void {
 /** 清除暂缓（设置页可手动恢复自动检查）。 */
 export function clearAppUpdateSnooze(): void {
   clearSnooze();
+  cachedSnoozeUntil = null;
   log.info("[app-updater] 更新提示暂缓已清除");
   pushFn?.(snapshotState());
 }
@@ -254,6 +260,8 @@ export function initAppUpdater(deps: Deps): void {
   pushFn = deps.push;
   beforeQuitAndInstall = deps.beforeQuitAndInstall ?? null;
   state = createInitialAppUpdateState(app.isPackaged, app.getVersion());
+  // 预热 snooze 缓存（snapshotState 此后只读缓存，见该函数注释）
+  cachedSnoozeUntil = readSnooze()?.until ?? null;
 
   if (!app.isPackaged) {
     log.info("[app-updater] dev/未打包环境，App 自动更新不可用");

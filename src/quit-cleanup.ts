@@ -15,7 +15,10 @@ import * as os from "os";
 import * as path from "path";
 import * as log from "./logger";
 
-// 运行时已知临时目录：退出即删（gateway 已在 before-quit 先行停止）
+// 运行时已知临时目录：退出即删（gateway 已在 before-quit 先行停止）。
+// 注意：多实例并行 dev（同时跑两个 CryoClaw/OneClaw 实例）下，另一实例的运行期
+// 临时目录同样命中这些前缀，会被这里误删——属可接受取舍：运行期目录被删后内核
+// 侧操作会报错显形，而非静默数据损坏，且 dev 并行场景罕见。
 const RUNTIME_TEMP_DIR_PATTERNS = [
   /^cryoclaw-openclaw-export-/, // openclaw-state-archive.ts 导出快照
   /^oneclaw-openclaw-export-/, // 改名前遗留

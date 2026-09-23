@@ -280,6 +280,7 @@
 > `{files: DiffFile[], truncated}`；porcelain/diff 解析器在 `src/git-parse.ts`（纯函数），
 > 底层 runner 在 `src/git-run.ts`（截断检测含 Node ≥22 的 `ERR_CHILD_PROCESS_STDIO_MAXBUFFER`）。
 > 结构化错误协议：git 未安装 `{error:"no-git"}`、cwd 白名单外 `{error:"denied"}`、
+> cwd 不存在/非目录 `{error:"not-found"}`（避免与 git 二进制缺失的 ENOENT 混淆）、
 > 非 git 仓库 `{error:"not-a-repo"}`、其余 git 失败 `{error:"git-error", message: stderr}`。
 > 文件路径入参只接受仓库相对路径（`sanitizeGitRelPaths` 拒绝绝对路径与 `..` 逃逸）。
 > `git:unstage` 用 `restore --staged`（要求 git ≥ 2.23）；空仓库（unborn HEAD）自动回退

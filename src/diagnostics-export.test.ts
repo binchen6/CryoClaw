@@ -22,6 +22,23 @@ test("redactSensitiveValues：敏感键值替换为 ***", () => {
   assert.equal(out.name, "keep-me");
 });
 
+test("redactSensitiveValues：author/authors 不命中 auth 锚定，authorization 仍脱敏", () => {
+  const out = redactSensitiveValues({
+    author: "keep-author",
+    authors: "keep-authors",
+    git_author: "keep-git-author",
+    authorization: "Bearer should-redact",
+    auth: "should-redact",
+    "x-auth-token": "should-redact",
+  }) as Record<string, unknown>;
+  assert.equal(out.author, "keep-author");
+  assert.equal(out.authors, "keep-authors");
+  assert.equal(out.git_author, "keep-git-author");
+  assert.equal(out.authorization, "***");
+  assert.equal(out.auth, "***");
+  assert.equal(out["x-auth-token"], "***");
+});
+
 test("redactSensitiveValues：回环代理 URL 中的 path secret 按值打码", () => {
   const out = redactSensitiveValues({
     baseUrl: "http://127.0.0.1:18790/AbCdEf123456_-xyz98765/coding",

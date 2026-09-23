@@ -178,8 +178,8 @@ htmlEscapeRenderer.html = ({ text }: { text: string }) => {
   if (!text) {
     return "";
   }
-  // \x00 占位符在正常文本中不会出现；即使出现，\x00数字\x00 的还原模式也只匹配
-  // 我们自己写入的占位符（数字由 String.replace 回调产出，无用户可控内容）。
+  // \x00 占位符可被用户文本里的字面「\x005\x00」伪造还原——这不是防护，只是约定：
+  // NUL 不可能出现在正常聊天/markdown 文本中，按可接受风险放行
   const passthrough: string[] = [];
   const masked = text.replace(PROGRESS_TAG_RE, (tag) => {
     passthrough.push(tag);

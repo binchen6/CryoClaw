@@ -826,7 +826,12 @@ async function ensureAuthProxy(): Promise<void> {
       ensureProxyConfig(runningPort);
     } else {
       const preferredPort = parseProxyPortFromConfig();
-      const actualPort = await startAuthProxy(preferredPort > 0 ? preferredPort : undefined);
+      // 避让 gateway 端口：tryListen 的 excludePort 此前从未接线，OS 动态分配
+      // 兜底分支可能选中 gateway 端口导致互踩
+      const actualPort = await startAuthProxy(
+        preferredPort > 0 ? preferredPort : undefined,
+        resolveGatewayPort(),
+      );
       // 同步 config（仅端口变化时写入）
       ensureProxyConfig(actualPort);
     }
@@ -930,7 +935,7 @@ ipcMain.handle("app:open-external", (event, url: string) => {
 });
 ipcMain.handle("app:open-path", async (event, filePath: string) => {
   if (!assertTrustedIpcSender(event, "app:open-path")) return Promise.reject(new Error("IPC sender not trusted"));
-  // 安全面：白名单见 safe-open.ts；workspace 内文件由 workspace:open-file 单独处理（有 path traversal 守卫）。
+  // 安全面：白名单见 safe-open.ts；workspace 内文件由 workspace:read-file 单独处理（有 path traversal 守卫）。
   const ext = path.extname(filePath).slice(1).toLowerCase();
   if (!isSafeOpenExt(ext)) {
     log.warn(`[security] app:open-path 拒绝非白名单扩展名: .${ext || "(无)"} ${filePath.slice(0, 100)}`);
@@ -1125,7 +1130,8 @@ ipcMain.handle("app:dismiss-release-notes", (_e, version: string) => {
   } catch (err: any) {
     log.error(`写入 lastShownReleaseNotesVersion 失败: ${err?.message ?? err}`);
   }
-});ipcMain.on("app:open-webui", (event) => {
+});
+ipcMain.on("app:open-webui", (event) => {
   if (!assertTrustedIpcSender(event, "app:open-webui")) return;
   // F5：不再把 gateway token 直接交给 OS/浏览器打开（完整 URL 会进入浏览器历史，
   // 开启历史同步即上传云端，而该 token 是本机 gateway 的全量控制凭据）。改为先跳

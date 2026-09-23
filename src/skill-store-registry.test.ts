@@ -1,4 +1,6 @@
 // skill-store registry 写入 scheme 守卫：明文 http 的 registry 会 MITM 技能载荷。
+// 被测对象（writeSkillStoreRegistry/readSkillStoreRegistry）实际在 src/skill-store.ts
+// （本文件仅承载用例，勿按文件名寻源）。
 import { test, expect, vi } from "vitest";
 import { useTempStateDir } from "./test-support/vitest-state-dir";
 

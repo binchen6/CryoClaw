@@ -437,8 +437,13 @@ async function browsePluginMarket(limit: number): Promise<MarketBrowseItem[]> {
     // 竞速截止：deadline 定时器必须在 HTTP 先胜出时显式清除——race 落败分支的
     // reject 若无人接听会升级为 unhandledRejection。
     let deadlineTimer: NodeJS.Timeout | undefined;
+    const fetchP = fetchMarketGroups(limit);
+    // 落败分支兜底：deadline 先胜出后，在途的 fetchMarketGroups 稍后失败时
+    // race 已 settle、reject 无人接听，会升级为 unhandledRejection——预挂空 catch
+    // 保持其「已被处理」，不改变竞速结果
+    fetchP.catch(() => {});
     groups = await Promise.race([
-      fetchMarketGroups(limit),
+      fetchP,
       new Promise<never>((_, reject) => {
         deadlineTimer = setTimeout(() => reject(new Error("market browse http deadline exceeded")), MARKET_BROWSE_HTTP_DEADLINE_MS);
       }),
@@ -868,7 +873,9 @@ export function registerPluginStoreIpc(): void {
     try {
       const items = await browsePluginMarket(limit);
       marketBrowseCache = { at: Date.now(), limit, items };
-      return { success: true, data: { items, fetchedAt: Date.now() } };
+      // fetchedAt 统一取缓存的 at：browse 耗时可能达 30s，另取 Date.now() 会让
+      // fetchedAt 晚于缓存命中口径（同一份数据两种时间戳）
+      return { success: true, data: { items, fetchedAt: marketBrowseCache.at } };
     } catch (err: any) {
       log.info(`[plugin-store] market-browse failed: ${err?.message ?? err}`);
       return { success: false, message: err?.message ?? String(err) };

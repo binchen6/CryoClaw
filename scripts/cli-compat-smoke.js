@@ -102,7 +102,6 @@ function parseCommands(helpText) {
   const body = text.slice(idx);
   const commands = [];
   // 行形态：`  name [args]   description...`（描述可折行，折行不匹配命令头正则即忽略）
-  const lineRe = /^ {2,}([a-z][a-z0-9:-]*)( \*| <[^>]+>|\.{3})* {2,}\S|^ {2,}([a-z][a-z0-9:-]*) \*/;
   for (const rawLine of body.split(/\r?\n/).slice(1)) {
     const m = rawLine.match(/^ {2,}([a-z][a-z0-9:-]*)((?: \*)|(?: <[^>]+>)*) {2,}\S/);
     if (m) commands.push({ name: m[1], hasSub: /\*$/.test((m[2] || "").trim()) });
@@ -166,7 +165,7 @@ async function main() {
   console.log("[1] 命令矩阵（--help 树）");
   let wrapperMatrix;
   try {
-    wrapperMatrix = await buildMatrix((args) => runCli(wrapper, args), "wrapper-2026.8.2");
+    wrapperMatrix = await buildMatrix((args) => runCli(wrapper, args), "wrapper");
   } catch (e) {
     console.error("[cli-smoke] 矩阵生成失败: " + e.message);
     process.exit(1);

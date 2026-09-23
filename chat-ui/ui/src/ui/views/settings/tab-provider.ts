@@ -2036,7 +2036,10 @@ async function handleGroupAddFetchModels(state: AppViewState, providerKey: strin
     if (res?.success && res.data?.models) {
       s.liveModels[providerKey] = { models: res.data.models, at: Date.now() };
       s.addFetchedFor = providerKey;
-      const options = mergeAddModelOptions(catalogProviderForKey(providerKey));
+      // 与渲染路径（renderGroupAddPanel）同用 getGroupAddModelOptions：catalog 查不到
+      // provider 时要回退读 liveModels[providerKey]，直接 mergeAddModelOptions(null)
+      // 会读到 liveModels[""] 恒为空，addShowCustomModelInput 不复位
+      const options = getGroupAddModelOptions(providerKey);
       if (!options.includes(s.addModelId) && options.length) {
         s.addModelId = options[0];
         s.addShowCustomModelInput = false;

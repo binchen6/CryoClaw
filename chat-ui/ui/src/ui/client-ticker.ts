@@ -11,13 +11,22 @@ const handlers = new Map<string, () => void | Promise<void>>();
 let timerId: number | null = null;
 
 // 执行所有已注册的 tick 回调，每个独立 try-catch
+// running 守卫：一轮可执行数秒，interval  tick 与 visibilitychange 补帧可能重叠——
+// 不加守卫会并发跑两轮全量 handler，对 gateway 重复打同一批请求
+let tickerRunning = false;
 async function runAllHandlers(): Promise<void> {
-  for (const [name, fn] of handlers) {
-    try {
-      await fn();
-    } catch (err) {
-      console.error(`[client-ticker] handler "${name}" failed:`, err);
+  if (tickerRunning) return;
+  tickerRunning = true;
+  try {
+    for (const [name, fn] of handlers) {
+      try {
+        await fn();
+      } catch (err) {
+        console.error(`[client-ticker] handler "${name}" failed:`, err);
+      }
     }
+  } finally {
+    tickerRunning = false;
   }
 }
 

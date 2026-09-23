@@ -14,7 +14,10 @@ const MAX_LOG_BYTES_PER_FILE = 2 * 1024 * 1024;
 // 日志目录总纳入上限
 const MAX_LOG_BYTES_TOTAL = 8 * 1024 * 1024;
 
-const SENSITIVE_KEY_PATTERN = /(apikey|api_key|token|secret|password|credential|auth)/i;
+// 锚定形态：auth 只匹配词首或 _/- 后的独立片段，并排除 author/authors 误命中；
+// authorization 头类键单独保留（其字面以 "auth"+"or" 开头，会被 (?!or) 前瞻排除）。
+// 不锚定的话 "auth" 会命中 author/authors，把 git 作者名等无害字段一并打码。
+const SENSITIVE_KEY_PATTERN = /(apikey|api_key|token|secret|password|credential|authorization|(^|[_-])auth(?!or))/i;
 
 // 回环代理 URL 里的 path secret（kimi-auth-proxy）：http://127.0.0.1:<port>/<secret>/...
 // secret 嵌在 baseUrl 值里、键名不敏感，需按值定向打码（诊断包是用户外发件）

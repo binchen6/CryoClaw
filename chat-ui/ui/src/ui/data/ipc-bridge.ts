@@ -136,7 +136,7 @@ export interface WebbridgeUpdateCheckResult {
 // 立即更新结果（settings:webbridge-update-apply）
 export interface WebbridgeUpdateApplyResult {
   success: boolean;
-  code?: "WEBBRIDGE_BUSY" | "PIN_STALE" | "UPDATE_FAILED";
+  code?: "WEBBRIDGE_BUSY" | "PIN_STALE" | "SWAP_FAILED" | "UPDATE_FAILED";
   message?: string;
   data?: { from: string | null; to: string | null; etag: string | null; daemonRestarted: boolean };
 }
@@ -427,6 +427,18 @@ function unwrapVoid(result: any): void {
   if (result && typeof result === "object" && "success" in result && !result.success) {
     throw new Error(result.message ?? "IPC call failed");
   }
+}
+
+// preload 版本旧于 bridge 方法时，可选链调用会静默返回 undefined，调用方 unwrap
+// 只拿到含混的 TypeError——显式判空抛出带方法名的错误
+function requireBridgeMethod<T extends (...args: any[]) => any>(
+  name: string,
+  fn: T | undefined,
+): T {
+  if (!fn) {
+    throw new Error(`bridge method unavailable: ${name}`);
+  }
+  return fn;
 }
 
 // ---------------------------------------------------------------------------
@@ -912,7 +924,9 @@ export async function appUpdateCheck(): Promise<AppUpdateState> {
 }
 
 export async function appUpdateDownload(): Promise<AppUpdateState> {
-  return unwrapData<AppUpdateState>(await oc().appUpdateDownload?.());
+  return unwrapData<AppUpdateState>(
+    await requireBridgeMethod("appUpdateDownload", oc().appUpdateDownload)(),
+  );
 }
 
 export async function appUpdateQuitAndInstall(): Promise<void> {
@@ -920,11 +934,15 @@ export async function appUpdateQuitAndInstall(): Promise<void> {
 }
 
 export async function appUpdateSnooze(opts: { days?: number; forever?: boolean }): Promise<AppUpdateState> {
-  return unwrapData<AppUpdateState>(await oc().appUpdateSnooze?.(opts));
+  return unwrapData<AppUpdateState>(
+    await requireBridgeMethod("appUpdateSnooze", oc().appUpdateSnooze)(opts),
+  );
 }
 
 export async function appUpdateClearSnooze(): Promise<AppUpdateState> {
-  return unwrapData<AppUpdateState>(await oc().appUpdateClearSnooze?.());
+  return unwrapData<AppUpdateState>(
+    await requireBridgeMethod("appUpdateClearSnooze", oc().appUpdateClearSnooze)(),
+  );
 }
 
 export function onAppUpdateState(cb: (s: AppUpdateState) => void): () => void {

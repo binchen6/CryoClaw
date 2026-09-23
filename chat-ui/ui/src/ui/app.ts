@@ -28,6 +28,7 @@ import {
 } from "./app-chat.ts";
 import { DEFAULT_CRON_FORM } from "./app-defaults.ts";
 import { connectGateway as connectGatewayInternal } from "./app-gateway.ts";
+import { stopTicker } from "./client-ticker.ts";
 import {
   deferredGatewayConnect,
   handleConnected,
@@ -803,6 +804,11 @@ export class OpenClawApp extends LitElement {
       document.removeEventListener("keydown", this.dialogKeydownHandler);
       this.dialogKeydownHandler = null;
     }
+    // 卸载时停掉 gateway client 与其共享轮询定时器：onClose 的 host.client !== client
+    // 守卫只挡旧 client 的回调，挡不住 WebSocket 本体与 ticker 继续运行
+    this.client?.stop();
+    this.client = null;
+    stopTicker();
     handleDisconnected(this as unknown as Parameters<typeof handleDisconnected>[0]);
     super.disconnectedCallback();
   }
@@ -1138,7 +1144,8 @@ export class OpenClawApp extends LitElement {
       }
       this.updateThinkingCapabilities();
     } catch {
-      this.configuredModels = [];
+      // 拉取失败（瞬断/超时）保留旧列表不清空：选择器整体空白比短暂陈旧更难恢复；
+      // configuredModels 初始值即 []，首次加载失败无需额外置空分支
     }
   }
 

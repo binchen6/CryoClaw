@@ -42,6 +42,8 @@ export function isChatStopCommand(text: string) {
   if (normalized === "/stop") {
     return true;
   }
+  // 裸词（无斜杠前缀）中止命令是镜像上游 openclaw control-ui 的契约，行为必须
+  // 与其保持一致——非斜杠前缀属有意设计，勿按本地约定「收紧」为仅识别 /stop
   return (
     normalized === "stop" ||
     normalized === "esc" ||
@@ -196,13 +198,17 @@ async function sendChatMessageNow(
     (host as unknown as OpenClawApp).chatMessages = [];
     (host as unknown as OpenClawApp).chatVisibleMessageCount = 0;
   }
+  const sessionChangedOut = { value: false };
   const ok = Boolean(
     await sendChatMessage(
       host as unknown as OpenClawApp,
       message,
       opts?.attachments,
       (host as any).thinkingLevel,
-      opts?.preserveRunState ? { preserveRunState: true } : undefined,
+      {
+        preserveRunState: Boolean(opts?.preserveRunState),
+        sessionChangedDuringRead: sessionChangedOut,
+      },
     ),
   );
   if (isResetCommand && !ok) {
@@ -219,10 +225,14 @@ async function sendChatMessageNow(
   }
   if (ok) {
     syncSessionLabelAfterSend(host, message, requestSessionKey);
-    setLastActiveSessionKey(
-      host as unknown as Parameters<typeof setLastActiveSessionKey>[0],
-      requestSessionKey,
-    );
+    // 附件读取期间已切走会话：last-active 写回旧会话会把用户刚切到的新会话覆盖掉，
+    // 该情形跳过写回（label 同步不受影响，仍归属原会话）
+    if (!sessionChangedOut.value) {
+      setLastActiveSessionKey(
+        host as unknown as Parameters<typeof setLastActiveSessionKey>[0],
+        requestSessionKey,
+      );
+    }
   }
   if (ok && opts?.restoreDraft && opts.previousDraft?.trim()) {
     host.chatMessage = opts.previousDraft;

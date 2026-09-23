@@ -35,12 +35,16 @@ export type GitStatusResult = {
   entries: GitStatusEntry[];
 };
 
-/** staged 组：tracked/renamed 且 index 字母非 "." */
+/** staged 组：tracked/renamed 且 index 字母非 "."
+ *  注意：渲染层有一份同形拷贝（chat-ui/ui/src/ui/controllers/git.ts），
+ *  改分组语义必须两侧同步。 */
 export function isStagedEntry(e: GitStatusEntry): boolean {
   return (e.kind === "tracked" || e.kind === "renamed") && e.index !== "." && e.index !== " ";
 }
 
-/** unstaged 组：tracked/renamed 且 worktree 字母非 "."；unmerged 归入 unstaged */
+/** unstaged 组：tracked/renamed 且 worktree 字母非 "."；unmerged 归入 unstaged
+ *  注意：渲染层有一份同形拷贝（chat-ui/ui/src/ui/controllers/git.ts），
+ *  改分组语义必须两侧同步。 */
 export function isUnstagedEntry(e: GitStatusEntry): boolean {
   if (e.kind === "unmerged") return true;
   return (e.kind === "tracked" || e.kind === "renamed") && e.worktree !== "." && e.worktree !== " ";
