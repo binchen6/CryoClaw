@@ -1,12 +1,11 @@
 /**
  * 托管图片解析（阶段 18）。
  *
- * 内核取证（managed-image-attachments）：助手消息里的图片 block 形如
+ * 内核对证（managed-image-attachments，2026.9 实机验证）：助手消息里的图片 block 形如
  * `{ type:"image", url:"/api/chat/media/outgoing/<sessionKey>/<id>/full", openUrl, ... }`，
- * url 是网关 HTTP server 的相对路径，且该端点强制 `Authorization: Bearer <token>` 头
- * （只认 header），file:// 渲染层的 <img src> 无法携带——必须先 fetch 转 blob object URL。
- *
- * 凭证优先级与 WS 连接一致：设备 token（operator 角色，含 chat.history scope）→ 共享 token。
+ * url 是网关 HTTP server 的相对路径，且该端点要求 Bearer 鉴权（网关共享 token 实测 200；
+ * **设备 token 实测 401**）——file:// 渲染层的 <img src> 无法携带 Authorization 头，
+ * 必须先 fetch 转 blob object URL。凭证按候选序列尝试：共享 token → 设备 token。
  */
 
 import { loadDeviceAuthToken } from "../device-auth.ts";
@@ -66,17 +65,68 @@ const pendingFetches = new Map<string, Promise<string | null>>();
 // 避免 reset 后晚到的在途任务把 object URL 写回缓存造成泄漏。
 let mediaGeneration = 0;
 
-async function resolveBearerToken(): Promise<string | null> {
+// 候选凭证列表（去重，按优先级）：共享 token（网关 token）→ 设备 token。
+//
+// 2026.9 实测（本机内核）：HTTP 媒体端点对**设备 token 一律 401**（设备认证只服务
+// WS 连接），网关共享 token 才被接受。旧实现只发单 token 且设备 token 优先——
+// 设备 token 非空但 HTTP 被拒时永不回退，全部托管图片退化为 ⚠ 占位（线上实报）。
+// 因此 HTTP 拉取用「共享优先 + 设备兜底 + 去重」的候选序列，逐一尝试。
+async function resolveBearerTokenCandidates(): Promise<string[]> {
+  const out: string[] = [];
+  const push = (t?: string | null) => {
+    const v = t?.trim();
+    if (v && !out.includes(v)) {
+      out.push(v);
+    }
+  };
+  push(config?.sharedToken);
   try {
     const identity = await loadOrCreateDeviceIdentity();
-    const deviceToken = loadDeviceAuthToken({
-      deviceId: identity.deviceId,
-      role: "operator",
-    })?.token;
-    return deviceToken ?? config?.sharedToken ?? null;
+    push(loadDeviceAuthToken({ deviceId: identity.deviceId, role: "operator" })?.token);
   } catch {
-    return config?.sharedToken ?? null;
+    // 设备身份不可用（node 测试、首启存储异常等）：仅共享 token 候选
   }
+  return out;
+}
+
+// 命中的候选下标：下一张图直接从同一凭证开始，避免每张都先撞 401 再回退
+let preferredCandidateIndex = 0;
+
+// 按候选顺序尝试鉴权拉取：401/403 视为「凭证不被接受」换下一候选；其余状态
+// 直接返回（404/5xx 换凭证无意义，保持调用方既有 !ok 语义）；网络层异常直接放弃。
+// 导出供测试直接覆盖回退语义（生产仅经 fetchManagedImageObjectUrl 调用）。
+export async function fetchWithTokenFallback(
+  absolute: string,
+  tokens: string[],
+): Promise<Response | null> {
+  if (tokens.length === 0) {
+    // 无凭证候选：直发（trusted-proxy / 免鉴权部署），行为与旧实现一致
+    try {
+      return await fetch(absolute);
+    } catch {
+      return null;
+    }
+  }
+  const start = Math.min(preferredCandidateIndex, tokens.length - 1);
+  const order = [...tokens.slice(start), ...tokens.slice(0, start)];
+  let last: Response | null = null;
+  for (const token of order) {
+    let res: Response;
+    try {
+      res = await fetch(absolute, { headers: { Authorization: `Bearer ${token}` } });
+    } catch {
+      return null;
+    }
+    if (res.ok) {
+      preferredCandidateIndex = tokens.indexOf(token);
+      return res;
+    }
+    if (res.status !== 401 && res.status !== 403) {
+      return res;
+    }
+    last = res; // 凭证被拒：记住最后一次响应（调用方按 !ok 处理并记录状态码）
+  }
+  return last;
 }
 
 /**
@@ -96,11 +146,14 @@ export async function fetchManagedImageObjectUrl(url: string): Promise<string | 
   const generation = mediaGeneration;
   const task = (async (): Promise<string | null> => {
     try {
-      const token = await resolveBearerToken();
-      const res = await fetch(absolute, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
-      if (!res.ok) {
+      const tokens = await resolveBearerTokenCandidates();
+      const res = await fetchWithTokenFallback(absolute, tokens);
+      if (!res || !res.ok) {
+        // 诊断可见性：失败原因进 console（渲染层 console 转发进 app.log 的
+        // [renderer] 行），此前静默 catch 让「图片为何是 ⚠ 占位」无从排查
+        console.warn(
+          `[managed-media] fetch failed status=${res ? res.status : "network"} url=${absolute}`,
+        );
         return null;
       }
       const blob = await res.blob();
@@ -144,4 +197,5 @@ export function resetManagedMedia() {
   objectUrlCache.clear();
   pendingFetches.clear();
   config = null;
+  preferredCandidateIndex = 0;
 }

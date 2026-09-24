@@ -1181,6 +1181,7 @@ export const zhDict: Record<string, string> = {
   "chat.fileCard.openFailed": "无法打开该文件（类型不受支持或文件不存在）",
   "chat.fileCard.revealFailed": "无法在文件夹中定位该文件",
   "chat.fileCard.revealFallback": "该类型文件不支持直接打开，已在文件夹中定位",
+  "chat.mediaRetry": "图片加载失败，点击重试",
   "chat.board.title": "仪表盘",
   "chat.model.sessionCurrent": "当前会话",
   "chat.fileCard.openLabel": "打开附件",

@@ -1142,6 +1142,7 @@ export const enDict: Record<string, string> = {
   "chat.fileCard.openFailed": "Cannot open the file (unsupported type or missing)",
   "chat.fileCard.revealFailed": "Cannot locate the file in its folder",
   "chat.fileCard.revealFallback": "This file type cannot be opened directly; located it in its folder instead",
+  "chat.mediaRetry": "Image failed to load — click to retry",
   "chat.board.title": "Dashboard",
   "chat.model.sessionCurrent": "current session",
   "chat.fileCard.openLabel": "Open attachment",

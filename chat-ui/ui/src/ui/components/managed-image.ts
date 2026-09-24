@@ -1,6 +1,7 @@
 import { LitElement, css, html } from "lit";
 import { customElement } from "lit/decorators.js";
 import { fetchManagedImageObjectUrl, isManagedMediaUrl } from "../chat/managed-media.ts";
+import { t } from "../i18n.ts";
 
 /**
  * 消息图片渲染组件（阶段 18 图文混排）。
@@ -56,6 +57,13 @@ export class ManagedImage extends LitElement {
       font-size: var(--font-size-meta);
       max-width: 480px;
       box-sizing: border-box;
+    }
+    .placeholder--retry {
+      cursor: pointer;
+    }
+    .placeholder--retry:hover {
+      border-color: var(--accent);
+      color: var(--text-primary);
     }
     .placeholder__dot {
       width: 6px;
@@ -115,6 +123,10 @@ export class ManagedImage extends LitElement {
     this.expanded = !this.expanded;
   }
 
+  private retry() {
+    void this.load();
+  }
+
   render() {
     if (this.resolvedSrc) {
       // 键盘可达：img 加 role=button + tabindex + Enter/Space 展开（此前仅鼠标可点，R67）
@@ -132,7 +144,18 @@ export class ManagedImage extends LitElement {
       />`;
     }
     if (this.failed) {
-      return html`<div class="placeholder">⚠ ${this.alt || "image"}</div>`;
+      // 失败可点击重试：凭证回退/网络瞬断修复后无需整页刷新即可恢复历史图片
+      // （失败无负缓存，retry 直接重新走鉴权回退链）。键盘可达同 img 展开。
+      return html`<div
+        class="placeholder placeholder--retry"
+        role="button"
+        tabindex="0"
+        title=${t("chat.mediaRetry")}
+        @click=${() => this.retry()}
+        @keydown=${(e: KeyboardEvent) => {
+          if (e.key === "Enter" || e.key === " ") { e.preventDefault(); this.retry(); }
+        }}
+      >⚠ ${this.alt || "image"}</div>`;
     }
     return html`<div class="placeholder">
       <span class="placeholder__dot" aria-hidden="true"></span>${this.alt || "image"}
