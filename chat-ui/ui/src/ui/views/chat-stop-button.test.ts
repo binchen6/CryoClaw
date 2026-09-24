@@ -3,6 +3,7 @@
 // stream 在工具间隙被冻成 null，于是 run 仍在却看不到 Stop。fix：把 canAbort（=chatRunId）也并进 isBusy。
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import { computeStopButtonVisible } from "./chat-stop-button-gate.ts";
 
@@ -55,4 +56,23 @@ test("Stop 按钮：onAbort 没接（理论上不会发生）时不显示，避�
     // onAbort 缺
   });
   assert.equal(r.showStop, false);
+});
+
+// 中止在途禁用：abortPending 时 Stop 按钮保持可见但禁用（钉模板与装配——
+// 纯门控函数层无可观察变化，禁用态在 renderChat 模板与 props 装配处）。
+test("Stop 按钮：abortPending 在途禁用（钉源码）", () => {
+  const readSrc = (rel: string) =>
+    readFileSync(new URL(`../../../../../src/ui/${rel}`, import.meta.url), "utf8");
+  const viewSrc = readSrc("views/chat.ts");
+  assert.match(
+    viewSrc,
+    /\?disabled=\$\{!props\.connected \|\| Boolean\(props\.abortPending\)\}/,
+    "Stop 按钮模板应在 abortPending 时禁用（防重复 chat.abort）",
+  );
+  const propsSrc = readSrc("app-chat-props.ts");
+  assert.match(
+    propsSrc,
+    /abortPending:\s*state\.chatAbortPending/,
+    "装配层应把 chatAbortPending 传入 abortPending prop",
+  );
 });

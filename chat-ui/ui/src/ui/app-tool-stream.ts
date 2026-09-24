@@ -353,6 +353,33 @@ export function resetToolStream(host: ToolStreamHost) {
   flushToolStreamSync(host);
 }
 
+/**
+ * R3：replace 帧越过 tool 边界整体重生成（reducer 判定 deltaText 全文不再以
+ * frozenPrefix 开头）时调用。被重写的 leadingSegment 仍挂在各 entry 上，不作废会
+ * 与新正文同屏双份（前缀双份）。作废全部冻结段（含已被 trim 淘汰进 sticky 列表的），
+ * 重建时间线；narrationSegment 刻意不进 chat delta 累计文本，不受重生成影响，保留。
+ * 注意：工具卡本身不动——工具确实执行过，内核历史同样保留该调用。
+ */
+export function invalidateFrozenLeadingSegments(host: ToolStreamHost) {
+  for (const id of host.toolStreamOrder) {
+    const entry = host.toolStreamById.get(id);
+    if (entry?.leadingSegment) {
+      debugLog("tool", "invalidate rewritten leadingSegment", {
+        toolCallId: id,
+        segmentLen: entry.leadingSegment.text.length,
+      });
+      entry.leadingSegment = undefined;
+    }
+  }
+  if (host.evictedLeadingSegments.length > 0) {
+    debugLog("tool", "invalidate evicted leadingSegments", {
+      count: host.evictedLeadingSegments.length,
+    });
+    host.evictedLeadingSegments = [];
+  }
+  flushToolStreamSync(host);
+}
+
 export type CompactionStatus = {
   active: boolean;
   startedAt: number | null;

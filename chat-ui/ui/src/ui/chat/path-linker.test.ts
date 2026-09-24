@@ -55,8 +55,14 @@ test("pathLinker：不含特殊字符的路径行为不变", () => {
   assert.equal(
     out,
     '<p>see <a class="chat-path-link" data-path="/home/user/plain.txt" ' +
-      'title="/home/user/plain.txt">/home/user/plain.txt</a></p>',
+      'title="/home/user/plain.txt" tabindex="0" role="button">/home/user/plain.txt</a></p>',
   );
+});
+
+test("pathLinker：链接键盘可达（tabindex/role，Enter/Space 由线程级 keydown 委托触发）", () => {
+  const out = linkifyPaths("<p>/a/b/c.txt</p>");
+  assert.ok(out.includes('tabindex="0"'), "无 href 的 <a> 需显式 tabindex 才能 Tab 聚焦");
+  assert.ok(out.includes('role="button"'), "需补 button 角色，Enter/Space 语义对齐按钮");
 });
 
 test("pathLinker：多个 &amp; 实体的路径全部解码", () => {

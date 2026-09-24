@@ -147,6 +147,11 @@ export class GatewayBrowserClient {
     const generation = ++this.socketGeneration;
     this.ws = ws;
     this.resetHandshakeState();
+    // seq 编号是连接级的：服务端在新连接上重新编号（重连/reconnectNow/gap 重连
+    // 均换 socket）。沿用旧连接的 lastSeq 会把新连接上的合法帧全部静默丢弃
+    // （seq <= lastSeq 判重），且无 onGap 告警。stop() 已有重置，这里补齐各
+    // 重连路径——连接级去重只需同连接内防服务端重发/回绕。
+    this.lastSeq = null;
     ws.addEventListener("open", () => {
       if (!this.isActiveSocket(ws, generation)) {
         return;
@@ -383,6 +388,17 @@ export class GatewayBrowserClient {
       }
       const seq = typeof evt.seq === "number" ? evt.seq : null;
       if (seq !== null) {
+        // 重复/回绕帧（服务端重发、重连重放）：lastSeq 只进不退，seq <= lastSeq 的
+        // 帧是旧帧重放——投递出去会让流式文本/事件重复处理（同一段正文双份上屏）。
+        // 整帧丢弃且不触发 onGap（不是缺口，是冗余）。lastSeq 为 null（首帧/刚重连）
+        // 时无参照，照常接收。
+        if (this.lastSeq !== null && seq <= this.lastSeq) {
+          console.debug("[gateway] duplicate or rewind seq frame dropped", {
+            seq,
+            lastSeq: this.lastSeq,
+          });
+          return;
+        }
         if (this.lastSeq !== null && seq > this.lastSeq + 1) {
           this.opts.onGap?.({ expected: this.lastSeq + 1, received: seq });
         }

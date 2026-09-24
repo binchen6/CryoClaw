@@ -4,7 +4,7 @@ import { repeat } from "lit/directives/repeat.js";
 import type { GatewaySessionRow, SessionsListResult } from "../types.ts";
 import type { ChatAttachment, ChatQueueItem, ConfiguredModel } from "../ui-types.ts";
 import { icons } from "../icons.ts";
-import { t } from "../i18n.ts";
+import { getLocale, t } from "../i18n.ts";
 import { detectTextDirection } from "../text-direction.ts";
 import { renderMarkdownSidebar } from "./markdown-sidebar.ts";
 import { resolveContextMeterStats } from "../context-meter.ts";
@@ -35,6 +35,7 @@ import { resolveModelSelectKey } from "../controllers/models.ts";
 import { resolveActiveToolName } from "../chat/tool-summary.ts";
 import { appendQuoteToDraft } from "../chat/quote-text.ts";
 import { isFailedSubagentStatus, selectSubagentCards, type SubagentCard } from "../chat/subagent-status.ts";
+import { isStreamTextDuplicatedInHistory } from "../chat/stream-bubble-guard.ts";
 import { selectPendingQuestions, type QuestionPrompt } from "../chat/question-cards.ts";
 import { renderQuestionCards } from "./question-card.ts";
 import { renderPlanPanel } from "./plan-panel.ts";
@@ -67,6 +68,8 @@ export type ChatProps = {
   loading: boolean;
   sending: boolean;
   canAbort?: boolean;
+  // 中止请求在途：Stop 按钮禁用（防重复 chat.abort），保持可见直到终态
+  abortPending?: boolean;
   compactionStatus?: CompactionIndicatorStatus | null;
   // 模型 fallback 提示（lifecycle 事件驱动，5s 自动消失）
   fallbackNotice?: FallbackNotice | null;
@@ -753,6 +756,24 @@ function handleQuoteMessage(props: ChatProps, text: string) {
   });
 }
 
+// 路径链接打开（.chat-path-link 点击与 Enter/Space 键盘委托共用）：
+// 经预加载桥 cryoclaw.openPath 走主进程 shell.openPath
+function openChatPathLink(link: HTMLElement, props: ChatProps) {
+  const path = link.dataset.path;
+  if (!path) {
+    return;
+  }
+  const w = window as unknown as Record<string, unknown>;
+  const cryoclaw = w.cryoclaw as Record<string, (p: string) => unknown> | undefined;
+  const result = cryoclaw?.openPath?.(path);
+  // 主进程对不支持的扩展名会 reject：补 catch 并 toast 提示，避免静默失败
+  if (result && typeof (result as Promise<unknown>).catch === "function") {
+    (result as Promise<unknown>).catch(() => {
+      props.onShowToast?.(t("chat.openPathFailed"));
+    });
+  }
+}
+
 function renderSkillPicker(props: ChatProps) {
   if (!skillPickerOpen) {
     return nothing;
@@ -1056,6 +1077,19 @@ export function renderChat(props: ChatProps) {
       role="log"
       aria-live="polite"
       @scroll=${props.onChatScroll}
+      @keydown=${(e: KeyboardEvent) => {
+        // 路径链接键盘可达：无 href 的 <a tabindex="0"> 不响应 Enter/Space，
+        // 线程级委托补齐（与 media-enhance 文件卡片的键盘处理同语义）。
+        if (e.key !== "Enter" && e.key !== " ") {
+          return;
+        }
+        const link = (e.target as HTMLElement | null)?.closest?.(".chat-path-link");
+        if (!link) {
+          return;
+        }
+        e.preventDefault();
+        openChatPathLink(link as HTMLElement, props);
+      }}
       @click=${(e: Event) => {
         // file-changes 面板「在 git 中查看」链接（P4）：切到 git 面板视图
         const gitLink = (e.target as HTMLElement).closest(".chat-git-view-link");
@@ -1069,18 +1103,7 @@ export function renderChat(props: ChatProps) {
           return;
         }
         e.preventDefault();
-        const path = (link as HTMLElement).dataset.path;
-        if (path) {
-          const w = window as unknown as Record<string, unknown>;
-          const cryoclaw = w.cryoclaw as Record<string, (p: string) => unknown> | undefined;
-          const result = cryoclaw?.openPath?.(path);
-          // 主进程对不支持的扩展名会 reject：补 catch 并 toast 提示，避免静默失败
-          if (result && typeof (result as Promise<unknown>).catch === "function") {
-            (result as Promise<unknown>).catch(() => {
-              props.onShowToast?.(t("chat.openPathFailed"));
-            });
-          }
-        }
+        openChatPathLink(link as HTMLElement, props);
       }}
     >
       ${
@@ -1127,6 +1150,7 @@ export function renderChat(props: ChatProps) {
           .assistantName=${props.assistantName}
           .assistantAvatar=${assistantIdentity.avatar}
           .gitAvailable=${props.gitAvailable}
+          .locale=${getLocale()}
           .onOpenSidebar=${props.onOpenSidebar}
           .onQuoteMessage=${(text: string) => handleQuoteMessage(props, text)}
           .onResendError=${props.onResendError}
@@ -1136,9 +1160,18 @@ export function renderChat(props: ChatProps) {
         // R41 Task 10：流式气泡/思考指示抽为独立组件，高频更新只命中其自身 render()；
         // 出现条件与原 buildChatItems 的 stream 条目一致（stream !== null，空白时组件内部
         // 降级为思考指示）。R88：思考/解说流式存在时同样挂载（组件内部渲染实时思考区）。
+        // R1 渲染层双保险：终态帧丢失后历史已含本轮回复时，chatStream 与历史双份——
+        // 内容相同则跳过流式气泡，历史成为唯一渲染源（app 层清态的渲染侧兜底）。
         // 子代理等待卡仍在其后（原「置于时间线末尾（流式气泡之后）」）。
+        // a11y：.chat-thread 是 role="log"（aria-live polite），流式气泡每帧改文本会让
+        // 屏幕阅读器逐 token 播报。oc-chat-stream 显式 aria-live="off"：离它最近的
+        // live 设置生效，流式子树整体移出 live 区域；内部 role="status" 行（阶段指示/
+        // 「正在生成…」）仍各自播报，终态消息经历史区进入 live 区域。
         props.stream !== null || props.thinkingStream !== null || props.narrationText !== null
-          ? html`<oc-chat-stream
+          ? isStreamTextDuplicatedInHistory(props.messages, props.stream)
+            ? nothing
+            : html`<oc-chat-stream
+              aria-live="off"
               .stream=${props.stream}
               .thinkingStream=${props.thinkingStream ?? null}
               .narrationText=${props.narrationText ?? null}
@@ -1373,6 +1406,17 @@ export function renderChat(props: ChatProps) {
             dir=${detectTextDirection(props.draft)}
             ?disabled=${!props.connected}
             @keydown=${(e: KeyboardEvent) => {
+              // 程序化改 draft（引用消息/插入技能/发送清空）不触发 @input，过期建议
+              // 须先作废——否则 Enter 会把 draft 替换成损坏文本（与下方
+              // renderCommandSuggestions 的 /^\/(\S*)$/ 防御同款，两处缺一不可：
+              // 那里管渲染浮层，这里管键盘拦截）。
+              if (
+                commandSuggestions.length > 0 &&
+                !/^\/(\S*)$/.test(props.draft ?? "")
+              ) {
+                commandSuggestions = [];
+                commandIndex = 0;
+              }
               if (commandSuggestions.length > 0) {
                 if (e.key === "Tab" || e.key === "Enter") {
                   e.preventDefault();
@@ -1559,7 +1603,7 @@ export function renderChat(props: ChatProps) {
               showStop
                 ? html`<button
                     class="chat-compose__send-btn"
-                    ?disabled=${!props.connected}
+                    ?disabled=${!props.connected || Boolean(props.abortPending)}
                     @click=${props.onAbort}
                     aria-label=${t("chat.stop")}
                     data-tooltip=${t("chat.stop")}

@@ -9,7 +9,9 @@
  * - apply_patch：解析 args.input 文本补丁（*** Add/Delete/Update File:、*** Move to:）
  *   或结构化 args.changes[]（{path, kind}）→ added/deleted/modified
  * 同组内同路径合并：delete 优先，否则保留首个 kind。
- * 「触碰」= 本会话可见窗口内任意 read/write/edit/apply_patch 引用过该路径。
+ * 「触碰」= 本会话可见窗口内任意 write/edit/apply_patch 引用过该路径。
+ * 只读（read/read_file）不计触碰：同轮先读后新建显示「新增」而非「修改」——
+ * read 只证明文件存在，不代表本轮改动过它。modified 判定只看写类触碰记录。
  * 注意：历史渲染窗口上限 200 条，窗口外的触碰不可知，此时 write 倾向判 added——可接受。
  */
 
@@ -24,7 +26,8 @@ const PATH_ARG_KEYS = ["path", "file_path", "filePath", "file"];
 const WRITE_TOOLS = new Set(["write", "write_file", "create", "create_file"]);
 const EDIT_TOOLS = new Set(["edit", "edit_file", "str_replace", "str_replace_editor", "apply_diff"]);
 const PATCH_TOOLS = new Set(["apply_patch", "applypatch"]);
-// 只读但算「触碰」的工具
+// 只读工具：读取不产生改动，也不再计入「触碰」（read 只证明文件存在，
+// 同轮先读后新建应显示「新增」而非「修改」）。
 const READ_TOOLS = new Set(["read", "read_file"]);
 
 function extractPathArg(args: unknown): string | null {
@@ -163,9 +166,8 @@ export function collectGroupFileChanges(
       } else if (EDIT_TOOLS.has(name)) {
         mergeInto(changes, { path, kind: "modified" });
         touched.add(path);
-      } else if (READ_TOOLS.has(name)) {
-        touched.add(path);
       }
+      // READ_TOOLS：只读引用不触碰、不产生改动，直接忽略
     }
   }
   return changes;

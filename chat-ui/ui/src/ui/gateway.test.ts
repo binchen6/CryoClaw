@@ -119,6 +119,19 @@ async function flushMicrotasks() {
   await Promise.resolve();
 }
 
+// 完成 connect 握手：应答 hello-ok，让 client 进入已连接状态。
+function completeHello(socket: FakeWebSocket) {
+  const connectRequest = socket.sent.find((payload) => JSON.parse(payload).method === "connect");
+  socket.message(
+    JSON.stringify({
+      type: "res",
+      id: JSON.parse(connectRequest!).id,
+      ok: true,
+      payload: { type: "hello-ok", protocol: 3 },
+    }),
+  );
+}
+
 async function testReconnectNowCancelsScheduledReconnect() {
   FakeWebSocket.instances = [];
   const timers = new FakeTimers();
@@ -245,11 +258,117 @@ async function testInvalidUrlDoesNotThrowAndGoesToReconnectPath() {
   installBrowserGlobals(timers);
 }
 
+// R2 流式输出对话重复修复：重复/回绕 seq 帧（服务端重发、重连重放）必须整帧
+// 丢弃——投递出去会让流式 delta 被重复处理，同一段正文双份上屏；且不得误报 onGap。
+async function testDuplicateOrRewindSeqFramesAreDroppedWithoutGap() {
+  FakeWebSocket.instances = [];
+  const timers = new FakeTimers();
+  installBrowserGlobals(timers);
+
+  const events: Array<number | undefined> = [];
+  const gaps: Array<{ expected: number; received: number }> = [];
+  const client = new GatewayBrowserClient({
+    url: "ws://127.0.0.1:18789",
+    onEvent: (evt) => events.push(evt.seq),
+    onGap: (info) => gaps.push(info),
+  });
+  client.start();
+  const socket = FakeWebSocket.instances[0]!;
+  socket.open();
+
+  timers.runNext();
+  await flushMicrotasks();
+  const connectRequest = socket.sent.find((payload) => JSON.parse(payload).method === "connect");
+  assert.ok(connectRequest, "握手阶段应先发出 connect 请求");
+  socket.message(
+    JSON.stringify({
+      type: "res",
+      id: JSON.parse(connectRequest).id,
+      ok: true,
+      payload: { type: "hello-ok", protocol: 3 },
+    }),
+  );
+  await flushMicrotasks();
+
+  const frame = (seq: number) =>
+    socket.message(JSON.stringify({ type: "event", event: "chat", seq, payload: {} }));
+  frame(1);
+  frame(2);
+  frame(2); // 重复帧：丢弃
+  frame(1); // 回绕帧：丢弃
+  frame(4); // 前向跳号：照常投递 + 触发 onGap
+
+  assert.deepEqual(
+    events,
+    [1, 2, 4],
+    "重复/回绕 seq 帧不得投递给 onEvent，前向跳号帧照常投递",
+  );
+  assert.deepEqual(
+    gaps,
+    [{ expected: 3, received: 4 }],
+    "仅前向跳号触发 onGap，重复/回绕帧不得误报",
+  );
+  client.stop();
+}
+
+// seq 编号是连接级的：断线重连（reconnectNow/自动重连）后服务端重新编号。
+// 新 socket 必须重置 lastSeq——沿用旧值会把新连接上的合法帧全部当重复帧
+// 静默丢弃，且无 onGap 告警。
+async function testLastSeqResetsOnNewSocketConnection() {
+  FakeWebSocket.instances = [];
+  const timers = new FakeTimers();
+  installBrowserGlobals(timers);
+
+  const events: Array<number | undefined> = [];
+  const gaps: Array<{ expected: number; received: number }> = [];
+  const client = new GatewayBrowserClient({
+    url: "ws://127.0.0.1:18789",
+    onEvent: (evt) => events.push(evt.seq),
+    onGap: (info) => gaps.push(info),
+  });
+  client.start();
+  const socket = FakeWebSocket.instances[0]!;
+  socket.open();
+  timers.runNext();
+  await flushMicrotasks();
+  completeHello(socket);
+  await flushMicrotasks();
+
+  const frame = (s: number) =>
+    socket.message(JSON.stringify({ type: "event", event: "chat", seq: s, payload: {} }));
+  frame(1);
+  frame(2);
+
+  // 断线 + 手动重连：新 socket 上服务端重新从 seq 1 编号
+  socket.close(1006, "lost");
+  client.reconnectNow();
+  const socket2 = FakeWebSocket.instances[1]!;
+  socket2.open();
+  timers.runNext();
+  await flushMicrotasks();
+  completeHello(socket2);
+  await flushMicrotasks();
+  const frame2 = (s: number) =>
+    socket2.message(JSON.stringify({ type: "event", event: "chat", seq: s, payload: {} }));
+  frame2(1);
+  frame2(2);
+
+  assert.deepEqual(
+    events,
+    [1, 2, 1, 2],
+    "新连接重新编号的帧不得被旧 lastSeq 当重复帧丢弃",
+  );
+  assert.deepEqual(gaps, [], "新连接首帧无参照基准，不得误报 gap");
+  client.stop();
+}
+
 async function main() {
   await testReconnectNowCancelsScheduledReconnect();
   await testRequestMustWaitForHelloHandshake();
   await testRequestTimesOutWhenGatewayNeverResponds();
   await testInvalidUrlDoesNotThrowAndGoesToReconnectPath();
+  await testDuplicateOrRewindSeqFramesAreDroppedWithoutGap();
+  await testLastSeqResetsOnNewSocketConnection();
   console.log("gateway reconnect tests passed");
 }
 

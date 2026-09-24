@@ -15,6 +15,9 @@ import { renderLiveThinkingGroup, renderReadingIndicatorGroup, renderStreamingGr
 // 事件回调以属性传入。注意 buildChatProps 每帧构造新闭包，回调属性每帧 identity 变化，
 // 但 shouldUpdate 只按视觉属性放行——属性赋值本身不受 shouldUpdate 影响（Lit 只跳过
 // render），事件触发时经 this.onXxx 调用拿到的始终是最新闭包，不会有旧引用问题。
+// 钉底阈值：距底部超过该值视为用户在回看早内容，不强制拉回
+const PIN_BOTTOM_THRESHOLD_PX = 24;
+
 @customElement("oc-chat-stream")
 export class OcChatStream extends LitElement {
   static properties = {
@@ -66,8 +69,8 @@ export class OcChatStream extends LitElement {
   }
 
   // R90：实时思考区展开时正文自动滚底——每帧新思考文本到达后把 scrollTop 钉在
-  // scrollHeight，用户手动上滚查看早前内容时不强制拉回（仅在有新帧时贴底一次，
-  // 与聊天线程的贴底语义不同：思考区是只读流水，钉底体验优先）。
+  // scrollHeight。仅当用户停留在底部（阈值 PIN_BOTTOM_THRESHOLD_PX）时钉底：
+  // 用户上滚查看早前内容时不强制拉回，回到底部后下一帧新内容自动恢复跟随。
   protected updated(changed: Map<PropertyKey, unknown>): void {
     if (!changed.has("thinkingStream")) {
       return;
@@ -78,7 +81,10 @@ export class OcChatStream extends LitElement {
     }
     const body = details.querySelector<HTMLElement>(".chat-thinking-live__text");
     if (body) {
-      body.scrollTop = body.scrollHeight;
+      const distanceToBottom = body.scrollHeight - body.scrollTop - body.clientHeight;
+      if (distanceToBottom <= PIN_BOTTOM_THRESHOLD_PX) {
+        body.scrollTop = body.scrollHeight;
+      }
     }
   }
 

@@ -14,6 +14,7 @@ import {
   clearFallbackNotice,
   flushToolStreamSync,
   handleAgentEvent,
+  invalidateFrozenLeadingSegments,
   type AgentEventPayload,
 } from "./app-tool-stream.ts";
 
@@ -430,4 +431,45 @@ test("seq-gap agent 错误：run 不匹配不触发", () => {
     data: { reason: "seq gap", expected: 50, received: 99 },
   });
   assert.equal(called, 0);
+});
+
+test("R3：invalidateFrozenLeadingSegments 作废被重写的冻结段（保留解说段与工具卡）", () => {
+  const host = makeHost({
+    chatStream: "正文第二段",
+    chatStreamFrozenPrefix: "正文第一段",
+  });
+  // 两个 tool entry，各有被冻结的 leadingSegment；第一个还带 narrationSegment
+  handleAgentEvent(host, {
+    runId: "run-1", seq: 1, stream: "tool", ts: Date.now(),
+    sessionKey: "agent:main:main",
+    data: { phase: "start", name: "exec", toolCallId: "call-1", args: { command: "echo 1" } },
+  });
+  const entry1 = host.toolStreamById.get("call-1");
+  assert.ok(entry1);
+  entry1!.narrationSegment = { text: "解说", ts: Date.now() };
+  host.chatNarrationText = null;
+  host.chatPendingNarrationText = null;
+  host.chatStream = "工具后的尾段";
+  handleAgentEvent(host, {
+    runId: "run-1", seq: 2, stream: "tool", ts: Date.now(),
+    sessionKey: "agent:main:main",
+    data: { phase: "start", name: "exec", toolCallId: "call-2", args: { command: "echo 2" } },
+  });
+  host.evictedLeadingSegments.push({ text: "更早被淘汰的冻结段", ts: Date.now() });
+  flushToolStreamSync(host);
+  const before = host.chatToolMessages.length;
+  assert.ok(before > 0);
+
+  invalidateFrozenLeadingSegments(host);
+
+  const e1 = host.toolStreamById.get("call-1");
+  const e2 = host.toolStreamById.get("call-2");
+  assert.equal(e1?.leadingSegment, undefined, "被重写的 leadingSegment 应作废");
+  assert.equal(e2?.leadingSegment, undefined, "被重写的 leadingSegment 应作废");
+  assert.equal(e1?.narrationSegment?.text, "解说", "narrationSegment 不属于累计文本，应保留");
+  assert.equal(host.evictedLeadingSegments.length, 0, "sticky 列表里的冻结段同样是前缀的一部分，应一并作废");
+  assert.ok(host.toolStreamById.size === 2, "工具卡本身保留（工具确实执行过）");
+  // 时间线重建后不再包含任何 leadingSegment 消息，只剩 解说 + 两张工具卡
+  flushToolStreamSync(host);
+  assert.equal(host.chatToolMessages.length, 3);
 });

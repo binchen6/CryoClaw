@@ -125,3 +125,44 @@ test("fileCard：sanitize 后含 &amp; 的路径解码一次再进属性", () =>
   assert.equal(im![1], "C:\\demo\\pic&amp;shot.png", "alt 应为单重转义的真实路径");
   assert.ok(!imgHtml.includes("&amp;amp"));
 });
+
+// ── 流式接线后加固：大小写不敏感、全角冒号、无扩展名回退文件卡片 ──
+
+test("media：大小写不敏感（media: / Media:）", () => {
+  const m = extractMediaMatch("已生成 media:C:\\out\\chart.png");
+  assert.ok(m, "小写 media: 应匹配");
+  assert.equal(m!.path, "C:\\out\\chart.png");
+
+  const lower = renderMediaMarkers("<p>media:C:\\demo\\pic.png</p>");
+  assert.ok(lower.includes('<img class="chat-local-media"'), "小写标记应渲染图片");
+
+  const mixed = renderMediaMarkers("<p>Media:C:\\demo\\report.pdf</p>");
+  assert.ok(mixed.includes('class="chat-file-card"'), "混合大小写标记应渲染文件卡片");
+});
+
+test("media：全角冒号 MEDIA：", () => {
+  const m = extractMediaMatch("已生成 MEDIA：C:\\out\\report.pdf");
+  assert.ok(m, "全角冒号应匹配");
+  assert.equal(m!.path, "C:\\out\\report.pdf");
+  assert.ok(m!.full.startsWith("MEDIA："));
+
+  const img = renderMediaMarkers("<p>MEDIA：C:\\demo\\pic.png</p>");
+  assert.ok(img.includes('<img class="chat-local-media"'), "全角冒号图片标记应渲染图片");
+
+  const card = renderMediaMarkers("<p>MEDIA：C:\\demo\\report.pdf</p>");
+  assert.ok(card.includes('class="chat-file-card"'), "全角冒号文件标记应渲染文件卡片");
+});
+
+test("fileCard：无扩展名/未知扩展名路径回退文件卡片（generic 图标），不再降级 <img>", () => {
+  const noExt = renderMediaMarkers("<p>MEDIA:C:\\out\\report</p>");
+  assert.ok(noExt.includes('class="chat-file-card"'), "无扩展名应回退文件卡片");
+  assert.ok(!noExt.includes("<img"), "不得渲染必加载失败的 img");
+  const ext = noExt.match(/data-file-ext="([^"]*)"/);
+  assert.ok(ext, "卡片应携带扩展名属性");
+  assert.equal(ext![1], "", "无扩展名应为空 ext（generic 图标分类兜底)");
+  assert.ok(noExt.includes("FILE"), "meta 应展示 FILE 占位");
+
+  const unknown = renderMediaMarkers("<p>MEDIA:C:\\out\\data.xyz123</p>");
+  assert.ok(unknown.includes('class="chat-file-card"'), "未知扩展名应回退文件卡片");
+  assert.ok(!unknown.includes("<img"));
+});

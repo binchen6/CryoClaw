@@ -2,7 +2,7 @@ import type { GatewayBrowserClient } from "../gateway.ts";
 import type { ChatAttachment } from "../ui-types.ts";
 import { extractText } from "../chat/message-extract.ts";
 import { debugLog } from "../debug.ts";
-import { clearReconnectOrphanRun, liveOrphanRunId } from "../stream-recovery.ts";
+import { clearReconnectOrphanRun, hasAssistantReplyAfter, liveOrphanRunId } from "../stream-recovery.ts";
 import { generateUUID } from "../uuid.ts";
 import { readFileBase64 } from "../data/ipc-bridge.ts";
 import { t } from "../i18n.ts";
@@ -66,13 +66,25 @@ export type ChatState = {
   // 下一个 tool start 到来时由 app-tool-stream 冻结进时间线。
   chatNarrationText: string | null;
   chatPendingNarrationText: string | null;
+  // R5：delta 交叉校验（reducer 自检 current+delta 是否对齐 message 全量）的连续
+  // 失败计数；连续达阈值 reducer 强制以快照 resync。run 终态清零。
+  chatStreamMismatchCount?: number;
+  // 中止在途标记（Stop 按钮禁用期）：own-run 终态/提交失败/切会话清零；
+  // 新 run 发起时也必须清零——否则上一轮在断连窗口丢失终态的残留标记
+  // 会把新一轮 run 的 Stop 按钮全程禁用。
+  chatAbortPending?: boolean;
+  // R3：replace 帧越过 tool 边界重生成（reducer 返回 invalidatesFrozenPrefix）时
+  // 调用——作废 toolStream 里被重写的冻结段。由 app 层接线（同 onStreamSeqGap 模式）。
+  onReplaceBeyondFrozenPrefix?: () => void;
   lastError: string | null;
 };
 
 export type ChatEventPayload = {
   runId: string;
   sessionKey: string;
-  state: "delta" | "final" | "aborted" | "error";
+  // "status"：内核 run 启动阶段广播的进度帧（preparing_workspace 等 7 phase），
+  // 非终态——handleChatEvent 不得按终态清 orphan 快照/重置 run 态。
+  state: "delta" | "final" | "aborted" | "error" | "status";
   message?: unknown;
   errorMessage?: string;
   // OpenClaw protocol v4 fields. deltaText is preferred when present; message
@@ -181,6 +193,8 @@ export function resetChatStreamState(state: ChatState) {
   state.chatThinkingStream = null;
   state.chatPendingNarrationText = null;
   state.chatNarrationText = null;
+  // R5：交叉校验计数随 run 终态清零，下一 run 重新起算
+  state.chatStreamMismatchCount = 0;
 }
 
 // R30：mergeIfStale 保留本地（内核快照滞后）后的延迟二次拉取。
@@ -251,6 +265,12 @@ type InFlightRunSnapshot = {
   startedAt?: unknown;
 };
 
+// 非 silent 加载的代际令牌：两个常规加载并发时，后发起者使先前加载整体失效——
+// 先前加载完成时不得清 chatLoading（最新一代仍在飞，先完成者的 finally 提前清位
+// 会让加载指示中途消失），也不得写回消息快照（防旧响应后至覆盖新响应的
+// last-write-wins 倒置）。silent 探测不置加载态、不拥有视图快照，不参与代际。
+let loadChatHistoryGeneration = 0;
+
 /**
  * 会话切换回来 / 窗口刷新 / 重连后的在途 run 恢复（用户反馈 R59）。
  *
@@ -260,9 +280,36 @@ type InFlightRunSnapshot = {
  * 内核快照带 runId + 全量累计文本，借此重建流式状态：后续 delta 与 chatRunId 匹配
  * 自然续显；本地已有活跃 run 时不覆盖（快照只用于恢复丢失的 run 态）。
  */
+/**
+ * R6：历史（本地旧列表 + 本次拉取的新列表）是否已含本 run 的 assistant 回复。
+ * 有 → 终态帧丢失但结果已持久化，收养 inFlightRun 快照会让快照累计文本与历史
+ * 回复双份显示。优先按 runId 精确匹配；内核 transcript 条目未必带 runId，退而按
+ * 「run 开始后的 assistant 回复」判定（与挂起流看门狗同一规则）。
+ */
+function historyAlreadyHasRunReply(
+  state: ChatState,
+  freshMessages: unknown[],
+  runId: string,
+  startedAt: number,
+): boolean {
+  for (const list of [freshMessages, state.chatMessages]) {
+    if (!Array.isArray(list)) continue;
+    for (let i = list.length - 1; i >= 0; i--) {
+      const m = list[i] as Record<string, unknown> | undefined;
+      if (m?.role !== "assistant") continue;
+      if (typeof m.runId === "string" && m.runId === runId) return true;
+    }
+  }
+  return (
+    hasAssistantReplyAfter(freshMessages, startedAt) ||
+    hasAssistantReplyAfter(state.chatMessages, startedAt)
+  );
+}
+
 function adoptInFlightRunFromHistory(
   state: ChatState,
   snapshot: InFlightRunSnapshot | null | undefined,
+  freshMessages?: unknown[],
 ): boolean {
   if (!snapshot || typeof snapshot !== "object") {
     return false;
@@ -271,14 +318,20 @@ function adoptInFlightRunFromHistory(
   if (!runId || state.chatRunId) {
     return false;
   }
+  const startedAt =
+    typeof snapshot.startedAt === "number" && Number.isFinite(snapshot.startedAt)
+      ? snapshot.startedAt
+      : Date.now();
+  // R6：历史已含本 run 回复（终态帧丢失但已持久化）→ 不收养，历史是唯一渲染源
+  if (historyAlreadyHasRunReply(state, freshMessages ?? [], runId, startedAt)) {
+    debugLog("lifecycle", "in-flight run adoption skipped: reply already in history", { runId });
+    return false;
+  }
   state.chatRunId = runId;
   // 空文本 → 流式气泡降级为思考/工具阶段指示（oc-chat-stream 语义），同样标志 run 活跃
   state.chatStream = typeof snapshot.text === "string" ? snapshot.text : "";
   state.chatStreamFrozenPrefix = "";
-  state.chatStreamStartedAt =
-    typeof snapshot.startedAt === "number" && Number.isFinite(snapshot.startedAt)
-      ? snapshot.startedAt
-      : Date.now();
+  state.chatStreamStartedAt = startedAt;
   state.chatLastActivityAt = Date.now();
   debugLog("lifecycle", "in-flight run adopted from chat.history", { runId });
   return true;
@@ -293,6 +346,7 @@ export async function loadChatHistory(
   }
   const requestSessionKey = state.sessionKey;
   cancelChatHistoryHydration(state);
+  const generation = opts?.silent ? null : ++loadChatHistoryGeneration;
   // silent：看门狗/重连探测等静默对齐路径不置加载态——视图层只要 chatLoading 为真
   // 就在消息线程顶部渲染「加载中」，探测每 30s 一次会闪屏；且置位后若被并发的常规加载
   // 交错，还会把常规加载的加载态提前清掉。
@@ -315,11 +369,16 @@ export async function loadChatHistory(
     if (state.sessionKey !== requestSessionKey) {
       return;
     }
+    // 被更新的非 silent 加载取代：旧响应不得写回（防旧快照覆盖新快照）。
+    if (generation !== null && generation !== loadChatHistoryGeneration) {
+      return;
+    }
+    const raw = Array.isArray(res.messages) ? res.messages : [];
     // 在途 run 收养放在会话守卫之后、滞后读保留分支之前：inFlightRun 来自内核侧
     // 实时 abort-controller 表（与消息列表的持久化快照无关），即便消息列表命中滞后
     // 读走「保留本地」分支，run 态恢复也应生效（重连 mergeIfStale 路径同样受益）。
-    adoptInFlightRunFromHistory(state, res.inFlightRun);
-    const raw = Array.isArray(res.messages) ? res.messages : [];
+    // R6：传入本次拉取的新消息列表——历史里已含本 run 回复时拒绝收养（双份防护）。
+    adoptInFlightRunFromHistory(state, res.inFlightRun, raw);
     // R12：终态刷新可能命中内核 chat.history 的滞后读（主会话实测，拉取结果落后一个回合），
     // 此时若拉取条数少于本地视图（刚结束回合的消息尚未进入快照），保留本地消息列表，
     // 等待下一次刷新收敛——避免用户可见的消息短暂“消失”。仅 mergeIfStale 调用方启用
@@ -377,7 +436,12 @@ export async function loadChatHistory(
     state.lastError = String(err);
   } finally {
     // silent 路径从未置位，不得在此回写 false：否则会清掉并发常规加载刚置起的加载态。
-    if (state.sessionKey === requestSessionKey && !opts?.silent) {
+    // 代际守卫同理：被更新的加载取代时，清位留给最新一代的 finally。
+    if (
+      state.sessionKey === requestSessionKey &&
+      !opts?.silent &&
+      (generation === null || generation === loadChatHistoryGeneration)
+    ) {
       state.chatLoading = false;
     }
   }
@@ -528,6 +592,11 @@ export async function sendChatMessage(
     state.chatStreamStartedAt = now;
     state.chatLastActivityAt = now;
     state.chatStreamFrozenPrefix = "";
+    // R5：交叉校验计数随新 run 清零（此前只有终态清零，新 run 会继承上一 run 的计数）
+    state.chatStreamMismatchCount = 0;
+    // 上一轮中止在途标记不得带入新 run（其终态若丢在断连窗口，残留标记会
+    // 把本轮 Stop 按钮全程禁用）
+    state.chatAbortPending = false;
   }
 
   // 图片 + 文件都走 base64 apiAttachments（文件编码失败/超限的已降级进文本前缀，不在此列）
@@ -652,8 +721,15 @@ export function handleChatEvent(state: ChatState, payload?: ChatEventPayload) {
       state.chatRunId = payload.runId;
       state.chatStreamStartedAt = Date.now();
       state.chatLastActivityAt = Date.now();
-      state.chatStream = state.chatStream ?? "";
+      // R6：收养是从零重建 run 态——显式清空上一 run 可能残留的流式文本
+      // （chatStream/chatPendingStreamText 理论上已被终态/onHello 清态清掉，
+      // 迟到帧/清态遗漏路径下会是脏数据），收养后叠加成双份。
+      state.chatStream = "";
+      state.chatPendingStreamText = null;
       state.chatStreamFrozenPrefix = "";
+      state.chatNarrationText = null;
+      state.chatPendingNarrationText = null;
+      state.chatStreamMismatchCount = 0;
       debugLog("lifecycle", "orphan run adopted after reconnect", { runId: payload.runId });
       // 收养即恢复链路接管：清 orphan 快照，重连探测（scheduleReconnectOrphanProbe）
       // 的 liveOrphanRunId() 检查随之停摆，不再发冗余静默历史拉取
@@ -662,8 +738,12 @@ export function handleChatEvent(state: ChatState, payload?: ChatEventPayload) {
     } else if (payload.state === "delta" || payload.state === "error") {
       return null;
     } else {
-      // 终态透传；若是 orphan 的终态，快照随之失效
-      clearReconnectOrphanRun(payload.runId, state.sessionKey);
+      // 终态（final/aborted）透传并清除 orphan 快照；status 等启动进度帧同样
+      // 透传（返回值无消费方）但不得清 orphan——误清后该 run 的后续 delta 会被
+      // 上方僵尸过滤丢弃，重连恢复链路断裂。
+      if (payload.state === "final" || payload.state === "aborted") {
+        clearReconnectOrphanRun(payload.runId, state.sessionKey);
+      }
       return payload.state;
     }
   }
@@ -685,10 +765,30 @@ export function handleChatEvent(state: ChatState, payload?: ChatEventPayload) {
       replace: payload.replace,
       message: payload.message,
       frozenPrefix: state.chatStreamFrozenPrefix,
+      mismatchCount: state.chatStreamMismatchCount,
     });
     if (reduced?.accepted) {
       state.chatPendingStreamText = reduced.text;
+      state.chatStreamMismatchCount = reduced.mismatchCount ?? 0;
       state.chatLastActivityAt = Date.now();
+      if (reduced.invalidatesFrozenPrefix) {
+        // R3：replace 帧越过 tool 边界整体重生成——被改写的冻结段（leadingSegment）
+        // 必须从 toolStream 时间线作废，否则与新正文同屏双份；frozenPrefix 也不再
+        // 适用于新的累计文本，必须同步清空（reducer 依赖它切片/交叉校验）。
+        debugLog("stream", "replace beyond frozen prefix → invalidate frozen segments", {
+          runId: payload.runId,
+          prefixLen: state.chatStreamFrozenPrefix.length,
+        });
+        state.onReplaceBeyondFrozenPrefix?.();
+        state.chatStreamFrozenPrefix = "";
+      }
+      if (reduced.text.trim().length > 0) {
+        // R4：正文 delta 非空上屏后，此前经 answer_candidate narration 显示的同文本
+        // 必须清掉——否则 narration 气泡与正文气泡同文双份（narration 刻意不进 chat
+        // delta 广播，上屏时机互不感知，只能靠正文首次非空时收敛）。
+        state.chatPendingNarrationText = null;
+        state.chatNarrationText = null;
+      }
       scheduleChatStreamFlush(state);
       debugLog("stream", "delta accept", {
         source: reduced.source,
@@ -709,7 +809,24 @@ export function handleChatEvent(state: ChatState, payload?: ChatEventPayload) {
   } else if (payload.state === "aborted") {
     debugLog("lifecycle", "chat:aborted → reset stream state", { runId: payload.runId });
     clearReconnectOrphanRun(payload.runId, state.sessionKey);
+    // 与 error 路径同一 partial 保留逻辑：中止前已上屏的末段文本若随 reset 丢弃，
+    // 而内核又未持久化该末段（abort 时内核同样可能截断持久化），用户可见内容丢失。
+    // 注意只保留 partial 文本、不注入错误卡——aborted 的语义是用户主动中止，
+    // 与 error 的「失败 + 可重发」不同。
+    const partialText = getActiveChatStreamText(state).trim();
     resetChatStreamState(state);
+    if (partialText) {
+      state.chatMessages = [
+        ...state.chatMessages,
+        {
+          role: "assistant",
+          content: [{ type: "text", text: partialText }],
+          timestamp: Date.now(),
+          cryoclawPartial: true,
+        },
+      ];
+      state.chatVisibleMessageCount = state.chatMessages.length;
+    }
   } else if (payload.state === "error") {
     debugLog("lifecycle", "chat:error → reset stream state", {
       runId: payload.runId,

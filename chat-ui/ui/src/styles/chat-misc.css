@@ -8,6 +8,47 @@
 /* 思考过程折叠（默认收起，点击展开） */
 .chat-thinking-collapse {
   margin-bottom: var(--spacer-10);
+  /* live → 完成切换是整块 DOM 替换：历史思考块入场 150ms 渐显衔接，
+     避免从实时思考区跳变到历史块时突兀闪现 */
+  animation: chat-thinking-enter var(--duration-fast) var(--ease-out);
+  /* 折叠开合真实高度过渡（见下方 ::details-content 规则）：
+     Chromium 的 interpolate-size 允许 height 在 0 与 auto 关键字间插值 */
+  interpolate-size: allow-keywords;
+}
+
+@keyframes chat-thinking-enter {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+/* 折叠开合真实高度过渡：::details-content 闭合态 height 0、展开态 auto，
+   配合 interpolate-size 得到开合高度动画（此前仅 summary 箭头旋转，正文瞬开瞬合）。
+   同一模式应用于思考折叠与工具折叠（chat-tools-collapse / chat-tool-msg-collapse
+   的选择器与基础样式在 chat.css，本文件层叠顺序在其后）。 */
+.chat-tool-msg-collapse,
+.chat-tools-collapse {
+  /* 与 .chat-thinking-collapse 相同：允许 height 在 0 与 auto 关键字间插值，
+     否则下方 ::details-content 的过渡对工具折叠不生效（仍是瞬开瞬合） */
+  interpolate-size: allow-keywords;
+}
+
+.chat-thinking-collapse::details-content,
+.chat-tool-msg-collapse::details-content,
+.chat-tools-collapse::details-content {
+  height: 0;
+  overflow: clip;
+  transition: height var(--duration-normal) var(--ease-out);
+}
+
+.chat-thinking-collapse[open]::details-content,
+.chat-tool-msg-collapse[open]::details-content,
+.chat-tools-collapse[open]::details-content {
+  height: auto;
 }
 
 .chat-thinking-summary {
@@ -110,6 +151,18 @@
     animation: none;
     /* 静止时钉住列尾（最新输出） */
     transform: translateY(calc(-100% + 1.4em));
+  }
+  /* 折叠高度过渡与思考块入场渐显一并退化（瞬开瞬合、直接出现） */
+  .chat-thinking-collapse,
+  .chat-tool-msg-collapse,
+  .chat-tools-collapse {
+    interpolate-size: auto;
+    animation: none;
+  }
+  .chat-thinking-collapse::details-content,
+  .chat-tool-msg-collapse::details-content,
+  .chat-tools-collapse::details-content {
+    transition: none;
   }
 }
 

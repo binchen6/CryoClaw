@@ -57,6 +57,17 @@ export function markReconnectOrphanRun(
 
 /** 当前可收养的 orphan runId（过期自动清除） */
 export function liveOrphanRunId(sessionKeyOrNow?: string | number, now = Date.now()): string | null {
+  return liveOrphanRun(sessionKeyOrNow, now)?.runId ?? null;
+}
+
+/**
+ * 当前可收养的 orphan 快照（含标记时间，供「run 开始时间」类判定使用；
+ * 如重连探测里用 hasAssistantReplyAfter 判定终态帧丢失）。过期自动清除。
+ */
+export function liveOrphanRun(
+  sessionKeyOrNow?: string | number,
+  now = Date.now(),
+): OrphanRunSnapshot | null {
   const args = resolveOrphanArgs(sessionKeyOrNow, now);
   const snapshot = orphanRuns.get(args.sessionKey);
   if (!snapshot) {
@@ -66,7 +77,7 @@ export function liveOrphanRunId(sessionKeyOrNow?: string | number, now = Date.no
     orphanRuns.delete(args.sessionKey);
     return null;
   }
-  return snapshot.runId;
+  return snapshot;
 }
 
 /** run 终结 / 用户发起新 run / 切换会话时清除 orphan 快照 */
@@ -170,6 +181,12 @@ export function shouldStreamPreAlign(
  * 历史消息里是否存在 run 开始之后落盘的 assistant 回复。
  * 是 → run 的终态帧虽丢，但结果已持久化，可清本地挂起态（看门狗恢复）。
  * 缺 timestamp 的条目无法判定，跳过继续向前扫（避免末尾一条缺时间戳时恒不清挂起态）。
+ *
+ * 扫描起点钉在「本 run 的最后一条 user 回声之后」（时间戳 ≤ runStartedAt 的最后一条
+ * user 消息）：本地回声时间戳与 runStartedAt 同源（发送时刻 Date.now()），内核落盘的
+ * 上一轮回复无论多近都不可能越界。此前仅靠 runStartedAt-1s 的 1s 容差，会把上一轮
+ * 刚落盘（时间戳落在容差窗口内）的回复误判为本轮回复，导致预对齐误清活跃 run /
+ * historyAlreadyHasRunReply 拒绝收养。1s 容差保留给回声之后的条目（跨端时钟微差）。
  */
 export function hasAssistantReplyAfter(messages: unknown[], runStartedAt: number | null): boolean {
   if (runStartedAt == null || !Number.isFinite(runStartedAt)) {
@@ -177,7 +194,21 @@ export function hasAssistantReplyAfter(messages: unknown[], runStartedAt: number
   }
   // 1s 容差：内核落盘时间戳与本地 run 起始计时之间可能有微小偏差
   const threshold = runStartedAt - 1000;
+  // 从后往前找本 run 的 user 回声（时间戳不晚于 run 开始）；找不到说明本 run 的
+  // 发送不来自本端（如 orphan 探测对端会话），退回全列表扫描（有 1s 容差兜底）。
+  let scanStart = 0;
   for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i] as Record<string, unknown>;
+    if (m?.role !== "user") {
+      continue;
+    }
+    const ts = typeof m.timestamp === "number" ? m.timestamp : Number.NaN;
+    if (Number.isFinite(ts) && ts <= runStartedAt) {
+      scanStart = i + 1;
+      break;
+    }
+  }
+  for (let i = messages.length - 1; i >= scanStart; i--) {
     const m = messages[i] as Record<string, unknown>;
     if (m?.role !== "assistant") {
       continue;

@@ -6,6 +6,11 @@ export type ChatStreamDeltaInput = {
   replace?: boolean;
   message?: unknown;
   frozenPrefix?: string;
+  /**
+   * R5：交叉校验连续失败计数（调用方在 run 状态上持久化，run 终态清零）。
+   * 缺省按 0 处理。
+   */
+  mismatchCount?: number;
 };
 
 export type ChatStreamDeltaResult = {
@@ -13,7 +18,19 @@ export type ChatStreamDeltaResult = {
   accepted: boolean;
   source: "deltaText" | "snapshot";
   replaced: boolean;
+  /**
+   * R3：replace 帧的全文不再以 frozenPrefix 开头 → 之前冻结进 toolStream 的
+   * leadingSegment 已被本次重生成改写。消费方据此作废被重写的冻结段并清空
+   * frozenPrefix，否则旧段与正文同屏双份。
+   */
+  invalidatesFrozenPrefix?: boolean;
+  /** R5：回写调用方的交叉校验连续失败计数（校验通过或未校验时为 0/缺省）。 */
+  mismatchCount?: number;
 };
+
+// R5：交叉校验连续失败 N 帧后放弃保守追加，强制以 message 快照 resync——
+// 否则坏基线上永远追加、永远校验失败、文本永不收敛（且持续偏离内核真值）。
+const MISMATCH_RESYNC_THRESHOLD = 3;
 
 /**
  * Reduce one gateway chat delta into the currently visible assistant segment.
@@ -45,13 +62,26 @@ export function reduceChatStreamDelta(input: ChatStreamDeltaInput): ChatStreamDe
   if (typeof input.deltaText === "string") {
     if (input.replace) {
       const prefix = input.frozenPrefix ?? "";
-      const text =
-        prefix && input.deltaText.startsWith(prefix) ? input.deltaText.slice(prefix.length) : input.deltaText;
+      if (prefix && !input.deltaText.startsWith(prefix)) {
+        // R3：重生成文本不再包含已冻结前缀——之前冻结的 leadingSegment 已被改写，
+        // 整段采用新文本并发出作废信号（消费方清掉被重写的冻结段 + frozenPrefix，
+        // 否则旧段留在 toolStream 时间线上与新正文双份显示）。
+        return {
+          text: input.deltaText,
+          accepted: true,
+          source: "deltaText",
+          replaced: true,
+          invalidatesFrozenPrefix: true,
+          mismatchCount: 0,
+        };
+      }
+      const text = prefix ? input.deltaText.slice(prefix.length) : input.deltaText;
       return {
         text,
         accepted: true,
         source: "deltaText",
         replaced: true,
+        mismatchCount: 0,
       };
     }
     // R88 self-heal: cross-check the appended result against the full snapshot.
@@ -82,14 +112,45 @@ export function reduceChatStreamDelta(input: ChatStreamDeltaInput): ChatStreamDe
             accepted: true,
             source: "snapshot",
             replaced: true,
+            mismatchCount: 0,
           };
         }
+        // R5：快照既对不上追加结果、又不是本地基线的前向延伸（基线已彻底偏离
+        // 内核真值）。单帧保守追加是合理的（防滞后读误伤），但连续失败说明不是
+        // 滞后而是持续漂移——第 N 帧强制以 message 快照 resync（按 frozenPrefix
+        // 切片替换 current），让文本重新收敛到内核累计文本。
+        const nextMismatch = (input.mismatchCount ?? 0) + 1;
+        if (nextMismatch >= MISMATCH_RESYNC_THRESHOLD) {
+          // 快照不含已冻结前缀时与 R3 同形态：冻结段已被内核改写，发作废信号
+          // 让消费方清掉旧 leadingSegment + frozenPrefix，防旧段与新正文双份。
+          const beyondPrefix = Boolean(prefix) && !fullText.startsWith(prefix);
+          let resync = fullText;
+          if (prefix && resync.startsWith(prefix)) {
+            resync = resync.slice(prefix.length);
+          }
+          return {
+            text: resync,
+            accepted: true,
+            source: "snapshot",
+            replaced: true,
+            ...(beyondPrefix ? { invalidatesFrozenPrefix: true } : {}),
+            mismatchCount: 0,
+          };
+        }
+        return {
+          text: current + input.deltaText,
+          accepted: true,
+          source: "deltaText",
+          replaced: false,
+          mismatchCount: nextMismatch,
+        };
       }
       return {
         text: current + input.deltaText,
         accepted: true,
         source: "deltaText",
         replaced: false,
+        mismatchCount: 0,
       };
     }
     return {

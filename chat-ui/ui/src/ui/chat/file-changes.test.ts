@@ -30,14 +30,23 @@ test("file changes：write 到新路径判 added", () => {
   assert.deepEqual(changes, [{ path: "src/new.ts", kind: "added" }]);
 });
 
-test("file changes：同会话先 read 再 write 判 modified", () => {
+test("file changes：同会话先 read 再 write 判 added（read 不计触碰）", () => {
   const touched = new Set<string>();
   collectGroupFileChanges([toolCall("read", { path: "src/a.ts" })], touched);
   const changes = collectGroupFileChanges(
     [toolCall("write", { path: "src/a.ts" })],
     touched,
   );
-  assert.deepEqual(changes, [{ path: "src/a.ts", kind: "modified" }]);
+  assert.deepEqual(changes, [{ path: "src/a.ts", kind: "added" }]);
+});
+
+test("file changes：同组先 read 后 write 判 added", () => {
+  const touched = new Set<string>();
+  const changes = collectGroupFileChanges(
+    [toolCall("read", { path: "src/a.ts" }), toolCall("write", { path: "src/a.ts" })],
+    touched,
+  );
+  assert.deepEqual(changes, [{ path: "src/a.ts", kind: "added" }]);
 });
 
 test("file changes：edit 恒判 modified，read 不产生改动", () => {

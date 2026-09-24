@@ -92,6 +92,17 @@ test("markdown 渲染：标题保留层级结构", () => {
   assert.ok(html.includes("<h2"), "二级标题应渲染为 h2");
 });
 
+test("markdown 渲染：4 空格缩进代码块不被 trim 破坏", () => {
+  const html = toSanitizedMarkdownHtml("    const a = 1;\n    const b = 2;");
+  assert.ok(html.includes("<pre"), "行首缩进应渲染为缩进代码块 <pre>");
+  assert.ok(html.includes("const a = 1;"), "代码块内容应保留");
+});
+
+test("markdown 渲染：纯空白输入仍返回空串（trim 仅用于空判定）", () => {
+  assert.equal(toSanitizedMarkdownHtml("   "), "");
+  assert.equal(toSanitizedMarkdownHtml("\n\n  \n"), "");
+});
+
 // ── R41 任务 8：markdown 安全前缀切分（纯函数） ──
 
 const { splitMarkdownSafePrefix } = await import("./markdown.ts");
@@ -156,6 +167,79 @@ test("splitMarkdownSafePrefix：表格行不误判为围栏", () => {
   const { stable, tail } = splitMarkdownSafePrefix(text);
   assert.equal(stable, "", "无围栏且无空行时 stable 应为空");
   assert.equal(tail, text);
+});
+
+// ── 行尾推进边界：完整行尽早进 stable（MEDIA 等单行标记流式可渲染）──
+
+test("splitMarkdownSafePrefix：普通行尾即推进边界（无空行）", () => {
+  const text = "结果如下：\n已生成 MEDIA:C:\\out\\report.pdf 进行中";
+  const { stable, tail } = splitMarkdownSafePrefix(text);
+  assert.equal(stable, "结果如下：\n", "已完成的行应进入 stable");
+  assert.equal(tail, "已生成 MEDIA:C:\\out\\report.pdf 进行中");
+});
+
+test("splitMarkdownSafePrefix：最后一行无行尾不换行不进 stable", () => {
+  const text = "已生成 MEDIA:C:\\out\\report.pdf";
+  const { stable, tail } = splitMarkdownSafePrefix(text);
+  assert.equal(stable, "", "行未结束（无 \\n）时该行的 MEDIA 标记仍归 tail");
+  assert.equal(tail, text);
+});
+
+test("splitMarkdownSafePrefix：表格行不作为行尾切点", () => {
+  const text = "| a | b |\n|---|";
+  const { stable, tail } = splitMarkdownSafePrefix(text);
+  assert.equal(stable, "", "表格行被切开结构会随下一行改变，stable 应为空");
+  assert.equal(tail, text);
+});
+
+test("splitMarkdownSafePrefix：setext 下划线前不切（否则段落变标题）", () => {
+  const text = "标题\n===";
+  const { stable, tail } = splitMarkdownSafePrefix(text);
+  assert.equal(stable, "", "下一行是 setext 下划线时不切，stable 应为空");
+  assert.equal(tail, text);
+});
+
+test("splitMarkdownSafePrefix：下一行是表格行时向前回溯保住单调推进", () => {
+  const text = "说明\n数据如下\n| 列A | 列B |";
+  const { stable, tail } = splitMarkdownSafePrefix(text);
+  assert.equal(stable, "说明\n", "最后的行尾不合格时回退到最近的合格行尾");
+  assert.equal(tail, "数据如下\n| 列A | 列B |");
+});
+
+test("splitMarkdownSafePrefix：围栏开启前的行尾不切（避免 stable 随围栏处理回缩）", () => {
+  const text = "前置说明\n```js\ncode";
+  const { stable, tail } = splitMarkdownSafePrefix(text);
+  assert.equal(stable, "", "下一行是未闭合围栏时不按行切");
+  assert.equal(tail, text);
+});
+
+test("splitMarkdownSafePrefix：未闭合围栏体内的行尾一律不切", () => {
+  // 审查回归例：旧实现会在 line1 后切出半截围栏进 stable（每帧重解析 + 段落跳进代码块）
+  const text = "```py\nline1\nline2";
+  const { stable, tail } = splitMarkdownSafePrefix(text);
+  assert.equal(stable, "", "未闭合围栏体内的行尾切点应被拒绝，stable 应为空");
+  assert.equal(tail, text, "未闭合围栏整体应归 tail");
+});
+
+test("splitMarkdownSafePrefix：围栏体内空行不切（向前回溯到围栏前的空行）", () => {
+  const text = "para one\n\nmid\n```py\nline1\n\nline2";
+  const { stable, tail } = splitMarkdownSafePrefix(text);
+  assert.equal(stable, "para one\n\n", "围栏体内的空行不是结构边界，应回溯到围栏前的空行");
+  assert.equal(tail, "mid\n```py\nline1\n\nline2");
+});
+
+test("splitMarkdownSafePrefix：围栏前无空行无合格行尾时整段归 tail", () => {
+  const text = "para\n```py\nline1\n\nline2";
+  const { stable, tail } = splitMarkdownSafePrefix(text);
+  assert.equal(stable, "", "围栏体内空行被拒且无更早边界时 stable 应为空");
+  assert.equal(tail, text);
+});
+
+test("splitMarkdownSafePrefix：围栏闭合后行尾可切", () => {
+  const text = "```py\ncode\n```\n第一行\n第二行";
+  const { stable, tail } = splitMarkdownSafePrefix(text);
+  assert.equal(stable, "```py\ncode\n```\n", "闭合围栏之后是稳定边界");
+  assert.equal(tail, "第一行\n第二行");
 });
 
 // ── R41 任务 9 → R83：流式安全前缀渐进 markdown 渲染（parts 双段形态） ──
@@ -259,5 +343,25 @@ test("渲染接线审计：grouped-render 的 isStreaming 分支调用 toStreami
   assert.ok(
     branch.includes("chat-text--stable") && branch.includes("chat-text--tail"),
     "streaming 分支应拆分稳定段/尾段双节点（稳定段 DOM 不随尾段每帧重建）",
+  );
+});
+
+test("渲染接线审计：streaming 稳定段经 renderMediaMarkers（MEDIA 标记流式可渲染）", () => {
+  // 与上方审计同源：稳定段必须与 history 路径同管线（sanitize →
+  // renderMediaMarkers → linkifyPaths），否则 MEDIA 标记在流式期间不渲染。
+  // 顺序必须 renderMediaMarkers 在内、linkifyPaths 在外（后者会把路径拆进 <a>）。
+  const fromSource = new URL("./chat/grouped-render.ts", import.meta.url);
+  const fromDist = new URL("../../../../src/ui/chat/grouped-render.ts", import.meta.url);
+  const srcUrl = existsSync(fromSource) ? fromSource : fromDist;
+  const src = readFileSync(srcUrl, "utf8");
+  const idx = src.indexOf("if (opts.isStreaming)");
+  assert.ok(idx >= 0, "grouped-render 应保留 isStreaming 分支");
+  const branch = src.slice(idx, idx + 2400);
+  const mediaIdx = branch.indexOf("renderMediaMarkers(parts.stableHtml)");
+  assert.ok(mediaIdx >= 0, "streaming 稳定段应套 renderMediaMarkers");
+  const linkifyIdx = branch.indexOf("linkifyPaths(renderMediaMarkers(parts.stableHtml))");
+  assert.ok(
+    linkifyIdx >= 0,
+    "renderMediaMarkers 必须先于 linkifyPaths（路径不可被拆进 <a>）",
   );
 });

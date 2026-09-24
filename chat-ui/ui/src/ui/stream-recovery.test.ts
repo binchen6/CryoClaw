@@ -6,6 +6,7 @@ import {
   clearReconnectOrphanRun,
   hasAssistantReplyAfter,
   isStreamStalled,
+  liveOrphanRun,
   liveOrphanRunId,
   markReconnectOrphanRun,
   preAlignThresholdMs,
@@ -14,6 +15,15 @@ import {
 } from "./stream-recovery.ts";
 
 // ── orphan 快照 ──
+
+test("orphan：liveOrphanRun 返回完整快照（含标记时间，供回复判定用）", () => {
+  markReconnectOrphanRun("run-1", "agent:main:main", 5000);
+  const snapshot = liveOrphanRun("agent:main:main", 5000);
+  assert.deepEqual(snapshot, { runId: "run-1", markedAt: 5000 });
+  assert.equal(liveOrphanRunId("agent:main:main", 5000), "run-1", "liveOrphanRunId 与完整版一致");
+  assert.equal(liveOrphanRun("agent:other:main", 5000), null);
+  clearReconnectOrphanRun();
+});
 
 test("orphan：快照后可收养，清除后不可", () => {
   markReconnectOrphanRun("run-1", 1000);
@@ -108,6 +118,31 @@ test("恢复判定：cryoclawError 合成卡与缺时间戳条目混合仍正确
     { role: "assistant", content: [] },
   ];
   assert.equal(hasAssistantReplyAfter(messages, 4000), true);
+});
+
+test("恢复判定：上一轮刚落盘的回复（1s 容差窗口内）不得误判为本轮回复", () => {
+  // 上一轮回复 10_400 落盘，距本轮开始 10_500 不足 1s——旧实现的
+  // runStartedAt-1s 容差会把它误判为本轮回复，导致预对齐误清活跃 run。
+  const messages = [
+    { role: "user", timestamp: 10_000 },
+    { role: "assistant", timestamp: 10_400, content: [{ type: "text", text: "上一轮回复" }] },
+    { role: "user", timestamp: 10_500 },
+  ];
+  assert.equal(hasAssistantReplyAfter(messages, 10_500), false);
+});
+
+test("恢复判定：本轮回声之后的回复仍判定为本轮回复", () => {
+  const messages = [
+    { role: "assistant", timestamp: 10_400, content: [] },
+    { role: "user", timestamp: 10_500 },
+    { role: "assistant", timestamp: 12_000, content: [{ type: "text", text: "本轮回复" }] },
+  ];
+  assert.equal(hasAssistantReplyAfter(messages, 10_500), true);
+});
+
+test("恢复判定：无 user 回声时退回全列表扫描（1s 容差兜底，如 orphan 探测）", () => {
+  const messages = [{ role: "assistant", timestamp: 12_000, content: [] }];
+  assert.equal(hasAssistantReplyAfter(messages, 11_500), true);
 });
 
 // ── R62 预对齐退避（P3-6） ──

@@ -1,4 +1,5 @@
 import { stripThinkingTags } from "../format.ts";
+import { t } from "../i18n.ts";
 
 const ENVELOPE_PREFIX = /^\[([^\]]+)\]\s*/;
 const ENVELOPE_CHANNELS = [
@@ -20,13 +21,22 @@ const textCache = new WeakMap<object, string | null>();
 const thinkingCache = new WeakMap<object, string | null>();
 
 function looksLikeEnvelopeHeader(header: string): boolean {
-  if (/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}Z\b/.test(header)) {
+  // 真实网关信封头始终以频道名开头（取证：网关 formatAgentEnvelope 产出
+  // `[<Channel> <from?> <host?> <ip?> <ts?>] body`，频道名是 parts[0]），
+  // 频道名是最强特征。
+  if (ENVELOPE_CHANNELS.some((label) => header.startsWith(`${label} `))) {
     return true;
   }
-  if (/\d{4}-\d{2}-\d{2} \d{2}:\d{2}\b/.test(header)) {
+  // 时间戳形态收紧为「带秒」：网关时间戳 displaySeconds: true（如
+  // `[2026-01-12 12:19:17]`），用户手打的 `[2024-01-01 12:00] 提醒我…`
+  // 不带秒，据此区分，避免误剥用户消息前缀。
+  if (/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z\b/.test(header)) {
     return true;
   }
-  return ENVELOPE_CHANNELS.some((label) => header.startsWith(`${label} `));
+  if (/\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\b/.test(header)) {
+    return true;
+  }
+  return false;
 }
 
 export function stripEnvelope(text: string): string {
@@ -151,5 +161,5 @@ export function formatReasoningMarkdown(text: string): string {
     .map((line) => line.trim())
     .filter(Boolean)
     .map((line) => `_${line}_`);
-  return lines.length ? ["_Reasoning:_", ...lines].join("\n") : "";
+  return lines.length ? [t("chat.reasoningLabel"), ...lines].join("\n") : "";
 }

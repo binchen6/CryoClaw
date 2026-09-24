@@ -87,3 +87,24 @@ test("oc-chat-history：buildChatItems 不再消费 stream / streamStartedAt（�
   assert.ok(!body.includes("streamStartedAt"), "buildChatItems 仍读 streamStartedAt");
   assert.ok(!body.includes('"stream"'), "buildChatItems 仍构造 stream 条目");
 });
+
+// ── R90 修复：思考区钉底须经阈值判定（updated() 操作真实 DOM，node 下源码审计）──
+
+test("oc-chat-stream：思考区钉底须经贴近底部阈值判定（用户上滚不拽回）", () => {
+  const updatedBody = functionBody(componentSrc, "protected updated(");
+  assert.ok(
+    updatedBody.includes("PIN_BOTTOM_THRESHOLD_PX"),
+    "钉底前应做贴近底部阈值判定（24px），而非无条件拉回",
+  );
+  assert.ok(
+    /scrollHeight\s*-\s*.*scrollTop/.test(updatedBody),
+    "阈值判定应基于 scrollHeight - scrollTop - clientHeight 的剩余距离",
+  );
+  const pinIdx = updatedBody.indexOf("body.scrollTop = body.scrollHeight");
+  const gateIdx = updatedBody.indexOf("PIN_BOTTOM_THRESHOLD_PX");
+  assert.ok(pinIdx > gateIdx, "scrollTop 钉底赋值必须位于阈值判定之后");
+  assert.ok(
+    /PIN_BOTTOM_THRESHOLD_PX\s*=\s*24\b/.test(componentSrc),
+    "钉底阈值应为 24px（与聊天线程贴底语义对齐的余量）",
+  );
+});

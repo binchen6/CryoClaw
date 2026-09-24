@@ -1,6 +1,7 @@
 import DOMPurify from "dompurify";
 import { marked } from "marked";
 import { truncateText } from "./format.ts";
+import { t } from "./i18n.ts";
 
 marked.setOptions({
   gfm: true,
@@ -132,10 +133,12 @@ export function toSanitizedMarkdownHtml(
   markdown: string,
   opts?: MarkdownRenderOptions,
 ): string {
-  const input = markdown.trim();
-  if (!input) {
+  // trim 只用于空判定：解析必须用原文——开头 4 空格缩进代码块依赖行首缩进，
+  // 先 trim 会把缩进代码块剥成普通段落。
+  if (!markdown.trim()) {
     return "";
   }
+  const input = markdown;
   installHooks();
   // 写入上限兜底：超过 MARKDOWN_CACHE_MAX_CHARS 的超长文本不读不写缓存
   const useCache = !opts?.bypassCache && input.length <= MARKDOWN_CACHE_MAX_CHARS;
@@ -147,7 +150,9 @@ export function toSanitizedMarkdownHtml(
   }
   const truncated = truncateText(input, MARKDOWN_CHAR_LIMIT);
   const suffix = truncated.truncated
-    ? `\n\n… truncated (${truncated.total} chars, showing first ${truncated.text.length}).`
+    ? `\n\n${t("chat.markdownTruncated")
+        .replace("{total}", String(truncated.total))
+        .replace("{shown}", String(truncated.text.length))}`
     : "";
   if (truncated.text.length > MARKDOWN_PARSE_LIMIT) {
     const escaped = escapeHtml(`${truncated.text}${suffix}`);
@@ -256,6 +261,20 @@ export function toStreamingMarkdownParts(text: string): StreamingMarkdownParts {
 // 边界之前是已完成结构（可完整解析渲染），之后是进行中内容（调用方按纯文本渲染），
 // 避免半截代码围栏被 marked 反复解析成不同结构造成抖动。
 // 围栏按行首 ``` / ~~~ 识别；奇数个围栏说明最后一个未闭合，边界退到倒数第二个之后。
+// 未闭合围栏体内的行尾切点/空行切点一律拒绝（ marked 对未闭合围栏也会
+// 即时产出代码块结构，切进去会让每帧增长的 stable 段反复重解析、视觉上
+// 行从段落「跳」进代码块）——切点必须落在未闭合围栏行首偏移之前。
+//
+// 行尾推进边界：除上述块级边界外，单个行尾 \n 也可作为推进边界（与上方
+// toStreamingMarkdownParts 注释「边界含行尾 \n」的既定语义对齐），让已完成
+// 的行（如 `已生成 MEDIA:C:\out\report.pdf`）尽早进入 stable 段完整渲染。
+// 保守条件（不安全切分点跳过该 \n，回退空行/围栏逻辑）：
+//   - 切分点所在行不是围栏行（``` / ~~~ 开头）——未闭合围栏内按行切会把
+//     半截围栏交给 marked 解析；
+//   - 切分行与下一行均不以 | 开头——表格行被切开时，下一行到来可能把已渲染
+//     的段落并入表格（结构突变），且 stable 可能回缩（边界退回空行搜索）；
+//   - 下一行不是 setext 下划线（= / -）或主题分隔（--- / *** / ___）——否则
+//     切出的「段落」随后会变成标题/分隔线。
 export function splitMarkdownSafePrefix(text: string): MarkdownSafeSplit {
   if (!text) {
     return { stable: "", tail: "" };
@@ -266,6 +285,9 @@ export function splitMarkdownSafePrefix(text: string): MarkdownSafeSplit {
   while ((m = fenceRe.exec(text)) !== null) {
     fences.push(m.index);
   }
+  // 未闭合围栏的行首偏移（奇数个围栏时最后一个未闭合）；切点落在大于该
+  // 偏移处即处于围栏体内，一律拒绝（下方行尾扫描与空行兜底都适用）。
+  const unclosedFenceStart = fences.length % 2 === 1 ? (fences[fences.length - 1] ?? -1) : -1;
   if (fences.length >= 2) {
     // 偶数个：最后一个是闭合围栏；奇数个：最后一个未闭合，边界取倒数第二个
     const lastClosed = fences.length % 2 === 0 ? fences.length - 1 : fences.length - 2;
@@ -275,9 +297,66 @@ export function splitMarkdownSafePrefix(text: string): MarkdownSafeSplit {
     const stableEnd = nl >= 0 ? nl + 1 : text.length;
     return { stable: text.slice(0, stableEnd), tail: text.slice(stableEnd) };
   }
-  const lastBlank = text.lastIndexOf("\n\n");
-  if (lastBlank >= 0) {
-    return { stable: text.slice(0, lastBlank + 2), tail: text.slice(lastBlank + 2) };
+  // 行尾推进边界（从后往前找最近的合格切点）：若最后的行尾因下一行变成
+  // 表格/setext 形态而不合格，向前回溯可保住单调推进（stable 只增长不回缩），
+  // 避免已渲染的 stable 段被撤下重排造成闪烁。
+  let searchFrom = text.length;
+  for (;;) {
+    const nl = text.lastIndexOf("\n", searchFrom - 1);
+    if (nl < 0) {
+      break;
+    }
+    const lineStart = text.lastIndexOf("\n", nl - 1) + 1;
+    const cutLine = text.slice(lineStart, nl);
+    const nextNl = text.indexOf("\n", nl + 1);
+    const nextLine = text.slice(nl + 1, nextNl === -1 ? text.length : nextNl);
+    // 未闭合围栏体内不按行切：半截围栏进 stable 会被 marked 解析成代码块，
+    // stable 每增长一次就整段重解析（marked+DOMPurify+hljs）且视觉抖动。
+    if (unclosedFenceStart >= 0 && nl > unclosedFenceStart) {
+      searchFrom = nl;
+      continue;
+    }
+    if (isSafeStreamLineCut(cutLine, nextLine)) {
+      return { stable: text.slice(0, nl + 1), tail: text.slice(nl + 1) };
+    }
+    searchFrom = nl;
+  }
+  // 空行兜底：同样拒绝未闭合围栏体内的空行（围栏内容里的空行不是结构边界，
+  // 切进去同样会把半截围栏交给 marked）；向前回溯找围栏前的空行。
+  let blankSearchFrom = text.length;
+  for (;;) {
+    const lastBlank = text.lastIndexOf("\n\n", blankSearchFrom - 1);
+    if (lastBlank < 0) {
+      break;
+    }
+    if (unclosedFenceStart < 0 || lastBlank < unclosedFenceStart) {
+      return { stable: text.slice(0, lastBlank + 2), tail: text.slice(lastBlank + 2) };
+    }
+    blankSearchFrom = lastBlank;
   }
   return { stable: "", tail: text };
+}
+
+// 行尾切分安全性判断（见 splitMarkdownSafePrefix 头注）。
+// 下一行形态相关的不合格判定会让该切点失效（依赖右侧内容，追加文本可能
+// 使既有切点失效），调用方因此从后往前回溯，保住 stable 单调推进。
+function isSafeStreamLineCut(cutLine: string, nextLine: string): boolean {
+  const cutTrimmed = cutLine.trimStart();
+  if (cutTrimmed.startsWith("```") || cutTrimmed.startsWith("~~~")) {
+    return false; // 围栏行：未闭合围栏内按行切不安全
+  }
+  if (cutTrimmed.startsWith("|")) {
+    return false; // 表格行：切开后结构可能随下一行改变
+  }
+  const nextTrimmed = nextLine.trim();
+  if (nextTrimmed.startsWith("|")) {
+    return false; // 下一行是表格行：可能与切分行同属一张表
+  }
+  if (nextTrimmed.startsWith("```") || nextTrimmed.startsWith("~~~")) {
+    return false; // 下一行是围栏行：围栏开启后该切点会随围栏处理回退，避免闪烁
+  }
+  if (/^(?:=+|-+|\*{3,}|_{3,})$/.test(nextTrimmed)) {
+    return false; // setext 下划线（= / -）或主题分隔（--- / *** / ___）
+  }
+  return true;
 }

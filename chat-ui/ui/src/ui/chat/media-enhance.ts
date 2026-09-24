@@ -23,8 +23,8 @@ import { decodeHtmlEntities } from "./path-linker.ts";
 import { isSafeOpenExt } from "../../../../src/safe-open.js";
 import { ref } from "lit/directives/ref.js";
 
-// MEDIA 标记：支持带引号路径与裸路径
-export const MEDIA_RE = /MEDIA:\s*(?:"([^"\n]+)"|([^\s"'<>|]+))/g;
+// MEDIA 标记：支持带引号路径与裸路径；大小写不敏感，兼容全角冒号（MEDIA：）
+export const MEDIA_RE = /MEDIA[:：]\s*(?:"([^"\n]+)"|([^\s"'<>|]+))/gi;
 
 const IMG_EXT_RE = /\.(png|jpe?g|gif|webp|bmp|svg|ico)$/i;
 
@@ -225,7 +225,8 @@ export function buildFileCardHtml(path: string, fullMatch: string): string {
  * 必须在 linkifyPaths 之前调用（否则路径已被拆进 <a>）。
  */
 export function renderMediaMarkers(html: string): string {
-  if (!html.includes("MEDIA:")) {
+  // 快速路径：任何形态（大小写不敏感、全半角冒号）的 MEDIA 标记都不存在则跳过
+  if (!/media[:：]/i.test(html)) {
     return html;
   }
   return html.replace(MEDIA_RE, (match, _q, _b, offset) => {
@@ -240,7 +241,10 @@ export function renderMediaMarkers(html: string): string {
     // 否则 data-file-path/alt/src 携带字面 &amp; 导致打开损坏路径（同 path-linker）
     const path = decodeHtmlEntities(parsed.path);
     const full = decodeHtmlEntities(parsed.full);
-    if (!isImageExt(path) && FILE_CARD_EXT_SET.has(fileExtOf(path))) {
+    if (!isImageExt(path)) {
+      // 非已知图片扩展名（含已知文件后缀、无扩展名、未知扩展名）统一走文件卡片：
+      // 无/未知扩展名的候选此前会静默降级为必加载失败的 <img>（要等 img error
+      // 才回退文本），buildFileCardHtml 的 generic 图标分类兜底展示
       return buildFileCardHtml(path, full);
     }
     const url = localPathToFileUrl(path);

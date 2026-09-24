@@ -40,6 +40,9 @@ export class OcChatHistory extends LitElement {
     assistantName: { attribute: false },
     assistantAvatar: { attribute: false },
     gitAvailable: { attribute: false },
+    // 语言标记：i18n 切换后由装配层传入新 locale 触发重渲染（divider/分组
+    // 文案按当前语言重新求值；buildChatItemsMemoized 的 locale 比较键随之命中）
+    locale: { attribute: false },
     onOpenSidebar: { attribute: false },
     onQuoteMessage: { attribute: false },
     onResendError: { attribute: false },
@@ -54,6 +57,7 @@ export class OcChatHistory extends LitElement {
   // 外层传入解析后的身份头像（assistantAvatar ?? assistantAvatarUrl）
   assistantAvatar: string | null = null;
   gitAvailable: boolean | null = null;
+  locale = "";
   onOpenSidebar?: (content: string) => void;
   onQuoteMessage?: (text: string) => void;
   onResendError?: (text: string, attachments?: ChatAttachment[]) => void;
@@ -73,6 +77,7 @@ export class OcChatHistory extends LitElement {
     "assistantName",
     "assistantAvatar",
     "gitAvailable",
+    "locale",
   ] as const;
 
   shouldUpdate(changed: Map<PropertyKey, unknown>): boolean {
@@ -329,8 +334,17 @@ function mergeToolResultHistory(items: ChatItem[]): ChatItem[] {
         // 合并产物只在本组件 memo 生命周期内存在）
         message: { ...targetMsg, content },
       };
+      // 两个索引都要摘除：slot 同时注册在 openById 与 openByName，只清单侧时
+      // 孤儿 result 可二次命中已合并的 slot，覆盖已写入的输出文本。
       if (typeof m.toolCallId === "string") {
         openById.delete(m.toolCallId);
+      }
+      const byName = openByName.get(slot.name);
+      if (byName) {
+        const slotIdx = byName.indexOf(slot);
+        if (slotIdx >= 0) {
+          byName.splice(slotIdx, 1);
+        }
       }
       continue;
     }

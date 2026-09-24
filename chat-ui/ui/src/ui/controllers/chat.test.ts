@@ -59,6 +59,8 @@ function makeState(overrides: Record<string, unknown> = {}) {
     chatHistoryHydrationFrame: null,
     chatPendingStreamText: null,
     chatStreamFrame: null,
+    chatNarrationText: null,
+    chatPendingNarrationText: null,
     lastError: null,
     ...overrides,
   } as any;
@@ -1150,6 +1152,327 @@ async function testInFlightRunAbsentKeepsClearedState() {
   assert.equal(state.chatStream, null, "无在途 run 时流式态保持空");
 }
 
+// R4：answer_candidate narration 上屏后，同文本经 chat delta 进入正文流时，
+// narration 必须清掉——否则 narration 气泡与正文气泡同文双份。
+async function testBodyDeltaClearsNarration() {
+  const raf = new FakeRaf();
+  installBrowserGlobals(raf);
+  const state = makeState({
+    chatNarrationText: "解说文本",
+    chatPendingNarrationText: null,
+  });
+
+  handleChatEvent(state, {
+    runId: "run-1",
+    sessionKey: "session-1",
+    state: "delta",
+    message: { role: "assistant", content: [{ type: "text", text: "解说文本正文" }] },
+  });
+  raf.runAll();
+
+  assert.equal(state.chatStream, "解说文本正文");
+  assert.equal(state.chatNarrationText, null, "正文 delta 非空上屏后 narration 应清除");
+  assert.equal(state.chatPendingNarrationText, null);
+}
+
+// R4：正文为空（空白 delta）时不得误清 narration。
+async function testEmptyBodyDeltaKeepsNarration() {
+  const raf = new FakeRaf();
+  installBrowserGlobals(raf);
+  const state = makeState({
+    chatStream: "",
+    chatNarrationText: "解说文本",
+  });
+
+  handleChatEvent(state, {
+    runId: "run-1",
+    sessionKey: "session-1",
+    state: "delta",
+    message: { role: "assistant", content: [{ type: "text", text: "" }] },
+  });
+  raf.runAll();
+
+  assert.equal(state.chatNarrationText, "解说文本", "空白正文 delta 不应清 narration");
+}
+
+// R3：replace 帧越过 tool 边界整体重生成（全文不再以 frozenPrefix 开头）→
+// 调用作废钩子并清空 frozenPrefix，被重写的 leadingSegment 由消费端清掉。
+async function testReplaceBeyondFrozenPrefixInvalidatesFrozenSegments() {
+  const raf = new FakeRaf();
+  installBrowserGlobals(raf);
+  let hookCalls = 0;
+  const state = makeState({
+    chatStream: "trail",
+    chatStreamFrozenPrefix: "before tool",
+    chatStreamMismatchCount: 2,
+    onReplaceBeyondFrozenPrefix: () => {
+      hookCalls++;
+    },
+  });
+
+  handleChatEvent(state, {
+    runId: "run-1",
+    sessionKey: "session-1",
+    state: "delta",
+    replace: true,
+    deltaText: "regenerated from scratch",
+  });
+  raf.runAll();
+
+  assert.equal(state.chatStream, "regenerated from scratch", "replace 帧整段采用新文本");
+  assert.equal(hookCalls, 1, "应触发 onReplaceBeyondFrozenPrefix 作废被重写的冻结段");
+  assert.equal(state.chatStreamFrozenPrefix, "", "frozenPrefix 不再适用于新累计文本，必须清空");
+  assert.equal(state.chatStreamMismatchCount, 0, "replace 帧后交叉校验计数应清零");
+}
+
+// R5：交叉校验连续失败 3 帧 → 强制以 message 快照 resync（此前永远保守追加、永不收敛）。
+async function testMismatchResyncAfterThreeFailures() {
+  const raf = new FakeRaf();
+  installBrowserGlobals(raf);
+  const state = makeState({ chatStream: "corrupted", chatStreamFrozenPrefix: "pre" });
+  const frame = (text: string, deltaText: string) => {
+    handleChatEvent(state, {
+      runId: "run-1",
+      sessionKey: "session-1",
+      state: "delta",
+      deltaText,
+      message: { role: "assistant", content: [{ type: "text", text }] },
+    });
+  };
+
+  // fullText "kernel truth 1" 与 base("pre"+"corrupted") 对不上 → 保守追加，计数 1
+  frame("kernel truth 1", " x");
+  assert.equal(state.chatPendingStreamText, "corrupted x");
+  assert.equal(state.chatStreamMismatchCount, 1);
+  // 第 2 帧：仍对不上 → 保守追加，计数 2
+  state.chatStream = state.chatPendingStreamText!;
+  state.chatPendingStreamText = null;
+  frame("kernel truth 2", " y");
+  assert.equal(state.chatPendingStreamText, "corrupted x y");
+  assert.equal(state.chatStreamMismatchCount, 2);
+  // 第 3 帧：达到阈值 → 强制 resync 到内核快照（整段替换，不再追加）
+  state.chatStream = state.chatPendingStreamText!;
+  state.chatPendingStreamText = null;
+  frame("kernel truth 3", " z");
+  assert.equal(state.chatPendingStreamText, "kernel truth 3");
+  assert.equal(state.chatStreamMismatchCount, 0, "强制 resync 后计数清零");
+}
+
+// R6：orphan 收养必须显式清空上一 run 的流式残留，否则与收养后文本叠加成双份。
+async function testOrphanAdoptionClearsStreamResidue() {
+  const raf = new FakeRaf();
+  installBrowserGlobals(raf);
+  markReconnectOrphanRun("run-orphan", "session-1");
+  const state = makeState({
+    chatRunId: null,
+    // 模拟清态遗漏路径下的脏残留（正常 onHello 清态后这些字段应为空）
+    chatStream: "old run residue",
+    chatPendingStreamText: "old pending residue",
+    chatStreamFrozenPrefix: "old prefix",
+    chatNarrationText: "old narration",
+  });
+
+  handleChatEvent(state, {
+    runId: "run-orphan",
+    sessionKey: "session-1",
+    state: "delta",
+    message: { role: "assistant", content: [{ type: "text", text: "新文本" }] },
+  });
+  raf.runAll();
+
+  assert.equal(state.chatRunId, "run-orphan");
+  assert.equal(state.chatStream, "新文本", "收养后 chatStream 应以本帧为基，不得叠加旧残留");
+  assert.equal(state.chatPendingStreamText, null);
+  assert.equal(state.chatStreamFrozenPrefix, "");
+  assert.equal(state.chatNarrationText, null);
+  clearReconnectOrphanRun();
+}
+
+// R6：历史（本次拉取）已含本 run 回复（终态帧丢失但已持久化）→ 不收养 inFlightRun，
+// 否则快照累计文本与历史回复双份。
+async function testInFlightRunNotAdoptedWhenReplyInFreshHistory() {
+  const raf = new FakeRaf();
+  installBrowserGlobals(raf);
+  const state = makeState({
+    chatRunId: null,
+    chatStream: null,
+    client: {
+      request: async () => ({
+        messages: [
+          { role: "user", content: [{ type: "text", text: "q" }] },
+          {
+            role: "assistant",
+            content: [{ type: "text", text: "已完成回复" }],
+            runId: "run-done",
+            timestamp: Date.now(),
+          },
+        ],
+        inFlightRun: { runId: "run-done", text: "已完成回复", startedAt: Date.now() - 1000 },
+      }),
+    },
+  });
+
+  await loadChatHistory(state);
+
+  assert.equal(state.chatRunId, null, "历史已含本 run 回复时不得收养 inFlightRun");
+  assert.equal(state.chatStream, null, "收养被拒时不应重建流式气泡");
+}
+
+// R6：本地旧列表已含本 run 回复（runId 精确匹配）同样拒绝收养。
+async function testInFlightRunNotAdoptedWhenReplyInLocalHistory() {
+  const raf = new FakeRaf();
+  installBrowserGlobals(raf);
+  const state = makeState({
+    chatRunId: null,
+    chatStream: null,
+    chatMessages: [
+      {
+        role: "assistant",
+        content: [{ type: "text", text: "早前已落盘" }],
+        runId: "run-done",
+        timestamp: Date.now(),
+      },
+    ],
+    client: {
+      request: async () => ({
+        messages: [{ role: "user", content: [{ type: "text", text: "q" }] }],
+        inFlightRun: { runId: "run-done", text: "早前已落盘", startedAt: Date.now() - 1000 },
+      }),
+    },
+  });
+
+  await loadChatHistory(state);
+
+  assert.equal(state.chatRunId, null, "本地历史已含本 run 回复时不得收养 inFlightRun");
+}
+
+// orphan 快照被 status 事件误清：内核 run 启动阶段广播 state:"status"
+// （preparing_workspace 等 7 phase）。status 帧不是终态，不得清除 orphan 快照——
+// 误清后同 runId 的后续 delta 会被僵尸过滤丢弃，重连恢复链路断裂。
+async function testOrphanStatusFrameDoesNotClearSnapshot() {
+  const raf = new FakeRaf();
+  installBrowserGlobals(raf);
+  markReconnectOrphanRun("run-orphan", "session-1");
+  const state = makeState({ chatRunId: null, chatStream: null });
+
+  const statusResult = handleChatEvent(state, {
+    runId: "run-orphan",
+    sessionKey: "session-1",
+    state: "status",
+  });
+
+  assert.equal(statusResult, "status", "status 帧透传（无消费方，不影响调用方）");
+  assert.equal(
+    liveOrphanRunId("session-1"),
+    "run-orphan",
+    "status 帧不得清除 orphan 快照（否则后续 delta 被僵尸过滤丢弃）",
+  );
+  assert.equal(state.chatRunId, null, "status 帧不得触碰本地 run 态");
+
+  // 快照仍在：后续 delta 应照常收养（回归点：误清后这里会被丢弃）
+  const deltaResult = handleChatEvent(state, {
+    runId: "run-orphan",
+    sessionKey: "session-1",
+    state: "delta",
+    message: { role: "assistant", content: [{ type: "text", text: "续跑文本" }] },
+  });
+  raf.runAll();
+  assert.equal(deltaResult, "delta");
+  assert.equal(state.chatRunId, "run-orphan", "status 帧之后 delta 仍应被收养续显");
+  clearReconnectOrphanRun();
+}
+
+// aborted 与 error 同一 partial 保留逻辑：中止前已上屏的末段文本不得随 reset 丢弃
+// （内核 abort 时同样可能截断持久化）。注意只保留 partial、不注入错误卡。
+async function testAbortedPreservesVisiblePartialText() {
+  const raf = new FakeRaf();
+  installBrowserGlobals(raf);
+  const state = makeState();
+
+  handleChatEvent(state, {
+    runId: "run-1",
+    sessionKey: "session-1",
+    state: "delta",
+    deltaText: "partial answer",
+  });
+  // aborted 与 error 同帧竞速：pending RAF 未执行即到达终态
+  handleChatEvent(state, {
+    runId: "run-1",
+    sessionKey: "session-1",
+    state: "aborted",
+  });
+
+  assert.equal(state.chatStream, null, "terminal should clear the live bubble");
+  assert.equal(state.chatPendingStreamText, null, "terminal should clear pending state");
+  assert.equal(state.chatMessages.length, 1, "aborted 只保留 partial 一条，无错误卡");
+  const partial = state.chatMessages[0] as any;
+  assert.equal(partial.cryoclawPartial, true);
+  assert.equal(partial.content[0].text, "partial answer");
+  assert.notEqual(partial.cryoclawError, true, "aborted 不注入错误卡（语义是主动中止）");
+}
+
+// 并发非 silent 加载：代际令牌——后发起者使先前加载失效。先前加载完成时
+// 不得清 loading（最新一代仍在飞）、不得写回快照（防旧响应后至覆盖新响应）。
+async function testConcurrentLoadsLatestGenerationWins() {
+  installBrowserGlobals(new FakeRaf());
+  const resolvers: Array<(res: unknown) => void> = [];
+  const state = makeState({
+    client: {
+      request: async () =>
+        new Promise((resolve) => {
+          resolvers.push(resolve);
+        }),
+    },
+  });
+
+  const pA = loadChatHistory(state);
+  const pB = loadChatHistory(state);
+  assert.equal(resolvers.length, 2, "两个并发加载都应发出请求");
+  assert.equal(state.chatLoading, true, "并发加载期间 loading 应置位");
+
+  // 最新一代（B）先返回
+  resolvers[1]!({
+    messages: [{ role: "assistant", content: [{ type: "text", text: "B-reply" }], timestamp: 2 }],
+  });
+  await pB;
+  assert.equal(
+    (state.chatMessages[0] as any).content[0].text,
+    "B-reply",
+    "最新一代的响应应写回快照",
+  );
+  assert.equal(state.chatLoading, false, "最新一代完成时应清加载态");
+
+  // 旧代（A）后返回：整体失效——不写回、不清位
+  resolvers[0]!({
+    messages: [{ role: "assistant", content: [{ type: "text", text: "A-reply" }], timestamp: 1 }],
+  });
+  await pA;
+  assert.equal(
+    (state.chatMessages[0] as any).content[0].text,
+    "B-reply",
+    "旧代加载后至不得覆盖新快照（last-write-wins 倒置）",
+  );
+  assert.equal(state.chatMessages.length, 1);
+  assert.equal(state.chatLoading, false, "旧代加载的 finally 不得再动加载态");
+}
+
+// R5：chatStreamMismatchCount 随用户发起的新 run 清零（此前只有终态清零，
+// 上一 run 累计的计数会继承进新 run，过早触发强制 resync）。
+async function testNewRunResetsMismatchCount() {
+  installBrowserGlobals(new FakeRaf());
+  const state = makeState({
+    chatRunId: null,
+    chatStream: null,
+    chatStreamMismatchCount: 7,
+    client: { request: async () => ({}) },
+  });
+
+  await sendChatMessage(state, "hi");
+
+  assert.ok(state.chatRunId, "新 run 应建立");
+  assert.equal(state.chatStreamMismatchCount, 0, "新 run 应清零交叉校验计数");
+}
+
 async function main() {
   await testChatStreamIsRafThrottled();
   await testLoadChatHistoryBatchesInitialRender();
@@ -1187,6 +1510,17 @@ async function main() {
   await testInFlightRunNotAdoptedWhenLocalRunActive();
   await testInFlightRunAdoptedEvenOnStaleReadRetention();
   await testInFlightRunAbsentKeepsClearedState();
+  await testBodyDeltaClearsNarration();
+  await testEmptyBodyDeltaKeepsNarration();
+  await testReplaceBeyondFrozenPrefixInvalidatesFrozenSegments();
+  await testMismatchResyncAfterThreeFailures();
+  await testOrphanAdoptionClearsStreamResidue();
+  await testInFlightRunNotAdoptedWhenReplyInFreshHistory();
+  await testInFlightRunNotAdoptedWhenReplyInLocalHistory();
+  await testOrphanStatusFrameDoesNotClearSnapshot();
+  await testAbortedPreservesVisiblePartialText();
+  await testConcurrentLoadsLatestGenerationWins();
+  await testNewRunResetsMismatchCount();
   cancelStaleHistoryRetryForTests();
   console.log("chat controller tests passed");
 }

@@ -7,6 +7,10 @@ type ScrollHost = {
   style: CSSStyleDeclaration;
   chatScrollFrame: number | null;
   chatScrollTimeout: number | null;
+  // 单调递增调度代际号：updateComplete.then 闭包不可取消，同帧两次调度会产生
+  // 双重滚动且 rAF 句柄互踩丢失（旧闭包覆盖新句柄，新调度反而取消不掉旧帧）。
+  // 回调落地前比对代际，过期即返回。
+  chatScrollGeneration: number;
   chatHasAutoScrolled: boolean;
   chatUserNearBottom: boolean;
   chatNewMessagesBelow: boolean;
@@ -20,6 +24,8 @@ export function scheduleChatScroll(host: ScrollHost, force = false, smooth = fal
     clearTimeout(host.chatScrollTimeout);
     host.chatScrollTimeout = null;
   }
+  const generation = ++host.chatScrollGeneration;
+  const isStale = () => generation !== host.chatScrollGeneration;
   const pickScrollTarget = () => {
     const container = host.querySelector(".chat-thread") as HTMLElement | null;
     if (container) {
@@ -36,7 +42,13 @@ export function scheduleChatScroll(host: ScrollHost, force = false, smooth = fal
   };
   // Wait for Lit render to complete, then scroll
   void host.updateComplete.then(() => {
+    if (isStale()) {
+      return; // 已被更新的调度取代（闭包不可取消，代际比对兜底）
+    }
     host.chatScrollFrame = requestAnimationFrame(() => {
+      if (isStale()) {
+        return;
+      }
       host.chatScrollFrame = null;
       const target = pickScrollTarget();
       if (!target) {
@@ -74,6 +86,9 @@ export function scheduleChatScroll(host: ScrollHost, force = false, smooth = fal
       const retryDelay = effectiveForce ? 150 : 120;
       host.chatScrollTimeout = window.setTimeout(() => {
         host.chatScrollTimeout = null;
+        if (isStale()) {
+          return; // 重试落地前又有新调度：过期重试不得回写滚动位置
+        }
         const latest = pickScrollTarget();
         if (!latest) {
           return;
@@ -108,6 +123,9 @@ export function handleChatScroll(host: ScrollHost, event: Event) {
 }
 
 export function resetChatScroll(host: ScrollHost) {
+  // 代际自增使在途的调度闭包（then/rAF/timeout 均不可取消）全部过期——
+  // 会话切换/手动回底后，旧会话残留的滚动回调不得再回写位置。
+  host.chatScrollGeneration += 1;
   host.chatHasAutoScrolled = false;
   host.chatUserNearBottom = true;
   host.chatNewMessagesBelow = false;

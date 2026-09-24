@@ -21,6 +21,7 @@ import { listEligibleSkills } from "./controllers/skills.ts";
 import { openWorkspaceView } from "./app-workspace.ts";
 import { dismissPlan } from "./plan-stream.ts";
 import { dismissProgressCard } from "./controllers/progress-card.ts";
+import { t } from "./i18n.ts";
 import type { ChatProps } from "./views/chat.ts";
 
 export function buildChatProps(state: AppViewState): ChatProps {
@@ -150,6 +151,9 @@ export function buildChatProps(state: AppViewState): ChatProps {
     // （未落盘，sendChatMessage 失败路径打了 cryoclawSendFailed 标记），一并移除——
     // 否则重发会再乐观 append 一条 user 气泡造成双份。run 级 error 的 user 气泡
     // 已落盘（无标记），保留。清理细节见 app-chat.ts removeFailedSendArtifacts。
+    // 另按文本对发送队列去重：队列 flush 失败回队可能留下同文本条目，重发成功后
+    // 终态 flush 会再次发出同一条（消息重复）——重发即取代队列里的那份。
+    // run 活跃时 handleSendChat 会把消息静默入队：toast 反馈「已加入队列」。
     onResendError: (text: string, attachments?: ChatAttachment[]) => {
       if (state.chatSending || !state.connected) {
         return;
@@ -165,14 +169,21 @@ export function buildChatProps(state: AppViewState): ChatProps {
           cleaned.length,
         );
       }
-      // 错误卡上保存的附件（resendAttachments）随重发带回，否则附件整体丢失
+      state.chatQueue = state.chatQueue.filter(
+        (item) => (item.message ?? item.text) !== text,
+      );
+      const willQueue = Boolean(state.chatRunId);
       void state.handleSendChat(
         text,
         attachments && attachments.length > 0 ? { attachments } : undefined,
       );
+      if (willQueue) {
+        showToast(state, t("chat.resentToQueue"));
+      }
     },
     onSend: () => state.handleSendChat(),
     canAbort: Boolean(state.chatRunId),
+    abortPending: state.chatAbortPending,
     onAbort: () => void state.handleAbortChat(),
     onQueueRemove: (id) => state.removeQueuedMessage(id),
     onQueueEdit: (id, newText) => state.editQueuedMessage(id, newText),

@@ -48,6 +48,7 @@ import {
   onPopState as onPopStateInternal,
 } from "./app-settings.ts";
 import {
+  invalidateFrozenLeadingSegments as invalidateFrozenLeadingSegmentsInternal,
   resetToolStream as resetToolStreamInternal,
   type ToolStreamEntry,
   type CompactionStatus,
@@ -195,6 +196,7 @@ export class OpenClawApp extends LitElement {
     chatNarrationText: { state: true },
     chatStreamStartedAt: { state: true },
     chatRunId: { state: true },
+    chatAbortPending: { state: true },
     planState: { state: true },
     progressCard: { state: true },
     board: { state: true },
@@ -381,6 +383,9 @@ export class OpenClawApp extends LitElement {
   chatStreamFrozenPrefix: string = "";
   evictedLeadingSegments: Array<{ text: string; ts: number }> = [];
   chatRunId: string | null = null;
+  // 中止请求在途标记：成功提交后保持到本 run 终态（app-gateway own-run 终态清零），
+  // 期间 Stop 按钮禁用防重复 chat.abort；提交失败即刻清零恢复可点。
+  chatAbortPending = false;
   // 计划悬浮面板状态（update_plan 工具事件驱动，独立于 toolStream，跨 turn 保留）
   planState: PlanStreamState | null = null;
   // Progress Card（内核 progressCard.get/put + progressCard.changed，每会话一卡）
@@ -520,6 +525,7 @@ export class OpenClawApp extends LitElement {
   client: GatewayBrowserClient | null = null;
   private chatScrollFrame: number | null = null;
   private chatScrollTimeout: number | null = null;
+  private chatScrollGeneration = 0;
   private chatHasAutoScrolled = false;
   chatUserNearBottom = true;
   chatNewMessagesBelow = false;
@@ -866,6 +872,14 @@ export class OpenClawApp extends LitElement {
       mergeIfStale: true,
       silent: true,
     });
+  }
+
+  // R3：replace 帧越过 tool 边界重生成（reducer 返回 invalidatesFrozenPrefix）→
+  // 作废 toolStream 里被重写的 leadingSegment，防前缀双份。
+  onReplaceBeyondFrozenPrefix() {
+    invalidateFrozenLeadingSegmentsInternal(
+      this as unknown as Parameters<typeof invalidateFrozenLeadingSegmentsInternal>[0],
+    );
   }
 
   resetChatScroll() {

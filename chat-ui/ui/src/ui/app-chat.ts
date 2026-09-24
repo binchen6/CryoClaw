@@ -19,6 +19,10 @@ export type ChatHost = {
   chatQueue: ChatQueueItem[];
   chatRunId: string | null;
   chatSending: boolean;
+  // 中止请求在途标记：在途期间禁用 Stop 按钮/忽略重复中止，防重复提交 chat.abort。
+  // 清零出口：本 run 终态事件 / 提交失败 / 切会话 / 新 run 发起 / 重连与 gap
+  // 软恢复清态（app-gateway）——缺任一路径残留都会把后续 run 的 Stop 按钮永禁用。
+  chatAbortPending?: boolean;
   sessionKey: string;
   basePath: string;
   hello: GatewayHelloOk | null;
@@ -81,8 +85,24 @@ export async function handleAbortChat(host: ChatHost) {
   if (!host.connected) {
     return;
   }
+  // 在途防重：Stop 按钮在 abortPending 期间禁用（装配层），这里是命令路径
+  // （/stop 等）的同一守卫，避免连击/双路径重复提交 chat.abort。
+  if (host.chatAbortPending) {
+    return;
+  }
+  // 无活跃 run 时中止无意义：置位后不会有任何终态事件来清零，标记会永驻
+  // （Stop 按钮路径本就有 canAbort 门控，这里挡的是 /stop 命令路径）
+  if (!host.chatRunId) {
+    return;
+  }
   // 中止只停 run，不动输入框草稿（清草稿是「发送 stop 命令」的语义，见 handleSendChat）
-  await abortChatRun(host as unknown as OpenClawApp);
+  host.chatAbortPending = true;
+  const ok = await abortChatRun(host as unknown as OpenClawApp);
+  if (!ok) {
+    // 提交失败：run 仍在跑，清零让按钮恢复可点；成功则保持到终态事件清零
+    // （app-gateway own-run 终态），期间按钮保持禁用防重复中止。
+    host.chatAbortPending = false;
+  }
 }
 
 function enqueueChatMessage(
@@ -260,6 +280,17 @@ async function flushChatQueue(host: ChatHost) {
     attachments: next.attachments,
   });
   if (!ok) {
+    // 与 sendQueuedMessageNow 失败回退同一契约：空闲路径失败已向消息流注入
+    // 乐观气泡+错误卡，回队前先清残留，避免与队列条目双份呈现。
+    const app = host as unknown as OpenClawApp;
+    const cleaned = removeFailedSendArtifacts(
+      app.chatMessages as unknown as Array<Record<string, unknown>>,
+      next.message ?? next.text ?? "",
+    );
+    if (cleaned) {
+      app.chatMessages = cleaned;
+      app.chatVisibleMessageCount = Math.min(app.chatVisibleMessageCount, cleaned.length);
+    }
     host.chatQueue = [next, ...host.chatQueue];
   }
 }

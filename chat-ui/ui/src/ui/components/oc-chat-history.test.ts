@@ -72,6 +72,15 @@ test("oc-chat-history：memo 调用点在组件内，复用 renderMessageGroup +
   assert.match(componentSrc, /repeat\(/, "历史列表应继续用 lit repeat（keyed 复用）");
 });
 
+// 语言切换刷新：divider/分组文案经 i18n 渲染，切语言后必须由装配层传入新
+// locale 触发重渲染（shouldUpdate 只放行视觉清单，locale 必须在清单内）。
+test("oc-chat-history：locale 是视觉属性且装配层传入 getLocale()", () => {
+  const visualList = componentSrc.match(/VISUAL_PROPS\s*=\s*\[[\s\S]*?\]/)?.[0] ?? "";
+  assert.ok(visualList.includes('"locale"'), "VISUAL_PROPS 应包含 locale");
+  assert.match(componentSrc, /locale:\s*\{\s*attribute:\s*false\s*\}/, "静态属性应声明 locale");
+  assert.match(chatViewSrc, /\.locale=\$\{getLocale\(\)\}/, "装配层应传 .locale=${getLocale()}");
+});
+
 test("views/chat：renderChat 不再直接调用历史 memo（调用点已迁入组件）", () => {
   assert.ok(
     !/\b(buildChatItemsMemoized|computeSessionFileChangesMemoized)\(/.test(chatViewSrc),

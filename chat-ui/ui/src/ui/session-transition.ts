@@ -8,6 +8,8 @@ import type { UiSettings } from "./storage.ts";
 export type SessionTransitionHost = ChatState & {
   chatQueue: unknown[];
   chatAvatarUrl: string | null;
+  // 中止请求在途标记（可选：测试替身不实现也无妨；切换会话时清零）
+  chatAbortPending?: boolean;
   // 计划面板状态（可选：测试替身不实现也无妨，切换会话时直接清空）
   planState?: { sessionKey?: string } | null;
   // Progress Card 状态（可选：测试替身不实现也无妨；切换会话时重建并重新拉取）
@@ -79,8 +81,16 @@ export function applySessionKeyTransition(
   }
   // R91 审查修复：被放弃的「新会话」pending label 切走即清——该会话无任何
   // 消息时 label 永不会被 final 事件消费，不清会一直以幽灵行注入侧边栏
-  // （每轮 sessions.list 刷新都重插入），且 Map 无上界
-  if ((host.chatMessages?.length ?? 0) === 0 && !host.chatMessage && host.chatAttachments.length === 0) {
+  // （每轮 sessions.list 刷新都重插入），且 Map 无上界。
+  // 判空剔除本地合成条目（cryoclawError 错误卡 / cryoclawSendFailed 乐观气泡）：
+  // 它们不代表内核持久化内容——新会话首发失败后消息流只剩合成条目，此前判定
+  // 「有消息」不清 label，幽灵行永驻。
+  const realMessageCount = (host.chatMessages ?? []).filter(
+    (m) =>
+      !((m as Record<string, unknown>).cryoclawError === true) &&
+      !((m as Record<string, unknown>).cryoclawSendFailed === true),
+  ).length;
+  if (realMessageCount === 0 && !host.chatMessage && host.chatAttachments.length === 0) {
     removePendingSessionLabel(host.sessionKey);
   }
   const savedSnapshot = sessionDraftSnapshots.get(trimmed);
@@ -106,6 +116,10 @@ export function applySessionKeyTransition(
   host.chatStreamStartedAt = null;
   host.chatLastActivityAt = null;
   host.chatRunId = null;
+  // R5：交叉校验计数随会话切换清零（此前只有终态/新 run 分支清零，跨 run 会继承）
+  host.chatStreamMismatchCount = 0;
+  // 中止在途标记随会话切换清零（新会话无在途中止）
+  host.chatAbortPending = false;
   host.chatQueue = [];
   host.chatAvatarUrl = null;
   // 计划面板按会话隔离：切走即清（渲染层也按 sessionKey 匹配兜底）

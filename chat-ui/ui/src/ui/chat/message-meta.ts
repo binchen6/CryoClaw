@@ -11,6 +11,7 @@
  */
 import { extractModelId } from "../context-window.ts";
 import { formatCost, formatTokens } from "../views/usage-metrics.ts";
+import { t } from "../i18n.ts";
 
 export type MessageUsage = {
   totalTokens: number | null;
@@ -88,7 +89,7 @@ export function sumGroupUsage(messages: readonly unknown[]): MessageUsage | null
 export function formatUsageFooter(usage: MessageUsage): string {
   const parts: string[] = [];
   if (usage.totalTokens != null) {
-    parts.push(`${formatTokens(usage.totalTokens)} tokens`);
+    parts.push(t("chat.usageTokens").replace("{n}", formatTokens(usage.totalTokens)));
   }
   if (usage.costUsd != null) {
     parts.push(formatCost(usage.costUsd, usage.costUsd >= 0.01 ? 2 : 4));

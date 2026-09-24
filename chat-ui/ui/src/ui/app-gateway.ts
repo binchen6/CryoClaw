@@ -62,8 +62,10 @@ import { configureManagedMedia, wsUrlToHttpOrigin } from "./chat/managed-media.t
 import { applySessionKeyTransition } from "./session-transition.ts";
 import { isToleratedHiddenSession } from "./session-jump.ts";
 import {
+  clearReconnectOrphanRun,
   hasAssistantReplyAfter,
   isStreamStalled,
+  liveOrphanRun,
   liveOrphanRunId,
   markReconnectOrphanRun,
   resetStreamPreAlign,
@@ -99,6 +101,8 @@ type GatewayHost = {
   sessionsIncludeGlobal: boolean;
   sessionsIncludeUnknown: boolean;
   chatRunId: string | null;
+  // 中止请求在途标记（handleAbortChat 置位，own-run 终态清零）
+  chatAbortPending?: boolean;
   chatStreamStartedAt: number | null;
   chatLastActivityAt: number | null;
   chatMessages: unknown[];
@@ -267,7 +271,27 @@ function checkStalledStream(host: GatewayHost) {
   if (host.chatRunId && idleFor != null && idleFor >= RUN_IDLE_ALIGN_MS) {
     // mergeIfStale：内核快照滞后（短读）时保留本地，无倒退风险
     if (shouldStreamPreAlign(host.chatRunId, idleFor, RUN_IDLE_ALIGN_MS)) {
-      void loadChatHistory(host as unknown as OpenClawApp, { mergeIfStale: true, silent: true });
+      // R1：预对齐拉历史后做回复检查——终态帧在断连/gap 窗口丢失时，run 开始后的
+      // assistant 回复已落盘历史，但本地 chatRunId 未清：流式气泡与历史回复并存双份。
+      // 命中即清本地流式态（与 180s 看门狗同一判定，此前此处只拉历史不查回复）。
+      const probeRunId = host.chatRunId;
+      const probeStartedAt = host.chatStreamStartedAt;
+      void (async () => {
+        await loadChatHistory(host as unknown as OpenClawApp, { mergeIfStale: true, silent: true });
+        if (!host.chatRunId || host.chatRunId !== probeRunId) {
+          return; // 探测期间终态已清理 / 已切到新一轮 run
+        }
+        if (host.chatStreamStartedAt !== probeStartedAt) {
+          return; // 同 id 复用防御
+        }
+        if (hasAssistantReplyAfter(host.chatMessages, probeStartedAt)) {
+          console.warn("[gateway] pre-align recovered terminal reply from history");
+          resetChatStreamState(host as unknown as Parameters<typeof resetChatStreamState>[0]);
+          resetToolStream(host as unknown as Parameters<typeof resetToolStream>[0]);
+          host.chatAbortPending = false; // run 已确认结束，中止在途标记一并清（防新 run Stop 永禁用）
+          void flushChatQueueForEvent(host as unknown as Parameters<typeof flushChatQueueForEvent>[0]);
+        }
+      })();
     }
   } else if (!host.chatRunId) {
     resetStreamPreAlign();
@@ -299,6 +323,7 @@ function checkStalledStream(host: GatewayHost) {
       console.warn("[gateway] stalled stream recovered via history probe");
       resetChatStreamState(host as unknown as Parameters<typeof resetChatStreamState>[0]);
       resetToolStream(host as unknown as Parameters<typeof resetToolStream>[0]);
+      host.chatAbortPending = false;
       // run 态已清：补一次队列冲刷，否则看门狗恢复后排队的消息会一直卡住
       void flushChatQueueForEvent(host as unknown as Parameters<typeof flushChatQueueForEvent>[0]);
     }
@@ -324,10 +349,28 @@ function scheduleReconnectOrphanProbe(host: GatewayHost) {
   ORPHAN_PROBE_DELAYS_MS.forEach((delay) => {
     const timer = setTimeout(() => {
       orphanProbeTimers = orphanProbeTimers.filter((x) => x !== timer);
-      if (!liveOrphanRunId(host.sessionKey)) {
+      const orphan = liveOrphanRun(host.sessionKey);
+      if (!orphan) {
         return; // orphan 已被收养/清除/过期——恢复链路已接管，无需再探测。
       }
-      void loadChatHistory(host as unknown as OpenClawApp, { mergeIfStale: true, silent: true });
+      // R1：探测拉历史后做回复检查——orphan 标记（断连）之后落盘的 assistant 回复
+      // 意味着该 run 实际已结束（终态帧在断连窗口丢失）。命中即清本地流式残留 +
+      // 作废 orphan 快照：历史成为唯一渲染源，此后同 runId 的迟到 delta 按僵尸帧
+      // 丢弃，不再收养出与历史双份的气泡（与 180s 看门狗同一回复判定）。
+      void (async () => {
+        await loadChatHistory(host as unknown as OpenClawApp, { mergeIfStale: true, silent: true });
+        if (liveOrphanRunId(host.sessionKey) !== orphan.runId) {
+          return; // 拉取期间 orphan 已被 delta 收养/被终态清除——收养路径自管，勿清活跃 run
+        }
+        if (hasAssistantReplyAfter(host.chatMessages, orphan.markedAt)) {
+          console.warn("[gateway] orphan probe recovered terminal reply from history");
+          resetChatStreamState(host as unknown as Parameters<typeof resetChatStreamState>[0]);
+          resetToolStream(host as unknown as Parameters<typeof resetToolStream>[0]);
+          host.chatAbortPending = false;
+          clearReconnectOrphanRun(orphan.runId, host.sessionKey);
+          void flushChatQueueForEvent(host as unknown as Parameters<typeof flushChatQueueForEvent>[0]);
+        }
+      })();
     }, delay);
     orphanProbeTimers.push(timer);
   });
@@ -435,6 +478,8 @@ export function connectGateway(host: GatewayHost) {
       // 统一走 resetChatStreamState 清理入口（R30：替代字段直赋，防双份清理逻辑漂移）
       resetChatStreamState(host as unknown as Parameters<typeof resetChatStreamState>[0]);
       resetToolStream(host as unknown as Parameters<typeof resetToolStream>[0]);
+      // 断连窗口可能丢失终态帧：中止在途标记若残留会把后续 run 的 Stop 按钮永禁用
+      host.chatAbortPending = false;
       // 重连清态后补一次队列冲刷：断连期间排队的消息不会因终态帧丢失而永久卡住
       // （首次连接时队列为空，flush 内部自查空队列直接返回）
       void flushChatQueueForEvent(host as unknown as Parameters<typeof flushChatQueueForEvent>[0]);
@@ -538,6 +583,7 @@ export function connectGateway(host: GatewayHost) {
         markReconnectOrphanRun(host.chatRunId, host.sessionKey);
         resetChatStreamState(host as unknown as Parameters<typeof resetChatStreamState>[0]);
         resetToolStream(host as unknown as Parameters<typeof resetToolStream>[0]);
+        host.chatAbortPending = false; // 同 onHello：gap 窗口丢失终态时防止标记永驻
         // F7：与 onHello 重连分支同理——gap 窗口内丢的若是 /new、/reset 的 final 帧，
         // pendingReset 未消费期间内核历史已被清空，必须强制替换而非 mergeIfStale。
         void loadChatHistory(
@@ -621,6 +667,8 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
         resetToolStream(host as unknown as Parameters<typeof resetToolStream>[0]);
         // chat 终态顺手清掉 fallback 提示（其自身也有 5s 自动消失兜底）
         clearFallbackNotice(host as unknown as Parameters<typeof clearFallbackNotice>[0]);
+        // own-run 终态：中止在途标记清零，Stop 按钮（若新一轮 run 已开始）恢复可用
+        host.chatAbortPending = false;
       }
       void flushChatQueueForEvent(host as unknown as Parameters<typeof flushChatQueueForEvent>[0]);
       // R5 收敛：终态 sessions 拉取从「700ms + 1500ms 双次轮询」改为单次延迟拉取，
@@ -633,8 +681,10 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
     if (state === "final") {
       const sessionKey = payload?.sessionKey ?? host.sessionKey;
       // /new、/reset 终态：历史已被内核清空轮换，必须强制替换（绕过 mergeIfStale），
-      // 否则重置后的空/短历史会被 R12 滞后兜底误判而继续显示旧对话
-      const wasReset = consumePendingSessionReset(sessionKey);
+      // 否则重置后的空/短历史会被 R12 滞后兜底误判而继续显示旧对话。
+      // 仅 own-run 终态消费标记：外来 run（inject/sub-agent）的 final 先消费会让
+      // 真正 reset run 的 final 到达时 wasReset=false → 旧对话残留。
+      const wasReset = isOwnRunEvent ? consumePendingSessionReset(sessionKey) : false;
       // R12：终态刷新启用滞后兜底（拉取结果落后本地视图时保留本地，防消息短暂消失）
       void loadChatHistory(
         host as unknown as OpenClawApp,
@@ -646,10 +696,11 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
       // 重置未生效（失败/中止）：撤销标记。R30：本 run 的终态无条件补拉真实历史——
       // 中止/出错前内核可能已落盘部分回复，本地 reset 掉的文本由历史恢复（此前仅
       // pendingReset 时补拉）；mergeIfStale 防滞后短读造成视图倒退。
-      // 外来 run（sub-agent/其他客户端）透传的终态不补拉，避免无谓 churn。
+      // 外来 run（sub-agent/其他客户端）透传的终态不补拉，避免无谓 churn；
+      // pendingReset 的消费同样仅限 own-run（理由同 final 分支）。
       const sessionKey = payload?.sessionKey ?? host.sessionKey;
-      consumePendingSessionReset(sessionKey);
       if (isOwnRunEvent) {
+        consumePendingSessionReset(sessionKey);
         void loadChatHistory(host as unknown as OpenClawApp, { mergeIfStale: true });
       }
     }

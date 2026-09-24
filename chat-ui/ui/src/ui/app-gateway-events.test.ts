@@ -14,8 +14,11 @@
 //   否则重启后会恢复到后台会话而非用户上次所看的会话
 // - onHello 的 previousClient 重连分支调用 scheduleReconnectOrphanProbe(host)：
 //   断连期间 run 已结束 + 重连读连续命中滞后快照（退避耗尽）时补有限次静默探测；
-//   探测上限 3 次、间隔钉死 [2000, 4000, 8000]；回调先查 liveOrphanRunId()，
-//   orphan 已被收养/清除/过期则不拉历史；拉取走 { mergeIfStale: true, silent: true }
+//   探测上限 3 次、间隔钉死 [2000, 4000, 8000]；回调先查 liveOrphanRun()，
+//   orphan 已被收养/清除/过期则不拉历史；拉取走 { mergeIfStale: true, silent: true }，
+//   拉后做回复检查（hasAssistantReplyAfter）——命中即清流式态 + 作废 orphan 快照（R1）
+// - R1 预对齐（shouldStreamPreAlign）拉历史后同样做回复检查，命中即清本地流式态；
+//   渲染层另有内容判重兜底（views/chat.ts 跳过与历史末条 assistant 相同的流式气泡）
 // - onClose 分支调用 cancelReconnectOrphanProbe()：新断连作废上轮挂起探测
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -161,14 +164,54 @@ test("app-gateway.ts：ORPHAN_PROBE_DELAYS_MS 钉死探测上限 3 次与间隔 
   );
 });
 
-test("app-gateway.ts：探测回调先检查 liveOrphanRunId，为空不拉历史；拉取走 silent + mergeIfStale", () => {
+test("app-gateway.ts：探测回调先检查 orphan 存活，为空不拉历史；拉取走 silent + mergeIfStale", () => {
   const s = src("app-gateway.ts");
   // orphan 已被后续 delta 收养 / 被终态清除 / 已过期（TTL 120s）——恢复链路已接管，
   // 探测必须静默跳过，不得再发起无谓的历史拉取。
   assert.match(
     s,
-    /if \(!liveOrphanRunId\(host.sessionKey\)\) \{[\s\S]*?return;[\s\S]*?\}[\s\S]*?void loadChatHistory\(host as unknown as OpenClawApp, \{ mergeIfStale: true, silent: true \}\);/,
-    "探测回调应先查 liveOrphanRunId()，为空直接 return；非空才走 loadChatHistory(..., { mergeIfStale: true, silent: true })",
+    /const orphan = liveOrphanRun\(host\.sessionKey\);[\s\S]*?if \(!orphan\) \{[\s\S]*?return;[\s\S]*?\}[\s\S]*?await loadChatHistory\(host as unknown as OpenClawApp, \{ mergeIfStale: true, silent: true \}\);/,
+    "探测回调应先查 liveOrphanRun()，为空直接 return；非空才走 await loadChatHistory(..., { mergeIfStale: true, silent: true })",
+  );
+});
+
+test("app-gateway.ts：orphan 探测拉历史后做回复检查，命中清流式态 + 作废 orphan 快照（R1）", () => {
+  const s = src("app-gateway.ts");
+  const start = s.indexOf("function scheduleReconnectOrphanProbe");
+  assert.notEqual(start, -1, "app-gateway.ts 缺少 scheduleReconnectOrphanProbe");
+  const branch = s.slice(start);
+  // 拉取期间 orphan 已被 delta 收养/被终态清除 → 收养路径自管活跃 run，探测不得清它
+  assert.match(
+    branch,
+    /liveOrphanRunId\(host\.sessionKey\) !== orphan\.runId\)[\s\S]*?return;/,
+    "拉历史后应先复查 orphan 仍未被收养，已被收养则不得 reset 活跃 run",
+  );
+  // orphan 标记（断连）之后落盘的 assistant 回复 = 该 run 实际已结束（终态帧丢失）：
+  // 清本地流式残留 + 作废 orphan 快照，历史成为唯一渲染源（与 180s 看门狗同一判定）。
+  assert.match(
+    branch,
+    /hasAssistantReplyAfter\(host\.chatMessages, orphan\.markedAt\)[\s\S]*?resetChatStreamState\([\s\S]*?resetToolStream\([\s\S]*?clearReconnectOrphanRun\(orphan\.runId, host\.sessionKey\);/,
+    "回复命中应 resetChatStreamState + resetToolStream + clearReconnectOrphanRun(orphan.runId)",
+  );
+});
+
+test("app-gateway.ts：预对齐拉历史后做回复检查（R1，此前只拉历史不查回复）", () => {
+  const s = src("app-gateway.ts");
+  const start = s.indexOf("function checkStalledStream");
+  assert.notEqual(start, -1, "app-gateway.ts 缺少 checkStalledStream");
+  const end = s.indexOf("function scheduleReconnectOrphanProbe", start);
+  assert.notEqual(end, -1, "无法定位 checkStalledStream 边界");
+  const branch = s.slice(start, end);
+  assert.match(
+    branch,
+    /shouldStreamPreAlign\(host\.chatRunId, idleFor, RUN_IDLE_ALIGN_MS\)\) \{[\s\S]*?await loadChatHistory\(host as unknown as OpenClawApp, \{ mergeIfStale: true, silent: true \}\);[\s\S]*?hasAssistantReplyAfter\(host\.chatMessages, probeStartedAt\)[\s\S]*?resetChatStreamState\(/,
+    "预对齐分支拉历史后应用 hasAssistantReplyAfter 判定，命中即清本地流式态（与看门狗同规则）",
+  );
+  // 负向钉点：预对齐不得退化为「每 tick 无条件 void loadChatHistory」的旧写法
+  assert.doesNotMatch(
+    branch,
+    /if \(shouldStreamPreAlign\(host\.chatRunId, idleFor, RUN_IDLE_ALIGN_MS\)\) \{\s*\n\s*void loadChatHistory\(/,
+    "预对齐分支不得只 void loadChatHistory 而不做回复检查",
   );
 });
 
@@ -223,5 +266,117 @@ test("controllers/chat.ts：orphan 收养分支调用 clearReconnectOrphanRun（
     adoptBranch,
     /clearReconnectOrphanRun\(payload\.runId, state\.sessionKey\);/,
     "收养分支应调用 clearReconnectOrphanRun(payload.runId)，收养即停重连探测",
+  );
+  // R6：收养从零重建 run 态——必须显式清空上一 run 的流式残留，否则与收养后文本
+  // 叠加成双份。
+  assert.match(
+    adoptBranch,
+    /state\.chatStream = "";[\s\S]*?state\.chatPendingStreamText = null;[\s\S]*?state\.chatStreamFrozenPrefix = "";/,
+    "收养分支应显式清空 chatStream/chatPendingStreamText/chatStreamFrozenPrefix",
+  );
+});
+
+test("controllers/chat.ts：in-flight run 收养前检查历史已含本 run 回复（R6，有则不收养）", () => {
+  const s = src("controllers/chat.ts");
+  assert.match(
+    s,
+    /function historyAlreadyHasRunReply\([\s\S]*?typeof m\.runId === "string" && m\.runId === runId[\s\S]*?hasAssistantReplyAfter\(freshMessages, startedAt\)[\s\S]*?hasAssistantReplyAfter\(state\.chatMessages, startedAt\)/,
+    "historyAlreadyHasRunReply 应按 runId 精确匹配 + 双列表 hasAssistantReplyAfter 判定",
+  );
+  assert.match(
+    s,
+    /if \(historyAlreadyHasRunReply\(state, freshMessages \?\? \[\], runId, startedAt\)\) \{\s*\n\s*debugLog\("lifecycle", "in-flight run adoption skipped: reply already in history"/,
+    "adoptInFlightRunFromHistory 应在收养前调用 historyAlreadyHasRunReply，命中即拒绝收养",
+  );
+  assert.match(
+    s,
+    /adoptInFlightRunFromHistory\(state, res\.inFlightRun, raw\);/,
+    "loadChatHistory 应把本次拉取的新消息列表（raw）传给收养判定",
+  );
+});
+
+test("controllers/chat.ts：delta 消费 reducer 新信号（R3 作废冻结段 / R4 清 narration / R5 计数）", () => {
+  const s = src("controllers/chat.ts");
+  const start = s.indexOf('if (payload.state === "delta") {');
+  assert.notEqual(start, -1, "chat.ts 缺少 delta 分支");
+  const end = s.indexOf('} else if (payload.state === "final") {', start);
+  assert.notEqual(end, -1, "无法定位 delta 分支边界");
+  const branch = s.slice(start, end);
+  // R3
+  assert.match(
+    branch,
+    /if \(reduced\.invalidatesFrozenPrefix\) \{[\s\S]*?state\.onReplaceBeyondFrozenPrefix\?\.\(\);[\s\S]*?state\.chatStreamFrozenPrefix = "";/,
+    "replace 越过 frozenPrefix 时应调用 onReplaceBeyondFrozenPrefix 钩子并清空 frozenPrefix",
+  );
+  // R4
+  assert.match(
+    branch,
+    /if \(reduced\.text\.trim\(\)\.length > 0\) \{[\s\S]*?state\.chatPendingNarrationText = null;[\s\S]*?state\.chatNarrationText = null;/,
+    "正文 delta 首次非空时应清掉 narration（防 narration 气泡 + 正文气泡同文双份）",
+  );
+  // R5
+  assert.match(
+    branch,
+    /mismatchCount: state\.chatStreamMismatchCount,[\s\S]*?state\.chatStreamMismatchCount = reduced\.mismatchCount \?\? 0;/,
+    "delta 分支应透传并回写 chatStreamMismatchCount（reducer 连续失败强制 resync 的载体）",
+  );
+});
+
+test("app-tool-stream.ts：invalidateFrozenLeadingSegments 作废被重写的冻结段（R3 消费端）", () => {
+  const s = src("app-tool-stream.ts");
+  assert.match(
+    s,
+    /export function invalidateFrozenLeadingSegments\(host: ToolStreamHost\) \{[\s\S]*?entry\.leadingSegment = undefined;[\s\S]*?host\.evictedLeadingSegments = \[\];[\s\S]*?flushToolStreamSync\(host\);[\s\S]*?\}/,
+    "invalidateFrozenLeadingSegments 应清各 entry 的 leadingSegment + sticky 列表并同步时间线",
+  );
+});
+
+test("app-gateway.ts：stream-recovery import 含 R1/R6 新 API", () => {
+  const s = src("app-gateway.ts");
+  assert.match(
+    s,
+    /import \{[\s\S]*?liveOrphanRun,[\s\S]*?\} from "\.\/stream-recovery\.ts"/,
+    "app-gateway.ts 的 stream-recovery import 应包含 liveOrphanRun（探测回调取 orphan.markedAt）",
+  );
+});
+
+// ---- F9：pendingReset 消费必须按 isOwnRunEvent 门控（跨 run final 不得抢先消费） ----
+
+test("app-gateway.ts：final 分支 consumePendingSessionReset 按 isOwnRunEvent 门控", () => {
+  const s = chatBranch(src("app-gateway.ts"));
+  // inject/sub-agent 的 cross-run final 先消费标记，会让真正 reset run 的 final
+  // 到达时 wasReset=false → 强制替换被跳过 → 旧对话在新会话残留。
+  assert.match(
+    s,
+    /const wasReset = isOwnRunEvent \? consumePendingSessionReset\(sessionKey\) : false;/,
+    "final 分支仅在 isOwnRunEvent 时消费 pendingReset",
+  );
+});
+
+test("app-gateway.ts：error/aborted 分支的 consumePendingSessionReset 移入 isOwnRunEvent 块", () => {
+  const s = chatBranch(src("app-gateway.ts"));
+  assert.match(
+    s,
+    /if \(isOwnRunEvent\) \{\s*\n\s*consumePendingSessionReset\(sessionKey\);\s*\n\s*void loadChatHistory\(host as unknown as OpenClawApp, \{ mergeIfStale: true \}\);\s*\n\s*\}/,
+    "error/aborted 分支应仅 own-run 时消费 pendingReset 并补拉历史",
+  );
+  // 负向钉点：不得再出现块外的无条件消费（final 分支的三元表达式除外）
+  const withoutFinal = s.replace(
+    /const wasReset = isOwnRunEvent \? consumePendingSessionReset\(sessionKey\) : false;/,
+    "",
+  );
+  assert.equal(
+    withoutFinal.includes("consumePendingSessionReset(sessionKey);"),
+    true,
+    "error/aborted 块内应保留唯一消费点",
+  );
+});
+
+test("app-gateway.ts：own-run 终态清零 chatAbortPending（中止在途标记的终态出口）", () => {
+  const s = chatBranch(src("app-gateway.ts"));
+  assert.match(
+    s,
+    /if \(isOwnRunEvent\) \{[\s\S]*?host\.chatAbortPending = false;/,
+    "own-run 终态应清零 chatAbortPending，让新一轮 run 的 Stop 按钮恢复可用",
   );
 });

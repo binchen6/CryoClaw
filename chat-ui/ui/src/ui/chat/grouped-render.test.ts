@@ -1,5 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { existsSync, readFileSync } from "node:fs";
+import { html } from "lit";
 
 // grouped-render.ts 经 components/managed-image.ts 注册自定义元素，
 // node 环境无 customElements，动态导入前打桩（lit 本体在 node 可正常加载）。
@@ -226,4 +228,102 @@ test("thinkingTail：超长文本取末尾 160 字符且不切断代理对", asy
   assert.ok(odd.endsWith(tail3));
   const first3 = tail3.codePointAt(0)!;
   assert.ok(!(first3 >= 0xdc00 && first3 <= 0xdfff), "修正后首字符仍不得是孤立低代理");
+});
+
+test("thinkingTail：结尾悬空的高代理丢弃（残缺 emoji 不渲染出 U+FFFD）", async () => {
+  const { thinkingTail } = await import("./grouped-render.ts");
+  // 全长 301：截窗（-160）以孤立高代理 \uD83D 收尾（其后低代理被截掉）
+  const dangling = "x".repeat(300) + "\uD83D";
+  const tail = thinkingTail(dangling);
+  assert.equal(tail, "x".repeat(159), "结尾悬空高代理应被丢弃，只留完整字符");
+  const last = tail.charCodeAt(tail.length - 1);
+  assert.ok(
+    !(last >= 0xd800 && last <= 0xdbff),
+    "尾字符不得是悬空高代理（渲染会变成 U+FFFD）",
+  );
+  // 完整 emoji 收尾不受影响（尾部是完整代理对：高代理+低代理俱在，不得误丢）
+  const intact = "x".repeat(299) + "👍";
+  const tail2 = thinkingTail(intact);
+  assert.equal(tail2, intact.slice(-160));
+  assert.ok(tail2.endsWith("👍"), "完整 emoji 应完整保留");
+  const last2 = tail2.charCodeAt(tail2.length - 1);
+  assert.ok(
+    last2 >= 0xdc00 && last2 <= 0xdfff && tail2.charCodeAt(tail2.length - 2) >= 0xd800,
+    "完整对的尾字符是低代理且前有高代理（合法）",
+  );
+});
+
+// ── R5 懒渲染 + 流式重放：折叠时不求值 bodyFn，展开后随宿主重放 ──
+
+test("懒渲染：折叠状态下 ref/toggle 重放均不求值 bodyFn", async () => {
+  const { replayLazyDetailsBody } = await import("./grouped-render.ts");
+  let calls = 0;
+  const bodyFn = () => {
+    calls++;
+    return html``;
+  };
+  // 折叠：不查 body、不求值（querySelector 直接抛桩，被调用即失败）
+  const closed = { open: false, querySelector: () => assert.fail("折叠时不应查询 body") };
+  replayLazyDetailsBody(closed as never, ":scope > .x", "sig-1", bodyFn);
+  assert.equal(calls, 0);
+});
+
+test("懒渲染：body 缺失或签名未变化时跳过重放（避免每帧重复解析）", async () => {
+  const { replayLazyDetailsBody } = await import("./grouped-render.ts");
+  let calls = 0;
+  const bodyFn = () => {
+    calls++;
+    return html``;
+  };
+  const openNoBody = { open: true, querySelector: () => null };
+  replayLazyDetailsBody(openNoBody as never, ":scope > .x", "sig-1", bodyFn);
+  assert.equal(calls, 0, "body 占位节点缺失时不应求值 bodyFn");
+  // 签名相同（内容未变）：跳过，bodyFn 不求值、不触发 lit render（node 无 DOM 会抛）
+  const sameSigBody = { dataset: { lazySig: "sig-1" } };
+  const openSameSig = { open: true, querySelector: () => sameSigBody };
+  replayLazyDetailsBody(openSameSig as never, ":scope > .x", "sig-1", bodyFn);
+  assert.equal(calls, 0, "签名未变化时不应重放");
+});
+
+test("懒渲染：展开且签名变化时重放 bodyFn（lit render 在 node 无 DOM，求值后即抛）", async () => {
+  const { replayLazyDetailsBody } = await import("./grouped-render.ts");
+  let calls = 0;
+  const bodyFn = () => {
+    calls++;
+    return html``;
+  };
+  const body = { dataset: {} as Record<string, string> };
+  const open = { open: true, querySelector: () => body };
+  assert.throws(
+    () => replayLazyDetailsBody(open as never, ":scope > .x", "sig-2", bodyFn),
+    () => true,
+    "lit render 需要 DOM，node 下应抛出",
+  );
+  assert.equal(calls, 1, "签名变化时 bodyFn 应被重放求值");
+  assert.equal(body.dataset.lazySig, "sig-2", "重放后应记录签名");
+});
+
+// ── 渲染接线审计：懒 details 展开后须 commit 级重放（防回退到一次性水合）──
+
+test("渲染接线审计：折叠 details 挂 ref 重放 + toggle 水合，无一次性 lazyHydrated 门", () => {
+  const fromSource = new URL("./grouped-render.ts", import.meta.url);
+  const fromDist = new URL("../../../../../src/ui/chat/grouped-render.ts", import.meta.url);
+  const srcUrl = existsSync(fromSource) ? fromSource : fromDist;
+  const src = readFileSync(srcUrl, "utf8");
+  assert.ok(!src.includes("lazyHydrated"), "一次性水合门 lazyHydrated 应已移除");
+  assert.ok(
+    src.includes("lazyDetailsBodyRef("),
+    "折叠 details 应挂 ref 回调实现 commit 级重放",
+  );
+  assert.ok(
+    src.includes("replayLazyDetailsBody("),
+    "toggle 展开路径应复用 replayLazyDetailsBody 立即水合",
+  );
+  const detailsIdx = src.indexOf('class="chat-tools-collapse"');
+  assert.ok(detailsIdx >= 0, "工具折叠 details 应存在");
+  const detailsTag = src.slice(detailsIdx, detailsIdx + 700);
+  assert.ok(
+    detailsTag.includes("lazyDetailsBodyRef(") && detailsTag.includes("@toggle"),
+    "chat-tools-collapse 应同时挂 ref 重放与 toggle 水合",
+  );
 });

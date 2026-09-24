@@ -140,3 +140,30 @@ test("历史合并：assistant 文本消息与 call 同在时不误伤文本", (
   assert.equal(content[0].text, "让我读一下文件");
   assert.equal(content[1].text, "content");
 });
+
+test("历史合并：命中后两侧索引都摘除，孤儿 result 不得二次命中已合并 slot 覆盖输出", () => {
+  // 第一个 result 按 toolCallId 命中；slot 此前同时注册在 openByName["read"]。
+  // 若合并后只摘 openById，紧随的无 id 孤儿 result 会按名字 shift 到同一 slot，
+  // 把已写入的 "correct output" 覆盖成 "stolen output"。
+  const orphanNoId = {
+    role: "toolResult",
+    toolName: "read",
+    content: [{ type: "text", text: "stolen output" }],
+    timestamp: 3,
+  };
+  const input = [
+    callMessage("tc1", "read", { path: "a.ts" }, 1),
+    resultMessage("tc1", "correct output", {}, 2),
+    orphanNoId,
+  ];
+  const items = runBuild(input);
+  const group = items[0] as { messages: Array<{ message: Record<string, unknown> }> };
+  assert.equal(group.messages.length, 2, "孤儿 result 应保留为独立消息");
+  const block = (group.messages[0].message.content as Array<Record<string, unknown>>)[0];
+  assert.equal(block.text, "correct output", "已合并 slot 的输出不得被孤儿 result 覆盖");
+  assert.equal(group.messages[1].message.role, "toolResult");
+  assert.equal(
+    (group.messages[1].message.content as Array<Record<string, unknown>>)[0].text,
+    "stolen output",
+  );
+});

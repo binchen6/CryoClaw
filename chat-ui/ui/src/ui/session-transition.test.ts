@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { applySessionKeyTransition, clearSessionDraftSnapshot } from "./session-transition.ts";
+import { pendingSessionLabels } from "./session-pending.ts";
 
 function makeHost() {
   let assistantLoads = 0;
@@ -140,11 +141,56 @@ async function testDraftSnapshotLruEviction() {
   assert.deepEqual(ctx.host.chatAttachments, []);
 }
 
+// 判空剔除本地合成条目：新会话首发失败后消息流只剩 cryoclawError 错误卡 +
+// cryoclawSendFailed 乐观气泡（均未落盘），pending label 不得因此残留成幽灵行。
+async function testSyntheticOnlyMessagesDoNotBlockPendingLabelCleanup() {
+  const ctx = makeHost();
+  pendingSessionLabels.set("session-a", "幽灵 label");
+  ctx.host.chatMessage = "";
+  ctx.host.chatAttachments = [];
+  ctx.host.chatMessages = [
+    { role: "user", cryoclawSendFailed: true, content: [] },
+    { role: "assistant", cryoclawError: true, content: [] },
+  ];
+  applySessionKeyTransition(ctx.host, "session-b");
+  assert.equal(
+    pendingSessionLabels.has("session-a"),
+    false,
+    "只剩合成条目的会话应视为空，pending label 切走即清",
+  );
+}
+
+// 对照：有真实（已落盘）消息时 pending label 保留，等 final 事件消费。
+async function testRealMessagesKeepPendingLabel() {
+  const ctx = makeHost();
+  pendingSessionLabels.set("session-a", "真实 label");
+  ctx.host.chatMessages = [
+    { role: "user", content: [{ type: "text", text: "hi" }] },
+    { role: "assistant", content: [{ type: "text", text: "hello" }] },
+  ];
+  applySessionKeyTransition(ctx.host, "session-b");
+  assert.equal(pendingSessionLabels.has("session-a"), true, "有真实消息时 label 应保留");
+  pendingSessionLabels.delete("session-a");
+}
+
+// R5 + 中止在途标记：切换会话时交叉校验计数与 chatAbortPending 一并清零。
+async function testTransitionResetsMismatchCountAndAbortPending() {
+  const ctx = makeHost();
+  ctx.host.chatStreamMismatchCount = 5;
+  ctx.host.chatAbortPending = true;
+  applySessionKeyTransition(ctx.host, "session-b");
+  assert.equal(ctx.host.chatStreamMismatchCount, 0, "跨会话不得继承上一 run 的校验计数");
+  assert.equal(ctx.host.chatAbortPending, false, "新会话无在途中止，标记应清零");
+}
+
 async function main() {
   await testApplySessionKeyTransitionResetsComposerState();
   await testDraftSnapshotSavedAndRestored();
   await testClearSessionDraftSnapshot();
   await testDraftSnapshotLruEviction();
+  await testSyntheticOnlyMessagesDoNotBlockPendingLabelCleanup();
+  await testRealMessagesKeepPendingLabel();
+  await testTransitionResetsMismatchCountAndAbortPending();
   console.log("session transition tests passed");
 }
 

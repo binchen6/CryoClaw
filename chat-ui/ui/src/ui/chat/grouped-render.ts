@@ -1,4 +1,5 @@
 import { html, nothing, render } from "lit";
+import { ref } from "lit/directives/ref.js";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import type { AssistantIdentity } from "../assistant-identity.ts";
 import { icons } from "../icons.ts";
@@ -69,14 +70,14 @@ function detectJsonCached(message: object, text: string): { parsed: unknown; pre
 // 生成 JSON 折叠摘要标签
 function jsonSummaryLabel(parsed: unknown): string {
   if (Array.isArray(parsed)) {
-    return `Array (${parsed.length} item${parsed.length === 1 ? "" : "s"})`;
+    return t("chat.jsonArray").replace("{n}", String(parsed.length));
   }
   if (parsed && typeof parsed === "object") {
     const keys = Object.keys(parsed as Record<string, unknown>);
     if (keys.length <= 4) {
       return `{ ${keys.join(", ")} }`;
     }
-    return `Object (${keys.length} keys)`;
+    return t("chat.jsonObject").replace("{n}", String(keys.length));
   }
   return "JSON";
 }
@@ -183,11 +184,16 @@ export function thinkingTail(thinking: string): string {
   if (thinking.length <= LIVE_THINKING_TAIL_CHARS) {
     return thinking;
   }
-  // 尾部截取后修正代理对边界（首字符若是低代理则丢弃，避免渲染出残缺字形）
+  // 尾部截取后修正代理对边界：首字符若是低代理则丢弃，结尾若是悬空的
+  // 高代理（0xD800-0xDBFF）同样丢弃——它指向被截掉的低代理，原样渲染会出 U+FFFD。
   let tail = thinking.slice(-LIVE_THINKING_TAIL_CHARS);
   const first = tail.charCodeAt(0);
   if (first >= 0xdc00 && first <= 0xdfff) {
     tail = tail.slice(1);
+  }
+  const last = tail.charCodeAt(tail.length - 1);
+  if (last >= 0xd800 && last <= 0xdbff) {
+    tail = tail.slice(0, -1);
   }
   return tail;
 }
@@ -195,6 +201,12 @@ export function thinkingTail(thinking: string): string {
 function renderLiveThinkingBlock(thinking: string) {
   const tail = thinkingTail(thinking);
   const tickerOn = tail.trim().length > 0;
+  // -50% 无缝循环依赖两份拷贝逐字一致（同一份 tail 渲染两份 → 同高同
+  // padding-bottom，相位天然对齐）；共享同一份模板让两份文本在同一次
+  // lit 提交里更新，消除两个独立绑定之间的不一致窗口（跨 160 字符
+  // 截断边界时 tail 突变，此前理论上存在 copy1 已更新/copy2 未更新的帧）。
+  const tickerCopies = html`<span class="chat-thinking-ticker__copy">${tail}</span
+    ><span class="chat-thinking-ticker__copy">${tail}</span>`;
   return html`
     <details class="chat-thinking-collapse chat-thinking-live">
       <summary class="chat-thinking-summary">
@@ -204,10 +216,7 @@ function renderLiveThinkingBlock(thinking: string) {
         <span class="chat-thinking-summary__label">${t("chat.phaseThinking")}</span>
         ${tickerOn
           ? html`<span class="chat-thinking-ticker" aria-hidden="true">
-              <span class="chat-thinking-ticker__track"
-                ><span class="chat-thinking-ticker__copy">${tail}</span
-                ><span class="chat-thinking-ticker__copy">${tail}</span
-              ></span>
+              <span class="chat-thinking-ticker__track">${tickerCopies}</span>
             </span>`
           : nothing}
       </summary>
@@ -462,7 +471,14 @@ function renderFileChanges(changes: FileChange[], gitAvailable?: boolean | null)
               <span class="chat-file-change__badge chat-file-change__badge--${change.kind}"
                 >${t(`chat.fileChange.${change.kind}`)}</span
               >
-              <a class="chat-path-link" data-path=${change.path} title=${change.path}>${change.path}</a>
+              <a
+                class="chat-path-link"
+                data-path=${change.path}
+                title=${change.path}
+                tabindex="0"
+                role="button"
+                >${change.path}</a
+              >
             </div>
           `,
         )}
@@ -529,16 +545,24 @@ function renderCollapsedToolCards(
   const { totalTools, label: summaryLabel, detail, isSingle, hasError, status } =
     summarizeToolCards(toolCards);
 
-  // 懒渲染：折叠时 body 不挂载（见 hydrateLazyDetailsBody 头注），
+  // 懒渲染：折叠时 body 不挂载（见 replayLazyDetailsBody 头注），
   // 单条 tool output 上限 120k 字符、一轮可达 50 个工具，此处内存收益最大。
   const bodyFn = () =>
     html`${toolCards.map((card) => renderToolCardSidebar(card, onOpenSidebar))}`;
+  const bodySig = toolCardsSignature(toolCards, status, hasError);
+  const bodySelector = ":scope > .chat-tools-collapse__body";
 
   return html`
     <details
       class="chat-tools-collapse"
+      ${lazyDetailsBodyRef(bodySelector, bodySig, bodyFn)}
       @toggle=${(event: Event) =>
-        hydrateLazyDetailsBody(event, ":scope > .chat-tools-collapse__body", bodyFn)}
+        replayLazyDetailsBody(
+          event.currentTarget as HTMLDetailsElement | null,
+          bodySelector,
+          bodySig,
+          bodyFn,
+        )}
     >
       <summary class="chat-tools-summary ${hasError ?"chat-tools-summary--failed" : ""}">
         ${
@@ -555,7 +579,7 @@ function renderCollapsedToolCards(
                 : nothing}
             `
           : html`
-              <span class="chat-tools-summary__count">${totalTools} tool${totalTools === 1 ? "" : "s"}</span>
+              <span class="chat-tools-summary__count">${t("chat.toolsCount").replace("{n}", String(totalTools))}</span>
               <span class="chat-tools-summary__names">${summaryLabel}</span>
             `}
         ${
@@ -575,21 +599,48 @@ function renderCollapsedToolCards(
   `;
 }
 
-// 折叠区懒渲染（R5 内存优化）：<details> 折叠时 body 不解析 markdown、不挂载 DOM，
-// 首次展开（toggle 事件）才把 bodyFn 的结果一次性渲染进 body 容器。
-// body 容器在模板里是静态空节点（无 Lit 表达式插槽），宿主 Lit 重渲染不会触碰
-// 手动挂载的子树，展开/折叠状态与内容都随 <details> 元素保留，不重复解析。
-function hydrateLazyDetailsBody(event: Event, bodySelector: string, bodyFn: () => unknown) {
-  const details = event.currentTarget as HTMLDetailsElement | null;
-  if (!details || !details.open) {
+// 折叠区懒渲染（R5 内存优化）：<details> 折叠时 body 不解析 markdown、不挂载 DOM。
+// 展开后 body 子树需要随宿主重渲染重放 bodyFn 更新——流式工具输出在首次展开后
+// 仍持续增长，只水合一次会让 summary 的 spinner 在转而 body 定格。
+// 重放由两处驱动、共享同一判定：
+// 1. lit ref 回调：bodyFn 是每帧新闭包 → ref 身份每帧变化 → 回调每次 commit
+//    触发（lit ref 语义：ref 变化即重调），展开状态下自动重放最新 bodyFn；
+// 2. @toggle：用户展开本身不产生 lit 更新（无响应式状态变化），需立即水合一次。
+// 折叠时不求值 bodyFn（懒语义保留）。sig 是内容的廉价签名（文本长度等），
+// 签名不变则跳过重放，避免展开期间每帧对未变化的 body 重复解析 markdown。
+export function replayLazyDetailsBody(
+  details: HTMLDetailsElement | null | undefined,
+  bodySelector: string,
+  sig: string,
+  bodyFn: () => unknown,
+): void {
+  if (!details?.open) {
     return;
   }
-  const body = details.querySelector(bodySelector);
-  if (!body || (body as HTMLElement).dataset.lazyHydrated === "1") {
+  const body = details.querySelector(bodySelector) as HTMLElement | null;
+  if (!body || body.dataset.lazySig === sig) {
     return;
   }
-  (body as HTMLElement).dataset.lazyHydrated = "1";
-  render(bodyFn() as Parameters<typeof render>[0], body as HTMLElement);
+  body.dataset.lazySig = sig;
+  render(bodyFn() as Parameters<typeof render>[0], body);
+}
+
+// 构造 replayLazyDetailsBody 的 ref 回调（每次渲染新建，保证 commit 级重放）
+function lazyDetailsBodyRef(bodySelector: string, sig: string, bodyFn: () => unknown) {
+  return ref((el?: Element) => replayLazyDetailsBody(el as HTMLDetailsElement | null, bodySelector, sig, bodyFn));
+}
+
+// 折叠工具卡 body 内容的廉价签名：工具数/状态/各卡输出长度/待定与失败标记。
+// 流式期间输出增长或状态翻转都会体现为签名变化，触发重放。
+function toolCardsSignature(toolCards: ToolCard[], status: string, hasError: boolean): string {
+  return [
+    status,
+    hasError ? "1" : "0",
+    ...toolCards.map(
+      (card) =>
+        `${card.name}:${card.text?.length ?? -1}:${card.pending ? 1 : 0}:${card.error !== undefined ? 1 : 0}:${card.errorSummary?.length ?? 0}:${card.diffStat ? `${card.diffStat.added}/${card.diffStat.removed}` : "-"}`,
+    ),
+  ].join("|");
 }
 
 
@@ -745,6 +796,9 @@ function renderGroupedMessage(
   // 保留（此前每帧整块 innerHTML 重写 + 全部 pre 重新增强/重高亮，是流式卡顿热点）。
   // 安全面：稳定段经 DOMPurify，尾部走纯文本绑定（lit 自动转义）；run 终态后
   // 转入 history 路径一次性完整渲染，用户可见的最终结果不变。
+  // 稳定段与 history 路径同管线：sanitize → renderMediaMarkers → linkifyPaths
+  // （MEDIA 标记在流式期间即可渲染为图片/文件卡片，须先于 linkifyPaths，
+  // 否则路径被拆进 <a>；渲染接线有 markdown.test.ts 审计测试钉住）。
   if (opts.isStreaming) {
     const parts = markdown ? toStreamingMarkdownParts(markdown) : { stableHtml: "", tail: "" };
     return html`
@@ -755,7 +809,7 @@ function renderGroupedMessage(
               class="chat-text chat-text--streaming chat-text--stable"
               dir="${detectTextDirection(markdown)}"
               ${chatTextEnhanceRef}
-            >${unsafeHTML(linkifyPaths(parts.stableHtml))}</div>`
+            >${unsafeHTML(linkifyPaths(renderMediaMarkers(parts.stableHtml)))}</div>`
           : nothing}
         ${parts.tail
           ? html`<div
@@ -784,8 +838,8 @@ function renderGroupedMessage(
     markdown && !toolSummaryLabel ? markdown.trim().replace(/\s+/g, " ").slice(0, 120) : "";
 
   if (isToolMessage) {
-    // 懒渲染：折叠时 body 不解析 markdown、不挂载（见 hydrateLazyDetailsBody 头注），
-    // 首次展开才一次性渲染；图片/思考/JSON/正文/工具卡全部推迟到展开时求值。
+    // 懒渲染：折叠时 body 不解析 markdown、不挂载（见 replayLazyDetailsBody 头注），
+    // 展开后随宿主重渲染重放；图片/思考/JSON/正文/工具卡全部推迟到展开时求值。
     const bodyFn = () =>
       renderMessageBodyParts({
         images,
@@ -796,14 +850,28 @@ function renderGroupedMessage(
         hasToolCards,
         onOpenSidebar,
       });
+    const bodySig = [
+      markdown?.length ?? -1,
+      reasoningMarkdown?.length ?? -1,
+      images.length,
+      toolCards.length,
+      mediaAttachments ? 1 : 0,
+    ].join(":");
+    const bodySelector = ":scope > .chat-tool-msg-body";
     return html`
       <div class="${bubbleClasses}">
         ${canCopyMarkdown ? renderCopyAsMarkdownButton(markdown!) : nothing}
         ${quoteButton}
         <details
           class="chat-tool-msg-collapse"
+          ${lazyDetailsBodyRef(bodySelector, bodySig, bodyFn)}
           @toggle=${(event: Event) =>
-            hydrateLazyDetailsBody(event, ":scope > .chat-tool-msg-body", bodyFn)}
+            replayLazyDetailsBody(
+              event.currentTarget as HTMLDetailsElement | null,
+              bodySelector,
+              bodySig,
+              bodyFn,
+            )}
         >
           <summary class="chat-tool-msg-summary">
             <span class="chat-tool-msg-summary__icon">${icons.zap}</span>
