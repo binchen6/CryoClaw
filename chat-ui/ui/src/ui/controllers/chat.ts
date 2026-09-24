@@ -259,11 +259,19 @@ function scheduleStaleHistoryRetry(state: ChatState, sessionKey: string) {
 // R59：内核 chat.history / chat.startup 响应附带在途 run 快照（同 handler，字段取证见
 // docs/kernel-recon/2026.8.2-chat-capabilities.md A.4 + gateway asar 实读）：
 // { runId, text: 全量累计流式文本, startedAt?, sessionAbortable? }——run 不在途时缺省。
-type InFlightRunSnapshot = {
+export type InFlightRunSnapshot = {
   runId?: unknown;
   text?: unknown;
   startedAt?: unknown;
 };
+
+// loadChatHistory 的返回值：把响应里的 inFlightRun 声明暴露给探测类调用方
+// （预对齐/看门狗/orphan 探测）——内核显式声明本 run 在途是权威信号，历史里出现的
+// assistant 内容一律视为中途落盘而非终态回复，不得据此清活跃 run。
+// 早退/失败路径返回 null（无权威信息，调用方按"未知"处理）。
+export type ChatHistoryLoadResult = {
+  inFlightRun?: InFlightRunSnapshot;
+} | null;
 
 // 非 silent 加载的代际令牌：两个常规加载并发时，后发起者使先前加载整体失效——
 // 先前加载完成时不得清 chatLoading（最新一代仍在飞，先完成者的 finally 提前清位
@@ -281,16 +289,25 @@ let loadChatHistoryGeneration = 0;
  * 自然续显；本地已有活跃 run 时不覆盖（快照只用于恢复丢失的 run 态）。
  */
 /**
- * R6：历史（本地旧列表 + 本次拉取的新列表）是否已含本 run 的 assistant 回复。
+ * R6：历史（本地旧列表 + 本次拉取的新列表）是否已含本 run 的 assistant 终态回复。
  * 有 → 终态帧丢失但结果已持久化，收养 inFlightRun 快照会让快照累计文本与历史
- * 回复双份显示。优先按 runId 精确匹配；内核 transcript 条目未必带 runId，退而按
- * 「run 开始后的 assistant 回复」判定（与挂起流看门狗同一规则）。
+ * 回复双份显示。判定分两档：
+ * - runId 精确匹配（两档通用）：内核 transcript 条目带 runId 时直接命中——
+ *   这是唯一无歧义的"本 run 已落终态"证据；
+ * - 时间戳兜底（仅当快照缺 startedAt 时启用）：退化为「run 开始后的 assistant
+ *   回复」判定（与挂起流看门狗同一规则）。有 startedAt 时不用它——run 期间内核
+ *   会落盘中间产物（progressive persist、子代理公告），时间戳上它们与终态回复
+ *   不可区分，靠它拒收养会把仍在途的 run 误判为已结束（切会话回来流式断掉）。
+ *   有 startedAt 时改用「终态标记」判定：仅当命中消息带 stopReason（内核终态
+ *   条目标记）才拒收；若内核终态条目不落 stopReason，此档退化为 runId-only——
+ *   方向安全：终态帧丢失时偶尔双份显示，胜过误拒收养导致流式永久中断。
  */
 function historyAlreadyHasRunReply(
   state: ChatState,
   freshMessages: unknown[],
   runId: string,
   startedAt: number,
+  useTimestampFallback: boolean,
 ): boolean {
   for (const list of [freshMessages, state.chatMessages]) {
     if (!Array.isArray(list)) continue;
@@ -300,10 +317,25 @@ function historyAlreadyHasRunReply(
       if (typeof m.runId === "string" && m.runId === runId) return true;
     }
   }
-  return (
-    hasAssistantReplyAfter(freshMessages, startedAt) ||
-    hasAssistantReplyAfter(state.chatMessages, startedAt)
-  );
+  if (useTimestampFallback) {
+    return (
+      hasAssistantReplyAfter(freshMessages, startedAt) ||
+      hasAssistantReplyAfter(state.chatMessages, startedAt)
+    );
+  }
+  // 终态标记判定：仅 stopReason -bearing 的 assistant 消息才算"本 run 终态已落盘"。
+  const threshold = startedAt - 1000;
+  for (const list of [freshMessages, state.chatMessages]) {
+    if (!Array.isArray(list)) continue;
+    for (let i = list.length - 1; i >= 0; i--) {
+      const m = list[i] as Record<string, unknown> | undefined;
+      if (m?.role !== "assistant") continue;
+      if (typeof m.stopReason !== "string" || !m.stopReason) continue;
+      const ts = typeof m.timestamp === "number" ? m.timestamp : Number.NaN;
+      if (Number.isFinite(ts) && ts >= threshold) return true;
+    }
+  }
+  return false;
 }
 
 function adoptInFlightRunFromHistory(
@@ -318,12 +350,13 @@ function adoptInFlightRunFromHistory(
   if (!runId || state.chatRunId) {
     return false;
   }
-  const startedAt =
-    typeof snapshot.startedAt === "number" && Number.isFinite(snapshot.startedAt)
-      ? snapshot.startedAt
-      : Date.now();
-  // R6：历史已含本 run 回复（终态帧丢失但已持久化）→ 不收养，历史是唯一渲染源
-  if (historyAlreadyHasRunReply(state, freshMessages ?? [], runId, startedAt)) {
+  const hasKernelStartedAt =
+    typeof snapshot.startedAt === "number" && Number.isFinite(snapshot.startedAt);
+  const startedAt = hasKernelStartedAt ? (snapshot.startedAt as number) : Date.now();
+  // R6：历史已含本 run 回复（终态帧丢失但已持久化）→ 不收养，历史是唯一渲染源。
+  // 有内核 startedAt 时关闭时间戳兜底（run 中途落盘产物与终态回复时间戳不可区分，
+  // 靠它拒收养会误杀仍在途的 run），仅 runId 精确匹配 / stopReason 终态标记生效。
+  if (historyAlreadyHasRunReply(state, freshMessages ?? [], runId, startedAt, !hasKernelStartedAt)) {
     debugLog("lifecycle", "in-flight run adoption skipped: reply already in history", { runId });
     return false;
   }
@@ -340,9 +373,9 @@ function adoptInFlightRunFromHistory(
 export async function loadChatHistory(
   state: ChatState,
   opts?: { mergeIfStale?: boolean; silent?: boolean },
-) {
+): Promise<ChatHistoryLoadResult> {
   if (!state.client || !state.connected) {
-    return;
+    return null;
   }
   const requestSessionKey = state.sessionKey;
   cancelChatHistoryHydration(state);
@@ -367,12 +400,15 @@ export async function loadChatHistory(
       },
     );
     if (state.sessionKey !== requestSessionKey) {
-      return;
+      return null;
     }
     // 被更新的非 silent 加载取代：旧响应不得写回（防旧快照覆盖新快照）。
     if (generation !== null && generation !== loadChatHistoryGeneration) {
-      return;
+      return null;
     }
+    // 权威在途声明尽早取出：下方 mergeIfStale 滞后保留分支会提前 return，
+    // 探测调用方在该分支同样需要 inFlightRun 做"中途落盘 vs 终态回复"判定。
+    const result: ChatHistoryLoadResult = { inFlightRun: res.inFlightRun };
     const raw = Array.isArray(res.messages) ? res.messages : [];
     // 在途 run 收养放在会话守卫之后、滞后读保留分支之前：inFlightRun 来自内核侧
     // 实时 abort-controller 表（与消息列表的持久化快照无关），即便消息列表命中滞后
@@ -400,7 +436,7 @@ export async function loadChatHistory(
       if (raw.length === 0 || !hasCompactionMarker) {
         // 滞后读保留本地后调度退避补拉（R30），避免「问了没答」要等下轮终态
         scheduleStaleHistoryRetry(state, requestSessionKey);
-        return;
+        return result;
       }
     }
     // 替换成功：滞后已收敛，停掉补拉退避
@@ -429,11 +465,13 @@ export async function loadChatHistory(
       scheduleChatHistoryHydration(state, requestSessionKey, deduplicated.length);
     }
     state.chatThinkingLevel = res.thinkingLevel ?? null;
+    return result;
   } catch (err) {
     if (state.sessionKey !== requestSessionKey) {
-      return;
+      return null;
     }
     state.lastError = String(err);
+    return null;
   } finally {
     // silent 路径从未置位，不得在此回写 false：否则会清掉并发常规加载刚置起的加载态。
     // 代际守卫同理：被更新的加载取代时，清位留给最新一代的 finally。

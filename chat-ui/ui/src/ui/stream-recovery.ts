@@ -187,6 +187,9 @@ export function shouldStreamPreAlign(
  * 上一轮回复无论多近都不可能越界。此前仅靠 runStartedAt-1s 的 1s 容差，会把上一轮
  * 刚落盘（时间戳落在容差窗口内）的回复误判为本轮回复，导致预对齐误清活跃 run /
  * historyAlreadyHasRunReply 拒绝收养。1s 容差保留给回声之后的条目（跨端时钟微差）。
+ * 锚条件带 +1s 宽限（ts ≤ runStartedAt + 1000）：mergeIfStale 替换后回声是内核副本，
+ * 其持久化时间戳晚于本地发送时刻（同机毫秒级滞后，远程/云工作区时钟差更大），
+ * 严格 ≤ 会让锚定静默 miss、退化为全列表扫描。
  */
 export function hasAssistantReplyAfter(messages: unknown[], runStartedAt: number | null): boolean {
   if (runStartedAt == null || !Number.isFinite(runStartedAt)) {
@@ -194,8 +197,8 @@ export function hasAssistantReplyAfter(messages: unknown[], runStartedAt: number
   }
   // 1s 容差：内核落盘时间戳与本地 run 起始计时之间可能有微小偏差
   const threshold = runStartedAt - 1000;
-  // 从后往前找本 run 的 user 回声（时间戳不晚于 run 开始）；找不到说明本 run 的
-  // 发送不来自本端（如 orphan 探测对端会话），退回全列表扫描（有 1s 容差兜底）。
+  // 从后往前找本 run 的 user 回声（时间戳不晚于 run 开始 +1s 宽限）；找不到说明
+  // 本 run 的发送不来自本端（如 orphan 探测对端会话），退回全列表扫描（有 1s 容差兜底）。
   let scanStart = 0;
   for (let i = messages.length - 1; i >= 0; i--) {
     const m = messages[i] as Record<string, unknown>;
@@ -203,7 +206,7 @@ export function hasAssistantReplyAfter(messages: unknown[], runStartedAt: number
       continue;
     }
     const ts = typeof m.timestamp === "number" ? m.timestamp : Number.NaN;
-    if (Number.isFinite(ts) && ts <= runStartedAt) {
+    if (Number.isFinite(ts) && ts <= runStartedAt + 1000) {
       scanStart = i + 1;
       break;
     }

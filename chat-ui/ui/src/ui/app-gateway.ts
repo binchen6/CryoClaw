@@ -274,23 +274,41 @@ function checkStalledStream(host: GatewayHost) {
       // R1：预对齐拉历史后做回复检查——终态帧在断连/gap 窗口丢失时，run 开始后的
       // assistant 回复已落盘历史，但本地 chatRunId 未清：流式气泡与历史回复并存双份。
       // 命中即清本地流式态（与 180s 看门狗同一判定，此前此处只拉历史不查回复）。
+      // 权威闸门：响应里的 inFlightRun 是内核对「本 run 仍在途」的显式声明——命中
+      // 回复但内核声明在途时，历史里的 assistant 内容视为中途落盘（progressive
+      // persist/子代理公告），不得清活跃 run（误清后后续 delta 被僵尸过滤丢弃，
+      // 流式永久中断）。清态前快照 orphan：万一内核 in-flight 读是陈旧快照，后续
+      // delta 仍可被 orphan 收养续显（run 真死则 TTL 120s 自然失效）。
       const probeRunId = host.chatRunId;
       const probeStartedAt = host.chatStreamStartedAt;
       void (async () => {
-        await loadChatHistory(host as unknown as OpenClawApp, { mergeIfStale: true, silent: true });
+        const loadResult = await loadChatHistory(host as unknown as OpenClawApp, { mergeIfStale: true, silent: true });
         if (!host.chatRunId || host.chatRunId !== probeRunId) {
           return; // 探测期间终态已清理 / 已切到新一轮 run
         }
         if (host.chatStreamStartedAt !== probeStartedAt) {
           return; // 同 id 复用防御
         }
-        if (hasAssistantReplyAfter(host.chatMessages, probeStartedAt)) {
-          console.warn("[gateway] pre-align recovered terminal reply from history");
-          resetChatStreamState(host as unknown as Parameters<typeof resetChatStreamState>[0]);
-          resetToolStream(host as unknown as Parameters<typeof resetToolStream>[0]);
-          host.chatAbortPending = false; // run 已确认结束，中止在途标记一并清（防新 run Stop 永禁用）
-          void flushChatQueueForEvent(host as unknown as Parameters<typeof flushChatQueueForEvent>[0]);
+        if (!hasAssistantReplyAfter(host.chatMessages, probeStartedAt)) {
+          return;
         }
+        const inFlightRunId =
+          typeof loadResult?.inFlightRun?.runId === "string"
+            ? loadResult.inFlightRun.runId.trim()
+            : "";
+        if (inFlightRunId === probeRunId) {
+          debugLog("lifecycle", "pre-align reply hit ignored: kernel still declares run in-flight", {
+            runId: probeRunId,
+          });
+          return;
+        }
+        console.warn("[gateway] pre-align recovered terminal reply from history");
+        // 可恢复性兜底：清态即快照 orphan，清错了后续 delta 仍能收养续显
+        markReconnectOrphanRun(probeRunId, host.sessionKey);
+        resetChatStreamState(host as unknown as Parameters<typeof resetChatStreamState>[0]);
+        resetToolStream(host as unknown as Parameters<typeof resetToolStream>[0]);
+        host.chatAbortPending = false; // run 已确认结束，中止在途标记一并清（防新 run Stop 永禁用）
+        void flushChatQueueForEvent(host as unknown as Parameters<typeof flushChatQueueForEvent>[0]);
       })();
     }
   } else if (!host.chatRunId) {
@@ -312,21 +330,35 @@ function checkStalledStream(host: GatewayHost) {
   const probeStartedAt = host.chatStreamStartedAt;
   void (async () => {
     // silent：探测是静默对齐，不置 chatLoading，避免流式挂起期间每 30s 闪一次「加载中」
-    await loadChatHistory(host as unknown as OpenClawApp, { mergeIfStale: true, silent: true });
+    const loadResult = await loadChatHistory(host as unknown as OpenClawApp, { mergeIfStale: true, silent: true });
     if (!host.chatRunId || host.chatRunId !== probeRunId) {
       return; // 探测期间终态已清理 / 已切到新一轮 run
     }
     if (host.chatStreamStartedAt !== probeStartedAt) {
       return; // 同 id 复用防御（理论上不会发生，uuid 唯一）
     }
-    if (hasAssistantReplyAfter(host.chatMessages, probeStartedAt)) {
-      console.warn("[gateway] stalled stream recovered via history probe");
-      resetChatStreamState(host as unknown as Parameters<typeof resetChatStreamState>[0]);
-      resetToolStream(host as unknown as Parameters<typeof resetToolStream>[0]);
-      host.chatAbortPending = false;
-      // run 态已清：补一次队列冲刷，否则看门狗恢复后排队的消息会一直卡住
-      void flushChatQueueForEvent(host as unknown as Parameters<typeof flushChatQueueForEvent>[0]);
+    if (!hasAssistantReplyAfter(host.chatMessages, probeStartedAt)) {
+      return;
     }
+    // 权威闸门 + orphan 兜底：同预对齐分支（命中回复但内核声明在途 → 不清；
+    // 清态前快照 orphan，清错了后续 delta 仍可收养续显）
+    const inFlightRunId =
+      typeof loadResult?.inFlightRun?.runId === "string"
+        ? loadResult.inFlightRun.runId.trim()
+        : "";
+    if (inFlightRunId === probeRunId) {
+      debugLog("lifecycle", "watchdog reply hit ignored: kernel still declares run in-flight", {
+        runId: probeRunId,
+      });
+      return;
+    }
+    console.warn("[gateway] stalled stream recovered via history probe");
+    markReconnectOrphanRun(probeRunId, host.sessionKey);
+    resetChatStreamState(host as unknown as Parameters<typeof resetChatStreamState>[0]);
+    resetToolStream(host as unknown as Parameters<typeof resetToolStream>[0]);
+    host.chatAbortPending = false;
+    // run 态已清：补一次队列冲刷，否则看门狗恢复后排队的消息会一直卡住
+    void flushChatQueueForEvent(host as unknown as Parameters<typeof flushChatQueueForEvent>[0]);
   })();
 }
 
@@ -358,18 +390,32 @@ function scheduleReconnectOrphanProbe(host: GatewayHost) {
       // 作废 orphan 快照：历史成为唯一渲染源，此后同 runId 的迟到 delta 按僵尸帧
       // 丢弃，不再收养出与历史双份的气泡（与 180s 看门狗同一回复判定）。
       void (async () => {
-        await loadChatHistory(host as unknown as OpenClawApp, { mergeIfStale: true, silent: true });
+        const loadResult = await loadChatHistory(host as unknown as OpenClawApp, { mergeIfStale: true, silent: true });
         if (liveOrphanRunId(host.sessionKey) !== orphan.runId) {
           return; // 拉取期间 orphan 已被 delta 收养/被终态清除——收养路径自管，勿清活跃 run
         }
-        if (hasAssistantReplyAfter(host.chatMessages, orphan.markedAt)) {
-          console.warn("[gateway] orphan probe recovered terminal reply from history");
-          resetChatStreamState(host as unknown as Parameters<typeof resetChatStreamState>[0]);
-          resetToolStream(host as unknown as Parameters<typeof resetToolStream>[0]);
-          host.chatAbortPending = false;
-          clearReconnectOrphanRun(orphan.runId, host.sessionKey);
-          void flushChatQueueForEvent(host as unknown as Parameters<typeof flushChatQueueForEvent>[0]);
+        if (!hasAssistantReplyAfter(host.chatMessages, orphan.markedAt)) {
+          return;
         }
+        // 权威闸门：命中回复但内核仍声明该 run 在途 → 历史里的 assistant 内容是
+        // 中途落盘而非终态回复，不清（清掉后 orphan 快照会随之作废，后续 delta
+        // 无法再收养续显）。声明在途以探测响应的 inFlightRun.runId 为准。
+        const inFlightRunId =
+          typeof loadResult?.inFlightRun?.runId === "string"
+            ? loadResult.inFlightRun.runId.trim()
+            : "";
+        if (inFlightRunId === orphan.runId) {
+          debugLog("lifecycle", "orphan probe reply hit ignored: kernel still declares run in-flight", {
+            runId: orphan.runId,
+          });
+          return;
+        }
+        console.warn("[gateway] orphan probe recovered terminal reply from history");
+        resetChatStreamState(host as unknown as Parameters<typeof resetChatStreamState>[0]);
+        resetToolStream(host as unknown as Parameters<typeof resetToolStream>[0]);
+        host.chatAbortPending = false;
+        clearReconnectOrphanRun(orphan.runId, host.sessionKey);
+        void flushChatQueueForEvent(host as unknown as Parameters<typeof flushChatQueueForEvent>[0]);
       })();
     }, delay);
     orphanProbeTimers.push(timer);

@@ -145,6 +145,27 @@ test("恢复判定：无 user 回声时退回全列表扫描（1s 容差兜底�
   assert.equal(hasAssistantReplyAfter(messages, 11_500), true);
 });
 
+test("恢复判定：内核副本回声时间戳略晚于 runStartedAt（+1s 宽限内）仍能锚定", () => {
+  // mergeIfStale 替换后回声是内核副本，持久化时间戳晚于本地发送时刻（同机毫秒级，
+  // 远程/云工作区更大）。锚条件若不带宽限会静默 miss、退化为全列表扫描——
+  // 此时上一轮刚落盘的回复又会落进 1s 容差窗口被误判为本轮回复。
+  const prevReply = { role: "assistant", timestamp: 9_400, content: [] };
+  const kernelEcho = { role: "user", timestamp: 10_500 }; // 比 startedAt(10_000) 晚 500ms
+  assert.equal(
+    hasAssistantReplyAfter([prevReply, kernelEcho], 10_000),
+    false,
+    "锚定生效后，回声之前的上一轮回复不得被判定为本轮回复",
+  );
+  assert.equal(
+    hasAssistantReplyAfter(
+      [prevReply, kernelEcho, { role: "assistant", timestamp: 12_000, content: [] }],
+      10_000,
+    ),
+    true,
+    "回声之后的本轮回复仍正常命中",
+  );
+});
+
 // ── R62 预对齐退避（P3-6） ──
 
 test("预对齐阈值：首次 45s，步进翻倍，封顶 5min", () => {

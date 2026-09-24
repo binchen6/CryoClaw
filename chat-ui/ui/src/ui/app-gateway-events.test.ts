@@ -190,8 +190,43 @@ test("app-gateway.ts：orphan 探测拉历史后做回复检查，命中清流�
   // 清本地流式残留 + 作废 orphan 快照，历史成为唯一渲染源（与 180s 看门狗同一判定）。
   assert.match(
     branch,
-    /hasAssistantReplyAfter\(host\.chatMessages, orphan\.markedAt\)[\s\S]*?resetChatStreamState\([\s\S]*?resetToolStream\([\s\S]*?clearReconnectOrphanRun\(orphan\.runId, host\.sessionKey\);/,
+    /if \(!hasAssistantReplyAfter\(host\.chatMessages, orphan\.markedAt\)\) \{\s*\n\s*return;\s*\n\s*\}[\s\S]*?resetChatStreamState\([\s\S]*?resetToolStream\([\s\S]*?clearReconnectOrphanRun\(orphan\.runId, host\.sessionKey\);/,
     "回复命中应 resetChatStreamState + resetToolStream + clearReconnectOrphanRun(orphan.runId)",
+  );
+});
+
+test("app-gateway.ts：回复命中的清态三处均以 inFlightRun 权威闸门否决（回归：误清活跃 run）", () => {
+  const s = src("app-gateway.ts");
+  // run 期间内核会落盘中间产物（progressive persist/子代理公告），仅凭"历史里有回复"
+  // 清活跃 run 会把仍在途的 run 误判为终态——清态后 delta 被僵尸过滤丢弃，流式永久
+  // 中断。响应的 inFlightRun 是内核对「本 run 仍在途」的显式声明，命中回复但内核
+  // 声明在途时必须跳过清态（预对齐 / 看门狗 / orphan 探测三处同规则）。
+  assert.match(
+    s,
+    /if \(inFlightRunId === probeRunId\) \{[\s\S]*?pre-align reply hit ignored[\s\S]*?return;/,
+    "预对齐分支应检查 loadResult.inFlightRun，内核声明在途时不清",
+  );
+  assert.match(
+    s,
+    /if \(inFlightRunId === probeRunId\) \{[\s\S]*?watchdog reply hit ignored[\s\S]*?return;/,
+    "看门狗分支应检查 loadResult.inFlightRun，内核声明在途时不清",
+  );
+  assert.match(
+    s,
+    /if \(inFlightRunId === orphan\.runId\) \{[\s\S]*?orphan probe reply hit ignored[\s\S]*?return;/,
+    "orphan 探测分支应检查 loadResult.inFlightRun，内核声明在途时不清",
+  );
+  // 可恢复性兜底：清态（内核未声明在途）前快照 orphan——万一 in-flight 读是陈旧
+  // 快照，清错了后续 delta 仍可被 orphan 收养续显（run 真死则 TTL 120s 自然失效）。
+  assert.match(
+    s,
+    /console\.warn\("\[gateway\] pre-align recovered terminal reply from history"\);[\s\S]*?markReconnectOrphanRun\(probeRunId, host\.sessionKey\);[\s\S]*?resetChatStreamState\(/,
+    "预对齐清态前应 markReconnectOrphanRun(probeRunId) 兜底",
+  );
+  assert.match(
+    s,
+    /console\.warn\("\[gateway\] stalled stream recovered via history probe"\);[\s\S]*?markReconnectOrphanRun\(probeRunId, host\.sessionKey\);[\s\S]*?resetChatStreamState\(/,
+    "看门狗清态前应 markReconnectOrphanRun(probeRunId) 兜底",
   );
 });
 
@@ -280,13 +315,21 @@ test("controllers/chat.ts：in-flight run 收养前检查历史已含本 run 回
   const s = src("controllers/chat.ts");
   assert.match(
     s,
-    /function historyAlreadyHasRunReply\([\s\S]*?typeof m\.runId === "string" && m\.runId === runId[\s\S]*?hasAssistantReplyAfter\(freshMessages, startedAt\)[\s\S]*?hasAssistantReplyAfter\(state\.chatMessages, startedAt\)/,
-    "historyAlreadyHasRunReply 应按 runId 精确匹配 + 双列表 hasAssistantReplyAfter 判定",
+    /function historyAlreadyHasRunReply\([\s\S]*?typeof m\.runId === "string" && m\.runId === runId[\s\S]*?if \(useTimestampFallback\) \{[\s\S]*?hasAssistantReplyAfter\(freshMessages, startedAt\)[\s\S]*?hasAssistantReplyAfter\(state\.chatMessages, startedAt\)/,
+    "historyAlreadyHasRunReply 应按 runId 精确匹配 + 时间戳兜底（仅在快照缺 startedAt 时启用）判定",
+  );
+  // 有内核 startedAt 时关闭时间戳兜底：改用 stopReason 终态标记判定——run 中途落盘
+  // 产物（progressive persist/子代理公告）与终态回复时间戳不可区分，靠时间戳拒收养
+  // 会误杀仍在途的 run（切会话回来流式断掉）。
+  assert.match(
+    s,
+    /if \(typeof m\.stopReason !== "string" \|\| !m\.stopReason\) continue;/,
+    "有 startedAt 时应回退到 stopReason 终态标记判定",
   );
   assert.match(
     s,
-    /if \(historyAlreadyHasRunReply\(state, freshMessages \?\? \[\], runId, startedAt\)\) \{\s*\n\s*debugLog\("lifecycle", "in-flight run adoption skipped: reply already in history"/,
-    "adoptInFlightRunFromHistory 应在收养前调用 historyAlreadyHasRunReply，命中即拒绝收养",
+    /if \(historyAlreadyHasRunReply\(state, freshMessages \?\? \[\], runId, startedAt, !hasKernelStartedAt\)\) \{\s*\n\s*debugLog\("lifecycle", "in-flight run adoption skipped: reply already in history"/,
+    "adoptInFlightRunFromHistory 应在收养前调用 historyAlreadyHasRunReply（按快照是否带 startedAt 选择判定档），命中即拒绝收养",
   );
   assert.match(
     s,

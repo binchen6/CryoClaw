@@ -1162,13 +1162,19 @@ export function renderChat(props: ChatProps) {
         // 降级为思考指示）。R88：思考/解说流式存在时同样挂载（组件内部渲染实时思考区）。
         // R1 渲染层双保险：终态帧丢失后历史已含本轮回复时，chatStream 与历史双份——
         // 内容相同则跳过流式气泡，历史成为唯一渲染源（app 层清态的渲染侧兜底）。
+        // 收窄：同文抑制只在纯正文场景生效——thinking/narration 活跃时整个组件
+        // 保留（否则内核中途落盘文本恰等于流式文本时，思考/解说指示被一并隐藏，
+        // 工具间隙表现为「流式中断」）。未下沉到组件内部按段隐藏：组件结构改动
+        // 成本高，此处取舍是或全显或全隐；同文导致的短暂双份由下一次 delta 收敛。
         // 子代理等待卡仍在其后（原「置于时间线末尾（流式气泡之后）」）。
         // a11y：.chat-thread 是 role="log"（aria-live polite），流式气泡每帧改文本会让
         // 屏幕阅读器逐 token 播报。oc-chat-stream 显式 aria-live="off"：离它最近的
         // live 设置生效，流式子树整体移出 live 区域；内部 role="status" 行（阶段指示/
         // 「正在生成…」）仍各自播报，终态消息经历史区进入 live 区域。
         props.stream !== null || props.thinkingStream !== null || props.narrationText !== null
-          ? isStreamTextDuplicatedInHistory(props.messages, props.stream)
+          ? props.thinkingStream == null &&
+            props.narrationText == null &&
+            isStreamTextDuplicatedInHistory(props.messages, props.stream)
             ? nothing
             : html`<oc-chat-stream
               aria-live="off"

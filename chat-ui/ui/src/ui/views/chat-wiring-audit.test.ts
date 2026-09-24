@@ -53,6 +53,20 @@ test("渲染接线审计：流式组件 aria-live off（逐 token 不进 log liv
   );
 });
 
+test("渲染接线审计：流式组件同文抑制仅在纯正文场景生效（思考/解说活跃时不隐藏，回归）", () => {
+  const src = readSource();
+  // R1 渲染层双保险（历史与流式全文同文时跳过流式气泡）带收窄条件：thinking/narration
+  // 活跃时必须保留整个 oc-chat-stream，否则内核中途落盘文本恰等于流式文本时，
+  // 思考/解说指示被一并隐藏，工具间隙表现为「流式中断」。
+  const idx = src.indexOf("isStreamTextDuplicatedInHistory(props.messages, props.stream)");
+  assert.ok(idx >= 0, "应保留 stream-bubble-guard 接线");
+  const guard = src.slice(Math.max(0, idx - 300), idx);
+  assert.ok(
+    guard.includes("props.thinkingStream == null") && guard.includes("props.narrationText == null"),
+    "同文抑制前应先确认 thinkingStream/narrationText 均为空（活跃时保留组件）",
+  );
+});
+
 test("渲染接线审计：路径链接键盘委托（Enter/Space 与点击同路径打开）", () => {
   const src = readSource();
   const threadIdx = src.indexOf('class="chat-thread');

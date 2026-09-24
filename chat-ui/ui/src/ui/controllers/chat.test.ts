@@ -1346,6 +1346,91 @@ async function testInFlightRunNotAdoptedWhenReplyInLocalHistory() {
   assert.equal(state.chatRunId, null, "本地历史已含本 run 回复时不得收养 inFlightRun");
 }
 
+// 回归：run 中途内核会落盘中间产物（progressive persist/子代理公告），时间戳上与终态
+// 回复不可区分。快照带内核 startedAt 时不得再走时间戳兜底拒收——否则切会话回来收养
+// 被误拒，后续 delta 被僵尸过滤丢弃，流式永久中断（线上实测回归）。
+async function testMidRunPersistedReplyDoesNotBlockAdoption() {
+  const raf = new FakeRaf();
+  installBrowserGlobals(raf);
+  const now = Date.now();
+  const state = makeState({
+    chatRunId: null,
+    chatStream: null,
+    client: {
+      request: async () => ({
+        messages: [
+          { role: "user", content: [{ type: "text", text: "q" }], timestamp: now - 500 },
+          // 中途落盘：时间戳在 run 开始后，但无 runId、无 stopReason（非终态条目）
+          { role: "assistant", content: [{ type: "text", text: "中途产物" }], timestamp: now - 100 },
+        ],
+        inFlightRun: { runId: "run-live", text: "中途产物", startedAt: now - 600 },
+      }),
+    },
+  });
+
+  await loadChatHistory(state);
+
+  assert.equal(
+    state.chatRunId,
+    "run-live",
+    "有内核 startedAt 时中途落盘产物不得拒收养（回归：切会话回来流式断掉）",
+  );
+  assert.equal(state.chatStream, "中途产物", "收养后流式文本应接续快照累计文本");
+}
+
+// 对照组：命中带 stopReason 的终态条目仍拒绝收养（内核终态已落盘，防双份）。
+async function testTerminalStopReasonStillBlocksAdoption() {
+  const raf = new FakeRaf();
+  installBrowserGlobals(raf);
+  const now = Date.now();
+  const state = makeState({
+    chatRunId: null,
+    chatStream: null,
+    client: {
+      request: async () => ({
+        messages: [
+          { role: "user", content: [{ type: "text", text: "q" }], timestamp: now - 500 },
+          {
+            role: "assistant",
+            content: [{ type: "text", text: "终态回复" }],
+            timestamp: now - 100,
+            stopReason: "stop",
+          },
+        ],
+        inFlightRun: { runId: "run-done-2", text: "终态回复", startedAt: now - 600 },
+      }),
+    },
+  });
+
+  await loadChatHistory(state);
+
+  assert.equal(state.chatRunId, null, "命中带 stopReason 的终态回复应拒绝收养");
+  assert.equal(state.chatStream, null, "收养被拒时不应重建流式气泡");
+}
+
+// 快照缺 startedAt 时保留时间戳兜底（无法区分中途产物，旧行为不回退）。
+async function testNoStartedAtKeepsTimestampFallback() {
+  const raf = new FakeRaf();
+  installBrowserGlobals(raf);
+  const now = Date.now();
+  const state = makeState({
+    chatRunId: null,
+    chatStream: null,
+    client: {
+      request: async () => ({
+        messages: [
+          { role: "assistant", content: [{ type: "text", text: "刚落盘" }], timestamp: now - 100 },
+        ],
+        inFlightRun: { runId: "run-x", text: "刚落盘" },
+      }),
+    },
+  });
+
+  await loadChatHistory(state);
+
+  assert.equal(state.chatRunId, null, "缺 startedAt 时时间戳兜底仍应拒收养（旧行为保留）");
+}
+
 // orphan 快照被 status 事件误清：内核 run 启动阶段广播 state:"status"
 // （preparing_workspace 等 7 phase）。status 帧不是终态，不得清除 orphan 快照——
 // 误清后同 runId 的后续 delta 会被僵尸过滤丢弃，重连恢复链路断裂。
@@ -1517,6 +1602,9 @@ async function main() {
   await testOrphanAdoptionClearsStreamResidue();
   await testInFlightRunNotAdoptedWhenReplyInFreshHistory();
   await testInFlightRunNotAdoptedWhenReplyInLocalHistory();
+  await testMidRunPersistedReplyDoesNotBlockAdoption();
+  await testTerminalStopReasonStillBlocksAdoption();
+  await testNoStartedAtKeepsTimestampFallback();
   await testOrphanStatusFrameDoesNotClearSnapshot();
   await testAbortedPreservesVisiblePartialText();
   await testConcurrentLoadsLatestGenerationWins();
