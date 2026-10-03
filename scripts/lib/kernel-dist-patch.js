@@ -620,6 +620,90 @@ function patchFsSafeAsarUnpacked(gatewayDir) {
   return 1;
 }
 
+// ─── worker 输入 Proxy 清理补丁（openclaw ≥2026.9.7，Windows 专属消息级崩溃）───
+//
+// 背景（2026.1004.0 真机复现）：Windows 上 cloneEnvWithPlatformSemantics（config-env-vars）
+// 返回 Proxy（模拟大小写不敏感 env 访问）；该 Proxy 经 session-store-target 读取请求
+// （loadSessionEntryForAdmission → readStoreTargetResult）原样进入 worker 池 postMessage
+// → DataCloneError "#<Object> could not be cloned" → WorkerTaskError → 每条消息的会话
+// 条目准入失败（"This turn ended before a reply"）。原始 npm 包（零补丁松散树）同样复现，
+// 属上游缺陷；Linux/macOS 因该函数返回纯对象不触发。
+//
+// 补丁策略：worker 池 postMessage 前把输入树里的 Proxy 快照为纯对象（值递归，
+// 容器仅在含 Proxy 时重建；Buffer/TypedArray/Map/Set 等原样交由 structured clone）。
+// worker 侧自带大小写不敏感 env 查询（getEnvValueCaseInsensitive）且消费方按纯对象
+// 处理，语义不变。幂等：含 /* cryoclaw-worker-clone */ marker 则跳过。
+function patchWorkerInputCloneSanitize(gatewayDir) {
+  const distDir = path.join(gatewayDir, "node_modules", "openclaw", "dist");
+  if (!fs.existsSync(distDir)) return 0;
+  const marker = "/* cryoclaw-worker-clone */";
+  const dispatchMarker = "worker.postMessage({\n\t\t\t\t\tinput,\n\t\t\t\t\ttaskId: task.id,";
+  let patched = 0;
+  for (const file of collectJsFilesRecursive(distDir)) {
+    let source = fs.readFileSync(file, "utf-8");
+    if (!source.includes(dispatchMarker)) continue;
+    if (source.includes(marker)) {
+      patched += 1;
+      continue;
+    }
+    const helper = [
+      "",
+      marker,
+      "function __cryoclawSanitizeWorkerInput(value, seen) {",
+      "\tif (value === null || typeof value !== 'object') return value;",
+      "\tif (seen.has(value)) return seen.get(value);",
+      "\tif (utilTypes.isProxy(value)) {",
+      "\t\tconst out = {};",
+      "\t\tseen.set(value, out);",
+      "\t\tfor (const key of Object.keys(value)) out[key] = __cryoclawSanitizeWorkerInput(value[key], seen);",
+      "\t\treturn out;",
+      "\t}",
+      "\tif (Array.isArray(value)) {",
+      "\t\tseen.set(value, value);",
+      "\t\tlet changed = false;",
+      "\t\tconst out = new Array(value.length);",
+      "\t\tfor (let i = 0; i < value.length; i++) {",
+      "\t\t\tconst next = __cryoclawSanitizeWorkerInput(value[i], seen);",
+      "\t\t\tout[i] = next;",
+      "\t\t\tif (next !== value[i]) changed = true;",
+      "\t\t}",
+      "\t\tif (!changed) return value;",
+      "\t\tseen.set(value, out);",
+      "\t\treturn out;",
+      "\t}",
+      "\tconst proto = Object.getPrototypeOf(value);",
+      "\tif (proto === Object.prototype || proto === null) {",
+      "\t\tseen.set(value, value);",
+      "\t\tlet changed = false;",
+      "\t\tconst out = {};",
+      "\t\tfor (const key of Object.keys(value)) {",
+      "\t\t\tconst next = __cryoclawSanitizeWorkerInput(value[key], seen);",
+      "\t\t\tout[key] = next;",
+      "\t\t\tif (next !== value[key]) changed = true;",
+      "\t\t}",
+      "\t\tif (!changed) return value;",
+      "\t\tseen.set(value, out);",
+      "\t\treturn out;",
+      "\t}",
+      "\treturn value;",
+      "}",
+      "",
+    ].join("\n");
+    source = source.replace(
+      dispatchMarker,
+      marker + " input = __cryoclawSanitizeWorkerInput(input, new Map());\n\t\t\t\tworker.postMessage({\n\t\t\t\t\tinput,\n\t\t\t\t\ttaskId: task.id,"
+    );
+    // 需要 util.types：文件可能未导入 node:util；命名导入 types 别名 utilTypes
+    //（isProxy 检测 structured clone 不支持的 Proxy 包装；重复导入经 ESM 去重）
+    if (!source.includes('import { types as utilTypes } from "node:util";')) {
+      source = 'import { types as utilTypes } from "node:util";\n' + source;
+    }
+    fs.writeFileSync(file, source + helper, "utf-8");
+    patched += 1;
+  }
+  return patched;
+}
+
 module.exports = {
   patchWindowsOpenclawArtifacts,
   patchWindowsHideGlobal,
@@ -630,4 +714,5 @@ module.exports = {
   assertAsarBoundaryCoverage,
   patchKimiThinkingProfile,
   patchFsSafeAsarUnpacked,
+  patchWorkerInputCloneSanitize,
 };

@@ -2746,6 +2746,14 @@ async function packGatewayAsar(gatewayDir, targetBase, platform, arch) {
   const fsSafePatched = kernelDistPatch.patchFsSafeAsarUnpacked(gatewayDir);
   log(`fs-safe pinned-open asar→unpacked 补丁: ${fsSafePatched > 0 ? "已注入" : "跳过（形态未命中）"}`);
 
+  // 补丁 worker 输入 Proxy 清理：Windows 上 env Proxy 经 session-store-target 请求
+  // 进入 worker postMessage → DataCloneError（2026.9.7 上游缺陷，每条消息必触发）
+  const cloneSanitized = kernelDistPatch.patchWorkerInputCloneSanitize(gatewayDir);
+  log(`worker 输入 Proxy 清理补丁: ${cloneSanitized > 0 ? `已注入 ${cloneSanitized} 文件` : "跳过（形态未命中）"}`);
+  if (cloneSanitized === 0) {
+    die("worker 输入 Proxy 清理补丁未命中（内核形态变化？Windows 会话读取将 DataCloneError），已中止打包");
+  }
+
   // unpack 规则：二进制文件需要 unpack（dlopen 不支持 asar 虚拟路径）；
   // dist/extensions 整目录 unpack（unpackDir）——openclaw ≥2026.9.2 的 fs-safe 公开构件
   // 校验要求 stat.dev/ino 非零（bigint 身份），asar 虚拟文件恒为 0 会被判 path-mismatch；
@@ -2870,6 +2878,31 @@ function verifyAsarContents(asarPath, { winArm64Cross = false } = {}) {
       die("gateway.asar 内 @openclaw/fs-safe/root-file.js 缺少 asar 快速通道补丁，已中止打包");
     }
     log("gateway.asar 内 @openclaw/fs-safe root-file asar 快速通道校验通过");
+  }
+
+  // worker 输入 Proxy 清理补丁（2026.9.7 Windows 消息级崩溃，见 kernel-dist-patch.js）：
+  // dist 下存在 worker-task-pool-*.mjs 时必须至少一个命中 marker，否则每条消息的
+  // 会话准入都会 DataCloneError（asar 内文件无法事后补丁）。文件名带哈希，按模式扫描。
+  const poolKeys = [...files].filter((f) =>
+    /^[\\/]node_modules[\\/]openclaw[\\/]dist([\\/][^\\/]*)?[\\/]worker-task-pool-[^\\/]+\.mjs$/.test(f)
+  );
+  if (poolKeys.length > 0) {
+    let poolPatched = false;
+    for (const key of poolKeys) {
+      const variants = [key.replace(/^[\\/]/, ""), key.replace(/^[\\/]/, "").replace(/\//g, "\\")];
+      for (const variant of variants) {
+        try {
+          const src = asar.extractFile(asarPath, variant).toString("utf-8");
+          if (src.includes("/* cryoclaw-worker-clone */")) poolPatched = true;
+          break;
+        } catch { /* 尝试下一种路径形态 */ }
+      }
+      if (poolPatched) break;
+    }
+    if (!poolPatched) {
+      die("gateway.asar 内 worker task pool 缺少 Proxy 清理补丁（Windows 会话读取将 DataCloneError），已中止打包");
+    }
+    log("gateway.asar 内 worker 输入 Proxy 清理补丁校验通过");
   }
 }
 

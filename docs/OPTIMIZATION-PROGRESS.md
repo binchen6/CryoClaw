@@ -812,3 +812,10 @@
 - **独立盲审（review 轮）**：P2-1（rewind 异步续体缺会话归属校验，可把 A 会话消息写进 B 会话输入框）与 P3-1（fork 期间用户切走被强行拽回）全修；P3-2 类型契约修正（branches.list 结果无 ok 字段）；P3-5 kernel-dist-patch legacy 还原改 replaceAll 语义；P3-6 补 seed 快照测试；P3-7（.zcode gitignore）按用户指示不改；其余（RPC 参数形状、租约清理语义、CSS 算术、i18n 对称、Lit properties 语义）逐项核实无问题。
 - **打包链**：kernel-dist-patch.js patchFsSafeAsarUnpacked 兼容 fs-safe 0.21.1 双路 realpath 声明（origDeclV21）+ v21 fixture（重跑后「已注入」）；gateway-asar-smoke 夹具 qqbot→telegram+botToken（9.7 渠道 schema 收紧 + qqbot 不再内置）；image-generation-core 合成清单继续生效（上游仍缺 manifest）。
 - **验证**：全量 **1501 pass / 0 fail / 4 skipped**（vitest 252 + node 276 + chat-ui 849 + scripts 124）；双 tsc 零错误；dupcheck 基线持平；内核真实安装 + asar 32164 文件校验 + 真机迁移 + gateway-asar 冒烟 2/2；发版四步 CDP 冒烟（layout/settings/interaction/ui-screenshot）全过。stable 渠道推进 2026.9.7（kernel-channel.json，updatedAt 2026-10-04）。
+
+### R95 · Windows 消息级 DataCloneError 热修（2026.9.7 上游缺陷）+ v2026.1004.1
+
+- **现象与根因**：用户报告分支操作后发消息报 `This turn ended before a reply: WorkerTaskError: DataCloneError: #<Object> could not be cloned.`；真机复现（原始 npm 包同现）= 上游缺陷：Windows 的 cloneEnvWithPlatformSemantics 返回 Proxy（大小写不敏感 env 包装），经 `loadSessionEntryForAdmission → readStoreTargetResult` 的 session-store-target 请求原样进入 worker 池 postMessage → structured clone 拒绝 Proxy。定位手法：worker 池 postMessage catch 插桩（`util.types.isProxy` 命中路径 + 任务创建栈），松散树与 asar 双复现。
+- **热修**：kernel-dist-patch.js 新增 patchWorkerInputCloneSanitize——派发前 `__cryoclawSanitizeWorkerInput`（Map 记录原→替换，Proxy 快照纯对象，容器仅在含 Proxy 时重建，Buffer/Map/Set 原样传递）；package-resources 打包断言 asar 内 worker-task-pool-*.mjs 必含 marker（按模式扫描，哈希无关），未命中即中止；kernel-dist-patch 单测 +3（含 helper 行为验证：structuredClone 不抛）。真机验证：修复前 100% DataCloneError，修复后完整问答（用户消息落盘 + thinking/正文回复）。
+- **教训**：CDP 冒烟不发送真实消息 → 未覆盖消息级链路；本修复后需补「打包产物真机发消息」验证（本轮以 WS 客户端直连网关完成）。gotcha #116。
+- **验证与交付**：全量 1504 pass / 0 fail（vitest 252 + node 276 + chat-ui 849 + scripts 127）；kernel-dist-patch 23 项全过；asar 重建校验通过；发版 v2026.1004.1。

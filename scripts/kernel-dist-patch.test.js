@@ -561,6 +561,98 @@ test("patchFsSafeAsarUnpacked：无 fs-safe 包（v8 内核）返回 0", (t) => 
   assert.equal(kdp.patchFsSafeAsarUnpacked(gatewayDir), 0);
 });
 
+// ─── worker 输入 Proxy 清理补丁（2026.9.7 Windows 消息级 DataCloneError）───
+
+// 模拟池派发文件：含精确的 postMessage 派发点形态（tabs 与真机 dist 一致）
+const WORKER_POOL_DISPATCH = [
+  "export class Pool {",
+  "\tstart(slot, task) {",
+  "\t\tlet input = task.input;",
+  "\t\ttry {",
+  "\t\t\tconst transferList = [];",
+  "\t\t\tif (!task.done) {",
+  "\t\t\t\tworker.postMessage({",
+  "\t\t\t\t\tinput,",
+  "\t\t\t\t\ttaskId: task.id,",
+  "\t\t\t\t\tinteractive: Boolean(task.options.onRequest),",
+  "\t\t\t\t\tnativeSections: slot.nativeSections.buffer,",
+  "\t\t\t\t\tsampleMemory: true",
+  "\t\t\t\t}, transferList);",
+  "\t\t\t}",
+  "\t\t} catch (error) {",
+  "\t\t\tthrow error;",
+  "\t\t}",
+  "\t}",
+  "}",
+  "",
+].join("\n");
+
+test("patchWorkerInputCloneSanitize：命中派发点注入清理调用与 helper，幂等", (t) => {
+  const { gatewayDir } = makeGatewayDist(t, {
+    "worker-task-pool-ABC12345.mjs": WORKER_POOL_DISPATCH,
+  });
+  const poolPath = path.join(gatewayDir, "node_modules", "openclaw", "dist", "worker-task-pool-ABC12345.mjs");
+
+  assert.equal(kdp.patchWorkerInputCloneSanitize(gatewayDir), 1);
+  const patched = fs.readFileSync(poolPath, "utf-8");
+  assert.match(patched, /import \{ types as utilTypes \} from "node:util";/);
+  assert.match(patched, /\/\* cryoclaw-worker-clone \*\/ input = __cryoclawSanitizeWorkerInput\(input, new Map\(\)\);/);
+  assert.match(patched, /function __cryoclawSanitizeWorkerInput\(value, seen\) \{/);
+  // 幂等：二次运行不重复注入
+  assert.equal(kdp.patchWorkerInputCloneSanitize(gatewayDir), 1);
+  const again = fs.readFileSync(poolPath, "utf-8");
+  assert.equal((again.match(/cryoclaw-worker-clone/g) || []).length, 2, "marker 不应重复增加");
+});
+
+test("patchWorkerInputCloneSanitize：无派发点的 dist 返回 0", (t) => {
+  const { gatewayDir } = makeGatewayDist(t, {
+    "chat-unrelated-A1B2C3D4.mjs": "export const x = 1;\n",
+  });
+  assert.equal(kdp.patchWorkerInputCloneSanitize(gatewayDir), 0);
+});
+
+test("补丁 helper 行为：Proxy 快照为纯对象、含 Proxy 的容器重建、纯对象原样返回", async (t) => {
+  const { gatewayDir } = makeGatewayDist(t, {
+    "worker-task-pool-ABC12345.mjs": WORKER_POOL_DISPATCH,
+  });
+  const poolPath = path.join(gatewayDir, "node_modules", "openclaw", "dist", "worker-task-pool-ABC12345.mjs");
+  kdp.patchWorkerInputCloneSanitize(gatewayDir);
+  // 抽出 helper 单独导入执行（文件本体含未定义引用，不能整体 import）
+  const patched = fs.readFileSync(poolPath, "utf-8");
+  const helperStart = patched.indexOf("/* cryoclaw-worker-clone */\nfunction __cryoclawSanitizeWorkerInput");
+  assert.ok(helperStart >= 0, "helper 应存在");
+  const helperSrc = patched.slice(helperStart).replace("/* cryoclaw-worker-clone */", "");
+  const helperPath = path.join(path.dirname(poolPath), "helper-only-EXPORT.mjs");
+  fs.writeFileSync(
+    helperPath,
+    'import { types as utilTypes } from "node:util";\n' + helperSrc + "\nexport { __cryoclawSanitizeWorkerInput };\n"
+  );
+  const { pathToFileURL } = require("node:url");
+  const { __cryoclawSanitizeWorkerInput: sanitize } = await import(pathToFileURL(helperPath).href);
+
+  const proxyEnv = new Proxy({ Path: "C:\\bin", HOME: "C:\\Users\\x" }, {});
+  const input = { request: { env: proxyEnv, name: "a" }, list: [{ env: proxyEnv }] };
+  const out = sanitize(input, new Map());
+  assert.notEqual(out, input, "含 Proxy 的容器应重建");
+  assert.notEqual(out.request, input.request);
+  assert.notEqual(out.request.env, proxyEnv, "Proxy 应被快照为纯对象");
+  assert.deepEqual({ ...out.request.env }, { Path: "C:\\bin", HOME: "C:\\Users\\x" });
+  assert.deepEqual(Object.getPrototypeOf(out.request.env), Object.prototype);
+  // structuredClone 不应再抛错
+  assert.doesNotThrow(() => structuredClone(out));
+
+  // 无 Proxy：原引用返回（零重建开销）
+  const plain = { a: 1, b: { c: [1, 2, 3] } };
+  assert.equal(sanitize(plain, new Map()), plain);
+  // 非纯对象（Buffer/Date）原样保留
+  const buf = Buffer.from("hi");
+  const wrapper = { buf, when: new Date(0), proxied: new Proxy({}, {}) };
+  const out2 = sanitize(wrapper, new Map());
+  assert.equal(out2.buf, buf);
+  assert.equal(out2.when.getTime(), 0);
+  assert.doesNotThrow(() => structuredClone(out2));
+});
+
 // ─── openclaw ≥2026.9.3 形态：dist 根 chunk .js → .mjs 翻转 ───
 // peer-link 等函数迁入 .mjs chunk 后，扫描/断言必须同步覆盖 .mjs，
 // 否则 asar 模式下 vendored 插件 peer 审计失败（R72）。
