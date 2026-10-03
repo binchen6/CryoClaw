@@ -313,6 +313,17 @@ function activeTaskSessionsOf(tasks: readonly TaskSummary[]): Set<string> {  if 
   return activeTaskMemoSet;
 }
 
+// 活跃任务计数（rail 角标）：按 tasks 数组引用记忆化，避免每帧 filter 新建数组。
+let activeTaskCountSrc: readonly TaskSummary[] | null = null;
+let activeTaskCountValue = 0;
+function activeTaskCountOf(tasks: readonly TaskSummary[]): number {
+  if (activeTaskCountSrc !== tasks) {
+    activeTaskCountSrc = tasks;
+    activeTaskCountValue = tasks.filter((task) => isActiveTask(task)).length;
+  }
+  return activeTaskCountValue;
+}
+
 export function renderApp(state: AppViewState) {
   ensureFileDropBridge(state);
   updateFileDropState(state);
@@ -336,7 +347,7 @@ export function renderApp(state: AppViewState) {
         : html`<oc-rail
             .props=${{
               activeView: cryoclawView,
-              tasksRunningCount: state.tasks.filter((task) => isActiveTask(task)).length,
+              tasksRunningCount: activeTaskCountOf(state.tasks),
               connected: state.connected,
               errors: [chatDisabledReason, state.lastError].filter(Boolean) as string[],
               webbridgeRepairVisible: state.webbridgeRepairVisible,

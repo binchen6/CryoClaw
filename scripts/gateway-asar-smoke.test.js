@@ -32,8 +32,9 @@ const maybe = hasArtifacts ? test : test.skip;
 
 // 冒烟夹具常量：非真实凭据，仅用于隔离状态目录的最小可启动配置
 const SMOKE_GATEWAY_TOKEN = "asar" + "-smoke-token";
-const SMOKE_QQBOT_APP_ID = "asar" + "-smoke";
-const SMOKE_QQBOT_SECRET = "asar" + "-smoke";
+// 内核 2026.9.7 起渠道插件 schema 收紧（qqbot 不再随内核分发，telegram 令牌字段
+// token→botToken），夹具改用仍内置的 telegram 渠道触发 doctor-contract 加载链
+const SMOKE_TELEGRAM_BOT_TOKEN = "123456:ABC" + "-asar-smoke";
 
 // 宿主环境可能注入 OPENCLAW_CONFIG_PATH / OPENCLAW_HOME / CLAWDBOT_* 等变量
 //（例如 Kimi Work 运行时的 openclaw-shim 空配置），透传会让子进程越过
@@ -100,7 +101,7 @@ maybe(
     t.after(() => cleanupDir(stateDir));
     const port = await freePort();
 
-    // 最小可复现配置：含一个 bundled 渠道（qqbot 假凭据）。
+    // 最小可复现配置：含一个 bundled 渠道（telegram 假凭据）。
     // doctor-contract 兼容性迁移链按已配置渠道加载 bundled 插件公开构件——
     // 正是 v2026.904.1 崩溃的代码路径；渠道连接失败发生在 ready 之后，不影响断言。
     fs.writeFileSync(
@@ -113,10 +114,9 @@ maybe(
             auth: { mode: "token", token: SMOKE_GATEWAY_TOKEN },
           },
           channels: {
-            qqbot: {
+            telegram: {
               enabled: true,
-              appId: SMOKE_QQBOT_APP_ID,
-              clientSecret: SMOKE_QQBOT_SECRET,
+              botToken: SMOKE_TELEGRAM_BOT_TOKEN,
               allowFrom: ["*"],
             },
           },

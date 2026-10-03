@@ -55,6 +55,16 @@ export function clearSessionDraftSnapshot(sessionKey: string) {
   sessionDraftSnapshots.delete(sessionKey);
 }
 
+// 预置目标会话的草稿快照（一次性，切过去即恢复并删除）：fork 新会话时用内核
+// 返回的 editorText/editorAttachments 预填输入框（复用恢复管线的同构语义）。
+export function seedSessionDraftSnapshot(
+  sessionKey: string,
+  draft: string,
+  attachments: ChatState["chatAttachments"] = [],
+) {
+  sessionDraftSnapshots.set(sessionKey, { draft, attachments });
+}
+
 export function applySessionKeyTransition(
   host: SessionTransitionHost,
   next: string,

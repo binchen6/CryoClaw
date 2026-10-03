@@ -4,7 +4,7 @@ import type { AppViewState } from "./app-view-state.ts";
 import type { ExecApprovalRequest } from "./controllers/exec-approval.ts";
 import type { QuestionPrompt } from "./chat/question-cards.ts";
 import type { SkillMessage } from "./controllers/skills.ts";
-import type { SessionCompactionCheckpoint } from "./controllers/session-compaction.ts";
+import type { SessionBranch } from "./controllers/session-branches.ts";
 import type { NavigatePayload as IpcNavigatePayload, AppUpdateState, KernelUpdateProgress } from "./data/ipc-bridge.ts";
 import type { GatewayBrowserClient, GatewayHelloOk } from "./gateway.ts";
 import type { Tab } from "./navigation.ts";
@@ -202,11 +202,11 @@ export class OpenClawApp extends LitElement {
     board: { state: true },
     compactionStatus: { state: true },
     fallbackNotice: { state: true },
-    compactionCheckpoints: { state: true },
-    compactionCheckpointsKey: { state: true },
-    compactionCheckpointsLoading: { state: true },
-    compactionCheckpointsError: { state: true },
-    compactionBusyCheckpointId: { state: true },
+    sessionBranches: { state: true },
+    sessionBranchesKey: { state: true },
+    sessionBranchesLoading: { state: true },
+    sessionBranchesError: { state: true },
+    branchBusyAction: { state: true },
     chatAvatarUrl: { state: true },
     chatThinkingLevel: { state: true },
     chatQueue: { state: true },
@@ -396,13 +396,14 @@ export class OpenClawApp extends LitElement {
   // 模型 fallback 提示（lifecycle 事件驱动，5s 自动消失；chat 终态清理）
   fallbackNotice: FallbackNotice | null = null;
   fallbackClearTimer: number | null = null;
-  // 会话 rewind/fork（回放点/分支）面板状态
-  compactionCheckpoints: SessionCompactionCheckpoint[] = [];
-  // checkpoints 归属的 sessionKey（异步加载结果可能晚于会话切换返回）
-  compactionCheckpointsKey: string | null = null;
-  compactionCheckpointsLoading = false;
-  compactionCheckpointsError: string | null = null;
-  compactionBusyCheckpointId: string | null = null;
+  // 会话分支（rewind/fork/switch，内核 2026.9.7 session branch tree）
+  sessionBranches: SessionBranch[] = [];
+  // branches 加载时对应的 sessionKey（异步加载结果可能晚于会话切换返回）
+  sessionBranchesKey: string | null = null;
+  sessionBranchesLoading = false;
+  sessionBranchesError: string | null = null;
+  // 正在执行的分支操作（switch:/rewind:/fork: + entryId），同一时刻一个
+  branchBusyAction: string | null = null;
   chatAvatarUrl: string | null = null;
   chatThinkingLevel: string | null = null;
   chatQueue: ChatQueueItem[] = [];

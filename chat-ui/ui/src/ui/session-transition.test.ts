@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { applySessionKeyTransition, clearSessionDraftSnapshot } from "./session-transition.ts";
+import { applySessionKeyTransition, clearSessionDraftSnapshot, seedSessionDraftSnapshot } from "./session-transition.ts";
 import { pendingSessionLabels } from "./session-pending.ts";
 
 function makeHost() {
@@ -183,6 +183,32 @@ async function testTransitionResetsMismatchCountAndAbortPending() {
   assert.equal(ctx.host.chatAbortPending, false, "新会话无在途中止，标记应清零");
 }
 
+// fork 预填：seedSessionDraftSnapshot 预置目标会话快照，切换时一次性恢复并删除。
+async function testSeedSessionDraftSnapshotRestoresOnce() {
+  const ctx = makeHost();
+  const attachments = [{ id: "att-1", dataUrl: "data:image/png;base64,xxx" }];
+  seedSessionDraftSnapshot("session-forked", "fork 预填文本", attachments);
+
+  applySessionKeyTransition(ctx.host, "session-forked");
+  assert.equal(ctx.host.chatMessage, "fork 预填文本", "切入 fork 会话应恢复预填草稿");
+  assert.deepEqual(ctx.host.chatAttachments, attachments);
+
+  // 一次性：切走再切回，不应复活预填内容
+  ctx.host.chatMessage = "新草稿";
+  applySessionKeyTransition(ctx.host, "session-a");
+  applySessionKeyTransition(ctx.host, "session-forked");
+  assert.equal(ctx.host.chatMessage, "新草稿", "seed 快照消费后不应复活");
+}
+
+// seed 空内容：仍写入条目但恢复结果为空草稿（与无快照同语义），不污染切换链路。
+async function testSeedSessionDraftSnapshotEmpty() {
+  const ctx = makeHost();
+  seedSessionDraftSnapshot("session-empty-seed", "");
+  applySessionKeyTransition(ctx.host, "session-empty-seed");
+  assert.equal(ctx.host.chatMessage, "");
+  assert.deepEqual(ctx.host.chatAttachments, []);
+}
+
 async function main() {
   await testApplySessionKeyTransitionResetsComposerState();
   await testDraftSnapshotSavedAndRestored();
@@ -191,6 +217,8 @@ async function main() {
   await testSyntheticOnlyMessagesDoNotBlockPendingLabelCleanup();
   await testRealMessagesKeepPendingLabel();
   await testTransitionResetsMismatchCountAndAbortPending();
+  await testSeedSessionDraftSnapshotRestoresOnce();
+  await testSeedSessionDraftSnapshotEmpty();
   console.log("session transition tests passed");
 }
 

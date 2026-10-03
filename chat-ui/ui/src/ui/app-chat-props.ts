@@ -9,14 +9,14 @@ import { showToast } from "./app-toast.ts";
 import {
   applySessionKey,
   confirmAndCreateNewSession,
-  handleBranchCheckpoint,
-  handleRestoreCheckpoint,
+  handleForkFromMessage,
+  handleRewindToMessage,
+  handleSwitchBranch,
   resolveAssistantAvatarUrl,
 } from "./app-session-actions.ts";
-import { loadChatHistory } from "./controllers/chat.ts";
 import { applyQuestionResolution, buildResolveParams } from "./chat/question-cards.ts";
 import { getCachedCommands } from "./controllers/commands.ts";
-import { loadCompactionCheckpoints } from "./controllers/session-compaction.ts";
+import { loadSessionBranches } from "./controllers/session-branches.ts";
 import { listEligibleSkills } from "./controllers/skills.ts";
 import { openWorkspaceView } from "./app-workspace.ts";
 import { dismissPlan } from "./plan-stream.ts";
@@ -129,22 +129,26 @@ export function buildChatProps(state: AppViewState): ChatProps {
     // file-changes 面板「在 git 中查看」→ git 面板视图（P4）
     gitAvailable: state.gitAvailable,
     onOpenGitView: () => openWorkspaceView(state, "git"),
-    compactionCheckpoints: state.compactionCheckpoints,
-    compactionCheckpointsKey: state.compactionCheckpointsKey ?? null,
-    compactionCheckpointsLoading: state.compactionCheckpointsLoading,
-    compactionCheckpointsError: state.compactionCheckpointsError,
-    compactionBusyCheckpointId: state.compactionBusyCheckpointId,
-    onOpenCompactionCheckpoints: () => {
-      void loadCompactionCheckpoints(
-        state as unknown as Parameters<typeof loadCompactionCheckpoints>[0],
+    // 会话分支（rewind/fork/switch，内核 2026.9.7 branch tree）
+    sessionBranches: state.sessionBranches,
+    sessionBranchesKey: state.sessionBranchesKey ?? null,
+    sessionBranchesLoading: state.sessionBranchesLoading,
+    sessionBranchesError: state.sessionBranchesError,
+    branchBusyAction: state.branchBusyAction,
+    onOpenSessionBranches: () => {
+      void loadSessionBranches(
+        state as unknown as Parameters<typeof loadSessionBranches>[0],
         state.sessionKey,
       );
     },
-    onRestoreCheckpoint: (checkpointId: string) => {
-      void handleRestoreCheckpoint(state, checkpointId);
+    onSwitchBranch: (leafEntryId: string) => {
+      void handleSwitchBranch(state, leafEntryId);
     },
-    onBranchCheckpoint: (checkpointId: string) => {
-      void handleBranchCheckpoint(state, checkpointId);
+    onRewindToMessage: (entryId: string) => {
+      void handleRewindToMessage(state, entryId);
+    },
+    onForkFromMessage: (entryId: string) => {
+      void handleForkFromMessage(state, entryId);
     },
     // 错误卡片「重发」：正在发送时不重复触发；直接以 override 发送失败文本（不碰当前草稿）。
     // 重发前移除匹配的旧错误卡；若其前一条是发送失败残留的本地乐观 user 气泡

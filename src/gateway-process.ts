@@ -23,6 +23,7 @@ import {
   resolveUserStateDir,
 } from "./constants";
 import { uninstallGatewayDaemon, getPortPid } from "./install-detector";
+import { ensureAgentDbSchemaReady } from "./agent-db-migration";
 import {
   shouldAbortStartAfterPrestart,
   shouldForceResetHalfDead,
@@ -270,6 +271,12 @@ export class GatewayProcess {
     // 双双空转，状态机永久卡死在 "starting"，只能重启 App 自愈。
     try {
       await this.cleanStaleLockfile();
+
+      // agent DB schema 就绪检查（内核 2026.9.4+ 要求 userVersion ≥ 24）：需要迁移时
+      // 自动清失效租约并跑 doctor --fix --non-interactive。会话级单次（attempted
+      // 闸门，崩溃自重启不重跑），无需迁移时零开销（目录扫描 + 4 字节头读）；失败
+      // 只记日志，网关照常尝试启动（若内核仍拒绝，走既有失败弹窗路径）。
+      await ensureAgentDbSchemaReady();
 
       // 卸载 OpenClaw 系统守护进程 + 清理 tmpdir 锁文件，防止杀进程后被自动重启。
       // 每应用会话只执行一次（R91 性能审查）：Windows 上串行跑 2 次 schtasks、

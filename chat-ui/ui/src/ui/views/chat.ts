@@ -19,7 +19,6 @@ import {
   goalTokenPercent,
   goalTokensLabel,
 } from "../chat/goal-display.ts";
-import type { SessionCompactionCheckpoint } from "../controllers/session-compaction.ts";
 import "../components/oc-resizable-divider.ts";
 // 流式气泡独立组件（R41 Task 10）：chatStream 高频变化只命中组件自身重渲染，
 // 历史列表 memo 不再被每帧 invalidate（接线见 renderChat 线程尾部 <oc-chat-stream>）
@@ -34,6 +33,7 @@ import { KNOWN_THINKING_LEVELS } from "../chat/thinking-levels.ts";
 import { resolveModelSelectKey } from "../controllers/models.ts";
 import { resolveActiveToolName } from "../chat/tool-summary.ts";
 import { appendQuoteToDraft } from "../chat/quote-text.ts";
+import type { SessionBranch } from "../controllers/session-branches.ts";
 import { isFailedSubagentStatus, selectSubagentCards, type SubagentCard } from "../chat/subagent-status.ts";
 import { isStreamTextDuplicatedInHistory } from "../chat/stream-bubble-guard.ts";
 import { selectPendingQuestions, type QuestionPrompt } from "../chat/question-cards.ts";
@@ -122,18 +122,20 @@ export type ChatProps = {
   isBinaryThinking?: boolean;
   onThinkingToggle?: () => void;
   onThinkingLevelChange?: (level: string) => void;
-  // 会话回放/分支（rewind/fork）
-  compactionCheckpoints?: SessionCompactionCheckpoint[];
-  /** checkpoints 加载时对应的 sessionKey，与当前 sessionKey 不匹配时按加载中处理 */
-  compactionCheckpointsKey?: string | null;
-  compactionCheckpointsLoading?: boolean;
-  compactionCheckpointsError?: string | null;
-  compactionBusyCheckpointId?: string | null;
-  onOpenCompactionCheckpoints?: () => void;
-  onRestoreCheckpoint?: (checkpointId: string) => void;
-  onBranchCheckpoint?: (checkpointId: string) => void;
   // 消息引用：把原文构造成引用块追加到草稿末尾，并把焦点送回输入框（可接着打字）
   onQuoteMessage?: (text: string) => void;
+  // 会话分支（rewind/fork/switch，内核 2026.9.7 branch tree）
+  sessionBranches?: SessionBranch[];
+  /** branches 加载时对应的 sessionKey，与当前 sessionKey 不匹配时按加载中处理 */
+  sessionBranchesKey?: string | null;
+  sessionBranchesLoading?: boolean;
+  sessionBranchesError?: string | null;
+  branchBusyAction?: string | null;
+  onOpenSessionBranches?: () => void;
+  onSwitchBranch?: (leafEntryId: string) => void;
+  // 消息级回退/分叉：entryId 为内核 transcript 条目 id（__openclaw.id）
+  onRewindToMessage?: (entryId: string) => void;
+  onForkFromMessage?: (entryId: string) => void;
   // 错误卡片「重发」：重新发送失败的用户消息文本（同步发送失败路径提供），
   // attachments 为错误卡上保存的附件（resendAttachments），带回防重发附件丢失
   onResendError?: (text: string, attachments?: ChatAttachment[]) => void;
@@ -203,12 +205,12 @@ let queueEditingId: string | null = null;
 // 否则监听会残留到下一次外部点击才被清掉（并持有过期 props 闭包）。
 let plusMenuOutsideCloser: ((ev: MouseEvent) => void) | null = null;
 
-// 思考档位 / 回放点 popover 的「点击外部关闭」监听（模块级单例）。
+// 思考档位 / 分支 popover 的「点击外部关闭」监听（模块级单例）。
 // toggle 按钮本身 stopPropagation，document 点击永远看不到按钮点击——
 // 若关闭分支不显式注销，每次 开→关→开 循环都会永久泄漏一个持有过期
 // popover/el 闭包的 document 监听器。
 let thinkingPopoverCloser: ((ev: MouseEvent) => void) | null = null;
-let rewindPopoverCloser: ((ev: MouseEvent) => void) | null = null;
+let branchPopoverCloser: ((ev: MouseEvent) => void) | null = null;
 
 function closeThinkingPopover() {
   for (const el of document.querySelectorAll(".chat-compose__thinking-popover--open")) {
@@ -220,13 +222,13 @@ function closeThinkingPopover() {
   }
 }
 
-function closeRewindPopover() {
-  for (const el of document.querySelectorAll(".chat-compose__rewind-popover--open")) {
-    el.classList.remove("chat-compose__rewind-popover--open");
+function closeBranchPopover() {
+  for (const el of document.querySelectorAll(".chat-compose__branch-popover--open")) {
+    el.classList.remove("chat-compose__branch-popover--open");
   }
-  if (rewindPopoverCloser) {
-    document.removeEventListener("click", rewindPopoverCloser);
-    rewindPopoverCloser = null;
+  if (branchPopoverCloser) {
+    document.removeEventListener("click", branchPopoverCloser);
+    branchPopoverCloser = null;
   }
 }
 
@@ -391,74 +393,62 @@ function generateAttachmentId(): string {
   return `att-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
-// 回放点（checkpoint）的触发原因标签，未知原因原样展示
-function formatCheckpointReason(reason?: string): string {
-  if (!reason) {
-    return t("chat.rewind.reasonUnknown");
-  }
-  const key = `chat.rewind.reason.${reason}`;
-  const label = t(key);
-  return label === key ? reason : label;
-}
-
-// 回放/分支 popover：列出当前会话的回放点，支持回放（restore）与创建分支（branch）
-function renderRewindPopover(props: ChatProps) {
-  const busyId = props.compactionBusyCheckpointId ?? null;
-  // 缓存的 checkpoints 属于别的会话时视为加载中，不把旧会话的回放点展示/暴露给当前会话
+// 分支 popover：列出当前会话的分支（transcript 树各 tip），支持切换到指定分支；
+// 回退/分叉入口在用户消息气泡上（rewind/fork 回调），此处只做分支浏览与切换
+function renderBranchPopover(props: ChatProps) {
+  const busy = props.branchBusyAction ?? null;
+  // 缓存的 branches 属于别的会话时视为加载中，不把旧会话的分支展示/暴露给当前会话
   const keyMismatch =
-    props.compactionCheckpointsKey != null && props.compactionCheckpointsKey !== props.sessionKey;
-  const loading = props.compactionCheckpointsLoading || keyMismatch;
-  const checkpoints = keyMismatch ? [] : (props.compactionCheckpoints ?? []);
+    props.sessionBranchesKey != null && props.sessionBranchesKey !== props.sessionKey;
+  const loading = props.sessionBranchesLoading || keyMismatch;
+  const branches = keyMismatch ? [] : (props.sessionBranches ?? []);
+  const busySwitch = busy?.startsWith("switch:") ? busy.slice("switch:".length) : null;
   return html`
-    <div class="chat-compose__rewind-popover">
-      <div class="chat-compose__rewind-title">${t("chat.rewind.title")}</div>
+    <div class="chat-compose__branch-popover">
+      <div class="chat-compose__branch-title">${t("chat.branch.title")}</div>
       ${loading
-        ? html`<div class="chat-compose__rewind-status">${t("chat.loading")}</div>`
+        ? html`<div class="chat-compose__branch-status">${t("chat.loading")}</div>`
         : nothing}
-      ${props.compactionCheckpointsError
-        ? html`<div class="chat-compose__rewind-status chat-compose__rewind-status--error">
-            ${t("chat.rewind.loadFailed")}: ${props.compactionCheckpointsError}
+      ${props.sessionBranchesError
+        ? html`<div class="chat-compose__branch-status chat-compose__branch-status--error">
+            ${t("chat.branch.loadFailed")}: ${props.sessionBranchesError}
           </div>`
         : nothing}
-      ${!loading && !props.compactionCheckpointsError && !checkpoints.length
-        ? html`<div class="chat-compose__rewind-status">${t("chat.rewind.empty")}</div>`
+      ${!loading && !props.sessionBranchesError && !branches.length
+        ? html`<div class="chat-compose__branch-status">${t("chat.branch.empty")}</div>`
         : nothing}
-      ${checkpoints.map(
-        (cp) => html`
-          <div class="chat-compose__rewind-item">
-            <div class="chat-compose__rewind-item-meta">
-              ${Number.isFinite(cp.createdAt)
-                ? html`<span class="chat-compose__rewind-item-time">
-                    ${new Date(cp.createdAt).toLocaleString()}
-                  </span>`
-                : nothing}
-              <span class="chat-compose__rewind-item-reason">${formatCheckpointReason(cp.reason)}</span>
-              ${typeof cp.tokensBefore === "number"
-                ? html`<span class="chat-compose__rewind-item-tokens">
-                    ${cp.tokensBefore} → ${typeof cp.tokensAfter === "number" ? cp.tokensAfter : "?"}
-                  </span>`
-                : nothing}
-              ${cp.summary
-                ? html`<div class="chat-compose__rewind-item-summary" title=${cp.summary}>${cp.summary}</div>`
-                : nothing}
+      ${branches.map(
+        (branch) => html`
+          <div class="chat-compose__branch-item">
+            <div class="chat-compose__branch-item-main">
+              <div class="chat-compose__branch-item-headline" title=${branch.headline}>
+                ${branch.headline}
+              </div>
+              <div class="chat-compose__branch-item-meta">
+                ${t("chat.branch.messages").replace(
+                  "{n}",
+                  String(branch.messageCount ?? 0),
+                )}
+                ${branch.updatedAt
+                  ? html`<span class="chat-compose__branch-item-time">
+                      ${new Date(branch.updatedAt).toLocaleString()}
+                    </span>`
+                  : nothing}
+              </div>
             </div>
-            <div class="chat-compose__rewind-item-actions">
-              <button
-                class="chat-compose__rewind-action"
-                type="button"
-                ?disabled=${busyId !== null}
-                @click=${() => props.onRestoreCheckpoint?.(cp.checkpointId)}
-              >
-                ${busyId === cp.checkpointId ? icons.loader : nothing}${t("chat.rewind.restore")}
-              </button>
-              <button
-                class="chat-compose__rewind-action"
-                type="button"
-                ?disabled=${busyId !== null}
-                @click=${() => props.onBranchCheckpoint?.(cp.checkpointId)}
-              >
-                ${busyId === cp.checkpointId ? icons.loader : nothing}${t("chat.rewind.branch")}
-              </button>
+            <div class="chat-compose__branch-item-actions">
+              ${branch.active
+                ? html`<span class="chat-compose__branch-current">${t("chat.branch.current")}</span>`
+                : html`<button
+                    class="chat-compose__branch-action"
+                    type="button"
+                    ?disabled=${busy !== null}
+                    @click=${() => props.onSwitchBranch?.(branch.leafEntryId)}
+                  >
+                    ${busySwitch === branch.leafEntryId ? icons.loader : nothing}${t(
+                      "chat.branch.switch",
+                    )}
+                  </button>`}
             </div>
           </div>
         `,
@@ -1000,7 +990,7 @@ export function renderChat(props: ChatProps) {
     lastSessionKey = props.sessionKey;
     closePlusMenu(props);
     closeThinkingPopover();
-    closeRewindPopover();
+    closeBranchPopover();
     goalFormOpen = false;
     goalDraft = "";
     queueEditingId = null;
@@ -1154,6 +1144,8 @@ export function renderChat(props: ChatProps) {
           .onOpenSidebar=${props.onOpenSidebar}
           .onQuoteMessage=${(text: string) => handleQuoteMessage(props, text)}
           .onResendError=${props.onResendError}
+          .onRewindToMessage=${props.onRewindToMessage}
+          .onForkFromMessage=${props.onForkFromMessage}
         ></oc-chat-history>`
       }
       ${
@@ -1560,47 +1552,47 @@ export function renderChat(props: ChatProps) {
                     : nothing}
                 </select>
               `
-              : props.configuredModels && props.configuredModels.length === 1
-                ? html`
-                  <select class="chat-compose__model-select" disabled>
-                    <option selected>${props.configuredModels[0].name}</option>
-                  </select>
-                `
-                : nothing
-            }
-            <div class="chat-compose__rewind">
+                : props.configuredModels && props.configuredModels.length === 1
+                  ? html`
+                    <select class="chat-compose__model-select" disabled>
+                      <option selected>${props.configuredModels[0].name}</option>
+                    </select>
+                  `
+                  : nothing
+              }
+            <div class="chat-compose__branch">
               <button
                 class="chat-compose__tool-btn"
                 type="button"
-                data-tooltip=${t("chat.rewind.tooltip")}
-                aria-label=${t("chat.rewind.tooltip")}
+                data-tooltip=${t("chat.branch.tooltip")}
+                aria-label=${t("chat.branch.tooltip")}
                 ?disabled=${!props.connected}
                 @click=${(e: Event) => {
                   e.stopPropagation();
-                  const el = (e.currentTarget as HTMLElement).closest(".chat-compose__rewind") as HTMLElement;
-                  const popover = el.querySelector(".chat-compose__rewind-popover") as HTMLElement | null;
+                  const el = (e.currentTarget as HTMLElement).closest(".chat-compose__branch") as HTMLElement;
+                  const popover = el.querySelector(".chat-compose__branch-popover") as HTMLElement | null;
                   if (!popover) return;
-                  if (popover.classList.contains("chat-compose__rewind-popover--open")) {
-                    closeRewindPopover();
+                  if (popover.classList.contains("chat-compose__branch-popover--open")) {
+                    closeBranchPopover();
                   } else {
-                    closeRewindPopover(); // 清掉上一轮可能残留的监听
-                    popover.classList.add("chat-compose__rewind-popover--open");
-                    // 打开时拉取最新回放点列表
-                    props.onOpenCompactionCheckpoints?.();
+                    closeBranchPopover(); // 清掉上一轮可能残留的监听
+                    popover.classList.add("chat-compose__branch-popover--open");
+                    // 打开时拉取最新分支列表
+                    props.onOpenSessionBranches?.();
                     const container = el;
-                    rewindPopoverCloser = (ev: MouseEvent) => {
-                      if (!container.contains(ev.target as Node)) closeRewindPopover();
+                    branchPopoverCloser = (ev: MouseEvent) => {
+                      if (!container.contains(ev.target as Node)) closeBranchPopover();
                     };
-                    const closer = rewindPopoverCloser;
+                    const closer = branchPopoverCloser;
                     requestAnimationFrame(() => {
-                      if (rewindPopoverCloser === closer) document.addEventListener("click", closer);
+                      if (branchPopoverCloser === closer) document.addEventListener("click", closer);
                     });
                   }
                 }}
               >
                 ${icons.history}
               </button>
-              ${renderRewindPopover(props)}
+              ${renderBranchPopover(props)}
             </div>
           </div>
           <div class="chat-compose__toolbar-right">

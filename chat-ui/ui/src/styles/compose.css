@@ -368,14 +368,14 @@
   font-weight: var(--weight-medium);
 }
 
-/* 回放/分支 popover — 复用 thinking-popover 的悬浮模式 */
-.chat-compose__rewind {
+/* 分支 popover（rewind/fork/switch）— 复用 thinking-popover 的悬浮模式 */
+.chat-compose__branch {
   position: relative;
   display: inline-flex;
   flex-shrink: 0;
 }
 
-.chat-compose__rewind-popover {
+.chat-compose__branch-popover {
   position: absolute;
   bottom: calc(100% + 4px);
   left: 0;
@@ -392,29 +392,29 @@
   display: none;
 }
 
-.chat-compose__rewind-popover--open {
+.chat-compose__branch-popover--open {
   display: block;
 }
 
-.chat-compose__rewind-title {
+.chat-compose__branch-title {
   padding: var(--spacer-4) var(--spacer-12) var(--spacer-6);
   font-size: var(--text-sm);
   font-weight: var(--weight-semibold);
   color: var(--text-muted);
 }
 
-.chat-compose__rewind-status {
+.chat-compose__branch-status {
   padding: var(--spacer-6) var(--spacer-12);
   font-size: var(--text-sm);
   color: var(--text-muted);
 }
 
-.chat-compose__rewind-status--error {
+.chat-compose__branch-status--error {
   color: var(--danger);
   word-break: break-all;
 }
 
-.chat-compose__rewind-item {
+.chat-compose__branch-item {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -423,40 +423,45 @@
   border-top: var(--hairline);
 }
 
-.chat-compose__rewind-item-meta {
+.chat-compose__branch-item-main {
   flex: 1;
   min-width: 0;
+}
+
+.chat-compose__branch-item-headline {
   font-size: var(--text-sm);
   color: var(--text);
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--spacer-4) var(--spacer-8);
-}
-
-.chat-compose__rewind-item-time {
-  font-variant-numeric: tabular-nums;
-}
-
-.chat-compose__rewind-item-reason,
-.chat-compose__rewind-item-tokens {
-  color: var(--text-muted);
-}
-
-.chat-compose__rewind-item-summary {
-  flex-basis: 100%;
-  color: var(--text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.chat-compose__rewind-item-actions {
+.chat-compose__branch-item-meta {
   display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacer-4) var(--spacer-8);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.chat-compose__branch-item-time {
+  font-variant-numeric: tabular-nums;
+}
+
+.chat-compose__branch-item-actions {
+  display: flex;
+  align-items: center;
   gap: var(--spacer-4);
   flex-shrink: 0;
 }
 
-.chat-compose__rewind-action {
+.chat-compose__branch-current {
+  font-size: var(--text-sm);
+  color: var(--accent);
+  font-weight: var(--weight-medium);
+}
+
+.chat-compose__branch-action {
   display: inline-flex;
   align-items: center;
   gap: var(--spacer-4);
@@ -472,17 +477,17 @@
     border-color var(--duration-fast) var(--ease-out);
 }
 
-.chat-compose__rewind-action:hover:not(:disabled) {
+.chat-compose__branch-action:hover:not(:disabled) {
   background: var(--bg-hover);
   border-color: var(--border-strong);
 }
 
-.chat-compose__rewind-action:disabled {
+.chat-compose__branch-action:disabled {
   opacity: 0.4;
   cursor: not-allowed;
 }
 
-.chat-compose__rewind-action svg {
+.chat-compose__branch-action svg {
   width: 12px;
   height: 12px;
   stroke: currentColor;

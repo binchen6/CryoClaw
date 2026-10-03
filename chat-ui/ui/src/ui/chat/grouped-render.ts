@@ -318,6 +318,9 @@ export function renderMessageGroup(
     gitAvailable?: boolean | null;
     onQuoteMessage?: (text: string) => void;
     onResendError?: (text: string, attachments?: ChatAttachment[]) => void;
+    // 消息级分支入口（内核 2026.9.7 branch tree）：entryId 为 transcript 条目 id
+    onRewindToMessage?: (entryId: string) => void;
+    onForkFromMessage?: (entryId: string) => void;
   },
 ) {
   const normalizedRole = normalizeRoleForGrouping(group.role);
@@ -365,6 +368,8 @@ export function renderMessageGroup(
               isHydrating: opts.isHydrating,
               onQuoteMessage: opts.onQuoteMessage,
               onResendError: opts.onResendError,
+              onRewindToMessage: opts.onRewindToMessage,
+              onForkFromMessage: opts.onForkFromMessage,
             },
             opts.onOpenSidebar,
           ),
@@ -700,6 +705,8 @@ function renderGroupedMessage(
     isHydrating?: boolean;
     onQuoteMessage?: (text: string) => void;
     onResendError?: (text: string, attachments?: ChatAttachment[]) => void;
+    onRewindToMessage?: (entryId: string) => void;
+    onForkFromMessage?: (entryId: string) => void;
   },
   onOpenSidebar?: (content: string) => void,
 ) {
@@ -754,7 +761,8 @@ function renderGroupedMessage(
   const markdownBase = extractedText?.trim() ? extractedText : null;
   const reasoningMarkdown = extractedThinking ? formatReasoningMarkdown(extractedThinking) : null;
   const markdown = markdownBase;
-  const canCopyMarkdown = role === "assistant" && Boolean(markdown?.trim());
+  const canCopyMarkdown =
+    (role === "assistant" || role === "user") && Boolean(markdown?.trim());
   // 引用：用户/助手气泡有文本即可引用（原文交给状态层构造引用块，避免二次转义）
   const canQuote =
     (normalizedRole === "user" || normalizedRole === "assistant") &&
@@ -771,6 +779,41 @@ function renderGroupedMessage(
       >${icons.quote}</button>`
     : nothing;
 
+  // 分支入口（仅用户消息，且内核 transcript 条目 id 可用）：回退编辑 / 分叉新会话。
+  // 操作是非破坏的——被回退的内容保留为分支，可从输入框旁「分支」popover 切回。
+  const branchEntryId =
+    (m.__openclaw as Record<string, unknown> | undefined)?.id ??
+    (typeof m.id === "string" ? m.id : undefined);
+  const canBranch =
+    normalizedRole === "user" &&
+    typeof branchEntryId === "string" &&
+    Boolean(branchEntryId) &&
+    Boolean(opts.onRewindToMessage || opts.onForkFromMessage);
+  const branchButtons = canBranch
+    ? html`
+        <div class="chat-branch-btns">
+          ${opts.onRewindToMessage
+            ? html`<button
+                class="chat-branch-btn"
+                type="button"
+                title=${t("chat.rewind.action")}
+                aria-label=${t("chat.rewind.action")}
+                @click=${() => opts.onRewindToMessage?.(branchEntryId as string)}
+              >${icons.rotateCcw}</button>`
+            : nothing}
+          ${opts.onForkFromMessage
+            ? html`<button
+                class="chat-branch-btn"
+                type="button"
+                title=${t("chat.fork.action")}
+                aria-label=${t("chat.fork.action")}
+                @click=${() => opts.onForkFromMessage?.(branchEntryId as string)}
+              >${icons.gitBranch}</button>`
+            : nothing}
+        </div>
+      `
+    : nothing;
+
   // 检测纯 JSON 消息，用折叠块展示
   const jsonResult =
     markdown && !opts.isStreaming && message && typeof message === "object"
@@ -781,6 +824,7 @@ function renderGroupedMessage(
     "chat-bubble",
     canCopyMarkdown ? "has-copy" : "",
     canQuote ? "has-quote" : "",
+    canBranch ? "has-branch" : "",
     opts.isStreaming ? "streaming" : "",
     opts.isHydrating ? "" : "fade-in",
   ]
@@ -894,6 +938,7 @@ function renderGroupedMessage(
     <div class="${bubbleClasses}">
       ${canCopyMarkdown ? renderCopyAsMarkdownButton(markdown!) : nothing}
       ${quoteButton}
+      ${branchButtons}
       ${renderMessageBodyParts({
         images,
         mediaAttachments,

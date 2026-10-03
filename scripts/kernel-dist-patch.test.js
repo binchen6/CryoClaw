@@ -365,6 +365,40 @@ const FS_SAFE_PINNED_OPEN = [
   "",
 ].join("\n");
 
+// fs-safe 0.21.x（openclaw ≥2026.9.7）pinned-open 形态：params 解构局部变量 +
+// 双路 realpath（包内 realpathSync 包装 / ioFs.realpathSync），身份观测点不变。
+const FS_SAFE_PINNED_OPEN_V21 = [
+  'import fs from "node:fs";',
+  'import { realpathSync } from "./realpath.js";',
+  "export function openPinnedFileSync(params) {",
+  "    const filePath = params.filePath;",
+  "    const resolvedPath = params.resolvedPath;",
+  "    const ioFs = params.ioFs ?? fs;",
+  "    let fd = null;",
+  "    try {",
+  "        const realPath = resolvedPath ??",
+  "            (ioFs === fs ? realpathSync(filePath) : ioFs.realpathSync(filePath));",
+  "        const preOpenStat = inspectFileIdentitySync(() => {",
+  '            const stat = ioFs.lstatSync(realPath, { bigint: true });',
+  "            return stat;",
+  "        });",
+  "        fd = ioFs.openSync(realPath, openReadFlags);",
+  "        const openedStat = ioFs.fstatSync(fd);",
+  "        inspectFileIdentitySync(() => {",
+  '            const stat = ioFs.lstatSync(realPath, { bigint: true });',
+  "            return stat;",
+  "        }, preOpenStat);",
+  "        const opened = { ok: true, path: realPath, fd, stat: openedStat };",
+  "        fd = null;",
+  "        return opened;",
+  "    }",
+  "    finally {",
+  "        if (fd !== null) ioFs.closeSync(fd);",
+  "    }",
+  "}",
+  "",
+].join("\n");
+
 const FS_SAFE_REGULAR_FILE = [
   'import fsSync from "node:fs";',
   'import fs from "node:fs/promises";',
@@ -494,6 +528,30 @@ test("assertAsarBoundaryCoverage：v8 形态（无 fs-safe 包）走 chunk marke
   assert.throws(() => kdp.assertAsarBoundaryCoverage(gatewayDir), /未命中任何模块/);
   kdp.patchAsarBoundaryCheck(gatewayDir);
   kdp.assertAsarBoundaryCoverage(gatewayDir);
+});
+
+// fs-safe 0.21.x（openclaw ≥2026.9.7）形态：realPath 声明改形后仍须命中映射
+test("v21 形态：pinned-open 身份观测映射命中（realPath 双路声明）", (t) => {
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "cryoclaw-asar-patch-v21-"));
+  t.after(() => fs.rmSync(tmpRoot, { recursive: true, force: true }));
+  const gatewayDir = path.join(tmpRoot, "gateway");
+  const fsSafeDist = path.join(gatewayDir, "node_modules", "@openclaw", "fs-safe", "dist");
+  fs.mkdirSync(fsSafeDist, { recursive: true });
+  const pinnedOpenPath = path.join(fsSafeDist, "pinned-open.js");
+  fs.writeFileSync(pinnedOpenPath, FS_SAFE_PINNED_OPEN_V21);
+
+  assert.equal(kdp.patchFsSafeAsarUnpacked(gatewayDir), 1);
+  const src = fs.readFileSync(pinnedOpenPath, "utf-8");
+  // 两次身份观测 lstat 的参数被映射（preOpen + 读前复核）
+  const mapped = src.match(/ioFs\.lstatSync\(\/\* cryoclaw-asar-identity \*\/ asarIdentityPath\(ioFs, realPath\)/g) || [];
+  assert.equal(mapped.length, 2, "两次 bigint lstat 都应映射");
+  // openSync 与返回值保持 asar 虚拟路径（模块解析依赖 asar 内 node_modules）
+  assert.match(src, /fd = ioFs\.openSync\(realPath, openReadFlags\)/);
+  assert.match(src, /const opened = \{ ok: true, path: realPath, fd, stat: openedStat \}/);
+  // 幂等
+  const once = src;
+  assert.equal(kdp.patchFsSafeAsarUnpacked(gatewayDir), 1);
+  assert.equal(fs.readFileSync(pinnedOpenPath, "utf-8"), once);
 });
 
 test("patchFsSafeAsarUnpacked：无 fs-safe 包（v8 内核）返回 0", (t) => {

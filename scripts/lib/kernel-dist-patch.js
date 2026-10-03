@@ -580,20 +580,26 @@ function patchFsSafeAsarUnpacked(gatewayDir) {
 
   // 还原 R56 早期版本的错误补丁形态（realPath 整体重映射 + 旧 helper）
   const origDecl = "const realPath = params.resolvedPath ?? ioFs.realpathSync(params.filePath);";
+  // fs-safe 0.21.x（openclaw ≥2026.9.7）改形：params 解构为局部变量 + 双路 realpath
+  // （ioFs === fs 时走包内 realpathSync 包装，其余走 ioFs.realpathSync）。
+  const origDeclV21 =
+    "const realPath = resolvedPath ??\n" +
+    "            (ioFs === fs ? realpathSync(filePath) : ioFs.realpathSync(filePath));";
   const legacyDecl = [
     "let realPath = params.resolvedPath ?? ioFs.realpathSync(params.filePath);",
     "\t\t/* cryoclaw-asar-unpacked */ realPath = mapAsarUnpackedPath(ioFs, realPath);",
   ].join("\n");
-  source = source.replace(legacyDecl, origDecl);
+  source = source.split(legacyDecl).join(origDecl);
   source = source.replace(
-    /\n\/\* cryoclaw-asar-unpacked \*\/\nfunction mapAsarUnpackedPath[\s\S]*?\n\}\n/,
+    /\n\/\* cryoclaw-asar-unpacked \*\/\nfunction mapAsarUnpackedPath[\s\S]*?\n\}\n/g,
     "\n"
   );
 
   // 两次 lstatSync(realPath, { bigint: true }) 是身份观测点（preOpen + 读前复核）；
   // rejectPathSymlink 的 lstatSync(params.filePath) 不做身份比对，不动。
   const statMarker = "ioFs.lstatSync(realPath, { bigint: true })";
-  if (!source.includes(origDecl) || !source.includes(statMarker)) return 0;
+  if (!source.includes(statMarker)) return 0;
+  if (!source.includes(origDecl) && !source.includes(origDeclV21)) return 0;
   const patchedStat =
     "ioFs.lstatSync(/* cryoclaw-asar-identity */ asarIdentityPath(ioFs, realPath), { bigint: true })";
 

@@ -900,6 +900,78 @@ img.chat-avatar {
   }
 }
 
+/* 分支按钮（用户消息：回退编辑 / 分叉新会话）— 与引用/复制按钮同款悬浮交互，
+   成组绝对定位在最右；复制/引用按钮按组合左移避让 */
+.chat-bubble.has-branch {
+  padding-right: 76px;
+}
+
+.chat-branch-btns {
+  position: absolute;
+  top: var(--spacer-6);
+  right: var(--spacer-8);
+  display: flex;
+  gap: var(--spacer-4);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--duration-fast) var(--ease-out);
+}
+
+.chat-branch-btn {
+  border: var(--hairline);
+  background: var(--bg);
+  color: var(--text-muted);
+  border-radius: var(--radius-8);
+  padding: var(--spacer-4) var(--spacer-6);
+  font-size: var(--text-base);
+  line-height: 1;
+  cursor: pointer;
+}
+
+.chat-branch-btn svg {
+  width: 14px;
+  height: 14px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.5px;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.chat-bubble:hover .chat-branch-btns {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.chat-branch-btn:hover {
+  background: var(--bg-hover);
+}
+
+.chat-branch-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* 有分支按钮时，复制/引用按钮依次左移避让（引用与复制并存时再让一段） */
+.chat-bubble.has-copy.has-branch .chat-copy-btn {
+  right: 76px;
+}
+
+.chat-bubble.has-copy.has-branch .chat-quote-btn {
+  right: 112px;
+}
+
+.chat-bubble.has-branch.has-quote:not(.has-copy) .chat-quote-btn {
+  right: 76px;
+}
+
+@media (hover: none) {
+  .chat-branch-btns {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
 .chat-copy-btn {
   position: absolute;
   top: var(--spacer-6);

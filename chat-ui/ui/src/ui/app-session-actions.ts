@@ -1,5 +1,5 @@
 /**
- * 会话操作 —— 会话切换/新建/重命名/删除/回放等，供侧边栏与对话页共用。
+ * 会话操作 —— 会话切换/新建/重命名/删除等，供侧边栏与对话页共用。
  * 从 app-render.ts 抽出（阶段 16 架构重构），逻辑未变。
  */
 
@@ -7,19 +7,25 @@ import { parseAgentSessionKey } from "../../../src/routing/session-key.js";
 import { refreshChat, refreshChatAvatar } from "./app-chat.ts";
 import { loadChatHistory } from "./controllers/chat.ts";
 import { patchSession, loadSessions } from "./controllers/sessions.ts";
+import {
+  forkSessionFromEntry,
+  loadSessionBranches,
+  rewindSessionToEntry,
+  switchSessionBranchTo,
+  type SessionEditorRestore,
+} from "./controllers/session-branches.ts";
 import { findActiveTaskForSession } from "./controllers/tasks.ts";
 import {
   buildWorktreeSessionMap,
   isNotGitCheckoutError,
   loadWorktrees,
 } from "./controllers/worktrees.ts";
-import {
-  branchCompactionCheckpoint,
-  loadCompactionCheckpoints,
-  restoreCompactionCheckpoint,
-} from "./controllers/session-compaction.ts";
 import { t } from "./i18n.ts";
-import { applySessionKeyTransition, clearSessionDraftSnapshot } from "./session-transition.ts";
+import {
+  applySessionKeyTransition,
+  clearSessionDraftSnapshot,
+  seedSessionDraftSnapshot,
+} from "./session-transition.ts";
 import {
   clearToleratedHiddenSession,
   isToleratedHiddenSession,
@@ -60,12 +66,12 @@ export function applySessionKey(state: AppViewState, next: string, syncUrl = fal
   if (changed) {
     // 显式切换的会话可能不在可见列表（已归档/被过滤），记录容忍防 tick reconcile 弹回
     tolerateHiddenSession(next);
-    // 清空回放点缓存，避免上一会话的 checkpoints 在新会话被误展示/误操作
-    state.compactionCheckpoints = [];
-    state.compactionCheckpointsKey = null;
-    state.compactionCheckpointsLoading = false;
-    state.compactionCheckpointsError = null;
-    state.compactionBusyCheckpointId = null;
+    // 清空分支缓存，避免上一会话的分支列表在新会话被误展示/误操作
+    state.sessionBranches = [];
+    state.sessionBranchesKey = null;
+    state.sessionBranchesLoading = false;
+    state.sessionBranchesError = null;
+    state.branchBusyAction = null;
     void refreshChatAvatar(state as unknown as Parameters<typeof refreshChatAvatar>[0]);
     // 拉取最新 sessions 快照，让 context meter 立即反映新会话的 token 占用。
     void loadSessions(state);
@@ -273,52 +279,100 @@ export async function deleteSessionFromSidebar(state: AppViewState, key: string)
   }
 }
 
-// 回放（rewind）：二次确认后把当前会话回退到选中回放点，成功后刷新会话历史
-// 成功后：收起回放 popover、刷新回放点列表与侧边栏（R14）
-export async function handleRestoreCheckpoint(state: AppViewState, checkpointId: string) {
-  const confirmed = await showConfirm(state, t("chat.rewind.confirmRestore"), { danger: true });
-  if (!confirmed) return;
-  // 用 checkpoints 加载时的 sessionKey（而非当前 key），避免会话已切换后误操作别的会话
-  const key = typeof state.compactionCheckpointsKey === "string" ? state.compactionCheckpointsKey : state.sessionKey;
-  const ok = await restoreCompactionCheckpoint(state, key, checkpointId);
-  if (ok) {
-    showToast(state, t("chat.rewind.restoreSuccess"));
-    // 回放会改写 transcript，复用 loadChatHistory 路径刷新当前会话历史
-    await loadChatHistory(state as unknown as Parameters<typeof loadChatHistory>[0]);
-    closeCompactionPopoverAndRefresh(state, key);
-    await loadSessions(state);
-  } else {
-    const err = state.compactionCheckpointsError;
-    showToast(state, err ? `${t("chat.rewind.restoreFailed")}: ${err}` : t("chat.rewind.restoreFailed"));
-  }
+// ── 会话分支（内核 2026.9.7 branch tree：rewind / fork / switch）─────────────
+// transcript 是一棵树，可见历史 = active path。rewind 非破坏：被回退的内容保留为
+// 可切换分支；fork 从所选消息分叉全新会话；switch 把 active path 切到指定分支 tip。
+
+// 内核 editorAttachments（base64 图片）→ 输入框附件（dataUrl 形态，与粘贴路径同构）
+function editorAttachmentsToChatAttachments(
+  attachments: SessionEditorRestore["editorAttachments"],
+): AppViewState["chatAttachments"] {
+  if (!attachments?.length) return [];
+  const stamp = Date.now();
+  return attachments.map((a, i) => ({
+    id: `att-${stamp}-${i}-${Math.random().toString(36).slice(2, 7)}`,
+    type: "image",
+    mimeType: a.mimeType,
+    dataUrl: `data:${a.mimeType};base64,${a.data}`,
+  }));
 }
 
-// 回放/分支成功后的收尾：收起 popover（DOM 类）+ 重拉回放点列表
-function closeCompactionPopoverAndRefresh(state: AppViewState, key: string) {
-  document
-    .querySelector<HTMLElement>(".chat-compose__rewind-popover--open")
-    ?.classList.remove("chat-compose__rewind-popover--open");
-  void loadCompactionCheckpoints(
-    state as unknown as Parameters<typeof loadCompactionCheckpoints>[0],
-    key,
+// 回退（编辑重发）：该用户消息及其之后移出 active path（保留为分支），
+// 消息文本/图片回填输入框，随后整段替换语义刷新历史
+export async function handleRewindToMessage(state: AppViewState, entryId: string) {
+  if (!state.client || !state.connected || state.branchBusyAction) return;
+  const key = state.sessionKey;
+  const restored = await rewindSessionToEntry(state, key, entryId);
+  // RPC await 期间用户可能已切走：续体必须归属校验，防止把 A 会话的消息
+  // 内容写进 B 会话的输入框（branchBusyAction 已被会话切换清空，这里是唯一防线）
+  if (state.sessionKey !== key) return;
+  if (!restored) {
+    const err = state.sessionBranchesError;
+    showToast(state, err ? `${t("chat.rewind.failed")}: ${err}` : t("chat.rewind.failed"));
+    return;
+  }
+  showToast(state, t("chat.rewind.success"));
+  // 编辑重发语义：草稿替换为被回退消息的文本（无文本时保留用户已有草稿不被清空）
+  if (restored.editorText) {
+    state.chatMessage = restored.editorText;
+  }
+  state.chatAttachments = [
+    ...state.chatAttachments,
+    ...editorAttachmentsToChatAttachments(restored.editorAttachments),
+  ];
+  await loadChatHistory(state as unknown as Parameters<typeof loadChatHistory>[0]);
+  void loadSessionBranches(state, key);
+  void loadSessions(state);
+}
+
+// 分叉：从所选用户消息创建新会话（prefix 截止到该消息之前），文本/图片预填新会话输入框
+export async function handleForkFromMessage(state: AppViewState, entryId: string) {
+  if (!state.client || !state.connected || state.branchBusyAction) return;
+  const key = state.sessionKey;
+  const res = await forkSessionFromEntry(state, key, entryId);
+  // await 期间用户切走则放弃跳转：seed 快照按 key 归属保留，用户之后手动切到
+  // fork 会话时仍能一次性恢复预填内容
+  if (state.sessionKey !== key) return;
+  if (!res?.sessionKey) {
+    const err = state.sessionBranchesError;
+    showToast(state, err ? `${t("chat.fork.failed")}: ${err}` : t("chat.fork.failed"));
+    return;
+  }
+  showToast(state, t("chat.fork.success"));
+  seedSessionDraftSnapshot(
+    res.sessionKey,
+    res.editorText ?? "",
+    editorAttachmentsToChatAttachments(res.editorAttachments),
   );
+  // 先刷新会话列表让新会话出现在侧边栏，再切换过去
+  await loadSessions(state);
+  handleSessionChange(state, res.sessionKey);
 }
 
-// 分支（fork）：从选中回放点分叉出新会话，成功后切换到新会话
-export async function handleBranchCheckpoint(state: AppViewState, checkpointId: string) {
-  // 同 restore：用 checkpoints 加载时的 sessionKey，避免会话切换后从错误的会话分叉
-  const key = typeof state.compactionCheckpointsKey === "string" ? state.compactionCheckpointsKey : state.sessionKey;
-  const nextKey = await branchCompactionCheckpoint(state, key, checkpointId);
-  if (nextKey) {
-    showToast(state, t("chat.rewind.branchSuccess"));
-    closeCompactionPopoverAndRefresh(state, key);
-    // 先刷新会话列表让新会话出现在侧边栏，再切换过去
+// 分支切换：把 active path 切到指定分支 tip。用 branches 加载时的 sessionKey
+// （而非当前 key），避免会话已切换后误操作别的会话
+export async function handleSwitchBranch(state: AppViewState, leafEntryId: string) {
+  if (!state.client || !state.connected || state.branchBusyAction) return;
+  const key =
+    typeof state.sessionBranchesKey === "string" ? state.sessionBranchesKey : state.sessionKey;
+  const ok = await switchSessionBranchTo(state, key, leafEntryId);
+  if (ok) {
+    showToast(state, t("chat.branch.switchSuccess"));
+    closeBranchPopoverAndRefresh(state, key);
+    await loadChatHistory(state as unknown as Parameters<typeof loadChatHistory>[0]);
     await loadSessions(state);
-    handleSessionChange(state, nextKey);
   } else {
-    const err = state.compactionCheckpointsError;
-    showToast(state, err ? `${t("chat.rewind.branchFailed")}: ${err}` : t("chat.rewind.branchFailed"));
+    const err = state.sessionBranchesError;
+    showToast(state, err ? `${t("chat.branch.switchFailed")}: ${err}` : t("chat.branch.switchFailed"));
   }
+}
+
+// 切换成功后的收尾：收起分支 popover（DOM 类）+ 重拉分支列表
+function closeBranchPopoverAndRefresh(state: AppViewState, key: string) {
+  document
+    .querySelector<HTMLElement>(".chat-compose__branch-popover--open")
+    ?.classList.remove("chat-compose__branch-popover--open");
+  void loadSessionBranches(state, key);
 }
 
 // 新建会话：同步写入本地列表后再切换，异步同步到 Gateway 供跨终端访问

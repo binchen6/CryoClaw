@@ -19,6 +19,7 @@ export default defineConfig({
       "src/openclaw-state-archive.test.ts",
       "src/openclaw-state-import-lifecycle.test.ts",
       "src/gateway-lifecycle.test.ts",
+      "src/agent-db-migration.test.ts",
       "src/analytics.test.ts",
       "src/memory-workspace.test.ts",
       "src/wecom-config.test.ts",

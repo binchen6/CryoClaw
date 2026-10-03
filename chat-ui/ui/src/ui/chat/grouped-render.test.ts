@@ -327,3 +327,83 @@ test("渲染接线审计：折叠 details 挂 ref 重放 + toggle 水合，无�
     "chat-tools-collapse 应同时挂 ref 重放与 toggle 水合",
   );
 });
+
+// ── 会话分支：用户消息的回退/分叉入口（内核 2026.9.7 branch tree）──
+
+function userGroup(message: Record<string, unknown>) {
+  return {
+    kind: "group" as const,
+    key: "group:user:1",
+    role: "user",
+    messages: [{ key: "msg:1", message }],
+    timestamp: 1,
+    isStreaming: false,
+  };
+}
+
+test("分支入口：用户消息带 __openclaw.id 且提供回调时渲染 chat-branch-btns", () => {
+  const group = userGroup({
+    role: "user",
+    content: [{ type: "text", text: "帮我写个函数" }],
+    timestamp: 1,
+    __openclaw: { id: "entry-42" },
+  });
+  const result = collect(
+    renderMessageGroup(group, {
+      showReasoning: false,
+      onRewindToMessage: () => {},
+      onForkFromMessage: () => {},
+    }),
+  );
+  const htmlText = serialize(result);
+  assert.ok(htmlText.includes("chat-branch-btns"), "用户气泡应渲染分支按钮组");
+  assert.ok(htmlText.includes("chat-branch-btn"), "应包含分支按钮本体");
+});
+
+test("分支入口：无 entryId 或未提供回调时不渲染", () => {
+  const noId = collect(
+    renderMessageGroup(
+      userGroup({ role: "user", content: [{ type: "text", text: "hi" }], timestamp: 1 }),
+      { showReasoning: false, onRewindToMessage: () => {}, onForkFromMessage: () => {} },
+    ),
+  );
+  assert.ok(!serialize(noId).includes("chat-branch-btns"), "缺 entryId 不应渲染分支按钮");
+
+  const noCallback = collect(
+    renderMessageGroup(
+      userGroup({
+        role: "user",
+        content: [{ type: "text", text: "hi" }],
+        timestamp: 1,
+        __openclaw: { id: "entry-42" },
+      }),
+      { showReasoning: false },
+    ),
+  );
+  assert.ok(!serialize(noCallback).includes("chat-branch-btns"), "未提供回调不应渲染分支按钮");
+
+  const assistant = collect(
+    renderMessageGroup(
+      {
+        kind: "group" as const,
+        key: "group:assistant:2",
+        role: "assistant",
+        messages: [
+          {
+            key: "msg:2",
+            message: {
+              role: "assistant",
+              content: [{ type: "text", text: "回答" }],
+              timestamp: 1,
+              __openclaw: { id: "entry-43" },
+            },
+          },
+        ],
+        timestamp: 1,
+        isStreaming: false,
+      },
+      { showReasoning: false, onRewindToMessage: () => {}, onForkFromMessage: () => {} },
+    ),
+  );
+  assert.ok(!serialize(assistant).includes("chat-branch-btns"), "助手气泡不渲染分支按钮");
+});

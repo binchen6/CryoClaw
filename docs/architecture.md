@@ -285,7 +285,8 @@ carryOverInjected → 补丁命中校验 → 冒烟 → 重打 → 备份 → re
   绝不回落 npm latest。`updateAvailable` 用三段数字比较：current 更高（手动 `--tag` 装过
   新版）时不提示「更新」（那是降级）；无 tag 且 current 不落后 stable 时早退。
 - **运行时门槛守卫（2026.912.0 起）**：清单可选 `minRuntimeNode` 字段（stable=2026.9.3
-  起 = `24.16.0`，openclaw 2026.9.x engines 收敛到 Node 24）——`cmdUpdate` 在确认换装后、
+  起 = `24.16.0`，openclaw 2026.9.x engines 收敛到 Node 24；stable 现为 2026.9.7，取证见
+  docs/kernel-recon/2026.9.7-diff.md）——`cmdUpdate` 在确认换装后、
   进 staging 前比较捆绑运行时版本（脚本由捆绑 node 直接 spawn，`process.version` 即运行时
   版本），不满足即 fail 并提示「先升级应用」，替代死在 npm preinstall 的裸错误；版本不可
   判定时放行（preinstall 是最终兜底）。显式 `--tag` 路径无清单可依，不做此判定；旧版 App

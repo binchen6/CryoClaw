@@ -1,7 +1,7 @@
 {
-  "stable": "2026.9.3",
+  "stable": "2026.9.7",
   "minRuntimeNode": "24.16.0",
   "minSupported": "2026.7.0",
-  "updatedAt": "2026-09-12",
-  "notes": "CryoClaw 策展的内核稳定版。仅当 openclaw 官方发行证据链完整（GitHub release 非 prerelease、ClawHub publish 已验证、无未跑测试豁免）时才推进 stable。运行时 kernel-update.mjs 拉取本文件（raw.githubusercontent → jsdelivr 镜像 → 构建期内置兜底），不再使用 npm dist-tag latest。stable 推进 2026.8.2 → 2026.9.3：2026.9.3 已过完整策展链（engines 收敛到 Node 24、kernel-dist-patch 六注入点逐字节同形态验证、真实安装树补丁 + gateway health 200，见 docs/kernel-recon/2026.9.3-diff.md），且携带 Node 24 运行时的 App 2026.911.0 已发布；minRuntimeNode=24.16.0 让旧运行时 App 快速失败并提示先升级应用，而非等 npm preinstall 拒装。npm dist-tag latest 当前为 2026.9.4（同时挂 beta 标签），证据链未核验，暂不推进。"
+  "updatedAt": "2026-10-04",
+  "notes": "CryoClaw 策展的内核稳定版。仅当 openclaw 官方发行证据链完整（GitHub release 非 prerelease、ClawHub publish 已验证、无未跑测试豁免）时才推进 stable。运行时 kernel-update.mjs 拉取本文件（raw.githubusercontent → jsdelivr 镜像 → 构建期内置兜底），不再使用 npm dist-tag latest。stable 推进 2026.9.3 → 2026.9.7：真实安装树补丁全命中（fs-safe 0.21.1 pinned-open 形态适配，见 kernel-dist-patch.origDeclV21）+ gateway.asar 32164 文件校验 + asar 真实启动冒烟（telegram 渠道 doctor-contract 链，夹具随 9.7 渠道 schema 收紧修正）+ RPC/渠道 schema 取证（docs/kernel-recon/2026.9.7-diff.md，sessions.compaction.* 由 sessions.branches/rewind/fork 树模型替代，CryoClaw UI 已同步重建为分支体系）。npm dist-tag latest 当前为 2026.9.8（同时挂 beta），证据链未核验，不推进。"
 }

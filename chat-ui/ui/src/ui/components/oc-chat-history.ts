@@ -46,6 +46,8 @@ export class OcChatHistory extends LitElement {
     onOpenSidebar: { attribute: false },
     onQuoteMessage: { attribute: false },
     onResendError: { attribute: false },
+    onRewindToMessage: { attribute: false },
+    onForkFromMessage: { attribute: false },
   };
 
   messages: unknown[] = [];
@@ -61,6 +63,8 @@ export class OcChatHistory extends LitElement {
   onOpenSidebar?: (content: string) => void;
   onQuoteMessage?: (text: string) => void;
   onResendError?: (text: string, attachments?: ChatAttachment[]) => void;
+  onRewindToMessage?: (entryId: string) => void;
+  onForkFromMessage?: (entryId: string) => void;
 
   // 无 shadow DOM：复用全局样式与线程级既有事件委托；自定义元素默认 display 为
   // inline，不影响内部块级 .chat-group/.chat-divider 布局（与 oc-chat-stream 同理）。
@@ -119,6 +123,8 @@ export class OcChatHistory extends LitElement {
             gitAvailable: this.gitAvailable,
             onQuoteMessage: this.onQuoteMessage,
             onResendError: this.onResendError,
+            onRewindToMessage: this.onRewindToMessage,
+            onForkFromMessage: this.onForkFromMessage,
           });
         }
 
