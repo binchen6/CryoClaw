@@ -609,4 +609,42 @@ export function registerWebbridgeIpc(opts: SettingsIpcOptions): void {  // ─�
       return { success: false, message: err.message || String(err) };
     }
   });
+
+  // ── 刷新钉定（T8）：绕过 24h 缓存强制拉取远端钉定清单 ──
+  // 上游原地重建 latest 后，本地缓存的清单可能仍是旧哈希（PIN_STALE 死循环的
+  // 根源之一）；本 handler 让用户在应用内一键取回 repo main 上的最新清单，
+  // 成功后写回本地缓存，随后的修复/更新流程（读同一份缓存）即可通过校验。
+  // 返回 data.count = 清单内哈希总枚数；data.updatedAt = 本次刷新时间（ISO）。
+  ipcMain.handle("settings:webbridge-refresh-pins", async (event) => {
+    if (!assertTrustedIpcSender(event, "settings:webbridge-refresh-pins")) throw new Error("IPC sender not trusted");
+    try {
+      const result = await loadRemotePins({
+        dataDir: resolveWebbridgeDataDir(),
+        force: true,
+        logger: { info: (m) => log.info(m) },
+      });
+      if (!result.pins) {
+        return {
+          success: false,
+          message: "无法获取远端钉定清单（网络不可达或清单格式非法），请稍后重试",
+        };
+      }
+      // 审查修复：force 失败会回落 stale-cache——那不是「刷新成功」（清单仍是旧的，
+      // 自动重试必然再次失败），按失败上报并给出网络指引
+      if (result.source === "stale-cache") {
+        return {
+          success: false,
+          message: "远端钉定清单不可达，当前仅有过期缓存；请检查网络或代理后重试",
+        };
+      }
+      const count = Object.values(result.pins).reduce((n, list) => n + list.length, 0);
+      log.info(`[webbridge-pins] 应用内刷新钉定成功: count=${count} source=${result.source}`);
+      return {
+        success: true,
+        data: { count, updatedAt: new Date().toISOString(), source: result.source },
+      };
+    } catch (err: any) {
+      return { success: false, message: err.message || String(err) };
+    }
+  });
 }

@@ -13,11 +13,9 @@ export const AUTH_PROXY_API_KEY_SENTINEL = "proxy-managed";
 // 把该 id 也补进去，避免 openclaw config-state 的 "allow 非空 + 不在 allow → 静默禁用" 把
 // entries.enabled=true 直接吃掉。allow 缺失或为空数组时不动它（语义是"未启用白名单"）。
 // 反向（disable）不从 allow 移除：用户可能临时禁用想保留授权，删除是另一个语义。
-export function syncPluginAllowOnEnable(config: any, pluginId: string): void {
-  const allow = config?.plugins?.allow;
-  if (!Array.isArray(allow) || allow.length === 0) return;
-  if (!allow.includes(pluginId)) allow.push(pluginId);
-}
+// T2：实现迁至 plugin-allow-sync（含全量 reconcile），此处 re-export 保持调用方兼容。
+export { syncPluginAllowOnEnable } from "./plugin-allow-sync";
+import { syncPluginAllowOnEnable } from "./plugin-allow-sync";
 
 // ── Kimi Search 配置 ──
 

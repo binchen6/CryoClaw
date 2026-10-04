@@ -9,6 +9,7 @@ import {
   applyWecomSave,
   applyWeixinSave,
   extractAdvancedView,
+  extractBundledRuntimeView,
   extractDingtalkView,
   extractFeishuView,
   extractKimiSearchView,
@@ -407,6 +408,38 @@ function testAdvancedSaveInvalidValues() {
   assert.equal((empty.gateway as any).reload.mode, "hybrid", "从未设置时兜底 hybrid");
 }
 
+/* ── bundled 运行态映射（settings:get-channel-runtime-state → 面板状态） ── */
+
+function testExtractBundledRuntimeView() {
+  const runtime = {
+    bundled: { qqbot: true, dingtalk: true, wecom: false, weixin: true, feishu: false, kimiSearch: true },
+    bundleMessages: {
+      wecom: "企业微信插件组件缺失，请遵循插件文档指引进行安装。",
+      feishu: "飞书组件缺失，请重新安装 CryoClaw。",
+    },
+    weixinAccounts: [],
+  };
+  // 六渠道（weixin/qq/feishu/wecom/dingtalk + kimiSearch）逐一可读
+  assert.deepEqual(extractBundledRuntimeView(runtime, "wecom"), {
+    bundled: false,
+    bundleMessage: "企业微信插件组件缺失，请遵循插件文档指引进行安装。",
+  });
+  assert.deepEqual(extractBundledRuntimeView(runtime, "feishu"), {
+    bundled: false,
+    bundleMessage: "飞书组件缺失，请重新安装 CryoClaw。",
+  });
+  assert.deepEqual(extractBundledRuntimeView(runtime, "qqbot"), { bundled: true, bundleMessage: "" }, "bundled=true 无文案");
+  for (const platform of ["weixin", "qqbot", "feishu", "wecom", "dingtalk", "kimiSearch"] as const) {
+    const view = extractBundledRuntimeView(runtime, platform);
+    assert.equal(typeof view?.bundled, "boolean", `${platform} 可提取`);
+  }
+  // IPC 失败（null）/ 旧主进程缺平台键 / 键类型不对 → null，调用方保持默认（不误阻断保存）
+  assert.equal(extractBundledRuntimeView(null, "feishu"), null);
+  assert.equal(extractBundledRuntimeView({ bundled: {}, bundleMessages: {} }, "feishu"), null);
+  assert.equal(extractBundledRuntimeView({ bundled: { feishu: "yes" } }, "feishu"), null);
+  assert.equal(extractBundledRuntimeView({ bundled: { feishu: false } }, "feishu")?.bundleMessage, "", "缺 message 键按空串");
+}
+
 /* ── 集成：快照 → 多个 save → buildMergePatch ── */
 
 function testMergePatchIntegration() {
@@ -472,6 +505,7 @@ function main() {
   testAdvancedExtractApproveAll();
   testAdvancedSave();
   testAdvancedSaveInvalidValues();
+  testExtractBundledRuntimeView();
   testMergePatchIntegration();
   console.log("tab-channels lib tests passed");
 }

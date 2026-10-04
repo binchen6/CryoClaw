@@ -1,8 +1,8 @@
 import * as crypto from "crypto";
-import * as fs from "fs";
 import * as https from "https";
 import * as path from "path";
 import { resolveUserExtensionsDir } from "./constants";
+import { isPluginPresentAnywhere } from "./plugin-presence";
 
 export const WECOM_PLUGIN_ID = "wecom-openclaw-plugin";
 export const WECOM_CHANNEL_ID = "wecom";
@@ -13,15 +13,12 @@ export function resolveWecomPluginDir(): string {
   return path.join(resolveUserExtensionsDir(), WECOM_PLUGIN_ID);
 }
 
-// 检查企业微信插件是否已经随应用一起打包。
+// 检查企业微信插件是否可用（四根判定，见 plugin-presence.ts）。此前只查
+// ~/.openclaw/extensions/ 单根，R93「用户自装优先」分支在插件已存在于
+// ~/.openclaw/npm/projects/ 时会跳过/删除镜像副本，导致插件实际可加载却误报
+// 「组件缺失」。默认探针语义不变：openclaw.plugin.json + 任一入口文件。
 export function isWecomPluginBundled(): boolean {
-  const pluginDir = resolveWecomPluginDir();
-  const hasEntry =
-    fs.existsSync(path.join(pluginDir, "index.ts")) ||
-    fs.existsSync(path.join(pluginDir, "dist", "index.js")) ||
-    fs.existsSync(path.join(pluginDir, "dist", "index.cjs.js")) ||
-    fs.existsSync(path.join(pluginDir, "dist", "index.esm.js"));
-  return hasEntry && fs.existsSync(path.join(pluginDir, "openclaw.plugin.json"));
+  return isPluginPresentAnywhere(WECOM_PLUGIN_ID);
 }
 
 // 企业微信凭据验证（通过 WebSocket 认证帧校验 botId + secret）。

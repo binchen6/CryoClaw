@@ -6,11 +6,16 @@ import {
   filterTasksByStatus,
   findActiveTaskForSession,
   isActiveTask,
+  loadTasks,
+  cancelTask,
   sortTasks,
   taskDurationMs,
   toTaskTimestampMs,
   type TaskEventPayload,
+  type TasksState,
 } from "./tasks.ts";
+import { capabilitiesOf, supportsMethod, supportsEvent } from "./capabilities.ts";
+import type { GatewayHelloOk } from "../gateway.ts";
 import type { TaskSummary } from "../types.ts";
 
 function task(id: string, overrides: Partial<TaskSummary> = {}): TaskSummary {
@@ -191,4 +196,68 @@ test("activeTaskSessionKeys：收集全部活跃任务的会话 key（大小写�
     task("d", { status: "queued", sessionKey: "s-own" }),
   ]);
   assert.deepEqual([...keys].sort(), ["s-child", "s-own"]);
+});
+
+// ── T1 能力门控 ────────────────────────────────────────────────────────
+
+function helloWith(methods: string[] | undefined, events: string[] | undefined): GatewayHelloOk {
+  const features: { methods?: string[]; events?: string[] } = {};
+  if (methods) features.methods = methods;
+  if (events) features.events = events;
+  return { type: "hello-ok", protocol: 4, features } as GatewayHelloOk;
+}
+
+test("supportsMethod 判定表：无能力面保守放行，有能力面按集合命中", () => {
+  assert.equal(supportsMethod(null, "tasks.list"), true, "hello 缺失（未连接）保守放行");
+  assert.equal(supportsMethod(helloWith(undefined, undefined), "tasks.list"), true, "内核未声明 features 保守放行");
+  assert.equal(supportsMethod(helloWith(["tasks.list", "cron.list"], undefined), "tasks.list"), true);
+  assert.equal(supportsMethod(helloWith(["cron.list"], undefined), "tasks.list"), false, "2026.9.7 形态：无 tasks.*");
+  assert.equal(supportsEvent(helloWith(undefined, ["task.suggestion"]), "task"), false);
+  assert.equal(supportsEvent(helloWith(undefined, undefined), "task"), true);
+  // 缓存一致性：同一 hello 对象多次解析结果稳定
+  const h = helloWith(["a.b"], undefined);
+  assert.equal(capabilitiesOf(h), capabilitiesOf(h));
+});
+
+function fakeState(hello: GatewayHelloOk | null): TasksState & { requests: string[] } {
+  const requests: string[] = [];
+  return {
+    client: {
+      request: (method: string) => {
+        requests.push(method);
+        return Promise.resolve({ tasks: [] });
+      },
+    } as unknown as TasksState["client"],
+    connected: true,
+    hello,
+    tasksLoading: false,
+    tasksError: null,
+    tasks: [],
+    tasksStatusFilter: "all",
+    tasksCancellingIds: new Set(),
+    tasksUnsupported: false,
+    requests,
+  };
+}
+
+test("loadTasks：内核无 tasks.list 时零请求并置空态标记", async () => {
+  const state = fakeState(helloWith(["cron.list"], ["task.suggestion"]));
+  await loadTasks(state);
+  assert.deepEqual(state.requests, [], "不得发出死 RPC");
+  assert.equal(state.tasksUnsupported, true);
+  assert.equal(state.tasksError, null, "门控路径不报错");
+});
+
+test("loadTasks：内核有 tasks.list 时正常拉取并清空态标记", async () => {
+  const state = fakeState(helloWith(["tasks.list"], undefined));
+  await loadTasks(state);
+  assert.deepEqual(state.requests, ["tasks.list"]);
+  assert.equal(state.tasksUnsupported, false);
+});
+
+test("cancelTask：内核无 tasks.cancel 时零请求", async () => {
+  const state = fakeState(helloWith(["cron.list"], undefined));
+  await cancelTask(state, "t1");
+  assert.deepEqual(state.requests, []);
+  assert.equal(state.tasksCancellingIds.size, 0);
 });

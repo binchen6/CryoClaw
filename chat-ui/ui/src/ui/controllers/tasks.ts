@@ -1,14 +1,18 @@
-import type { GatewayBrowserClient } from "../gateway.ts";
+import type { GatewayBrowserClient, GatewayHelloOk } from "../gateway.ts";
 import type { TaskRuntime, TaskSummary, TasksListResult, TaskStatus } from "../types.ts";
+import { supportsMethod } from "./capabilities.ts";
 
 export type TasksState = {
   client: GatewayBrowserClient | null;
   connected: boolean;
+  hello: GatewayHelloOk | null;
   tasksLoading: boolean;
   tasksError: string | null;
   tasks: TaskSummary[];
   tasksStatusFilter: TaskStatus | "all";
   tasksCancellingIds: Set<string>;
+  /** 当前内核未注册 tasks.*（如 2026.9.7）：视图显示说明性空态而非报错 */
+  tasksUnsupported: boolean;
 };
 
 export type TaskEventPayload = {
@@ -239,6 +243,14 @@ export async function loadTasks(state: TasksState) {
   if (!state.client || !state.connected) {
     return;
   }
+  // 能力门控（T1）：2026.9.7 起内核移除 tasks.*，未门控会每 30s 打一次死 RPC 并裸报错
+  if (!supportsMethod(state.hello, "tasks.list")) {
+    state.tasksUnsupported = true;
+    state.tasks = [];
+    state.tasksError = null;
+    return;
+  }
+  state.tasksUnsupported = false;
   if (state.tasksLoading) {
     tasksRefreshPending = true;
     return;
@@ -264,6 +276,9 @@ export async function loadTasks(state: TasksState) {
 
 export async function cancelTask(state: TasksState, taskId: string) {
   if (!state.client || !state.connected) {
+    return;
+  }
+  if (!supportsMethod(state.hello, "tasks.cancel")) {
     return;
   }
   if (state.tasksCancellingIds.has(taskId)) {

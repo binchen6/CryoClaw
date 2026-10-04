@@ -10,6 +10,8 @@
  *   config 中只写 proxy-managed 占位符；同时联动启用 kimi-search + memory embedding
  */
 import { html, nothing } from "lit";
+import { repeat } from "lit/directives/repeat.js";
+import { ref } from "lit/directives/ref.js";
 import type { AppViewState } from "../../app-view-state.ts";
 import { t, tWithDetail } from "../../i18n.ts";
 import * as ipc from "../../data/ipc-bridge.ts";
@@ -39,6 +41,7 @@ import {
   AUTH_PROXY_API_KEY_SENTINEL,
   type AddSelection,
   type ProviderGroup, type GroupedProvider, type ProviderModelEntry, type ProviderGroupId,
+  deriveProviderView,
 } from "./tab-provider.lib.ts";
 import {
   emptyModelOrg, loadModelOrg, saveModelOrg, addOrgGroup, renameOrgGroup, removeOrgGroup,
@@ -48,8 +51,9 @@ import {
 import { renderModelOptionsGrouped } from "../../model-options.ts";
 import { deriveUsageView, formatResetText, type UsageLabels } from "./tab-provider-usage.lib.ts";
 
-/** 编辑器可选思考档位（off/on 为基础开关、adaptive 为 provider 专有，不暴露） */
-const EDITABLE_THINKING_LEVELS = ["minimal", "low", "medium", "high", "xhigh", "max"] as const;
+/** 编辑器可选思考档位与草稿类型已迁至 oc-caps-editor 组件（T6 组件化） */
+import "../../components/oc-caps-editor.ts";
+import { type CapsDraft } from "../../components/oc-caps-editor.ts";
 
 /* ── types ── */
 
@@ -68,18 +72,6 @@ interface DropTarget {
   kind: "model" | "fallback" | "org-group";
   id: string;
   position: "before" | "after";
-}
-
-/** 能力编辑草稿（编辑既有模型与分组追加共用） */
-interface CapsDraft {
-  contextWindow: string;
-  contextTokens: string;
-  maxTokens: string;
-  image: boolean;
-  video: boolean;
-  audio: boolean;
-  reasoning: boolean;
-  thinkingLevels: string[];
 }
 
 /* ── module-level state ── */
@@ -173,6 +165,8 @@ const s = createProviderState();
 
 function resetProviderState() {
   Object.assign(s, createProviderState());
+  // T6：模块级冷却/缓存一并清——否则切走再回会带着旧失败冷却与旧分组记忆
+  agentsLoadFailedAt = 0;
 }
 
 /* ── helpers ── */
@@ -264,6 +258,9 @@ async function init(state: AppViewState) {
       void loadGatewayModels(state.client).then(catalog => {
         if (catalog) state.requestUpdate();
       });
+      // T4：agents.list 从渲染期（renderAgentMapping 内副作用）移到 tab 激活时；
+      // 冷却兜底保留（旧内核不支持该 RPC 时不刷屏）
+      void loadAgents(state);
     }
     await checkOAuthStatus(state);
   } finally {
@@ -1293,14 +1290,16 @@ async function handleFetchUsage(prov: GroupedProvider, state: AppViewState) {
 
 export function resetProviderTab() { resetProviderState(); }
 
+// T6 性能：分组/回退/默认模型/总数按 config 快照对象记忆化（实现见 tab-provider.lib.ts）
 export function renderTabProvider(state: AppViewState) {
   if (!s.initialized) init(state);
   const snap = getCachedConfigSnapshot();
-  const groups = snap ? groupProvidersFromConfig(snap.config) : [];
-  const fallbacks = snap ? readFallbacks(snap.config) : [];
-  const fallbackRank = new Map(fallbacks.map((key, index) => [key, index + 1]));
-  const defaultEntry = groups.flatMap(g => g.providers).flatMap(p => p.models).find(m => m.isDefault);
-  const totalModels = groups.reduce((sum, g) => sum + g.providers.reduce((n, p) => n + p.models.length, 0), 0);
+  const view = snap ? deriveProviderView(snap) : null;
+  const groups = view?.groups ?? [];
+  const fallbacks = view?.fallbacks ?? [];
+  const fallbackRank = view?.fallbackRank ?? new Map<string, number>();
+  const defaultEntry = view?.defaultEntry;
+  const totalModels = view?.totalModels ?? 0;
 
   return html`
     <div class="oc-settings__section">
@@ -1345,6 +1344,7 @@ export function renderTabProvider(state: AppViewState) {
       <oc-message-box .message=${s.successMsg ?? ""} .type=${"success"} .visible=${!!s.successMsg}></oc-message-box>
       ${s.restartHint ? html`<div class="oc-provider-restart-hint">${s.restartHint}</div>` : nothing}
     </div>
+    ${renderModelEditDrawer(state, groups)}
   `;
 }
 
@@ -1424,75 +1424,31 @@ function renderOrgManager(state: AppViewState) {
   `;
 }
 
-/* ── 能力编辑器（模型卡片编辑与分组追加共用） ── */
+/* ── 能力编辑器（T6：独立 LitElement，按键只重渲染编辑器子树） ── */
 
-function renderCapsEditor(draft: CapsDraft, state: AppViewState) {
-  const numInput = (
-    label: string,
-    field: "contextWindow" | "contextTokens" | "maxTokens",
-    placeholder: string,
-  ) => html`
-    <div class="oc-settings__form-group">
-      <label class="oc-settings__label">${label}</label>
-      <input class="oc-settings__input" type="number" min="1" step="1" .value=${draft[field]}
-        placeholder=${placeholder}
-        @input=${(e: Event) => { draft[field] = (e.target as HTMLInputElement).value.replace(/[^\d]/g, ""); state.requestUpdate(); }} />
-    </div>
-  `;
-  const CONTEXT_PRESETS: Array<[string, number]> = [["128K", 131072], ["256K", 262144], ["512K", 524288], ["1M", 1048576]];
-  const capToggle = (label: string, field: "image" | "video" | "audio") => html`
-    <oc-toggle-switch .label=${label} .checked=${draft[field]}
-      @change=${(e: CustomEvent) => { draft[field] = e.detail.checked; state.requestUpdate(); }}
-    ></oc-toggle-switch>
-  `;
-  return html`
-    <div class="oc-caps-editor">
-      ${numInput(t("settings.provider.caps.contextWindow"), "contextWindow", t("settings.provider.caps.inheritHint"))}
-      <div class="oc-caps-editor__chips">
-        ${CONTEXT_PRESETS.map(([label, v]) => html`
-          <button class="oc-caps-chip ${draft.contextWindow === String(v) ?"is-active" : ""}"
-            @click=${() => { draft.contextWindow = String(v); state.requestUpdate(); }}>${label}</button>
-        `)}
-      </div>
-      ${numInput(t("settings.provider.caps.maxTokens"), "maxTokens", t("settings.provider.caps.inheritHint"))}
-      <div class="oc-settings__form-group">
-        <label class="oc-settings__label">${t("settings.provider.caps.modalities")}</label>
-        <div class="oc-caps-editor__toggles">
-          ${capToggle(t("settings.provider.caps.image"), "image")}
-          ${capToggle(t("settings.provider.caps.video"), "video")}
-          ${capToggle(t("settings.provider.caps.audio"), "audio")}
-        </div>
-      </div>
-      <div class="oc-settings__form-group">
-        <oc-toggle-switch .label=${t("settings.provider.caps.reasoning")} .checked=${draft.reasoning}
-          @change=${(e: CustomEvent) => { draft.reasoning = e.detail.checked; state.requestUpdate(); }}
-        ></oc-toggle-switch>
-      </div>
-      ${draft.reasoning ? html`
-        <div class="oc-settings__form-group">
-          <label class="oc-settings__label">${t("settings.provider.caps.thinkingLevels")}</label>
-          <div class="oc-caps-editor__chips">
-            ${EDITABLE_THINKING_LEVELS.map(lv => html`
-              <button class="oc-caps-chip ${draft.thinkingLevels.includes(lv) ?"is-active" : ""}"
-                @click=${() => {
-                  const i = draft.thinkingLevels.indexOf(lv);
-                  if (i >= 0) draft.thinkingLevels.splice(i, 1);
-                  else draft.thinkingLevels.push(lv);
-                  state.requestUpdate();
-                }}>${t(`chat.thinkLevel.${lv}`)}</button>
-            `)}
-          </div>
-          <span class="oc-provider-dynamic-hint">${t("settings.provider.caps.thinkingLevelsHint")}</span>
-        </div>
-      ` : nothing}
-    </div>
-  `;
+function renderCapsEditor(draft: CapsDraft, _state: AppViewState) {
+  return html`<oc-caps-editor .draft=${draft}></oc-caps-editor>`;
 }
 
-function renderModelEditPanel(prov: GroupedProvider, entry: ProviderModelEntry, state: AppViewState) {
-  if (!s.editDraft) return nothing;
+/* ── 模型能力编辑抽屉（T6：移出卡片行，fixed 右侧抽屉消除灰空白） ── */
+
+function renderModelEditDrawer(state: AppViewState, groups: ProviderGroup[]) {
+  if (!s.editingModelKey || !s.editDraft) return nothing;
+  const entryKey = s.editingModelKey;
+  const prov = groups.flatMap(g => g.providers).find(p => p.models.some(m => m.key === entryKey));
+  const entry = prov?.models.find(m => m.key === entryKey);
+  if (!prov || !entry) return nothing;
   return html`
-    <div class="oc-provider-edit-panel">
+    <div class="oc-provider-edit-drawer__backdrop" @click=${() => cancelModelEdit(state)}></div>
+    <aside class="oc-provider-edit-drawer" role="dialog" aria-modal="true"
+      tabindex="-1"
+      aria-label=${t("settings.provider.editModel")}
+      ${ref((el) => {
+        // 打开时焦点移入抽屉（Esc 才可达；焦点在抽屉内时不动，防输入期抢焦点）
+        const node = el as HTMLElement | undefined;
+        if (node && !node.contains(document.activeElement)) node.focus();
+      })}
+      @keydown=${(e: KeyboardEvent) => { if (e.key === "Escape") cancelModelEdit(state); }}>
       <div class="oc-provider-edit-panel__title">${t("settings.provider.editModel")} · ${entry.name}</div>
       ${renderCapsEditor(s.editDraft, state)}
       <div class="btn-row">
@@ -1502,7 +1458,7 @@ function renderModelEditPanel(prov: GroupedProvider, entry: ProviderModelEntry, 
           ${s.editSaving ? "..." : t("settings.save")}
         </button>
       </div>
-    </div>
+    </aside>
   `;
 }
 
@@ -1631,7 +1587,7 @@ function renderProvider(prov: GroupedProvider, group: ProviderGroup, state: AppV
       ` : nothing}
 
       <div class="oc-provider-cards">
-        ${visibleModels.map(entry => renderModelCard(prov, entry, state, fallbackRank))}
+        ${repeat(visibleModels, entry => entry.key, entry => renderModelCard(prov, entry, state, fallbackRank))}
       </div>
     </div>
   `;
@@ -1716,7 +1672,6 @@ function renderModelCard(prov: GroupedProvider, entry: ProviderModelEntry, state
           ` : nothing}
         </div>
       ` : nothing}
-      ${s.editingModelKey === entry.key ? renderModelEditPanel(prov, entry, state) : nothing}
     </div>
   `;
 }
@@ -2313,7 +2268,6 @@ function renderFallbacks(state: AppViewState, fallbacks: string[]) {
 /* ── per-agent 模型映射 ── */
 
 function renderAgentMapping(state: AppViewState) {
-  if (!s.agentsLoaded) loadAgents(state);
   const configuredKeys = allConfiguredKeys();
   if (configuredKeys.length === 0) return nothing;
   // key → 显示名（与 fallback 区同源），选择器按自定义分组渲染
@@ -2328,7 +2282,8 @@ function renderAgentMapping(state: AppViewState) {
   }
   const optionModels = configuredKeys.map(k => ({ key: k, name: nameOf.get(k) ?? k }));
   return html`
-    <details class="oc-settings__details-advanced oc-provider-agents">
+    <details class="oc-settings__details-advanced oc-provider-agents"
+      @toggle=${() => { if (!s.agentsLoaded) void loadAgents(state); }}>
       <summary>${t("settings.provider.agents.title")}</summary>
       <p class="oc-settings__hint">${t("settings.provider.agents.desc")}</p>
       ${s.agents.length === 0 ? html`

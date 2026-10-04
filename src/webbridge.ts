@@ -12,7 +12,7 @@ import {
   resolveWebbridgeCrxPath,
   resolveWebbridgeDataDir,
 } from "./constants";
-import { loadRemotePins } from "./webbridge-pins";
+import { loadRemotePins, pinValuesOf } from "./webbridge-pins";
 import type {
   BrowserInstallSummary,
   BrowserMode,
@@ -130,42 +130,45 @@ function failClosedDelete(binaryPath: string, err: Error): never {
  * - expected 未给：按二进制文件名取内置 pin 表（生产路径）。
  * - expected === ""：显式跳过（测试 fixture 注入口，两条路径语义一致）。
  * - expected 非空：以调用方为准。
- * - extraPins：远端可更新清单（webbridge-pins.ts）；与内置表任一命中即通过——
- *   上游反复重建 latest 时无需发版即可修复（R68），仍是精确 sha256 比对。
+ * - extraPins：远端可更新清单（webbridge-pins.ts）；允许集合 = 内置 pin ∪ 远端条目
+ *   （T8 schema v2：远端条目可为多哈希数组，上游原地重建 latest 时最近几代并存），
+ *   actual 命中任意一枚即通过——仍是精确 sha256 比对，fail closed 不放宽。
  * - KIMI_WEBBRIDGE_SKIP_PIN=1：排障逃生门，直接放行。
- * 失败抛错并删除落盘文件（fail closed，不留可执行物）。
+ * 失败抛错并删除落盘文件（fail closed，不留可执行物）；错误信息附「刷新钉定」
+ * 应用内自救指引（远端清单可绕过发版周期修复 stale pin）。
  */
 export function verifyWebbridgeBinarySha256(
   binaryPath: string,
   filename: string,
   expected?: string,
-  extraPins?: Record<string, string> | null,
+  extraPins?: Record<string, string | string[]> | null,
 ): void {
   if (process.env.KIMI_WEBBRIDGE_SKIP_PIN === "1") return;
   if (expected === "") return;
   const embedded = expected ?? resolveWebbridgeBinaryPin(filename);
-  const remote = extraPins?.[filename] ?? null;
-  const pin = embedded ?? remote;
-  if (!pin) {
+  const allowed: string[] = [];
+  if (embedded) allowed.push(embedded.toLowerCase());
+  for (const h of pinValuesOf(extraPins?.[filename])) {
+    if (!allowed.includes(h)) allowed.push(h);
+  }
+  if (allowed.length === 0) {
     failClosedDelete(
       binaryPath,
       new Error(
         `webbridge 二进制缺少 sha256 钉定（${filename}）——拒绝执行未校验的下载产物；` +
-          `请更新 WEBBRIDGE_BINARY_SHA256_PINS 或设置 KIMI_WEBBRIDGE_SKIP_PIN=1 排障`,
+          `请更新 WEBBRIDGE_BINARY_SHA256_PINS，或在应用内「设置 → 高级 → WebBridge」点击` +
+          `「刷新钉定」拉取远端清单；排障可设 KIMI_WEBBRIDGE_SKIP_PIN=1`,
       ),
     );
   }
-  const actual = sha256FileSync(binaryPath);
-  const okEmbedded = actual.toLowerCase() === pin.toLowerCase();
-  const okRemote =
-    !okEmbedded && remote !== null && actual.toLowerCase() === remote.toLowerCase();
-  if (!okEmbedded && !okRemote) {
+  const actual = sha256FileSync(binaryPath).toLowerCase();
+  if (!allowed.includes(actual)) {
     failClosedDelete(
       binaryPath,
       new Error(
-        `webbridge 二进制 sha256 校验失败: ${filename}\n  expected ${pin}` +
-          `${remote && remote !== pin ? `\n  remote   ${remote}` : ""}\n  actual   ${actual}` +
-          `\n（上游 latest 内容已变化或传输被污染；升级需更新钉定表）`,
+        `webbridge 二进制 sha256 校验失败: ${filename}\n  expected ${allowed.join("\n           ")}\n  actual   ${actual}` +
+          `\n（上游 latest 内容已变化或传输被污染；可在「设置 → 高级 → WebBridge」点击「刷新钉定」` +
+          `在线更新钉定清单后重试，或将 CryoClaw 升级到最新版本）`,
       ),
     );
   }
@@ -489,8 +492,9 @@ export interface InstallOptions {
   /**
    * 远端钉定清单（R79 去重）：调用方已经 loadRemotePins 过时注入，命中即不再
    * 重复拉取（修复路径原先会拉两次）。undefined = 按生产逻辑自行加载。
+   * 值为 v1 单串或 v2 多哈希数组（T8），校验侧统一归一化成集合。
    */
-  remotePins?: Record<string, string> | null;
+  remotePins?: Record<string, string | string[]> | null;
   /** 本地二进制版本探测注入（测试 fixture；生产用 probeWebbridgeBinaryVersion）。 */
   versionProbe?: (binaryPath: string) => Promise<string | null>;
 }
@@ -634,16 +638,16 @@ export async function installWebbridge(
         : null;
 
   // 当前文件名的有效钉定（embedded + remote；fixture 语义与下载路径一致：
-  // 未给 = 内置 pin；空串 = 显式跳过）
-  const pinsForFilename = (): { embedded: string | null; remote: string | null } => ({
+  // 未给 = 内置 pin；空串 = 显式跳过）。remote 归一化为数组（T8 多哈希）。
+  const pinsForFilename = (): { embedded: string | null; remote: string[] } => ({
     embedded:
       options.expectedSha256 === undefined
         ? resolveWebbridgeBinaryPin(filename)
         : options.expectedSha256 || null,
     remote:
       options.expectedSha256 === undefined
-        ? remotePins?.[filename] ?? null
-        : null,
+        ? pinValuesOf(remotePins?.[filename])
+        : [],
   });
 
   const shaOfBinary = (p: string): string | null => {
@@ -666,7 +670,7 @@ export async function installWebbridge(
     const pinHit =
       actual !== null &&
       ((embedded !== null && actual === embedded.toLowerCase()) ||
-        (remote !== null && actual === remote.toLowerCase()));
+        remote.includes(actual));
     if (pinHit) {
       // 磁盘产物与当前钉定一致 = 已是已知安全版本（ETag 命中路径之外的
       // 第三条 skip 路径）；保留旧 manifest 的 etag 供更新检查比对。
@@ -727,7 +731,7 @@ export async function installWebbridge(
       const trusted =
         actual !== null &&
         ((embedded !== null && actual === embedded.toLowerCase()) ||
-          (remote !== null && actual === remote.toLowerCase()) ||
+          remote.includes(actual) ||
           (manifest?.sha256 && actual === manifest.sha256.toLowerCase()));
       if (trusted) {
         return {
@@ -758,16 +762,17 @@ export async function installWebbridge(
       const pin = options.expectedSha256 === undefined
         ? resolveWebbridgeBinaryPin(filename)
         : (options.expectedSha256 || null);
-      const remotePin = options.expectedSha256 === undefined ? remotePins?.[filename] ?? null : null;
+      const remoteList =
+        options.expectedSha256 === undefined ? pinValuesOf(remotePins?.[filename]) : [];
       const cacheOk = (() => {
-        if (!pin && !remotePin) return true; // 无钉定条目：按下载后校验的策略处理，此处放行
+        if (!pin && remoteList.length === 0) return true; // 无钉定条目：按下载后校验的策略处理，此处放行
         let actual: string;
         try {
           actual = sha256FileSync(binaryPath).toLowerCase();
         } catch {
           return false;
         }
-        return (!!pin && actual === pin.toLowerCase()) || (!!remotePin && actual === remotePin.toLowerCase());
+        return (!!pin && actual === pin.toLowerCase()) || remoteList.includes(actual);
       })();
       if (cacheOk) {
         return {
@@ -867,9 +872,9 @@ export interface WebbridgeSetupTaskDeps {
   existingBinaryPath?: string;
   /**
    * 远端可更新钉定清单（R68；由调用方 loadRemotePins 后注入）。
-   * 缺省 null = 只用内置表（测试路径不触网）。
+   * 缺省 null = 只用内置表（测试路径不触网）。值为 v1 单串或 v2 多哈希数组（T8）。
    */
-  remotePins?: Record<string, string> | null;
+  remotePins?: Record<string, string | string[]> | null;
 }
 
 export type SetupTaskOutcome =

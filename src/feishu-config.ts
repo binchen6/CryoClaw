@@ -1,4 +1,22 @@
+import * as path from "path";
+import { resolveGatewayPackageDir } from "./constants";
+import { isPluginPresentAnywhere, manifestOnlyPluginDirProbe } from "./plugin-presence";
+
 export const FEISHU_CHANNEL_ID = "feishu";
+export const FEISHU_PLUGIN_ID = "feishu";
+
+// 统一解析飞书插件目录。feishu 是内核 vendored 官方扩展：构建期由
+// scripts/package-resources.js（OFFICIAL_VENDOR_PLUGINS）把 @openclaw/feishu
+// 原样写入 gateway dist/extensions/feishu/，形态与 qqbot 相同。
+export function resolveFeishuPluginDir(): string {
+  return path.join(resolveGatewayPackageDir(), "dist", "extensions", FEISHU_PLUGIN_ID);
+}
+
+// 检查飞书插件是否可用（四根判定，见 plugin-presence.ts）。vendored 入口布局
+// 与 mirror 插件不同，探针只要求 openclaw.plugin.json（同 qqbot）。
+export function isFeishuPluginBundled(): boolean {
+  return isPluginPresentAnywhere(FEISHU_PLUGIN_ID, manifestOnlyPluginDirProbe);
+}
 
 type MutableRecord = Record<string, any>;
 

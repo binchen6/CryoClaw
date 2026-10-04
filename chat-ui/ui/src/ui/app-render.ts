@@ -71,6 +71,7 @@ declare global {
       pluginStoreSearch?: (params?: Record<string, unknown>) => Promise<any>;
       pluginStoreInstall?: (params?: Record<string, unknown>) => Promise<any>;
       pluginStoreUninstall?: (params?: Record<string, unknown>) => Promise<any>;
+      pluginStoreSetEnabled?: (params?: Record<string, unknown>) => Promise<any>;
       // 插件更新/详情/市场浏览（R91）
       pluginStoreCheckUpdates?: () => Promise<any>;
       pluginStoreUpdate?: (params?: Record<string, unknown>) => Promise<any>;

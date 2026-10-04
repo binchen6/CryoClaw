@@ -4,6 +4,7 @@ import * as path from "path";
 import { createRequire } from "node:module";
 import { writeFileAtomicSync } from "./atomic-write";
 import { resolveGatewayPackageDir, resolveUserExtensionsDir, resolveUserStateDir } from "./constants";
+import { isPluginPresentAnywhere } from "./plugin-presence";
 
 export const WEIXIN_PLUGIN_ID = "openclaw-weixin";
 export const WEIXIN_CHANNEL_ID = "openclaw-weixin";
@@ -22,14 +23,12 @@ export function resolveWeixinPluginDir(): string {
   return path.join(resolveUserExtensionsDir(), WEIXIN_PLUGIN_ID);
 }
 
-// 检查微信插件是否已 reconcile 到用户目录。reconcile 在 main process 启动时执行，
-// 因此本函数被调用时插件应已就位；缺失通常意味着 mirror 也缺（打包异常）。
+// 检查微信插件是否可用（四根判定，见 plugin-presence.ts）。reconcile 在 main
+// process 启动时执行，正常情况下 ~/.openclaw/extensions/ 已就位；用户从市场
+// 自装同 id 插件时镜像副本会让位（R93），此时按 npm/projects 根命中，
+// 不再误报「插件未安装」。
 export function isWeixinPluginBundled(): boolean {
-  const pluginDir = resolveWeixinPluginDir();
-  const hasEntry =
-    fs.existsSync(path.join(pluginDir, "index.ts")) ||
-    fs.existsSync(path.join(pluginDir, "dist", "index.js"));
-  return hasEntry && fs.existsSync(path.join(pluginDir, "openclaw.plugin.json"));
+  return isPluginPresentAnywhere(WEIXIN_PLUGIN_ID);
 }
 
 // 启用微信前必须先把 mirror 同步到 external plugin 目录，避免写出 gateway 不认识的 channel。

@@ -51,6 +51,8 @@ import { readUserConfig, writeUserConfig } from "./provider-config";
 import { resolveKimiSearchApiKey, readKimiApiKey, readKimiSearchDedicatedApiKey, writeKimiApiKey, ensureMemorySearchProxyConfig, healLegacyProxyProviders, AUTH_PROXY_API_KEY_SENTINEL } from "./kimi-config";
 import { reconcileCliOnAppLaunch } from "./cli-integration";
 import { reconcileExtensionsOnAppLaunch } from "./extension-mirror";
+import { reconcilePluginsAllowWithEnabled } from "./plugin-allow-sync";
+import { scheduleCacheWarmupAfterStartup } from "./preload-warmup";
 import { migrateLegacyFeishuPluginEntry } from "./feishu-config";
 import { migrateBrowserProfileForCurrentGateway } from "./browser-profile-config";
 import { uninstallGatewayDaemon, cleanGatewayLockFiles } from "./install-detector";
@@ -472,6 +474,9 @@ async function startGatewayAndShowMain(source: string, opts: StartMainOptions = 
   // 必须在 gateway 启动前 await——openclaw 首次扫描 plugin root 时要看到完整目录。
   // 函数自身吞掉所有错误，不会阻断启动。
   await reconcileExtensionsOnAppLaunch();
+  // T2：mirror reconcile 可能使 plugins.allow 非空，而历史 UI 开关/市场安装不同步
+  // allow → 启用插件被内核静默禁用。启动期全量对齐一次（allow 为空时 no-op）。
+  reconcilePluginsAllowWithEnabled();
 
   const running = await ensureGatewayRunning(source);
   if (!running) {
@@ -1463,6 +1468,8 @@ app.whenReady().then(async () => {
       });
       await startGatewayAndShowMain("app:startup");
       await earlyWindow;
+      // T3：gateway 健康后错峰预热插件/技能列表缓存（纯优化，内部吞错）
+      scheduleCacheWarmupAfterStartup();
       scheduleAutoKernelUpgradeIfNeeded();
       break;
     }

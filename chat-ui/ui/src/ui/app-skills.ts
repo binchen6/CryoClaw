@@ -206,6 +206,7 @@ async function installSkillFromStore(state: AppViewState, slug: string) {
     const result = await window.cryoclaw.skillStoreInstall({ slug });
     if (result?.success) {
       skillStoreState.installedSlugs.add(slug);
+      showToast(state, t("skillStore.installSuccess"));
     } else {
       showToast(state, t("skillStore.installFailed"));
     }
@@ -225,6 +226,7 @@ async function uninstallSkillFromStore(state: AppViewState, slug: string) {
     const result = await window.cryoclaw.skillStoreUninstall({ slug });
     if (result?.success) {
       skillStoreState.installedSlugs.delete(slug);
+      showToast(state, t("skillStore.uninstallSuccess"));
     } else {
       showToast(state, t("skillStore.uninstallFailed"));
     }
@@ -246,6 +248,7 @@ async function uninstallLocalSkill(state: AppViewState, slug: string) {
       // 刷新已安装列表和商店已安装标记
       void loadSkills(state);
       await refreshInstalledSlugs();
+      showToast(state, t("skillStore.uninstallSuccess"));
     } else {
       showToast(state, t("skillStore.uninstallFailed"));
     }

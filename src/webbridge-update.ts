@@ -402,8 +402,8 @@ export interface ApplyWebbridgeUpdateOptions {
   cdnBaseUrl?: string;
   onProgress?: ProgressHandler;
   maxRetries?: number;
-  /** 远端钉定清单提供者（测试注入；缺省 = loadRemotePins 强制刷新）。 */
-  remotePinsProvider?: () => Promise<Record<string, string> | null>;
+  /** 远端钉定清单提供者（测试注入；缺省 = loadRemotePins 强制刷新）。值为 v1 单串或 v2 多哈希数组（T8）。 */
+  remotePinsProvider?: () => Promise<Record<string, string | string[]> | null>;
   /** daemon 状态提供者（测试注入；缺省 = fetchWebbridgeDaemonStatus）。 */
   fetchDaemonStatus?: () => Promise<WebbridgeDaemonStatus | null>;
   /** skill 刷新注入（测试注入；缺省 = installWebbridgeSkill）。 */
@@ -483,7 +483,7 @@ async function applyWebbridgeUpdateLocked(
   const loadPins =
     options.remotePinsProvider ??
     (async () => (await loadRemotePins({ dataDir, forceRefresh: true }).catch(() => ({ pins: null }))).pins);
-  let remotePins: Record<string, string> | null = null;
+  let remotePins: Record<string, string | string[]> | null = null;
   try {
     remotePins = await loadPins();
   } catch {

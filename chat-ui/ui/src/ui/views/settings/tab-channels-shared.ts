@@ -9,6 +9,7 @@ import { t, tWithDetail } from "../../i18n.ts";
 import * as ipc from "../../data/ipc-bridge.ts";
 import { getConfigSnapshot, getCachedConfigSnapshot } from "../../controllers/config.ts";
 import { updateChannelEnabled, syncChannelEnabledFromSnapshot } from "./tab-channels.ts";
+import { extractBundledRuntimeView } from "./tab-channels.lib.ts";
 import { renderPairingPanel, type PairingPanelState } from "./tab-channels-pairing-panel.ts";
 
 // 渠道/记忆子面板 init 公共骨架（dingtalk / qqbot / wecom / weixin / memory 共用）：
@@ -36,15 +37,17 @@ export async function initChannelTabOnce(
   } catch {}
 }
 
-// bundled 运行态探测（dingtalk / qqbot / wecom 共用）：未打包时携带主进程提示文案。
+// bundled 运行态探测（dingtalk / qqbot / wecom / feishu 共用）：未打包时携带主进程提示文案。
+// 提取逻辑走 tab-channels.lib 的纯函数（含旧主进程缺键的 fail-open 语义），可独立单测。
 export async function loadBundledRuntimeState(
-  platform: "dingtalk" | "qqbot" | "wecom",
+  platform: "dingtalk" | "qqbot" | "wecom" | "feishu",
   st: { bundled: boolean; bundleMessage: string },
 ): Promise<void> {
   const runtime = await ipc.settingsGetChannelRuntimeState().catch(() => null);
-  if (runtime) {
-    st.bundled = runtime.bundled[platform];
-    st.bundleMessage = runtime.bundleMessages[platform] ?? "";
+  const view = extractBundledRuntimeView(runtime, platform);
+  if (view) {
+    st.bundled = view.bundled;
+    st.bundleMessage = view.bundleMessage;
   }
 }
 

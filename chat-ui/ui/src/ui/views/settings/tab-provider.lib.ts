@@ -498,3 +498,31 @@ export function applyKimiCodeLinkage(draft: Record<string, unknown>, proxyPort: 
     };
   }
 }
+
+// ── T6：派生视图记忆化 ──
+// 分组/回退/默认模型/总数历史在每次全应用重渲染时重算；config 快照在
+// controllers/config 缓存内对象身份稳定（配置变更才换新对象），用 WeakMap
+// 键控快照对象做记忆化，重渲染零重算、配置变更自动失效。
+
+export interface DerivedProviderView {
+  groups: ProviderGroup[];
+  fallbacks: string[];
+  fallbackRank: Map<string, number>;
+  defaultEntry: ProviderModelEntry | undefined;
+  totalModels: number;
+}
+
+const derivedViewCache = new WeakMap<object, DerivedProviderView>();
+
+export function deriveProviderView(snap: object & { config: Record<string, unknown> }): DerivedProviderView {
+  const hit = derivedViewCache.get(snap);
+  if (hit) return hit;
+  const groups = groupProvidersFromConfig(snap.config);
+  const fallbacks = readFallbacks(snap.config);
+  const fallbackRank = new Map(fallbacks.map((key, index) => [key, index + 1]));
+  const defaultEntry = groups.flatMap(g => g.providers).flatMap(p => p.models).find(m => m.isDefault);
+  const totalModels = groups.reduce((sum, g) => sum + g.providers.reduce((n, p) => n + p.models.length, 0), 0);
+  const view: DerivedProviderView = { groups, fallbacks, fallbackRank, defaultEntry, totalModels };
+  derivedViewCache.set(snap, view);
+  return view;
+}

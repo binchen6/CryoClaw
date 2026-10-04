@@ -1,0 +1,51 @@
+# refresh-webbridge-pins — WebBridge 钉定清单自动轮转（T8）
+#
+# 上游会原地重建 `.../webbridge/latest/releases/<name>`（同字节数、新 Go build
+# ID），exact-hash 钉定在重建窗口期过期 → 用户端「修复 WebBridge」fail closed。
+# 本 workflow 跑 scripts/refresh-webbridge-pins.mjs：下载各平台 latest 产物、
+# 计算 sha256、前插进 resources/webbridge-pins.json（每文件保留最近 5 枚），
+# 有变化时直接提交回 main（manifest 的信任锚 = repo main 写权限，详见
+# docs/webbridge-pins-runbook.md）。App 端修复/更新时拉取该文件，无需发版。
+name: refresh-webbridge-pins
+
+on:
+  # 手动触发：上游刚重建 latest、用户报 PIN_STALE 时的即时自救
+  workflow_dispatch:
+  # 发版后跑一次：新版本内嵌钉定表与清单对齐，顺带捕获发版窗口期的上游重建
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      # 清单的权威副本在 main：release 触发时 GITHUB_REF 是 tag，必须显式检 main
+      - uses: actions/checkout@v5
+        with:
+          ref: main
+
+      - uses: actions/setup-node@v5
+        with:
+          # 与产物运行时同 patch（package.json cryoclaw.node），与 tests.yml 一致
+          node-version: 24.21.0
+
+      # 脚本零依赖（全局 fetch + node:crypto），无需 npm ci
+      - name: Refresh webbridge pins
+        run: node scripts/refresh-webbridge-pins.mjs
+
+      # 无变化时 git diff 为空 → 跳过提交（避免空提交刷历史）
+      - name: Commit updated pins
+        run: |
+          if git diff --quiet -- resources/webbridge-pins.json; then
+            echo "pins unchanged; skip commit"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add resources/webbridge-pins.json
+          git commit -m "chore(webbridge): refresh binary sha256 pins [skip ci]"
+          git push origin main

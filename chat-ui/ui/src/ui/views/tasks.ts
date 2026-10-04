@@ -39,6 +39,8 @@ export type TasksProps = {
   statusFilter: TaskStatus | "all";
   cancellingIds: ReadonlySet<string>;
   connected: boolean;
+  /** T1：当前内核未注册 tasks.*，显示说明性空态（非错误） */
+  unsupported: boolean;
   tab: TasksViewTab;
   /** 定时 tab 内容（由装配层组装 renderCronView，避免 views 层反向依赖 app-cron） */
   cronSlot: TemplateResult;
@@ -366,6 +368,20 @@ function renderTaskRow(props: TasksProps, task: TaskSummary) {
 }
 
 function renderTasksRuns(props: TasksProps) {
+  // T1：当前内核未注册 tasks.*（如 2026.9.7）——说明性空态，隐藏统计/筛选/列表
+  if (props.unsupported) {
+    return html`
+      <div class="ts-header panel__header">
+        <div>
+          <h2 class="ts-title panel__title">${t("tasks.title")}</h2>
+          <p class="ts-sub panel__subtitle">${t("tasks.subtitle")}</p>
+        </div>
+      </div>
+      <div class="callout info ts-error">
+        <span class="ts-error__text">${t("tasks.unsupportedKernel")}</span>
+      </div>
+    `;
+  }
   // 统计条始终基于全量列表（deriveTaskStats 计数不受筛选影响）
   const stats = deriveTaskStats(props.tasks);
   // Agent 选项动态收集；列表刷新后选中 agent 可能已无任务 → 归一化为「全部」

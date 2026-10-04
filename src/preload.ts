@@ -137,6 +137,9 @@ contextBridge.exposeInMainWorld("cryoclaw", {
   // 立即更新：下载新二进制 → 钉定校验 → 换装 → 按需重启 daemon
   settingsWebbridgeUpdateApply: () =>
     ipcRenderer.invoke("settings:webbridge-update-apply"),
+  // 刷新钉定（T8）：绕过 24h 缓存强制拉取远端 WebBridge 钉定清单
+  settingsWebbridgeRefreshPins: () =>
+    ipcRenderer.invoke("settings:webbridge-refresh-pins"),
   settingsGetCliStatus: () => ipcRenderer.invoke("settings:get-cli-status"),
   settingsInstallCli: () => ipcRenderer.invoke("settings:install-cli"),
   settingsUninstallCli: () => ipcRenderer.invoke("settings:uninstall-cli"),
@@ -176,6 +179,9 @@ contextBridge.exposeInMainWorld("cryoclaw", {
     ipcRenderer.invoke("plugin-store:install", params),
   pluginStoreUninstall: (params?: Record<string, unknown>) =>
     ipcRenderer.invoke("plugin-store:uninstall", params),
+  // T2：启用/禁用统一写入（entries.enabled + plugins.allow 同步，主进程原子写）
+  pluginStoreSetEnabled: (params?: Record<string, unknown>) =>
+    ipcRenderer.invoke("plugin-store:set-enabled", params),
   // R91：检查更新（dry-run）/ 执行更新 / 插件详情 / 市场分类浏览
   pluginStoreCheckUpdates: () =>
     ipcRenderer.invoke("plugin-store:check-updates"),

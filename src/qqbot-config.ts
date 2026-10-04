@@ -1,6 +1,6 @@
-import * as fs from "fs";
 import * as path from "path";
 import { resolveGatewayPackageDir } from "./constants";
+import { isPluginPresentAnywhere, manifestOnlyPluginDirProbe } from "./plugin-presence";
 
 export const QQBOT_PLUGIN_ID = "qqbot";
 
@@ -11,8 +11,8 @@ export function resolveQqbotPluginDir(): string {
   return path.join(resolveGatewayPackageDir(), "dist", "extensions", QQBOT_PLUGIN_ID);
 }
 
-// 检查 QQ Bot 插件是否已经随应用一起打包。
+// 检查 QQ Bot 插件是否可用（四根判定，见 plugin-presence.ts）。vendored 形态
+// 入口布局与 mirror 插件不同，探针保持旧语义：只要求 openclaw.plugin.json。
 export function isQqbotPluginBundled(): boolean {
-  const pluginDir = resolveQqbotPluginDir();
-  return fs.existsSync(path.join(pluginDir, "openclaw.plugin.json"));
+  return isPluginPresentAnywhere(QQBOT_PLUGIN_ID, manifestOnlyPluginDirProbe);
 }

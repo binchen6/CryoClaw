@@ -6,14 +6,19 @@
 // electron 依赖 mock（对齐 skill-store.test.ts）：wecom-config → constants 链在
 // import 时会加载 electron。
 import { test, expect, vi } from "vitest";
-import { createWsFrameParser } from "./wecom-config";
+import * as fs from "fs";
+import * as path from "path";
+import { createWsFrameParser, isWecomPluginBundled, WECOM_PLUGIN_ID } from "./wecom-config";
 import type { WsFrameEvent } from "./wecom-config";
+import { useTempStateDir } from "./test-support/vitest-state-dir";
 
 vi.mock("electron", () => ({
   app: {
-    isPackaged: true,
+    // bundled 判定用例走 dev 分支：资源根 = getAppPath()/resources/targets/<platform-arch>，
+    // 测试内用 CRYOCLAW_TEST_APP_PATH 指到临时目录（mirror / gateway 根均可布置夹具）。
+    isPackaged: false,
     getVersion: () => "0.0.0",
-    getAppPath: () => "/app",
+    getAppPath: () => process.env.CRYOCLAW_TEST_APP_PATH || "/app",
   },
   ipcMain: { handle: vi.fn() },
 }));
@@ -164,4 +169,76 @@ test("close 帧：产出 closed 事件并终止解析", () => {
   ]);
   const events = parser.push(chunk);
   expect(events).toEqual([{ kind: "closed", reason: "bye" }]);
+});
+
+// ── isWecomPluginBundled 四根判定（T5） ──
+// 旧实现只查 ~/.openclaw/extensions/ 单根；R93「用户自装优先」分支在插件已存在于
+// ~/.openclaw/npm/projects/ 时会跳过/删除镜像副本，导致插件实际可加载却误报
+// 「组件缺失」。以下用例覆盖：任一根存在即 true、四根全空才 false。
+
+const presence = useTempStateDir("cryoclaw-wecom-presence-");
+
+// 写一个带清单 + 入口文件的假插件目录（entry 支持嵌套路径如 dist/index.js）
+function writePluginFixture(dir: string, entry = "index.ts"): void {
+  fs.mkdirSync(path.dirname(path.join(dir, entry)), { recursive: true });
+  fs.writeFileSync(path.join(dir, "openclaw.plugin.json"), JSON.stringify({ id: WECOM_PLUGIN_ID }), "utf-8");
+  fs.writeFileSync(path.join(dir, entry), "export default {};\n", "utf-8");
+}
+
+// 资源根夹具：dev 分支 resolveResourcesPath = <appPath>/resources/targets/<CRYOCLAW_TARGET>
+function useTempResourceRoot(): { appRoot: string; resources: string } {
+  const holder = { appRoot: "", resources: "" };
+  holder.appRoot = path.join(presence.dir, "app");
+  holder.resources = path.join(holder.appRoot, "resources", "targets", "test-target");
+  vi.stubEnv("CRYOCLAW_TEST_APP_PATH", holder.appRoot);
+  vi.stubEnv("CRYOCLAW_TARGET", "test-target");
+  return holder;
+}
+
+test("bundled：state extensions 目录存在插件 → true", () => {
+  writePluginFixture(path.join(presence.dir, "extensions", WECOM_PLUGIN_ID));
+  expect(isWecomPluginBundled()).toBe(true);
+});
+
+test("bundled：state 目录为空但 npm/projects 受管安装存在 → true（R93 用户自装让位镜像副本）", () => {
+  const projectDir = path.join(presence.dir, "npm", "projects", "proj-a");
+  fs.mkdirSync(path.join(projectDir, "node_modules", "@wecom", WECOM_PLUGIN_ID), { recursive: true });
+  fs.writeFileSync(
+    path.join(projectDir, "package.json"),
+    JSON.stringify({ dependencies: { [`@wecom/${WECOM_PLUGIN_ID}`]: "1.0.0" } }),
+    "utf-8",
+  );
+  // 受管安装根按清单声明的运行时 id 命中（包名 @wecom/... ≠ id）
+  fs.writeFileSync(
+    path.join(projectDir, "node_modules", "@wecom", WECOM_PLUGIN_ID, "openclaw.plugin.json"),
+    JSON.stringify({ id: WECOM_PLUGIN_ID, channels: ["wecom"] }),
+    "utf-8",
+  );
+  expect(isWecomPluginBundled()).toBe(true);
+});
+
+test("bundled：仅 mirror 目录存在（尚未 reconcile）→ true", () => {
+  const { resources } = useTempResourceRoot();
+  writePluginFixture(path.join(resources, "extensions-mirror", WECOM_PLUGIN_ID), path.join("dist", "index.js"));
+  expect(isWecomPluginBundled()).toBe(true);
+});
+
+test("bundled：仅 gateway dist/extensions 存在 → true", () => {
+  const { resources } = useTempResourceRoot();
+  writePluginFixture(
+    path.join(resources, "gateway", "node_modules", "openclaw", "dist", "extensions", WECOM_PLUGIN_ID),
+  );
+  expect(isWecomPluginBundled()).toBe(true);
+});
+
+test("bundled：四根全空 → false", () => {
+  useTempResourceRoot();
+  expect(isWecomPluginBundled()).toBe(false);
+});
+
+test("bundled：清单在但入口文件缺失 → false（默认探针要求清单 + 任一入口）", () => {
+  const dir = path.join(presence.dir, "extensions", WECOM_PLUGIN_ID);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, "openclaw.plugin.json"), JSON.stringify({ id: WECOM_PLUGIN_ID }), "utf-8");
+  expect(isWecomPluginBundled()).toBe(false);
 });

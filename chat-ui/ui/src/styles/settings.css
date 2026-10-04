@@ -1154,20 +1154,38 @@
 }
 .oc-provider-add-panel .oc-settings__form-group { margin-bottom: 0; }
 
-/* 模型能力编辑器（卡片内联 + 分组追加面板共用） */
-.oc-provider-edit-panel {
-  padding: var(--spacer-12);
-  border: var(--hairline);
-  border-radius: var(--radius-12);
-  background: var(--bg-secondary);
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacer-10);
-}
+/* 模型能力编辑器（面板体在 oc-caps-editor；标题为抽屉共用） */
 .oc-provider-edit-panel__title {
   font-size: var(--heading-xs);
   font-weight: var(--weight-semibold);
   color: var(--text-strong);
+}
+/* T6：模型能力编辑抽屉——编辑器历史渲染在 .oc-provider-card 的 flex 行内，
+   高面板撑高整行留下大片灰空白；改为 fixed 右侧抽屉 + 遮罩（点遮罩/Esc 关闭） */
+.oc-provider-edit-drawer__backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgb(0 0 0 / 0.35);
+  z-index: 60;
+}
+.oc-provider-edit-drawer {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  width: min(480px, 90vw);
+  z-index: 61;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacer-10);
+  padding: var(--spacer-16);
+  background: var(--bg-content, var(--bg-secondary));
+  border-left: 1px solid var(--border);
+  box-shadow: -8px 0 24px rgb(0 0 0 / 0.18);
+  overflow-y: auto;
+}
+.oc-provider-edit-drawer:focus {
+  outline: none;
 }
 .oc-caps-editor {
   display: flex;

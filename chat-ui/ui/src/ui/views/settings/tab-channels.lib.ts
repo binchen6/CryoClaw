@@ -58,6 +58,34 @@ export function isKimiCodeConfigured(config: Record<string, unknown> | null | un
   return typeof apiKey === "string" && apiKey.trim().length > 0;
 }
 
+/* ── bundled 运行态（settings:get-channel-runtime-state 结果映射） ── */
+
+export type BundledPlatform = "qqbot" | "dingtalk" | "wecom" | "weixin" | "feishu" | "kimiSearch";
+
+export interface BundledRuntimeView {
+  bundled: boolean;
+  bundleMessage: string;
+}
+
+/**
+ * 从运行态查询结果提取单个平台的 bundled 状态 + 提示文案。
+ * runtime 缺失（IPC 失败）或对应键不是 boolean（旧主进程未返回该平台，如
+ * feishu 为 T5 新增键）时返回 null，调用方保持默认值（bundled=true）——
+ * fail-open 只影响 banner 展示，不误阻断保存。
+ */
+export function extractBundledRuntimeView(
+  runtime: unknown,
+  platform: BundledPlatform,
+): BundledRuntimeView | null {
+  if (!isRecord(runtime)) return null;
+  const bundledMap = isRecord(runtime.bundled) ? runtime.bundled : null;
+  const bundled = bundledMap ? bundledMap[platform] : undefined;
+  if (typeof bundled !== "boolean") return null;
+  const messageMap = isRecord(runtime.bundleMessages) ? runtime.bundleMessages : null;
+  const message = messageMap ? messageMap[platform] : undefined;
+  return { bundled, bundleMessage: typeof message === "string" ? message : "" };
+}
+
 /* ── 飞书 ── */
 
 export const FEISHU_CHANNEL_ID = "feishu";

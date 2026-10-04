@@ -33,6 +33,7 @@ import { CN_CLAWHUB_MIRROR, isNetworkFailure, jsonGet, readSkillStoreRegistry } 
 import { readBuildConfigClawhubRegistry } from "./build-config";
 import { readCryoclawConfig, writeCryoclawConfig } from "./cryoclaw-config";
 import { readUserConfigForWrite, writeUserConfig } from "./provider-config";
+import { reconcilePluginsAllowWithEnabled, syncPluginAllowOnEnable } from "./plugin-allow-sync";
 
 const EXEC_TIMEOUT_MS = 90_000;
 const MAX_BUFFER = 8 * 1024 * 1024;
@@ -46,6 +47,14 @@ function invalidatePluginListCache() {
   listCache = null;
   // 市场浏览缓存同点失效：安装/卸载/更新会改变 installed 集合与推荐排除集
   marketBrowseCache = null;
+}
+
+/**
+ * T3：启动后预热——plugins list 冷启 ~15s（内核 CLI 全量加载），健康检查后
+ * 预拉一次入 10min 缓存，首进扩展页直接命中。失败抛给调用方（preload-warmup 吞错）。
+ */
+export async function warmPluginListCache(): Promise<void> {
+  await listInstalledPlugins();
 }
 
 // 市场浏览缓存（R91 性能审查）：单次浏览并发 14+ 路 HTTP（分类×关键词×family），
@@ -112,9 +121,17 @@ function execKernelCli(args: string[]): Promise<string> {
       },
       (err, stdout, stderr) => {
         if (err) {
-          const rejection = new Error(String(stderr ?? "").trim() || err.message) as Error & { stdout?: string; stderr?: string };
+          const rejection = new Error(String(stderr ?? "").trim() || err.message) as Error & {
+            stdout?: string;
+            stderr?: string;
+            code?: number | string;
+            killed?: boolean;
+          };
           rejection.stdout = String(stdout ?? "");
           rejection.stderr = String(stderr ?? "");
+          // T2：保留退出码/超时标记，供 check-updates 失败分档（classifyUpdateFailure）
+          rejection.code = (err as { code?: number | string }).code;
+          rejection.killed = (err as { killed?: boolean }).killed === true;
           reject(rejection);
           return;
         }
@@ -186,6 +203,45 @@ const UP_TO_DATE_LINE_RE = /^(?:hook pack )?"?([^"\s:]+)"? is up to date \(([^)]
 const FAILED_CHECK_LINE_RE = /^Failed to check (?:hook pack )?"?([^"\s:]+)"?: (.*?)(?:\.)?$/;
 const NO_TRACKED_MARK = "No tracked plugins or hook packs";
 const RESTART_HINT_MARK = "Restart the gateway";
+
+// T2：内核 CLI 非零退出的网络类 stderr 标记（undici/Node 网络错误串）。
+// check-updates 在「exec 失败 + 无 Failed 行 + 含网络标记」时据此触发全量 HTTP 回退。
+// 审查修复：不得含裸 network（stdout 进度文本如 "checking network" 会误触发回退并掩盖真实错误）
+const NETWORK_FAILURE_MARK_RE = /fetch failed|ETIMEDOUT|UND_ERR_|ECONNREFUSED|ENOTFOUND|EAI_AGAIN|socket hang up/i;
+
+/**
+ * T2：把 check-updates 的 exec 失败翻译成人话（纯函数）。
+ * 铁律：任何分支都不得回传 Node 的 `Command failed: …` 原文（stderr 为空时
+ * err.message 即该串，历史曾裸漏到 UI）。
+ */
+export function classifyUpdateFailure(args: {
+  combined: string;
+  exitCode: number | string | null;
+  timedOut?: boolean;
+}): string {
+  const clean = stripAnsiCodes(String(args.combined ?? ""));
+  if (args.timedOut) {
+    return "插件更新检查超时（90s）：内核 CLI 未在规定时间内返回，请稍后重试。";
+  }
+  if (/install policy|policy warning/i.test(clean)) {
+    return "内核安装策略确认未通过（非交互环境无法应答）。请改用页面内「全部更新」按钮重试。";
+  }
+  if (/invalid config|config invalid|failed to (load|parse) config/i.test(clean)) {
+    return "openclaw 配置校验失败，内核拒绝执行更新检查。请先在设置中修复配置后重试。";
+  }
+  if (/blocked|preflight/i.test(clean)) {
+    return "内核拦截了本次更新检查（blocked mutation preflight）。请确认 gateway 状态后重试。";
+  }
+  if (/Failed to check /.test(clean) || NETWORK_FAILURE_MARK_RE.test(clean)) {
+    return "无法连接 ClawHub 检查插件更新。请检查网络或代理后重试；也可在 设置 → 高级 配置可达的 ClawHub Registry 地址。";
+  }
+  const firstLine = clean
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .find((l) => l && !/DeprecationWarning|ExperimentalWarning|^$/.test(l));
+  const code = args.exitCode === null || args.exitCode === undefined ? "未知" : String(args.exitCode);
+  return `插件更新检查失败（CLI 退出码 ${code}）：${(firstLine ?? "无错误输出").slice(0, 160)}`;
+}
 
 // 去掉行尾句号（版本号本身不含空白，捕获组会把 `.` 一起吃进来）
 function trimTrailingDot(v: string): string {
@@ -732,6 +788,9 @@ export function registerPluginStoreIpc(): void {
         const note = `已恢复此前保存的插件配置（${restored.join(", ")}）`;
         warning = warning ? `${warning} ${note}` : note;
       }
+      // T2：安装/恢复后全量对齐 plugins.allow（allow 非空时内核会静默禁用不在列的
+      // enabled 插件；新装 id 与恢复的 enabled 条目一并并入）
+      reconcilePluginsAllowWithEnabled();
       return { success: true, ...(warning ? { warning } : {}) };
     } catch (err: any) {
       log.info(`[plugin-store] install ${name} failed: ${err?.message ?? err}`);
@@ -753,6 +812,29 @@ export function registerPluginStoreIpc(): void {
     }
   });
 
+  // T2：启用/禁用插件的统一写入通道。历史前端直接 config.patch 只写
+  // entries.<id>.enabled，allow 非空时内核静默禁用 → 「开关显示启用但实际不加载」。
+  // 主进程一次原子写：enabled + allow 同步（仅启用方向）+ 失效列表缓存。
+  ipcMain.handle("plugin-store:set-enabled", async (event, params) => {
+    if (!assertTrustedIpcSender(event, "plugin-store:set-enabled")) throw new Error("IPC sender not trusted");
+    const id = typeof params?.id === "string" ? params.id.trim() : "";
+    const enabled = Boolean(params?.enabled);
+    if (!isValidPluginName(id)) return { success: false, message: "invalid plugin id" };
+    try {
+      const { config, baseSnapshot } = readUserConfigForWrite();
+      const entries = (config.plugins ??= {}).entries ??= {};
+      const existing = typeof entries[id] === "object" && entries[id] !== null ? entries[id] : {};
+      entries[id] = { ...existing, enabled };
+      if (enabled) syncPluginAllowOnEnable(config, id);
+      writeUserConfig(config, { baseSnapshot });
+      invalidatePluginListCache();
+      return { success: true, data: { id, enabled } };
+    } catch (err: any) {
+      log.info(`[plugin-store] set-enabled ${id} failed: ${err?.message ?? err}`);
+      return { success: false, message: err?.message ?? String(err) };
+    }
+  });
+
   // R91：检查插件更新（dry-run，不落盘）。stdout 为人类可读文本，靠
   // parseUpdateOutcomes 解析；无可识别行且非 "No tracked" 视为解析失败而不是
   // 空结果（否则内核报错会被静默当成"全部最新"误导用户）。
@@ -763,11 +845,13 @@ export function registerPluginStoreIpc(): void {
   ipcMain.handle("plugin-store:check-updates", async (event) => {
     if (!assertTrustedIpcSender(event, "plugin-store:check-updates")) throw new Error("IPC sender not trusted");
     let stdout = "";
-    let execFailure: (Error & { stdout?: string; stderr?: string }) | null = null;
+    let execFailure: (Error & { stdout?: string; stderr?: string; code?: number | string; killed?: boolean }) | null = null;
     try {
-      stdout = await execKernelCli(["plugins", "update", "--dry-run", "--all"]);
+      // T2：dry-run 同样要带 install-policy ack——非 TTY 下内核 ack 模块返回 {}，
+      // 缺参时内核直接 exit 1 且 stderr 无结果行（历史裸漏 Command failed 的成因之一）
+      stdout = await execKernelCli(["plugins", "update", "--dry-run", "--all", "--acknowledge-install-policy-warning"]);
     } catch (err) {
-      execFailure = err as Error & { stdout?: string; stderr?: string };
+      execFailure = err as Error & { stdout?: string; stderr?: string; code?: number | string; killed?: boolean };
     }
     try {
       // 内核 exit 1 时结果行在 stderr（console.error），stdout 里可能有进度文本
@@ -785,11 +869,29 @@ export function registerPluginStoreIpc(): void {
         // 回退判为 up-to-date 的也算"检查成功"信号（否则全失败场景会被误报成
         // 输出不可解析）
         parsed.upToDateIds.push(...http.upToDateIds);
+      } else if (execFailure && NETWORK_FAILURE_MARK_RE.test(stripAnsiCodes(combined))) {
+        // T2：内核「无信号死亡」（超时 kill / 网络错误但无逐插件 Failed 行）时，
+        // 历史不走回退直接裸漏 Command failed；改为对全量已装 id 走 HTTP 回退。
+        // 审查修复：仅用已热列表缓存——CLI 刚失败，再起一次 plugins list（冷启 ~15s、
+        // 超时 90s）会叠加等待，且无本地版本时回退只会逐 id 记「本地版本未知」
+        const ids = listCache ? listCache.plugins.map((p) => p.id) : [];
+        if (ids.length > 0) {
+          log.info(`[plugin-store] check-updates exec failed with network markers — trying http fallback for ${ids.length} ids`);
+          const http = await checkUpdatesViaHttp(ids);
+          updatable = updatable.concat(http.updatable);
+          failed = http.stillFailed;
+          parsed.upToDateIds.push(...http.upToDateIds);
+        }
       }
       const sawAnySignal = parsed.sawNoTracked || updatable.length > 0 || parsed.upToDateIds.length > 0;
       if (!sawAnySignal && failed.length === 0) {
         if (execFailure) {
-          return { success: false, message: stripAnsiCodes(execFailure.message).slice(0, 300) || "插件更新检查失败" };
+          const exitCode = (execFailure as { code?: number | string }).code ?? null;
+          const timedOut = execFailure.killed === true || String(execFailure.code) === "ETIMEDOUT";
+          return {
+            success: false,
+            message: classifyUpdateFailure({ combined, exitCode, timedOut }),
+          };
         }
         const snippet = stripAnsiCodes(stdout).trim().slice(0, 200);
         return { success: false, message: `无法解析 plugins update --dry-run 输出：${snippet || "(empty)"}` };

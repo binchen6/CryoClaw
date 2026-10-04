@@ -59,8 +59,8 @@ export interface UsageData {
 // R4：渠道/搜索/记忆的 openclaw.json 读写已改走内核 config.get/config.patch，
 // 主进程只保留运行态查询（bundle 是否就绪、微信账号列表）。
 export interface ChannelRuntimeState {
-  bundled: { qqbot: boolean; dingtalk: boolean; wecom: boolean; weixin: boolean; kimiSearch: boolean };
-  bundleMessages: { qqbot?: string; dingtalk?: string; wecom?: string; weixin?: string; kimiSearch?: string };
+  bundled: { qqbot: boolean; dingtalk: boolean; wecom: boolean; weixin: boolean; feishu: boolean; kimiSearch: boolean };
+  bundleMessages: { qqbot?: string; dingtalk?: string; wecom?: string; weixin?: string; feishu?: string; kimiSearch?: string };
   weixinAccounts: string[];
 }
 
@@ -139,6 +139,13 @@ export interface WebbridgeUpdateApplyResult {
   code?: "WEBBRIDGE_BUSY" | "PIN_STALE" | "SWAP_FAILED" | "UPDATE_FAILED";
   message?: string;
   data?: { from: string | null; to: string | null; etag: string | null; daemonRestarted: boolean };
+}
+
+// 刷新钉定结果（settings:webbridge-refresh-pins，T8）：count = 远端清单内哈希总枚数
+export interface WebbridgeRefreshPinsResult {
+  success: boolean;
+  message?: string;
+  data?: { count: number; updatedAt: string; source?: string | null };
 }
 
 export interface CliStatus {
@@ -352,6 +359,7 @@ interface CryoClawBridgeExtended {
       settingsWebbridgeVersionStatus?: () => Promise<any>;
       settingsWebbridgeUpdateCheck?: (params?: Record<string, unknown>) => Promise<any>;
       settingsWebbridgeUpdateApply?: () => Promise<any>;
+      settingsWebbridgeRefreshPins?: () => Promise<any>;
       // Settings: Backup
       settingsListConfigBackups?: () => Promise<any>;
       settingsExportOpenclawState?: () => Promise<any>;
@@ -815,6 +823,12 @@ export async function settingsWebbridgeUpdateCheck(
 // 立即更新：下载新二进制 → 钉定校验 → 换装 → 按需重启 daemon。失败不抛异常，返回结构化 code。
 export async function settingsWebbridgeUpdateApply(): Promise<WebbridgeUpdateApplyResult> {
   const result = (await oc().settingsWebbridgeUpdateApply()) as WebbridgeUpdateApplyResult;
+  return result ?? { success: false, message: "no response" };
+}
+
+// 刷新钉定（T8）：绕过 24h 缓存强制拉取远端钉定清单。失败不抛异常，返回结构化结果。
+export async function settingsWebbridgeRefreshPins(): Promise<WebbridgeRefreshPinsResult> {
+  const result = (await oc().settingsWebbridgeRefreshPins()) as WebbridgeRefreshPinsResult;
   return result ?? { success: false, message: "no response" };
 }
 

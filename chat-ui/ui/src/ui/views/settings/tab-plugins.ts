@@ -147,13 +147,39 @@ function init(state: AppViewState) {
   void loadInstalled(state);
 }
 
-// 启用/禁用：config.patch plugins.entries.<id>.enabled（与渠道 tab 同一写入路径）
+// 启用/禁用：T2 起优先走主进程 plugin-store:set-enabled（entries.enabled 与
+// plugins.allow 一次原子写——allow 非空时内核会静默禁用不在列的 enabled 插件，
+// 历史仅 config.patch 写 enabled 导致「开关显示启用但实际不加载」）；
+// bridge 缺失（旧壳/浏览器调试）时回退 config.patch 原路径。
 async function togglePluginEnabled(state: AppViewState, plugin: InstalledPluginView, next: boolean) {
   if (s.togglingId) return;
   s.togglingId = plugin.id;
   s.error = null;
   s.successMsg = null;
   state.requestUpdate();
+  if (window.cryoclaw?.pluginStoreSetEnabled) {
+    try {
+      const result = await window.cryoclaw.pluginStoreSetEnabled({ id: plugin.id, enabled: next });
+      if (result?.success) {
+        s.installed = s.installed.map((p) => (p.id === plugin.id ? { ...p, enabled: next } : p));
+        s.successMsg = t("settings.plugins.enableHint");
+        showToast(state, next ? t("settings.plugins.enabledToast") : t("settings.plugins.disabledToast"));
+        // T3：后台回拉主进程列表校验内核实际状态（白名单静默禁用等漂移在此显形）——
+        // 不 await：冷缓存下 plugins list 需 ~15s，开关不能因此卡住（审查修复）
+        void loadInstalled(state);
+      } else {
+        s.error = result?.message ?? t("settings.error.saveFailed");
+      }
+      s.togglingId = null;
+      state.requestUpdate();
+      return;
+    } catch (err: any) {
+      s.error = tWithDetail("settings.error.saveFailed", err?.message);
+      s.togglingId = null;
+      state.requestUpdate();
+      return;
+    }
+  }
   const outcome = await runConfigPatch(state, (draft) => {
     const plugins = (draft.plugins ??= {}) as Record<string, any>;
     const entries = (plugins.entries ??= {}) as Record<string, any>;

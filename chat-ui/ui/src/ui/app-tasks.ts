@@ -98,6 +98,7 @@ export function renderTasksView(state: AppViewState) {
     statusFilter: state.tasksStatusFilter,
     cancellingIds: state.tasksCancellingIds,
     connected: state.connected,
+    unsupported: state.tasksUnsupported === true,
     tab: tasksViewTab,
     autoRefresh: tasksAutoRefreshEnabled,
     cronJobCount: state.cronJobs.filter((j) => j.enabled !== false && !isExpiredOneShot(j)).length,

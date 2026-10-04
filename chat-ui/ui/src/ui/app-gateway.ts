@@ -44,6 +44,8 @@ import { loadSessions } from "./controllers/sessions.ts";
 import { applySessionsChangedPatch } from "./controllers/sessions-patch.ts";
 import { loadWorktrees } from "./controllers/worktrees.ts";
 import { applyTaskEvent, loadTasks } from "./controllers/tasks.ts";
+import { supportsMethod } from "./controllers/capabilities.ts";
+import { loadSkills } from "./controllers/skills.ts";
 import {
   handleProgressCardChanged,
   loadProgressCard,
@@ -570,11 +572,22 @@ export function connectGateway(host: GatewayHost) {
       void loadCommands(host.client!, { force: true });
       // 加载执行权限模式（聊天页三态）
       void (host as unknown as OpenClawApp).loadExecMode();
+      // T3：idle 预取已装技能 status——技能视图历史首开才付全量 RPC 延迟
+      const ric = (window as unknown as { requestIdleCallback?: (cb: () => void) => number }).requestIdleCallback;
+      if (typeof ric === "function") {
+        ric(() => {
+          void loadSkills(host as unknown as Parameters<typeof loadSkills>[0]);
+        });
+      }
       void refreshActiveTab(host as unknown as Parameters<typeof refreshActiveTab>[0]);
       // 注册定时轮询并启动客户端定时器（"cron" 是 tick handler 标识，非视图 id，勿当死接线删）
       registerTickHandler("cron", () => loadCronJobs(host as unknown as Parameters<typeof loadCronJobs>[0]));
       registerTickHandler("sessions", () => loadSessionsAndReconcile(host));
-      registerTickHandler("tasks", () => loadTasks(host as unknown as OpenClawApp));
+      // T1 能力门控：内核未注册 tasks.*（2026.9.7+）时不注册 ticker，避免 30s 死轮询；
+      // loadTasks 内部另有同门控兜底（视图手动刷新路径）
+      if (supportsMethod(host.hello, "tasks.list")) {
+        registerTickHandler("tasks", () => loadTasks(host as unknown as OpenClawApp));
+      }
       registerTickHandler("stream-watchdog", () => checkStalledStream(host));
       registerTickHandler("question-expiry", () => {
         // R61：pending 问题过期本地标记（等待 resolved/list 事件收敛），有变化才触发重渲染

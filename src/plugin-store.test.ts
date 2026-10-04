@@ -16,6 +16,7 @@ import {
   mergeMarketResults,
   isValidPluginName,
   comparePluginVersions,
+  classifyUpdateFailure,
   PLUGIN_MARKET_CATEGORY_KEYWORDS,
 } from "./plugin-store.ts";
 import { validateSkillSlug } from "./skill-store.ts";
@@ -255,4 +256,34 @@ test("parseSlugMatches：非歧义 body / 坏 JSON / 空输入返回空", () => 
   assert.deepEqual(parseSlugMatches(JSON.stringify({ code: "OTHER" })), []);
   assert.deepEqual(parseSlugMatches("not json"), []);
   assert.deepEqual(parseSlugMatches(undefined), []);
+});
+
+// ── T2 classifyUpdateFailure ─────────────────────────────────────────
+
+test("classifyUpdateFailure：分档翻译且永不裸漏 Command failed", () => {
+  const cases: Array<[string, { combined: string; exitCode: number | string | null; timedOut?: boolean }, string]> = [
+    ["超时", { combined: "", exitCode: "ETIMEDOUT", timedOut: true }, "超时"],
+    ["安装策略", { combined: "install policy warning requires acknowledgement", exitCode: 1 }, "安装策略"],
+    ["配置校验", { combined: "Error: invalid config at plugins.entries", exitCode: 1 }, "配置校验"],
+    ["blocked", { combined: "blocked by mutation preflight", exitCode: 1 }, "拦截"],
+    ["网络(Failed 行)", { combined: "Failed to check foo: fetch failed | Connect Timeout Error", exitCode: 1 }, "ClawHub"],
+    ["网络(undici)", { combined: "TypeError: fetch failed\ncause: UND_ERR_CONNECT_TIMEOUT", exitCode: 1 }, "ClawHub"],
+  ];
+  for (const [label, input, expectIncludes] of cases) {
+    const msg = classifyUpdateFailure(input);
+    assert.ok(msg.includes(expectIncludes), `${label} 档位文案应含「${expectIncludes}」: ${msg}`);
+    assert.ok(!msg.includes("Command failed"), `${label} 不得裸漏 Node 原文`);
+  }
+});
+
+test("classifyUpdateFailure：通用兜底带退出码与首行有意义 stderr", () => {
+  const msg = classifyUpdateFailure({
+    combined: "(node:12) DeprecationWarning: xx\nSome unknown kernel error line\n",
+    exitCode: 3,
+  });
+  assert.ok(msg.includes("退出码 3"), msg);
+  assert.ok(msg.includes("Some unknown kernel error line"), msg);
+  assert.ok(!msg.includes("Command failed"), msg);
+  const empty = classifyUpdateFailure({ combined: "", exitCode: 1 });
+  assert.ok(empty.includes("无错误输出"), empty);
 });

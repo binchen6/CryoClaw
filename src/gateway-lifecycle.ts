@@ -21,6 +21,15 @@ export function shouldAbortStartAfterPrestart(state: GatewayStateLiteral): boole
 }
 
 /**
+ * T4：端口释放等待间隔（ms）——100ms 起步、指数退避封顶 500ms。
+ * 快乐路径（旧 gateway 已退出、端口首轮即释放）历史固定 500ms 白等；
+ * 10 轮预算合计 4.2s ≤ 历史 5s，上限不扩大。
+ */
+export function portWaitDelayMs(attempt: number): number {
+  return Math.min(500, 100 * 2 ** Math.max(0, attempt));
+}
+
+/**
  * P0-1：stop() 遇到「starting + 无 proc」半死态时，是否可直接强制复位 stopped。
  * 仅当无子进程句柄且无在途 doStart（预启动窗口，proc 尚未赋值）时才允许——
  * 有在途启动时强转 stopped 会让 doStart 在 stop() 返回后继续 spawn 出孤儿，

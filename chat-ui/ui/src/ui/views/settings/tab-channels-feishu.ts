@@ -16,7 +16,7 @@ import { getConfigSnapshot, getCachedConfigSnapshot } from "../../controllers/co
 import { runConfigPatch } from "./tab-patch.ts";
 import { extractFeishuView, applyFeishuSave, looksLikeFeishuGroupId } from "./tab-channels.lib.ts";
 import { loadPairingData, type PairingPanelState } from "./tab-channels-pairing-panel.ts";
-import { markChannelSaved, renderChannelSaveFooter, renderAddGroupDialog, renderChannelPairingSection, createChannelPanelBaseState, runChannelToggle, runChannelSave, verifyChannelCredentials, openChannelAddGroupDialog, closeChannelAddGroupDialog, confirmChannelAddGroup } from "./tab-channels-shared.ts";
+import { markChannelSaved, renderChannelSaveFooter, renderAddGroupDialog, renderChannelPairingSection, createChannelPanelBaseState, runChannelToggle, runChannelSave, verifyChannelCredentials, loadBundledRuntimeState, openChannelAddGroupDialog, closeChannelAddGroupDialog, confirmChannelAddGroup } from "./tab-channels-shared.ts";
 
 // Feishu 面板状态必须可整体回滚，避免未保存表单和配对缓存跨会话残留。
 function createFeishuState() {
@@ -28,6 +28,10 @@ function createFeishuState() {
     dmScope: "main",
     groupPolicy: "disabled",
     groupAllowFrom: [] as string[],
+    // bundled 运行态（settings:get-channel-runtime-state）：默认按已打包处理，
+    // 探测结果返回前不误显示「组件缺失」banner。
+    bundled: true,
+    bundleMessage: "",
     ...createChannelPanelBaseState(),
   };
 }
@@ -62,6 +66,10 @@ async function init(state: AppViewState) {
       loadFromSnapshot();
       state.requestUpdate();
     }
+    // bundled 运行态探测（T5）：主进程四根判定 + throttled reconcile 自愈，
+    // 缺组件时渲染 banner 并阻断保存（同 wecom/dingtalk/qqbot 面板）。
+    await loadBundledRuntimeState("feishu", s);
+    state.requestUpdate();
     refreshFeishuPairing(state);
   } catch {}
 }
@@ -74,6 +82,7 @@ export async function refreshFeishuPairing(state: AppViewState) {
 /** 统一保存：主进程验证凭据 → config.patch 写入。 */
 async function saveFeishu(state: AppViewState, enabled: boolean): Promise<boolean> {
   if (enabled) {
+    if (!s.bundled) { s.error = s.bundleMessage || t("settings.channels.feishu.notBundled"); return false; }
     if (!(await verifyChannelCredentials(s, { provider: "feishu", appId: s.appId, appSecret: s.appSecret }))) return false;
   }
   let rejected = false;
@@ -141,6 +150,7 @@ export function renderChannelFeishu(state: AppViewState) {
         </div>
       </div>
 
+      ${!s.bundled ? html`<oc-message-box .message=${s.bundleMessage || t("settings.channels.feishu.notBundled")} .type=${"info"} .visible=${true}></oc-message-box>` : nothing}
 
       <div class="oc-settings__form-group">
         <oc-toggle-switch .label=${t("settings.channels.enable")} .checked=${s.enabled}

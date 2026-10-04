@@ -54,6 +54,8 @@ type RepairModalState =
       message?: string;
       messageKind?: "error" | "info";
       saving?: boolean;
+      // T8：修复因钉定过期失败 → modal 内显示「刷新钉定」按钮
+      pinStale?: boolean;
     };
 
 // Advanced 页状态必须可整体回滚，避免切换 CLI/登录项后的脏状态跨会话残留。
@@ -104,6 +106,10 @@ function createAdvancedState() {
     wbAutoUpdate: true,
     wbVersionMessage: null as string | null,
     wbVersionMessageKind: "info" as "info" | "error",
+    // ── T8「刷新钉定」──
+    // 更新流程命中 PIN_STALE → 版本卡片显示「刷新钉定」按钮
+    wbPinStale: false,
+    wbRefreshPinsBusy: false,
   };
 }
 
@@ -260,6 +266,7 @@ async function onWbCheckUpdate(state: AppViewState) {
 async function onWbApplyUpdate(state: AppViewState) {
   if (s.wbApplyBusy || s.wbCheckBusy) return;
   s.wbApplyBusy = true;
+  s.wbPinStale = false;
   setWbVersionMessage(null);
   state.requestUpdate();
   try {
@@ -270,7 +277,9 @@ async function onWbApplyUpdate(state: AppViewState) {
     } else if (res.code === "WEBBRIDGE_BUSY") {
       setWbVersionMessage(t("settings.advanced.wbUpdateBusy"), "error");
     } else if (res.code === "PIN_STALE" || isWebbridgePinStaleError(res.message)) {
-      // 钉定校验失败对用户不可操作（消息含内部哈希）→ 提示升级应用
+      // 钉定校验失败（消息含内部哈希，对用户不可操作）→ 提示升级应用，
+      // 并显示「刷新钉定」按钮（T8）：远端清单可在不发版的情况下修复 stale pin
+      s.wbPinStale = true;
       setWbVersionMessage(t("settings.advanced.wbRepairPinStale"), "error");
     } else if (res.code === "SWAP_FAILED") {
       // 换装阶段失败（文件被安全软件/占用锁定）：下载与校验其实已成功，提示重试即可
@@ -288,6 +297,79 @@ async function onWbApplyUpdate(state: AppViewState) {
     setWbVersionMessage(tWithDetail("settings.advanced.wbUpdateFailed", e?.message), "error");
   } finally {
     s.wbApplyBusy = false;
+    state.requestUpdate();
+  }
+}
+
+// ── T8「刷新钉定」：force 拉取远端钉定清单（绕 24h 缓存），成功后自动重试原流程 ──
+
+// 版本卡片入口（PIN_STALE banner 旁）：刷新成功后立即重跑「立即更新」流程。
+async function onWbRefreshPins(state: AppViewState) {
+  if (s.wbRefreshPinsBusy || s.wbApplyBusy || s.wbCheckBusy) return;
+  s.wbRefreshPinsBusy = true;
+  setWbVersionMessage(t("settings.advanced.wbRefreshPinsBusy"));
+  state.requestUpdate();
+  try {
+    const res = await ipc.settingsWebbridgeRefreshPins();
+    if (!res.success) {
+      setWbVersionMessage(
+        t("settings.advanced.wbRefreshPinsFailed") + (res.message ? `: ${res.message}` : ""),
+        "error",
+      );
+      return;
+    }
+    s.wbPinStale = false;
+    state.requestUpdate();
+    // 清单已刷新 → 自动重试刚才因钉定过期失败的更新流程
+    await onWbApplyUpdate(state);
+    // 审查修复：onWbApplyUpdate 开头会清空版本消息；若更新流程未产出结果文案，
+    // 把「钉定已刷新」确认补回（否则用户看不到刷新成功的反馈）
+    if (!s.wbVersionMessage) {
+      setWbVersionMessage(
+        t("settings.advanced.wbRefreshPinsDone").replace(/\{count\}/g, String(res.data?.count ?? 0)),
+      );
+    }
+  } catch (e: any) {
+    setWbVersionMessage(tWithDetail("settings.advanced.wbRefreshPinsFailed", e?.message), "error");
+  } finally {
+    s.wbRefreshPinsBusy = false;
+    state.requestUpdate();
+  }
+}
+
+// 修复 modal 入口：刷新成功后立即重跑「修复并启用」流程；失败则把错误写进 modal 消息区。
+async function onModalRefreshPins(state: AppViewState) {
+  const m = s.repairModal;
+  if (!m || m.view !== "repair" || s.wbRefreshPinsBusy) return;
+  s.wbRefreshPinsBusy = true;
+  s.repairModal = { ...m, saving: true };
+  state.requestUpdate();
+  try {
+    const res = await ipc.settingsWebbridgeRefreshPins();
+    if (res.success) {
+      s.wbRefreshPinsBusy = false;
+      // 清单已刷新 → 重跑当前修复流程（onRepairConfirm 自管 saving 与消息）
+      await onRepairConfirm(state);
+      return;
+    }
+    s.repairModal = {
+      ...m,
+      saving: false,
+      pinStale: true,
+      message:
+        t("settings.advanced.wbRefreshPinsFailed") + (res.message ? `: ${res.message}` : ""),
+      messageKind: "error",
+    };
+  } catch (e: any) {
+    s.repairModal = {
+      ...m,
+      saving: false,
+      pinStale: true,
+      message: tWithDetail("settings.advanced.wbRefreshPinsFailed", e?.message),
+      messageKind: "error",
+    };
+  } finally {
+    s.wbRefreshPinsBusy = false;
     state.requestUpdate();
   }
 }
@@ -450,10 +532,13 @@ async function onRepairConfirm(state: AppViewState) {
         messageKind: "error",
       };
     } else {
+      // T8：钉定过期导致的修复失败 → 标记 pinStale，modal 内出现「刷新钉定」按钮
+      const pinStale = isWebbridgePinStaleError(res.message);
       s.repairModal = {
         ...m,
         saving: false,
-        message: isWebbridgePinStaleError(res.message)
+        pinStale,
+        message: pinStale
           ? t("settings.advanced.wbRepairPinStale")
           : t("settings.advanced.wbRepairFailed") + (res.message ? ": " + res.message : ""),
         messageKind: "error",
@@ -574,6 +659,12 @@ function renderRepairModal(state: AppViewState) {
           ${m.message ?? "—"}
         </div>
         <div class="wb-modal-actions">
+          ${m.pinStale
+            ? html`<button type="button" class="btn" ?disabled=${m.saving || s.wbRefreshPinsBusy}
+                @click=${() => { void onModalRefreshPins(state); }}>
+                ${s.wbRefreshPinsBusy ? t("settings.advanced.wbRefreshPinsBusy") : t("settings.advanced.wbRefreshPins")}
+              </button>`
+            : nothing}
           <button type="button" class="btn" data-dialog-dismiss ?disabled=${m.saving} @click=${close}>
             ${t("settings.advanced.wbRepairCancel")}
           </button>
@@ -636,6 +727,13 @@ function renderWebbridgeVersionCard(state: AppViewState) {
               ?disabled=${s.wbCheckBusy || s.wbApplyBusy}
               @click=${() => { void onWbApplyUpdate(state); }}>
               ${s.wbApplyBusy ? t("settings.advanced.wbUpdateApplying") : t("settings.advanced.wbUpdateApply")}
+            </button>`
+          : nothing}
+        ${s.wbPinStale
+          ? html`<button class="btn btn--sm"
+              ?disabled=${s.wbRefreshPinsBusy || s.wbCheckBusy || s.wbApplyBusy}
+              @click=${() => { void onWbRefreshPins(state); }}>
+              ${s.wbRefreshPinsBusy ? t("settings.advanced.wbRefreshPinsBusy") : t("settings.advanced.wbRefreshPins")}
             </button>`
           : nothing}
       </div>

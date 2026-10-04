@@ -14,6 +14,11 @@
 // 安全边界：清单来自我们自己的仓库（与 App 发布同信任级），走 https，限制体积与超时；
 // JSON 结构严格校验（值必须是 64 位 hex），非法清单整体丢弃。清单不可达时回退内置表，
 // 两者都不匹配则维持 fail closed。
+//
+// T8 schema v2：`pins[filename]` 接受 `string | string[]`——上游会**原地反复重建**
+// latest 产物，单哈希钉定在重建窗口期必然过期。多哈希让清单同时保留最近几代产物
+// （写入侧 scripts/refresh-webbridge-pins.mjs 保留最近 5 枚），任意一枚命中即通过，
+// 仍是精确 sha256 比对（fail closed 不放宽）。读取侧向后兼容 v1 单串形态。
 import * as fs from "fs";
 import * as path from "path";
 import * as https from "https";
@@ -45,11 +50,13 @@ export function resolvePinsUrls(): string[] {
 }
 
 /**
- * 严格解析清单 JSON：`{ "<filename>": "<64-hex sha256>", ... }`。
- * 任何非法条目（非 64 hex / 非字符串）都会导致整体返回 null——宁可不更新也不能
- * 让半截清单放宽校验。
+ * 严格解析清单 JSON（T8 schema v2）：
+ *   `{ "<filename>": "<64-hex>" | ["<64-hex>", ...], ... }`
+ * v1 单串值读作单元素数组（向后兼容）；数组值逐项校验、去重、上限 MAX_PINS_PER_FILE。
+ * 任何非法条目（非 64 hex / 非字符串或字符串数组 / 空数组 / 超上限）都会导致整体
+ * 返回 null——宁可不更新也不能让半截清单放宽校验。
  */
-export function parsePinsJson(raw: string): Record<string, string> | null {
+export function parsePinsJson(raw: string): PinValues | null {
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
@@ -63,18 +70,56 @@ export function parsePinsJson(raw: string): Record<string, string> | null {
     typeof obj.pins === "object" && obj.pins !== null && !Array.isArray(obj.pins)
       ? (obj.pins as Record<string, unknown>)
       : obj;
-  const out: Record<string, string> = {};
+  const out: PinValues = {};
   for (const [key, value] of Object.entries(candidate)) {
-    if (key === "version" || key === "updatedAt") continue; // 允许的元数据字段
-    if (typeof value !== "string" || !/^[0-9a-f]{64}$/i.test(value)) return null;
-    out[key] = value.toLowerCase();
+    if (key === "version" || key === "updatedAt" || key === "note") continue; // 允许的元数据字段
+    const list = normalizePinValue(value);
+    if (!list) return null;
+    out[key] = list;
   }
   return Object.keys(out).length > 0 ? out : null;
 }
 
+/** 每枚文件名的哈希上限（写入侧保留最近 5 枚；读取侧同限，防清单被塞爆）。 */
+export const MAX_PINS_PER_FILE = 5;
+
+const PIN_HEX_RE = /^[0-9a-f]{64}$/i;
+
+/** 归一化后的钉定表：filename → 小写 64-hex 数组（v1 单串读作单元素数组）。 */
+export type PinValues = Record<string, string[]>;
+
+/** 严格归一化单个钉定值：非法（含空数组/超上限/非 hex 项）返回 null。 */
+function normalizePinValue(value: unknown): string[] | null {
+  const toHex = (v: unknown): string | null =>
+    typeof v === "string" && PIN_HEX_RE.test(v) ? v.toLowerCase() : null;
+  if (typeof value === "string") {
+    const h = toHex(value);
+    return h ? [h] : null;
+  }
+  if (Array.isArray(value)) {
+    if (value.length === 0 || value.length > MAX_PINS_PER_FILE) return null;
+    const out: string[] = [];
+    for (const item of value) {
+      const h = toHex(item);
+      if (!h) return null;
+      if (!out.includes(h)) out.push(h);
+    }
+    return out;
+  }
+  return null;
+}
+
+/**
+ * 宽容归一化（校验侧用，webbridge.ts verify 路径）：任意钉定条目 → 小写 hex 数组。
+ * 非法/缺失返回空数组——由调用方按「无远端钉定」继续 fail-closed 判定。
+ */
+export function pinValuesOf(value: unknown): string[] {
+  return normalizePinValue(value) ?? [];
+}
+
 interface PinsCache {
   fetchedAt: number;
-  pins: Record<string, string>;
+  pins: PinValues;
 }
 
 function readCache(cachePath: string): PinsCache | null {
@@ -82,7 +127,14 @@ function readCache(cachePath: string): PinsCache | null {
     const parsed = JSON.parse(fs.readFileSync(cachePath, "utf-8"));
     if (typeof parsed?.fetchedAt !== "number") return null;
     if (typeof parsed?.pins !== "object" || parsed.pins === null) return null;
-    return { fetchedAt: parsed.fetchedAt, pins: parsed.pins as Record<string, string> };
+    // v1 缓存（值为单串）读时归一化成数组；任一条目非法 → 整份缓存作废重拉。
+    const pins: PinValues = {};
+    for (const [key, value] of Object.entries(parsed.pins as Record<string, unknown>)) {
+      const list = normalizePinValue(value);
+      if (!list) return null;
+      pins[key] = list;
+    }
+    return { fetchedAt: parsed.fetchedAt, pins };
   } catch {
     return null;
   }
@@ -159,30 +211,44 @@ export interface LoadRemotePinsOptions {
   maxAgeMs?: number;
   /** 测试注入口：替换实际网络拉取。 */
   fetchText?: (url: string) => Promise<string>;
-  /** 测试注入口：忽略新鲜缓存强制刷新。 */
+  /** 忽略新鲜缓存强制刷新（T8「刷新钉定」IPC 与更新管线用）。 */
   forceRefresh?: boolean;
+  /** forceRefresh 的别名（语义相同；两者任一为 true 即强制）。 */
+  force?: boolean;
   logger?: { info: (m: string) => void };
 }
 
 export interface RemotePinsResult {
-  pins: Record<string, string> | null;
+  pins: PinValues | null;
   source: string | null;
 }
 
+// 强制刷新时把 raw.githubusercontent 排到 jsDelivr 前面：jsDelivr 的 CDN 缓存
+// 有小时级滞后，而 force 场景（上游刚重建 latest / 用户点了「刷新钉定」）恰恰
+// 最需要拿到最新清单——打到 jsDelivr 缓存等于没刷新。非强制路径维持
+// jsDelivr 优先（国内可达性优于 raw）。
+function orderPinsUrls(urls: string[], force: boolean): string[] {
+  if (!force) return urls;
+  const raw = urls.filter((u) => u.includes("raw.githubusercontent.com"));
+  const rest = urls.filter((u) => !u.includes("raw.githubusercontent.com"));
+  return [...raw, ...rest];
+}
+
 /**
- * 读取远端钉定清单（优先新鲜缓存；过期则按序尝试各 URL；全部失败时回退过期缓存）。
+ * 读取远端钉定清单（优先新鲜缓存；过期或 force 则按序尝试各 URL；全部失败时回退过期缓存）。
  * 永不抛错——拉不到就返回 { pins: null }，由调用方回退内置钉定表。
  */
 export async function loadRemotePins(opts: LoadRemotePinsOptions): Promise<RemotePinsResult> {
   const cachePath = path.join(opts.dataDir, CACHE_FILE_NAME);
   const cached = readCache(cachePath);
   const maxAge = opts.maxAgeMs ?? DEFAULT_MAX_AGE_MS;
-  if (cached && !opts.forceRefresh && Date.now() - cached.fetchedAt < maxAge) {
+  const force = opts.force === true || opts.forceRefresh === true;
+  if (cached && !force && Date.now() - cached.fetchedAt < maxAge) {
     return { pins: cached.pins, source: "cache" };
   }
 
   const fetchText = opts.fetchText ?? fetchTextSmall;
-  for (const url of opts.urls ?? resolvePinsUrls()) {
+  for (const url of opts.urls ?? orderPinsUrls(resolvePinsUrls(), force)) {
     try {
       const raw = await fetchText(url);
       const pins = parsePinsJson(raw);

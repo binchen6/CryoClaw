@@ -257,6 +257,7 @@ export class OpenClawApp extends LitElement {
     tasks: { state: true },
     tasksStatusFilter: { state: true },
     tasksCancellingIds: { state: true },
+    tasksUnsupported: { state: true },
     worktreesLoading: { state: true },
     worktreesError: { state: true },
     worktrees: { state: true },
@@ -475,6 +476,7 @@ export class OpenClawApp extends LitElement {
   tasks: import("./types.js").TaskSummary[] = [];
   tasksStatusFilter: import("./types.js").TaskStatus | "all" = "all";
   tasksCancellingIds = new Set<string>();
+  tasksUnsupported = false;
 
   // Worktrees 管理视图 + 侧边栏会话 worktree 徽标（内核 worktrees.* RPC）
   worktreesLoading = false;

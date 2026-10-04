@@ -29,6 +29,7 @@ import {
   shouldForceResetHalfDead,
   shouldFireCrashOnStartingExit,
   isPlausiblyOwnGatewayFromTasklist,
+  portWaitDelayMs,
 } from "./gateway-lifecycle";
 
 // 诊断日志（R20 起统一写入 ~/.openclaw/logs/gateway.log；旧路径一次性迁移）
@@ -597,9 +598,9 @@ export class GatewayProcess {
       diagLog(`旧 gateway stop 失败: ${err.message ?? err}`);
     }
 
-    // 等端口释放
+    // 等端口释放（T4：100ms 起步指数退避，快乐路径不再白等 500ms）
     for (let i = 0; i < 10; i++) {
-      await sleep(500);
+      await sleep(portWaitDelayMs(i));
       if (!(await this.probeHealth())) {
         diagLog("端口已释放");
         return;
@@ -611,7 +612,7 @@ export class GatewayProcess {
     if (pid > 0 && (await isPlausiblyOwnGateway(pid))) {
       await killProcess(pid);
       for (let i = 0; i < 10; i++) {
-        await sleep(500);
+        await sleep(portWaitDelayMs(i));
         if (!(await this.probeHealth())) {
           diagLog(`强杀 pid=${pid} 后端口已释放`);
           // 被强杀的进程没机会自清 lockfile，残留死 pid 锁会阻塞新 gateway 启动（exit(1)）

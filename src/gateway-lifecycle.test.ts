@@ -9,6 +9,7 @@ import {
   parseTasklistImageName,
   isPlausibleGatewayImage,
   isPlausiblyOwnGatewayFromTasklist,
+  portWaitDelayMs,
 } from "./gateway-lifecycle";
 
 describe("shouldAbortStartAfterPrestart（P0-1：预启动后 spawn 前复查）", () => {
@@ -102,5 +103,22 @@ describe("tasklist 镜像名解析与身份判定（L2：fail-closed）", () => 
     const foreign = '"SomeRandomService.exe","4242","Services","0","2","9,876 K"\r\n';
     expect(isPlausiblyOwnGatewayFromTasklist(own)).toBe(true);
     expect(isPlausiblyOwnGatewayFromTasklist(foreign)).toBe(false);
+  });
+});
+
+describe("portWaitDelayMs（T4 端口等待退避）", () => {
+  test("100ms 起步、指数退避、500ms 封顶", () => {
+    expect(portWaitDelayMs(0)).toBe(100);
+    expect(portWaitDelayMs(1)).toBe(200);
+    expect(portWaitDelayMs(2)).toBe(400);
+    expect(portWaitDelayMs(3)).toBe(500);
+    expect(portWaitDelayMs(9)).toBe(500);
+  });
+  test("10 轮总预算不超过历史 5s", () => {
+    const total = Array.from({ length: 10 }, (_, i) => portWaitDelayMs(i)).reduce((a, b) => a + b, 0);
+    expect(total).toBeLessThanOrEqual(5000);
+  });
+  test("负 attempt 不产生非法间隔", () => {
+    expect(portWaitDelayMs(-1)).toBe(100);
   });
 });

@@ -1,0 +1,36 @@
+{
+  "kernelVersion": "2026.9.7",
+  "generatedBy": "scripts/kernel-method-audit.mjs --write-baseline",
+  "methods": {
+    "tasks.cancel": {
+      "status": "gated",
+      "note": "T1：同 tasks.list",
+      "files": [
+        "chat-ui/ui/src/ui/controllers/tasks.ts"
+      ]
+    },
+    "tasks.list": {
+      "status": "gated",
+      "note": "T1：controllers/capabilities.ts 门控 + 视图空态（2026.9.7 已移除 tasks.*）",
+      "files": [
+        "chat-ui/ui/src/ui/controllers/tasks.ts"
+      ]
+    }
+  },
+  "events": {
+    "board.changed": {
+      "status": "fallback",
+      "note": "R89 board 仪表盘广播；2026.9.7 GATEWAY_EVENTS 不再包含（监听死但无害），board.get 已有静默探测 controllers/board.ts:17",
+      "files": [
+        "chat-ui/ui/src/ui/app-gateway.ts"
+      ]
+    },
+    "task": {
+      "status": "gated",
+      "note": "T1：2026.9.7 不再广播 task 事件；app-gateway 分支保留但 loadTasks 兜底门控",
+      "files": [
+        "chat-ui/ui/src/ui/app-gateway.ts"
+      ]
+    }
+  }
+}

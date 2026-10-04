@@ -333,12 +333,12 @@ test("getWebbridgePrecheck: 全 OK / binary 缺 / 默认浏览器不支持 / web
 
 // ── R68：可自动更新的远端钉定清单（上游反复重建 latest 的永久修复） ──
 
-test("webbridge-pins：parsePinsJson 严格校验（合法/非法 hex/包裹形态/元数据键）", async () => {
+test("webbridge-pins：parsePinsJson 严格校验（合法/非法 hex/包裹形态/元数据键；v1 单串读作数组）", async () => {
   const { parsePinsJson } = await import("./webbridge-pins");
   const h = "a".repeat(64);
   assert.equal(parsePinsJson(JSON.stringify({ f: { x: 1 } })), null, "值为对象整体丢弃");
-  assert.deepEqual(parsePinsJson(JSON.stringify({ f: h })), { f: h });
-  assert.deepEqual(parsePinsJson(JSON.stringify({ pins: { f: h }, version: 1, updatedAt: "x" })), { f: h });
+  assert.deepEqual(parsePinsJson(JSON.stringify({ f: h })), { f: [h] }, "v1 单串 → 单元素数组");
+  assert.deepEqual(parsePinsJson(JSON.stringify({ pins: { f: h }, version: 1, updatedAt: "x" })), { f: [h] });
   assert.equal(parsePinsJson(JSON.stringify({ f: "zz" })), null, "非法 hex 整体丢弃");
   assert.equal(parsePinsJson(JSON.stringify({ f: 123 })), null, "非字符串整体丢弃");
   assert.equal(parsePinsJson("not json"), null);
@@ -356,7 +356,7 @@ test("webbridge-pins：新鲜缓存不触网；过期缓存拉取失败时回退
   // 首次：无缓存 → 拉取并写缓存
   const first = await loadRemotePins({ dataDir: dir, urls: ["https://x/pins.json"], fetchText: rt });
   assert.equal(first.source, "https://x/pins.json");
-  assert.deepEqual(first.pins, { f: h });
+  assert.deepEqual(first.pins, { f: [h] });
   assert.equal(calls, 1);
 
   // 二次：新鲜缓存命中 → 不再拉取
@@ -370,7 +370,7 @@ test("webbridge-pins：新鲜缓存不触网；过期缓存拉取失败时回退
     fetchText: async () => { throw new Error("offline"); },
   });
   assert.equal(stale.source, "stale-cache");
-  assert.deepEqual(stale.pins, { f: h });
+  assert.deepEqual(stale.pins, { f: [h] });
 
   // 无缓存 + 全部失败 → null（调用方回退内置表）
   const empty = fs.mkdtempSync(path.join(os.tmpdir(), "wb-pins-"));

@@ -601,13 +601,29 @@ function listInstalledSkills(): string[] {
 
 // ── IPC 注册 ──
 
+// 列表缓存（R91 性能审查）：list 是纯读 HTTP（sort+limit+cursor 键控），
+// 排序切换/重进商店 tab 不应重付网络往返；install/uninstall 主动失效。
+// T3：提到模块级供启动预热（warmSkillListCache）复用同一键空间。
+const SKILL_LIST_CACHE_TTL_MS = 5 * 60_000;
+const skillListCache = new Map<string, { at: number; result: ListResult }>();
+// 预热参数/键必须与商店首开请求一致（app-skills：sort=trending, limit=20, 无 cursor），
+// 否则预热点缓存不会被命中（审查修复）
+const SKILL_LIST_WARM_PARAMS = { sort: "trending", limit: 20 } as const;
+const SKILL_LIST_DEFAULT_CACHE_KEY = JSON.stringify([SKILL_LIST_WARM_PARAMS.sort, SKILL_LIST_WARM_PARAMS.limit, ""]);
+
+/**
+ * T3：启动后预热——拉一次商店首开默认列表入缓存，首进商店 tab 免网络往返。
+ * 失败抛给调用方（preload-warmup 统一吞错记日志）。
+ */
+export async function warmSkillListCache(): Promise<void> {
+  const cached = skillListCache.get(SKILL_LIST_DEFAULT_CACHE_KEY);
+  if (cached && Date.now() - cached.at < SKILL_LIST_CACHE_TTL_MS) return;
+  const result = await listSkills({ sort: SKILL_LIST_WARM_PARAMS.sort, limit: SKILL_LIST_WARM_PARAMS.limit });
+  skillListCache.set(SKILL_LIST_DEFAULT_CACHE_KEY, { at: Date.now(), result });
+}
+
 // 注册技能商店相关 IPC handler
 export function registerSkillStoreIpc(): void {
-  // 列表缓存（R91 性能审查）：list 是纯读 HTTP（sort+limit+cursor 键控），
-  // 排序切换/重进商店 tab 不应重付网络往返；install/uninstall 主动失效
-  const SKILL_LIST_CACHE_TTL_MS = 5 * 60_000;
-  const skillListCache = new Map<string, { at: number; result: ListResult }>();
-
   ipcMain.handle("skill-store:list", async (_event, params) => {
     if (!assertTrustedIpcSender(_event, "skill-store:list")) throw new Error("IPC sender not trusted");
     debugLog(`ipc list sort=${params?.sort} limit=${params?.limit} cursor=${params?.cursor ?? "none"}`);
