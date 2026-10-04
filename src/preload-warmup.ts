@@ -11,11 +11,15 @@ import { warmSkillListCache } from "./skill-store";
 // 启动关键路径（gateway spawn + 首帧渲染）之后错峰；过短会与首帧争 CPU
 const WARMUP_DELAY_MS = 8_000;
 let scheduled = false;
+let warmupTimer: ReturnType<typeof setTimeout> | null = null;
+let cancelled = false;
 
 export function scheduleCacheWarmupAfterStartup(): void {
   if (scheduled) return;
   scheduled = true;
-  const timer = setTimeout(() => {
+  warmupTimer = setTimeout(() => {
+    warmupTimer = null;
+    if (cancelled) return;
     void (async () => {
       try {
         await warmPluginListCache();
@@ -29,5 +33,18 @@ export function scheduleCacheWarmupAfterStartup(): void {
       }
     })();
   }, WARMUP_DELAY_MS);
-  timer.unref?.();
+  warmupTimer.unref?.();
+}
+
+/**
+ * 取消预热（R94 更新换装交接前调用）：换装会强杀应用进程，预热启动的
+ * CryoClaw Helper.exe 子进程若存活会占住安装目录文件、干扰旧版卸载。
+ * 未触发则清掉定时器；已触发则在途子进程由 killTrackedKernelCliChildren 终止。
+ */
+export function cancelCacheWarmup(): void {
+  cancelled = true;
+  if (warmupTimer !== null) {
+    clearTimeout(warmupTimer);
+    warmupTimer = null;
+  }
 }

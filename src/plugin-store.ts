@@ -24,7 +24,7 @@
  *     警告行，解析时取第一个 `{` 到最后一个 `}` 的子串。
  */
 import { ipcMain } from "electron";
-import { execFile } from "child_process";
+import { execFile, type ChildProcess } from "child_process";
 import * as path from "path";
 import * as log from "./logger";
 import { assertTrustedIpcSender } from "./ipc-sender-guard";
@@ -102,12 +102,34 @@ export type MarketPlugin = {
 // 传入 baseUrl（显式参优先于 env），env 对 update/search/install 不生效；若某些
 // 路径生效，把用户配的 skills-only 镜像（无 packages API）路由给内核反而会弄坏
 // 安装/更新。Electron 侧 marketApiBase() 与内核各走各的默认源。
+// 在途内核 CLI 子进程跟踪（R94 更新换装死循环修复）：这些子进程以
+// CryoClaw Helper.exe 运行、路径位于安装目录内，更新换装时若仍存活会占住
+// 安装目录文件 → NSIS 卸载旧版失败 → 目录被清空却装不上、重试永远无效。
+// 更新交接前由 main.ts 调 killTrackedKernelCliChildren() 统一终止。
+const inflightKernelCliChildren = new Set<ChildProcess>();
+
+/** 终止全部在途内核 CLI 子进程（返回终止数）；供更新换装前交接清理调用 */
+export function killTrackedKernelCliChildren(): number {
+  let killed = 0;
+  for (const child of inflightKernelCliChildren) {
+    try {
+      if (child.pid && !child.killed) {
+        child.kill();
+        killed += 1;
+      }
+    } catch {
+      // 进程可能已退出：忽略
+    }
+  }
+  return killed;
+}
+
 function execKernelCli(args: string[]): Promise<string> {
   const nodeBin = resolveNodeBin();
   const entry = resolveGatewayEntry();
   const envPath = resolveUserBinDir() + path.delimiter + (process.env.PATH ?? "");
   return new Promise((resolve, reject) => {
-    execFile(
+    const child = execFile(
       nodeBin,
       ["--no-deprecation", entry, ...args],
       {
@@ -120,6 +142,7 @@ function execKernelCli(args: string[]): Promise<string> {
         windowsHide: true,
       },
       (err, stdout, stderr) => {
+        inflightKernelCliChildren.delete(child);
         if (err) {
           const rejection = new Error(String(stderr ?? "").trim() || err.message) as Error & {
             stdout?: string;
@@ -138,6 +161,7 @@ function execKernelCli(args: string[]): Promise<string> {
         resolve(String(stdout ?? ""));
       },
     );
+    inflightKernelCliChildren.add(child);
   });
 }
 

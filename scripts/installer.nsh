@@ -138,6 +138,45 @@
   ${if} $0 == 1
     Sleep 2000
   ${endif}
+
+  ; ── R94 自愈：更新换装中断残留 ────────────────────────────────────────
+  ; 场景（实测）：上次换装把旧版卸载了但新版未落地 → 安装目录已无主 exe，而
+  ; Windows 卸载注册表项仍在（UninstallString 指向已不存在的卸载器）。此后每次
+  ; 安装都会在模板 uninstallOldVersion 里复制/执行缺失的卸载器，失败 5 次后弹出
+  ; appCannotBeClosed（「重试」永远无效，只能点「取消」绕过）——用户被卡在
+  ; 「目录已空 + 注册表残留」的死循环里。
+  ; 处理：命中残留时删除陈旧卸载项，让安装器走全新安装路径（用户数据在
+  ; ~/.openclaw，不受影响）；INSTALL_REGISTRY_KEY 保留 → $INSTDIR 与快捷方式
+  ; 语义不变、安装模式判定（customInstallMode）不受影响。
+  ; 判定基准与模板 uninstallOldVersion 同源：目录先取 $INSTDIR（已由
+  ; initMultiUser 解析），回落 InstallLocation，再回落默认目录；仅当卸载项存在
+  ; 且（主 exe 缺失 或 卸载器缺失）才动作——正常升级路径 exe/卸载器均在，不受影响。
+  StrCpy $R7 "$INSTDIR"
+  ${if} $R7 == ""
+    ReadRegStr $R7 SHELL_CONTEXT "${INSTALL_REGISTRY_KEY}" InstallLocation
+  ${endif}
+  ${if} $R7 == ""
+    StrCpy $R7 "$LOCALAPPDATA\Programs\${APP_FILENAME}"
+  ${endif}
+  ReadRegStr $R8 SHELL_CONTEXT "${UNINSTALL_REGISTRY_KEY}" UninstallString
+  ${if} $R8 != ""
+    StrCpy $R6 0
+    ${ifNot} ${FileExists} "$R7\${APP_EXECUTABLE_FILENAME}"
+      StrCpy $R6 1
+    ${endif}
+    ${if} $R6 == 0
+      ${ifNot} ${FileExists} "$R7\Uninstall ${APP_FILENAME}.exe"
+        StrCpy $R6 1
+      ${endif}
+    ${endif}
+    ${if} $R6 == 1
+      DetailPrint "检测到上次更新中断残留（旧版目录不可用），已按全新安装处理"
+      DeleteRegKey SHELL_CONTEXT "${UNINSTALL_REGISTRY_KEY}"
+      !ifdef UNINSTALL_REGISTRY_KEY_2
+        DeleteRegKey SHELL_CONTEXT "${UNINSTALL_REGISTRY_KEY_2}"
+      !endif
+    ${endif}
+  ${endif}
 !macroend
 
 ; ============================================================

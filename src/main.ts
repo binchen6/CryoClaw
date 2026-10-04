@@ -35,7 +35,7 @@ import { TrayManager } from "./tray";
 import { registerSetupIpc } from "./setup-ipc";
 import { registerSettingsIpc } from "./settings-ipc";
 import { registerSkillStoreIpc } from "./skill-store";
-import { registerPluginStoreIpc } from "./plugin-store";
+import { registerPluginStoreIpc, killTrackedKernelCliChildren } from "./plugin-store";
 import { registerWorkspaceIpc } from "./workspace-ipc";
 import { registerGitIpc } from "./git-ipc";
 import { detectGitCached } from "./git-detector";
@@ -52,7 +52,7 @@ import { resolveKimiSearchApiKey, readKimiApiKey, readKimiSearchDedicatedApiKey,
 import { reconcileCliOnAppLaunch } from "./cli-integration";
 import { reconcileExtensionsOnAppLaunch } from "./extension-mirror";
 import { reconcilePluginsAllowWithEnabled } from "./plugin-allow-sync";
-import { scheduleCacheWarmupAfterStartup } from "./preload-warmup";
+import { scheduleCacheWarmupAfterStartup, cancelCacheWarmup } from "./preload-warmup";
 import { migrateLegacyFeishuPluginEntry } from "./feishu-config";
 import { migrateBrowserProfileForCurrentGateway } from "./browser-profile-config";
 import { uninstallGatewayDaemon, cleanGatewayLockFiles } from "./install-detector";
@@ -1347,7 +1347,14 @@ app.whenReady().then(async () => {
       // downloaded 态时托盘菜单挂「重启以更新」入口（状态复位后自动消失）
       tray.setAppUpdateReady(s.status === "downloaded");
     },
-    beforeQuitAndInstall: () => windowManager.prepareForAppQuit(),
+    beforeQuitAndInstall: () => {
+      // R94 更新换装交接清理：先取消启动预热并终止在途内核 CLI 子进程（均为
+      // CryoClaw Helper.exe、路径在安装目录内）——它们存活会占住安装目录文件，
+      // 导致 NSIS 卸载旧版复制/删除失败，出现「无法关闭」重试死循环。
+      cancelCacheWarmup();
+      killTrackedKernelCliChildren();
+      windowManager.prepareForAppQuit();
+    },
   });
   tray.create({
     windowManager,
