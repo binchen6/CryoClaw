@@ -245,6 +245,19 @@ export interface NavigatePayload {
 
 export type GatewayState = "running" | "starting" | "stopping" | "stopped";
 
+// 主进程 gateway:state 新契约：{ state, progress }——progress 是最近一次启动进度
+// （晚加载的渲染层据此补齐启动进度展示），未在启动中为 null。
+export interface GatewayProgress {
+  step: string;
+  attempt: number;
+  elapsedMs?: number;
+}
+
+export interface GatewayStateInfo {
+  state: GatewayState;
+  progress: GatewayProgress | null;
+}
+
 // Setup 快速通道：环境变量中检测到的 provider key（仅掩码，明文不出主进程）
 export interface EnvKeyCandidate {
   providerKey: string;
@@ -373,6 +386,7 @@ interface CryoClawBridgeExtended {
       settingsGetAboutInfo?: () => Promise<any>;
       // Gateway
       getGatewayState?: () => Promise<any>;
+      onGatewayProgress?: (cb: (payload: any) => void) => () => void;
       restartGateway?: () => void;
       startGateway?: () => void;
       stopGateway?: () => Promise<any>;
@@ -881,8 +895,14 @@ export async function settingsGetAboutInfo(): Promise<AboutInfo> {
 // Gateway control (4)
 // ---------------------------------------------------------------------------
 
-export function getGatewayState(): Promise<GatewayState> {
-  return oc().getGatewayState() as Promise<GatewayState>;
+export function getGatewayState(): Promise<GatewayStateInfo> {
+  return oc().getGatewayState() as Promise<GatewayStateInfo>;
+}
+
+// 主进程推送 gateway 启动进度（cleanup/database/port/spawn/health/ready），
+// 渲染层本地化展示；返回 unsubscribe。
+export function onGatewayProgress(cb: (p: GatewayProgress) => void): () => void {
+  return oc().onGatewayProgress(cb);
 }
 
 export function restartGateway(): void {

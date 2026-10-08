@@ -2199,6 +2199,155 @@ img.chat-avatar {
   stroke-linejoin: round;
 }
 
+/* ── Gateway 连接状态 callout（三态：starting / reconnecting / failed）── */
+.chat-conn-callout {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacer-8);
+  margin: var(--spacer-12) var(--spacer-8) 0;
+}
+
+/* 与计划面板同现时的避让同 error callout（plan-panel 绝对定位右上胶囊） */
+.chat:has(.plan-panel) .chat-conn-callout {
+  margin-right: max(
+    16px,
+    min(calc(min(360px, 100% - 32px) + 24px), calc(100% - 160px))
+  );
+}
+
+.chat-conn-callout__icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.chat-conn-callout__icon svg {
+  width: 16px;
+  height: 16px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 2px;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.chat-conn-callout__body {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: var(--spacer-4);
+}
+
+.chat-conn-callout__title {
+  font-weight: var(--weight-semibold);
+  color: var(--text-strong);
+}
+
+.chat-conn-callout__step {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.chat-conn-callout__attempt {
+  margin-left: var(--spacer-6);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.chat-conn-callout__bar {
+  height: var(--spacer-6);
+  border-radius: var(--radius-pill);
+  background: var(--bg-muted);
+  overflow: hidden;
+  max-width: 320px;
+}
+
+.chat-conn-callout__bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  transition: width var(--duration-normal) var(--ease-out);
+}
+
+.chat-conn-callout__retry {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacer-4);
+}
+
+.chat-conn-callout__retry svg {
+  width: 13px;
+  height: 13px;
+}
+
+/* 队列「待发送」提示（断开乐观入队时） */
+.chat-queue__pending-hint {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  margin-top: calc(-1 * var(--spacer-4));
+}
+
+/* ── 会话历史加载骨架：气泡形 shimmer（复用 base.css shimmer keyframes）── */
+.chat-loading {
+  display: grid;
+  gap: var(--spacer-16);
+  padding: var(--spacer-16) var(--spacer-8) 0;
+}
+
+.chat-loading__row {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--spacer-10);
+}
+
+.chat-loading__row--user {
+  justify-content: flex-end;
+}
+
+.chat-loading__avatar,
+.chat-loading__bubble {
+  background: linear-gradient(
+    90deg,
+    var(--bg-muted) 25%,
+    var(--bg-hover) 50%,
+    var(--bg-muted) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.4s linear infinite;
+}
+
+.chat-loading__avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-full);
+  flex-shrink: 0;
+}
+
+.chat-loading__bubble {
+  height: 36px;
+  border-radius: var(--radius-12);
+}
+
+.chat-loading__bubble--user {
+  height: 28px;
+  border-radius: var(--radius-12) var(--radius-12) var(--radius-4) var(--radius-12);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-loading__avatar,
+  .chat-loading__bubble {
+    animation: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-conn-callout__bar-fill {
+    transition: none;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .chat-tool-card__spinner {
     animation: none;

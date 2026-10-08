@@ -10,7 +10,7 @@
 | `restartGateway()` | `gateway:restart` | send |
 | `startGateway()` | `gateway:start` | send |
 | `stopGateway()` | `gateway:stop` | send |
-| `getGatewayState()` | `gateway:state` | invoke |
+| `getGatewayState()` | `gateway:state` | invoke，返回 `{ state, progress }`（`progress` 为最近一次 `GatewayProgressInfo`，无则 null） |
 
 ## 自动更新
 
@@ -311,6 +311,7 @@
 | `onNavigate(cb)` | `app:navigate` | Chat UI 视图切换（返回 unsubscribe 函数） |
 | `onKernelUpdateProgress(cb)` | `kernel:update-progress` | 内核升级进度推送（返回 unsubscribe 函数） |
 | `onGatewayReady(cb)` | `gateway:ready` | 网关就绪推送（token/gatewayUrl；返回 unsubscribe 函数） |
+| `onGatewayProgress(cb)` | `gateway:progress` | 网关启动进度推送（`GatewayProgressInfo {step, attempt, elapsedMs?}`，step: cleanup/database/port/spawn/health/ready；返回 unsubscribe 函数） |
 | `onWebbridgeStateChanged(cb)` | `webbridge:state-changed` | webbridge 状态变化（setup 装完扩展/修复完成；返回 unsubscribe 函数） |
 
 > `kernel:update-progress` 载荷为 `{step, pct, msg, source?}`；v2026.907.0 起新增

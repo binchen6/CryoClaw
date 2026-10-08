@@ -100,10 +100,22 @@ function diagLog(msg: string): void {
 
 export type GatewayState = "stopped" | "starting" | "running" | "stopping";
 
+// 启动进度步骤（机器可读键，渲染层负责本地化）
+export type GatewayStartStep = "cleanup" | "database" | "port" | "spawn" | "health" | "ready";
+
+export interface GatewayProgressInfo {
+  step: GatewayStartStep;
+  // 监督链重试序号（ensureGatewayRunning 的第几次尝试），非监督启动为 1
+  attempt: number;
+  // 仅 health 步携带：等待健康检查已耗时的毫秒数，供 UI 展示活性
+  elapsedMs?: number;
+}
+
 interface GatewayOptions {
   port?: number;
   token: string;
   onStateChange?: (state: GatewayState) => void;
+  onProgress?: (info: GatewayProgressInfo) => void;
   /**
    * 非预期退出（运行中崩溃 / 启动期退出）回调——由 main 决定是否自动重启。
    * 不在本类内部自动重启：重启需要「有界次数 + 冷却 + 达上限后人工恢复」策略，
@@ -119,8 +131,13 @@ export class GatewayProcess {
   private token: string;
   private extraEnv: Record<string, string> = {};
   private lastCrashTime = 0;
+  // 上次退出是否为崩溃：崩溃冷却只对异常退出生效，干净停止/首次启动不等待
+  private lastExitWasCrash = false;
+  private currentAttempt = 1;
+  private lastProgress: GatewayProgressInfo | null = null;
   private onStateChange?: (state: GatewayState) => void;
   private onCrash?: (info: { code: number | null; signal: string | null }) => void;
+  private onProgress?: (info: GatewayProgressInfo) => void;
   private startedAt: number | null = null;
 
   // 世代计数器：每次 spawn 递增，exit handler 只处理同代进程的退出
@@ -140,6 +157,7 @@ export class GatewayProcess {
     this.token = opts.token;
     this.onStateChange = opts.onStateChange;
     this.onCrash = opts.onCrash;
+    this.onProgress = opts.onProgress;
   }
 
   getState(): GatewayState {
@@ -152,6 +170,11 @@ export class GatewayProcess {
 
   getStartedAt(): number | null {
     return this.startedAt;
+  }
+
+  // 最近一次启动进度（供 gateway:state IPC 让晚加载的渲染层补进度）
+  getLastProgress(): GatewayProgressInfo | null {
+    return this.lastProgress;
   }
 
   // 当前子进程 PID（未运行返回 null），供本地控制服务暴露状态
@@ -197,7 +220,7 @@ export class GatewayProcess {
   // onCrash 恢复）不经由监督启动，标记刻意不覆盖该场景。
   private supervisedStartActive = false;
 
-  start(opts: { supervised?: boolean } = {}): Promise<void> {
+  start(opts: { supervised?: boolean; attempt?: number } = {}): Promise<void> {
     if (this.state === "running" || this.state === "starting") return Promise.resolve();
     if (this.inflightStart) {
       // state 已是 stopped 但旧启动 promise 尚未落定 = 旧启动正在收尾
@@ -215,8 +238,9 @@ export class GatewayProcess {
     return this.inflightStart;
   }
 
-  private async doStart(opts: { supervised?: boolean } = {}): Promise<void> {
+  private async doStart(opts: { supervised?: boolean; attempt?: number } = {}): Promise<void> {
     this.supervisedStartActive = opts.supervised === true;
+    this.currentAttempt = opts.attempt ?? 1;
     if (this.state === "running" || this.state === "starting") return;
 
     // 前一次 stop 还未完成，等待其结束再启动
@@ -233,9 +257,9 @@ export class GatewayProcess {
       }
     }
 
-    // 崩溃冷却期
+    // 崩溃冷却期：仅上次异常退出（崩溃/健康超时）才等待；首次启动与干净停止后直接启动
     const elapsed = Date.now() - this.lastCrashTime;
-    if (this.lastCrashTime > 0 && elapsed < CRASH_COOLDOWN_MS) {
+    if (this.lastExitWasCrash && this.lastCrashTime > 0 && elapsed < CRASH_COOLDOWN_MS) {
       await sleep(CRASH_COOLDOWN_MS - elapsed);
     }
 
@@ -271,25 +295,33 @@ export class GatewayProcess {
     // 这些步骤抛错，若不复位状态，start()（"starting" 守卫）与 stop()（!proc 早退）
     // 双双空转，状态机永久卡死在 "starting"，只能重启 App 自愈。
     try {
+      this.emitProgress("cleanup");
       await this.cleanStaleLockfile();
 
       // agent DB schema 就绪检查（内核 2026.9.4+ 要求 userVersion ≥ 24）：需要迁移时
       // 自动清失效租约并跑 doctor --fix --non-interactive。会话级单次（attempted
       // 闸门，崩溃自重启不重跑），无需迁移时零开销（目录扫描 + 4 字节头读）；失败
       // 只记日志，网关照常尝试启动（若内核仍拒绝，走既有失败弹窗路径）。
-      await ensureAgentDbSchemaReady();
-
+      //
       // 卸载 OpenClaw 系统守护进程 + 清理 tmpdir 锁文件，防止杀进程后被自动重启。
       // 每应用会话只执行一次（R91 性能审查）：Windows 上串行跑 2 次 schtasks、
       // macOS 上 2 次 launchctl bootout，任务不存在时也要付 0.3-1.2s 的 spawn
-      // 成本——该清理只针对历史安装残留，会话内重复执行无额外收益，却出现在
-      // 每次 start（启动/设置重启/崩溃自重启）的串行关键路径上。
+      // 成本——该清理只针对历史安装残留，会话内重复执行无额外收益。
+      // 两者无相互依赖，并行执行以缩短启动关键路径；端口探测/停止旧实例仍在
+      // 它们落定后串行进行（必须在 spawn 前完成）。
+      this.emitProgress("database");
+      const prestartParallel: Promise<unknown>[] = [ensureAgentDbSchemaReady()];
       if (!gatewayDaemonCleanupDone) {
-        await uninstallGatewayDaemon();
-        gatewayDaemonCleanupDone = true;
+        prestartParallel.push(
+          uninstallGatewayDaemon().then(() => {
+            gatewayDaemonCleanupDone = true;
+          }),
+        );
       }
+      await Promise.all(prestartParallel);
 
       // 启动前探测端口，若有旧 gateway 则自动停止
+      this.emitProgress("port");
       const portBusy = await this.probeHealth();
       if (portBusy) {
         diagLog(`WARN: 端口 ${this.port} 已有服务响应，尝试自动停止旧 gateway`);
@@ -329,6 +361,7 @@ export class GatewayProcess {
     // 依赖，其弃用告警不可行动，直接静音。
     const args = ["--no-deprecation", entry, "gateway", "run"];
     diagLog(`spawn: ${nodeBin} ${args.join(" ")} (gen=${gen})`);
+    this.emitProgress("spawn");
 
     this.proc = spawn(nodeBin, args, {
       cwd,
@@ -377,6 +410,7 @@ export class GatewayProcess {
         // 交由监督链的重试与失败上报处理
         const stateAtError = this.state;
         this.lastCrashTime = Date.now();
+        this.lastExitWasCrash = true;
         this.setState("stopped");
         this.proc = null;
         if (shouldFireCrashOnStartingExit(stateAtError, this.supervisedStartActive)) {
@@ -418,6 +452,7 @@ export class GatewayProcess {
         // 运行中非预期退出 = 崩溃
         diagLog("WARN: gateway 运行中意外退出");
         this.lastCrashTime = Date.now();
+        this.lastExitWasCrash = true;
         this.setState("stopped");
         this.proc = null;
         this.onCrash?.({ code, signal });
@@ -425,6 +460,7 @@ export class GatewayProcess {
       } else {
         // starting 阶段退出（如端口冲突）
         this.lastCrashTime = Date.now();
+        this.lastExitWasCrash = true;
         this.setState("stopped");
         this.proc = null;
         // P0-2：监督式启动在途时不触发 onCrash——监督链（ensureGatewayRunning）
@@ -459,6 +495,9 @@ export class GatewayProcess {
       if (this.isChildAlive(childPid)) {
         diagLog("health check passed, child alive");
         this.setState("running");
+        // 成功跑起来后，此前的崩溃记录不再影响后续启动的冷却判定
+        this.lastExitWasCrash = false;
+        this.emitProgress("ready");
       } else {
         diagLog("WARN: health check passed 但子进程已退出（端口可能被旧 gateway 占用）");
         this.setState("stopped");
@@ -472,6 +511,7 @@ export class GatewayProcess {
       // 相同的监督守卫（P0-2）：监督链（ensureGatewayRunning 自带重试）在途时
       // 不重复排程崩溃重启
       this.lastCrashTime = Date.now();
+      this.lastExitWasCrash = true;
       if (shouldFireCrashOnStartingExit("starting", this.supervisedStartActive)) {
         this.onCrash?.({ code: null, signal: "HEALTH_TIMEOUT" });
       }
@@ -629,7 +669,7 @@ export class GatewayProcess {
 
   // 重启：stop() 返回时进程已死，直接 start()；opts 透传——监督链的重试 restart
   // 必须保持监督语义（P0-2），否则 starting 退出会双触发崩溃重启链
-  async restart(opts: { supervised?: boolean } = {}): Promise<void> {
+  async restart(opts: { supervised?: boolean; attempt?: number } = {}): Promise<void> {
     await this.stop();
     await this.start(opts);
   }
@@ -657,12 +697,21 @@ export class GatewayProcess {
     // R91 性能审查：前 5s 用 150ms 快轮询（探测是 2s 超时的本地 http.get，
     // CPU 成本可忽略），就绪推送平均提前 ~175ms；之后退回 500ms 常规节奏
     const fastDeadline = Date.now() + 5_000;
+    const healthStart = Date.now();
+    this.emitProgress("health", 0);
+    let lastHealthProgressAt = healthStart;
     while (Date.now() < deadline) {
       if (!this.isChildAlive(childPid)) {
         diagLog(`health check aborted: child exited pid=${childPid}`);
         return false;
       }
       if (await this.probeHealth()) return true;
+      // 约每 1s 上报一次等待耗时，UI 据此展示活性（进度条/耗时文案）
+      const now = Date.now();
+      if (now - lastHealthProgressAt >= 1000) {
+        lastHealthProgressAt = now;
+        this.emitProgress("health", now - healthStart);
+      }
       await sleep(Date.now() < fastDeadline ? 150 : HEALTH_POLL_INTERVAL_MS);
     }
     return false;
@@ -724,6 +773,12 @@ export class GatewayProcess {
   private setState(s: GatewayState): void {
     const prev = this.state;
     this.state = s;
+    // 进度快照只在启动窗口内有意义：进入新一轮启动先清掉上一轮的最终步骤
+    // （否则重试 attempt 间隙晚加载的渲染层会补到上次的 health/ready），
+    // 停止/启动失败时同样清空，避免 gateway:state 携带过期进度
+    if (s === "starting" || s === "stopped") {
+      this.lastProgress = null;
+    }
     if (s === "running") {
       this.startedAt = Date.now();
     } else if (s === "stopped") {
@@ -731,6 +786,13 @@ export class GatewayProcess {
     }
     diagLog(`state: ${prev} → ${s}`);
     this.onStateChange?.(s);
+  }
+
+  private emitProgress(step: GatewayStartStep, elapsedMs?: number): void {
+    const info: GatewayProgressInfo = { step, attempt: this.currentAttempt };
+    if (elapsedMs !== undefined) info.elapsedMs = elapsedMs;
+    this.lastProgress = info;
+    this.onProgress?.(info);
   }
 }
 

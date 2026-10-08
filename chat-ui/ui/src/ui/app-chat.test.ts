@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
-import { removeFailedSendArtifacts, handleAbortChat, flushChatQueueForEvent } from "./app-chat.ts";
+import { removeFailedSendArtifacts, handleAbortChat, flushChatQueueForEvent, handleSendChat } from "./app-chat.ts";
 
 // 与 controllers/chat.test.ts 同款的最小帧调度器/浏览器全局打桩。
 class FakeRaf {
@@ -236,6 +236,45 @@ test("handleAbortChat：无活跃 run 时不置位（防标记永驻）", async 
 
   assert.equal(abortCalls, 0, "无活跃 run 不应提交 chat.abort");
   assert.equal(host.chatAbortPending, false, "无活跃 run 置位后无终态事件清零，标记会永驻");
+});
+
+// ── 断开连接乐观入队（C3）：compose 保持可编辑，发送进入「待发送」队列，
+// 重连握手后由既有 flushChatQueue 链路自动补发。
+
+test("handleSendChat：断开连接时发送乐观入队（返回 true、清空输入、队列入项）", async () => {
+  installBrowserGlobals(new FakeRaf());
+  const host = makeHost({ connected: false, chatMessage: "hello gateway" });
+
+  const accepted = await handleSendChat(host);
+
+  assert.equal(accepted, true, "断开时发送应被接受（乐观入队），不是硬阻塞 false");
+  assert.equal(host.chatQueue.length, 1, "消息应进入待发送队列");
+  assert.equal(host.chatQueue[0].message, "hello gateway");
+  assert.equal(host.chatMessage, "", "入队后输入框应即时清空给出反馈");
+});
+
+test("handleSendChat：断开时 stop/reset 命令不入队（维持旧「不接收」语义，不当普通文本发出）", async () => {
+  installBrowserGlobals(new FakeRaf());
+
+  const stopHost = makeHost({ connected: false, chatMessage: "/stop" });
+  const stopAccepted = await handleSendChat(stopHost);
+  assert.equal(stopAccepted, false, "断开时 /stop 不接收");
+  assert.equal(stopHost.chatQueue.length, 0, "控制命令不得当普通文本入队");
+  assert.equal(stopHost.chatMessage, "/stop", "不接收时保留草稿");
+
+  const resetHost = makeHost({ connected: false, chatMessage: "/new" });
+  const resetAccepted = await handleSendChat(resetHost);
+  assert.equal(resetAccepted, false, "断开时 /new 不接收");
+  assert.equal(resetHost.chatQueue.length, 0, "/new 入队会变成重连后发出字面文本");
+  assert.equal(resetHost.chatMessage, "/new", "不接收时保留草稿");
+});
+
+test("handleSendChat：断开时空消息仍被拒绝", async () => {
+  installBrowserGlobals(new FakeRaf());
+  const host = makeHost({ connected: false, chatMessage: "   " });
+  const accepted = await handleSendChat(host);
+  assert.equal(accepted, false);
+  assert.equal(host.chatQueue.length, 0);
 });
 
 // 源码钉点（app-chat-props.ts 依赖 Lit 视图层，node 下不可导入）：onResendError

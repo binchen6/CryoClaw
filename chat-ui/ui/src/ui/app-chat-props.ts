@@ -19,10 +19,15 @@ import { getCachedCommands } from "./controllers/commands.ts";
 import { loadSessionBranches } from "./controllers/session-branches.ts";
 import { listEligibleSkills } from "./controllers/skills.ts";
 import { openWorkspaceView } from "./app-workspace.ts";
+import { handleReconnect } from "./app-session-actions.ts";
 import { dismissPlan } from "./plan-stream.ts";
 import { dismissProgressCard } from "./controllers/progress-card.ts";
 import { t } from "./i18n.ts";
 import type { ChatProps } from "./views/chat.ts";
+
+// 2026.9.7：tasks.* 已移除，子代理状态卡无数据源——模块级常量空数组，
+// 引用稳定（buildChatItems memo 按引用比较 props.tasks）
+const EMPTY_TASKS: ChatProps["tasks"] = [];
 
 export function buildChatProps(state: AppViewState): ChatProps {
   return {
@@ -66,8 +71,9 @@ export function buildChatProps(state: AppViewState): ChatProps {
     messages: state.chatMessages,
     visibleHistoryCount: state.chatVisibleMessageCount,
     toolMessages: state.chatToolMessages,
-    // R23：子代理等待状态卡数据源（tasks 数组引用稳定，供 buildChatItems memo 比较）
-    tasks: state.tasks,
+    // R23：子代理等待状态卡数据源。2026.9.7 起内核移除 tasks.*，无实时任务数据
+    // 可得——恒传空数组（引用稳定，selectSubagentCards 返回空，卡片自然隐藏）
+    tasks: EMPTY_TASKS,
     runActive: Boolean(state.chatRunId),
     // R61：问答卡片数据源 + resolve 回调
     questionPrompts: state.questionPrompts,
@@ -106,6 +112,12 @@ export function buildChatProps(state: AppViewState): ChatProps {
     queue: state.chatQueue,
     connected: state.connected,
     canSend: state.connected,
+    // 连接状态三态（connected 为 null）：对话页顶部 callout 与输入框占位文案据此
+    // 出友好提示（启动中/重连中/已断开），不再渲染裸 disconnected(code) 文案
+    gatewayConnection: state.connected
+      ? null
+      : { phase: state.gatewayPhase ?? "reconnecting", progress: state.gatewayProgress },
+    onReconnect: () => handleReconnect(state),
     error: state.lastError,
     sessions: state.sessionsResult,
     onChatScroll: (event) => state.handleChatScroll(event),

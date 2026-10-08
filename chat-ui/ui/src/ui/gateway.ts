@@ -343,7 +343,10 @@ export class GatewayBrowserClient {
         if (!this.isActiveSocket(ws, generation)) {
           return;
         }
-        console.error("[gateway] connect request failed", err);
+        // 内核启动窗口期的拒绝是预期内的重试信号，不算错误（避免控制台噪音）
+        const expectedStartupReject =
+          err instanceof Error && /gateway starting|retry shortly|try again/i.test(err.message);
+        (expectedStartupReject ? console.warn : console.error)("[gateway] connect request failed", err);
         if (canFallbackToShared && deviceIdentity) {
           clearDeviceAuthToken({ deviceId: deviceIdentity.deviceId, role });
         }

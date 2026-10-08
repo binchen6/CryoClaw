@@ -1,12 +1,14 @@
-import type { GatewayBrowserClient } from "../gateway.ts";
+import type { GatewayBrowserClient, GatewayHelloOk } from "../gateway.ts";
 import { t } from "../i18n.ts";
 import type { CronJob, CronRunLogEntry, CronStatus } from "../types.ts";
 import type { CronFormState } from "../ui-types.ts";
 import { toNumber } from "../format.ts";
+import { supportsMethod } from "./capabilities.ts";
 
 export type CronState = {
   client: GatewayBrowserClient | null;
   connected: boolean;
+  hello: GatewayHelloOk | null;
   cronLoading: boolean;
   cronJobs: CronJob[];
   cronStatus: CronStatus | null;
@@ -17,8 +19,13 @@ export type CronState = {
   cronBusy: boolean;
 };
 
+// 能力门控：内核未注册对应 cron.* 方法时静默跳过（对齐 capabilities.ts 的保守放行
+// 语义——hello 未声明 features 的旧内核 supportsMethod 返回 true，不误伤）
 export async function loadCronStatus(state: CronState) {
   if (!state.client || !state.connected) {
+    return;
+  }
+  if (!supportsMethod(state.hello, "cron.status")) {
     return;
   }
   try {
@@ -29,11 +36,20 @@ export async function loadCronStatus(state: CronState) {
   }
 }
 
+// 事件驱动重入补跑（对齐 loadRunHistory 的 runsRefreshPending）：cron 广播恰在
+// 在途窗口到达时标记补跑，落地后再拉一轮，避免任务列表最长陈旧一个 tick 周期。
+// chat-ui 按单 app 实例设计，模块级瞬态变量依赖单挂载前提。
+let cronJobsRefreshPending = false;
+
 export async function loadCronJobs(state: CronState) {
   if (!state.client || !state.connected) {
     return;
   }
+  if (!supportsMethod(state.hello, "cron.list")) {
+    return;
+  }
   if (state.cronLoading) {
+    cronJobsRefreshPending = true;
     return;
   }
   state.cronLoading = true;
@@ -47,6 +63,10 @@ export async function loadCronJobs(state: CronState) {
     state.cronError = String(err);
   } finally {
     state.cronLoading = false;
+    if (cronJobsRefreshPending) {
+      cronJobsRefreshPending = false;
+      void loadCronJobs(state);
+    }
   }
 }
 
@@ -156,6 +176,9 @@ export async function addCronJob(state: CronState) {
   if (!state.client || !state.connected || state.cronBusy) {
     return;
   }
+  if (!supportsMethod(state.hello, "cron.add")) {
+    return;
+  }
   state.cronBusy = true;
   state.cronError = null;
   try {
@@ -197,6 +220,9 @@ export async function updateCronJob(state: CronState, jobId: string) {
   if (!state.client || !state.connected || state.cronBusy) {
     return;
   }
+  if (!supportsMethod(state.hello, "cron.update")) {
+    return;
+  }
   state.cronBusy = true;
   state.cronError = null;
   try {
@@ -233,6 +259,9 @@ export async function toggleCronJob(state: CronState, job: CronJob, enabled: boo
   if (!state.client || !state.connected || state.cronBusy) {
     return;
   }
+  if (!supportsMethod(state.hello, "cron.update")) {
+    return;
+  }
   state.cronBusy = true;
   state.cronError = null;
   try {
@@ -248,6 +277,9 @@ export async function toggleCronJob(state: CronState, job: CronJob, enabled: boo
 
 export async function runCronJob(state: CronState, job: CronJob, isCurrent?: () => boolean) {
   if (!state.client || !state.connected || state.cronBusy) {
+    return;
+  }
+  if (!supportsMethod(state.hello, "cron.run")) {
     return;
   }
   state.cronBusy = true;
@@ -267,6 +299,9 @@ export async function runCronJob(state: CronState, job: CronJob, isCurrent?: () 
 
 export async function removeCronJob(state: CronState, job: CronJob) {
   if (!state.client || !state.connected || state.cronBusy) {
+    return;
+  }
+  if (!supportsMethod(state.hello, "cron.remove")) {
     return;
   }
   state.cronBusy = true;
@@ -291,6 +326,9 @@ export async function removeCronJob(state: CronState, job: CronJob) {
 // 否则丢弃迟到结果（覆盖掉已收起时清空的 cronRuns）。
 export async function loadCronRuns(state: CronState, jobId: string, isCurrent?: () => boolean) {
   if (!state.client || !state.connected) {
+    return;
+  }
+  if (!supportsMethod(state.hello, "cron.runs")) {
     return;
   }
   try {

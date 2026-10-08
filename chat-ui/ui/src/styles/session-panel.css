@@ -5,12 +5,33 @@
    ========================================================================== */
 
 /* 宿主承载宽度：内联 width 仅在用户自定义（sidebarWidth > 0）时存在；
-   未自定义（0 哨兵）时走 --panel-width，窄窗媒体查询收窄照常生效 */
+   未自定义（0 哨兵）时走 --panel-width，窄窗媒体查询收窄照常生效。
+   挂载入场：width 0 → var(--panel-width) 展开 + 淡入（--panel-width 与用户
+   自定义宽度同源同步，动画终点即最终宽度，不会回跳）。 */
 oc-session-panel {
   display: block;
   width: var(--panel-width);
   flex-shrink: 0;
   height: 100vh;
+  animation: oc-panel-enter var(--duration-normal) var(--ease-out);
+}
+
+@keyframes oc-panel-enter {
+  from {
+    width: 0;
+    opacity: 0;
+  }
+
+  to {
+    width: var(--panel-width);
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  oc-session-panel {
+    animation: none;
+  }
 }
 
 .oc-panel {

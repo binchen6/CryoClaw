@@ -18,7 +18,6 @@ import {
   restoreWorktree,
   type WorktreeBranch,
 } from "./controllers/worktrees.ts";
-import { findActiveTaskForSession } from "./controllers/tasks.ts";
 import { workspaceViewState } from "./controllers/workspace.ts";
 import { showToast } from "./app-toast.ts";
 import { t, tWithDetail } from "./i18n.ts";
@@ -26,14 +25,7 @@ import { handleSessionChange } from "./app-session-actions.ts";
 import type { AppViewState } from "./app-view-state.ts";
 
 async function confirmAndRemoveWorktree(state: AppViewState, id: string) {
-  // R58 删除守卫：owner 会话有 queued/running 任务时禁止删除
-  const target = state.worktrees.find((w) => w.id === id);
-  if (target?.ownerKind === "session" && target.ownerId) {
-    if (findActiveTaskForSession(state.tasks ?? [], target.ownerId)) {
-      showToast(state, t("worktrees.removeBlockedByTask"));
-      return;
-    }
-  }
+  // 2026.9.7：内核移除 tasks.*，R58 活跃任务删除守卫无数据源可用，退化为不阻塞
   // 内核删除时有未提交改动会自动先快照（可 restore），确认文案已说明
   const confirmed = await showConfirm(state, t("worktrees.removeConfirm"), { danger: true });
   if (!confirmed) return;
@@ -171,13 +163,8 @@ export function renderWorktreesView(
   state: AppViewState,
   opts?: { compact?: boolean; onSelectRepo?: (path: string) => void },
 ) {
-  // owner 会话有活跃任务的 worktree：删除按钮禁用
+  // 2026.9.7：内核移除 tasks.*，活跃任务数据源消失——删除按钮不再按任务阻塞（恒空集）
   const blockedIds = new Set<string>();
-  for (const w of state.worktrees) {
-    if (w.ownerKind === "session" && w.ownerId && findActiveTaskForSession(state.tasks ?? [], w.ownerId)) {
-      blockedIds.add(w.id);
-    }
-  }
   return renderWorktrees(
     {
       loading: state.worktreesLoading,

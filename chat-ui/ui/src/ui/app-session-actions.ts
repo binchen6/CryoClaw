@@ -14,7 +14,6 @@ import {
   switchSessionBranchTo,
   type SessionEditorRestore,
 } from "./controllers/session-branches.ts";
-import { findActiveTaskForSession } from "./controllers/tasks.ts";
 import {
   buildWorktreeSessionMap,
   isNotGitCheckoutError,
@@ -203,16 +202,11 @@ export function isDeletingSession(key: string): boolean {
 }
 
 // 侧边栏删除回调：同步走完 reset + delete，期间该行按钮显示 loading。
-// R58 守卫：会话有 queued/running 任务时禁止删除（删除会连坐 transcript 与 worktree）。
+// 2026.9.7：内核移除 tasks.*，R58 活跃任务删除守卫无数据源可用，退化为不阻塞
+// （守卫原本防止删除连坐进行中任务的 transcript；内核已无此任务面）。
 export async function deleteSessionFromSidebar(state: AppViewState, key: string) {
   if (!state.client || !state.connected) return;
   if (deletingSessionKeys.has(key)) return;
-
-  const activeTask = findActiveTaskForSession(state.tasks ?? [], key);
-  if (activeTask) {
-    showToast(state, t("sidebar.deleteBlockedByTask"));
-    return;
-  }
 
   const confirmed = await showConfirm(state, t("sidebar.deleteSession"), { danger: true });
   if (!confirmed) return;

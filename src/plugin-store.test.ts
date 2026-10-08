@@ -18,6 +18,14 @@ import {
   comparePluginVersions,
   classifyUpdateFailure,
   PLUGIN_MARKET_CATEGORY_KEYWORDS,
+  INSTALL_POLICY_ACK_FLAG,
+  LEGACY_INSTALL_POLICY_ACK_FLAG,
+  pluginInstallArgs,
+  stripAcknowledgeFlags,
+  shouldRetryWithoutAck,
+  nextAckFallbackArgs,
+  isExecTimeoutFailure,
+  runUpdateCheckTimeoutHttpFallback,
 } from "./plugin-store.ts";
 import { validateSkillSlug } from "./skill-store.ts";
 
@@ -286,4 +294,105 @@ test("classifyUpdateFailure：通用兜底带退出码与首行有意义 stderr"
   assert.ok(!msg.includes("Command failed"), msg);
   const empty = classifyUpdateFailure({ combined: "", exitCode: 1 });
   assert.ok(empty.includes("无错误输出"), empty);
+});
+
+// ── ack 旗标契约与旧内核回退（install/update 共用）──────────────────
+
+test("pluginInstallArgs：用 --acknowledge-install-policy-warning，不含已废弃的 --acknowledge-clawhub-risk", () => {
+  const args = pluginInstallArgs("@kimi/foo");
+  assert.deepEqual(args, ["plugins", "install", "clawhub:@kimi/foo", "--acknowledge-install-policy-warning", "--force"]);
+  assert.ok(args.includes(INSTALL_POLICY_ACK_FLAG));
+  assert.ok(!args.includes("--acknowledge-clawhub-risk"));
+});
+
+test("ack 回退：「不识别选项」失败且参数带 ack 旗标时才重试，重试参数剥掉旗标", () => {
+  const unrecognized = {
+    message: 'OpenClaw does not recognize option "--acknowledge-install-policy-warning"',
+    stderr: 'OpenClaw does not recognize option "--acknowledge-install-policy-warning"',
+  };
+  const args = ["plugins", "update", "--all", INSTALL_POLICY_ACK_FLAG];
+  assert.equal(shouldRetryWithoutAck(args, unrecognized), true);
+  assert.deepEqual(stripAcknowledgeFlags(args), ["plugins", "update", "--all"]);
+  // commander 风格文案也认
+  assert.equal(shouldRetryWithoutAck(args, { message: "", stderr: "error: unknown option '--acknowledge-install-policy-warning'" }), true);
+  // 无 ack 旗标 → 不重试（剥无可剥）
+  assert.equal(shouldRetryWithoutAck(["plugins", "list", "--json"], unrecognized), false);
+  // 非「不识别选项」失败（如网络错误）→ 不重试，原样抛出
+  assert.equal(shouldRetryWithoutAck(args, { message: "fetch failed", stderr: "UND_ERR_CONNECT_TIMEOUT" }), false);
+});
+
+test("ack 降级链：新旗标 → 旧旗标 → 无旗标，逐级降级而非一次剥光", () => {
+  const args = ["plugins", "install", "clawhub:@kimi/foo", INSTALL_POLICY_ACK_FLAG, "--force"];
+  // 第一档：新旗标不认识 → 换旧旗标（2026.7.x 内核需要旧旗标做免交互确认，
+  // 直接剥光会撞上 install policy warning 失败）
+  const legacy = nextAckFallbackArgs(args);
+  assert.deepEqual(legacy, ["plugins", "install", "clawhub:@kimi/foo", LEGACY_INSTALL_POLICY_ACK_FLAG, "--force"]);
+  // 第二档：旧旗标也不认识 → 剥光 ack 旗标
+  const stripped = nextAckFallbackArgs(legacy!);
+  assert.deepEqual(stripped, ["plugins", "install", "clawhub:@kimi/foo", "--force"]);
+  // 末档：无 ack 旗标 → 无可降级（null），原错误抛出
+  assert.equal(nextAckFallbackArgs(stripped!), null);
+  assert.equal(nextAckFallbackArgs(["plugins", "list", "--json"]), null);
+});
+
+// ── 超时预算与超时回退 ─────────────────────────────────────────────
+
+test("classifyUpdateFailure：超时文案用实际秒数（不再硬编码 90s），含网络/代理建议", () => {
+  const msg = classifyUpdateFailure({ combined: "", exitCode: "ETIMEDOUT", timedOut: true });
+  assert.ok(!msg.includes("90s"), msg);
+  assert.ok(msg.includes("180s"), msg);
+  assert.ok(msg.includes("代理"), msg);
+  assert.ok(msg.includes("重试"), msg);
+  // 显式传入的预算优先
+  const custom = classifyUpdateFailure({ combined: "", exitCode: "ETIMEDOUT", timedOut: true, timeoutSeconds: 45 });
+  assert.ok(custom.includes("45s"), custom);
+  assert.ok(!custom.includes("180s"), custom);
+});
+
+test("isExecTimeoutFailure：killed 或 code=ETIMEDOUT 判为超时", () => {
+  assert.equal(isExecTimeoutFailure({ killed: true }), true);
+  assert.equal(isExecTimeoutFailure({ code: "ETIMEDOUT" }), true);
+  assert.equal(isExecTimeoutFailure({ code: 1 }), false);
+  assert.equal(isExecTimeoutFailure({ killed: false, code: 1 }), false);
+  assert.equal(isExecTimeoutFailure(null), false);
+  assert.equal(isExecTimeoutFailure(undefined), false);
+});
+
+test("runUpdateCheckTimeoutHttpFallback：缓存热时走 HTTP 回退，回退全灭/无缓存返回 null", async () => {
+  const cached = [
+    { id: "foo", name: "foo", enabled: true },
+    { id: "bar", name: "bar", enabled: true },
+  ];
+  const res = await runUpdateCheckTimeoutHttpFallback(cached, async (ids) => {
+    assert.deepEqual(ids, ["foo", "bar"]);
+    return {
+      updatable: [{ id: "foo", currentVersion: "1.0.0", nextVersion: "1.1.0", action: "update" as const }],
+      stillFailed: [{ id: "bar", reason: "HTTP 404" }],
+      upToDateIds: [],
+    };
+  });
+  assert.ok(res);
+  assert.deepEqual(res.updatable, [{ id: "foo", currentVersion: "1.0.0", nextVersion: "1.1.0", action: "update" }]);
+  assert.deepEqual(res.failed, ["bar"]);
+
+  // 回退逐 id 全失败（无任何成功信号）→ null，让 handler 回落到超时错误文案
+  const allFailed = await runUpdateCheckTimeoutHttpFallback(cached, async () => ({
+    updatable: [],
+    stillFailed: [{ id: "foo", reason: "fetch failed" }],
+    upToDateIds: [],
+  }));
+  assert.equal(allFailed, null);
+
+  // 回退函数本身抛错 → null（不向上炸，由 handler 报超时）
+  const threw = await runUpdateCheckTimeoutHttpFallback(cached, async () => {
+    throw new Error("boom");
+  });
+  assert.equal(threw, null);
+
+  // 缓存冷/为空 → null，且不应发起 HTTP 检查
+  const mustNotCall = async (): Promise<never> => {
+    throw new Error("should not be called");
+  };
+  assert.equal(await runUpdateCheckTimeoutHttpFallback(null, mustNotCall), null);
+  assert.equal(await runUpdateCheckTimeoutHttpFallback([], mustNotCall), null);
 });

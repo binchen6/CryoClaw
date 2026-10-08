@@ -15,7 +15,7 @@ import "../../components/message-box.ts";
 import { runConfigPatch } from "./tab-patch.ts";
 import { extractWecomView, applyWecomSave } from "./tab-channels.lib.ts";
 import { loadPairingData, type PairingPanelState } from "./tab-channels-pairing-panel.ts";
-import { markChannelSaved, renderChannelSaveFooter, renderAddGroupDialog, renderChannelPairingSection, createChannelPanelBaseState, runChannelToggle, runChannelSave, initChannelTabOnce, loadBundledRuntimeState, verifyChannelCredentials, openChannelAddGroupDialog, closeChannelAddGroupDialog, confirmChannelAddGroup } from "./tab-channels-shared.ts";
+import { markChannelSaved, renderChannelSaveFooter, renderAddGroupDialog, renderChannelPairingSection, createChannelPanelBaseState, runChannelToggle, runChannelSave, initChannelTabOnce, loadBundledRuntimeState, verifyChannelCredentials, openChannelAddGroupDialog, closeChannelAddGroupDialog, confirmChannelAddGroup, renderChannelEnableCard } from "./tab-channels-shared.ts";
 
 // WeCom 面板状态必须可整体回滚，避免未保存表单和配对缓存跨会话残留。
 function createWecomState() {
@@ -126,11 +126,7 @@ export function renderChannelWecom(state: AppViewState) {
 
       ${!s.bundled ? html`<oc-message-box .message=${s.bundleMessage || t("settings.channels.wecom.notBundled")} .type=${"info"} .visible=${true}></oc-message-box>` : nothing}
 
-      <div class="oc-settings__form-group">
-        <oc-toggle-switch .label=${t("settings.channels.enable")} .checked=${s.enabled}
-          @change=${(e: CustomEvent) => handleToggle(state, e.detail.checked)}
-        ></oc-toggle-switch>
-      </div>
+      ${renderChannelEnableCard("wecom", s.enabled, (checked) => void handleToggle(state, checked))}
 
       ${s.enabled ? html`
         <div class="oc-settings__form-group">

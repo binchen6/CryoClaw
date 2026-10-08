@@ -5,7 +5,7 @@ import { html, nothing } from "lit";
 import type { AppViewState } from "../../app-view-state.ts";
 import { t, tWithDetail } from "../../i18n.ts";
 import * as ipc from "../../data/ipc-bridge.ts";
-import type { BackupEntry, GatewayState } from "../../data/ipc-bridge.ts";
+import type { BackupEntry, GatewayState, GatewayStateInfo } from "../../data/ipc-bridge.ts";
 import { showConfirm } from "../confirm-dialog.ts";
 import { registerTickHandler, unregisterTickHandler } from "../../client-ticker.ts";
 import "../../components/message-box.ts";
@@ -45,7 +45,7 @@ async function init(state: AppViewState) {
     s.backups = backup.backups ?? [];
     s.hasLastKnownGood = backup.hasLastKnownGood ?? false;
     s.lastKnownGoodUpdatedAt = backup.lastKnownGoodUpdatedAt ?? "";
-    s.gatewayState = gw;
+    s.gatewayState = readGatewayState(gw);
     state.requestUpdate();
   } catch {}
   if (gen !== initGeneration) return;
@@ -54,8 +54,9 @@ async function init(state: AppViewState) {
   registerTickHandler(TICK_HANDLER_NAME, async () => {
     try {
       const gw = await ipc.getGatewayState();
-      if (gw !== s.gatewayState) {
-        s.gatewayState = gw;
+      const next = readGatewayState(gw);
+      if (next !== s.gatewayState) {
+        s.gatewayState = next;
         s.stateRef?.requestUpdate();
       }
     } catch {}
@@ -170,11 +171,17 @@ function scheduleGatewayRefresh(state: AppViewState) {
       // gateway 重启窗口期 getGatewayState 可能 reject：吞掉等下一次刷新/60s ticker，
       // 对齐稳态轮询的防御，避免 unhandled rejection。
       try {
-        s.gatewayState = await ipc.getGatewayState();
+        s.gatewayState = readGatewayState(await ipc.getGatewayState());
         state.requestUpdate();
       } catch {}
     }, delay));
   }
+}
+
+// gateway:state 新契约返回 { state, progress }；容忍旧契约的裸字符串（防御未升级的主进程）
+function readGatewayState(info: GatewayStateInfo | GatewayState): GatewayState {
+  if (typeof info === "string") return info;
+  return info?.state ?? "stopped";
 }
 
 export function cleanupBackupTab() {

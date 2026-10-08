@@ -3,13 +3,20 @@
  * R91 扩展：check-updates（dry-run）/ update / detail（inspect --json）/ market-browse
  * （ClawHub HTTP 分类浏览 + CLI 回退），以及配套的纯解析函数。
  *
- * 契约取证（openclaw 2026.7.1-2，只读）：
+ * 契约取证（openclaw 2026.7.1-2 只读；install/update 的 ack 旗标经 2026.9.7 复核）：
  *   - `plugins list --json` → { plugins: [{ id, name, version, description, format, kind,
  *     source, rootDir, origin, enabled, status }], registry: { source, diagnostics }, diagnostics }
  *   - `plugins search <query> --json --limit <n>` → { results: [{ score, package: {
  *     name, displayName, family, channel, isOfficial, latestVersion, summary, ownerHandle,
  *     stats, icon, verificationTier } }] }（ClawHub 插件市场）
- *   - `plugins install clawhub:<name> --acknowledge-clawhub-risk --force`（免交互安装/覆盖）
+ *   - `plugins install clawhub:<name> --acknowledge-install-policy-warning --force`
+ *     （免交互安装/覆盖）。ack 旗标以 2026.9.7 实测为准：确认旗标是
+ *     --acknowledge-install-policy-warning，旧名 --acknowledge-clawhub-risk 已废弃；
+ *     kernel-channel.json minSupported 2026.7.0 的旧内核可能只认识旧旗标、甚至
+ *     新旧都不认识，execKernelCliWithAckFallback 在「does not recognize option」
+ *     失败时按 新旗标 → 旧旗标 → 无旗标 逐级降级重试（install 与两条 update
+ *     路径共用；不能一次剥光——无 ack 旗标的非交互调用撞上 install policy
+ *     warning 会直接失败）。
  *   - `plugins uninstall <id> --force`（免交互卸载）
  *   - `plugins update --dry-run --all`（R91）：stdout 为人类可读文本（无 --json，含 ANSI
  *     色码），关键行：`Would update <id>: <cur> -> <next>.` / `Would downgrade ...` /
@@ -36,6 +43,10 @@ import { readUserConfigForWrite, writeUserConfig } from "./provider-config";
 import { reconcilePluginsAllowWithEnabled, syncPluginAllowOnEnable } from "./plugin-allow-sync";
 
 const EXEC_TIMEOUT_MS = 90_000;
+// check-updates / update 单独放宽到 180s：Windows 热重启后内核冷载 alone 就要
+// ~80-85s，dry-run 还要逐插件串行查 ClawHub（单插件连接超时 10s），90s 预算
+// 会整体超时；其余 CLI 调用（list/search/install/uninstall/inspect 等）保持 90s。
+const UPDATE_CHECK_TIMEOUT_MS = 180_000;
 const MAX_BUFFER = 8 * 1024 * 1024;
 // 清单缓存（R17 立项，R91 性能审查放宽）：内核 CLI 全量加载约 15s，60s TTL
 // 只覆盖快速来回切换；install/uninstall/update 均主动失效，TTL 提到 10 分钟
@@ -124,7 +135,7 @@ export function killTrackedKernelCliChildren(): number {
   return killed;
 }
 
-function execKernelCli(args: string[]): Promise<string> {
+function execKernelCli(args: string[], timeoutMs: number = EXEC_TIMEOUT_MS): Promise<string> {
   const nodeBin = resolveNodeBin();
   const entry = resolveGatewayEntry();
   const envPath = resolveUserBinDir() + path.delimiter + (process.env.PATH ?? "");
@@ -133,7 +144,7 @@ function execKernelCli(args: string[]): Promise<string> {
       nodeBin,
       ["--no-deprecation", entry, ...args],
       {
-        timeout: EXEC_TIMEOUT_MS,
+        timeout: timeoutMs,
         maxBuffer: MAX_BUFFER,
         // OPENCLAW_STATE_DIR 显式对齐 gateway spawn（R91 审查修复）：Windows 上
         // HOME/USERPROFILE 可能指向不同路径（Git Bash 会设 POSIX 形态 HOME），
@@ -163,6 +174,79 @@ function execKernelCli(args: string[]): Promise<string> {
     );
     inflightKernelCliChildren.add(child);
   });
+}
+
+// ── ack 旗标兼容（旧内核回退）──
+// 2026.9.7 的免交互确认旗标是 --acknowledge-install-policy-warning（install 与
+// update 共用）；旧名 --acknowledge-clawhub-risk 已被内核废弃。kernel-channel.json
+// minSupported 2026.7.0，存量机器的旧内核可能只认识旧旗标，甚至新旧都不认识——
+// 但不带任何 ack 旗标的非交互调用撞上 install policy warning 会直接失败
+// （"This invocation cannot approve install policy warnings"），所以失败回退是
+// 降级链而非一次剥光：新旗标 → 旧旗标 → 无旗标，逐级在「does not recognize
+// option」失败时降级。
+
+/** 2026.9.7 实测的免交互安装/更新确认旗标（install 与 update 共用同一旗标） */
+export const INSTALL_POLICY_ACK_FLAG = "--acknowledge-install-policy-warning";
+
+/** 2026.7.x 时代的旧旗标名（新内核已废弃，仅作为旧内核降级链的中间档） */
+export const LEGACY_INSTALL_POLICY_ACK_FLAG = "--acknowledge-clawhub-risk";
+
+/** install 调用点参数（导出钉住契约：首选旗标是 INSTALL_POLICY_ACK_FLAG，旧名只在降级链里出现） */
+export function pluginInstallArgs(name: string): string[] {
+  return ["plugins", "install", `clawhub:${name}`, INSTALL_POLICY_ACK_FLAG, "--force"];
+}
+
+/** 剥掉参数里的全部 ack 旗标（--acknowledge-* 一族），供降级链末档 */
+export function stripAcknowledgeFlags(args: readonly string[]): string[] {
+  return args.filter((a) => !a.startsWith("--acknowledge-"));
+}
+
+/** 失败是否属于「内核不识别该选项」（commander/内核自定义报错两种文案都认） */
+export function isUnrecognizedOptionFailure(err: { message?: string; stderr?: string } | null | undefined): boolean {
+  const text = `${err?.stderr ?? ""}\n${err?.message ?? ""}`;
+  return /does not recognize option|unknown option/i.test(text);
+}
+
+/** 是否值得剥掉 ack 旗标重试：参数里确实带了 ack 旗标，且失败是「不识别选项」 */
+export function shouldRetryWithoutAck(args: readonly string[], err: { message?: string; stderr?: string } | null | undefined): boolean {
+  return args.some((a) => a.startsWith("--acknowledge-")) && isUnrecognizedOptionFailure(err);
+}
+
+/**
+ * 降级链的下一档参数：含新旗标 → 换成旧旗标；含旧旗标（或其它 ack 旗标）→
+ * 剥光 ack 旗标；无 ack 旗标 → null（没有可降级的档）。调用方只在
+ * isUnrecognizedOptionFailure 命中时取下一档。
+ */
+export function nextAckFallbackArgs(args: readonly string[]): string[] | null {
+  if (args.includes(INSTALL_POLICY_ACK_FLAG)) {
+    return args.map((a) => (a === INSTALL_POLICY_ACK_FLAG ? LEGACY_INSTALL_POLICY_ACK_FLAG : a));
+  }
+  if (args.some((a) => a.startsWith("--acknowledge-"))) {
+    return stripAcknowledgeFlags(args);
+  }
+  return null;
+}
+
+// install / check-updates / update 三条路径共用的 exec 包装：带 ack 旗标的调用
+// 在旧内核上以「不识别选项」失败时按 新旗标 → 旧旗标 → 无旗标 逐级降级重试；
+// 其余失败原样抛出。
+async function execKernelCliWithAckFallback(args: string[], timeoutMs: number = EXEC_TIMEOUT_MS): Promise<string> {
+  let current = args;
+  for (;;) {
+    try {
+      return await execKernelCli(current, timeoutMs);
+    } catch (err) {
+      if (!isUnrecognizedOptionFailure(err as { message?: string; stderr?: string })) {
+        throw err;
+      }
+      const next = nextAckFallbackArgs(current);
+      if (!next) {
+        throw err;
+      }
+      log.info(`[plugin-store] kernel does not recognize ack flag, downgrading: ${current.join(" ")} → ${next.join(" ")}`);
+      current = next;
+    }
+  }
 }
 
 // 插件 id / 包名安全面：防参数注入（-- 开头）与路径穿越
@@ -242,10 +326,13 @@ export function classifyUpdateFailure(args: {
   combined: string;
   exitCode: number | string | null;
   timedOut?: boolean;
+  /** 实际生效的超时秒数（check-updates 用 UPDATE_CHECK_TIMEOUT_MS），缺省取该预算 */
+  timeoutSeconds?: number;
 }): string {
   const clean = stripAnsiCodes(String(args.combined ?? ""));
   if (args.timedOut) {
-    return "插件更新检查超时（90s）：内核 CLI 未在规定时间内返回，请稍后重试。";
+    const secs = args.timeoutSeconds ?? Math.round(UPDATE_CHECK_TIMEOUT_MS / 1000);
+    return `插件更新检查超时（${secs}s）：内核 CLI 未在规定时间内返回。请检查网络/代理连接后重试；若刚重启过应用，内核冷加载较慢，可稍后再试。`;
   }
   if (/install policy|policy warning/i.test(clean)) {
     return "内核安装策略确认未通过（非交互环境无法应答）。请改用页面内「全部更新」按钮重试。";
@@ -265,6 +352,11 @@ export function classifyUpdateFailure(args: {
     .find((l) => l && !/DeprecationWarning|ExperimentalWarning|^$/.test(l));
   const code = args.exitCode === null || args.exitCode === undefined ? "未知" : String(args.exitCode);
   return `插件更新检查失败（CLI 退出码 ${code}）：${(firstLine ?? "无错误输出").slice(0, 160)}`;
+}
+
+/** exec 失败是否为超时（execFile timeout 触发时 killed=true，部分平台 code=ETIMEDOUT） */
+export function isExecTimeoutFailure(err: { code?: number | string; killed?: boolean } | null | undefined): boolean {
+  return !!err && (err.killed === true || String(err.code) === "ETIMEDOUT");
 }
 
 // 去掉行尾句号（版本号本身不含空白，捕获组会把 `.` 一起吃进来）
@@ -649,14 +741,23 @@ function extractLatestVersion(raw: unknown): string | null {
 
 async function checkUpdatesViaHttp(
   ids: readonly string[],
+  knownVersions?: ReadonlyMap<string, string>,
 ): Promise<{ updatable: PluginUpdateEntry[]; stillFailed: PluginUpdateFailure[]; upToDateIds: string[] }> {
-  let installed: InstalledPlugin[] = [];
-  try {
-    installed = await listInstalledPlugins();
-  } catch (err) {
-    log.info(`[plugin-store] update http fallback: plugins list unavailable: ${err instanceof Error ? err.message : String(err)}`);
+  // knownVersions（超时回退路径传入 list 缓存的版本表）时跳过 listInstalledPlugins：
+  // 该路径发生在内核 CLI 刚 180s 超时之后，缓存 TTL 若已过，回源 list 会再 spawn
+  // 一次 CLI 白等最长 90s；且 id 取自缓存、版本取自回源两者可能不一致
+  let versionById: Map<string, string>;
+  if (knownVersions) {
+    versionById = new Map(knownVersions);
+  } else {
+    let installed: InstalledPlugin[] = [];
+    try {
+      installed = await listInstalledPlugins();
+    } catch (err) {
+      log.info(`[plugin-store] update http fallback: plugins list unavailable: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    versionById = new Map(installed.filter((p) => p.version).map((p) => [p.id, p.version as string]));
   }
-  const versionById = new Map(installed.filter((p) => p.version).map((p) => [p.id, p.version as string]));
   const settled = await Promise.allSettled(
     ids.map(async (id): Promise<PluginUpdateEntry | { id: string; reason: string }> => {
       const currentVersion = versionById.get(id);
@@ -694,6 +795,49 @@ async function checkUpdatesViaHttp(
     updatable.push(v);
   }
   return { updatable, stillFailed, upToDateIds };
+}
+
+export type UpdateCheckTimeoutFallbackResult = {
+  updatable: PluginUpdateEntry[];
+  upToDateIds: string[];
+  failed: string[];
+};
+
+// check-updates 超时的末级回退：内核 CLI 整体超时（热重启冷载 ~80-85s + 逐插件
+// 10s 网络检查，超过 UPDATE_CHECK_TIMEOUT_MS）时，若 list 缓存还热，直接对缓存
+// id 走 HTTP 检查出结果，而不是整页报超时错。返回 null 表示回退不可用/也失败，
+// 由调用方回落到超时错误文案。checkHttp 可注入以便 node:test 覆盖。
+export async function runUpdateCheckTimeoutHttpFallback(
+  cachedPlugins: readonly InstalledPlugin[] | null | undefined,
+  // 默认 checkHttp 把缓存自带的版本表一并传入，HTTP 兜底不再回源 plugins list
+  // （避免在 CLI 刚超时后又 spawn 一次 CLI 白等；id 与版本同源也保证一致）
+  checkHttp: (ids: readonly string[]) => Promise<{
+    updatable: PluginUpdateEntry[];
+    stillFailed: PluginUpdateFailure[];
+    upToDateIds: string[];
+  }> = (ids) =>
+    checkUpdatesViaHttp(
+      ids,
+      new Map(
+        (cachedPlugins ?? [])
+          .filter((p) => p.id && p.version)
+          .map((p) => [p.id, p.version as string]),
+      ),
+    ),
+): Promise<UpdateCheckTimeoutFallbackResult | null> {
+  const ids = (cachedPlugins ?? []).map((p) => p.id).filter(Boolean);
+  if (ids.length === 0) return null;
+  let http: { updatable: PluginUpdateEntry[]; stillFailed: PluginUpdateFailure[]; upToDateIds: string[] };
+  try {
+    http = await checkHttp(ids);
+  } catch (err) {
+    log.info(`[plugin-store] check-updates timeout http fallback failed: ${err instanceof Error ? err.message : String(err)}`);
+    return null;
+  }
+  // 全部 id 都失败且无任何成功信号（网络大概率也不通）→ 视为回退失败，
+  // 把超时错误文案留给用户比「0 个可更新」的假成功更诚实
+  if (http.updatable.length === 0 && http.upToDateIds.length === 0 && http.stillFailed.length > 0) return null;
+  return { updatable: http.updatable, upToDateIds: http.upToDateIds, failed: http.stillFailed.map((f) => f.id) };
 }
 
 // R93：重装恢复暂存的插件 config。市场包名与运行时 id 可不同
@@ -796,7 +940,7 @@ export function registerPluginStoreIpc(): void {
     const name = typeof params?.name === "string" ? params.name.trim() : "";
     if (!isValidPluginName(name)) return { success: false, message: "invalid plugin name" };
     try {
-      const stdout = await execKernelCli(["plugins", "install", `clawhub:${name}`, "--acknowledge-clawhub-risk", "--force"]);
+      const stdout = await execKernelCliWithAckFallback(pluginInstallArgs(name));
       invalidatePluginListCache();
       // R17：安装可能覆盖运行时 id 相同的既有插件（manifest id 与包名不同时静默覆盖）——
       // 从 stdout 探测并透出警告，避免“安装成功但官方插件被顶替”静默发生。
@@ -866,6 +1010,10 @@ export function registerPluginStoreIpc(): void {
   // exit 1（Failed 行在 stderr）——exec 拒绝时解析附件里的 Failed 行，交由
   // Electron 侧 HTTP（marketApiBase，用户可配镜像）回退重查；回退后仍失败才
   // 报错，报错文案带网络/镜像配置指引而非裸 undici 超时串。
+  // R95：整体超时（killed/ETIMEDOUT，UPDATE_CHECK_TIMEOUT_MS=180s 预算被热重启
+  // 冷载 + 逐插件网络检查吃满）且 list 缓存还热时，自动对缓存 id 走
+  // checkUpdatesViaHttp 并直接返回（结果标注来自直连 HTTP 检查）；回退也不可用
+  // 才报超时错。
   ipcMain.handle("plugin-store:check-updates", async (event) => {
     if (!assertTrustedIpcSender(event, "plugin-store:check-updates")) throw new Error("IPC sender not trusted");
     let stdout = "";
@@ -873,9 +1021,29 @@ export function registerPluginStoreIpc(): void {
     try {
       // T2：dry-run 同样要带 install-policy ack——非 TTY 下内核 ack 模块返回 {}，
       // 缺参时内核直接 exit 1 且 stderr 无结果行（历史裸漏 Command failed 的成因之一）
-      stdout = await execKernelCli(["plugins", "update", "--dry-run", "--all", "--acknowledge-install-policy-warning"]);
+      stdout = await execKernelCliWithAckFallback(
+        ["plugins", "update", "--dry-run", "--all", INSTALL_POLICY_ACK_FLAG],
+        UPDATE_CHECK_TIMEOUT_MS,
+      );
     } catch (err) {
       execFailure = err as Error & { stdout?: string; stderr?: string; code?: number | string; killed?: boolean };
+      // R95：超时且 list 缓存还热 → 直连 HTTP 回退直接出结果
+      if (isExecTimeoutFailure(execFailure)) {
+        const fallback = await runUpdateCheckTimeoutHttpFallback(listCache?.plugins);
+        if (fallback) {
+          log.info(`[plugin-store] check-updates timed out; returning http fallback results (${fallback.updatable.length} updatable, ${fallback.failed.length} failed)`);
+          return {
+            success: true,
+            data: {
+              updatable: fallback.updatable,
+              checkedAt: Date.now(),
+              ...(fallback.failed.length > 0 ? { failed: fallback.failed } : {}),
+              source: "http-fallback",
+              message: "内核 CLI 检查超时，以下结果来自直连 ClawHub HTTP 检查。",
+            },
+          };
+        }
+      }
     }
     try {
       // 内核 exit 1 时结果行在 stderr（console.error），stdout 里可能有进度文本
@@ -911,10 +1079,15 @@ export function registerPluginStoreIpc(): void {
       if (!sawAnySignal && failed.length === 0) {
         if (execFailure) {
           const exitCode = (execFailure as { code?: number | string }).code ?? null;
-          const timedOut = execFailure.killed === true || String(execFailure.code) === "ETIMEDOUT";
+          const timedOut = isExecTimeoutFailure(execFailure);
           return {
             success: false,
-            message: classifyUpdateFailure({ combined, exitCode, timedOut }),
+            message: classifyUpdateFailure({
+              combined,
+              exitCode,
+              timedOut,
+              timeoutSeconds: Math.round(UPDATE_CHECK_TIMEOUT_MS / 1000),
+            }),
           };
         }
         const snippet = stripAnsiCodes(stdout).trim().slice(0, 200);
@@ -946,15 +1119,16 @@ export function registerPluginStoreIpc(): void {
   // R91：执行更新。id 省略/为空 → --all；否则单插件更新。成功后失效 listCache
   // （与 install/uninstall 同步：list 页的版本号来自缓存）。不传
   // --accept-capabilities：能力扩大留给用户在 CLI 决定，内核报错时信息透传。
+  // 与 check-updates 同享 180s 预算：实际更新同样要过内核冷载 + 逐插件下载。
   ipcMain.handle("plugin-store:update", async (event, params) => {
     if (!assertTrustedIpcSender(event, "plugin-store:update")) throw new Error("IPC sender not trusted");
     const id = typeof params?.id === "string" ? params.id.trim() : "";
     if (id && !isValidPluginName(id)) return { success: false, message: "invalid plugin id" };
     const args = id
-      ? ["plugins", "update", id, "--acknowledge-install-policy-warning"]
-      : ["plugins", "update", "--all", "--acknowledge-install-policy-warning"];
+      ? ["plugins", "update", id, INSTALL_POLICY_ACK_FLAG]
+      : ["plugins", "update", "--all", INSTALL_POLICY_ACK_FLAG];
     try {
-      const stdout = await execKernelCli(args);
+      const stdout = await execKernelCliWithAckFallback(args, UPDATE_CHECK_TIMEOUT_MS);
       invalidatePluginListCache();
       const parsed = parseUpdateOutcomes(stdout);
       return {

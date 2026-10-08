@@ -16,7 +16,7 @@
  * - 断连重连：app-gateway onHello 调 loadProgressCard 重拉当前会话。
  * - 事件失效重拉：changed 只带 sessionKey+revision，按当前会话过滤；revision 与本地一致时跳过。
  * - 竞态守卫：拉取锚定发起时的 sessionKey，响应晚到时若会话已切换则丢弃（isCurrent 守卫）；
- *   在途期间再次请求刷新置脏标记，完成后补跑一轮（同 controllers/tasks.ts loadTasks 模式）。
+ *   在途期间再次请求刷新置脏标记，完成后补跑一轮（同 controllers/tasks.ts loadRunHistory 模式）。
  */
 import type { GatewayBrowserClient } from "../gateway.ts";
 
@@ -177,7 +177,7 @@ export function progressCardChangedNeedsReload(
 }
 
 // 在途拉取期间再次请求刷新（changed 事件/会话切换）时置脏，完成后补跑一轮：
-// 否则晚到的旧响应会覆盖更新状态（同 loadTasks 的 tasksRefreshPending 模式）。
+// 否则晚到的旧响应会覆盖更新状态（同 loadRunHistory 的 runsRefreshPending 模式）。
 const progressCardRefreshPending = new WeakMap<ProgressCardHost, string>();
 const progressCardDismissToken = new WeakMap<ProgressCardHost, symbol>();
 

@@ -253,6 +253,84 @@ test("thinkingTail：结尾悬空的高代理丢弃（残缺 emoji 不渲染出 
   );
 });
 
+// ── R90 marquee 移除：实时思考区改静态单行（单拷贝，无 __track 滚动动画）──
+
+test("liveThinkingGroup：tail 只渲染单拷贝，不含 __track 滚动容器与滚动动画类", async () => {
+  const { renderLiveThinkingGroup, thinkingTail } = await import("./grouped-render.ts");
+  // 用长文本：tail（160 截断窗口）与正文全量是不同的字符串，可分别计数
+  const thinking = "x".repeat(300) + "TAIL_MARKER";
+  const tail = thinkingTail(thinking);
+  const result = collect(renderLiveThinkingGroup(undefined, thinking, null, null, false));
+  const htmlText = serialize(result);
+  assert.ok(
+    htmlText.includes("chat-thinking-ticker__copy"),
+    "静态单行窗口仍应有 tail 拷贝",
+  );
+  assert.ok(
+    !htmlText.includes("chat-thinking-ticker__track"),
+    "双拷贝 -50% 循环的 __track 容器应已移除",
+  );
+  // 单拷贝：tail 文本在模板里只出现一次（此前 marquee 为两份拷贝）
+  const tailOccurrences = result.values.filter((v) => v === tail).length;
+  assert.equal(tailOccurrences, 1, "tail 只渲染一份（此前 marquee 为两份拷贝）");
+});
+
+test("liveThinkingGroup：无思考内容时不渲染 ticker 窗口", async () => {
+  const { renderLiveThinkingGroup } = await import("./grouped-render.ts");
+  const result = collect(renderLiveThinkingGroup(undefined, "", null, null, false));
+  assert.ok(
+    !serialize(result).includes("chat-thinking-ticker"),
+    "tail 为空时不应渲染 ticker 窗口",
+  );
+});
+
+// ── 错误卡（cryoclawError）：裸 "Error:" 前缀不直接上屏，走本地化前缀 + title 详情 ──
+
+test("错误卡：渲染本地化前缀，裸 Error 前缀降级为 title 详情", async () => {
+  const { renderMessageGroup } = await import("./grouped-render.ts");
+  const group = {
+    kind: "group" as const,
+    key: "group:assistant:err",
+    role: "assistant",
+    messages: [
+      {
+        key: "msg:err",
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: "Error: unknown method: chat.send" }],
+          timestamp: 1,
+          cryoclawError: true,
+        },
+      },
+    ],
+    timestamp: 1,
+    isStreaming: false,
+  };
+  const result = collect(renderMessageGroup(group, { showReasoning: false }));
+  const htmlText = serialize(result);
+  assert.ok(
+    htmlText.includes("chat-error-card"),
+    "cryoclawError 消息应渲染错误卡",
+  );
+  // 本地化前缀经 t() 求值为当前 locale 文案（node 默认 en）
+  const { t } = await import("../i18n.ts");
+  assert.ok(
+    htmlText.includes(t("chat.errorCardPrefix")),
+    "错误卡应渲染本地化前缀（当前 locale）",
+  );
+  // 裸 "Error:" 前缀不得作为可见文本（只允许作为 title 属性值出现）
+  const visibleText = result.strings.join(" ") + " " + result.values.filter((v) => typeof v === "string" && !String(v).includes("unknown method")).join(" ");
+  assert.ok(
+    !visibleText.includes("Error: unknown method"),
+    "裸 English 错误串不得直接上屏（detail 正文可保留，前缀必须本地化）",
+  );
+  // 详情正文（去掉 Error: 前缀后）仍在可见值里
+  assert.ok(
+    result.values.some((v) => v === "unknown method: chat.send"),
+    "去掉前缀后的详情正文应保留展示",
+  );
+});
+
 // ── R5 懒渲染 + 流式重放：折叠时不求值 bodyFn，展开后随宿主重放 ──
 
 test("懒渲染：折叠状态下 ref/toggle 重放均不求值 bodyFn", async () => {

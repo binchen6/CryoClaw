@@ -43,8 +43,7 @@ import {
 import { loadSessions } from "./controllers/sessions.ts";
 import { applySessionsChangedPatch } from "./controllers/sessions-patch.ts";
 import { loadWorktrees } from "./controllers/worktrees.ts";
-import { applyTaskEvent, loadTasks } from "./controllers/tasks.ts";
-import { supportsMethod } from "./controllers/capabilities.ts";
+import { loadRunHistory } from "./controllers/tasks.ts";
 import { loadSkills } from "./controllers/skills.ts";
 import {
   handleProgressCardChanged,
@@ -58,8 +57,12 @@ import {
   type BoardHost,
 } from "./controllers/board.ts";
 import { loadCommands } from "./controllers/commands.ts";
-import type { TaskSummary } from "./types.ts";
 import { GatewayBrowserClient } from "./gateway.ts";
+import {
+  mapCloseCodeToPhase,
+  type GatewayConnPhase,
+  type GatewayProgressInfo,
+} from "./gateway-connection.ts";
 import { configureManagedMedia, wsUrlToHttpOrigin } from "./chat/managed-media.ts";
 import { applySessionKeyTransition } from "./session-transition.ts";
 import { isToleratedHiddenSession } from "./session-jump.ts";
@@ -86,6 +89,10 @@ type GatewayHost = {
   connected: boolean;
   hello: GatewayHelloOk | null;
   lastError: string | null;
+  // 连接状态三态（starting/reconnecting/failed；已连接为 null）+ 主进程推送的
+  // 启动进度——渲染层据此出友好连接状态，不再把裸 close code 文案直接甩给用户
+  gatewayPhase: GatewayConnPhase | null;
+  gatewayProgress: GatewayProgressInfo | null;
   onboarding?: boolean;
   tab: Tab;
   agentsLoading: boolean;
@@ -112,11 +119,10 @@ type GatewayHost = {
   meterTotalsBaseline: Map<string, number>;
   execApprovalQueue: ExecApprovalRequest[];
   execApprovalError: string | null;
-  tasksLoading: boolean;
-  tasksError: string | null;
-  tasks: TaskSummary[];
-  tasksStatusFilter: string;
-  tasksCancellingIds: Set<string>;
+  runsLoading: boolean;
+  runsError: string | null;
+  runHistory: import("./types.ts").CronRunLogEntry[];
+  runsStatusFilter: string;
 };
 
 type SessionDefaultsSnapshot = {
@@ -446,6 +452,55 @@ async function reconcileQuestionPrompts(host: GatewayHost): Promise<void> {
 const GAP_RECONNECT_MAX = 3;
 let gapReconnectCount = 0;
 
+// 持续失败窗口：断连后 phase 先落 reconnecting（自动退避重连中，信息态），
+// 超过该窗口仍未握手成功才升 failed（错误态，用户可手动重试）。WS 退避 800ms
+// 起步 ×1.7 封顶 15s——10s 窗口内约已重试 4 次，足称「持续失败」。
+const SUSTAINED_FAILURE_MS = 10_000;
+let sustainedFailureTimer: ReturnType<typeof setTimeout> | null = null;
+
+function clearSustainedFailureTimer() {
+  if (sustainedFailureTimer !== null) {
+    clearTimeout(sustainedFailureTimer);
+    sustainedFailureTimer = null;
+  }
+}
+
+function setGatewayPhase(host: GatewayHost, phase: GatewayConnPhase | null) {
+  if (host.gatewayPhase !== phase) {
+    host.gatewayPhase = phase;
+  }
+}
+
+function armSustainedFailure(host: GatewayHost, delayMs: number = SUSTAINED_FAILURE_MS) {
+  clearSustainedFailureTimer();
+  sustainedFailureTimer = setTimeout(() => {
+    sustainedFailureTimer = null;
+    if (host.connected) {
+      return;
+    }
+    setGatewayPhase(host, "failed");
+  }, delayMs);
+}
+
+// 启动静默窗口：starting 态下 progress 事件是活性证据（noteGatewayStartProgress
+// 每次都会取消本计时）。若进度事件停止流动超过该窗口——监督链重试耗尽（不再有任何
+// 步骤事件）或 ready 后握手持续被拒——升级 failed 给手动重试入口，否则「启动中」
+// 横幅会无限挂起。取值需大于预启动最坏静默段（stopExistingGateway 优雅停止 +
+// 端口释放等待 + 强杀兜底 ≈ 30s）。
+const STARTING_SILENCE_MS = 45_000;
+
+// gateway:progress 推送是「内核正在启动」的权威信号（来自主进程监督链）：
+// 纠正 phase 回 starting 并取消持续失败计时。WS 连接在启动窗口内被拒
+// （close 4000/1006）会把 phase 打成 reconnecting，10s 无握手还会误升 failed
+// 红态——而健康检查窗口本身可达数十秒，只要进度事件还在流就说明启动活着。
+export function noteGatewayStartProgress(host: GatewayHost): void {
+  if (host.connected) {
+    return;
+  }
+  clearSustainedFailureTimer();
+  setGatewayPhase(host, "starting");
+}
+
 // exec.approval 过期定时器：entry.id → timer id。
 // resolved 事件与重连清队列时同步 clearTimeout，避免过期回调误删重连后的同名新条目。
 const execApprovalExpiryTimers = new Map<string, number>();
@@ -487,8 +542,12 @@ export function connectGateway(host: GatewayHost) {
   host.execApprovalQueue = [];
   host.execApprovalError = null;
   clearAllExecApprovalExpiryTimers();
+  clearSustainedFailureTimer();
 
   const previousClient = host.client;
+  // 首次连接（无旧 client）→ starting（内核启动窗口，信息态）；
+  // gap 重连/显式重连（有旧 client）→ reconnecting。
+  setGatewayPhase(host, previousClient ? "reconnecting" : "starting");
   // 托管图片（/api/chat/media/...）：配置网关 HTTP origin 与兜底 token，
   // oc-managed-img 组件据此做 Bearer fetch → blob URL 渲染
   configureManagedMedia({
@@ -512,6 +571,10 @@ export function connectGateway(host: GatewayHost) {
       }
       host.connected = true;
       host.lastError = null;
+      // 连接成功：三态复位 + 启动进度结束（启动进度只在未连接窗口展示）
+      setGatewayPhase(host, null);
+      host.gatewayProgress = null;
+      clearSustainedFailureTimer();
       // 连接成功，重置 gap 重连计数
       gapReconnectCount = 0;
       host.hello = hello;
@@ -583,11 +646,8 @@ export function connectGateway(host: GatewayHost) {
       // 注册定时轮询并启动客户端定时器（"cron" 是 tick handler 标识，非视图 id，勿当死接线删）
       registerTickHandler("cron", () => loadCronJobs(host as unknown as Parameters<typeof loadCronJobs>[0]));
       registerTickHandler("sessions", () => loadSessionsAndReconcile(host));
-      // T1 能力门控：内核未注册 tasks.*（2026.9.7+）时不注册 ticker，避免 30s 死轮询；
-      // loadTasks 内部另有同门控兜底（视图手动刷新路径）
-      if (supportsMethod(host.hello, "tasks.list")) {
-        registerTickHandler("tasks", () => loadTasks(host as unknown as OpenClawApp));
-      }
+      // 2026.9.7：tasks.* 已移除，不再注册 tasks 轮询——运行记录由任务视图内
+      // 30s ticker（app-tasks.ts）与 cron 广播事件分支承担刷新
       registerTickHandler("stream-watchdog", () => checkStalledStream(host));
       registerTickHandler("question-expiry", () => {
         // R61：pending 问题过期本地标记（等待 resolved/list 事件收敛），有变化才触发重渲染
@@ -616,10 +676,37 @@ export function connectGateway(host: GatewayHost) {
       unregisterTickHandler("stream-watchdog");
       unregisterTickHandler("question-expiry");
       stopTicker();
-      // Code 1012 = Service Restart (expected during config saves, don't show as error)
+      // 三态模型：1012 = Service Restart（配置保存触发的平滑重启，信息态）；
+      // 1013 = 内核启动/健康检查重启窗口（info 而非 error）；其余异常关闭 →
+      // reconnecting（客户端自动退避重连），持续失败超时后才升 failed。
+      // 裸 `disconnected (code): reason` 不再作为用户可见文案，仅留 console/原始详情。
       if (code !== 1012) {
         host.lastError = `disconnected (${code}): ${reason || "no reason"}`;
       }
+      // 稳定化守卫（审查修复）：
+      // - starting 不降级：启动窗口内 WS 被拒（1006/4000）是预期噪音，gateway:progress
+      //   推送是该窗口的权威信号（noteGatewayStartProgress 会维持 starting 并取消
+      //   持续失败计时）；降级成 reconnecting 会让横幅在「启动中/重连中」间闪烁
+      // - failed 不降级：长期断连时退避重连的每次失败 close 都会把 failed 打回
+      //   reconnecting 并重臂 10s 计时，红色错误态每周期只出现几秒无限抖动；
+      //   failed 的退出通道（onHello 复位 / noteGatewayStartProgress / 手动重试
+      //   reconnectNow → connectGateway 重置）均已存在，不会被堵死
+      if (host.gatewayPhase === "starting") {
+        // starting 不降级（闪烁），但臂一个更长的静默计时兜底：进度事件停止
+        // 流动（监督链耗尽 / ready 后握手持续被拒）时仍能升到 failed 给出重试入口。
+        // 仅在无在途计时时臂——close 事件随退避重连周期到达，若每次都重臂，
+        // 计时器永远到不了期，「启动中」横幅会无限挂起（进度事件到达时
+        // noteGatewayStartProgress 会清计时，下一次 close 重新起算 45s 静默窗口）
+        if (sustainedFailureTimer === null) {
+          armSustainedFailure(host, STARTING_SILENCE_MS);
+        }
+        return;
+      }
+      if (host.gatewayPhase === "failed" && code !== 1012 && code !== 1013) {
+        return;
+      }
+      setGatewayPhase(host, mapCloseCodeToPhase(code));
+      armSustainedFailure(host);
     },
     onEvent: (evt) => {
       if (host.client !== client) {
@@ -635,6 +722,9 @@ export function connectGateway(host: GatewayHost) {
       if (gapReconnectCount >= GAP_RECONNECT_MAX) {
         console.warn(`[gateway] onGap expected=${expected} received=${received}, max retries reached`);
         host.lastError = `event gap detected (expected seq ${expected}, got ${received}); please refresh`;
+        // 事件缺口重试耗尽：等同持续失败——直接落 failed（手动刷新/重试才能恢复）
+        setGatewayPhase(host, "failed");
+        clearSustainedFailureTimer();
         gapReconnectCount = 0;
         // R30 软恢复：gap 耗尽不再只显示文案。丢的若是 final/aborted 帧，本地 run 态
         // 会永久挂起——socket 未断（事件仍在流、请求可用），清态 + 重拉历史对齐内核真实状态。
@@ -861,20 +951,18 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
     return;
   }
 
-  // 后台任务实时事件（v2026.7）：upserted / deleted / restored
-  if (evt.event === "task") {
+  // cron 广播事件（2026.9.7 取代已移除的 task 事件）：job 增删改/运行完成均广播，
+  // 载荷 {action, job?}——增量语义不足以更新本地列表，统一失效重拉（loadCronJobs /
+  // loadRunHistory 内部有在途合并与能力门控，事件密集期至多补跑一轮）。
+  // 仅任务视图打开时刷新：高频任务（分钟级）每次运行完成都广播，视图未开时
+  // cron.list/cron.runs 无消费者纯属空转；下次进入视图时 openTasksView/onTabChange
+  // 会首拉，onHello 的 tick 注册也保留 30s 兜底。
+  if (evt.event === "cron") {
     const app = host as unknown as OpenClawApp;
-    const payload = evt.payload as { action?: string; taskId?: string; task?: TaskSummary } | undefined;
-    const next = applyTaskEvent(app.tasks, payload);
-    if (next) {
-      app.tasks = next;
-    } else {
-      // restored / 未知 action / 事件载荷不完整 → 全量重拉，避免本地状态与内核漂移
-      void loadTasks(app as any);
+    if (app.settings?.cryoclawView === "tasks") {
+      void loadCronJobs(app as unknown as Parameters<typeof loadCronJobs>[0]);
+      void loadRunHistory(app as unknown as Parameters<typeof loadRunHistory>[0]);
     }
-    // upserted/deleted 已本地应用（loadTasks 恒拉全量、过滤在客户端，事件带完整
-    // task 对象），任务视图打开时无需再重拉——R72 前此举让任务密集期每个事件都
-    // 触发一次全量 tasks.list 往返。
     app.requestUpdate?.();
     return;
   }

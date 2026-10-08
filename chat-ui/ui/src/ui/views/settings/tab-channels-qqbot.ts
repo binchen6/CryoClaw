@@ -13,7 +13,7 @@ import "../../components/password-input.ts";
 import "../../components/message-box.ts";
 import { runConfigPatch } from "./tab-patch.ts";
 import { extractQqbotView, applyQqbotSave } from "./tab-channels.lib.ts";
-import { markChannelSaved, renderChannelSaveFooter, runChannelToggle, runChannelSave, initChannelTabOnce, loadBundledRuntimeState, verifyChannelCredentials } from "./tab-channels-shared.ts";
+import { markChannelSaved, renderChannelSaveFooter, runChannelToggle, runChannelSave, initChannelTabOnce, loadBundledRuntimeState, verifyChannelCredentials, renderChannelEnableCard } from "./tab-channels-shared.ts";
 
 // QQ Bot 面板状态必须可整体回滚，避免未保存凭据残留到下次打开。
 function createQqbotState() {
@@ -98,11 +98,7 @@ export function renderChannelQqbot(state: AppViewState) {
 
       ${!s.bundled ? html`<oc-message-box .message=${s.bundleMessage || t("settings.channels.qqbot.notBundled")} .type=${"info"} .visible=${true}></oc-message-box>` : nothing}
 
-      <div class="oc-settings__form-group">
-        <oc-toggle-switch .label=${t("settings.channels.enable")} .checked=${s.enabled}
-          @change=${(e: CustomEvent) => handleToggle(state, e.detail.checked)}
-        ></oc-toggle-switch>
-      </div>
+      ${renderChannelEnableCard("qqbot", s.enabled, (checked) => void handleToggle(state, checked))}
 
       ${s.enabled ? html`
         <div class="oc-settings__form-group">

@@ -9,6 +9,7 @@
  * 视图清单见 views/registry.ts（新增视图接线点共 3 处，见其文件头）。
  */
 import { html, nothing } from "lit";
+import { keyed } from "lit/directives/keyed.js";
 import type { AppViewState } from "./app-view-state.ts";
 import { buildChatProps } from "./app-chat-props.ts";
 import {
@@ -31,8 +32,6 @@ import { buildTranscriptFilename, buildTranscriptMarkdown, copyText, downloadMar
 import type { TranscriptMessage } from "./chat/transcript-export.ts";
 import { setCryoClawView } from "./app-view-switch.ts";
 import { loadSessions } from "./controllers/sessions.ts";
-import { activeTaskSessionKeys, isActiveTask } from "./controllers/tasks.ts";
-import type { TaskSummary } from "./types.ts";
 import { t } from "./i18n.ts";
 import { icons } from "./icons.ts";
 import { resolveMainSessionKey } from "./session-visibility.ts";
@@ -303,33 +302,16 @@ async function exportCurrentTranscript(state: AppViewState, sessionLabel: string
   showToast(state, copied ? t("chat.transcriptCopied") : t("chat.transcriptExported"));
 }
 
-// 活跃任务会话集合（R58 删除守卫）：按 tasks 数组引用记忆化，
-// 会话面板 shouldUpdate 按引用比较该字段，引用稳定时跳过重渲染。
-let activeTaskMemoSrc: readonly TaskSummary[] | null = null;
-let activeTaskMemoSet = new Set<string>();
-function activeTaskSessionsOf(tasks: readonly TaskSummary[]): Set<string> {  if (activeTaskMemoSrc !== tasks) {
-    activeTaskMemoSrc = tasks;
-    activeTaskMemoSet = activeTaskSessionKeys(tasks);
-  }
-  return activeTaskMemoSet;
-}
-
-// 活跃任务计数（rail 角标）：按 tasks 数组引用记忆化，避免每帧 filter 新建数组。
-let activeTaskCountSrc: readonly TaskSummary[] | null = null;
-let activeTaskCountValue = 0;
-function activeTaskCountOf(tasks: readonly TaskSummary[]): number {
-  if (activeTaskCountSrc !== tasks) {
-    activeTaskCountSrc = tasks;
-    activeTaskCountValue = tasks.filter((task) => isActiveTask(task)).length;
-  }
-  return activeTaskCountValue;
-}
+// 2026.9.7：内核移除 tasks.*，活跃任务数据源消失——rail 角标恒 0（隐藏），
+// 会话删除守卫（R58）退化为不阻塞。常量引用保持稳定：会话面板 shouldUpdate
+// 按引用比较 activeTaskSessions，每帧新建 Set 会破坏记忆化。
+const NO_ACTIVE_TASK_SESSIONS = new Set<string>();
+const ACTIVE_TASKS_RUNNING_COUNT = 0;
 
 export function renderApp(state: AppViewState) {
   ensureFileDropBridge(state);
   updateFileDropState(state);
   syncPanelWidthVar(state.settings.sidebarWidth);
-  const chatDisabledReason = state.connected ? null : t("error.disconnected");
   const chatFocus = state.onboarding;
   const panelCollapsed = !state.onboarding && state.settings.navCollapsed;
   const currentSessionKey = state.sessionKey;
@@ -338,6 +320,12 @@ export function renderApp(state: AppViewState) {
   const meta = CRYOCLAW_VIEW_META[cryoclawView];
   const currentSessionLabel =
     sessionOptions.find((o) => o.key === currentSessionKey)?.label ?? null;
+  // 连接状态三态（connected 为 null）——图标轨状态入口与对话页 callout 共用。
+  // 裸 lastError（disconnected (code): reason 等）不再进入 errors 列表甩给用户，
+  // 仅保留在 state 里作 console/详情用途。
+  const connection = state.connected
+    ? null
+    : { phase: state.gatewayPhase ?? "reconnecting", progress: state.gatewayProgress };
 
   return html`
     <div
@@ -348,9 +336,10 @@ export function renderApp(state: AppViewState) {
         : html`<oc-rail
             .props=${{
               activeView: cryoclawView,
-              tasksRunningCount: activeTaskCountOf(state.tasks),
+              tasksRunningCount: ACTIVE_TASKS_RUNNING_COUNT,
               connected: state.connected,
-              errors: [chatDisabledReason, state.lastError].filter(Boolean) as string[],
+              errors: [] as string[],
+              connection,
               webbridgeRepairVisible: state.webbridgeRepairVisible,
               webbridgeRepairChecking: state.webbridgeRepairChecking,
               onWebbridgeRepairClick: () => {
@@ -401,8 +390,8 @@ export function renderApp(state: AppViewState) {
               onDeleteSession: (key: string) => {
                 void deleteSessionFromSidebar(state, key);
               },
-              // R58：有 queued/running 任务的会话禁止删除（按 tasks 引用记忆化，避免每帧新 Set）
-              activeTaskSessions: activeTaskSessionsOf(state.tasks ?? []),
+              // 2026.9.7：无后台任务数据源，R58 删除守卫退化为恒空（不阻塞删除）
+              activeTaskSessions: NO_ACTIVE_TASK_SESSIONS,
               // 失败统一 toast（此前 patchSession 的错误只写进无人消费的 sessionsError → 点了没反应）
               onTogglePin: (key: string, pinned: boolean) => {
                 void patchSessionFromSidebar(state, key, { pinned });
@@ -430,7 +419,7 @@ export function renderApp(state: AppViewState) {
         </div>
 
         <main class="cryoclaw-content">
-          ${renderActiveView(state, cryoclawView)}
+          ${keyed(cryoclawView, renderActiveView(state, cryoclawView))}
         </main>
       </div>
 

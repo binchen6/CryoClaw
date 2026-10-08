@@ -35,6 +35,25 @@
   flex-direction: column;
 }
 
+/* 顶层视图切换入场：keyed(cryoclawView) 保证切视图时重建 DOM（多个视图的根都是
+   div，Lit 原位复用不触发动画），动画只在新节点插入时跑一次；同视图内重渲染
+   原位更新，不会反复播放。 */
+.cryoclaw-content > * {
+  animation: oc-view-enter var(--duration-normal) var(--ease-out);
+}
+
+@keyframes oc-view-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 .cryoclaw-content > .card.chat {
   flex: 1;
   border-radius: 0;
@@ -223,7 +242,9 @@ oc-rail {
   background: var(--accent-subtle);
 }
 
-/* R94：当前态左侧 2px 指示条（轨内容水平居中，item 40px 宽 → 条贴轨左缘内侧） */
+/* R94：当前态左侧 2px 指示条（轨内容水平居中，item 40px 宽 → 条贴轨左缘内侧）。
+   激活项切换时 ::before 是新建伪元素盒，transition 不会补间——用入场动画
+   （ scaleY + 淡入 ）表达滑动落位。 */
 .oc-rail__item.active::before {
   content: "";
   position: absolute;
@@ -234,6 +255,19 @@ oc-rail {
   height: 20px;
   border-radius: var(--radius-full);
   background: var(--accent);
+  animation: oc-rail-indicator-in var(--duration-normal) var(--ease-out);
+}
+
+@keyframes oc-rail-indicator-in {
+  from {
+    opacity: 0;
+    transform: translateY(-50%) scaleY(0.2);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(-50%) scaleY(1);
+  }
 }
 
 .oc-rail__item svg {
@@ -255,13 +289,140 @@ oc-rail {
   background: var(--warn-subtle);
 }
 
-.oc-rail__item--disconnected {
+/* 连接状态入口（三态：starting/reconnecting/failed）——替代旧 disconnected 红态。
+   starting/reconnecting 是信息/过渡态用 accent 系，failed 才用 destructive。
+   激活指示条（::before）沿轨道滑入，见文件头 rail 通用规则。 */
+.oc-rail__item--conn-starting {
+  color: var(--accent);
+}
+
+.oc-rail__item--conn-starting:hover {
+  color: var(--accent);
+  background: var(--accent-subtle);
+}
+
+.oc-rail__item--conn-reconnecting {
+  color: var(--warn);
+}
+
+.oc-rail__item--conn-reconnecting:hover {
+  color: var(--warn);
+  background: var(--warn-subtle);
+}
+
+.oc-rail__item--conn-failed {
   color: var(--destructive);
 }
 
-.oc-rail__item--disconnected:hover {
+.oc-rail__item--conn-failed:hover {
   color: var(--destructive);
   background: var(--danger-subtle);
+}
+
+/* 连接状态悬浮卡：图标轨按钮右侧弹出（同 error-popup 交互） */
+.oc-rail__conn-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.oc-rail__conn-popup {
+  display: none;
+  position: absolute;
+  left: calc(100% + 8px);
+  bottom: 0;
+  width: 248px;
+  padding: var(--spacer-12);
+  background: var(--bg-elevated);
+  border: var(--hairline);
+  border-radius: var(--radius-12);
+  box-shadow: var(--shadow-lg);
+  font-size: var(--text-sm);
+}
+
+.oc-rail__conn-wrap:hover .oc-rail__conn-popup,
+.oc-rail__conn-popup:focus-within {
+  display: grid;
+  gap: var(--spacer-8);
+}
+
+.oc-rail__conn-title {
+  font-weight: var(--weight-semibold);
+  color: var(--text-strong);
+}
+
+.oc-rail__conn-title--reconnecting {
+  color: var(--warn);
+}
+
+.oc-rail__conn-title--failed {
+  color: var(--destructive);
+}
+
+/* 启动步骤点（6 步：cleanup/database/port/spawn/health/ready） */
+.oc-rail__conn-steps {
+  display: flex;
+  gap: var(--spacer-4);
+}
+
+.oc-rail__conn-step {
+  flex: 1;
+  height: 4px;
+  border-radius: var(--radius-full);
+  background: var(--bg-muted);
+  transition: background-color var(--duration-normal) var(--ease-out);
+}
+
+.oc-rail__conn-step.is-done {
+  background: var(--accent);
+}
+
+.oc-rail__conn-step.is-active {
+  background: var(--accent);
+  animation: pulse-subtle 1.2s ease-in-out infinite;
+}
+
+.oc-rail__conn-step-text {
+  color: var(--text-secondary);
+}
+
+.oc-rail__conn-attempt {
+  margin-left: var(--spacer-6);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+/* 近似定位进度条（步骤序号/(总长-1)；health 可能多轮，条不做精确语义） */
+.oc-rail__conn-bar {
+  height: var(--spacer-6);
+  border-radius: var(--radius-pill);
+  background: var(--bg-muted);
+  overflow: hidden;
+}
+
+.oc-rail__conn-bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  transition: width var(--duration-normal) var(--ease-out);
+}
+
+.oc-rail__conn-hint {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  line-height: var(--leading-title);
+}
+
+.oc-rail__conn-retry {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacer-4);
+}
+
+.oc-rail__conn-retry svg {
+  width: 13px;
+  height: 13px;
 }
 
 /* 数字徽标（运行中任务数 / 错误数） */
@@ -282,7 +443,7 @@ oc-rail {
   pointer-events: none;
 }
 
-.oc-rail__item--disconnected .oc-rail__badge {
+.oc-rail__item--conn-failed .oc-rail__badge {
   background: var(--destructive);
   color: var(--text-on-accent);
 }
@@ -375,6 +536,12 @@ oc-rail {
 @media (prefers-reduced-motion: reduce) {
   .cryoclaw-panel-resize::after {
     transition: none;
+  }
+  .cryoclaw-content > * {
+    animation: none;
+  }
+  .oc-rail__item.active::before {
+    animation: none;
   }
 }
 

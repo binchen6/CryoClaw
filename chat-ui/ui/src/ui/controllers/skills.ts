@@ -72,6 +72,27 @@ async function runSkillMutation(
   }
 }
 
+// skills 加载超时：QA 捕获过 skills.status 永不返回导致「刷新中」常驻——
+// 15s 未 settle 即判加载失败（走错误态 + 重试），与网关侧 30s 请求超时解耦。
+export const SKILLS_LOAD_TIMEOUT_MS = 15_000;
+
+// 导出供单测用小的 ms 直接驱动（loadSkills 内部用 SKILLS_LOAD_TIMEOUT_MS 调用）。
+export function withLoadTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("skills load timeout")), ms);
+    p.then(
+      (v) => {
+        clearTimeout(timer);
+        resolve(v);
+      },
+      (err) => {
+        clearTimeout(timer);
+        reject(err instanceof Error ? err : new Error(String(err)));
+      },
+    );
+  });
+}
+
 export async function loadSkills(state: SkillsState, options?: LoadSkillsOptions) {
   if (options?.clearMessages && Object.keys(state.skillMessages).length > 0) {
     state.skillMessages = {};
@@ -85,12 +106,18 @@ export async function loadSkills(state: SkillsState, options?: LoadSkillsOptions
   state.skillsLoading = true;
   state.skillsError = null;
   try {
-    const res = await state.client.request<SkillStatusReport | undefined>("skills.status", {});
+    const res = await withLoadTimeout(
+      state.client.request<SkillStatusReport | undefined>("skills.status", {}),
+      SKILLS_LOAD_TIMEOUT_MS,
+    );
     if (res) {
       state.skillsReport = res;
     }
   } catch (err) {
-    state.skillsError = getErrorMessage(err);
+    // 裸错误（gateway request timeout / Error: unknown method ...）只进 console，
+    // UI 统一走友好文案 + 重试（渲染层 skillsError → skill-store__error 出重试按钮）
+    console.warn("[skills] skills.status failed:", err);
+    state.skillsError = t("skillStore.error");
   } finally {
     state.skillsLoading = false;
   }

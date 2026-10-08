@@ -93,7 +93,8 @@
   gap: var(--spacer-12);
 }
 
-/* 技能卡片：hairline + radius-12，hover 微浮起（--shadow-md + 1px 上移） */
+/* 技能卡片：hairline + radius-12，hover 微浮起（--shadow-md + 1px 上移）。
+   入场：rise + stagger-N 延迟（base.css stagger 类，前 6 张渐次出现）。 */
 .skill-store__card {
   border: var(--hairline);
   border-radius: var(--radius-12);
@@ -103,6 +104,7 @@
   transition: border-color var(--duration-fast) var(--ease-out),
     box-shadow var(--duration-fast) var(--ease-out),
     transform var(--duration-fast) var(--ease-out);
+  animation: rise var(--duration-normal) var(--ease-out) backwards;
 }
 
 .skill-store__card:hover {
@@ -238,6 +240,51 @@
 
 .skill-store__error {
   color: var(--destructive);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--spacer-10);
+}
+
+/* 已安装技能加载骨架（shimmer 占位卡）：首刷无数据时替代空白区域 */
+.skill-store__card--skeleton {
+  pointer-events: none;
+}
+
+.skills-skeleton__avatar,
+.skills-skeleton__line {
+  display: block;
+  background: linear-gradient(
+    90deg,
+    var(--bg-muted) 25%,
+    var(--bg-hover) 50%,
+    var(--bg-muted) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.4s linear infinite;
+}
+
+.skills-skeleton__avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-full);
+  flex-shrink: 0;
+}
+
+.skills-skeleton__line {
+  height: 12px;
+  border-radius: var(--radius-full);
+}
+
+.skills-skeleton__line--desc {
+  margin-top: var(--spacer-10);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skills-skeleton__avatar,
+  .skills-skeleton__line {
+    animation: none;
+  }
 }
 
 /* 技能商店操作 toast 提示（与 settings 页 toast 风格一致） */

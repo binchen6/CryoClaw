@@ -175,9 +175,10 @@ export function renderReadingIndicatorGroup(
 }
 
 // R90 实时思考区（默认折叠）：summary 单行窗口展示最新思考输出（tail 提取 +
-// 无缝垂直向上滚动动画，css 沿 transform 合成层动画不触发重排；prefers-reduced-motion
-// 时静止并钉住列尾）；展开后正文限高滚动，最新内容自动滚底（oc-chat-stream updated
-// 钩子驱动）。正文走纯文本绑定（高频帧免 markdown 解析开销）。
+// 窗口底部锚定的静态单行——此前的双拷贝 -50% 无缝滚动 marquee 已移除：高频
+// 流式帧下整段位移抖动收益低于成本，静态末行 + 上下渐隐 mask 更稳）；
+// 展开后正文限高滚动，最新内容自动滚底（oc-chat-stream updated 钩子驱动）。
+// 正文走纯文本绑定（高频帧免 markdown 解析开销）。
 const LIVE_THINKING_TAIL_CHARS = 160;
 
 export function thinkingTail(thinking: string): string {
@@ -201,12 +202,8 @@ export function thinkingTail(thinking: string): string {
 function renderLiveThinkingBlock(thinking: string) {
   const tail = thinkingTail(thinking);
   const tickerOn = tail.trim().length > 0;
-  // -50% 无缝循环依赖两份拷贝逐字一致（同一份 tail 渲染两份 → 同高同
-  // padding-bottom，相位天然对齐）；共享同一份模板让两份文本在同一次
-  // lit 提交里更新，消除两个独立绑定之间的不一致窗口（跨 160 字符
-  // 截断边界时 tail 突变，此前理论上存在 copy1 已更新/copy2 未更新的帧）。
-  const tickerCopies = html`<span class="chat-thinking-ticker__copy">${tail}</span
-    ><span class="chat-thinking-ticker__copy">${tail}</span>`;
+  // 单拷贝静态渲染：1.4em 窗口（overflow hidden）+ flex-end 底部锚定，
+  // 多行 wrap 时露出的是最末行（最新输出）；CSS 侧不再有位移动画。
   return html`
     <details class="chat-thinking-collapse chat-thinking-live">
       <summary class="chat-thinking-summary">
@@ -216,7 +213,7 @@ function renderLiveThinkingBlock(thinking: string) {
         <span class="chat-thinking-summary__label">${t("chat.phaseThinking")}</span>
         ${tickerOn
           ? html`<span class="chat-thinking-ticker" aria-hidden="true">
-              <span class="chat-thinking-ticker__track">${tickerCopies}</span>
+              <span class="chat-thinking-ticker__copy">${tail}</span>
             </span>`
           : nothing}
       </summary>
@@ -715,9 +712,12 @@ function renderGroupedMessage(
   const normalizedRole = normalizeRoleForGrouping(role);
 
   // 合成错误消息（controllers/chat.ts 发送失败注入，标 cryoclawError）→ 着色卡片，
-  // 借鉴 control-ui：⚠️ 图标 + danger 色调背景，整宽显示在消息列里
+  // 借鉴 control-ui：⚠️ 图标 + danger 色调背景，整宽显示在消息列里。
+  // 裸 "Error: ..." 前缀是内核/transport 英文标签——展示层换本地化前缀 + 去掉
+  // 英文标签后的详情正文；完整原文保留在 title（hover 可见）。
   if (m.cryoclawError === true) {
-    const errorText = extractTextCached(message) ?? "";
+    const rawText = extractTextCached(message) ?? "";
+    const detailText = rawText.replace(/^Error:\s*/, "");
     const resendText = typeof m.resendText === "string" && m.resendText.trim() ? m.resendText : null;
     // 发送失败时随错误卡保存的附件（controllers/chat.ts），重发时带回防附件丢失
     const resendAttachments = Array.isArray(m.resendAttachments)
@@ -726,7 +726,9 @@ function renderGroupedMessage(
     return html`
       <div class="chat-bubble chat-error-card ${opts.isHydrating ?"" : "fade-in"}" role="alert">
         <span class="chat-error-card__icon" aria-hidden="true">${icons.warning}</span>
-        <span class="chat-error-card__text">${errorText}</span>
+        <span class="chat-error-card__text" title=${rawText}>
+          ${t("chat.errorCardPrefix")}${detailText.trim() ? detailText : ""}
+        </span>
         ${resendText && opts.onResendError
           ? html`<button
               class="chat-error-card__resend"

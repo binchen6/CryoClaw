@@ -5,8 +5,12 @@ import type { ExecApprovalRequest } from "./controllers/exec-approval.ts";
 import type { QuestionPrompt } from "./chat/question-cards.ts";
 import type { SkillMessage } from "./controllers/skills.ts";
 import type { SessionBranch } from "./controllers/session-branches.ts";
-import type { NavigatePayload as IpcNavigatePayload, AppUpdateState, KernelUpdateProgress } from "./data/ipc-bridge.ts";
+import type { NavigatePayload as IpcNavigatePayload, AppUpdateState, GatewayStateInfo, KernelUpdateProgress } from "./data/ipc-bridge.ts";
 import type { GatewayBrowserClient, GatewayHelloOk } from "./gateway.ts";
+import type {
+  GatewayConnPhase,
+  GatewayProgressInfo,
+} from "./gateway-connection.ts";
 import type { Tab } from "./navigation.ts";
 import type { ResolvedTheme, ThemeMode } from "./theme.ts";
 import type {
@@ -27,7 +31,7 @@ import {
   sendQueuedMessageNow as sendQueuedMessageNowInternal,
 } from "./app-chat.ts";
 import { DEFAULT_CRON_FORM } from "./app-defaults.ts";
-import { connectGateway as connectGatewayInternal } from "./app-gateway.ts";
+import { connectGateway as connectGatewayInternal, noteGatewayStartProgress } from "./app-gateway.ts";
 import { stopTicker } from "./client-ticker.ts";
 import {
   deferredGatewayConnect,
@@ -115,6 +119,10 @@ type GatewayReadyPayload = { token?: string | null; gatewayUrl?: string | null }
 type CryoClawBridge = {
   onNavigate?: (cb: (payload: CryoClawNavigatePayload) => void) => (() => void) | void;
   onGatewayReady?: (cb: (payload?: GatewayReadyPayload) => void) => (() => void) | void;
+  // 主进程推送 gateway 启动进度（cleanup/database/port/spawn/health/ready）；
+  // getGatewayState 附带最近一次进度，晚加载窗口据此补齐
+  onGatewayProgress?: (cb: (payload: GatewayProgressInfo) => void) => (() => void) | void;
+  getGatewayState?: () => Promise<GatewayStateInfo | null>;
   reportSetupViewState?: (active: boolean) => void;
   // sidebar 「连接你的常用浏览器」pill 用：纯查询当前是否需要修复
   settingsWebbridgeNeedsRepair?: () => Promise<{
@@ -181,6 +189,8 @@ export class OpenClawApp extends LitElement {
     themeResolved: { state: true },
     hello: { state: true },
     lastError: { state: true },
+    gatewayPhase: { state: true },
+    gatewayProgress: { state: true },
     assistantName: { state: true },
     assistantAvatar: { state: true },
     assistantAgentId: { state: true },
@@ -252,12 +262,11 @@ export class OpenClawApp extends LitElement {
     cronBusy: { state: true },
     sessionsIncludeArchived: { state: true },
     sidebarSessionSearch: { state: true },
-    tasksLoading: { state: true },
-    tasksError: { state: true },
-    tasks: { state: true },
-    tasksStatusFilter: { state: true },
-    tasksCancellingIds: { state: true },
-    tasksUnsupported: { state: true },
+    runsLoading: { state: true },
+    runsError: { state: true },
+    runHistory: { state: true },
+    runsStatusFilter: { state: true },
+    runsUnsupported: { state: true },
     worktreesLoading: { state: true },
     worktreesError: { state: true },
     worktrees: { state: true },
@@ -349,6 +358,10 @@ export class OpenClawApp extends LitElement {
   themeResolved: ResolvedTheme = "light";
   hello: GatewayHelloOk | null = null;
   lastError: string | null = null;
+  // Gateway 连接状态三态（starting/reconnecting/failed；已连接为 null）与
+  // 主进程推送的启动进度——驱动友好连接状态 UI（见 gateway-connection.ts）
+  gatewayPhase: GatewayConnPhase | null = null;
+  gatewayProgress: GatewayProgressInfo | null = null;
   private toolStreamSyncTimer: number | null = null;
   private sidebarCloseTimer: number | null = null;
   // R66：问答卡倒计时/过期回收的秒级 ticker（仅在存在 pending 且未过期的问题时运行）
@@ -470,13 +483,12 @@ export class OpenClawApp extends LitElement {
   sessionsIncludeArchived = false;
   sidebarSessionSearch = "";
 
-  // 后台任务实时视图（v2026.7 tasks.list / tasks.cancel / task 事件）
-  tasksLoading = false;
-  tasksError: string | null = null;
-  tasks: import("./types.js").TaskSummary[] = [];
-  tasksStatusFilter: import("./types.js").TaskStatus | "all" = "all";
-  tasksCancellingIds = new Set<string>();
-  tasksUnsupported = false;
+  // 运行记录（2026.9.7：tasks.* 已移除，数据源为 cron.runs scope:"all" 全局运行历史）
+  runsLoading = false;
+  runsError: string | null = null;
+  runHistory: CronRunLogEntry[] = [];
+  runsStatusFilter: "all" | "ok" | "error" | "skipped" = "all";
+  runsUnsupported = false;
 
   // Worktrees 管理视图 + 侧边栏会话 worktree 徽标（内核 worktrees.* RPC）
   worktreesLoading = false;
@@ -583,6 +595,7 @@ export class OpenClawApp extends LitElement {
   private themeMediaHandler: ((event: MediaQueryListEvent) => void) | null = null;
   private appNavigateCleanup: (() => void) | null = null;
   private gatewayReadyCleanup: (() => void) | null = null;
+  private gatewayProgressCleanup: (() => void) | null = null;
   private webbridgeStateCleanup: (() => void) | null = null;
   // R91 审查修复：webbridge 修复轮询的 interval/timeout 句柄——原先直接丢弃，
   // 组件重挂载（dev 热重载/未来重构）会叠加新 interval 且断开后不清
@@ -606,6 +619,7 @@ export class OpenClawApp extends LitElement {
     handleConnected(this as unknown as Parameters<typeof handleConnected>[0]);
     this.bindAppNavigation();
     this.bindGatewayReady();
+    this.bindGatewayProgress();
     this.bindWebbridgeStateChanged();
     this.bindDialogKeyboard();
     this.bindWebbridgeRepairPoll();
@@ -786,6 +800,8 @@ export class OpenClawApp extends LitElement {
     this.appNavigateCleanup = null;
     this.gatewayReadyCleanup?.();
     this.gatewayReadyCleanup = null;
+    this.gatewayProgressCleanup?.();
+    this.gatewayProgressCleanup = null;
     this.webbridgeStateCleanup?.();
     this.webbridgeStateCleanup = null;
     // R91 审查修复：webbridge 修复轮询句柄对称清理
@@ -1061,6 +1077,45 @@ export class OpenClawApp extends LitElement {
       });
       this.gatewayReadyCleanup = typeof unsubscribe === "function" ? unsubscribe : null;
     }
+  }
+
+  // 订阅主进程 gateway:progress 推送（内核启动步骤），驱动启动进度卡片。
+  // 晚加载的窗口（renderer 后开/热重载）首帧用 getGatewayState() 附带的最近进度补齐。
+  // 进度只在未连接窗口展示——hello 成功即清空（见 app-gateway.ts onHello）。
+  private bindGatewayProgress() {
+    if (this.gatewayProgressCleanup) return;
+    const bridge = this.getCryoClawBridge();
+    if (!bridge?.onGatewayProgress) return;
+    const apply = (payload: GatewayProgressInfo | null | undefined) => {
+      if (!payload || typeof payload.step !== "string") return;
+      // 已连接后迟到的 progress（主进程 ready 推送与 hello 处理存在竞态）不得
+      // 重新写入——gatewayProgress 只在未连接窗口展示，hello 清空后这里再写
+      // 会留下无人清理的陈旧进度（下次 1012 进 starting 时显示上轮就绪快照）
+      if (this.connected) return;
+      this.gatewayProgress = {
+        step: payload.step,
+        attempt: typeof payload.attempt === "number" && payload.attempt > 0 ? payload.attempt : 1,
+        ...(typeof payload.elapsedMs === "number" ? { elapsedMs: payload.elapsedMs } : {}),
+      };
+      // 进度事件是「内核正在启动」的权威信号：把 phase 纠正回 starting
+      // （WS 被拒会先打成 reconnecting、10s 后误升 failed），并取消持续失败计时
+      noteGatewayStartProgress(this);
+    };
+    const unsubscribe = bridge.onGatewayProgress((payload) => apply(payload));
+    this.gatewayProgressCleanup = typeof unsubscribe === "function" ? unsubscribe : null;
+    void bridge
+      .getGatewayState?.()
+      .then((info) => {
+        // 仅当当前仍未连接且主进程声明内核正在启动时补齐：已连接时进度无展示
+        // 意义（避免闪帧）；running/stopped 态主进程不再携带进度（防御旧主进程
+        // 的过期 progress：只在 starting 时才采纳）
+        if (this.connected || info?.state !== "starting") {
+          return;
+        }
+        noteGatewayStartProgress(this);
+        apply(info?.progress);
+      })
+      .catch(() => {});
   }
 
   private bindAppNavigation() {

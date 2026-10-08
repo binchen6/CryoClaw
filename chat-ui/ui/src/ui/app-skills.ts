@@ -137,12 +137,15 @@ async function loadSkillStoreData(state: AppViewState, append = false) {
         : skills;
       skillStoreState.nextCursor = result.data.nextCursor ?? null;
     } else {
-      skillStoreState.error = result?.message ?? t("skillStore.error");
+      // 裸 message（主进程英文错误）只进 console，UI 统一友好文案（D5）
+      console.warn("[skillStore] list failed:", result?.message);
+      skillStoreState.error = t("skillStore.error");
     }
     // 同步已安装列表
     await refreshInstalledSlugs();
-  } catch {
+  } catch (err) {
     if (token !== storeRequestToken) return;
+    console.warn("[skillStore] list error:", err);
     skillStoreState.error = t("skillStore.error");
   } finally {
     if (token === storeRequestToken) {
@@ -173,10 +176,12 @@ async function searchSkillStore(state: AppViewState) {
       skillStoreState.skills = Array.isArray(result.data.skills) ? result.data.skills : [];
       skillStoreState.nextCursor = null;
     } else {
-      skillStoreState.error = result?.message ?? t("skillStore.error");
+      console.warn("[skillStore] search failed:", result?.message);
+      skillStoreState.error = t("skillStore.error");
     }
-  } catch {
+  } catch (err) {
     if (token !== storeRequestToken) return;
+    console.warn("[skillStore] search error:", err);
     skillStoreState.error = t("skillStore.error");
   } finally {
     if (token === storeRequestToken) {
@@ -304,6 +309,26 @@ function clamp(text: string | undefined, max: number): string {
 
 // 已安装技能列表的可见集合（纯逻辑见 skill-visibility.ts）：计数徽章与列表共用，
 // 避免出现"58 项"却只渲染 2 行的偏差。
+// 加载骨架：首刷无数据时的占位卡片（shimmer），替代空白区域——QA 曾捕获
+// 「刷新中 + 0 项 + 大面积空白」。仅在「加载中且尚无数据」时渲染。
+function renderSkillsSkeleton() {
+  return html`
+    <div class="skill-store__list" aria-hidden="true">
+      ${[72, 58, 80].map(
+        (w) => html`
+          <div class="skill-store__card skill-store__card--skeleton">
+            <div class="skill-store__card-header">
+              <span class="skills-skeleton__avatar"></span>
+              <span class="skills-skeleton__line" style="width: ${w}%"></span>
+            </div>
+            <span class="skills-skeleton__line skills-skeleton__line--desc" style="width: 88%"></span>
+          </div>
+        `,
+      )}
+    </div>
+  `;
+}
+
 // 渲染已安装技能视图
 function renderInstalledSkillsView(state: AppViewState) {
   const filtered = selectVisibleInstalledSkills(state);
@@ -313,10 +338,22 @@ function renderInstalledSkillsView(state: AppViewState) {
 
   return html`
     ${state.skillsError
-      ? html`<div class="skill-store__error">${state.skillsError}</div>`
+      ? html`<div class="skill-store__error">
+          <span>${state.skillsError}</span>
+          <button
+            class="btn btn--sm"
+            type="button"
+            ?disabled=${state.skillsLoading}
+            @click=${() => void loadSkills(state)}
+          >${t("ext.market.retry")}</button>
+        </div>`
       : nothing}
 
-    ${filtered.length === 0 && !state.skillsLoading
+    ${state.skillsLoading && filtered.length === 0
+      ? renderSkillsSkeleton()
+      : nothing}
+
+    ${filtered.length === 0 && !state.skillsLoading && !state.skillsError
       ? html`<div class="skill-store__empty panel__empty">${t("skills.empty")}</div>`
       : nothing}
 

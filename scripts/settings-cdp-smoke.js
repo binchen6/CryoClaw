@@ -41,11 +41,13 @@ async function main() {
   await waitForAppReady(cdp);
   await waitForGateway("http://127.0.0.1:18789/", 40_000);
 
-  const settingsIdx = await cdp.evaluate(
-    `[...document.querySelectorAll('.oc-rail__item')].findIndex(e => /settings|设置/i.test(e.getAttribute('aria-label')||e.title||e.textContent))`,
+  // 设置入口：footer 直接子 button 的最后一个（有可用更新时设置项 aria-label 变成
+  // 「有可用更新」，按 settings|设置 文案匹配会失效；webbridge/conn 状态项不是
+  // footer 的直接子 button，pop() 恒为设置项）
+  const settingsFound = await cdp.evaluate(
+    `(() => { const b = [...document.querySelectorAll('.oc-rail__footer > button.oc-rail__item')].pop(); if (!b) return false; b.click(); return true; })()`,
   );
-  if (settingsIdx < 0) { console.error("[settings-smoke] 未找到设置入口"); cleanup(); process.exit(1); }
-  await cdp.evaluate(`document.querySelectorAll('.oc-rail__item')[${settingsIdx}].click()`);
+  if (!settingsFound) { console.error("[settings-smoke] 未找到设置入口"); cleanup(); process.exit(1); }
   await waitForSettle(cdp, 900);
 
   // 跨组件叶子重叠检测（同一自定义组件内部的覆盖不算——如密码框眼睛图标悬浮输入框；

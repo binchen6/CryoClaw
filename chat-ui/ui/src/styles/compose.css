@@ -308,7 +308,9 @@
     stroke var(--duration-fast) var(--ease-out);
 }
 
-/* 思考级别 popover — 默认隐藏，单击 toggle 打开（菜单层 ≤60 契约） */
+/* 思考级别 popover — 默认隐藏，单击 toggle 打开（菜单层 ≤60 契约）。
+   入场：淡入 + scale(0.96→1)（display:none↔grid 切换无法用 transition，
+   用单次入场动画表达）。 */
 .chat-compose__thinking-popover {
   position: absolute;
   bottom: calc(100% + 4px);
@@ -321,11 +323,32 @@
   box-shadow: var(--shadow-lg);
   z-index: 60;
   display: none;
+  transform-origin: bottom left;
 }
 
 .chat-compose__thinking-popover--open {
   display: grid;
   gap: var(--spacer-2);
+  animation: chat-popover-in var(--duration-fast) var(--ease-out);
+}
+
+@keyframes chat-popover-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-compose__thinking-popover--open,
+  .chat-compose__branch-popover--open {
+    animation: none;
+  }
 }
 
 .chat-compose__thinking-option {
@@ -390,10 +413,12 @@
   /* 层叠契约（R43 QA）：菜单类 ≤60；原 100 与 titlebar 同层越界 */
   z-index: 60;
   display: none;
+  transform-origin: bottom left;
 }
 
 .chat-compose__branch-popover--open {
   display: block;
+  animation: chat-popover-in var(--duration-fast) var(--ease-out);
 }
 
 .chat-compose__branch-title {
@@ -527,6 +552,12 @@
 .chat-compose__send-btn:hover:not(:disabled) {
   transform: scale(1.08);
   background: var(--accent-hover);
+}
+
+/* 按下反馈：active 压感缩放（hover 放大之上再收，给点击一个确认感） */
+.chat-compose__send-btn:active:not(:disabled) {
+  transform: scale(0.94);
+  transition-duration: var(--duration-fast);
 }
 
 .chat-compose__send-btn:disabled {

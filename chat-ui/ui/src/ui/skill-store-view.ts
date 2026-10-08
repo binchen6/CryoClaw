@@ -70,12 +70,13 @@ function renderSkillCard(
   installed: boolean,
   installing: boolean,
   callbacks: SkillStoreCallbacks,
+  staggerClass = "",
 ) {
   const letter = (skill.name || skill.slug || "?").charAt(0).toUpperCase();
   const bgColor = skillAvatarColor(skill.slug);
   const openDetail = callbacks.onOpenDetail;
   return html`
-    <div class="skill-store__card">
+    <div class="skill-store__card ${staggerClass}">
       <div class="skill-store__card-header">
         <!-- 字母头像底色为固定品牌色板（不随主题变化），字色恒用白色保底对比度 -->
         <div class="skill-store__card-icon" style="background: ${bgColor}; color: var(--text-on-accent);">
@@ -156,12 +157,13 @@ export function renderSkillStoreView(
       : nothing}
 
     <div class="skill-store__list">
-      ${sorted.map((skill) =>
+      ${sorted.map((skill, i) =>
         renderSkillCard(
           skill,
           state.installedSlugs.has(skill.slug),
           state.installingSlugs.has(skill.slug),
           callbacks,
+          i < 6 ? `stagger-${i + 1}` : "",
         ),
       )}
     </div>

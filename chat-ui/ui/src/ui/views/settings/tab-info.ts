@@ -51,7 +51,9 @@ function renderRow(label: string, value: string, mono = false) {
 export function renderTabEnvInfo(state: AppViewState) {
   if (!s.initialized) init(state);
   const sessionsCount = state.sessionsResult?.sessions?.length ?? null;
-  const tasksCount = state.tasks?.length ?? null;
+  // 2026.9.7：tasks.* 已移除，该行改展示已加载的定时任务运行记录数
+  // （仅任务视图打开后才有数据，否则显示 "—"）
+  const tasksCount = state.runHistory.length > 0 ? state.runHistory.length : null;
 
   return html`
     <div class="oc-settings__section">

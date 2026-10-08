@@ -3,6 +3,8 @@ import { customElement } from "lit/decorators.js";
 import { t } from "../i18n.ts";
 import { icons } from "../icons.ts";
 import type { CryoClawViewId } from "../views/registry.ts";
+import type { GatewayConnPhase, GatewayProgressInfo } from "../gateway-connection.ts";
+import { gatewayStepIndex, gatewayStepKey, GATEWAY_PROGRESS_STEPS } from "../gateway-connection.ts";
 import { unsafeSVG } from "lit/directives/unsafe-svg.js";
 
 // 品牌标：与 chat-ui favicon 同源（assets/cryoclaw-favicon.svg），内联避免资产
@@ -39,12 +41,14 @@ export class OcRail extends LitElement {
     let changedFlag = false;
     for (const name of DATA_FIELDS) {
       if (name === "errors") continue;
+      if (name === "connection") continue;
       if (prev[name] !== next[name]) {
         changedFlag = true;
         break;
       }
     }
     if (!changedFlag) changedFlag = !errorsEqual(prev.errors, next.errors);
+    if (!changedFlag) changedFlag = !connectionEqual(prev.connection, next.connection);
     return changedFlag;
   }
 
@@ -67,6 +71,11 @@ export type RailProps = {
   tasksRunningCount: number;
   connected: boolean;
   errors: string[];
+  /**
+   * 连接状态（connected 为 null）：三态友好展示替代裸 `disconnected (code)` 文案。
+   * starting 附启动进度（gateway:progress 推送），failed 提供手动重试入口。
+   */
+  connection: RailConnection;
   // webbridge 模式但浏览器扩展未启用 → 显示修复入口（wrench 图标，accent 高亮）
   webbridgeRepairVisible: boolean;
   webbridgeRepairChecking: boolean;
@@ -83,6 +92,11 @@ export type RailProps = {
   onReconnect: () => void;
 };
 
+export type RailConnection = {
+  phase: GatewayConnPhase;
+  progress: GatewayProgressInfo | null;
+} | null;
+
 // shouldUpdate 数据字段比较清单：布尔/数字/字符串按值、数组按引用。
 // 全部回调一律排除（每帧新闭包，引用比较恒变会让隔离失效）。
 const DATA_FIELDS = [
@@ -94,6 +108,7 @@ const DATA_FIELDS = [
   "settingsBadge",
   "settingsUpdateBadge",
   "errors",
+  "connection",
 ] as const;
 
 function errorsEqual(a: string[], b: string[]): boolean {
@@ -103,6 +118,22 @@ function errorsEqual(a: string[], b: string[]): boolean {
     if (a[i] !== b[i]) return false;
   }
   return true;
+}
+
+// connection 每帧由装配层新建对象——按值比较（phase + 进度字段）才能保住 shouldUpdate 隔离
+function connectionEqual(a: RailConnection, b: RailConnection): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  if (a.phase !== b.phase) return false;
+  const ap = a.progress;
+  const bp = b.progress;
+  if (ap === bp) return true;
+  if (!ap || !bp) return false;
+  return (
+    ap.step === bp.step &&
+    ap.attempt === bp.attempt &&
+    ap.elapsedMs === bp.elapsedMs
+  );
 }
 
 function railItem(
@@ -130,6 +161,83 @@ function railItem(
       ${opts.icon}
       ${opts.badge ?? nothing}
     </button>
+  `;
+}
+
+// 未连接状态入口：三态友好展示（starting/reconnecting/failed），替代旧
+// 「刷新 + 裸错误文案」的 disconnected 项。hover 弹出状态卡：启动进度条 +
+// 当前步骤 + 重试按钮（failed 态）；starting/reconnecting 为信息/过渡态，
+// 不渲染红色错误语义。
+function renderConnectionItem(props: RailProps) {
+  const conn = props.connection;
+  const phase: GatewayConnPhase = conn?.phase ?? "reconnecting";
+  const labelKey =
+    phase === "starting"
+      ? "gateway.status.starting"
+      : phase === "reconnecting"
+        ? "gateway.status.reconnecting"
+        : "gateway.status.failed";
+  const icon =
+    phase === "starting"
+      ? icons.loader
+      : phase === "reconnecting"
+        ? icons.refreshCw
+        : icons.warning;
+  const progress = conn?.progress ?? null;
+  const stepIdx = progress ? gatewayStepIndex(progress.step) : -1;
+  const stepCount = GATEWAY_PROGRESS_STEPS.length;
+  return html`
+    <span class="oc-rail__conn-wrap">
+      <button
+        class="oc-rail__item oc-rail__item--conn oc-rail__item--conn-${phase}"
+        type="button"
+        @click=${() => props.onReconnect()}
+        data-tooltip=${t(labelKey)}
+        data-tooltip-pos="right"
+        aria-label=${t(labelKey)}
+      >
+        ${icon}
+      </button>
+      <div class="oc-rail__conn-popup" role="status">
+        <div class="oc-rail__conn-title oc-rail__conn-title--${phase}">${t(labelKey)}</div>
+        ${phase === "starting" && progress
+          ? html`
+              <div class="oc-rail__conn-steps">
+                ${GATEWAY_PROGRESS_STEPS.map((step, i) => html`
+                  <span
+                    class="oc-rail__conn-step ${i < stepIdx || progress.step === "ready" ? "is-done" : i === stepIdx ? "is-active" : ""}"
+                    title=${t(gatewayStepKey(step))}
+                  ></span>
+                `)}
+              </div>
+              <div class="oc-rail__conn-step-text">
+                ${t(gatewayStepKey(progress.step))}
+                ${progress.attempt > 1
+                  ? html`<span class="oc-rail__conn-attempt">${t("gateway.starting.attempt").replace("{n}", String(progress.attempt))}</span>`
+                  : nothing}
+              </div>
+              <div class="oc-rail__conn-bar" aria-hidden="true">
+                <span
+                  class="oc-rail__conn-bar-fill"
+                  style=${`width: ${Math.max(8, Math.round(((stepIdx + 1) / stepCount) * 100))}%`}
+                ></span>
+              </div>
+            `
+          : nothing}
+        ${phase === "reconnecting"
+          ? html`<div class="oc-rail__conn-hint">${t("gateway.status.reconnectingHint")}</div>`
+          : nothing}
+        ${phase === "failed"
+          ? html`
+              <div class="oc-rail__conn-hint">${t("gateway.status.failedHint")}</div>
+              <button class="btn btn--sm oc-rail__conn-retry" type="button" @click=${() => props.onReconnect()}>
+                ${icons.refreshCw}
+                ${t("gateway.retry")}
+              </button>
+            `
+          : nothing}
+      </div>
+    </span>
   `;
 }
 
@@ -200,13 +308,7 @@ function renderRailInner(props: RailProps) {
                 onClick: () => props.onOpenWebUI(),
                 badge: errorBadge,
               })
-            : railItem(props, {
-                label: t("sidebar.reconnect"),
-                icon: icons.refreshCw,
-                onClick: () => props.onReconnect(),
-                badge: errorBadge,
-                extraClass: "oc-rail__item--disconnected",
-              })}
+            : renderConnectionItem(props)}
           ${hasErrors
             ? html`<div class="oc-rail__error-popup">
                 ${props.errors.map((msg) => html`<div class="oc-rail__error-item">${msg}</div>`)}

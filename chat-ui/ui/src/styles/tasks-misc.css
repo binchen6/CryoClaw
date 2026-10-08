@@ -150,6 +150,31 @@
   flex-wrap: wrap;
 }
 
+/* 加载中骨架：无数据首刷时的占位药丸（与 chip 同尺寸语言，shimmer） */
+.ts-stats--skeleton {
+  pointer-events: none;
+}
+
+.ts-stats__skeleton-chip {
+  width: 84px;
+  height: 28px;
+  border-radius: var(--radius-pill);
+  background: linear-gradient(
+    90deg,
+    var(--bg-muted) 25%,
+    var(--bg-hover) 50%,
+    var(--bg-muted) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.4s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ts-stats__skeleton-chip {
+    animation: none;
+  }
+}
+
 .ts-chip {
   display: inline-flex;
   align-items: center;
@@ -313,6 +338,8 @@
   padding: var(--spacer-10) var(--spacer-14);
   /* 活动行左侧 2px accent 强调条（与 accent-subtle 底同语义） */
   border-left: 2px solid transparent;
+  /* 入场：rise + stagger-N 延迟（前 6 行渐次出现；既有行原位更新不重复播放） */
+  animation: rise var(--duration-normal) var(--ease-out) backwards;
 }
 
 .ts-row + .ts-row {

@@ -44,6 +44,8 @@ import { renderProgressCard } from "./progress-card.ts";
 import type { ProgressCardState } from "../controllers/progress-card.ts";
 import { BOARD_WIDGET_SANDBOX, type BoardState } from "../controllers/board.ts";
 import type { FallbackNotice } from "../app-tool-stream.ts";
+import type { GatewayConnPhase, GatewayProgressInfo } from "../gateway-connection.ts";
+import { GATEWAY_PROGRESS_STEPS, gatewayStepIndex, gatewayStepKey } from "../gateway-connection.ts";
 
 export { computeStopButtonVisible };
 
@@ -59,6 +61,13 @@ export type CompactionIndicatorStatus = {
   startedAt: number | null;
   completedAt: number | null;
 };
+
+// Gateway 连接状态（connected 为 null）——对话页顶部 callout / 占位文案据此出
+// 三态友好提示（见 gateway-connection.ts）
+export type GatewayConnectionProps = {
+  phase: GatewayConnPhase;
+  progress: GatewayProgressInfo | null;
+} | null;
 
 export type ChatProps = {
   sessionKey: string;
@@ -102,6 +111,7 @@ export type ChatProps = {
   queue: ChatQueueItem[];
   connected: boolean;
   canSend: boolean;
+  gatewayConnection?: GatewayConnectionProps;
   error: string | null;
   sessions: SessionsListResult | null;
   // Sidebar state
@@ -139,6 +149,8 @@ export type ChatProps = {
   // 错误卡片「重发」：重新发送失败的用户消息文本（同步发送失败路径提供），
   // attachments 为错误卡上保存的附件（resendAttachments），带回防重发附件丢失
   onResendError?: (text: string, attachments?: ChatAttachment[]) => void;
+  // 连接失败 callout 的手动重试（failed 态「重试」按钮）
+  onReconnect?: () => void;
   // 目标模式（官方 session.goal）
   goal?: SessionGoal | null;
   onGoalCommand?: (text: string) => void;
@@ -371,6 +383,74 @@ function renderCompactionIndicator(status: CompactionIndicatorStatus | null | un
   return nothing;
 }
 
+// Gateway 连接状态 callout（三态：starting / reconnecting / failed）——替代旧
+// 裸 `disconnected (code): reason` 红色横幅。starting 为蓝色信息态并附启动进度
+// （步骤点 + 不定进度条 + 尝试次数）；reconnecting 为过渡态提示；只有持续重连
+// 失败才落 danger 态并给手动重试按钮。
+function renderGatewayCallout(props: ChatProps) {
+  const conn = props.gatewayConnection;
+  if (props.connected || !conn) {
+    return nothing;
+  }
+  if (conn.phase === "starting") {
+    const progress = conn.progress;
+    const stepIdx = progress ? gatewayStepIndex(progress.step) : -1;
+    const stepCount = GATEWAY_PROGRESS_STEPS.length;
+    return html`
+      <div class="callout info chat-conn-callout" role="status" aria-live="polite">
+        <span class="chat-conn-callout__icon" aria-hidden="true">${icons.loader}</span>
+        <div class="chat-conn-callout__body">
+          <div class="chat-conn-callout__title">${t("gateway.status.starting")}</div>
+          ${progress
+            ? html`
+                <div class="chat-conn-callout__step">
+                  ${t(gatewayStepKey(progress.step))}
+                  ${progress.attempt > 1
+                    ? html`<span class="chat-conn-callout__attempt">${t("gateway.starting.attempt").replace("{n}", String(progress.attempt))}</span>`
+                    : nothing}
+                </div>
+                <div class="chat-conn-callout__bar" aria-hidden="true">
+                  <span
+                    class="chat-conn-callout__bar-fill"
+                    style=${`width: ${Math.max(8, Math.round(((stepIdx + 1) / stepCount) * 100))}%`}
+                  ></span>
+                </div>
+              `
+            : html`<div class="chat-conn-callout__step">${t("gateway.status.startingHint")}</div>`}
+        </div>
+      </div>
+    `;
+  }
+  if (conn.phase === "reconnecting") {
+    return html`
+      <div class="callout info chat-conn-callout" role="status" aria-live="polite">
+        <span class="chat-conn-callout__icon" aria-hidden="true">${icons.refreshCw}</span>
+        <div class="chat-conn-callout__body">
+          <div class="chat-conn-callout__title">${t("gateway.status.reconnecting")}</div>
+          <div class="chat-conn-callout__step">${t("gateway.status.reconnectingHint")}</div>
+        </div>
+      </div>
+    `;
+  }
+  return html`
+    <div class="callout danger chat-conn-callout" role="alert">
+      <span class="chat-conn-callout__icon" aria-hidden="true">${icons.warning}</span>
+      <div class="chat-conn-callout__body">
+        <div class="chat-conn-callout__title">${t("gateway.status.failed")}</div>
+        <div class="chat-conn-callout__step">${t("gateway.status.failedHint")}</div>
+      </div>
+      <button
+        class="btn btn--sm chat-conn-callout__retry"
+        type="button"
+        @click=${() => props.onReconnect?.()}
+      >
+        ${icons.refreshCw}
+        ${t("gateway.retry")}
+      </button>
+    </div>
+  `;
+}
+
 // 模型 fallback 提示：复用 compaction-indicator 胶囊样式（--fallback 变体，warning 色调），
 // 由 app-tool-stream 的 5s 定时器 / chat 终态负责清掉，这里只读当前值渲染。
 function renderFallbackNotice(notice: FallbackNotice | null | undefined) {
@@ -410,8 +490,8 @@ function renderBranchPopover(props: ChatProps) {
         ? html`<div class="chat-compose__branch-status">${t("chat.loading")}</div>`
         : nothing}
       ${props.sessionBranchesError
-        ? html`<div class="chat-compose__branch-status chat-compose__branch-status--error">
-            ${t("chat.branch.loadFailed")}: ${props.sessionBranchesError}
+        ? html`<div class="chat-compose__branch-status chat-compose__branch-status--error" title=${props.sessionBranchesError}>
+            ${t("chat.branch.loadFailed")}
           </div>`
         : nothing}
       ${!loading && !props.sessionBranchesError && !branches.length
@@ -997,7 +1077,6 @@ export function renderChat(props: ChatProps) {
     commandSuggestions = [];
     commandIndex = 0;
   }
-  const canCompose = props.connected;
   const { isBusy, showStop } = computeStopButtonVisible(props);
   const activeSession = props.sessions?.sessions?.find((row) => row.key === props.sessionKey);
   const reasoningLevel = activeSession?.reasoningLevel ?? "off";
@@ -1020,8 +1099,13 @@ export function renderChat(props: ChatProps) {
   };
 
   const hasAttachments = (props.attachments?.length ?? 0) > 0;
+  // 占位文案：断开时按三态软化——内核启动中显示「启动完成后即可聊天」，
+  // 重连中/已断开沿用原断开占位
+  const gatewayPhase: GatewayConnPhase = props.gatewayConnection?.phase ?? "reconnecting";
   const composePlaceholder = !props.connected
-    ? t("chat.placeholder.disconnected")
+    ? gatewayPhase === "starting"
+      ? t("chat.placeholder.starting")
+      : t("chat.placeholder.disconnected")
     : isBusy
       ? t("chat.placeholder.busy")
       : hasAttachments
@@ -1099,7 +1183,19 @@ export function renderChat(props: ChatProps) {
       ${
         props.loading
           ? html`
-              <div class="muted">${t("chat.loading")}</div>
+              <div class="chat-loading" role="status" aria-label=${t("chat.loading")}>
+                <div class="chat-loading__row">
+                  <span class="chat-loading__avatar"></span>
+                  <span class="chat-loading__bubble" style="width: 62%"></span>
+                </div>
+                <div class="chat-loading__row chat-loading__row--user">
+                  <span class="chat-loading__bubble chat-loading__bubble--user" style="width: 40%"></span>
+                </div>
+                <div class="chat-loading__row">
+                  <span class="chat-loading__avatar"></span>
+                  <span class="chat-loading__bubble" style="width: 74%"></span>
+                </div>
+              </div>
             `
           : nothing
       }
@@ -1197,10 +1293,11 @@ export function renderChat(props: ChatProps) {
 
   return html`
     <section class="card chat">
-      ${props.error
+      ${renderGatewayCallout(props)}
+      ${props.connected && props.error
         ? html`<div class="callout danger chat-error-callout">
             <span class="chat-error-callout__icon" aria-hidden="true">${icons.warning}</span>
-            <span>${props.error}</span>
+            <span title=${props.error}>${t("chat.error.generic")}</span>
           </div>`
         : nothing}
 
@@ -1244,6 +1341,9 @@ export function renderChat(props: ChatProps) {
           ? html`
             <div class="chat-queue" role="status" aria-live="polite">
               <div class="chat-queue__title">${t("chat.queued")} (${props.queue.length})</div>
+              ${!props.connected
+                ? html`<div class="chat-queue__pending-hint">${t("chat.queuedPendingHint")}</div>`
+                : nothing}
               <div class="chat-queue__list">
                 ${props.queue.map((item) => {
                   const editing = queueEditingId === item.id;
@@ -1402,7 +1502,6 @@ export function renderChat(props: ChatProps) {
             ${ref((el) => el && adjustTextareaHeight(el as HTMLTextAreaElement, true))}
             .value=${props.draft}
             dir=${detectTextDirection(props.draft)}
-            ?disabled=${!props.connected}
             @keydown=${(e: KeyboardEvent) => {
               // 程序化改 draft（引用消息/插入技能/发送清空）不触发 @input，过期建议
               // 须先作废——否则 Enter 会把 draft 替换成损坏文本（与下方
@@ -1452,13 +1551,10 @@ export function renderChat(props: ChatProps) {
               if (e.shiftKey) {
                 return;
               } // Allow Shift+Enter for line breaks
-              if (!props.connected) {
-                return;
-              }
+              // 断开时也不拦截：发送会走乐观入队（待发送，重连自动补发），
+              // 输入框保持可编辑（见 handleSendChat 的 disconnected 分支）
               e.preventDefault();
-              if (canCompose) {
-                props.onSend();
-              }
+              props.onSend();
             }}
             @input=${(e: Event) => {
               const target = e.target as HTMLTextAreaElement;
@@ -1610,10 +1706,9 @@ export function renderChat(props: ChatProps) {
             }
             <button
               class="chat-compose__send-btn"
-              ?disabled=${!props.connected}
               @click=${props.onSend}
-              aria-label=${isBusy ? t("chat.sendEnqueue") : t("chat.send")}
-              data-tooltip=${isBusy ? t("chat.sendEnqueue") : t("chat.send")}
+              aria-label=${!props.connected ? t("chat.sendQueued") : isBusy ? t("chat.sendEnqueue") : t("chat.send")}
+              data-tooltip=${!props.connected ? t("chat.sendQueued") : isBusy ? t("chat.sendEnqueue") : t("chat.send")}
             >${icons.arrowUp}</button>
           </div>
         </div>

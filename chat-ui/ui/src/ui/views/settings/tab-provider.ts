@@ -1496,7 +1496,13 @@ function renderGroup(group: ProviderGroup, state: AppViewState, fallbackRank: Ma
           </button>
         ` : nothing}
       </div>
-      ${collapsed ? nothing : visibleProviders.map(prov => renderProvider(prov, group, state, fallbackRank))}
+      <!-- 组体常驻 DOM（折叠时 0fr 收起），grid-template-rows 过渡出真实高度动画；
+           折叠交互态见 settings.css 的 .oc-provider-group__body 规则 -->
+      <div class="oc-provider-group__body ${collapsed ? "is-collapsed" : ""}">
+        <div class="oc-provider-group__body-inner">
+          ${visibleProviders.map(prov => renderProvider(prov, group, state, fallbackRank))}
+        </div>
+      </div>
     </div>
   `;
 }

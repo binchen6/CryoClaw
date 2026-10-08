@@ -6,7 +6,10 @@
  * - 跨会话任务不显示（与 tool / lifecycle 流的会话过滤约定一致）
  */
 import type { TaskSummary } from "../types.ts";
-import { isActiveTask } from "../controllers/tasks.ts";
+
+// 2026.9.7 起 tasks.* 已移除，本模块不再有实时数据源（app-chat-props 恒传空数组），
+// 纯函数与测试保留以待内核恢复任务面；活跃判定内联于此（原 controllers/tasks.ts
+// isActiveTask：queued/running 为进行中，缺省按 queued）。
 
 export type SubagentCard = {
   id: string;
@@ -50,8 +53,8 @@ export function selectSubagentCards(
       continue;
     }
     // 无 status 字段视为不可判定，按终态路径走时间窗兜底（防僵尸等待卡：
-    // isActiveTask 对缺失 status 默认 queued，会误判为活跃恒显示）
-    const active = typeof task.status === "string" ? isActiveTask(task) : false;
+    // 缺失 status 若按 queued 算活跃会误判为活跃恒显示）
+    const active = task.status === "queued" || task.status === "running";
     if (!active) {
       const ended = toMillis(task.endedAt) ?? toMillis(task.updatedAt);
       if (ended === null || now - ended > TERMINAL_GRACE_MS) {

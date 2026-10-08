@@ -92,15 +92,26 @@ async function main() {
   };
 
   // ---------- 场景 1：视图巡览（逐个点击 rail 项） ----------
+  // 只巡览 .oc-rail__nav 的 4 个稳定视图项 + footer 设置项：footer 的 webbridge
+  // 修复项/连接状态项随连接态动态出现消失（点击还有副作用——conn 触发重连、
+  // 修复项可能开浏览器），按索引点全部 .oc-rail__item 会在巡览途中因集合变化
+  // 越界（getAttribute of undefined）。
   console.log("[场景] 视图巡览 × 宽度");
-  const railCount = await cdp.evaluate("document.querySelectorAll('.oc-rail__item').length");
+  const navCount = await cdp.evaluate("document.querySelectorAll('.oc-rail__nav .oc-rail__item').length");
+  const totalTargets = navCount + 1; // +1：footer 设置项
   const chatWidths = widths;
   const otherWidths = [Math.max(...widths), Math.min(...widths)];
-  for (let i = 0; i < railCount; i++) {
+  for (let i = 0; i < totalTargets; i++) {
+    // 每轮重新取元素（视图切换后 DOM  keyed 重建）；设置项取 footer 直接子
+    // button 的最后一个（更新徽标会改 aria-label，不能按文案匹配）
+    const pick =
+      i === totalTargets - 1
+        ? `[...document.querySelectorAll('.oc-rail__footer > button.oc-rail__item')].pop()`
+        : `document.querySelectorAll('.oc-rail__nav .oc-rail__item')[${i}]`;
     const label = await cdp.evaluate(
-      `(document.querySelectorAll('.oc-rail__item')[${i}].getAttribute('aria-label') || 'rail-' + ${i})`,
+      `((${pick})?.getAttribute('aria-label') || 'rail-' + ${i})`,
     );
-    await cdp.evaluate(`document.querySelectorAll('.oc-rail__item')[${i}].click()`);
+    await cdp.evaluate(`(${pick})?.click()`);
     await waitForSettle(cdp, 700);
     for (const width of i === 0 ? chatWidths : otherWidths) {
       await setViewport(cdp, width);

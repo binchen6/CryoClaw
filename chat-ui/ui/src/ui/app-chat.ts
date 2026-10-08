@@ -384,9 +384,6 @@ export async function handleSendChat(
   // （图片 dataUrl + 文件 filePath），缺省时重发不含附件（旧行为）。
   opts?: { restoreDraft?: boolean; attachments?: ChatAttachment[] },
 ) {
-  if (!host.connected) {
-    return false;
-  }
   const previousDraft = host.chatMessage;
   const message = (messageOverride ?? host.chatMessage).trim();
   const attachments = host.chatAttachments ?? [];
@@ -395,6 +392,12 @@ export async function handleSendChat(
 
   // Allow sending with just attachments (no message text required)
   if (!message && !hasAttachments) {
+    return false;
+  }
+
+  // stop/reset 命令依赖内核执行：断开时维持旧「不接收」行为（不清草稿、不入队）——
+  // 否则「/new」会被当普通文本乐观入队，重连后作为消息发出。
+  if (!host.connected && (isChatStopCommand(message) || isChatResetCommand(message))) {
     return false;
   }
 
@@ -409,6 +412,13 @@ export async function handleSendChat(
     host.chatMessage = "";
     // Clear attachments when sending
     host.chatAttachments = [];
+  }
+
+  // 断开连接不硬阻塞：消息乐观入队（「待发送」），重连握手后由 onHello →
+  // flushChatQueue 既有链路自动补发；队列项已拷贝附件，期间清空输入框给出即时反馈。
+  if (!host.connected) {
+    enqueueChatMessage(host, message, attachmentsToSend);
+    return true;
   }
 
   if (isChatBusy(host)) {

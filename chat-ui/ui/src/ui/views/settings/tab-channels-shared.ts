@@ -87,6 +87,36 @@ export function createChannelPanelBaseState() {
   };
 }
 
+// 启用开关卡（五个渠道子面板共用）：标题 + 渠道说明 + 开关集中在一张卡里。
+// QA 修复——此前开关行孤零零顶在整宽内容列上（开关被甩到最右、页面空荡）。
+// descKey 取不到时兜底空文案（nothing），不阻断渲染。
+export function renderChannelEnableCard(
+  platform: "weixin" | "feishu" | "wecom" | "dingtalk" | "qqbot",
+  checked: boolean,
+  onChange: (checked: boolean) => void,
+): TemplateResult {
+  const descKey = `settings.channels.${platform}.enableDesc`;
+  const desc = t(descKey);
+  return html`
+    <div class="oc-settings__card oc-channel-enable">
+      <div class="oc-channel-enable__head">
+        <div class="oc-channel-enable__text">
+          <div class="oc-settings__card-title">${t("settings.channels.enable")}</div>
+          ${desc && desc !== descKey
+            ? html`<p class="oc-settings__hint">${desc}</p>`
+            : nothing}
+        </div>
+        <oc-toggle-switch
+          .label=${t("settings.channels.enable")}
+          .checked=${checked}
+          @change=${(e: CustomEvent) =>
+            onChange(Boolean((e.detail as { checked?: boolean } | null)?.checked))}
+        ></oc-toggle-switch>
+      </div>
+    </div>
+  `;
+}
+
 // 渠道开关统一流程（四个渠道子面板共用）：
 //   disable → 立即保存；enable → 可选凭据门槛 + 可选保存 + 保存成功后回调。
 export async function runChannelToggle(

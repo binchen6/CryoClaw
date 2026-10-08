@@ -83,17 +83,32 @@ function contrastScanExpr() {
       const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
       return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
     };
+    // 半透明背景需沿祖先链逐层合成（source-over），否则 accent-subtle 这类
+    // 8% 透明度底色会被当成不透明纯色，产生 fg==bg 的假阳性
+    const over = (top, under) => {
+      const a = top.a + under.a * (1 - top.a);
+      if (a <= 0) return { r: 255, g: 255, b: 255, a: 0 };
+      return {
+        r: (top.r * top.a + under.r * under.a * (1 - top.a)) / a,
+        g: (top.g * top.a + under.g * under.a * (1 - top.a)) / a,
+        b: (top.b * top.a + under.b * under.a * (1 - top.a)) / a,
+        a,
+      };
+    };
     const bgOf = (el) => {
+      let acc = null;
       let cur = el;
       while (cur) {
         const cs = getComputedStyle(cur);
         // 渐变/背景图无法取色，放弃判定（误报源：active 项常用渐变 pill）
         if (cs.backgroundImage && cs.backgroundImage !== "none") return null;
         const bg = parse(cs.backgroundColor);
-        if (bg && bg.a > 0.05) return bg;
+        if (bg && bg.a > 0) acc = acc ? over(acc, bg) : bg;
+        if (acc && acc.a >= 0.99) return acc;
         cur = cur.parentElement;
       }
-      return { r: 255, g: 255, b: 255, a: 1 };
+      const base = { r: 255, g: 255, b: 255, a: 1 };
+      return acc ? over(acc, base) : base;
     };
     const low = [];
     const seen = new Set();

@@ -101,15 +101,19 @@
   font-size: var(--text-sm);
 }
 
-/* ── 对话框（radius-16 + --shadow-xl，head/body/foot 分区） ── */
+/* ── 对话框（radius-16 + --shadow-xl，head/body/foot 分区） ──
+   遮罩滚动安全：内容高于视口时 safe center 退化为顶对齐 + overlay 滚动，
+   避免「垂直居中 + overflow」组合把对话框顶部裁掉（QA：长文案弹窗在矮窗下
+   按钮不可达）。 */
 .cc-dialog-overlay {
   position: fixed;
   inset: 0;
   z-index: var(--z-dialog);
   display: flex;
-  align-items: center;
+  align-items: safe center;
   justify-content: center;
   padding: var(--spacer-24);
+  overflow-y: auto;
   background: var(--overlay);
 }
 

@@ -1,13 +1,14 @@
 /**
- * 任务实时视图 —— 入口与 props 构建。
- * 从 app-render.ts 抽出（阶段 16 架构重构），逻辑未变。
- * R92：新增 30s 自动刷新生命周期（startTasksAutoRefresh/stopTasksAutoRefresh）
- * 与 R92 视图 props（autoRefresh/onAutoRefreshChange/requestUpdate）装配。
+ * 任务视图 —— 入口与 props 构建。
+ * 从 app-render.ts 抽出（阶段 16 架构重构）。
+ * 2026.9.7 适配：内核移除 tasks.*，运行记录 tab 数据源改为 cron.runs
+ * scope:"all"（controllers/tasks.ts loadRunHistory），取消任务按钮随之移除；
+ * R92 的 30s 自动刷新生命周期（startTasksAutoRefresh/stopTasksAutoRefresh）保留。
  */
 
 import { html } from "lit";
 import { renderTasks, type TasksViewTab } from "./views/tasks.ts";
-import { loadTasks, cancelTask } from "./controllers/tasks.ts";
+import { loadRunHistory } from "./controllers/tasks.ts";
 import { loadCronJobs } from "./controllers/cron.ts";
 import { isExpiredOneShot } from "./presenter.ts";
 import { renderCronView } from "./app-cron.ts";
@@ -47,9 +48,7 @@ function runTasksAutoRefreshTick() {
     stopTasksAutoRefresh();
     return;
   }
-  void loadTasks(state); // 与 onRefresh 同一数据路径（tasks.list 全量拉取）
-  // tick 顺带 requestUpdate 一次：进行中任务耗时（taskDurationMs 基于
-  // Date.now()）随 tick 滚动，不另开 1s 定时器
+  void loadRunHistory(state); // 与 onRefresh 同一数据路径（cron.runs scope:"all" 全量拉取）
   state.requestUpdate();
 }
 
@@ -75,12 +74,15 @@ export function stopTasksAutoRefresh() {
 // openTasksView / renderTasksView 调 startTasksAutoRefresh）
 registerViewLeaveHook("tasks", () => stopTasksAutoRefresh());
 
-// 打开任务实时视图（tab 缺省 runs；cron 时预拉定时任务列表）
+// 打开任务视图（tab 缺省 runs；cron 时预拉定时任务列表）
 export function openTasksView(state: AppViewState, tab: TasksViewTab = "runs") {
   tasksViewTab = tab;
   setCryoClawView(state, "tasks");
-  void loadTasks(state);
   if (tab === "cron") {
+    void loadCronJobs(state);
+  } else {
+    void loadRunHistory(state);
+    // 运行记录行的 jobName 兜底补全依赖 cron.list（内核通常已在 entries 附带）
     void loadCronJobs(state);
   }
   startTasksAutoRefresh(state);
@@ -91,14 +93,13 @@ export function renderTasksView(state: AppViewState) {
   // 下直接渲染任务视图（如启动恢复），渲染期顺手确保 ticker 与开关一致
   startTasksAutoRefresh(state);
   return renderTasks({
-    loading: state.tasksLoading,
-    error: state.tasksError,
-    tasks: state.tasks,
+    loading: state.runsLoading,
+    error: state.runsError,
+    runs: state.runHistory,
     cronJobs: state.cronJobs,
-    statusFilter: state.tasksStatusFilter,
-    cancellingIds: state.tasksCancellingIds,
+    statusFilter: state.runsStatusFilter,
     connected: state.connected,
-    unsupported: state.tasksUnsupported === true,
+    unsupported: state.runsUnsupported === true,
     tab: tasksViewTab,
     autoRefresh: tasksAutoRefreshEnabled,
     cronJobCount: state.cronJobs.filter((j) => j.enabled !== false && !isExpiredOneShot(j)).length,
@@ -107,6 +108,7 @@ export function renderTasksView(state: AppViewState) {
       ? renderCronView(state, {
           onOpenRunsTab: () => {
             tasksViewTab = "runs";
+            void loadRunHistory(state);
             state.requestUpdate();
           },
         })
@@ -115,6 +117,8 @@ export function renderTasksView(state: AppViewState) {
       tasksViewTab = tab;
       if (tab === "cron") {
         void loadCronJobs(state);
+      } else {
+        void loadRunHistory(state);
       }
       state.requestUpdate();
     },
@@ -125,14 +129,13 @@ export function renderTasksView(state: AppViewState) {
     },
     onStatusFilterChange: (status) => {
       // 状态过滤是纯客户端筛选（views/tasks 内 filter），无需重新拉取
-      state.tasksStatusFilter = status;
+      state.runsStatusFilter = status;
       state.requestUpdate();
     },
     onRefresh: () => {
-      void loadTasks(state);
-    },
-    onCancel: (taskId) => {
-      void cancelTask(state, taskId);
+      void loadRunHistory(state);
+      // jobName 兜底补全依赖 cron.list，随刷新一并更新
+      void loadCronJobs(state);
     },
     onOpenChat: (sessionKey) => {
       // 走完整会话切换（重置流态/拉历史/同步 URL），与侧边栏点击一致

@@ -6,7 +6,11 @@ contextBridge.exposeInMainWorld("cryoclaw", {
   restartGateway: () => ipcRenderer.send("gateway:restart"),
   startGateway: () => ipcRenderer.send("gateway:start"),
   stopGateway: () => ipcRenderer.invoke("gateway:stop"),
-  getGatewayState: () => ipcRenderer.invoke("gateway:state"),
+  // 返回当前状态 + 最近一次启动进度（晚加载页面补进度用）
+  getGatewayState: () => ipcRenderer.invoke("gateway:state") as Promise<{
+    state: "stopped" | "starting" | "running" | "stopping";
+    progress: { step: string; attempt: number; elapsedMs?: number } | null;
+  }>,
 
   // 内核升级/回退
   kernelGetUpdateState: () => ipcRenderer.invoke("kernel:get-update-state"),
@@ -262,6 +266,16 @@ contextBridge.exposeInMainWorld("cryoclaw", {
     ) => cb(payload);
     ipcRenderer.on("gateway:ready", listener);
     return () => ipcRenderer.removeListener("gateway:ready", listener);
+  },
+  // 主进程推送 gateway 启动进度（step 为机器可读键：cleanup/database/port/spawn/health/ready，
+  // 渲染层本地化；health 步带 elapsedMs；返回 unsubscribe 函数）
+  onGatewayProgress: (cb: (payload: { step: string; attempt: number; elapsedMs?: number }) => void) => {
+    const listener = (
+      _event: Electron.IpcRendererEvent,
+      payload: { step: string; attempt: number; elapsedMs?: number },
+    ) => cb(payload);
+    ipcRenderer.on("gateway:progress", listener);
+    return () => ipcRenderer.removeListener("gateway:progress", listener);
   },
   // 主进程通知 webbridge precheck 状态可能已变（setup-task 后台装完扩展、settings 修复完成等）
   // chat-ui 据此重查 settings:webbridge-needs-repair，避免 pill 卡在旧结果

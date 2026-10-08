@@ -98,7 +98,8 @@ export type CommandEntry = {
 };
 
 // ---------------------------------------------------------------------------
-// Tasks（后台任务；v2026.7 tasks.list/get/cancel + task 事件）
+// Tasks（后台任务；v2026.7 tasks.list/get/cancel + task 事件；2026.9.7 内核已移除
+// tasks.*，类型仅为 chat/subagent-status.ts 的纯函数投影保留，不再有 RPC 数据源）
 // ---------------------------------------------------------------------------
 
 export type TaskStatus = "queued" | "running" | "completed" | "failed" | "cancelled" | "timed_out";
@@ -127,11 +128,6 @@ export type TaskSummary = {
   terminalSummary?: string;
   error?: string;
   [key: string]: unknown;
-};
-
-export type TasksListResult = {
-  tasks: TaskSummary[];
-  nextCursor?: string;
 };
 
 // ---------------------------------------------------------------------------
@@ -225,11 +221,31 @@ export type CronJob = {
 export type CronRunLogEntry = {
   ts: number;
   jobId?: string;
+  /** 内核 cron run 状态（2026.9.7 schema："ok" | "error" | "skipped"） */
   status?: string;
   sessionKey?: string;
+  sessionId?: string;
+  runId?: string;
+  runAtMs?: number;
   durationMs?: number;
   summary?: string;
   error?: string;
+  /** cron.runs scope:"all" 响应中由内核按 jobId 附带（任务已删除时可能缺失） */
+  jobName?: string;
+  delivered?: boolean;
+  deliveryStatus?: string;
+  deliveryError?: string;
+  [key: string]: unknown;
+};
+
+/** cron.runs scope:"all"（不传 id 时的缺省 scope）全局运行历史分页响应 */
+export type CronRunHistoryResult = {
+  entries?: CronRunLogEntry[];
+  total?: number;
+  offset?: number;
+  limit?: number;
+  hasMore?: boolean;
+  nextOffset?: number | null;
   [key: string]: unknown;
 };
 

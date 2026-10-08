@@ -196,6 +196,7 @@
 
   /* 语义色 */
   --ok: #16a34a;
+  --ok-strong: #15803d;
   --ok-muted: rgba(22, 163, 74, 0.75);
   --ok-subtle: rgba(22, 163, 74, 0.1);
   --destructive: #dc2626;
@@ -261,6 +262,7 @@
   --accent-glow: rgba(75, 164, 230, 0.28);
 
   --ok: #4ade80;
+  --ok-strong: #4ade80;
   --ok-muted: rgba(74, 222, 128, 0.75);
   --ok-subtle: rgba(74, 222, 128, 0.12);
   --destructive: #f87171;
@@ -323,6 +325,7 @@
     --accent-glow: rgba(75, 164, 230, 0.28);
 
     --ok: #4ade80;
+    --ok-strong: #4ade80;
     --ok-muted: rgba(74, 222, 128, 0.75);
     --ok-subtle: rgba(74, 222, 128, 0.12);
     --destructive: #f87171;

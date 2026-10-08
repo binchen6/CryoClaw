@@ -64,7 +64,7 @@
 .oc-settings-nav-item--active,
 .oc-settings-nav-item--active:hover {
   background: var(--accent-subtle);
-  color: var(--accent);
+  color: var(--accent-hover);
   font-weight: var(--weight-semibold);
 }
 
@@ -425,9 +425,10 @@
   inset: 0;
   background: var(--overlay);
   display: flex;
-  align-items: center;
+  align-items: safe center;
   justify-content: center;
   padding: var(--spacer-24);
+  overflow-y: auto;
   z-index: 1000;
 }
 .oc-modal-dialog {
@@ -487,7 +488,7 @@
 .oc-settings-channels__nav-item--active,
 .oc-settings-channels__nav-item--active:hover {
   background: var(--accent-subtle);
-  color: var(--accent);
+  color: var(--accent-hover);
   font-weight: var(--weight-semibold);
 }
 .oc-settings-channels__nav-item:focus-visible {
@@ -508,6 +509,28 @@
   display: flex;
   flex-direction: column;
   gap: var(--spacer-16);
+  /* 内容列限宽：表单控件不过度拉伸（QA 渠道页 toggle 被甩到最右的修复），
+     160px 子导航 + 640px 面板在常规窗口下留白舒适 */
+  max-width: 640px;
+}
+
+/* 启用开关卡：标题 + 渠道说明 + 开关集中一卡（tab-channels-shared.ts
+   renderChannelEnableCard 的样式契约） */
+.oc-channel-enable__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacer-16);
+}
+
+.oc-channel-enable__text {
+  min-width: 0;
+  display: grid;
+  gap: var(--spacer-4);
+}
+
+.oc-channel-enable__text .oc-settings__hint {
+  margin: 0;
 }
 
 /* ── 配对面板（feishu / wecom 共用） ── */
@@ -631,7 +654,7 @@
   color: var(--text);
 }
 .oc-weixin-badge {
-  color: var(--ok);
+  color: var(--ok-strong);
   font-weight: var(--weight-semibold);
 }
 .oc-weixin-account-id {
@@ -866,6 +889,36 @@
   background: var(--bg-hover);
 }
 .oc-provider-group__header:last-child { border-radius: var(--radius-12); }
+/* 折叠时组体 0fr 收起，组头恢复整圆角 */
+.oc-provider-group:has(.oc-provider-group__body.is-collapsed) .oc-provider-group__header {
+  border-radius: var(--radius-12);
+}
+/* 组体折叠动画：grid-template-rows 0fr↔1fr 真实高度过渡（grid 项 min-height:0 +
+   overflow 裁剪配合）。overflow 用离散过渡做方向性延迟——折叠立即裁剪、展开
+   动画结束后才恢复 visible（模型卡的分组指派菜单向下弹出，稳态绝不能被裁）。 */
+.oc-provider-group__body {
+  display: grid;
+  grid-template-rows: 1fr;
+  transition: grid-template-rows var(--duration-normal) var(--ease-out);
+}
+.oc-provider-group__body-inner {
+  min-height: 0;
+  overflow: visible;
+  transition: overflow 0s var(--duration-normal);
+}
+.oc-provider-group__body.is-collapsed {
+  grid-template-rows: 0fr;
+}
+.oc-provider-group__body.is-collapsed .oc-provider-group__body-inner {
+  overflow: hidden;
+  transition: overflow 0s;
+}
+@media (prefers-reduced-motion: reduce) {
+  .oc-provider-group__body,
+  .oc-provider-group__body-inner {
+    transition: none;
+  }
+}
 .oc-provider-group__chevron {
   color: var(--text-muted);
   transition: transform var(--duration-normal) var(--ease-out);

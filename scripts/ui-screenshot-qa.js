@@ -68,15 +68,17 @@ async function main() {
     console.log(`  ${name}: 重叠 ${bad.length}${bad.length ? " :: " + bad.join(" | ") : ""}${tq.pageHOverflow ? " ⚠ 横向滚动条" : ""}${tq.clipped && tq.clipped.length ? ` · 文本裁切 ${tq.clipped.length}` : ""}`);
   }
 
-  const railCount = await cdp.evaluate("document.querySelectorAll('.oc-rail__item').length");
-  const railLabels = await cdp.evaluate(`[...document.querySelectorAll('.oc-rail__item')].map((e,i)=>i+':'+(e.getAttribute('aria-label')||e.title||('rail'+i)))`);
+  // rail 结构：.oc-rail__nav 内为 4 个主视图项；footer 内还有 webbridge 修复 /
+  // 连接状态等动态项（点它会弹窗/开外部浏览器），巡览只走 nav 内的视图项。
+  const railCount = await cdp.evaluate("document.querySelectorAll('.oc-rail__nav .oc-rail__item').length");
+  const railLabels = await cdp.evaluate(`[...document.querySelectorAll('.oc-rail__nav .oc-rail__item')].map((e,i)=>i+':'+(e.getAttribute('aria-label')||e.title||('rail'+i)))`);
   const railSlug = (i) => (railLabels[i] || `rail${i}`).split(":").pop().replace(/\s+/g, "_");
 
   // 场景组 1：主视图 × 宽度 × 主题（light 全宽度，dark 全视图 @1440）
   console.log("[ui-qa] 主视图巡览");
   await setTheme(cdp, "light");
   for (let i = 0; i < railCount; i++) {
-    await cdp.evaluate(`document.querySelectorAll('.oc-rail__item')[${i}].click()`);
+    await cdp.evaluate(`document.querySelectorAll('.oc-rail__nav .oc-rail__item')[${i}]?.click()`);
     await waitForSettle(cdp, 800);
     await setViewport(cdp, 1440);
     await shot(`view_${railSlug(i)}_1440_light`);
@@ -86,22 +88,24 @@ async function main() {
   await setViewport(cdp, 1440);
   await setTheme(cdp, "dark");
   for (let i = 0; i < railCount; i++) {
-    await cdp.evaluate(`document.querySelectorAll('.oc-rail__item')[${i}].click()`);
+    await cdp.evaluate(`document.querySelectorAll('.oc-rail__nav .oc-rail__item')[${i}]?.click()`);
     await waitForSettle(cdp, 700);
     await shot(`view_${railSlug(i)}_1440_dark`);
   }
   await setTheme(cdp, "light");
 
   // 场景组 2：设置页全 tab（light 1440）+ dark 首屏抽查
+  // footer 里设置项永远是最后一个直接子按钮（其 aria-label 会被更新徽标改为
+  // 「有可用更新」等，不能用文案匹配）；conn/webbridge 项包在 span 里，不受影响。
   console.log("[ui-qa] 设置页 tab 巡览");
-  const settingsIdx = await cdp.evaluate(`[...document.querySelectorAll('.oc-rail__item')].findIndex(e => /settings|设置/i.test(e.getAttribute('aria-label')||e.title||e.textContent))`);
-  await cdp.evaluate(`document.querySelectorAll('.oc-rail__item')[${settingsIdx}].click()`);
+  const clickSettingsRail = `[...document.querySelectorAll('.oc-rail__footer > button.oc-rail__item')].pop()?.click()`;
+  await cdp.evaluate(clickSettingsRail);
   await waitForSettle(cdp, 900);
   await setViewport(cdp, 1440);
   const tabCount = await cdp.evaluate("document.querySelectorAll('.oc-settings-nav-item').length");
   for (let i = 0; i < tabCount; i++) {
     const label = await cdp.evaluate(`document.querySelectorAll('.oc-settings-nav-item')[${i}].textContent.trim()`);
-    await cdp.evaluate(`document.querySelectorAll('.oc-settings-nav-item')[${i}].click()`);
+    await cdp.evaluate(`document.querySelectorAll('.oc-settings-nav-item')[${i}]?.click()`);
     const slug = label.replace(/[^\w一-龥]+/g, "_").slice(0, 24);
     await shot(`settings_${slug}`);
     // 首个 tab 额外拍 dark，抽查设置页深色观感
@@ -118,11 +122,10 @@ async function main() {
   await cdp.send("Page.navigate", { url });
   await waitForAppReady(cdp, { timeoutMs: 20_000 });
   await setViewport(cdp, 1440);
-  await cdp.evaluate(`document.querySelectorAll('.oc-rail__item')[0].click()`);
+  await cdp.evaluate(`document.querySelectorAll('.oc-rail__nav .oc-rail__item')[0]?.click()`);
   await waitForSettle(cdp, 700);
   await shot("view_chat_1440_light_en");
-  const s2 = await cdp.evaluate(`[...document.querySelectorAll('.oc-rail__item')].findIndex(e => /settings|设置/i.test(e.getAttribute('aria-label')||e.title||e.textContent))`);
-  await cdp.evaluate(`document.querySelectorAll('.oc-rail__item')[${s2}].click()`);
+  await cdp.evaluate(clickSettingsRail);
   await waitForSettle(cdp, 700);
   await shot("settings_first_1440_en");
 
@@ -146,6 +149,9 @@ async function main() {
   console.log(`[ui-qa] 截图目录: ${outDir}`);
   if (cdp.exceptions.length) {
     for (const line of uniqueExceptionLines(cdp)) console.error("  renderer: " + line);
+  }
+  if (cdp.consoleErrors.length) {
+    for (const line of [...new Set(cdp.consoleErrors)].slice(0, 10)) console.error("  console: " + line);
   }
   ws.close();
   cleanup();

@@ -111,7 +111,9 @@
   color: var(--text-muted);
 }
 
-/* R90 默认折叠：summary 单行窗口，tail 文本在窗口内垂直向上滚动（上下滚动动画） */
+/* R90 默认折叠：summary 单行窗口，tail 文本静态单行展示（窗口底部锚定，
+   多行 wrap 时露出的自然是最末行 = 最新输出；上下渐隐 mask 进出不生硬）。
+   此前的双拷贝 -50% 无缝滚动 marquee（chat-thinking-scroll-up 12s）已移除。 */
 .chat-thinking-live .chat-thinking-summary {
   width: 100%;
   min-width: 0;
@@ -125,33 +127,20 @@
   line-height: 1.4;
   color: var(--text-muted);
   word-break: break-word;
-  /* 上下渐隐：文本滚动进出窗口不生硬 */
+  /* 底部锚定：内容高于窗口时露出末行（与旧 marquee 静止态/reduced-motion 行为一致） */
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  /* 上下渐隐：文本进出窗口不生硬 */
   mask-image: linear-gradient(180deg, transparent, #000 15%, #000 85%, transparent);
   -webkit-mask-image: linear-gradient(180deg, transparent, #000 15%, #000 85%, transparent);
-}
-.chat-thinking-ticker__track {
-  display: block;
-  will-change: transform;
-  /* 双拷贝纵向堆叠 + -50% 循环 = 无缝向上滚动 */
-  animation: chat-thinking-scroll-up 12s linear infinite;
 }
 .chat-thinking-ticker__copy {
   display: block;
   white-space: pre-wrap;
   word-break: break-word;
-  /* 两份 tail 之间的间隔（无缝 -50% 循环的半个周期单位） */
-  padding-bottom: 1.4em;
-}
-@keyframes chat-thinking-scroll-up {
-  from { transform: translateY(0); }
-  to { transform: translateY(-50%); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .chat-thinking-ticker__track {
-    animation: none;
-    /* 静止时钉住列尾（最新输出） */
-    transform: translateY(calc(-100% + 1.4em));
-  }
   /* 折叠高度过渡与思考块入场渐显一并退化（瞬开瞬合、直接出现） */
   .chat-thinking-collapse,
   .chat-tool-msg-collapse,

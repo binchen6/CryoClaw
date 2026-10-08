@@ -1,32 +1,27 @@
 /**
- * Tasks 实时视图 — v2026.7 内核 tasks.list / tasks.cancel + task 事件。
- * 展示进行中（queued/running）与最近完成的后台任务，可取消、可跳转会话。
- * 2026.9 视觉重写：任务卡 → 清单式行（状态点 + 等宽 meta + hairline 分隔），
- * 顶层 tab → 分段控件（segmented control）。
- * R92：新增统计条（状态分组 chip 联动过滤）、搜索/来源/Agent 客户端筛选、
- * 30s 自动刷新开关（ticker 生命周期在 app-tasks）、失败详情展开/收起与
- * 「显示全部」。过滤/展开等视图私有状态放模块级变量（不给 AppViewState 加
- * 字段，参照 app-skills 的 skillsSubTab 模式）；统计与过滤逻辑走
- * controllers/tasks.ts 导出的纯函数，便于测试与复用。
+ * Tasks 视图（2026.9.7 适配）— 运行记录 = cron.runs scope:"all" 全局运行历史。
+ * 内核已移除 tasks.*（无后台任务面），运行记录 tab 改展示定时任务运行历史
+ * （状态点 + 等宽 meta + hairline 分隔的清单式行），定时 tab 不变。
+ * 统计条（状态分组 chip 联动过滤）、搜索/状态客户端筛选、30s 自动刷新开关
+ * （ticker 生命周期在 app-tasks）、失败详情展开/收起沿用 R92 模式；过滤/展开等
+ * 视图私有状态放模块级变量（不给 AppViewState 加字段，参照 app-skills 的
+ * skillsSubTab 模式）；统计与过滤逻辑走 controllers/tasks.ts 导出的纯函数。
  */
 import { html, nothing, type TemplateResult } from "lit";
-import type { CronJob, TaskSummary, TaskStatus } from "../types.ts";
+import type { CronJob, CronRunLogEntry } from "../types.ts";
 import { formatRelativeTimestamp, formatDurationHuman } from "../format.ts";
 import { icons } from "../icons.ts";
 import { t } from "../i18n.ts";
 import "../components/toggle-switch.ts";
 import {
-  collectAgentIds,
-  deriveTaskStats,
-  filterTasksByQuery,
-  filterTasksByRuntime,
-  isActiveTask,
-  taskDurationMs,
-  taskGroupOfStatus,
-  toTaskTimestampMs,
-  type TaskGroupKey,
-  type TaskRuntimeFilter,
-  type TaskStats,
+  deriveRunStats,
+  filterRunsByQuery,
+  runGroupOfStatus,
+  runMatchesStatusFilter,
+  runTimestampMs,
+  type CronRunStatusFilter,
+  type RunGroupKey,
+  type RunStats,
 } from "../controllers/tasks.ts";
 
 export type TasksViewTab = "runs" | "cron";
@@ -34,12 +29,11 @@ export type TasksViewTab = "runs" | "cron";
 export type TasksProps = {
   loading: boolean;
   error: string | null;
-  tasks: TaskSummary[];
+  runs: CronRunLogEntry[];
   cronJobs: CronJob[];
-  statusFilter: TaskStatus | "all";
-  cancellingIds: ReadonlySet<string>;
+  statusFilter: CronRunStatusFilter;
   connected: boolean;
-  /** T1：当前内核未注册 tasks.*，显示说明性空态（非错误） */
+  /** 当前内核未注册 cron.runs（2026.9.7 之前的内核）：显示说明性空态（非错误） */
   unsupported: boolean;
   tab: TasksViewTab;
   /** 定时 tab 内容（由装配层组装 renderCronView，避免 views 层反向依赖 app-cron） */
@@ -49,11 +43,10 @@ export type TasksProps = {
   /** R92：30s 自动刷新开关状态（ticker 生命周期由 app-tasks 管理） */
   autoRefresh: boolean;
   onTabChange: (tab: TasksViewTab) => void;
-  /** runtime === "cron" 任务行「查看定时任务」→ 切定时 tab */
+  /** 运行记录行「查看定时任务」→ 切定时 tab */
   onOpenCronTab: () => void;
-  onStatusFilterChange: (status: TaskStatus | "all") => void;
+  onStatusFilterChange: (status: CronRunStatusFilter) => void;
   onRefresh: () => void;
-  onCancel: (taskId: string) => void;
   onOpenChat: (sessionKey: string) => void;
   /** R92：自动刷新开关切换（app-tasks 起/停 ticker） */
   onAutoRefreshChange: (enabled: boolean) => void;
@@ -61,128 +54,89 @@ export type TasksProps = {
   requestUpdate: () => void;
 };
 
-const STATUS_OPTIONS: Array<TaskStatus | "all"> = [
-  "all",
-  "running",
-  "queued",
-  "completed",
-  "failed",
-  "cancelled",
-  "timed_out",
-];
-
-// 来源筛选选项：四种已知 runtime + unknown（缺省/未知来源，标签复用 tasks.runtime.*）
-const RUNTIME_FILTER_OPTIONS: TaskRuntimeFilter[] = ["subagent", "cron", "acp", "cli", "unknown"];
+const STATUS_OPTIONS: CronRunStatusFilter[] = ["all", "ok", "error", "skipped"];
 
 // 搜索防抖：停键 200ms 才提交过滤词并重渲染（避免每键 requestUpdate 风暴）
 const SEARCH_DEBOUNCE_MS = 200;
-// 最近完成默认折叠条数（超过才出现「显示全部」）
-const RECENT_CLAMP = 50;
 // 失败行错误详情默认截断字符数
 const ERROR_DETAIL_CLAMP = 140;
 
 // ── 视图私有过滤/交互状态（模块级；切走视图不重置，回到本页保留筛选上下文） ──
-let tasksSearchInput = ""; // 搜索框即时值（每键同步，不触发渲染）
-let tasksSearchQuery = ""; // 防抖提交后的过滤词（真正参与过滤）
-let tasksSearchTimer: ReturnType<typeof setTimeout> | null = null;
-let tasksRuntimeFilter: TaskRuntimeFilter = "all"; // 来源筛选
-let tasksAgentFilter = ""; // Agent 筛选（空 = 全部）
-// 统计 chip 的分组过滤态（active=queued+running、failed=failed+timed_out 等多
-// 状态组无法塞进 AppViewState 的单状态 statusFilter，故存视图模块级）
-let tasksStatusGroup: TaskGroupKey | "all" = "all";
-let tasksShowAllRecent = false; // 最近完成 >50 条时在 50/全部之间切换
-const tasksExpandedErrorIds = new Set<string>(); // 展开完整错误详情的 task.id
+let runsSearchInput = ""; // 搜索框即时值（每键同步，不触发渲染）
+let runsSearchQuery = ""; // 防抖提交后的过滤词（真正参与过滤）
+let runsSearchTimer: ReturnType<typeof setTimeout> | null = null;
+// 统计 chip 的分组过滤态（other 覆盖缺省/未知状态，单状态 select 表达不了，
+// 故存视图模块级）
+let runsStatusGroup: RunGroupKey | "all" = "all";
+const runsExpandedErrorKeys = new Set<string>(); // 展开完整错误详情的记录 key
 
-function statusLabel(status: TaskStatus | "all"): string {
-  if (status === "all") {
-    return t("tasks.statusAll");
+function statusLabel(status: string | undefined): string {
+  switch (status) {
+    case "ok":
+    case "error":
+    case "skipped":
+      return t(`tasks.status.${status}`);
+    default:
+      return t("tasks.status.other");
   }
-  return t(`tasks.status.${status}`);
 }
 
-// 状态点：running=accent（脉动）/ queued=warn / completed=ok / failed·timed_out=destructive / 其余 muted
-function statusDotClass(status: TaskStatus | "all"): string {
+// 状态点：ok=ok / error=destructive / skipped=warn / 其余 muted
+function statusDotClass(status: string | undefined): string {
   switch (status) {
-    case "running":
-      return "ts-dot--running";
-    case "queued":
-      return "ts-dot--queued";
-    case "completed":
+    case "ok":
       return "ts-dot--ok";
-    case "failed":
-    case "timed_out":
+    case "error":
       return "ts-dot--danger";
+    case "skipped":
+      return "ts-dot--queued";
     default:
       return "ts-dot--muted";
   }
 }
 
 // meta 行内状态文字配色（与状态点同语义）
-function statusTextClass(status: TaskStatus | "all"): string {
+function statusTextClass(status: string | undefined): string {
   switch (status) {
-    case "running":
-      return "ts-status--running";
-    case "queued":
-      return "ts-status--queued";
-    case "completed":
+    case "ok":
       return "ts-status--ok";
-    case "failed":
-    case "timed_out":
+    case "error":
       return "ts-status--danger";
+    case "skipped":
+      return "ts-status--queued";
     default:
       return "ts-status--muted";
   }
 }
 
-function runtimeLabel(runtime?: string): string {
-  switch (runtime) {
-    case "subagent":
-      return t("tasks.runtime.subagent");
-    case "cron":
-      return t("tasks.runtime.cron");
-    case "acp":
-      return t("tasks.runtime.acp");
-    case "cli":
-      return t("tasks.runtime.cli");
-    default:
-      return t("tasks.runtime.unknown");
+// 记录标题：jobName（内核附带或 cron.list 补全）→ jobId → 通用兜底
+function runTitle(run: CronRunLogEntry): string {
+  const name = run.jobName?.trim();
+  if (name) {
+    return name;
   }
+  const id = run.jobId?.trim();
+  if (id) {
+    return id;
+  }
+  return t("tasks.unknownJob");
 }
 
-function taskTitle(task: TaskSummary): string {
-  const title = task.title?.trim();
-  if (title) {
-    return title;
+function runDetail(run: CronRunLogEntry): string | null {
+  if (run.status === "error") {
+    return run.error?.trim() || run.summary?.trim() || null;
   }
-  const kind = task.kind?.trim();
-  if (kind) {
-    return kind;
-  }
-  return runtimeLabel(task.runtime);
+  return run.summary?.trim() || run.error?.trim() || null;
 }
 
-function taskDetail(task: TaskSummary): string | null {
-  const status = task.status;
-  if (status === "failed" || status === "timed_out") {
-    return task.error?.trim() || task.terminalSummary?.trim() || task.progressSummary?.trim() || null;
-  }
-  if (isActiveTask(task)) {
-    return task.progressSummary?.trim() || null;
-  }
-  return task.terminalSummary?.trim() || task.progressSummary?.trim() || null;
-}
-
-function taskTimestamp(task: TaskSummary): string {
-  const raw = task.updatedAt ?? task.startedAt ?? task.createdAt;
-  const ms = toTaskTimestampMs(raw);
+function runTimestamp(run: CronRunLogEntry): string {
+  const ms = runTimestampMs(run);
   return ms != null ? formatRelativeTimestamp(ms) : "n/a";
 }
 
-// cron 任务来源名：用 sourceId/kind 反查定时任务（内核任务行不直接带 job name）
-function cronSourceName(props: TasksProps, task: TaskSummary): string | null {
-  if (task.runtime !== "cron") return null;
-  const match = props.cronJobs.find((j) => j.id === task.sourceId || j.id === task.kind);
-  return match?.name ?? null;
+// 展开态 key：runId 优先，缺省退化为 jobId+ts 组合（同一次运行唯一）
+function runKey(run: CronRunLogEntry): string {
+  return run.runId ?? `${run.jobId ?? ""}:${run.ts}`;
 }
 
 /**
@@ -190,55 +144,59 @@ function cronSourceName(props: TasksProps, task: TaskSummary): string | null {
  * 提交过滤词并 requestUpdate 一次。重复输入先清旧 timer，只保留最后一次。
  */
 function onSearchInput(props: TasksProps, value: string) {
-  tasksSearchInput = value;
-  if (tasksSearchTimer != null) {
-    clearTimeout(tasksSearchTimer);
+  runsSearchInput = value;
+  if (runsSearchTimer != null) {
+    clearTimeout(runsSearchTimer);
   }
-  tasksSearchTimer = setTimeout(() => {
-    tasksSearchTimer = null;
-    tasksSearchQuery = tasksSearchInput;
+  runsSearchTimer = setTimeout(() => {
+    runsSearchTimer = null;
+    runsSearchQuery = runsSearchInput;
     props.requestUpdate();
   }, SEARCH_DEBOUNCE_MS);
 }
 
 /**
- * 统计 chip ↔ 状态过滤联动。chip 是「分组」（active=queued+running、
- * failed=failed+timed_out，单个 TaskStatus 表达不了），因此分组态存模块级
- * 变量，与单状态 select 互斥联动：点 chip 生效对应分组并把 select 归 all；
- * 再点同一分组（含 select 单状态归并出的分组）→ 还原 all。
+ * 统计 chip ↔ 状态过滤联动。chip 是「分组」（other 覆盖缺省/未知状态，单个
+ * 状态 select 表达不了），因此分组态存模块级变量，与单状态 select 互斥联动：
+ * 点 chip 生效对应分组并把 select 归 all；再点同一分组（含 select 单状态
+ * 归并出的分组）→ 还原 all。
  */
-function toggleGroupFilter(props: TasksProps, group: TaskGroupKey) {
+function toggleGroupFilter(props: TasksProps, group: RunGroupKey) {
   const current = props.statusFilter !== "all"
-    ? taskGroupOfStatus(props.statusFilter)
-    : tasksStatusGroup;
-  tasksStatusGroup = current === group ? "all" : group;
+    ? runGroupOfStatus(props.statusFilter)
+    : runsStatusGroup;
+  runsStatusGroup = current === group ? "all" : group;
   if (props.statusFilter !== "all") {
     props.onStatusFilterChange("all");
   }
   props.requestUpdate();
 }
 
-/** 状态过滤匹配：单状态 select 优先，其次统计 chip 分组（覆盖多状态组） */
-function statusMatchesFilter(task: TaskSummary, props: TasksProps): boolean {
-  if (props.statusFilter !== "all") {
-    return task.status === props.statusFilter;
+/** 统计条：4 枚状态 chip（计数 + 状态点），点击等价设置状态分组过滤。
+ *  无数据时整组隐藏（全零药丸无信息量，QA 任务页空态观感修复）；无数据且
+ *  加载中渲染 shimmer 骨架占位，表达「统计即将到来」而非静默。 */
+function renderStatsBar(props: TasksProps, stats: RunStats) {
+  if (stats.total === 0) {
+    if (!props.loading) {
+      return nothing;
+    }
+    return html`
+      <div class="ts-stats ts-stats--skeleton" role="status" aria-label=${t("chat.loading")}>
+        <span class="ts-stats__skeleton-chip"></span>
+        <span class="ts-stats__skeleton-chip"></span>
+        <span class="ts-stats__skeleton-chip"></span>
+        <span class="ts-stats__skeleton-chip"></span>
+      </div>
+    `;
   }
-  if (tasksStatusGroup !== "all") {
-    return taskGroupOfStatus(task.status) === tasksStatusGroup;
-  }
-  return true;
-}
-
-/** 统计条：4 枚状态 chip（计数 + 状态点），点击等价设置状态分组过滤 */
-function renderStatsBar(props: TasksProps, stats: TaskStats) {
-  // chip 高亮：select 单状态归并到所在分组（如选 failed → 失败 chip 亮），否则用分组态
+  // chip 高亮：select 单状态归并到所在分组（如选 error → 失败 chip 亮），否则用分组态
   const activeGroup = props.statusFilter !== "all"
-    ? taskGroupOfStatus(props.statusFilter)
-    : tasksStatusGroup;
-  const chips: Array<{ group: TaskGroupKey; label: string; count: number; dot: string }> = [
-    { group: "active", label: t("tasks.stats.active"), count: stats.active, dot: "ts-dot--running" },
-    { group: "completed", label: t("tasks.stats.completed"), count: stats.completed, dot: "ts-dot--ok" },
-    { group: "failed", label: t("tasks.stats.failed"), count: stats.failed, dot: "ts-dot--danger" },
+    ? runGroupOfStatus(props.statusFilter)
+    : runsStatusGroup;
+  const chips: Array<{ group: RunGroupKey; label: string; count: number; dot: string }> = [
+    { group: "ok", label: t("tasks.stats.ok"), count: stats.ok, dot: "ts-dot--ok" },
+    { group: "error", label: t("tasks.stats.error"), count: stats.error, dot: "ts-dot--danger" },
+    { group: "skipped", label: t("tasks.stats.skipped"), count: stats.skipped, dot: "ts-dot--queued" },
     { group: "other", label: t("tasks.stats.other"), count: stats.other, dot: "ts-dot--muted" },
   ];
   return html`
@@ -263,23 +221,23 @@ function renderStatsBar(props: TasksProps, stats: TaskStats) {
 }
 
 /**
- * 任务详情行。失败/超时行：默认截断 ${ERROR_DETAIL_CLAMP} 字符 +「展开详情」
- * 切换完整内容；展开态记模块级 Set（按 task.id，切走视图保留）。其余行沿用
- * CSS 2 行 clamp（进行中/完成摘要一般较短）。
+ * 记录详情行。失败行：默认截断 ${ERROR_DETAIL_CLAMP} 字符 +「展开详情」
+ * 切换完整内容；展开态记模块级 Set（按运行 key，切走视图保留）。其余行沿用
+ * CSS 2 行 clamp（运行摘要一般较短）。
  */
-function renderTaskDetail(
+function renderRunDetail(
   props: TasksProps,
-  task: TaskSummary,
-  status: TaskStatus | "all",
+  run: CronRunLogEntry,
 ): TemplateResult | typeof nothing {
-  const detail = taskDetail(task);
+  const detail = runDetail(run);
   if (!detail) {
     return nothing;
   }
-  if (status !== "failed" && status !== "timed_out") {
+  if (run.status !== "error") {
     return html`<div class="ts-row__detail">${detail}</div>`;
   }
-  const expanded = tasksExpandedErrorIds.has(task.id);
+  const key = runKey(run);
+  const expanded = runsExpandedErrorKeys.has(key);
   const clamped = detail.length > ERROR_DETAIL_CLAMP;
   const text = expanded || !clamped ? detail : `${detail.slice(0, ERROR_DETAIL_CLAMP)}…`;
   return html`
@@ -292,9 +250,9 @@ function renderTaskDetail(
           @click=${() => {
             // 展开是纯本地交互：改模块级 Set 后直接请求重渲染（无 RPC）
             if (expanded) {
-              tasksExpandedErrorIds.delete(task.id);
+              runsExpandedErrorKeys.delete(key);
             } else {
-              tasksExpandedErrorIds.add(task.id);
+              runsExpandedErrorKeys.add(key);
             }
             props.requestUpdate();
           }}
@@ -303,34 +261,24 @@ function renderTaskDetail(
   `;
 }
 
-function renderTaskRow(props: TasksProps, task: TaskSummary) {
-  const active = isActiveTask(task);
-  const cancelling = props.cancellingIds.has(task.id);
-  const sessionKey = task.childSessionKey ?? task.sessionKey;
-  const timestamp = taskTimestamp(task);
-  // 耗时基于 Date.now()：30s 自动刷新 tick 的 requestUpdate 会顺带滚动该值（不另开 1s 定时器）
-  const durationMs = taskDurationMs(task);
-  const status = task.status ?? "queued";
-  const source = cronSourceName(props, task);
-  const title = taskTitle(task);
+function renderRunRow(props: TasksProps, run: CronRunLogEntry, staggerClass = "") {
+  const sessionKey = typeof run.sessionKey === "string" ? run.sessionKey.trim() : "";
+  const timestamp = runTimestamp(run);
+  const durationMs = typeof run.durationMs === "number" && run.durationMs > 0 ? run.durationMs : null;
+  const title = runTitle(run);
   return html`
-    <div class="ts-row ${active ? "ts-row--active" : ""}">
-      <span class="ts-dot ${statusDotClass(status)}" title=${statusLabel(status)}></span>
+    <div class="ts-row ${staggerClass}">
+      <span class="ts-dot ${statusDotClass(run.status)}" title=${statusLabel(run.status)}></span>
       <div class="ts-row__main">
         <div class="ts-row__title-line">
           <span class="ts-row__title" title=${title}>${title}</span>
         </div>
         <div class="ts-row__meta">
-          <span class="ts-row__meta-item ts-status ${statusTextClass(status)}">${statusLabel(status)}</span>
-          <span class="ts-row__meta-item">${runtimeLabel(task.runtime)}</span>
-          ${task.agentId ? html`<span class="ts-row__meta-item">${task.agentId}</span>` : nothing}
+          <span class="ts-row__meta-item ts-status ${statusTextClass(run.status)}">${statusLabel(run.status)}</span>
           ${durationMs != null ? html`<span class="ts-row__meta-item">${formatDurationHuman(durationMs)}</span>` : nothing}
-          ${source
-            ? html`<span class="ts-row__meta-item" title=${source}>${t("tasks.cronSource").replace("{name}", source)}</span>`
-            : nothing}
           <span class="ts-row__meta-item ts-row__time-inline" title=${timestamp}>${timestamp}</span>
         </div>
-        ${renderTaskDetail(props, task, status)}
+        ${renderRunDetail(props, run)}
       </div>
       <div class="ts-row__actions">
         ${sessionKey
@@ -342,33 +290,20 @@ function renderTaskRow(props: TasksProps, task: TaskSummary) {
               ${t("tasks.openSession")}
               </button>`
           : nothing}
-        ${task.runtime === "cron"
-          ? html`<button
-              class="btn btn--sm"
-              type="button"
-              @click=${() => props.onOpenCronTab()}
-              >
-              ${t("tasks.viewCronJob")}
-              </button>`
-          : nothing}
-        ${active
-          ? html`<button
-              class="btn danger btn--sm"
-              type="button"
-              ?disabled=${cancelling || !props.connected}
-              @click=${() => props.onCancel(task.id)}
-              >
-              ${cancelling ? icons.loader : nothing}
-              ${cancelling ? t("tasks.cancelling") : t("tasks.cancel")}
-              </button>`
-          : nothing}
+        <button
+          class="btn btn--sm"
+          type="button"
+          @click=${() => props.onOpenCronTab()}
+          >
+          ${t("tasks.viewCronJob")}
+          </button>
       </div>
     </div>
   `;
 }
 
 function renderTasksRuns(props: TasksProps) {
-  // T1：当前内核未注册 tasks.*（如 2026.9.7）——说明性空态，隐藏统计/筛选/列表
+  // 当前内核未注册 cron.runs（2026.9.7 之前的内核）——说明性空态，隐藏统计/筛选/列表
   if (props.unsupported) {
     return html`
       <div class="ts-header panel__header">
@@ -382,29 +317,15 @@ function renderTasksRuns(props: TasksProps) {
       </div>
     `;
   }
-  // 统计条始终基于全量列表（deriveTaskStats 计数不受筛选影响）
-  const stats = deriveTaskStats(props.tasks);
-  // Agent 选项动态收集；列表刷新后选中 agent 可能已无任务 → 归一化为「全部」
-  const agentIds = collectAgentIds(props.tasks);
-  const agentFilter = agentIds.includes(tasksAgentFilter) ? tasksAgentFilter : "";
-  // 搜索/来源/Agent 任一生效 → 扁平结果列表（与状态过滤共用一条结果流）；
-  // 空态文案：列表筛选生效用 noMatch，仅状态过滤沿用 emptyFiltered
-  const hasListFilters =
-    tasksRuntimeFilter !== "all" || agentFilter !== "" || tasksSearchQuery.trim() !== "";
-  const flatMode = hasListFilters || props.statusFilter !== "all" || tasksStatusGroup !== "all";
+  // 统计条始终基于全量列表（deriveRunStats 计数不受筛选影响）
+  const stats = deriveRunStats(props.runs);
+  // 搜索生效 → 与状态过滤共用一条结果流；空态文案：搜索生效用 noMatch，
+  // 仅状态过滤沿用 emptyFiltered
+  const hasListFilters = runsSearchQuery.trim() !== "";
 
-  // 过滤管线（全客户端）：状态（select 优先，其次 chip 分组）→ 来源 → Agent → 搜索
-  let visible = props.tasks.filter((task) => statusMatchesFilter(task, props));
-  visible = filterTasksByRuntime(visible, tasksRuntimeFilter);
-  if (agentFilter) {
-    visible = visible.filter((task) => task.agentId === agentFilter);
-  }
-  visible = filterTasksByQuery(visible, tasksSearchQuery);
-
-  // 双分组视图只在完全无过滤时展示（进行中 + 最近完成）
-  const activeTasks = props.tasks.filter((task) => isActiveTask(task));
-  const recentAll = props.tasks.filter((task) => !isActiveTask(task));
-  const recentShown = tasksShowAllRecent ? recentAll : recentAll.slice(0, RECENT_CLAMP);
+  // 过滤管线（全客户端）：状态（select 优先，其次 chip 分组）→ 搜索
+  let visible = props.runs.filter((run) => runMatchesStatusFilter(run, props.statusFilter, runsStatusGroup));
+  visible = filterRunsByQuery(visible, runsSearchQuery);
 
   return html`
     <div class="ts-header panel__header">
@@ -435,7 +356,7 @@ function renderTasksRuns(props: TasksProps) {
 
       ${props.error
         ? html`<div class="callout danger ts-error">
-            <span class="ts-error__text">${props.error}</span>
+            <span class="ts-error__text" title=${props.error}>${t("tasks.loadFailed")}</span>
             <button
               class="btn btn--sm"
               type="button"
@@ -448,98 +369,48 @@ function renderTasksRuns(props: TasksProps) {
           </div>`
         : nothing}
 
+      <!-- 统计条：有数据才展示全量计数；无数据且加载中出骨架占位，全零药丸不再空挂 -->
       ${renderStatsBar(props, stats)}
 
-      <!-- R94：筛选控件从页头下沉为独立工具行（页头只留标题与两个主操作） -->
+      <!-- 筛选控件独立工具行（页头只留标题与两个主操作） -->
       <div class="ts-toolbar panel__toolbar">
           <input
             class="ts-search"
             type="text"
             placeholder=${t("tasks.searchPlaceholder")}
-            .value=${tasksSearchInput}
+            .value=${runsSearchInput}
             @input=${(e: Event) => onSearchInput(props, (e.target as HTMLInputElement).value)}
           />
-          <select
-            class="ts-select"
-            .value=${tasksRuntimeFilter}
-            @change=${(e: Event) => {
-              tasksRuntimeFilter = (e.target as HTMLSelectElement).value as TaskRuntimeFilter;
-              props.requestUpdate();
-            }}
-          >
-            <option value="all">${t("tasks.runtimeAll")}</option>
-            ${RUNTIME_FILTER_OPTIONS.map((runtime) => html`
-              <option value=${runtime}>${runtimeLabel(runtime === "unknown" ? undefined : runtime)}</option>
-            `)}
-          </select>
-          ${agentIds.length > 0
-            ? html`<select
-                class="ts-select"
-                .value=${agentFilter}
-                @change=${(e: Event) => {
-                  tasksAgentFilter = (e.target as HTMLSelectElement).value;
-                  props.requestUpdate();
-                }}
-              >
-                <option value="">${t("tasks.agentAll")}</option>
-                ${agentIds.map((id) => html`<option value=${id}>${id}</option>`)}
-              </select>`
-            : nothing}
           <select
             class="ts-select"
             .value=${props.statusFilter}
             @change=${(e: Event) => {
               // 单状态 select 与统计 chip 分组互斥：select 生效时清分组态，避免叠加过滤
-              tasksStatusGroup = "all";
-              props.onStatusFilterChange((e.target as HTMLSelectElement).value as TaskStatus | "all");
+              runsStatusGroup = "all";
+              props.onStatusFilterChange((e.target as HTMLSelectElement).value as CronRunStatusFilter);
             }}
           >
-            ${STATUS_OPTIONS.map((status) => html`<option value=${status}>${statusLabel(status)}</option>`)}
+            ${STATUS_OPTIONS.map((status) => html`
+              <option value=${status}>${status === "all" ? t("tasks.statusAll") : statusLabel(status)}</option>
+            `)}
           </select>
       </div>
 
-      ${flatMode
-        ? visible.length === 0
+      ${visible.length === 0
+        ? hasListFilters || props.statusFilter !== "all" || runsStatusGroup !== "all"
           ? html`<p class="ts-empty panel__empty">${hasListFilters ? t("tasks.noMatch") : t("tasks.emptyFiltered")}</p>`
-          : html`<div class="ts-list">${visible.map((task) => renderTaskRow(props, task))}</div>`
-        : html`
-            <section class="ts-section">
-              <h3 class="ts-section__title">${t("tasks.activeTitle")}
-                ${activeTasks.length > 0 ? html`<span class="ts-count">${activeTasks.length}</span>` : nothing}
-              </h3>
-              ${activeTasks.length === 0
-                ? html`<div class="empty-state">
-                    <span class="empty-state__icon">${icons.activity}</span>
-                    <div class="empty-state__title">${t("tasks.noActive")}</div>
-                    <div class="empty-state__actions">
-                      <button
-                        class="btn btn--sm"
-                        type="button"
-                        @click=${() => props.onOpenCronTab()}
-                      >${t("tasks.viewCronJob")}</button>
-                    </div>
-                  </div>`
-                : html`<div class="ts-list">${activeTasks.map((task) => renderTaskRow(props, task))}</div>`}
-            </section>
-            <section class="ts-section">
-              <h3 class="ts-section__title">${t("tasks.recentTitle")}</h3>
-              ${recentShown.length === 0
-                ? html`<p class="ts-empty panel__empty">${t("tasks.noRecent")}</p>`
-                : html`<div class="ts-list">${recentShown.map((task) => renderTaskRow(props, task))}</div>`}
-              ${recentAll.length > RECENT_CLAMP
-                ? html`<div class="ts-recent-more">
-                    <button
-                      class="btn btn--sm"
-                      type="button"
-                      @click=${() => {
-                        tasksShowAllRecent = !tasksShowAllRecent;
-                        props.requestUpdate();
-                      }}
-                    >${tasksShowAllRecent ? t("tasks.collapse") : t("tasks.showAll")}</button>
-                  </div>`
-                : nothing}
-            </section>
-          `}
+          : html`<div class="empty-state">
+              <span class="empty-state__icon">${icons.activity}</span>
+              <div class="empty-state__title">${t("tasks.noRuns")}</div>
+              <div class="empty-state__actions">
+                <button
+                  class="btn btn--sm"
+                  type="button"
+                  @click=${() => props.onOpenCronTab()}
+                >${t("tasks.viewCronJob")}</button>
+              </div>
+            </div>`
+        : html`<div class="ts-list">${visible.map((run, i) => renderRunRow(props, run, i < 6 ? `stagger-${i + 1}` : ""))}</div>`}
   `;
 }
 

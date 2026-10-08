@@ -40,11 +40,15 @@ if (!fs.existsSync(exe)) {
   const step = (name, ok, detail = "") => { steps.push({ name, ok, detail }); console.log(`${ok ? "PASS" : "FAIL"}  ${name}${detail ? " — " + detail : ""}`); };
   const dialogCount = () => cdp.evaluate(`document.querySelectorAll('[role="dialog"][aria-modal="true"]').length`);
 
-  // 逐视图：点击 rail 项 + 视图内安全交互
-  const railCount = await cdp.evaluate("document.querySelectorAll('.oc-rail__item').length");
-  for (let i = 0; i < railCount; i++) {
-    const label = await cdp.evaluate(`(document.querySelectorAll('.oc-rail__item')[${i}].getAttribute('aria-label') || 'rail-'+${i})`);
-    await cdp.evaluate(`document.querySelectorAll('.oc-rail__item')[${i}].click()`);
+  // 逐视图：点击 rail 项 + 视图内安全交互。
+  // 只巡览 .oc-rail__nav 的 4 个稳定视图项：footer 的 webbridge 修复项/连接状态项
+  // 随连接态动态增减（且点击有副作用——conn 触发重连、修复项可能开浏览器），
+  // 按索引点全部 .oc-rail__item 会在巡览途中因集合变化越界；每轮重新取元素。
+  const navCount = await cdp.evaluate("document.querySelectorAll('.oc-rail__nav .oc-rail__item').length");
+  for (let i = 0; i < navCount; i++) {
+    const pick = `document.querySelectorAll('.oc-rail__nav .oc-rail__item')[${i}]`;
+    const label = await cdp.evaluate(`((${pick})?.getAttribute('aria-label') || 'rail-'+${i})`);
+    await cdp.evaluate(`(${pick})?.click()`);
     await waitForSettle(cdp, 800);
     const before = await dialogCount();
     // 侧栏会话行 / 工作区节点 / git 行的键盘可达性：统计 role=button 行数
@@ -53,8 +57,9 @@ if (!fs.existsSync(exe)) {
   }
 
   // 设置页：全 tab 巡览后，验证「恢复出厂」确认框的 Escape 语义
-  const settingsIdx = await cdp.evaluate(`[...document.querySelectorAll('.oc-rail__item')].findIndex(e => /settings|设置/i.test(e.getAttribute('aria-label')||e.title||e.textContent))`);
-  await cdp.evaluate(`document.querySelectorAll('.oc-rail__item')[${settingsIdx}].click()`);
+  // 设置入口取 footer 直接子 button 的最后一个（有可用更新时 aria-label 会变成
+  // 「有可用更新」，按 settings|设置 文案匹配会找不到）
+  await cdp.evaluate(`[...document.querySelectorAll('.oc-rail__footer > button.oc-rail__item')].pop()?.click()`);
   await waitForSettle(cdp, 1000);
   const tabCount = await cdp.evaluate("document.querySelectorAll('.oc-settings-nav-item').length");
   for (let i = 0; i < tabCount; i++) {

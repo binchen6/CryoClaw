@@ -55,3 +55,57 @@ test("normalize 返回新对象，不改入参", () => {
   assert.equal(original.cronExpr, "0 7 * * *");
   assert.notEqual(next, original);
 });
+
+// ── 能力门控（2026.9.7 适配）：内核未注册对应 cron.* 时零请求静默跳过 ──
+
+import { loadCronJobs, loadCronRuns, loadCronStatus, type CronState } from "./cron.ts";
+import type { GatewayHelloOk } from "../gateway.ts";
+
+function helloWith(methods: string[] | undefined): GatewayHelloOk {
+  const features: { methods?: string[] } = {};
+  if (methods) features.methods = methods;
+  return { type: "hello-ok", protocol: 4, features } as GatewayHelloOk;
+}
+
+function fakeCronState(hello: GatewayHelloOk | null): CronState & { requests: string[] } {
+  const requests: string[] = [];
+  return {
+    client: {
+      request: (method: string) => {
+        requests.push(method);
+        return Promise.resolve({ jobs: [], entries: [] });
+      },
+    } as unknown as CronState["client"],
+    connected: true,
+    hello,
+    cronLoading: false,
+    cronJobs: [],
+    cronStatus: null,
+    cronError: null,
+    cronForm: form(),
+    cronRunsJobId: null,
+    cronRuns: [],
+    cronBusy: false,
+    requests,
+  };
+}
+
+test("loadCronJobs / loadCronStatus：内核声明无对应方法时零请求", async () => {
+  const state = fakeCronState(helloWith(["chat.history"]));
+  await loadCronJobs(state);
+  await loadCronStatus(state);
+  await loadCronRuns(state, "job-1");
+  assert.deepEqual(state.requests, [], "未注册的 cron.* 不得发出死 RPC");
+});
+
+test("loadCronJobs / loadCronStatus：内核声明对应方法或缺省保守放行时正常请求", async () => {
+  const gated = fakeCronState(helloWith(["cron.list", "cron.status", "cron.runs"]));
+  await loadCronJobs(gated);
+  await loadCronStatus(gated);
+  await loadCronRuns(gated, "job-1");
+  assert.deepEqual(gated.requests, ["cron.list", "cron.status", "cron.runs"]);
+
+  const legacy = fakeCronState(helloWith(undefined));
+  await loadCronJobs(legacy);
+  assert.deepEqual(legacy.requests, ["cron.list"], "未声明 features 的旧内核保守放行");
+});

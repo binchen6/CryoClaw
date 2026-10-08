@@ -22,7 +22,7 @@ app.commandLine.appendSwitch(
 app.commandLine.appendSwitch("disable-component-update");
 app.commandLine.appendSwitch("disable-breakpad");
 
-import { GatewayProcess, closeDiagLogStream } from "./gateway-process";
+import { GatewayProcess, closeDiagLogStream, type GatewayProgressInfo } from "./gateway-process";
 import {
   CRASH_RESTART_DELAY_MS,
   CRASH_RESTART_MAX,
@@ -153,6 +153,21 @@ process.on("unhandledRejection", (reason) => {
 const gateway = new GatewayProcess({
   port: resolveGatewayPort(),
   token: resolveGatewayAuthToken({ persist: false }),
+  // 启动进度推送：与 gateway:ready 同一可信窗口判定；payload 不含凭据，
+  // 跳过非可信窗口时无需告警（宁可少一次进度更新）
+  onProgress: (info: GatewayProgressInfo) => {
+    const chatUiPrefix = chatUiEntryUrlPrefix();
+    for (const w of BrowserWindow.getAllWindows()) {
+      if (w.isDestroyed()) {
+        continue;
+      }
+      const targetUrl = w.webContents.getURL();
+      if (!isTrustedChatUiUrl(targetUrl, chatUiPrefix)) {
+        continue;
+      }
+      w.webContents.send("gateway:progress", info);
+    }
+  },
   onStateChange: (state) => {
     tray.updateMenu();
     // gateway 就绪后立即通知 Chat UI 重连，避免盲等指数退避
@@ -415,10 +430,10 @@ async function ensureGatewayRunning(source: string): Promise<boolean> {
     // 子进程退出时不再触发 onCrash 崩溃重启（否则双链并发双倍消耗崩溃预算、双恢复入口）
     try {
       if (attempt === 1) {
-        await gateway.start({ supervised: true });
+        await gateway.start({ supervised: true, attempt });
       } else {
         log.warn(`Gateway 启动重试 ${attempt}/${MAX_GATEWAY_START_ATTEMPTS}: ${source}`);
-        await gateway.restart({ supervised: true });
+        await gateway.restart({ supervised: true, attempt });
       }
     } catch (err) {
       log.error(`Gateway 启动异常（第 ${attempt} 次尝试, ${source}）: ${err}`);
@@ -880,7 +895,12 @@ ipcMain.handle("gateway:stop", async (event) => {
 });
 ipcMain.handle("gateway:state", (event) => {
   if (!assertTrustedIpcSender(event, "gateway:state")) throw new Error("IPC sender not trusted");
-  return gateway.getState();
+  // 附带最近一次启动进度，晚加载的渲染层可据此补齐进度展示。
+  // 仅启动窗口内下发：running/stopped 携带进度会让晚加载的渲染层补出
+  // 过期的「就绪/等待服务」卡片（进度随状态机在进入 starting/stopped 时已清空，
+  // 这里的门控是双保险）
+  const state = gateway.getState();
+  return { state, progress: state === "starting" ? gateway.getLastProgress() : null };
 });
 
 // ── 内核升级/回退 ──

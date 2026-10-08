@@ -14,7 +14,7 @@ import { getConfigSnapshot, getCachedConfigSnapshot } from "../../controllers/co
 import { runConfigPatch } from "./tab-patch.ts";
 import { extractWeixinEnabled, applyWeixinSave } from "./tab-channels.lib.ts";
 import { updateChannelEnabled, syncChannelEnabledFromSnapshot } from "./tab-channels.ts";
-import { initChannelTabOnce } from "./tab-channels-shared.ts";
+import { initChannelTabOnce, renderChannelEnableCard } from "./tab-channels-shared.ts";
 import { showConfirm } from "../confirm-dialog.ts";
 
 // Weixin 面板状态必须可整体回滚，避免二维码和账号缓存残留到下次打开。
@@ -176,11 +176,7 @@ export function renderChannelWeixin(state: AppViewState) {
 
   return html`
     <div class="oc-settings__section">
-      <div class="oc-settings__form-group">
-        <oc-toggle-switch .label=${t("settings.channels.enable")} .checked=${s.enabled}
-          @change=${(e: CustomEvent) => handleToggle(state, e.detail.checked)}
-        ></oc-toggle-switch>
-      </div>
+      ${renderChannelEnableCard("weixin", s.enabled, (checked) => void handleToggle(state, checked))}
 
       ${s.enabled ? html`
         ${connected ? html`
