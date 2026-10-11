@@ -251,17 +251,28 @@
   pointer-events: none;
 }
 
+/* 底色实底 + ::after 渐变条扫光（合成层 translateX，明暗 token 不变） */
 .skills-skeleton__avatar,
 .skills-skeleton__line {
   display: block;
+  position: relative;
+  overflow: hidden;
+  background: var(--bg-muted);
+}
+
+.skills-skeleton__avatar::after,
+.skills-skeleton__line::after {
+  content: "";
+  position: absolute;
+  inset: 0;
   background: linear-gradient(
     90deg,
-    var(--bg-muted) 25%,
+    transparent 25%,
     var(--bg-hover) 50%,
-    var(--bg-muted) 75%
+    transparent 75%
   );
-  background-size: 200% 100%;
-  animation: shimmer 1.4s linear infinite;
+  will-change: transform;
+  animation: shimmer var(--duration-loop) linear infinite;
 }
 
 .skills-skeleton__avatar {
@@ -281,8 +292,8 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .skills-skeleton__avatar,
-  .skills-skeleton__line {
+  .skills-skeleton__avatar::after,
+  .skills-skeleton__line::after {
     animation: none;
   }
 }
@@ -310,6 +321,12 @@
 @keyframes skill-toast-in {
   from { opacity: 0; transform: translateX(-50%) translateY(-8px); }
   to { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skill-store__toast {
+    animation: none;
+  }
 }
 
 /* 技能页滚动容器 */
@@ -567,7 +584,7 @@
    ========================================================================== */
 
 .cc-dialog {
-  animation: cc-dialog-in var(--duration-normal) var(--ease-out);
+  animation: cc-dialog-in var(--duration-normal) var(--ease-spring);
 }
 
 @keyframes cc-dialog-in {

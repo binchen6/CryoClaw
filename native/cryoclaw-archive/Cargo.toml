@@ -1,0 +1,19 @@
+[package]
+name = "cryoclaw-archive"
+version = "0.1.1"
+edition = "2021"
+description = "CryoClaw .openclaw archive sidecar: streaming zip create/manifest/extract over a JSON Lines protocol"
+publish = false
+
+[dependencies]
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
+crc32fast = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+# sidecar panic = 进程死 + JS 回退（结果仍正确），把潜在算术回绕变成显式失败：
+# 成本极低（二进制略大），换取 zip 偏移/大小算术的回绕类 bug 不再静默
+overflow-checks = true

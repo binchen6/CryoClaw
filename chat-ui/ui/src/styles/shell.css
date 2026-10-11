@@ -378,7 +378,7 @@ oc-rail {
 
 .oc-rail__conn-step.is-active {
   background: var(--accent);
-  animation: pulse-subtle 1.2s ease-in-out infinite;
+  animation: pulse-subtle var(--duration-loop) ease-in-out infinite;
 }
 
 .oc-rail__conn-step-text {

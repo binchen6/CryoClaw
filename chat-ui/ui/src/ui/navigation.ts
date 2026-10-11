@@ -1,32 +1,14 @@
-export type Tab =
-  | "agents"
-  | "overview"
-  | "channels"
-  | "instances"
-  | "sessions"
-  | "usage"
-  | "cron"
-  | "skills"
-  | "nodes"
-  | "chat"
-  | "config"
-  | "debug"
-  | "logs";
+/* 路由收敛（2026.9 R2b）：URL 路由层实际消费集 = 主进程白名单
+   （ipc-sender-guard.ts KNOWN_CHAT_UI_ENTRIES）∩ 本表可解析路由。
+   历史路由 agents/overview/channels/instances/sessions/usage/nodes/config/
+   debug/logs 已从 Chat UI 移除（见 gotchas #55 与 guard 注释），命中它们
+   的深链现在解析为 null → 回落 "chat" 并重写 URL，不再产生死路由页面。 */
+export type Tab = "chat" | "skills" | "cron";
 
 const TAB_PATHS: Record<Tab, string> = {
-  agents: "/agents",
-  overview: "/overview",
-  channels: "/channels",
-  instances: "/instances",
-  sessions: "/sessions",
-  usage: "/usage",
-  cron: "/cron",
-  skills: "/skills",
-  nodes: "/nodes",
   chat: "/chat",
-  config: "/config",
-  debug: "/debug",
-  logs: "/logs",
+  skills: "/skills",
+  cron: "/cron",
 };
 
 const PATH_TO_TAB = new Map(Object.entries(TAB_PATHS).map(([tab, path]) => [path, tab as Tab]));

@@ -130,3 +130,94 @@ export function resetChatScroll(host: ScrollHost) {
   host.chatUserNearBottom = true;
   host.chatNewMessagesBelow = false;
 }
+
+// ── 切换会话不断流配套：滚动位置按会话记忆 ──
+// 切走前保存旧会话 scrollTop，切回时还原（低成本版）。只记非贴底位置：贴底会话
+// 切回保持 chatUserNearBottom=true 走既有 stick-to-bottom 链路（还原路径会把
+// chatUserNearBottom 置 false，还原值又常被注水/CV 占位估算 clamp 到历史中部，
+// 贴底跟流反而中断）。
+// 已知取舍：切回后历史走渐进注水（首屏 20 条逐批补齐），注水完成前还原值可能被
+// clamp（.chat-group 的 content-visibility 占位估算同向叠加）；长历史切回的精确
+// 位置不保证，run 态无损才是本批次的主目标。
+
+const sessionScrollPositions = new Map<string, number>();
+const SESSION_SCROLL_POSITION_MAX = 20;
+
+export function saveChatScrollPosition(sessionKey: string, scrollTop?: number) {
+  let top = scrollTop;
+  if (top === undefined) {
+    // 无显式值（生产路径）时从 DOM 读；node 测试环境无 DOM 时跳过保存
+    if (typeof document === "undefined" || typeof document.querySelector !== "function") {
+      return;
+    }
+    const container = document.querySelector(".chat-thread") as HTMLElement | null;
+    if (container) {
+      // 贴底会话不记位置：切回保持 chatUserNearBottom=true 走既有贴底链路（渐进
+      // 注水 + stick-to-bottom）。记位置反而有害——restoreChatScrollPosition 会把
+      // 贴底态置 false，还原值又常被注水/CV 占位估算 clamp 到历史中部，贴底跟流中断
+      if (
+        container.scrollHeight - container.scrollTop - container.clientHeight <
+        NEAR_BOTTOM_THRESHOLD
+      ) {
+        sessionScrollPositions.delete(sessionKey);
+        return;
+      }
+      top = container.scrollTop;
+    } else {
+      top = 0;
+    }
+  }
+  sessionScrollPositions.delete(sessionKey); // 重新插入以刷新迭代序（LRU 语义）
+  sessionScrollPositions.set(sessionKey, top);
+  while (sessionScrollPositions.size > SESSION_SCROLL_POSITION_MAX) {
+    const oldest = sessionScrollPositions.keys().next().value;
+    if (oldest === undefined) break;
+    sessionScrollPositions.delete(oldest);
+  }
+}
+
+/** 一次性读取（还原后即删除） */
+export function takeChatScrollPosition(sessionKey: string): number | null {
+  const top = sessionScrollPositions.get(sessionKey) ?? null;
+  sessionScrollPositions.delete(sessionKey);
+  return top;
+}
+
+// 会话被删除时同步清理（deleteSessionFromSidebar 调用，对齐草稿/run 态快照清理）
+export function clearSessionScrollPosition(sessionKey: string) {
+  sessionScrollPositions.delete(sessionKey);
+}
+
+// 切回时还原：先置 chatUserNearBottom=false（仅非贴底会话有保存条目，贴底会话
+// 不记位置），再在渲染完成后写回 scrollTop。代际守卫同 scheduleChatScroll——
+// 切换后若有更新的滚动调度（历史加载触发），本次还原即过期。
+export function restoreChatScrollPosition(
+  host: {
+    updateComplete?: Promise<unknown>;
+    chatScrollGeneration: number;
+    chatUserNearBottom: boolean;
+  },
+  sessionKey: string,
+): void {
+  const saved = takeChatScrollPosition(sessionKey);
+  if (saved == null) {
+    return;
+  }
+  host.chatUserNearBottom = false;
+  if (typeof host.updateComplete?.then !== "function") {
+    return; // 测试替身无渲染管线：位置记忆已消费即可
+  }
+  const generation = host.chatScrollGeneration;
+  void host.updateComplete.then(() => {
+    if (generation !== host.chatScrollGeneration) {
+      return;
+    }
+    if (typeof document === "undefined" || typeof document.querySelector !== "function") {
+      return;
+    }
+    const container = document.querySelector(".chat-thread") as HTMLElement | null;
+    if (container) {
+      container.scrollTop = saved;
+    }
+  });
+}

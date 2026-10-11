@@ -5,15 +5,16 @@ import { existsSync, readFileSync } from "node:fs";
 // views/chat.ts 的线程级交互（keydown 拦截 / aria-live / 路径链接键盘委托）
 // 依赖真实 DOM 事件流，node 环境做源码审计钉住接线，防止回退。
 
-function readSource(): string {
-  const fromSource = new URL("./chat.ts", import.meta.url);
-  const fromDist = new URL("../../../../../src/ui/views/chat.ts", import.meta.url);
+function readSource(file = "chat.ts"): string {
+  const fromSource = new URL(`./${file}`, import.meta.url);
+  const fromDist = new URL(`../../../../../src/ui/views/${file}`, import.meta.url);
   const srcUrl = existsSync(fromSource) ? fromSource : fromDist;
   return readFileSync(srcUrl, "utf8");
 }
 
 test("渲染接线审计：命令建议键盘拦截前重校验 draft（过期建议不劫持 Enter）", () => {
-  const src = readSource();
+  // R2b 拆分：compose 输入框（textarea + 命令建议）迁至 views/chat-compose.ts
+  const src = readSource("chat-compose.ts");
   // 以 @input 的 refreshCommandSuggestions 为锚，其前方的 keydown 即 compose 输入框拦截
   const inputIdx = src.indexOf("refreshCommandSuggestions(props, target.value)");
   assert.ok(inputIdx >= 0, "compose 输入框应保留 @input 建议刷新");

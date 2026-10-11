@@ -490,7 +490,7 @@
   border: 2px solid var(--border);
   border-top-color: var(--accent);
   border-radius: var(--radius-pill);
-  animation: oc-spin 0.6s linear infinite;
+  animation: oc-spin var(--duration-loop) linear infinite;
 }
 .oc-setup-spinner--lg {
   width: var(--spacer-24);

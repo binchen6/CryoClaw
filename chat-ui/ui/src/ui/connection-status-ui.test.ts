@@ -142,11 +142,13 @@ test("主进程：gateway:state 仅启动窗口内携带进度，状态机离启
   );
 });
 
-test("views/chat.ts：断开时不再硬禁用输入与主发送键（乐观入队由 handleSendChat 兜）", () => {
-  const s = src("views/chat.ts");
+test("views/chat-compose.ts：断开时不再硬禁用输入与主发送键（乐观入队由 handleSendChat 兜）", () => {
+  // R2b 拆分：compose 输入区迁至 views/chat-compose.ts；队列「待发送」提示在
+  // views/chat-queue.ts；callout 装配与错误 title 仍在 views/chat.ts。
+  const s = src("views/chat-compose.ts");
   // textarea：整块内不得有 disabled（断开时保持可编辑）
   const textareaStart = s.indexOf("<textarea");
-  assert.notEqual(textareaStart, -1, "views/chat.ts 应有 compose textarea");
+  assert.notEqual(textareaStart, -1, "views/chat-compose.ts 应有 compose textarea");
   const textareaEnd = s.indexOf("></textarea>", textareaStart);
   const textareaBlock = s.slice(textareaStart, textareaEnd);
   assert.ok(
@@ -156,25 +158,27 @@ test("views/chat.ts：断开时不再硬禁用输入与主发送键（乐观入�
   // 主发送键（arrowUp 那颗）：禁用逻辑移除——断开时点击=乐观入队；
   // Stop 键（onAbort）保留禁用（中止需连接），thinking/model/branch 同理。
   const sendBtn = s.indexOf("${icons.arrowUp}");
-  assert.notEqual(sendBtn, -1, "views/chat.ts 应有主发送键");
+  assert.notEqual(sendBtn, -1, "views/chat-compose.ts 应有主发送键");
   const sendTagStart = s.lastIndexOf("<button", sendBtn);
   const sendTag = s.slice(sendTagStart, sendBtn);
   assert.ok(
     !sendTag.includes("disabled"),
     "主发送键不应再被 disabled（断开时发送走待发送队列）",
   );
+  const chatSrc = src("views/chat.ts");
   assert.match(
-    s,
+    chatSrc,
     /renderGatewayCallout\(props\)/,
     "断开状态应渲染三态 callout（替代裸错误横幅）",
   );
+  const queueSrc = src("views/chat-queue.ts");
   assert.match(
-    s,
+    queueSrc,
     /chat\.queuedPendingHint/,
     "断开入队应给出「待发送」提示",
   );
   assert.match(
-    s,
+    chatSrc,
     /title=\$\{props\.error\}/,
     "连接态错误应保留原始详情（title），文案走本地化通用语",
   );

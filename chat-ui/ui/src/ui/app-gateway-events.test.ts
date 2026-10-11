@@ -423,3 +423,60 @@ test("app-gateway.ts：own-run 终态清零 chatAbortPending（中止在途标�
     "own-run 终态应清零 chatAbortPending，让新一轮 run 的 Stop 按钮恢复可用",
   );
 });
+
+// ---- 切换会话不断流：后台会话事件分派进 per-session run 态快照 ----
+
+test("app-gateway.ts：后台会话 chat 事件先分派 dispatchBackgroundChatEvent，终态仍补侧边栏刷新", () => {
+  const s = chatBranch(src("app-gateway.ts"));
+  assert.match(
+    s,
+    /payload\.sessionKey !== host\.sessionKey[\s\S]*?dispatchBackgroundChatEvent\(payload\);[\s\S]*?payload\.state === "final"[\s\S]*?payload\.state === "error"[\s\S]*?payload\.state === "aborted"[\s\S]*?scheduleTerminalSessionsRefresh\(host as unknown as OpenClawApp, payload\.sessionKey\);\s*\n\s*return;/,
+    "后台会话 chat 事件应分派 dispatchBackgroundChatEvent 累积，终态仍走 scheduleTerminalSessionsRefresh + return",
+  );
+});
+
+test("app-gateway.ts：后台会话 agent 事件分派 accumulateBackgroundAgentEvent（不进前台 handleAgentEvent）", () => {
+  const s = src("app-gateway.ts");
+  const start = s.indexOf('if (evt.event === "agent")');
+  assert.notEqual(start, -1, "app-gateway.ts 缺少 agent 事件分支");
+  const end = s.indexOf('if (evt.event === "chat")', start);
+  assert.notEqual(end, -1, "无法定位 agent 分支边界");
+  const branch = s.slice(start, end);
+  assert.match(
+    branch,
+    /agentPayload\.sessionKey !== host\.sessionKey[\s\S]*?accumulateBackgroundAgentEvent\(agentPayload\.sessionKey, agentPayload\);\s*\n\s*return;/,
+    "后台会话 agent 事件应分派 accumulateBackgroundAgentEvent 后 return",
+  );
+});
+
+test("app-gateway.ts：后台分派函数从 ./run-state-store.ts 导入", () => {
+  const s = src("app-gateway.ts");
+  assert.match(
+    s,
+    /import \{[\s\S]*?accumulateBackgroundAgentEvent,[\s\S]*?dispatchBackgroundChatEvent,[\s\S]*?\} from "\.\/run-state-store\.ts"/,
+    "app-gateway.ts 应从 ./run-state-store.ts 导入 accumulateBackgroundAgentEvent 与 dispatchBackgroundChatEvent",
+  );
+});
+
+test("run-state-store.ts：后台 own-run 终态清条目时间线并标历史脏（队列保留语义见 isOwnRunTerminal 分支）", () => {
+  const s = src("run-state-store.ts");
+  assert.match(
+    s,
+    /const isOwnRunTerminal = isTerminal &&[\s\S]*?handleChatEvent\(entry as unknown as ChatState, payload\);[\s\S]*?resetToolStream\(entry as unknown as ToolStreamHost\);[\s\S]*?markRunStateHistoryDirty\(payload\.sessionKey\);/,
+    "后台 own-run 终态应经 handleChatEvent 清 run 态 + resetToolStream 清时间线 + 标记历史脏",
+  );
+});
+
+test("session-transition.ts：切走 save / 切回 restore run 态快照的接线", () => {
+  const s = src("session-transition.ts");
+  assert.match(
+    s,
+    /host\.chatRunId \|\| \(host\.chatQueue\?\.length \?\? 0\) > 0\) \{\s*\n\s*saveRunStateSnapshot\(host\.sessionKey, captureRunStateSnapshot\(host\)\);/,
+    "切走前 run 在跑或队列非空时应保存 run 态快照",
+  );
+  assert.match(
+    s,
+    /const runSnapshot = takeRunStateSnapshot\(trimmed\);[\s\S]*?if \(runSnapshot\) \{\s*\n\s*restoreRunStateSnapshot\(host, runSnapshot\);[\s\S]*?\} else \{/,
+    "切回命中快照应 restoreRunStateSnapshot，未命中走 else 重置路径",
+  );
+});

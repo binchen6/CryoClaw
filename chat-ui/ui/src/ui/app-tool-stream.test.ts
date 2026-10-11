@@ -11,10 +11,13 @@ g.window ??= {
 };
 
 import {
+  captureToolStreamTimeline,
   clearFallbackNotice,
   flushToolStreamSync,
   handleAgentEvent,
+  invalidateDuplicatedNarrationSegments,
   invalidateFrozenLeadingSegments,
+  restoreToolStreamTimeline,
   type AgentEventPayload,
 } from "./app-tool-stream.ts";
 
@@ -472,4 +475,98 @@ test("R3：invalidateFrozenLeadingSegments 作废被重写的冻结段（保留�
   // 时间线重建后不再包含任何 leadingSegment 消息，只剩 解说 + 两张工具卡
   flushToolStreamSync(host);
   assert.equal(host.chatToolMessages.length, 3);
+});
+
+// ── Bug1-B：tool start 冻结点清掉实时思考流（收窄流式同文抑制失效窗口） ──
+
+test("tool start 冻结：清掉 chatThinkingStream / chatPendingThinkingText", () => {
+  const host = makeHost({
+    chatThinkingStream: "第一阶段的推理文本",
+    chatPendingThinkingText: "第一阶段的推理文本（pending）",
+  });
+  handleAgentEvent(
+    host,
+    toolEvent({ phase: "start", toolCallId: "call-1", name: "exec", args: { command: "echo hi" } }),
+  );
+  assert.equal(host.chatThinkingStream ?? null, null, "冻结点应清掉实时思考流");
+  assert.equal(host.chatPendingThinkingText ?? null, null, "pending 一并清掉（防下一帧复活）");
+});
+
+// ── Bug1-B'：invalidateDuplicatedNarrationSegments 作废被正文接管的冻结解说段 ──
+
+test("invalidateDuplicatedNarrationSegments：正文头部同文/同前缀的冻结段作废，其余保留", () => {
+  const host = makeHost();
+  for (const [seq, id] of [["1", "call-1"], ["2", "call-2"], ["3", "call-3"], ["4", "call-4"]] as const) {
+    handleAgentEvent(host, {
+      runId: "run-1", seq: Number(seq), stream: "tool", ts: Date.now(),
+      sessionKey: "agent:main:main",
+      data: { phase: "start", name: "exec", toolCallId: id, args: {} },
+    });
+  }
+  const body = "被正文接管的候选答案的后半";
+  const e1 = host.toolStreamById.get("call-1")!;
+  const e2 = host.toolStreamById.get("call-2")!;
+  const e3 = host.toolStreamById.get("call-3")!;
+  const e4 = host.toolStreamById.get("call-4")!;
+  e1.narrationSegment = { text: "被正文接管的候选答案", ts: Date.now() }; // 正文前缀
+  e2.narrationSegment = { text: body, ts: Date.now() }; // 与正文同文
+  e3.narrationSegment = { text: "与正文无关的解说", ts: Date.now() }; // 不同文
+  e4.narrationSegment = { text: body + "以及更多没被回放的内容", ts: Date.now() }; // 正文尚未追平（候选被否决场景）
+
+  invalidateDuplicatedNarrationSegments(host, body);
+
+  assert.equal(e1.narrationSegment, undefined, "是正文前缀的冻结段应作废");
+  assert.equal(e2.narrationSegment, undefined, "与正文同文的冻结段应作废");
+  assert.equal(e3.narrationSegment?.text, "与正文无关的解说", "不同文的冻结段应保留");
+  assert.equal(
+    e4.narrationSegment?.text,
+    body + "以及更多没被回放的内容",
+    "正文未追平的冻结段应保留（唯一展示来源）",
+  );
+  // 时间线已同步重建：剩余消息 = e3 解说段 + e4 解说段 + 四张工具卡
+  assert.equal(host.chatToolMessages.length, 6);
+});
+
+test("invalidateDuplicatedNarrationSegments：正文空白时不动任何冻结段", () => {
+  const host = makeHost();
+  handleAgentEvent(host, {
+    runId: "run-1", seq: 1, stream: "tool", ts: Date.now(),
+    sessionKey: "agent:main:main",
+    data: { phase: "start", name: "exec", toolCallId: "call-1", args: {} },
+  });
+  const e1 = host.toolStreamById.get("call-1")!;
+  e1.narrationSegment = { text: "解说", ts: Date.now() };
+  invalidateDuplicatedNarrationSegments(host, "");
+  assert.equal(e1.narrationSegment?.text, "解说");
+});
+
+// ── 切换会话不断流：工具时间线导出/恢复 ──
+
+test("captureToolStreamTimeline/restoreToolStreamTimeline：往返无损，快照与新宿主脱钩", () => {
+  const host = makeHost();
+  handleAgentEvent(
+    host,
+    toolEvent({ phase: "start", toolCallId: "tc1", name: "exec", args: { command: "ls" } }),
+  );
+  const snapshot = captureToolStreamTimeline(host);
+  assert.equal(snapshot.toolStreamById.size, 1);
+  assert.deepEqual(snapshot.toolStreamOrder, ["tc1"]);
+
+  const target = makeHost();
+  restoreToolStreamTimeline(target, snapshot);
+  assert.equal(target.toolStreamById.get("tc1")?.name, "exec");
+  assert.deepEqual(target.toolStreamOrder, ["tc1"]);
+
+  // 恢复后的后续事件写入新宿主；Map 为拷贝（entry 对象引用刻意共享——R72 的
+  // renderMessage/callMessage memo 依赖引用稳定，且切走后旧宿主时间线已清空）
+  handleAgentEvent(
+    target,
+    toolEvent({ phase: "result", toolCallId: "tc1", name: "exec", result: { text: "ok" } }),
+  );
+  assert.equal(target.toolStreamById.get("tc1")?.output, "ok");
+  assert.notEqual(
+    host.toolStreamById,
+    target.toolStreamById,
+    "时间线 Map 应为拷贝而非同一引用",
+  );
 });

@@ -60,10 +60,11 @@ test("Stop 按钮：onAbort 没接（理论上不会发生）时不显示，避�
 
 // 中止在途禁用：abortPending 时 Stop 按钮保持可见但禁用（钉模板与装配——
 // 纯门控函数层无可观察变化，禁用态在 renderChat 模板与 props 装配处）。
+// R2b 拆分：Stop 按钮模板随 compose 区迁至 views/chat-compose.ts。
 test("Stop 按钮：abortPending 在途禁用（钉源码）", () => {
   const readSrc = (rel: string) =>
     readFileSync(new URL(`../../../../../src/ui/${rel}`, import.meta.url), "utf8");
-  const viewSrc = readSrc("views/chat.ts");
+  const viewSrc = readSrc("views/chat-compose.ts");
   assert.match(
     viewSrc,
     /\?disabled=\$\{!props\.connected \|\| Boolean\(props\.abortPending\)\}/,

@@ -21,7 +21,7 @@
   border-radius: var(--radius-12);
   padding: var(--spacer-20);
   box-shadow: var(--shadow-xs);
-  animation: rise 0.35s var(--ease-out) backwards;
+  animation: rise var(--duration-slow) var(--ease-out) backwards;
   transition: border-color var(--duration-normal) var(--ease-out),
     box-shadow var(--duration-normal) var(--ease-out);
 }
@@ -104,7 +104,7 @@
 }
 
 .compaction-indicator--active svg {
-  animation: oc-spin 1s linear infinite;
+  animation: oc-spin var(--duration-loop) linear infinite;
 }
 
 .compaction-indicator--complete {
@@ -217,6 +217,12 @@
   to {
     opacity: 1;
     transform: translateX(-50%) translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .global-toast {
+    animation: none;
   }
 }
 

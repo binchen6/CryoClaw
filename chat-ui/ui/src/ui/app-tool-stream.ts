@@ -75,7 +75,7 @@ export type ToolStreamEntry = {
   callMessage: Record<string, unknown>;
 };
 
-type ToolStreamHost = {
+export type ToolStreamHost = {
   sessionKey: string;
   chatRunId: string | null;
   toolStreamById: Map<string, ToolStreamEntry>;
@@ -326,6 +326,45 @@ export function flushToolStreamSync(host: ToolStreamHost) {
   syncToolStreamMessages(host);
 }
 
+// ── 切换会话不断流：工具时间线导出/恢复 ──
+// run-state-store.ts 的 run 态快照内嵌时间线，切走 capture、切回 restore。
+// 拷贝而非引用可变结构：后台累积（二期）以快照条目为宿主继续写时间线，
+// 宿主与快照不得共享 Map/数组。
+
+export type ToolStreamTimelineSnapshot = {
+  toolStreamById: Map<string, ToolStreamEntry>;
+  toolStreamOrder: string[];
+  chatToolMessages: Record<string, unknown>[];
+  evictedLeadingSegments: StreamSegment[];
+};
+
+export function captureToolStreamTimeline(host: ToolStreamHost): ToolStreamTimelineSnapshot {
+  return {
+    toolStreamById: new Map(host.toolStreamById),
+    toolStreamOrder: [...host.toolStreamOrder],
+    chatToolMessages: [...host.chatToolMessages],
+    evictedLeadingSegments: [...host.evictedLeadingSegments],
+  };
+}
+
+export function restoreToolStreamTimeline(
+  host: ToolStreamHost,
+  snapshot: ToolStreamTimelineSnapshot,
+): void {
+  // 先取消宿主可能在途的节流帧（旧会话残留 timer 不得回写新时间线），
+  // 再整体换回快照结构；摊平数组由 syncToolStreamMessages 的引用比较重建
+  // （entry/段对象引用未变 → 保留快照数组，R72 的 renderMessage memo 继续命中）。
+  if (host.toolStreamSyncTimer != null) {
+    clearTimeout(host.toolStreamSyncTimer);
+    host.toolStreamSyncTimer = null;
+  }
+  host.toolStreamById = snapshot.toolStreamById;
+  host.toolStreamOrder = snapshot.toolStreamOrder;
+  host.evictedLeadingSegments = snapshot.evictedLeadingSegments;
+  host.chatToolMessages = snapshot.chatToolMessages;
+  flushToolStreamSync(host);
+}
+
 export function scheduleToolStreamSync(host: ToolStreamHost, force = false) {
   if (force) {
     flushToolStreamSync(host);
@@ -378,6 +417,59 @@ export function invalidateFrozenLeadingSegments(host: ToolStreamHost) {
     host.evictedLeadingSegments = [];
   }
   flushToolStreamSync(host);
+}
+
+// R4 收敛时的同文判定：正文累计全量头部与冻结 narration 的文本比较。
+// 宽容归一化（折叠空白）——commentary 的 progressText 与正文回放同源但可能
+// 有空白漂移；只有「正文已（开始）承载该段全文」才作废，部分重叠不动
+// （answer_candidate 被否决时 narration 是唯一展示，作废会丢内容）。
+function narrationMatchesBodyHead(segText: string, bodyText: string): boolean {
+  const exact = bodyText.startsWith(segText);
+  if (exact) {
+    return true;
+  }
+  const norm = (s: string) => s.replace(/\s+/g, " ").trim();
+  const nBody = norm(bodyText);
+  const nSeg = norm(segText);
+  return nBody.startsWith(nSeg);
+}
+
+/**
+ * R4 补强：首个非空正文 delta 上屏时由 controllers/chat.ts 经
+ * onBodyTextAdoptsNarration 钩子调用（接线同 onReplaceBeyondFrozenPrefix）。
+ * answer_candidate 先经 narration 上屏、tool start 把它冻结成 narrationSegment，
+ * 随后同文本经正文通道回放——live narration 由 chat.ts 清掉，但冻结段仍留在
+ * 时间线上与正文头部同屏双份。此处作废「与正文头部同文/同前缀」的冻结段并
+ * 重建时间线。leadingSegment 不动：正文与它（正文前缀）是接续关系而非重复。
+ * evictedLeadingSegments 刻意不处理：该列表不区分段类型（narration/正文混存），
+ * 而 R4 只该动 narration；被淘汰条目的双份场景（>50 工具 + answer_candidate）
+ * 终态后由历史刷新完整回归。
+ */
+export function invalidateDuplicatedNarrationSegments(host: ToolStreamHost, bodyText: string) {
+  if (!bodyText.trim() || host.toolStreamOrder.length === 0) {
+    return;
+  }
+  let invalidated = false;
+  for (const id of host.toolStreamOrder) {
+    const entry = host.toolStreamById.get(id);
+    const seg = entry?.narrationSegment;
+    if (!seg) {
+      continue;
+    }
+    if (narrationMatchesBodyHead(seg.text, bodyText)) {
+      debugLog("tool", "invalidate narrationSegment adopted by body text", {
+        toolCallId: id,
+        segmentLen: seg.text.length,
+      });
+      entry.narrationSegment = undefined;
+      invalidated = true;
+    }
+  }
+  // 每个 delta 都会进来（幂等）：时间线未变时跳过摊平重建，免掉高频 token 流下
+  // 每 delta 一次的 O(工具数) 扫描摊平
+  if (invalidated) {
+    flushToolStreamSync(host);
+  }
 }
 
 export type CompactionStatus = {
@@ -689,6 +781,14 @@ export function handleAgentEvent(host: ToolStreamHost, payload?: AgentEventPaylo
       host.chatNarrationText = null;
       host.chatPendingNarrationText = null;
     }
+    // Bug1-B：tool start 是思考阶段边界——清掉实时思考流（含 pending）。思考文本
+    // 不冻结进时间线（时间线只承载正文/解说段），此前一旦 thinking 事件到达过
+    // chatThinkingStream 就全程非 null（仅 resetChatStreamState 清），views/chat.ts
+    // 的流式同文抑制（前提 thinkingStream == null）随之整轮失效。冻结点清掉可收窄
+    // 该窗口；段间再思考会重新流式。代价：上一思考段在工具执行期间不再实时可见
+    // （冻结前已与正文段同屏渲染过；终态后由历史按 thinkingLevel 持久化结果还原）。
+    host.chatThinkingStream = null;
+    host.chatPendingThinkingText = null;
     const leading: StreamSegment | undefined = liveText
       ? { text: liveText, ts: host.chatStreamStartedAt ?? now }
       : undefined;

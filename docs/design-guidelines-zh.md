@@ -68,8 +68,11 @@ token 分两层：**基础层 `shared/design-tokens.css`**（全局唯一事实�
   `--leading-relaxed/1.75`（助手正文）。
 - **字重**：`--weight-regular/medium/semibold/bold`（400/500/600/700）。
 - **动效**：`--ease-out/--ease-in-out/--ease-standard/--ease-spring`，
-  时长阶梯 `--duration-instant/fast/normal/slow/slower`（0.08/0.12/0.2/0.35/0.5s），
-  `--transition: 180ms ease`。
+  时长阶梯 `--duration-instant/fast/normal/slow/slower`（0.08/0.12/0.2/0.35/0.5s；
+  instant=微反馈瞬时切换 / fast=hover·press / normal=面板开合·入场 /
+  slow=卡片入场 / slower=大面积过渡），循环指示器（pulse/spin/shimmer 等
+  无限循环动画）统一走 `--duration-loop`（1.2s）；stagger 入场延迟步长
+  `--delay-step`（50ms，`.stagger-1..6` = 0~5 步 calc 计算式）。
 - **玻璃模糊量**：`--glass-blur-sm/md`（8/16px，配 `--glass-*` 底色做 backdrop-filter）。
 
 ### 2.2 色板
@@ -348,7 +351,9 @@ hairline + radius-12 + `--shadow-lg`，`--text-sm` medium，z-index 10001，
   （骨架屏扫光、loading 转环、调宽手柄指示条）另有各自的红运动停动画块，
   新动画需在同类块中登记。
 - 动效时长约定：hover/press 用 `--duration-fast`，面板开合/入场用
-  `--duration-normal`，统一走 `--ease-out`。
+  `--duration-normal`，统一走 `--ease-standard`（规范推荐值，存量
+  `--ease-out` 不再新增）；pulse/spin/shimmer 等无限循环动画一律
+  `--duration-loop`；popover/dialog 的 scale 入场用 `--ease-spring`。
 - 拖拽区分工：壳层大面积 `-webkit-app-region: drag` 保证窗口可拖动，所有可交互
   元素必须配 `no-drag`，保证键盘/鼠标可达。
 

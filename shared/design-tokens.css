@@ -126,7 +126,10 @@
   --duration-normal: 0.2s;
   --duration-slow: 0.35s;
   --duration-slower: 0.5s;
-  --transition: 180ms ease;
+  /* 循环指示器统一周期（pulse/spin/shimmer 等无限循环动画一律走此 token） */
+  --duration-loop: 1.2s;
+  /* stagger 入场延迟步长（.stagger-1..6 = 0~5 步，calc 计算式） */
+  --delay-step: 50ms;
 
   /* 玻璃拟态模糊量（配合 --glass-* 底色使用） */
   --glass-blur-sm: 8px;

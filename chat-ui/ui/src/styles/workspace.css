@@ -86,7 +86,7 @@
 .wb-modal-spinner {
   width: 16px;
   height: 16px;
-  animation: oc-spin 0.85s linear infinite;
+  animation: oc-spin var(--duration-loop) linear infinite;
 }
 .fixed-tooltip--wide {
   padding: var(--spacer-8) var(--spacer-10);

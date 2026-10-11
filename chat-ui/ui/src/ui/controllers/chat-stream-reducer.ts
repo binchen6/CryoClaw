@@ -28,9 +28,11 @@ export type ChatStreamDeltaResult = {
   mismatchCount?: number;
 };
 
-// R5：交叉校验连续失败 N 帧后放弃保守追加，强制以 message 快照 resync——
-// 否则坏基线上永远追加、永远校验失败、文本永不收敛（且持续偏离内核真值）。
-const MISMATCH_RESYNC_THRESHOLD = 3;
+// R5：交叉校验失配按帧计数（连续失配 = 基线漂移观测值，随 run 终态/新 run 清零）。
+// 失配帧的处理规则：前向延伸走 R88 self-heal 即刻 resync；非前向（倒退/分叉）
+// 一律保守追加、绝不回跳已上屏文本——漂移的收敛靠后续帧重新对齐或终态历史刷新。
+// （旧版此处有「连续 N 帧强制 resync」分支，实为不可达死代码：凡满足前向条件的
+// 失配帧更早被 R88 self-heal 收走，非前向 resync 又会回跳，两头都不成立，已删。）
 
 /**
  * Reduce one gateway chat delta into the currently visible assistant segment.
@@ -116,27 +118,11 @@ export function reduceChatStreamDelta(input: ChatStreamDeltaInput): ChatStreamDe
           };
         }
         // R5：快照既对不上追加结果、又不是本地基线的前向延伸（基线已彻底偏离
-        // 内核真值）。单帧保守追加是合理的（防滞后读误伤），但连续失败说明不是
-        // 滞后而是持续漂移——第 N 帧强制以 message 快照 resync（按 frozenPrefix
-        // 切片替换 current），让文本重新收敛到内核累计文本。
+        // 内核真值）——一律保守追加、绝不回跳已上屏文本（倒退/分叉的 resync 会与
+        // 时间线上的冻结段同屏双份闪现）。失配按帧计数（连续失配 = 漂移观测值，run
+        // 终态/新 run 清零）；前向延伸的失配帧更早被上方 R88 self-heal 即刻收敛，
+        // 非前向失配等后续帧重新对齐或终态/历史刷新整体回归。
         const nextMismatch = (input.mismatchCount ?? 0) + 1;
-        if (nextMismatch >= MISMATCH_RESYNC_THRESHOLD) {
-          // 快照不含已冻结前缀时与 R3 同形态：冻结段已被内核改写，发作废信号
-          // 让消费方清掉旧 leadingSegment + frozenPrefix，防旧段与新正文双份。
-          const beyondPrefix = Boolean(prefix) && !fullText.startsWith(prefix);
-          let resync = fullText;
-          if (prefix && resync.startsWith(prefix)) {
-            resync = resync.slice(prefix.length);
-          }
-          return {
-            text: resync,
-            accepted: true,
-            source: "snapshot",
-            replaced: true,
-            ...(beyondPrefix ? { invalidatesFrozenPrefix: true } : {}),
-            mismatchCount: 0,
-          };
-        }
         return {
           text: current + input.deltaText,
           accepted: true,
@@ -167,6 +153,9 @@ export function reduceChatStreamDelta(input: ChatStreamDeltaInput): ChatStreamDe
   }
 
   const prefix = input.frozenPrefix ?? "";
+  // 旧版快照路径与 deltaText-replace 分支同契约：全文不再以 frozenPrefix 开头
+  // 说明工具前文本已被内核改写（重生成/换基线），冻结段留任会与新正文双份。
+  const beyondPrefix = Boolean(prefix) && !fullText.startsWith(prefix);
   let next = fullText;
   if (prefix && fullText.startsWith(prefix)) {
     next = fullText.slice(prefix.length);
@@ -178,6 +167,7 @@ export function reduceChatStreamDelta(input: ChatStreamDeltaInput): ChatStreamDe
       accepted: true,
       source: "snapshot",
       replaced: true,
+      ...(beyondPrefix ? { invalidatesFrozenPrefix: true } : {}),
     };
   }
 
@@ -195,5 +185,6 @@ export function reduceChatStreamDelta(input: ChatStreamDeltaInput): ChatStreamDe
     accepted: true,
     source: "snapshot",
     replaced: false,
+    ...(beyondPrefix ? { invalidatesFrozenPrefix: true } : {}),
   };
 }

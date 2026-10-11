@@ -49,8 +49,8 @@ CryoClaw 是在 **[OneClaw](https://github.com/oneclaw/oneclaw)**（AGPL-3.0）�
 | CLI | `openclaw` PATH 注入 | 额外提供 gateway CLI 托管（127.0.0.1 控制面，`openclaw gateway restart/status` 不再报错） |
 | 启动速度 | — | 窗口先行（首屏创建早于同步迁移与扩展 reconcile）+ 内核并行启动 + V8 编译缓存热启动，约 0.6s 看到界面 |
 | 插件管理 | 命令行 | 设置页「插件」tab：已安装插件清单 + 启停/卸载 + **ClawHub 插件市场**（搜索/一键安装） |
-| 测试 | — | 1078 个用例全量回归（vitest + node:test + typecheck），0 fail 为硬指标 |
-| 代码质量 | — | jscpd 重复率度量与防回退（全源码重复率 1.06%，阈值 5%，`npm run dupcheck`） |
+| 测试 | — | 1617 个用例全量回归（vitest + node:test + typecheck），0 fail 为硬指标 |
+| 代码质量 | — | jscpd 重复率度量与防回退（全源码重复率 1.30%，阈值 5%，`npm run dupcheck`） |
 
 ### 🚀 快速上手
 
@@ -91,14 +91,14 @@ Anthropic (Claude) / OpenAI (GPT / Codex) / Google (Gemini) / Moonshot（Kimi）
 ```
 CryoClaw (Electron 43 + TypeScript 5.9)
   ├── 主进程壳        src/          IPC 白名单 + sender guard；gateway 子进程托管
-  ├── 内核            openclaw 2026.9.3（版本 pin，gateway.asar，构建期打补丁）
+  ├── 内核            openclaw 2026.9.9（版本 pin，gateway.asar，构建期打补丁）
   ├── 聊天界面        chat-ui/      Lit 3 + Vite SPA，file:// 本地加载；图标统一 lucide 风格
   ├── 应用更新器      src/app-updater.ts  electron-updater + GitHub Releases，差分下载、静默换装
   ├── 内核升级器      scripts/updater/  差分 ASAR 换装/回滚 + 冒烟自检
   └── 打包链路        scripts/package-resources.js → electron-builder
 ```
 
-- **通信**：chat-ui 经 WebSocket RPC 与 gateway 内核通信（内核注册 326 个 RPC 方法（随内核升级增长））；渲染层 CSP 只允许连接 127.0.0.1。
+- **通信**：chat-ui 经 WebSocket RPC 与 gateway 内核通信（内核注册 483 个 RPC 方法（随内核升级增长））；渲染层 CSP 只允许连接 127.0.0.1。
 - **渲染**：markdown 引擎（marked + DOMPurify）支持 GFM 表格/任务列表，样式化的标题与斑马纹表格；代码块带语法高亮（highlight.js 按需加载 15 种常用语言）、语言标签与悬停复制按钮；LaTeX 公式（$$块级$$/$行内$）KaTeX 专业排版；历史消息 `MEDIA:<路径>` 标记渲染为本地图片（点击全屏预览）；LRU 缓存 + 流式旁路防污染，解析异常自动退化为纯文本。
 - **消息操作**：任意消息悬停「引用」一键插入 markdown 引用块到输入框；发送失败错误卡片带「重发」按钮，可反复重试。
 - **本地文件卡片**：历史消息中的 `MEDIA:<路径>` 标记——图片直接渲染预览，其他常见文件类型（文档/表格/压缩/音视频/代码等）渲染为文件卡片：点击打开、卡片内按钮在文件夹中显示，图标按扩展名区分。
@@ -112,8 +112,8 @@ CryoClaw (Electron 43 + TypeScript 5.9)
 - **内核升级**：设置页「内核升级」卡片或 `openclaw update` CLI，差分换装、双备份、健康检查失败自动回滚。
 - **执行权限**：请求批准 / 智能审批 / 完全同意三态 + Docker 沙箱前置守卫；支持 `update_plan` 计划悬浮面板、目标模式、消息队列、`/` 命令补全。
 - **样式体系**：`shared/design-tokens.css`（中性灰 + CryoBlue 混色 brand-500 `#2a89dd`，浅色一等）+ `styles/primitives.css` 契约组件，禁止硬编码颜色。
-- **测试**：vitest（主进程单测）+ node:test（编译产物/脚本）+ chat-ui typecheck 与单测 + scripts 用例，`npm test` 一键全量（基线 1504 pass / 0 fail / 4 skipped）。
-- **代码质量**：`npm run dupcheck`（jscpd，配置 `.jscpd.json`，阈值 5%）度量全源码重复率，当前 1.13%；公共逻辑集中在渠道面板共享模块、Kimi OAuth 流程、安全打开白名单等共享模块。
+- **测试**：vitest（主进程单测）+ node:test（编译产物/脚本）+ chat-ui typecheck 与单测 + scripts 用例，`npm test` 一键全量（基线 1617 pass / 0 fail / 4 skipped（vitest 266 + node 310 + chat-ui 905 + scripts 136）。
+- **代码质量**：`npm run dupcheck`（jscpd，配置 `.jscpd.json`，阈值 5%）度量全源码重复率，当前 1.30%；公共逻辑集中在渠道面板共享模块、Kimi OAuth 流程、安全打开白名单等共享模块。
 
 详细架构与历史优化记录见 `docs/architecture.md` 与 `docs/OPTIMIZATION-PROGRESS.md`。
 

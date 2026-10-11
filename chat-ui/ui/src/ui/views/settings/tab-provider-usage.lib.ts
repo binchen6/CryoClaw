@@ -2,6 +2,7 @@
  * Pure derivation for the Kimi usage panel rendered in the Provider tab.
  * Kept free of Lit / DOM imports so node:test can exercise it directly.
  */
+import { isRecord } from "../../types/guards.ts";
 
 export interface UsageLabels {
   rateFallback: string;   // "速率限制" / "Rate Limit"
@@ -23,10 +24,6 @@ export interface UsageCardView {
 export interface UsageView {
   week: UsageCardView | null;
   rate: UsageCardView | null;
-}
-
-function isRecord(v: unknown): v is Record<string, unknown> {
-  return !!v && typeof v === "object" && !Array.isArray(v);
 }
 
 function toInt(v: unknown): number {

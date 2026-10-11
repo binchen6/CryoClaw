@@ -1,5 +1,5 @@
 {
-  "kernelVersion": "2026.9.7",
+  "kernelVersion": "2026.9.9",
   "generatedBy": "scripts/kernel-method-audit.mjs --write-baseline",
   "methods": {},
   "events": {

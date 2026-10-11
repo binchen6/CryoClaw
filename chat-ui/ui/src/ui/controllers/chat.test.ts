@@ -5,12 +5,18 @@ import {
   handleChatEvent,
   loadChatHistory,
   sendChatMessage,
+  stripInFlightStreamDuplicates,
 } from "./chat.ts";
 import {
   clearReconnectOrphanRun,
   liveOrphanRunId,
   markReconnectOrphanRun,
 } from "../stream-recovery.ts";
+import {
+  flushToolStreamSync,
+  handleAgentEvent,
+  invalidateDuplicatedNarrationSegments,
+} from "../app-tool-stream.ts";
 import { FakeScheduler } from "../../test-utils/fake-scheduler.ts";
 
 // 最小帧调度器，手动推进 requestAnimationFrame 回调。
@@ -33,6 +39,10 @@ function installBrowserGlobals(raf: FakeRaf) {
     window: {
       requestAnimationFrame: (fn: FrameRequestCallback) => raf.requestAnimationFrame(fn),
       cancelAnimationFrame: (id: number) => raf.cancelAnimationFrame(id),
+      // handleAgentEvent（tool 流节流）依赖 window.setTimeout；测试手动 flush，
+      // 桩成不触发的定时器即可。
+      setTimeout: () => 0,
+      clearTimeout: () => {},
     },
     requestAnimationFrame: (fn: FrameRequestCallback) => raf.requestAnimationFrame(fn),
     cancelAnimationFrame: (id: number) => raf.cancelAnimationFrame(id),
@@ -285,6 +295,19 @@ function makeHistoryClient(messages: unknown[]) {
       return { messages };
     },
   } as any;
+}
+
+// 可控 deferred 的历史客户端：request 挂起，直到外部调用 resolvers[i](响应)。
+// 并发/交错加载类测试用它精确控制响应返回顺序。
+function makeDeferredHistoryClient() {
+  const resolvers: Array<(res: unknown) => void> = [];
+  const client = {
+    request: async () =>
+      new Promise((resolve) => {
+        resolvers.push(resolve);
+      }),
+  } as any;
+  return { client, resolvers };
 }
 
 // mergeIfStale：普通短读（内核滞后）保留本地列表。
@@ -1225,7 +1248,9 @@ async function testReplaceBeyondFrozenPrefixInvalidatesFrozenSegments() {
   assert.equal(state.chatStreamMismatchCount, 0, "replace 帧后交叉校验计数应清零");
 }
 
-// R5：交叉校验连续失败 3 帧 → 强制以 message 快照 resync（此前永远保守追加、永不收敛）。
+// R5（Bug1-D）：连续失配第 3 帧的强制 resync 有前向条件——快照必须是 base
+// （frozenPrefix+current）的前向延伸。滞后/分叉快照不再触发 resync（防文本回退
+// 双份闪现），继续保守追加、计数累计；随后到来的前向延伸快照由 R88 self-heal 收敛。
 async function testMismatchResyncAfterThreeFailures() {
   const raf = new FakeRaf();
   installBrowserGlobals(raf);
@@ -1240,7 +1265,8 @@ async function testMismatchResyncAfterThreeFailures() {
     });
   };
 
-  // fullText "kernel truth 1" 与 base("pre"+"corrupted") 对不上 → 保守追加，计数 1
+  // fullText "kernel truth 1" 与 base("pre"+"corrupted") 对不上、也不是其前向延伸
+  // → 保守追加，计数 1
   frame("kernel truth 1", " x");
   assert.equal(state.chatPendingStreamText, "corrupted x");
   assert.equal(state.chatStreamMismatchCount, 1);
@@ -1250,12 +1276,18 @@ async function testMismatchResyncAfterThreeFailures() {
   frame("kernel truth 2", " y");
   assert.equal(state.chatPendingStreamText, "corrupted x y");
   assert.equal(state.chatStreamMismatchCount, 2);
-  // 第 3 帧：达到阈值 → 强制 resync 到内核快照（整段替换，不再追加）
+  // 第 3 帧：达到阈值但快照不是前向延伸 → 不回跳（旧行为会 resync 成 "kernel truth 3"）
   state.chatStream = state.chatPendingStreamText!;
   state.chatPendingStreamText = null;
   frame("kernel truth 3", " z");
-  assert.equal(state.chatPendingStreamText, "kernel truth 3");
-  assert.equal(state.chatStreamMismatchCount, 0, "强制 resync 后计数清零");
+  assert.equal(state.chatPendingStreamText, "corrupted x y z", "非前向快照不得强制 resync 回退文本");
+  assert.equal(state.chatStreamMismatchCount, 3, "前向条件不满足：计数继续累计");
+  // 随后前向延伸快照（base 之后丢了 " gap" 一段）到达 → self-heal 立即收敛
+  state.chatStream = state.chatPendingStreamText!;
+  state.chatPendingStreamText = null;
+  frame("precorrupted x y z gap!", "!");
+  assert.equal(state.chatPendingStreamText, "corrupted x y z gap!");
+  assert.equal(state.chatStreamMismatchCount, 0, "self-heal 后计数清零");
 }
 
 // R6：orphan 收养必须显式清空上一 run 的流式残留，否则与收养后文本叠加成双份。
@@ -1500,15 +1532,8 @@ async function testAbortedPreservesVisiblePartialText() {
 // 不得清 loading（最新一代仍在飞）、不得写回快照（防旧响应后至覆盖新响应）。
 async function testConcurrentLoadsLatestGenerationWins() {
   installBrowserGlobals(new FakeRaf());
-  const resolvers: Array<(res: unknown) => void> = [];
-  const state = makeState({
-    client: {
-      request: async () =>
-        new Promise((resolve) => {
-          resolvers.push(resolve);
-        }),
-    },
-  });
+  const { client, resolvers } = makeDeferredHistoryClient();
+  const state = makeState({ client });
 
   const pA = loadChatHistory(state);
   const pB = loadChatHistory(state);
@@ -1556,6 +1581,386 @@ async function testNewRunResetsMismatchCount() {
 
   assert.ok(state.chatRunId, "新 run 应建立");
   assert.equal(state.chatStreamMismatchCount, 0, "新 run 应清零交叉校验计数");
+}
+
+// ── Bug1-A：在途 run 的历史替换剔除与流同文/同前缀的尾部 assistant 条目 ──
+
+function testStripInFlightStreamDuplicatesPure() {
+  const assistant = (text: string) => ({ role: "assistant", content: [{ type: "text", text }] });
+  // 同文与前缀剔除（尾部连续命中，更早的无关条目保留）
+  let out = stripInFlightStreamDuplicates(
+    [assistant("无关的旧回复"), assistant("abc")],
+    "run-1", "run-1", "", "abcdef",
+  );
+  assert.equal(out.length, 1, "前缀命中的尾部产物应被剔除");
+  out = stripInFlightStreamDuplicates(
+    [assistant("abcdef"), assistant("abcdef")],
+    "run-1", "run-1", "ab", "cdef",
+  );
+  assert.equal(out.length, 0, "同文（含 frozenPrefix 拼接后）应被剔除");
+  // 反向不动：持久化比流更长（内核已领先），剔除会丢可见文本
+  out = stripInFlightStreamDuplicates(
+    [assistant("abcdefZZZ")],
+    "run-1", "run-1", "", "abcdef",
+  );
+  assert.equal(out.length, 1, "比流更长的条目不得剔除");
+  // 非尾部/非 assistant/空文本不剔
+  out = stripInFlightStreamDuplicates(
+    [assistant("abc"), { role: "user", content: [{ type: "text", text: "u" }] }],
+    "run-1", "run-1", "", "abcdef",
+  );
+  assert.equal(out.length, 2, "尾部是 user 消息时不得继续向前剔");
+  out = stripInFlightStreamDuplicates(
+    [assistant("abc"), assistant("")],
+    "run-1", "run-1", "", "abcdef",
+  );
+  assert.equal(out.length, 2, "空文本 assistant 条目应中断剔除（保守）");
+  // 收养条件不满足时整体 no-op
+  out = stripInFlightStreamDuplicates(
+    [assistant("abc")],
+    "run-other", "run-1", "", "abcdef",
+  );
+  assert.equal(out.length, 1, "inFlightRun 声明的不是本地活跃 run 时不得剔除");
+  out = stripInFlightStreamDuplicates(
+    [assistant("abc")],
+    "run-1", null, "", "abcdef",
+  );
+  assert.equal(out.length, 1, "无本地活跃 run（终态后）时不得剔除");
+}
+
+// Bug1-A 集成：run 在途期间静默历史拉取把 progressive persist 中途产物替换进
+// chatMessages；thinkingStream 全程非 null 使渲染层同文抑制（前提 thinking==null）
+// 失效——替换前剔除与流式全量同文的尾部产物后，流式气泡成为唯一渲染源。
+async function testLoadChatHistoryStripsInFlightDuplicates() {
+  const raf = new FakeRaf();
+  installBrowserGlobals(raf);
+  const artifact = {
+    role: "assistant",
+    content: [{ type: "text", text: "前置段：让我尝试直接调用 API" }],
+    timestamp: Date.now() - 100,
+  };
+  const olderReply = {
+    role: "assistant",
+    content: [{ type: "text", text: "上一轮的真实回复，不应误伤" }],
+    timestamp: Date.now() - 90_000,
+  };
+  const state = makeState({
+    client: {
+      request: async () => ({
+        messages: [olderReply, artifact],
+        inFlightRun: { runId: "run-1", text: "前置段：让我尝试直接调用 API", startedAt: Date.now() - 50 },
+      }),
+    },
+  });
+  state.chatStream = "前置段：让我尝试直接调用 API";
+  state.chatStreamStartedAt = Date.now() - 50;
+  // thinking 全程非 null —— 正是渲染层同文抑制失效的场景
+  state.chatThinkingStream = "思考中";
+
+  await loadChatHistory(state, { mergeIfStale: true, silent: true });
+
+  assert.equal(state.chatMessages.length, 1, "与流同文的中途产物应被剔除");
+  assert.equal(
+    (state.chatMessages[0] as { content: Array<{ text: string }> }).content[0]?.text,
+    "上一轮的真实回复，不应误伤",
+  );
+  assert.equal(state.chatStream, "前置段：让我尝试直接调用 API", "流式气泡仍是该文本的唯一渲染源");
+}
+
+// ── Bug1-B'：answer_candidate → tool start 冻结 → 正文回放同文本，冻结 narration 段作废 ──
+
+async function testBodyDeltaInvalidatesFrozenNarrationSegment() {
+  const raf = new FakeRaf();
+  installBrowserGlobals(raf);
+  type TimelineMessage = { content?: Array<{ type: string; text?: string }> };
+  type CompHost = {
+    toolStreamById: Map<string, { narrationSegment?: { text: string } | undefined }>;
+    toolStreamOrder: string[];
+    chatToolMessages: TimelineMessage[];
+    toolStreamSyncTimer: number | null;
+    evictedLeadingSegments: Array<{ text: string }>;
+    onBodyTextAdoptsNarration?: (bodyText: string) => void;
+  };
+  const host = {
+    ...makeState(),
+    toolStreamById: new Map(),
+    toolStreamOrder: [],
+    chatToolMessages: [],
+    toolStreamSyncTimer: null,
+    evictedLeadingSegments: [],
+  } as CompHost;
+  host.onBodyTextAdoptsNarration = (bodyText: string) =>
+    invalidateDuplicatedNarrationSegments(host as never, bodyText);
+
+  // 1) answer_candidate narration 上屏
+  handleAgentEvent(host as never, {
+    runId: "run-1", seq: 1, stream: "item", ts: Date.now(), sessionKey: "session-1",
+    data: { kind: "answer_candidate", phase: "update", progressText: "候选答案全文", itemId: "item-1" },
+  });
+  raf.runAll();
+  assert.equal((host as unknown as { chatNarrationText: string | null }).chatNarrationText, "候选答案全文");
+
+  // 2) tool start 把 narration 冻结成 entry.narrationSegment
+  handleAgentEvent(host as never, {
+    runId: "run-1", seq: 2, stream: "tool", ts: Date.now(), sessionKey: "session-1",
+    data: { phase: "start", name: "exec", toolCallId: "call-1", args: { command: "echo hi" } },
+  });
+  const entry = host.toolStreamById.get("call-1");
+  assert.equal(entry?.narrationSegment?.text, "候选答案全文");
+  flushToolStreamSync(host as never);
+  const timelineHasNarration = () =>
+    host.chatToolMessages.some((m: TimelineMessage) =>
+      m.content?.some((b) => b.type === "text" && b.text === "候选答案全文"),
+    );
+  assert.ok(timelineHasNarration(), "正文回放前冻结 narration 段应在时间线上");
+
+  // 3) 正文通道回放同文本 → R4 触发点经钩子作废冻结段
+  handleChatEvent(host as never, {
+    runId: "run-1",
+    sessionKey: "session-1",
+    state: "delta",
+    message: { role: "assistant", content: [{ type: "text", text: "候选答案全文" }] },
+  });
+  raf.runAll();
+  assert.equal(entry?.narrationSegment, undefined, "被正文接管的冻结 narrationSegment 应作废");
+  assert.ok(!timelineHasNarration(), "时间线里不应再出现该 narration 段消息");
+
+  // 4) 对照：正文与 narration 不同文时冻结段保留（answer_candidate 被否决的场景）
+  const host2 = {
+    ...makeState(),
+    toolStreamById: new Map(),
+    toolStreamOrder: [],
+    chatToolMessages: [],
+    toolStreamSyncTimer: null,
+    evictedLeadingSegments: [],
+    onBodyTextAdoptsNarration: (bodyText: string) =>
+      invalidateDuplicatedNarrationSegments(host2 as never, bodyText),
+  } as CompHost;
+  handleAgentEvent(host2 as never, {
+    runId: "run-1", seq: 1, stream: "item", ts: Date.now(), sessionKey: "session-1",
+    data: { kind: "answer_candidate", phase: "update", progressText: "被否决的候选", itemId: "item-2" },
+  });
+  raf.runAll();
+  handleAgentEvent(host2 as never, {
+    runId: "run-1", seq: 2, stream: "tool", ts: Date.now(), sessionKey: "session-1",
+    data: { phase: "start", name: "exec", toolCallId: "call-2", args: {} },
+  });
+  handleChatEvent(host2 as never, {
+    runId: "run-1",
+    sessionKey: "session-1",
+    state: "delta",
+    message: { role: "assistant", content: [{ type: "text", text: "另一个回答" }] },
+  });
+  raf.runAll();
+  assert.equal(
+    host2.toolStreamById.get("call-2")?.narrationSegment?.text,
+    "被否决的候选",
+    "正文未接管该段时冻结 narration 应保留（唯一展示来源）",
+  );
+}
+
+// ── Bug2-1：mergeIfStale 等长滞后（缺本 run 回复）保留本地 + 补拉 ──
+
+// Bug2 测试共用：终态轮消息基线——[user 回声] + run 起始时间锚
+// （乐观回声与 chatStreamStartedAt 同源，均为发送时刻）。
+function makeTerminalRoundState(overrides: Record<string, unknown> = {}) {
+  const startedAt = Date.now() - 5000;
+  const echo = { role: "user", content: [{ type: "text", text: "问题" }], timestamp: startedAt };
+  const state = makeState({
+    chatMessages: [echo],
+    chatVisibleMessageCount: 1,
+    chatStreamStartedAt: startedAt,
+    ...overrides,
+  });
+  return { state, echo, startedAt };
+}
+
+async function testFinalInjectsSyntheticPartialPlaceholder() {
+  const raf = new FakeRaf();
+  installBrowserGlobals(raf);
+  const { state } = makeTerminalRoundState();
+
+  handleChatEvent(state, {
+    runId: "run-1", sessionKey: "session-1", state: "delta",
+    deltaText: "完整回复",
+    message: { role: "assistant", content: [{ type: "text", text: "完整回复" }] },
+  });
+  handleChatEvent(state, { runId: "run-1", sessionKey: "session-1", state: "final" });
+
+  assert.equal(state.chatStream, null, "final 后流式态应清除");
+  assert.equal(state.chatMessages.length, 2, "final 应注入合成 partial 占位（回复全程可见）");
+  const placeholder = state.chatMessages[1] as Record<string, unknown>;
+  assert.equal(placeholder.cryoclawPartial, true, "占位复用 aborted/error 的 partial 形态");
+  assert.equal(placeholder.runId, "run-1", "占位带 runId 供等长滞后判定精确命中");
+  assert.equal(
+    (placeholder.content as Array<{ text: string }>)[0]?.text,
+    "完整回复",
+  );
+  assert.ok(state.chatTerminalRun, "终态 run 记录应写入（等长滞后判定用）");
+}
+
+async function testMergeIfStaleEqualLengthMissingReplyRetainsLocal() {
+  installBrowserGlobals(new FakeRaf());
+  mock.timers.enable({ apis: ["setTimeout"] });
+  try {
+    const { state, echo, startedAt } = makeTerminalRoundState();
+    state.chatTerminalRun = { runId: "run-1", startedAt };
+    // final 已注入合成占位：本地 = [回声, 占位]，长度 2
+    state.chatMessages = [...state.chatMessages, {
+      role: "assistant",
+      content: [{ type: "text", text: "完整回复" }],
+      timestamp: Date.now(),
+      cryoclawPartial: true,
+      runId: "run-1",
+    }];
+    state.chatVisibleMessageCount = 2;
+
+    // 滞后快照等长（2）：含回声 + 一条更早的旧 assistant 回复，缺本 run 回复
+    const staleRemote = [
+      echo,
+      { role: "assistant", content: [{ type: "text", text: "旧回复" }], timestamp: startedAt - 60_000 },
+    ];
+    let calls = 0;
+    state.client = {
+      request: async () => {
+        calls++;
+        return { messages: staleRemote };
+      },
+    };
+    await loadChatHistory(state, { mergeIfStale: true });
+    assert.equal(calls, 1);
+    assert.equal(state.chatMessages.length, 2, "等长缺回复应保留本地（含合成占位）");
+    assert.equal((state.chatMessages[1] as { cryoclawPartial?: boolean }).cryoclawPartial, true);
+
+    // 关键回归点：不得 cancelStaleHistoryRetry——600ms 后应发起补拉
+    mock.timers.tick(600);
+    for (let i = 0; i < 5; i++) {
+      await new Promise((r) => setImmediate(r));
+    }
+    assert.equal(calls, 2, "等长滞后保留后应调度补拉而非取消");
+  } finally {
+    mock.timers.reset();
+    cancelStaleHistoryRetryForTests();
+  }
+}
+
+// Bug2-1 收敛方向：等长快照含本 run 真回复 → 放行替换，合成占位随本地列表撤掉。
+async function testMergeIfStaleEqualLengthWithReplyReplaces() {
+  installBrowserGlobals(new FakeRaf());
+  const startedAt = Date.now() - 5000;
+  const echo = { role: "user", content: [{ type: "text", text: "问题" }], timestamp: startedAt };
+  const realReply = {
+    role: "assistant",
+    content: [{ type: "text", text: "完整回复" }],
+    timestamp: Date.now() - 100,
+    runId: "run-1",
+  };
+  const state = makeState({
+    chatMessages: [
+      echo,
+      { role: "assistant", content: [{ type: "text", text: "完整回复" }], timestamp: Date.now(), cryoclawPartial: true, runId: "run-1" },
+    ],
+    chatVisibleMessageCount: 2,
+    chatTerminalRun: { runId: "run-1", startedAt },
+    client: makeHistoryClient([echo, realReply]),
+  });
+
+  await loadChatHistory(state, { mergeIfStale: true });
+
+  assert.equal(state.chatMessages.length, 2, "等长含回复应放行替换");
+  const tail = state.chatMessages[1] as Record<string, unknown>;
+  assert.equal(tail.cryoclawPartial, undefined, "拿到真回复后合成占位应撤掉");
+  assert.equal(tail.runId, "run-1");
+}
+
+// Bug2-1 边界：双方都无本 run 回复（空回复终态）——尾部差异只是回声时间戳噪音，
+// 放行替换，否则这类合法快照被永久挡住，历史永不收敛。
+async function testMergeIfStaleEqualLengthBothMissingReplyReplaces() {
+  installBrowserGlobals(new FakeRaf());
+  const startedAt = Date.now() - 5000;
+  const state = makeState({
+    chatMessages: [{ role: "user", content: [{ type: "text", text: "问题" }], timestamp: startedAt }],
+    chatVisibleMessageCount: 1,
+    chatTerminalRun: { runId: "run-1", startedAt },
+    // 内核持久化的回声副本：时间戳略晚于本地乐观回声（合法差异）
+    client: makeHistoryClient([
+      { role: "user", content: [{ type: "text", text: "问题" }], timestamp: startedAt + 800 },
+    ]),
+  });
+
+  await loadChatHistory(state, { mergeIfStale: true });
+
+  assert.equal(
+    (state.chatMessages[0] as { timestamp: number }).timestamp,
+    startedAt + 800,
+    "双方都无回复的等长快照应放行替换（回声时间戳收敛）",
+  );
+}
+
+// ── Bug2-3：silent 迟到响应丢弃 + 终态 tombstone 拒收养 ──
+
+async function testSilentLateResponseDroppedAfterNewerNonSilentLoad() {
+  installBrowserGlobals(new FakeRaf());
+  const { client, resolvers } = makeDeferredHistoryClient();
+  const state = makeState({ client });
+
+  const silentPromise = loadChatHistory(state, { mergeIfStale: true, silent: true });
+  const nonSilentPromise = loadChatHistory(state);
+  assert.equal(resolvers.length, 2, "两个加载都应发出请求");
+
+  // 非 silent（后发起）先完成并写回
+  resolvers[1]!({
+    messages: [{ role: "assistant", content: [{ type: "text", text: "new-reply" }], timestamp: 2 }],
+  });
+  await nonSilentPromise;
+  assert.equal(state.chatLoading, false);
+  assert.equal(
+    (state.chatMessages[0] as { content: Array<{ text: string }> }).content[0]?.text,
+    "new-reply",
+  );
+
+  // silent（先发起）后到：期间已有更新的非 silent 加载发起 → 丢弃写回
+  resolvers[0]!({
+    messages: [{ role: "assistant", content: [{ type: "text", text: "stale-reply" }], timestamp: 1 }],
+  });
+  await silentPromise;
+  assert.equal(
+    (state.chatMessages[0] as { content: Array<{ text: string }> }).content[0]?.text,
+    "new-reply",
+    "迟到的 silent 响应不得覆盖更新的非 silent 写回",
+  );
+  assert.equal(state.chatMessages.length, 1);
+  assert.equal(state.chatLoading, false, "silent 丢弃路径不得动非 silent 的加载态");
+}
+
+async function testTerminalTombstoneRejectsInFlightAdoption() {
+  installBrowserGlobals(new FakeRaf());
+  const state = makeState();
+  // own-run final → 记录 tombstone（run-1 已终结）
+  handleChatEvent(state, { runId: "run-1", sessionKey: "session-1", state: "final" });
+  assert.equal(state.chatRunId, null);
+
+  // 迟到的历史响应仍声明 run-1 在途（滞后快照）→ 不得收养复活成僵尸流
+  state.client = {
+    request: async () => ({
+      messages: [],
+      inFlightRun: { runId: "run-1", text: "复活文本", startedAt: Date.now() - 1000 },
+    }),
+  };
+  await loadChatHistory(state);
+  assert.equal(state.chatRunId, null, "已收过终态帧的 run 不得被迟到快照收养");
+  assert.equal(state.chatStream, null);
+
+  // 对照：未收过终态的 run 仍可正常收养（tombstone 不误伤）
+  state.client = {
+    request: async () => ({
+      messages: [],
+      inFlightRun: { runId: "run-fresh", text: "hi", startedAt: 42 },
+    }),
+  };
+  await loadChatHistory(state);
+  assert.equal(state.chatRunId, "run-fresh", "未终结 run 的收养不受影响");
+  assert.equal(state.chatStream, "hi");
 }
 
 async function main() {
@@ -1609,6 +2014,15 @@ async function main() {
   await testAbortedPreservesVisiblePartialText();
   await testConcurrentLoadsLatestGenerationWins();
   await testNewRunResetsMismatchCount();
+  testStripInFlightStreamDuplicatesPure();
+  await testLoadChatHistoryStripsInFlightDuplicates();
+  await testBodyDeltaInvalidatesFrozenNarrationSegment();
+  await testFinalInjectsSyntheticPartialPlaceholder();
+  await testMergeIfStaleEqualLengthMissingReplyRetainsLocal();
+  await testMergeIfStaleEqualLengthWithReplyReplaces();
+  await testMergeIfStaleEqualLengthBothMissingReplyReplaces();
+  await testSilentLateResponseDroppedAfterNewerNonSilentLoad();
+  await testTerminalTombstoneRejectsInFlightAdoption();
   cancelStaleHistoryRetryForTests();
   console.log("chat controller tests passed");
 }

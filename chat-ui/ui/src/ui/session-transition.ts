@@ -3,6 +3,14 @@ import { resetProgressCardForSession, type ProgressCardHost } from "./controller
 import { resetBoardForSession, type BoardHost } from "./controllers/board.ts";
 import { clearReconnectOrphanRun } from "./stream-recovery.ts";
 import { removePendingSessionLabel } from "./session-pending.ts";
+import {
+  captureRunStateSnapshot,
+  consumeRunStateHistoryDirty,
+  restoreRunStateSnapshot,
+  saveRunStateSnapshot,
+  takeRunStateSnapshot,
+} from "./run-state-store.ts";
+import { restoreChatScrollPosition, saveChatScrollPosition } from "./app-scroll.ts";
 import type { UiSettings } from "./storage.ts";
 
 export type SessionTransitionHost = ChatState & {
@@ -103,6 +111,14 @@ export function applySessionKeyTransition(
   if (realMessageCount === 0 && !host.chatMessage && host.chatAttachments.length === 0) {
     removePendingSessionLabel(host.sessionKey);
   }
+  // 滚动位置按会话记忆：切走即存（此时 DOM 仍是旧会话内容），切回还原。
+  saveChatScrollPosition(host.sessionKey);
+  // 切换不断流：原会话 run 在跑（或有排队消息）时，run 态快照进 per-session Map
+  //（后台期间的 chat/agent 事件由 app-gateway 分派累积进同一快照，见
+  // run-state-store.ts），切回无损恢复；排队消息随快照保留——此前直接丢弃。
+  if (host.chatRunId || (host.chatQueue?.length ?? 0) > 0) {
+    saveRunStateSnapshot(host.sessionKey, captureRunStateSnapshot(host));
+  }
   const savedSnapshot = sessionDraftSnapshots.get(trimmed);
   sessionDraftSnapshots.delete(trimmed);
   host.sessionKey = trimmed;
@@ -110,30 +126,59 @@ export function applySessionKeyTransition(
   clearReconnectOrphanRun();
   host.chatMessage = savedSnapshot?.draft ?? "";
   host.chatAttachments = savedSnapshot?.attachments ?? [];
-  host.chatStream = null;
-  host.chatPendingStreamText = null;
-  host.chatStreamFrozenPrefix = "";
-  // R88：实时思考/解说按会话隔离——不清会残留上一会话的思考流式区
-  host.chatThinkingStream = null;
-  host.chatPendingThinkingText = null;
-  host.chatNarrationText = null;
-  host.chatPendingNarrationText = null;
+  // 命中 run 态快照 → 无损恢复（流式气泡/思考流/解说/工具时间线/队列原样续显；
+  // 历史刻意不进快照，仍由下方 loadChatHistory 重拉）。未命中走原有重置路径。
+  // 仅「run 在跑或队列非空」的会话有快照，其余会话与旧行为完全一致。
+  const runSnapshot = takeRunStateSnapshot(trimmed);
+  if (runSnapshot) {
+    restoreRunStateSnapshot(host, runSnapshot);
+    // 后台 own-run 终态已标记历史脏：下方 loadChatHistory 的无条件重拉即「强制
+    // 重拉」的承载（本方法在已连接时总是重拉历史），消费掉脏标记即可。
+    consumeRunStateHistoryDirty(trimmed);
+    // 后台终态后切回：队列非空且无活跃 run → 补一次队列冲刷，排队消息继续自动发
+    if (
+      !host.chatRunId &&
+      (host.chatQueue?.length ?? 0) > 0 &&
+      host.client &&
+      host.connected
+    ) {
+      void import("./app-chat.ts")
+        .then(({ flushChatQueueForEvent }) =>
+          flushChatQueueForEvent(host as unknown as Parameters<typeof flushChatQueueForEvent>[0]),
+        )
+        .catch((err) =>
+          console.warn("[session-transition] flushChatQueueForEvent failed:", err),
+        );
+    }
+  } else {
+    host.chatStream = null;
+    host.chatPendingStreamText = null;
+    host.chatStreamFrozenPrefix = "";
+    // R88：实时思考/解说按会话隔离——不清会残留上一会话的思考流式区
+    host.chatThinkingStream = null;
+    host.chatPendingThinkingText = null;
+    host.chatNarrationText = null;
+    host.chatPendingNarrationText = null;
+    host.chatStreamStartedAt = null;
+    host.chatLastActivityAt = null;
+    host.chatRunId = null;
+    // 终态轮记录按会话隔离：切走即清（等长滞后判定只属于原会话的终态轮次）
+    host.chatTerminalRun = null;
+    // R5：交叉校验计数随会话切换清零（此前只有终态/新 run 分支清零，跨 run 会继承）
+    host.chatStreamMismatchCount = 0;
+    // 中止在途标记随会话切换清零（新会话无在途中止）
+    host.chatAbortPending = false;
+    host.chatQueue = [];
+    // 计划面板按会话隔离：切走即清（渲染层也按 sessionKey 匹配兜底）
+    host.planState = null;
+    host.resetToolStream();
+  }
   host.chatVisibleMessageCount = 0;
   // 加载态随会话重置（R64 审查 P3）：断连交错下旧请求的 finally 以
   // sessionKey 守卫跳过清位，若不在此重置，新会话线程区会一直显示「加载中」
   // 直到重连；已连接时随后的 loadChatHistory 会立即重新置位。
   host.chatLoading = false;
-  host.chatStreamStartedAt = null;
-  host.chatLastActivityAt = null;
-  host.chatRunId = null;
-  // R5：交叉校验计数随会话切换清零（此前只有终态/新 run 分支清零，跨 run 会继承）
-  host.chatStreamMismatchCount = 0;
-  // 中止在途标记随会话切换清零（新会话无在途中止）
-  host.chatAbortPending = false;
-  host.chatQueue = [];
   host.chatAvatarUrl = null;
-  // 计划面板按会话隔离：切走即清（渲染层也按 sessionKey 匹配兜底）
-  host.planState = null;
   // Progress Card 同属会话级状态：重建为新会话锚点，随后随历史一起重拉
   // （resetProgressCardForSession 内部会在已连接时发起 progressCard.get）
   resetProgressCardForSession(host as unknown as ProgressCardHost, trimmed);
@@ -152,8 +197,12 @@ export function applySessionKeyTransition(
   }
   host.fallbackClearTimer = null;
   host.fallbackNotice = null;
-  host.resetToolStream();
   host.resetChatScroll();
+  // 滚动位置按会话记忆：切回有记忆的会话时还原（贴底场景由既有逻辑兜底）
+  restoreChatScrollPosition(
+    host as unknown as Parameters<typeof restoreChatScrollPosition>[0],
+    trimmed,
+  );
   host.applySettings({
     ...host.settings,
     sessionKey: trimmed,

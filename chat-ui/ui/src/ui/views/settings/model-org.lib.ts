@@ -8,6 +8,7 @@
  * - 纯函数不依赖 lit / i18n / IPC，可独立单测；localStorage 读写封装在 load/save 两个入口。
  */
 import { reorderIds } from "./tab-provider.lib.ts";
+import { isRecord } from "../../types/guards.ts";
 
 export interface ModelOrgGroup {
   id: string;
@@ -26,10 +27,6 @@ export const MODEL_ORG_STORAGE_KEY = "cryoclaw.model-org.v1";
 
 export function emptyModelOrg(): ModelOrgState {
   return { version: 1, groups: [], assignments: {} };
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 /** 解析 localStorage 原始字符串；任何畸形输入一律回退空状态（不抛错） */

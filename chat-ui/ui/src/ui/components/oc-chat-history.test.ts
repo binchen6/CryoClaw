@@ -84,7 +84,7 @@ test("oc-chat-history：locale 是视觉属性且装配层传入 getLocale()", (
 test("views/chat：renderChat 不再直接调用历史 memo（调用点已迁入组件）", () => {
   assert.ok(
     !/\b(buildChatItemsMemoized|computeSessionFileChangesMemoized)\(/.test(chatViewSrc),
-    "views/chat.ts 仍存在历史 memo 直接调用（应只保留再导出与装配）",
+    "views/chat.ts 仍存在历史 memo 直接调用（再导出已移除，消费方直导组件模块）",
   );
   assert.ok(!/const chatItems\b/.test(chatViewSrc), "views/chat.ts 不应再持有 chatItems 局部量");
 });

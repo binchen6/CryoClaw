@@ -1,7 +1,7 @@
 {
-  "stable": "2026.9.7",
+  "stable": "2026.9.9",
   "minRuntimeNode": "24.16.0",
   "minSupported": "2026.7.0",
-  "updatedAt": "2026-10-04",
-  "notes": "CryoClaw 策展的内核稳定版。仅当 openclaw 官方发行证据链完整（GitHub release 非 prerelease、ClawHub publish 已验证、无未跑测试豁免）时才推进 stable。运行时 kernel-update.mjs 拉取本文件（raw.githubusercontent → jsdelivr 镜像 → 构建期内置兜底），不再使用 npm dist-tag latest。stable 推进 2026.9.3 → 2026.9.7：真实安装树补丁全命中（fs-safe 0.21.1 pinned-open 形态适配，见 kernel-dist-patch.origDeclV21）+ gateway.asar 32164 文件校验 + asar 真实启动冒烟（telegram 渠道 doctor-contract 链，夹具随 9.7 渠道 schema 收紧修正）+ RPC/渠道 schema 取证（docs/kernel-recon/2026.9.7-diff.md，sessions.compaction.* 由 sessions.branches/rewind/fork 树模型替代，CryoClaw UI 已同步重建为分支体系）。npm dist-tag latest 当前为 2026.9.8（同时挂 beta），证据链未核验，不推进。"
+  "updatedAt": "2026-10-10",
+  "notes": "CryoClaw 策展的内核稳定版。仅当 openclaw 官方发行证据链完整（GitHub release 非 prerelease、ClawHub publish 已验证、无未跑测试豁免）时才推进 stable。运行时 kernel-update.mjs 拉取本文件（raw.githubusercontent → jsdelivr 镜像 → 构建期内置兜底），不再使用 npm dist-tag latest。stable 推进 2026.9.7 → 2026.9.9（9.8 为中间 reliability hotfix，一并覆盖）：证据链 = RPC 方法表 core-method-policy 与 GATEWAY_EVENTS 60 项逐字节一致（483 方法 +0/-0，rpc-baseline 无需更新）+ agent DB userVersion 门槛维持 24（schemaVersions state:19/agent:24 不变）+ fs-safe 0.21.1 同形态补丁全命中 + 真实安装树（捆绑 Node 24.21.0）补丁实跑全命中（含 R95 worker Proxy 清理硬闸门；上游 9.9 的 win32 env Proxy 根因仍在）+ 渠道 schema（telegram botToken）与 skills/extensions 白名单清单三版零变化 + 取证 docs/kernel-recon/2026.9.9-diff.md。"
 }

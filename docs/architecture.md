@@ -285,8 +285,8 @@ carryOverInjected → 补丁命中校验 → 冒烟 → 重打 → 备份 → re
   绝不回落 npm latest。`updateAvailable` 用三段数字比较：current 更高（手动 `--tag` 装过
   新版）时不提示「更新」（那是降级）；无 tag 且 current 不落后 stable 时早退。
 - **运行时门槛守卫（2026.912.0 起）**：清单可选 `minRuntimeNode` 字段（stable=2026.9.3
-  起 = `24.16.0`，openclaw 2026.9.x engines 收敛到 Node 24；stable 现为 2026.9.7，取证见
-  docs/kernel-recon/2026.9.7-diff.md）——`cmdUpdate` 在确认换装后、
+  起 = `24.16.0`，openclaw 2026.9.x engines 收敛到 Node 24；stable 现为 2026.9.9，取证见
+  docs/kernel-recon/2026.9.7-diff.md 与 docs/kernel-recon/2026.9.9-diff.md）——`cmdUpdate` 在确认换装后、
   进 staging 前比较捆绑运行时版本（脚本由捆绑 node 直接 spawn，`process.version` 即运行时
   版本），不满足即 fail 并提示「先升级应用」，替代死在 npm preinstall 的裸错误；版本不可
   判定时放行（preinstall 是最终兜底）。显式 `--tag` 路径无清单可依，不做此判定；旧版 App
@@ -394,8 +394,12 @@ Custom NSIS assisted installer with:
   `renderActiveView()` switch 分支（storage.ts 类型自动生效）。
 - `app-render.ts`：壳层渲染入口（~450 行）：侧边栏 / 标题栏 / 内容区分发 / 全局弹窗。
   各视图实现已拆分为 `app-chat-props.ts`（对话 props 装配）、`app-skills.ts`、
-  `app-cron.ts`、`app-tasks.ts`、`app-feedback.ts`、`app-session-actions.ts`（会话操作）、
-  `app-view-switch.ts`（`setCryoClawView()` + enter/leave 钩子表）、`app-toast.ts`。
+  `app-cron.ts`、`app-tasks.ts`、`app-extensions.ts`（技能/插件/市场 R91）、
+  `app-workspace.ts` + `app-git.ts` + `app-worktrees.ts`（工作区视图簇，
+  配套 `controllers/workspace*.ts` / `controllers/git.ts` / `controllers/worktrees.ts`）、
+  `app-session-actions.ts`（会话操作）、`app-view-switch.ts`（`setCryoClawView()` +
+  enter/leave 钩子表）、`run-state-store.ts`（run 状态单一事实来源，R91+）、
+  `app-toast.ts`。
 - `app-gateway.ts`：gateway 事件分发（chat / agent / cron / task /
   sessions.changed / exec/plugin.approval 等）。
 - `sidebar.ts` + `sidebar-grouping.ts`：Codex 风侧边栏（新对话 + 主导航：任务/定时/
@@ -417,7 +421,7 @@ Custom NSIS assisted installer with:
    逻辑（内核升级链、配置迁移、启动所有权、IPC sender guard、配置缓存等）。
 2. **node:test**（src 编译到 `.test-dist/`，191 pass + 4 平台门控 skip）：不依赖 vitest
    的 src 测试，由 `scripts/run-node-tests.js` 运行（`test:compile` 先 tsc 编译）。
-3. **chat-ui**（`chat-ui/ui/src/**/*.test.ts`，645 用例）：node:test 风格，
+3. **chat-ui**（`chat-ui/ui/src/**/*.test.ts`，903 用例）：node:test 风格，
    `chat-ui/tsconfig.test.json` 编译到 `chat-ui/ui/.test-dist/`（产物标 `type:module`），
    由 `scripts/run-chat-ui-tests.js` 运行。**新增 chat-ui 控制器/纯函数请同步补该层测试**。
 4. **scripts**（`scripts/*.test.js` 81 用例）：打包/升级脚本纯逻辑。

@@ -79,8 +79,11 @@ were fully retuned.
   `--leading-relaxed/1.75` (assistant body text).
 - **Font weight**: `--weight-regular/medium/semibold/bold` (400/500/600/700).
 - **Motion**: `--ease-out/--ease-in-out/--ease-standard/--ease-spring`, duration scale
-  `--duration-instant/fast/normal/slow/slower` (0.08/0.12/0.2/0.35/0.5s),
-  `--transition: 180ms ease`.
+  `--duration-instant/fast/normal/slow/slower` (0.08/0.12/0.2/0.35/0.5s; instant = micro-
+  feedback swaps, fast = hover/press, normal = panels/entrances, slow = card entrances,
+  slower = large transitions); loop indicators (pulse/spin/shimmer infinite loops) all use
+  `--duration-loop` (1.2s); stagger entrance delays use `--delay-step` (50ms,
+  `.stagger-1..6` = steps 0–5 via calc).
 - **Glass blur**: `--glass-blur-sm/md` (8/16px, pairs with the `--glass-*` backgrounds
   for backdrop-filter).
 
@@ -379,7 +382,9 @@ Since the 2026.9 R2 refresh, **all app icons are drawn in-house**
   component level (skeleton shine, loading spinners, resize-handle indicator) has its
   own reduced-motion blocks — register new animations in the same pattern.
 - Motion-duration conventions: hover/press use `--duration-fast`, panel open/close and
-  entrances use `--duration-normal`, all on `--ease-out`.
+  entrances use `--duration-normal`, all on `--ease-standard` (the recommended value;
+  stop adding new `--ease-out` uses); infinite loops (pulse/spin/shimmer) always use
+  `--duration-loop`; popover/dialog scale entrances use `--ease-spring`.
 - Drag-region discipline: large shell surfaces are `-webkit-app-region: drag` so the
   window stays draggable; every interactive element must pair with `no-drag` to stay
   keyboard/mouse reachable.

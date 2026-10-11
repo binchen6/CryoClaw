@@ -1,5 +1,6 @@
 import type { GatewayBrowserClient } from "../gateway.ts";
 import type { ApprovalKind } from "./exec-approval.ts";
+import { isRecord } from "../types/guards.ts";
 
 export type { ApprovalKind };
 export type ApprovalStatus = "pending" | "approved" | "denied" | "expired";
@@ -24,10 +25,6 @@ export type ApprovalHistoryEntry = {
 // 上限 100 条，超出时丢弃最旧的已完结记录。
 const HISTORY_LIMIT = 100;
 const store = new Map<string, ApprovalHistoryEntry>();
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
 
 function asString(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value : null;

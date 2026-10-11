@@ -614,7 +614,7 @@
   background: var(--ok-subtle);
 }
 .oc-settings-pairing__spinner {
-  animation: oc-spin 0.85s linear infinite;
+  animation: oc-spin var(--duration-loop) linear infinite;
 }.oc-settings-pairing__section {
   display: flex;
   flex-direction: column;
@@ -1175,7 +1175,7 @@
   border: 2px solid var(--border);
   border-top-color: var(--accent);
   border-radius: var(--radius-pill);
-  animation: oc-spin 0.6s linear infinite;
+  animation: oc-spin var(--duration-loop) linear infinite;
 }
 .oc-provider-link {
   font-size: var(--heading-xs);
@@ -1421,7 +1421,7 @@
   background: var(--bg-hover);
 }
 .oc-provider-usage-refresh:disabled { cursor: progress; opacity: 0.7; }
-.oc-provider-usage-refresh.is-loading svg { animation: oc-spin 0.8s linear infinite; }
+.oc-provider-usage-refresh.is-loading svg { animation: oc-spin var(--duration-loop) linear infinite; }
 .oc-provider-usage {
   display: grid;
   grid-template-columns: 1fr 1fr;

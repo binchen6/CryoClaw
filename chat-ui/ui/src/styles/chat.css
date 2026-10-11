@@ -487,7 +487,7 @@
 
 .chat-subagent-card--active .chat-subagent-card__pulse {
   background: var(--accent);
-  animation: ocSubagentPulse 1.2s ease-in-out infinite;
+  animation: ocSubagentPulse var(--duration-loop) ease-in-out infinite;
 }
 
 .chat-subagent-card--done .chat-subagent-card__pulse {
@@ -718,6 +718,10 @@
   margin-right: auto;
   max-width: var(--chat-column);
   width: 100%;
+  /* 离屏跳过渲染（长历史内存/渲染双降）；auto 关键字记住实测高度，
+     钉底/回底与渐进注水滚动锚定不受估算高度影响 */
+  content-visibility: auto;
+  contain-intrinsic-block-size: auto 240px;
   /* 新消息入场微动效（repeat 按 key 复用节点，只在元素创建时播放一次；
      prefers-reduced-motion 全局关停） */
   animation: rise var(--duration-normal) var(--ease-out);
@@ -1011,7 +1015,7 @@ img.chat-avatar {
   position: absolute;
   top: 0;
   left: 0;
-  transition: opacity var(--duration-fast) ease;
+  transition: opacity var(--duration-instant) var(--ease-out);
 }
 
 .chat-copy-btn__icon-check,
@@ -1437,7 +1441,7 @@ img.chat-avatar {
     var(--accent-subtle) 50%,
     transparent 100%
   );
-  animation: chat-progress-indeterminate 1.4s var(--ease-in-out) infinite;
+  animation: chat-progress-indeterminate var(--duration-loop) var(--ease-in-out) infinite;
 }
 
 @keyframes chat-progress-indeterminate {
@@ -1767,16 +1771,16 @@ img.chat-avatar {
   background: var(--accent);
   opacity: .6;
   transform: translateY(0);
-  animation: chatReadingDot 1.2s ease-in-out infinite;
+  animation: chatReadingDot var(--duration-loop) ease-in-out infinite;
   will-change: transform, opacity;
 }
 
 .chat-reading-indicator__dots > span:nth-child(2) {
-  animation-delay: .15s;
+  animation-delay: calc(var(--delay-step) * 3);
 }
 
 .chat-reading-indicator__dots > span:nth-child(3) {
-  animation-delay: .3s;
+  animation-delay: calc(var(--delay-step) * 6);
 }
 
 @keyframes chatReadingDot {
@@ -2071,7 +2075,7 @@ img.chat-avatar {
   border: 2px solid var(--border-strong);
   border-top-color: var(--accent);
   border-radius: var(--radius-full);
-  animation: oc-spin .8s linear infinite;
+  animation: oc-spin var(--duration-loop) linear infinite;
 }
 /* 折叠摘要行：任一工具失败 → 红色 ✗ 前缀 + 红色调 */
 .chat-tools-summary--failed {
@@ -2306,16 +2310,27 @@ img.chat-avatar {
   justify-content: flex-end;
 }
 
+/* 底色实底 + ::after 渐变条扫光（合成层 translateX，明暗 token 不变） */
 .chat-loading__avatar,
 .chat-loading__bubble {
+  position: relative;
+  overflow: hidden;
+  background: var(--bg-muted);
+}
+
+.chat-loading__avatar::after,
+.chat-loading__bubble::after {
+  content: "";
+  position: absolute;
+  inset: 0;
   background: linear-gradient(
     90deg,
-    var(--bg-muted) 25%,
+    transparent 25%,
     var(--bg-hover) 50%,
-    var(--bg-muted) 75%
+    transparent 75%
   );
-  background-size: 200% 100%;
-  animation: shimmer 1.4s linear infinite;
+  will-change: transform;
+  animation: shimmer var(--duration-loop) linear infinite;
 }
 
 .chat-loading__avatar {
@@ -2336,8 +2351,8 @@ img.chat-avatar {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .chat-loading__avatar,
-  .chat-loading__bubble {
+  .chat-loading__avatar::after,
+  .chat-loading__bubble::after {
     animation: none;
   }
 }
@@ -2406,7 +2421,7 @@ img.chat-avatar {
   content: "▍";
   margin-left: 2px;
   color: var(--accent);
-  animation: ocStreamCaret 1.06s steps(2, end) infinite;
+  animation: ocStreamCaret var(--duration-loop) steps(2, end) infinite;
 }
 
 /* R41 Task 9 流式安全前缀渐进渲染：容器 pre-wrap 仍服务于未闭合尾部纯文本段，
@@ -2443,7 +2458,7 @@ img.chat-avatar {
   height: 6px;
   border-radius: var(--radius-full);
   background: var(--accent);
-  animation: ocStreamDot 1.2s ease-in-out infinite;
+  animation: ocStreamDot var(--duration-loop) ease-in-out infinite;
 }
 
 @keyframes ocStreamDot {
@@ -2687,7 +2702,7 @@ img.chat-avatar {
 
 .chat-progress-card__dot--active {
   background: var(--info);
-  animation: chat-progress-card-pulse 1.2s ease-in-out infinite;
+  animation: chat-progress-card-pulse var(--duration-loop) ease-in-out infinite;
 }
 
 .chat-progress-card__dot--done {
@@ -2865,7 +2880,7 @@ img.chat-avatar {
   border: 2px solid var(--border-strong);
   border-top-color: var(--accent);
   border-radius: var(--radius-full);
-  animation: oc-spin .8s linear infinite;
+  animation: oc-spin var(--duration-loop) linear infinite;
 }
 @keyframes chat-progress-card-pulse {
   0%, 100% {

@@ -20,8 +20,9 @@ test("BOARD_WIDGET_SANDBOX：不含 allow-same-origin（防沙箱失效组合）
   assert.equal(BOARD_WIDGET_SANDBOX.includes("allow-forms"), true);
 });
 
-test("views/chat.ts：board iframe 引用 BOARD_WIDGET_SANDBOX 常量（非内联字符串）", () => {
-  const src = readFileSync(new URL("../../../../../src/ui/views/chat.ts", import.meta.url), "utf8");
+test("views/chat-panels.ts：board iframe 引用 BOARD_WIDGET_SANDBOX 常量（非内联字符串）", () => {
+  // R2b 拆分：会话仪表盘面板迁至 views/chat-panels.ts
+  const src = readFileSync(new URL("../../../../../src/ui/views/chat-panels.ts", import.meta.url), "utf8");
   assert.match(
     src,
     /sandbox=\$\{BOARD_WIDGET_SANDBOX\}/,

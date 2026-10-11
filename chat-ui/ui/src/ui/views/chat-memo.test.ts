@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-// views/chat.ts 经 components（managed-image / oc-resizable-divider）注册自定义元素，
+// oc-chat-history 模块顶层有 @customElement 注册（views/chat.ts 链路同理），
 // node 环境无 customElements，动态导入前打桩（lit 本体在 node 可正常加载）。
 const g = globalThis as Record<string, unknown>;
 g.customElements ??= {
@@ -11,7 +11,9 @@ g.customElements ??= {
   },
 };
 
-const { buildChatItemsMemoized, computeSessionFileChangesMemoized } = await import("./chat.ts");
+const { buildChatItemsMemoized, computeSessionFileChangesMemoized } = await import(
+  "../components/oc-chat-history.ts"
+);
 const { getLocale, setLocale } = await import("../i18n.ts");
 
 // 共享空数组：memo 按数组引用比较，默认 props 必须复用同一引用

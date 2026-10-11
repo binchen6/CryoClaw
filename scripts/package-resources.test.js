@@ -571,3 +571,76 @@ test("verifyAsarContents: win-arm64 交叉编译仅缺 kimi-search → 豁免通
     fs.rmSync(tmpRoot, { recursive: true, force: true });
   }
 });
+
+// ─── Step 7.2: 归档工具 sidecar（cryoclaw-archive） ───
+
+function loadArchiveToolSandbox(tmpRoot, { consoleOverride } = {}) {
+  writeFixture(path.join(tmpRoot, "package.json"), JSON.stringify({ cryoclaw: { archiveTool: "0.1.0" } }));
+  const sandbox = loadPackageResourcesSandbox({
+    rootDir: tmpRoot,
+    ...(consoleOverride ? { console: consoleOverride } : {}),
+  });
+  return sandbox;
+}
+
+test("readArchiveToolExpectedHash 按文件名精确匹配，不受 .sig 兄弟条目前缀干扰", () => {
+  const sums = [
+    "aaa111  cryoclaw-archive-win32-x64.exe",
+    "bbb222  cryoclaw-archive-win32-x64.exe.sig",
+    "ccc333  cryoclaw-archive-darwin-arm64",
+  ].join("\n");
+  const sandbox = loadPackageResourcesSandbox();
+  assert.equal(sandbox.readArchiveToolExpectedHash(sums, "cryoclaw-archive-win32-x64.exe"), "aaa111");
+  assert.equal(sandbox.readArchiveToolExpectedHash(sums, "cryoclaw-archive-darwin-arm64"), "ccc333");
+  assert.throws(() => sandbox.readArchiveToolExpectedHash(sums, "cryoclaw-archive-win32-arm64.exe"), /SHA256SUMS/);
+});
+
+test("prepareArchiveTool stamp 匹配 + 输出存在 → 跳过（不 spawn 不触网）", async () => {
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "cryoclaw-archive-tool-stamp-"));
+  try {
+    const sandbox = loadArchiveToolSandbox(tmpRoot);
+    const targetBase = path.join(tmpRoot, "resources", "targets", "win32-x64");
+    const outputDir = path.join(targetBase, "archive-tool");
+    writeFixture(path.join(outputDir, "cryoclaw-archive.exe"), "fake-binary");
+    writeFixture(path.join(outputDir, ".archive-tool-stamp"), "0.1.0-win32-x64");
+    // spawn 兜底保护：任何 --version 握手都会失败（fake-binary 不可执行）
+    await sandbox.prepareArchiveTool("win32", "x64", targetBase);
+    assert.equal(fs.readFileSync(path.join(outputDir, "cryoclaw-archive.exe"), "utf-8"), "fake-binary");
+  } finally {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});
+
+test("prepareArchiveTool 远端下载失败只 warn 不 fail（运行时回退纯 JS）", async () => {
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "cryoclaw-archive-tool-netfail-"));
+  const logs = [];
+  try {
+    const sandbox = loadArchiveToolSandbox(tmpRoot, {
+      consoleOverride: { log: () => {}, error: () => {}, warn: (m) => logs.push(String(m)) },
+    });
+    // 覆盖下载实现模拟网络不可达（prepareArchiveTool 内部经全局绑定解析）
+    sandbox.downloadFileWithFallback = async () => {
+      throw new Error("network down");
+    };
+    const targetBase = path.join(tmpRoot, "resources", "targets", "win32-x64");
+    await sandbox.prepareArchiveTool("win32", "x64", targetBase);
+    // 输出目录必须存在（electron-builder extraResources 源），但二进制缺失
+    assert.ok(fs.existsSync(path.join(targetBase, "archive-tool")));
+    assert.ok(!fs.existsSync(path.join(targetBase, "archive-tool", "cryoclaw-archive.exe")));
+  } finally {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});
+
+test("prepareArchiveTool 未 pin 时跳过且不建目录", async () => {
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "cryoclaw-archive-tool-nopin-"));
+  try {
+    writeFixture(path.join(tmpRoot, "package.json"), JSON.stringify({ cryoclaw: {} }));
+    const sandbox = loadPackageResourcesSandbox({ rootDir: tmpRoot });
+    const targetBase = path.join(tmpRoot, "resources", "targets", "win32-x64");
+    await sandbox.prepareArchiveTool("win32", "x64", targetBase);
+    assert.ok(!fs.existsSync(path.join(targetBase, "archive-tool")));
+  } finally {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});

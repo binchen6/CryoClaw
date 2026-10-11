@@ -3067,6 +3067,140 @@ async function downloadOfficeCli(platform, arch, targetBase) {
   log(`OfficeCLI v${version} → ${path.relative(ROOT, outputBin)}`);
 }
 
+// ─── Step 7.2: 归档工具 sidecar（Rust，cryoclaw-archive） ───
+//
+// 与 OfficeCLI 同构的下载/缓存/sha256 链，但缺失不 fail 构建：
+//   来源 1（优先）：仓库内 cargo 本地产物 native/cryoclaw-archive/target/release/
+//                  （--version 与 package.json cryoclaw.archiveTool pin 一致才采纳）
+//   来源 2（预留）：GitHub Releases（仓内尚无发布物；下载/校验失败只 warn，
+//                  运行时回退纯 JS fflate 归档实现，行为等价于 sidecar 不存在）
+//   输出: <targetBase>/archive-tool/cryoclaw-archive[.exe] + .archive-tool-stamp
+//
+// pin 存在时始终确保输出目录存在：electron-builder.yml 的 extraResources
+// 固定引用 resources/targets/<target>/archive-tool，缺失会让 electron-builder
+// 报错；空目录注入无害（运行时探测不到二进制自然回退 JS）。
+
+/** cryoclaw-archive 平台映射：(platform, arch) → GitHub Release 资产名 */
+function getArchiveToolAssetName(platform, arch) {
+  const map = {
+    "darwin-arm64": "cryoclaw-archive-darwin-arm64",
+    "darwin-x64": "cryoclaw-archive-darwin-x64",
+    "win32-x64": "cryoclaw-archive-win32-x64.exe",
+    "win32-arm64": "cryoclaw-archive-win32-arm64.exe",
+  };
+  const key = `${platform}-${arch}`;
+  const name = map[key];
+  if (!name) die(`归档工具不支持平台 ${key}`);
+  return name;
+}
+
+/** SHA256SUMS 行尾才是文件名：取「以 " <assetName>" 结尾」的行首哈希 */
+function readArchiveToolExpectedHash(sumsContent, assetName) {
+  const expectedLine = sumsContent.split("\n").find((l) => l.trim().endsWith(` ${assetName}`));
+  if (!expectedLine) {
+    throw new Error(`SHA256SUMS 中未找到 ${assetName}`);
+  }
+  return expectedLine.trim().split(/\s+/)[0];
+}
+
+/** --version 握手：输出行首必须严格等于 "cryoclaw-archive <pin>" */
+async function verifyArchiveToolVersion(binPath, version) {
+  const { execFileSync } = require("child_process");
+  try {
+    const stdout = execFileSync(binPath, ["--version"], {
+      timeout: 10_000,
+      windowsHide: true,
+      encoding: "utf-8",
+    });
+    const firstLine = String(stdout).split(/\r?\n/, 1)[0]?.trim() ?? "";
+    return firstLine === `cryoclaw-archive ${version}`;
+  } catch {
+    return false;
+  }
+}
+
+function writeArchiveToolOutput(sourceBin, outputDir, outputBin, stampFile, stampValue, platform) {
+  ensureDir(outputDir);
+  fs.copyFileSync(sourceBin, outputBin);
+  if (platform !== "win32") {
+    fs.chmodSync(outputBin, 0o755);
+  }
+  fs.writeFileSync(stampFile, stampValue);
+}
+
+async function prepareArchiveTool(platform, arch, targetBase) {
+  const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8"));
+  const version = pkg.cryoclaw?.archiveTool;
+  const binName = platform === "win32" ? "cryoclaw-archive.exe" : "cryoclaw-archive";
+  const outputDir = path.join(targetBase, "archive-tool");
+  const outputBin = path.join(outputDir, binName);
+  if (!version) {
+    log("package.json cryoclaw.archiveTool 未指定，跳过归档工具（运行时回退纯 JS）");
+    return;
+  }
+  // pin 存在即保证 extraResources 源目录存在（见上方注释）
+  ensureDir(outputDir);
+
+  // 增量检测：stamp 匹配 + 输出存在 → 跳过
+  const stampFile = path.join(outputDir, ".archive-tool-stamp");
+  const stampValue = `${version}-${platform}-${arch}`;
+  if (fs.existsSync(stampFile) && fs.readFileSync(stampFile, "utf-8").trim() === stampValue && fs.existsSync(outputBin)) {
+    log(`归档工具已是 ${stampValue}，跳过`);
+    return;
+  }
+
+  // 来源 1：本地产物（dev 机器 cargo build --release）
+  const localBin = path.join(ROOT, "native", "cryoclaw-archive", "target", "release", binName);
+  if (fs.existsSync(localBin)) {
+    if (await verifyArchiveToolVersion(localBin, version)) {
+      writeArchiveToolOutput(localBin, outputDir, outputBin, stampFile, stampValue, platform);
+      log(`归档工具（本地产物）v${version} → ${path.relative(ROOT, outputBin)}`);
+      return;
+    }
+    log(`⚠ 本地归档工具与 pin v${version} 版本不符，跳过本地产物（cargo build --release 刷新？）`);
+  }
+
+  // 来源 2：GitHub Releases（预留；仓内尚无发布物，失败只 warn 不 fail）
+  const assetName = getArchiveToolAssetName(platform, arch);
+  const cacheDir = path.join(ROOT, ".cache", "archive-tool", version);
+  const cachedBin = path.join(cacheDir, assetName);
+  const cachedSums = path.join(cacheDir, "SHA256SUMS");
+  const baseUrl = `https://github.com/binchen6/CryoClaw/releases/download/v${version}`;
+  try {
+    // 半截 SHA256SUMS 缓存（进程中途被杀）会自我延续：解析不出目标条目即删缓存重下
+    const sumsValid = (() => {
+      if (!fs.existsSync(cachedSums)) return false;
+      try {
+        readArchiveToolExpectedHash(fs.readFileSync(cachedSums, "utf-8"), assetName);
+        return true;
+      } catch {
+        safeUnlink(cachedSums);
+        return false;
+      }
+    })();
+    if (!sumsValid) {
+      ensureDir(cacheDir);
+      await downloadFileWithFallback([`${baseUrl}/SHA256SUMS`], cachedSums);
+    }
+    if (!fs.existsSync(cachedBin)) {
+      log(`正在下载归档工具 ${assetName} ...`);
+      await downloadFileWithFallback([`${baseUrl}/${assetName}`], cachedBin);
+    }
+    const { createHash } = require("crypto");
+    const actual = createHash("sha256").update(fs.readFileSync(cachedBin)).digest("hex");
+    const expected = readArchiveToolExpectedHash(fs.readFileSync(cachedSums, "utf-8"), assetName);
+    if (actual !== expected) {
+      safeUnlink(cachedBin);
+      throw new Error(`sha256 校验失败: ${assetName}`);
+    }
+    writeArchiveToolOutput(cachedBin, outputDir, outputBin, stampFile, stampValue, platform);
+    log(`归档工具 v${version} → ${path.relative(ROOT, outputBin)}`);
+  } catch (err) {
+    safeUnlink(outputBin);
+    log(`⚠ 归档工具 sidecar 不可用（${err.message || String(err)}），打包继续；运行时回退纯 JS 归档实现`);
+  }
+}
+
 // 验证目标目录关键文件是否存在
 function verifyOutput(targetPaths, opts) {
   log("正在验证输出文件...");
@@ -3084,6 +3218,18 @@ function verifyOutput(targetPaths, opts) {
     }
   })();
   const officecliRel = path.join(targetRel, "officecli", platform === "win32" ? "officecli.exe" : "officecli");
+  // ArchiveTool sidecar 与 officecli 同契约：pin 了就必须在产物里（缺失 = 归档
+  // 性能优化静默归零且无任何信号）。仅 win32-x64 硬性要求——sidecar 目前只有该
+  // 目标有产物链，mac/arm64 交叉编译缺失属已知形态（运行时回退 JS），硬失败会砍掉整个产物。
+  const archiveToolPinned = (() => {
+    try {
+      return Boolean(JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8")).cryoclaw?.archiveTool);
+    } catch {
+      return false;
+    }
+  })();
+  const archiveToolRequired = archiveToolPinned && platform === "win32" && opts.arch === "x64";
+  const archiveToolRel = path.join(targetRel, "archive-tool", platform === "win32" ? "cryoclaw-archive.exe" : "cryoclaw-archive");
 
   // macOS npm 在 vendor/npm/，Windows npm 在 node_modules/npm/
   const npmDir = platform === "darwin"
@@ -3099,6 +3245,7 @@ function verifyOutput(targetPaths, opts) {
       path.join(targetRel, "build-config.json"),
       path.join(targetRel, "app-icon.png"),
       ...(officecliPinned ? [officecliRel] : []),
+      ...(archiveToolRequired ? [archiveToolRel] : []),
     ];
 
     // External channel plugins 不进 gateway.asar，需要单独校验 mirror 输出。
@@ -3133,6 +3280,7 @@ function verifyOutput(targetPaths, opts) {
     path.join(targetRel, "build-config.json"),
     path.join(targetRel, "app-icon.png"),
     ...(officecliPinned ? [officecliRel] : []),
+    ...(archiveToolRequired ? [archiveToolRel] : []),
   ];
 
   // Windows arm64 交叉编译时含 native addon 的插件可能注入失败，校验时降级为 warning
@@ -3423,6 +3571,12 @@ async function main() {
   // Step 7: 下载 OfficeCLI 二进制
   log("Step 7: 下载 OfficeCLI 二进制");
   await downloadOfficeCli(opts.platform, opts.arch, targetPaths.targetBase);
+
+  console.log();
+
+  // Step 7.2: 准备归档工具 sidecar（Rust；本地产物优先，缺失回退纯 JS）
+  log("Step 7.2: 准备归档工具 sidecar");
+  await prepareArchiveTool(opts.platform, opts.arch, targetPaths.targetBase);
 
   console.log();
 

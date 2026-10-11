@@ -70,7 +70,7 @@ export class ManagedImage extends LitElement {
       height: 6px;
       border-radius: 50%;
       background: var(--accent);
-      animation: ocMediaPulse 1.2s ease-in-out infinite;
+      animation: ocMediaPulse var(--duration-loop) ease-in-out infinite;
       flex-shrink: 0;
     }
     @keyframes ocMediaPulse {

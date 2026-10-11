@@ -3,6 +3,13 @@ import * as os from "os";
 import * as path from "path";
 import { Zip, ZipDeflate, ZipPassThrough } from "fflate";
 import {
+  probeArchiveTool,
+  rustCreateArchive,
+  dateToDosDateTime,
+  warnArchiveToolFallbackOnce,
+  type RustCreateEntry,
+} from "./archive-backend";
+import {
   asUint8Array,
   assertArchiveOutsideStateDir,
   buildOpenclawStateArchiveDefaultFileName,
@@ -75,6 +82,18 @@ export async function exportOpenclawStateToArchive(
     const entries = await collectOpenclawStateEntries(snapshotDir);
 
     fs.mkdirSync(path.dirname(targetZipPath), { recursive: true });
+    // 双 backend：Rust sidecar 可用时直写目标路径（流式 deflate + 硬件级 CRC）；
+    // 任何失败静默落回纯 JS fflate 写 zip（回退告警 warnArchiveToolFallbackOnce）。
+    // 导出侧刻意不做产物回读校验：导入端 readArchive/validate 的契约校验是权威兜底。
+    const tool = await probeArchiveTool();
+    if (tool) {
+      try {
+        await rustCreateArchive(tool, { outputPath: targetZipPath, entries: buildRustCreateEntries(entries) });
+        return;
+      } catch (err) {
+        warnArchiveToolFallbackOnce(err);
+      }
+    }
     const fd = fs.openSync(targetZipPath, "w");
     try {
       await writeZip(entries, fd);
@@ -315,6 +334,39 @@ function validateArchiveMarker(entryNames: string[], entryContents: Map<string, 
   } catch {
     throw new Error("不是 CryoClaw .openclaw 数据包");
   }
+}
+
+// Rust create 条目清单：顺序与字段与 JS writeZip 逐个对齐——marker 为首
+// 条目（store + 固定 1980-01-01 + 0o644），目录 store、文件 deflate(level 6)，
+// dosDate/dosTime 在 JS 侧从本地时间换算（sidecar 不依赖本地时区库）。
+function buildRustCreateEntries(entries: OpenclawStateEntry[]): RustCreateEntry[] {
+  const markerDos = dateToDosDateTime(new Date(1980, 0, 1));
+  const out: RustCreateEntry[] = [
+    {
+      path: "",
+      relPath: ARCHIVE_MARKER_NAME,
+      kind: "file",
+      mode: 0o644,
+      dosDate: markerDos.dosDate,
+      dosTime: markerDos.dosTime,
+      compression: "store",
+      contentBase64: Buffer.from(ARCHIVE_MARKER_CONTENT, "utf8").toString("base64"),
+    },
+  ];
+  for (const entry of entries) {
+    const dos = dateToDosDateTime(entry.mtime);
+    out.push({
+      path: entry.absPath,
+      relPath: entry.relPath,
+      kind: entry.kind,
+      mode: entry.mode & 0o777,
+      dosDate: dos.dosDate,
+      dosTime: dos.dosTime,
+      compression: entry.kind === "dir" ? "store" : "deflate",
+      contentBase64: null,
+    });
+  }
+  return out;
 }
 
 async function writeZip(entries: OpenclawStateEntry[], fd: number): Promise<void> {

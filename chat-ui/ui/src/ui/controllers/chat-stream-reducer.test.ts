@@ -69,6 +69,45 @@ test("legacy cumulative snapshots still remove the frozen tool prefix", () => {
   assert.equal(result?.accepted, true);
 });
 
+test("legacy snapshot path emits invalidatesFrozenPrefix when full text dropped the prefix", () => {
+  // Bug1-C：旧版快照路径（无 deltaText）此前只切片不发作废信号——工具前文本被
+  // 内核改写后（全文不再以 frozenPrefix 开头），冻结段留在时间线上与新正文双份。
+  // 现与 deltaText-replace 分支同契约发作废信号。
+  const result = reduceChatStreamDelta({
+    currentText: "trail",
+    message: { content: [{ type: "text", text: "regenerated from scratch" }] },
+    frozenPrefix: "before tool",
+  });
+  assert.deepEqual(result, {
+    text: "regenerated from scratch",
+    accepted: true,
+    source: "snapshot",
+    replaced: false,
+    invalidatesFrozenPrefix: true,
+  });
+});
+
+test("legacy replace snapshot beyond the frozen prefix invalidates it", () => {
+  const result = reduceChatStreamDelta({
+    currentText: "trail",
+    replace: true,
+    message: { content: [{ type: "text", text: "rewritten body" }] },
+    frozenPrefix: "before tool",
+  });
+  assert.equal(result?.invalidatesFrozenPrefix, true);
+  assert.equal(result?.text, "rewritten body");
+});
+
+test("legacy snapshot within the frozen prefix keeps frozen segments intact", () => {
+  const result = reduceChatStreamDelta({
+    currentText: "trail",
+    message: { content: [{ type: "text", text: "before tooltrail" }] },
+    frozenPrefix: "before tool",
+  });
+  assert.equal(result?.invalidatesFrozenPrefix, undefined);
+  assert.equal(result?.text, "trail");
+});
+
 test("legacy snapshots reject backwards movement without replace", () => {
   const result = reduceChatStreamDelta({
     currentText: "a longer visible segment",
@@ -131,9 +170,11 @@ test("R3: replace frame without a frozen prefix does not invalidate anything", (
   assert.equal(result?.text, "regenerated");
 });
 
-test("R5: conservative append for the first mismatching frames, forced snapshot resync at the 3rd", () => {
-  // 基线彻底偏离内核（如连续丢帧 + 收养错基线）：第 1、2 帧保守追加并累计计数，
-  // 第 3 帧强制以 message 快照 resync（按 frozenPrefix 切片），文本重新收敛。
+test("R5: mismatched snapshots that are not forward extensions keep appending conservatively", () => {
+  // Bug1-D 前置条件：连续失配第 3 帧的强制 resync 只允许在「fullText 是 base
+  // （frozenPrefix+current）的前向延伸」时发生。滞后/分叉快照（如此处 fullText
+  // 与 base 完全无关）resync 会把已上屏文本回跳、冻结段留在时间线上 → 双份闪现。
+  // 新语义：不满足前向条件则继续保守追加（计数仍累计），等后续帧重新对齐。
   const mk = (mismatchCount?: number) => ({
     currentText: "corrupted local text",
     deltaText: " more",
@@ -150,23 +191,46 @@ test("R5: conservative append for the first mismatching frames, forced snapshot 
   assert.equal(r2?.text, "corrupted local text more");
   assert.equal(r2?.mismatchCount, 2);
 
+  // 第 3 帧达到阈值，但快照不是前向延伸 → 不回跳、不作废冻结段
   const r3 = reduceChatStreamDelta(mk(r2?.mismatchCount));
-  // 第 3 帧：fullText "kernel truth more" 不以 base("pre" + current) 开头 →
-  // 计数达到阈值 → 强制 resync：fullText 不以 frozenPrefix 开头 → 整段采用，
-  // 且与 R3 同形态发出 frozenPrefix 作废信号（冻结段已被内核改写，防旧段双份）
   assert.deepEqual(r3, {
-    text: "kernel truth more",
+    text: "corrupted local text more",
     accepted: true,
-    source: "snapshot",
-    replaced: true,
-    invalidatesFrozenPrefix: true,
-    mismatchCount: 0,
+    source: "deltaText",
+    replaced: false,
+    mismatchCount: 3,
   });
 });
 
-test("R5: forced resync keeps the frozen prefix when the snapshot still contains it", () => {
-  // 快照仍含 frozenPrefix（普通漂移，非前缀重写）：resync 按前缀切片，
-  // 不作废冻结段（无 invalidatesFrozenPrefix 信号）。
+test("R5: a forward-extension snapshot self-heals immediately (mismatch counter resets)", () => {
+  // 基线漂移后内核快照是 base 的前向延伸（丢帧形态）→ R88 self-heal 首帧即收敛，
+  // 无需等 R5 阈值；计数清零。
+  const bad = reduceChatStreamDelta({
+    currentText: "local",
+    deltaText: " x",
+    message: { content: [{ type: "text", text: "unrelated snapshot" }] },
+    frozenPrefix: "pre",
+  });
+  assert.equal(bad?.mismatchCount, 1);
+  const healed = reduceChatStreamDelta({
+    currentText: "local x",
+    deltaText: " y",
+    message: { content: [{ type: "text", text: "prelocal x gap y" }] },
+    frozenPrefix: "pre",
+    mismatchCount: bad?.mismatchCount,
+  });
+  // base = "pre" + "local x" = "prelocal x"；fullText "prelocal x gap y" 是其前向
+  // 延伸（基线漏了 " gap"）且与追加结果不对齐 → self-heal：切片 frozenPrefix 后整段采用
+  assert.equal(healed?.text, "local x gap y");
+  assert.equal(healed?.source, "snapshot");
+  assert.equal(healed?.replaced, true);
+  assert.equal(healed?.mismatchCount, 0);
+});
+
+test("R5: regressed snapshot at the threshold never moves the stream backwards", () => {
+  // Bug1-D：阈值到达时快照仍含 frozenPrefix 但全文比本地基线短/回退（滞后读）——
+  // 旧行为强制 resync 会把可见文本从 "corrupted" 回跳成更短文本并重复闪现；
+  // 新行为保守追加，冻结段保持有效。
   const r = reduceChatStreamDelta({
     currentText: "corrupted",
     deltaText: " x",
@@ -174,9 +238,9 @@ test("R5: forced resync keeps the frozen prefix when the snapshot still contains
     frozenPrefix: "pre",
     mismatchCount: 2,
   });
-  assert.equal(r?.text, "kernel truth x");
-  assert.equal(r?.invalidatesFrozenPrefix, undefined);
-  assert.equal(r?.mismatchCount, 0);
+  assert.equal(r?.text, "corrupted x");
+  assert.equal(r?.invalidatesFrozenPrefix, undefined, "冻结段未被改写，不得发作废信号");
+  assert.equal(r?.mismatchCount, 3, "前向条件不满足：计数继续累计");
 });
 
 test("R5: mismatch counter resets as soon as a frame cross-checks cleanly", () => {

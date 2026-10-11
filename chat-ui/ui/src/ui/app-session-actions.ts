@@ -25,6 +25,8 @@ import {
   clearSessionDraftSnapshot,
   seedSessionDraftSnapshot,
 } from "./session-transition.ts";
+import { clearSessionRunStateSnapshot } from "./run-state-store.ts";
+import { clearSessionScrollPosition } from "./app-scroll.ts";
 import {
   clearToleratedHiddenSession,
   isToleratedHiddenSession,
@@ -261,12 +263,16 @@ export async function deleteSessionFromSidebar(state: AppViewState, key: string)
 
     // 3) 成功：全量刷新侧边栏；reconcileVisibleSession 会在活跃会话被删时切到下一个可见会话。
     removePendingSessionLabel(key);
-    // 同步清理该会话的草稿快照，防同名 key 复用时复活旧草稿
-    clearSessionDraftSnapshot(key);
     // 被删的若是显式跳转容忍的会话，清除容忍让 reconcile 正常切走
     clearToleratedHiddenSession(key);
     await loadSessions(state);
     reconcileVisibleSession(state);
+    // 草稿/run 态/滚动位置清理必须在 reconcile 之后：删的是活跃会话时，
+    // applySessionKeyTransition 会先按「切走」语义把被删 key 的三项状态重新存进
+    // 快照（resurrect），清理放在其后才能真正清掉，防同名 key 复用时复活旧状态
+    clearSessionDraftSnapshot(key);
+    clearSessionRunStateSnapshot(key);
+    clearSessionScrollPosition(key);
   } finally {
     deletingSessionKeys.delete(key);
     state.requestUpdate();

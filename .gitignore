@@ -83,3 +83,6 @@ repowiki/
 
 # tsc 单文件误编译产物（勿提交）
 src/**/*.js
+
+# Rust sidecar 构建产物（native/cryoclaw-archive）
+native/cryoclaw-archive/target/

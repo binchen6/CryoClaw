@@ -65,6 +65,10 @@ import {
 } from "./gateway-connection.ts";
 import { configureManagedMedia, wsUrlToHttpOrigin } from "./chat/managed-media.ts";
 import { applySessionKeyTransition } from "./session-transition.ts";
+import {
+  accumulateBackgroundAgentEvent,
+  dispatchBackgroundChatEvent,
+} from "./run-state-store.ts";
 import { isToleratedHiddenSession } from "./session-jump.ts";
 import {
   clearReconnectOrphanRun,
@@ -775,6 +779,15 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
     if (host.onboarding) {
       return;
     }
+    const agentPayload = evt.payload as AgentEventPayload | undefined;
+    if (agentPayload?.sessionKey && agentPayload.sessionKey !== host.sessionKey) {
+      // 切换不断流（后台累积）：后台会话的 agent 事件（thinking/解说/tool 时间线）
+      // 分派进 per-session run 态快照——快照对象本身即 ToolStreamHost 形态，冻结/
+      // 摊平逻辑以快照为宿主运行，不写 host 响应式字段、不占前台单份定时器。
+      // 无快照（该会话无可恢复的 run 态）维持既有丢弃语义。
+      accumulateBackgroundAgentEvent(agentPayload.sessionKey, agentPayload);
+      return;
+    }
     handleAgentEvent(
       host as unknown as Parameters<typeof handleAgentEvent>[0],
       evt.payload as AgentEventPayload | undefined,
@@ -792,16 +805,19 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
         payload.sessionKey,
       );
     }
-    // 后台会话终态：不进 handleChatEvent（其首行按 sessionKey 过滤），
-    // 但侧边栏排序/标题/未读需要及时刷新——对齐事件驱动刷新，
-    // 不落到 30s ticker 兜底（复用既有 per-session 去重 + in-flight 合并）。
-    // delta 等高频事件仍不处理（被下方 handleChatEvent 的 sessionKey 过滤），
-    // 只补终态刷新，防刷爆。
-    if (
-      payload?.sessionKey &&
-      payload.sessionKey !== host.sessionKey &&
-      (payload.state === "final" || payload.state === "error" || payload.state === "aborted")
-    ) {
+    if (payload?.sessionKey && payload.sessionKey !== host.sessionKey) {
+      // 切换不断流（后台累积）：后台会话事件分派进 per-session run 态快照——
+      // delta 实时累积（全量快照语义，漏帧 reducer 自愈），own-run 终态清条目内
+      // run 态（队列保留）并标记历史脏；无快照维持既有丢弃语义。host 响应式字段
+      // 与单份定时器（rAF/80ms 节流）完全不受影响。
+      dispatchBackgroundChatEvent(payload);
+      const isBackgroundTerminal =
+        payload.state === "final" || payload.state === "error" || payload.state === "aborted";
+      if (!isBackgroundTerminal) {
+        return;
+      }
+      // 后台会话终态：侧边栏排序/标题/未读需要及时刷新——对齐事件驱动刷新，
+      // 不落到 30s ticker 兜底（复用既有 per-session 去重 + in-flight 合并）。
       scheduleTerminalSessionsRefresh(host as unknown as OpenClawApp, payload.sessionKey);
       return;
     }

@@ -286,6 +286,9 @@ export function onPopState(host: SettingsHost) {
   }
   const resolved = tabFromPath(window.location.pathname, host.basePath);
   if (!resolved) {
+    // Tab 收敛后的已删虚拟路径（旧版本历史记录/深链 popState）：把 URL 拉回当前
+    // tab 的规范地址，避免地址栏与应用视图失配直到下一次导航
+    syncUrlWithTab(host, host.tab, true);
     return;
   }
 

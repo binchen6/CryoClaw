@@ -4,6 +4,7 @@
  */
 import { getPath } from "../../controllers/config.ts";
 import { getCachedGatewayModelEntries } from "../../controllers/models.ts";
+import { isRecord } from "../../types/guards.ts";
 import {
   PROVIDERS, CUSTOM_PRESETS, MOONSHOT_SUB_PLATFORMS, SUB_PLATFORM_URLS,
   deriveCustomConfigKey, AUTH_PROXY_API_KEY_SENTINEL,
@@ -64,10 +65,6 @@ export function resolveGroupId(providerKey: string): ProviderGroupId {
     return providerKey;
   }
   return "custom";
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 /** 从模型条目提取思考档位：compat.supportedReasoningEfforts 优先，其次 thinkingLevelMap 键 */

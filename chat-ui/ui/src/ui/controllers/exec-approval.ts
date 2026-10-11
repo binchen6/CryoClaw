@@ -1,3 +1,5 @@
+import { isRecord } from "../types/guards.ts";
+
 export type ExecApprovalRequestPayload = {
   command: string;
   cwd?: string | null;
@@ -31,10 +33,6 @@ export type ExecApprovalResolved = {
   resolvedBy?: string | null;
   ts?: number | null;
 };
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
 
 // 审批 payload 公共外壳校验（exec / plugin 两个解析器共用）：id + request + 时间戳。
 function parseApprovalEnvelope(payload: unknown): {

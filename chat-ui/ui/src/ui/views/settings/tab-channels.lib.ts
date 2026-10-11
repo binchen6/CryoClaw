@@ -10,9 +10,9 @@
 
 /* ── 基础工具 ── */
 
-export function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
+import { isRecord } from "../../types/guards.ts";
+
+export { isRecord };
 
 export function ensureRecord(parent: Record<string, unknown>, key: string): Record<string, unknown> {
   if (!isRecord(parent[key])) {

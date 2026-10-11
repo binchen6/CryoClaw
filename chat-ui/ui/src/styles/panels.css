@@ -169,6 +169,12 @@
   }
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .chat-new-messages {
+    animation: none;
+  }
+}
+
 .chat-new-messages:hover {
   border-color: var(--accent);
   box-shadow: var(--shadow-lg);

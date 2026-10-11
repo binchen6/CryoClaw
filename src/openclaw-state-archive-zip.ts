@@ -2,6 +2,14 @@ import * as fs from "fs";
 import * as path from "path";
 import { Unzip, UnzipInflate } from "fflate";
 import {
+  probeArchiveTool,
+  rustExtractArchive,
+  rustReadManifest,
+  warnArchiveToolFallbackOnce,
+  type ArchiveToolHandle,
+  type RustManifestEntry,
+} from "./archive-backend";
+import {
   asUint8Array,
   createPathRegistry,
   type EntryKind,
@@ -72,6 +80,94 @@ export async function readArchive(
     throw new Error("ZIP 文件不存在");
   }
 
+  // 双 backend：探测到 Rust sidecar 且全流程成功才采纳其结果；任何失败
+  // （spawn/协议/校验拒绝）都落回纯 JS 实现，由 JS 产生权威行为与文案。
+  const tool = await probeArchiveTool();
+  if (tool) {
+    try {
+      return await readArchiveWithRust(tool, zipPath, rootDir, outputDir, captureEntryNames);
+    } catch (err) {
+      // 静默回退：用户可见行为等价于 sidecar 不存在（回退告警见 archive-backend）
+      warnArchiveToolFallbackOnce(err);
+    }
+  }
+  return readArchiveWithJs(zipPath, rootDir, outputDir, captureEntryNames);
+}
+
+// Rust backend：sidecar manifest 只做结构校验，清单拿回 JS 侧过同一套
+// 路径注册表/条目类型/白名单校验（与 JS backend 的 readCentralDirectory
+// 逐条等价），通过后才授权 sidecar 单遍流式解压。
+async function readArchiveWithRust(
+  tool: ArchiveToolHandle,
+  zipPath: string,
+  rootDir: string,
+  outputDir: string | undefined,
+  captureEntryNames: ReadonlySet<string>,
+): Promise<ZipArchiveSummary> {
+  const manifest = await rustReadManifest(tool, zipPath);
+  const registry = createPathRegistry(rootDir);
+  const whitelist = manifest.map((raw) => validateRustManifestEntry(raw, registry));
+
+  for (const raw of manifest) {
+    if (captureEntryNames.has(raw.name) && raw.uncompressedSize > MAX_CAPTURED_ENTRY_BYTES) {
+      throw new Error(`ZIP entry 过大: ${raw.name}`);
+    }
+  }
+  if (outputDir) ensureOutputRootDir(outputDir);
+
+  const { entryNames, capture } = await rustExtractArchive(tool, {
+    zipPath,
+    outputDir: outputDir ?? null,
+    entries: whitelist,
+    capture: [...captureEntryNames],
+  });
+  const entryContents = new Map<string, Buffer>();
+  for (const item of capture) {
+    entryContents.set(item.name, Buffer.from(item.contentBase64, "base64"));
+  }
+  return { entryNames, entryContents };
+}
+
+// 双 backend 测试用：直接复用 JS central directory 解析提取 {name, crc32, size}
+// 清单（对 JS/Rust 产物都是中立裁判）。
+export function readCentralEntriesForTests(
+  zipPath: string,
+  rootDir: string,
+): { name: string; crc32: number; uncompressedSize: number }[] {
+  return [...readCentralDirectory(zipPath, rootDir).entries.values()].map((entry) => ({
+    name: entry.name,
+    crc32: entry.crc32,
+    uncompressedSize: entry.uncompressedSize,
+  }));
+}
+
+// 与 JS backend readCentralDirectory 内联的校验逐条对齐：先路径注册表
+// （空名/反斜杠/绝对/盘符/越界/大小写冲突/文件目录冲突/重复 entry），
+// 再条目类型（目录带数据/ DOS 目录属性冲突 / unix 类型白名单）。
+function validateRustManifestEntry(
+  raw: RustManifestEntry,
+  registry: ReturnType<typeof createPathRegistry>,
+): { name: string; kind: EntryKind; segments: string[] } {
+  const kind: EntryKind = raw.name.endsWith("/") ? "dir" : "file";
+  const portable = validatePortablePath(raw.name, kind, registry);
+  validateZipEntryType({
+    name: raw.name,
+    kind,
+    versionMadeBy: raw.versionMadeBy,
+    externalAttrs: raw.externalAttrs,
+    uncompressedSize: raw.uncompressedSize,
+  });
+  return { name: raw.name, kind, segments: portable.segments };
+}
+
+// 纯 JS backend（fflate）：readArchive 的默认实现与最终回退。导出供双 backend
+// 测试确定性驱动两侧（生产调用一律走 readArchive 的探测分发）。
+export async function readArchiveWithJs(
+  zipPath: string,
+  rootDir: string,
+  outputDir?: string,
+  captureEntryNames: ReadonlySet<string> = new Set(),
+): Promise<ZipArchiveSummary> {
   // Treat the central directory as the manifest, then require every streamed
   // local entry to match it. This keeps validation identical for dry-run and write.
   const centralDirectory = readCentralDirectory(zipPath, rootDir);

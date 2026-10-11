@@ -1,6 +1,29 @@
 import assert from "node:assert/strict";
 import { applySessionKeyTransition, clearSessionDraftSnapshot, seedSessionDraftSnapshot } from "./session-transition.ts";
 import { pendingSessionLabels } from "./session-pending.ts";
+import { dispatchBackgroundChatEvent } from "./run-state-store.ts";
+import { FakeScheduler } from "../test-utils/fake-scheduler.ts";
+
+// 后台 delta 分派走 scheduleChatStreamFlush 的 requestAnimationFrame：装最小桩手动推进。
+class FakeRaf extends FakeScheduler<FrameRequestCallback> {
+  constructor() {
+    super((fn) => fn(performance.now()));
+  }
+  requestAnimationFrame(fn: FrameRequestCallback) {
+    return this.schedule(fn);
+  }
+  cancelAnimationFrame(id: number) {
+    this.cancel(id);
+  }
+}
+
+function installRaf(raf: FakeRaf) {
+  Object.assign(globalThis, {
+    requestAnimationFrame: (fn: FrameRequestCallback) => raf.requestAnimationFrame(fn),
+    cancelAnimationFrame: (id: number) => raf.cancelAnimationFrame(id),
+    window: { setTimeout: () => 0, clearTimeout: () => {} },
+  });
+}
 
 function makeHost() {
   let assistantLoads = 0;
@@ -26,9 +49,24 @@ function makeHost() {
     chatHistoryHydrationFrame: null,
     chatPendingStreamText: "pending",
     chatStreamFrame: null,
+    chatStreamFrozenPrefix: "frozen",
+    chatStreamMismatchCount: 3,
+    chatLastActivityAt: 456,
+    chatThinkingStream: "thinking",
+    chatPendingThinkingText: null,
+    chatNarrationText: "narration",
+    chatPendingNarrationText: null,
+    chatTerminalRun: null,
+    chatAbortPending: true,
     chatVisibleMessageCount: 7,
     chatQueue: [{ id: "queued" }],
     chatAvatarUrl: "https://example.com/avatar.png",
+    planState: { runId: "run-1", steps: [], explanation: null, updatedAt: 1, dismissed: false },
+    toolStreamSyncTimer: null,
+    toolStreamById: new Map(),
+    toolStreamOrder: [] as string[],
+    chatToolMessages: [],
+    evictedLeadingSegments: [],
     basePath: "",
     hello: null,
     sessionsResult: null,
@@ -38,6 +76,10 @@ function makeHost() {
     },
     resetToolStream() {
       toolResets++;
+      this.toolStreamById = new Map();
+      this.toolStreamOrder = [];
+      this.chatToolMessages = [];
+      this.evictedLeadingSegments = [];
     },
     resetChatScroll() {
       scrollResets++;
@@ -209,6 +251,78 @@ async function testSeedSessionDraftSnapshotEmpty() {
   assert.deepEqual(ctx.host.chatAttachments, []);
 }
 
+// 切换不断流（一期）：流式中切走再切回，run 态（气泡/思考流/解说/队列/计划面板/
+// 工具时间线）无损恢复；pending 提交进可见字段。
+async function testRunStateSnapshotSavedAndRestored() {
+  const ctx = makeHost();
+  ctx.host.chatPendingStreamText = null;
+  ctx.host.chatAbortPending = true;
+  ctx.host.toolStreamById.set("tc1", {
+    toolCallId: "tc1", runId: "run-1", name: "exec", startedAt: 1, updatedAt: 1, callMessage: {},
+  });
+  ctx.host.toolStreamOrder.push("tc1");
+
+  applySessionKeyTransition(ctx.host, "session-b");
+  // 切走：host 字段清空（session-b 无快照，走重置路径）
+  assert.equal(ctx.host.chatRunId, null);
+  assert.equal(ctx.host.chatStream, null);
+  assert.equal(ctx.host.chatQueue.length, 0);
+  assert.equal(ctx.host.toolStreamById.size, 0);
+
+  // 切回：run 态原样恢复
+  applySessionKeyTransition(ctx.host, "session-a");
+  assert.equal(ctx.host.chatRunId, "run-1", "切回应恢复活跃 runId（Stop 恢复可用）");
+  assert.equal(ctx.host.chatStream, "stream", "流式气泡文本无损");
+  assert.equal(ctx.host.chatThinkingStream, "thinking", "思考流无损");
+  assert.equal(ctx.host.chatNarrationText, "narration", "中途解说无损");
+  assert.equal(ctx.host.chatStreamFrozenPrefix, "frozen", "冻结前缀无损（后台 delta 切片依赖）");
+  assert.equal(ctx.host.chatStreamMismatchCount, 3, "交叉校验计数不丢");
+  assert.equal(ctx.host.chatStreamStartedAt, 123);
+  assert.equal(ctx.host.chatLastActivityAt, 456);
+  assert.equal(ctx.host.chatAbortPending, true, "中止在途标记随快照往返");
+  assert.deepEqual(ctx.host.chatQueue, [{ id: "queued" }], "排队消息不丢");
+  assert.equal((ctx.host.planState as { runId: string }).runId, "run-1", "计划面板状态恢复");
+  assert.equal(ctx.host.toolStreamById.get("tc1")?.name, "exec", "工具时间线恢复");
+  assert.deepEqual(ctx.host.toolStreamOrder, ["tc1"]);
+}
+
+// 切换不断流（二期）：切走期间后台 delta 实时累积进快照，切回直接续显最新文本
+async function testBackgroundDeltaAccumulatesWhileAway() {
+  const raf = new FakeRaf();
+  installRaf(raf);
+  const ctx = makeHost();
+  ctx.host.chatPendingStreamText = null;
+  applySessionKeyTransition(ctx.host, "session-b");
+
+  dispatchBackgroundChatEvent({
+    runId: "run-1",
+    sessionKey: "session-a",
+    state: "delta",
+    deltaText: " +more",
+    message: { role: "assistant", content: [{ type: "text", text: "stream +more" }] },
+  } as any);
+  raf.runAll();
+
+  applySessionKeyTransition(ctx.host, "session-a");
+  assert.equal(ctx.host.chatRunId, "run-1");
+  assert.equal(ctx.host.chatStream, "stream +more", "后台累积的文本切回应续显");
+}
+
+// 后台 own-run 终态：条目内 run 态清零（切回不复活僵尸流），队列保留续发
+async function testBackgroundTerminalClearsRunStateButKeepsQueue() {
+  const ctx = makeHost();
+  ctx.host.chatPendingStreamText = null;
+  applySessionKeyTransition(ctx.host, "session-b");
+
+  dispatchBackgroundChatEvent({ runId: "run-1", sessionKey: "session-a", state: "final" } as any);
+
+  applySessionKeyTransition(ctx.host, "session-a");
+  assert.equal(ctx.host.chatRunId, null, "已终态的 run 不得复活成僵尸流");
+  assert.equal(ctx.host.chatStream, null);
+  assert.equal(ctx.host.toolStreamById.size, 0, "工具时间线随终态清零");
+  assert.deepEqual(ctx.host.chatQueue, [{ id: "queued" }], "后台终态后排队消息仍保留");
+}
+
 async function main() {
   await testApplySessionKeyTransitionResetsComposerState();
   await testDraftSnapshotSavedAndRestored();
@@ -219,6 +333,9 @@ async function main() {
   await testTransitionResetsMismatchCountAndAbortPending();
   await testSeedSessionDraftSnapshotRestoresOnce();
   await testSeedSessionDraftSnapshotEmpty();
+  await testRunStateSnapshotSavedAndRestored();
+  await testBackgroundDeltaAccumulatesWhileAway();
+  await testBackgroundTerminalClearsRunStateButKeepsQueue();
   console.log("session transition tests passed");
 }
 

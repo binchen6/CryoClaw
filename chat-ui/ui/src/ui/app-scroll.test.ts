@@ -118,3 +118,75 @@ test("正常单调度：then → rAF 各落地一次，滚动一次", async () =
   assert.equal(scrollCalls.length, 1);
   assert.equal(host.chatScrollFrame, null, "rAF 落地后句柄应复位");
 });
+
+// ── 切换会话不断流配套：滚动位置按会话记忆 ──
+
+import {
+  clearSessionScrollPosition,
+  restoreChatScrollPosition,
+  saveChatScrollPosition,
+  takeChatScrollPosition,
+} from "./app-scroll.ts";
+
+test("save/take 滚动位置：一次性读取，未命中为 null", () => {
+  saveChatScrollPosition("scroll-a", 480);
+  assert.equal(takeChatScrollPosition("scroll-a"), 480);
+  assert.equal(takeChatScrollPosition("scroll-a"), null, "take 为一次性语义");
+  assert.equal(takeChatScrollPosition("never-saved"), null);
+});
+
+test("clearSessionScrollPosition：删除会话时清理，防同名 key 复用", () => {
+  saveChatScrollPosition("scroll-clear", 100);
+  clearSessionScrollPosition("scroll-clear");
+  assert.equal(takeChatScrollPosition("scroll-clear"), null);
+});
+
+test("LRU 上限 20：最旧滚动位置被逐出", () => {
+  for (let i = 1; i <= 21; i++) {
+    saveChatScrollPosition(`scroll-lru-${i}`, i);
+  }
+  assert.equal(takeChatScrollPosition("scroll-lru-1"), null, "超限后最旧被逐出");
+  assert.equal(takeChatScrollPosition("scroll-lru-21"), 21);
+});
+
+test("restoreChatScrollPosition：还原 scrollTop、置 chatUserNearBottom=false，代际过期即跳过", async () => {
+  const container = { scrollTop: 0 };
+  const prevDocument = (globalThis as Record<string, unknown>).document;
+  Object.assign(globalThis, {
+    document: {
+      querySelector: (selector: string) => (selector === ".chat-thread" ? container : null),
+    },
+  });
+  try {
+    const host = {
+      updateComplete: Promise.resolve(),
+      chatScrollGeneration: 0,
+      chatUserNearBottom: true,
+    };
+    saveChatScrollPosition("scroll-restore", 720);
+    restoreChatScrollPosition(host, "scroll-restore");
+    assert.equal(host.chatUserNearBottom, false, "还原后不得强拉回底");
+    await Promise.resolve();
+    assert.equal(container.scrollTop, 720, "scrollTop 应写回记忆位置");
+    assert.equal(takeChatScrollPosition("scroll-restore"), null, "位置记忆一次性消费");
+
+    // 代际过期：resetChatScroll（代际自增）后还原闭包不得回写
+    const container2 = { scrollTop: 0 };
+    const doc2 = {
+      querySelector: (selector: string) => (selector === ".chat-thread" ? container2 : null),
+    };
+    Object.assign(globalThis, { document: doc2 });
+    const host2 = {
+      updateComplete: Promise.resolve(),
+      chatScrollGeneration: 5,
+      chatUserNearBottom: true,
+    };
+    saveChatScrollPosition("scroll-stale", 300);
+    restoreChatScrollPosition(host2, "scroll-stale");
+    host2.chatScrollGeneration += 1; // 模拟其后又有更新的滚动调度
+    await Promise.resolve();
+    assert.equal(container2.scrollTop, 0, "代际过期后不得回写滚动位置");
+  } finally {
+    (globalThis as Record<string, unknown>).document = prevDocument;
+  }
+});

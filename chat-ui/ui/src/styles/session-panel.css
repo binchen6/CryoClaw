@@ -6,8 +6,8 @@
 
 /* 宿主承载宽度：内联 width 仅在用户自定义（sidebarWidth > 0）时存在；
    未自定义（0 哨兵）时走 --panel-width，窄窗媒体查询收窄照常生效。
-   挂载入场：width 0 → var(--panel-width) 展开 + 淡入（--panel-width 与用户
-   自定义宽度同源同步，动画终点即最终宽度，不会回跳）。 */
+   挂载入场只做 transform+opacity 滑入（不动 width，布局零参与）——
+   自定义内联宽度在动画全程直接生效，终点无回跳。 */
 oc-session-panel {
   display: block;
   width: var(--panel-width);
@@ -18,12 +18,12 @@ oc-session-panel {
 
 @keyframes oc-panel-enter {
   from {
-    width: 0;
+    transform: translateX(calc(var(--spacer-16) * -1));
     opacity: 0;
   }
 
   to {
-    width: var(--panel-width);
+    transform: translateX(0);
     opacity: 1;
   }
 }
@@ -283,7 +283,7 @@ oc-session-panel {
 }
 
 .oc-panel__session-action.is-loading svg {
-  animation: oc-spin 0.8s linear infinite;
+  animation: oc-spin var(--duration-loop) linear infinite;
 }
 .oc-panel__session-menu {
   position: absolute;

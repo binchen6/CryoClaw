@@ -9,6 +9,7 @@
  *   - sessions.usage {startDate,endDate,limit,groupBy} → sessions[] + aggregates
  *   - usage.status  {} → 服务商配额窗口（60s TTL，可无返回）
  */
+import { isRecord } from "../../types/guards.ts";
 
 export interface UsageTokenTotals {
   input: number;
@@ -108,10 +109,6 @@ function toIsoDate(d: Date): string {
 }
 
 // ── 载荷映射（宽容解析：字段缺失/类型异常降级为 0/null）──
-
-export function isRecord(v: unknown): v is Record<string, unknown> {
-  return !!v && typeof v === "object" && !Array.isArray(v);
-}
 
 function asString(v: unknown): string | null {
   return typeof v === "string" && v.length > 0 ? v : null;

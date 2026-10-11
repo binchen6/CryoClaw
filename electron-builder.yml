@@ -54,6 +54,10 @@ mac:
   extraResources:
     - from: "resources/targets/darwin-${arch}/officecli"
       to: "resources/officecli"
+    # 归档工具 sidecar（Rust）：缺失时打包链只 warn（prepareArchiveTool 保证目录存在），
+    # 运行时探测不到二进制自动回退纯 JS 归档实现
+    - from: "resources/targets/darwin-${arch}/archive-tool"
+      to: "resources/archive-tool"
 
 # 自动更新：GitHub Releases（public 仓库，客户端检查更新免 token；
 # 发布时 electron-builder --publish 走 GH_TOKEN，仅放本地 .env.build，不入库）
@@ -75,6 +79,10 @@ win:
   extraResources:
     - from: "resources/targets/win32-${arch}/officecli"
       to: "resources/officecli"
+    # 归档工具 sidecar（Rust）：缺失时打包链只 warn（prepareArchiveTool 保证目录存在），
+    # 运行时探测不到二进制自动回退纯 JS 归档实现
+    - from: "resources/targets/win32-${arch}/archive-tool"
+      to: "resources/archive-tool"
 
 nsis:
   oneClick: false

@@ -155,22 +155,32 @@
   pointer-events: none;
 }
 
+/* 底色实底 + ::after 渐变条扫光（合成层 translateX，明暗 token 不变） */
 .ts-stats__skeleton-chip {
   width: 84px;
   height: 28px;
   border-radius: var(--radius-pill);
+  position: relative;
+  overflow: hidden;
+  background: var(--bg-muted);
+}
+
+.ts-stats__skeleton-chip::after {
+  content: "";
+  position: absolute;
+  inset: 0;
   background: linear-gradient(
     90deg,
-    var(--bg-muted) 25%,
+    transparent 25%,
     var(--bg-hover) 50%,
-    var(--bg-muted) 75%
+    transparent 75%
   );
-  background-size: 200% 100%;
-  animation: shimmer 1.4s linear infinite;
+  will-change: transform;
+  animation: shimmer var(--duration-loop) linear infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .ts-stats__skeleton-chip {
+  .ts-stats__skeleton-chip::after {
     animation: none;
   }
 }
@@ -363,7 +373,13 @@
 
 .ts-dot--running {
   background: var(--accent);
-  animation: ts-dot-pulse 1.6s var(--ease-in-out) infinite;
+  animation: ts-dot-pulse var(--duration-loop) var(--ease-in-out) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ts-dot--running {
+    animation: none;
+  }
 }
 
 .ts-dot--queued {

@@ -49,7 +49,7 @@
 
 .plan-panel__dot--active {
   background: var(--info);
-  animation: plan-pulse 1.2s ease-in-out infinite;
+  animation: plan-pulse var(--duration-loop) ease-in-out infinite;
 }
 
 .plan-panel__dot--done {
@@ -183,7 +183,7 @@
 
 .plan-panel__step--in_progress .plan-panel__step-icon {
   color: var(--info);
-  animation: plan-pulse 1.2s ease-in-out infinite;
+  animation: plan-pulse var(--duration-loop) ease-in-out infinite;
 }
 
 .plan-panel__step--in_progress .plan-panel__step-text {

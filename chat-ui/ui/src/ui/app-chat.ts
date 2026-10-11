@@ -5,6 +5,7 @@ import { parseAgentSessionKey } from "../../../src/sessions/session-key-utils.js
 import { scheduleChatScroll } from "./app-scroll.ts";
 import { setLastActiveSessionKey } from "./app-settings.ts";
 import { resetToolStream } from "./app-tool-stream.ts";
+import { requeueChatMessageForSession } from "./run-state-store.ts";
 import { abortChatRun, loadChatHistory, sendChatMessage } from "./controllers/chat.ts";
 import { loadSessions, patchSession } from "./controllers/sessions.ts";
 import { normalizeBasePath } from "./navigation.ts";
@@ -275,11 +276,21 @@ async function flushChatQueue(host: ChatHost) {
   if (!next) {
     return;
   }
+  // 发送发起时的会话快照：await 窗口内可能切走会话，失败回队必须归属原会话——
+  // 直接写 host.chatQueue 会把 A 的排队消息插进当前会话（B）的队列，B 下次冲刷时
+  // 错投；且该条目已从 A 弹出，A 侧永久丢失。
+  const flushSessionKey = host.sessionKey;
   host.chatQueue = rest;
   const ok = await sendChatMessageNow(host, next.message ?? next.text, {
     attachments: next.attachments,
   });
   if (!ok) {
+    if (host.sessionKey !== flushSessionKey) {
+      // 已切走：残留乐观气泡/错误卡在被抛弃的原会话视图里（当前消息流是新会话的，
+      // 清理反而可能误删同文条目），条目归还原会话快照，切回时继续自动冲刷
+      requeueChatMessageForSession(flushSessionKey, next);
+      return;
+    }
     // 与 sendQueuedMessageNow 失败回退同一契约：空闲路径失败已向消息流注入
     // 乐观气泡+错误卡，回队前先清残留，避免与队列条目双份呈现。
     const app = host as unknown as OpenClawApp;
@@ -352,12 +363,18 @@ export async function sendQueuedMessageNow(host: ChatHost, id: string) {
     return false;
   }
   const item = host.chatQueue[index];
+  // 发送发起时的会话快照：await 窗口内可能切走，失败回队必须归属原会话（同 flushChatQueue）
+  const ownerSessionKey = host.sessionKey;
   host.chatQueue = host.chatQueue.filter((entry) => entry.id !== id);
   const ok = await sendChatMessageNow(host, item.message ?? (item.text as string) ?? "", {
     attachments: item.attachments,
     preserveRunState: isChatBusy(host),
   });
   if (!ok) {
+    if (host.sessionKey !== ownerSessionKey) {
+      requeueChatMessageForSession(ownerSessionKey, item);
+      return ok;
+    }
     // 空闲路径（非 preserveRunState）的失败已向消息流注入乐观气泡+错误卡：
     // 条目放回队列前先清掉这些残留，避免与队列条目双份呈现
     // （busy 路径 preserveRunState 本就不注入，清理无匹配时为空操作）。

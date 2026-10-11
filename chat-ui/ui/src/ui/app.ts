@@ -52,6 +52,7 @@ import {
   onPopState as onPopStateInternal,
 } from "./app-settings.ts";
 import {
+  invalidateDuplicatedNarrationSegments as invalidateDuplicatedNarrationSegmentsInternal,
   invalidateFrozenLeadingSegments as invalidateFrozenLeadingSegmentsInternal,
   resetToolStream as resetToolStreamInternal,
   type ToolStreamEntry,
@@ -898,6 +899,16 @@ export class OpenClawApp extends LitElement {
   onReplaceBeyondFrozenPrefix() {
     invalidateFrozenLeadingSegmentsInternal(
       this as unknown as Parameters<typeof invalidateFrozenLeadingSegmentsInternal>[0],
+    );
+  }
+
+  // R4 补强：首个非空正文 delta 上屏（携带正文累计全量）→ 作废 toolStream 里
+  // 与其头部同文/同前缀的冻结 narrationSegment（answer_candidate 先 narration 后
+  // 正文回放的双份场景），leadingSegment 不受影响。
+  onBodyTextAdoptsNarration(bodyText: string) {
+    invalidateDuplicatedNarrationSegmentsInternal(
+      this as unknown as Parameters<typeof invalidateDuplicatedNarrationSegmentsInternal>[0],
+      bodyText,
     );
   }
 

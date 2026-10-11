@@ -329,7 +329,7 @@
 .chat-compose__thinking-popover--open {
   display: grid;
   gap: var(--spacer-2);
-  animation: chat-popover-in var(--duration-fast) var(--ease-out);
+  animation: chat-popover-in var(--duration-fast) var(--ease-spring);
 }
 
 @keyframes chat-popover-in {
@@ -418,7 +418,7 @@
 
 .chat-compose__branch-popover--open {
   display: block;
-  animation: chat-popover-in var(--duration-fast) var(--ease-out);
+  animation: chat-popover-in var(--duration-fast) var(--ease-spring);
 }
 
 .chat-compose__branch-title {

@@ -111,18 +111,6 @@ select {
   }
 }
 
-@keyframes scale-in {
-  0% {
-    opacity: 0;
-    transform: scale(.95)
-  }
-
-  to {
-    opacity: 1;
-    transform: scale(1)
-  }
-}
-
 @keyframes dashboard-enter {
   0% {
     opacity: 0;
@@ -135,13 +123,15 @@ select {
   }
 }
 
+/* 骨架屏扫光：translateX 合成层动画（消费方一律挂 ::after 渐变条，
+   不再动画 background-position，避免每帧重绘） */
 @keyframes shimmer {
   0% {
-    background-position: -200% 0
+    transform: translateX(-100%)
   }
 
   to {
-    background-position: 200% 0
+    transform: translateX(100%)
   }
 }
 
@@ -157,40 +147,28 @@ select {
   }
 }
 
-@keyframes glow-pulse {
-
-  0%,
-  to {
-    box-shadow: 0 0 0 transparent
-  }
-
-  50% {
-    box-shadow: 0 0 20px var(--accent-glow)
-  }
-}
-
 .stagger-1 {
   animation-delay: 0ms
 }
 
 .stagger-2 {
-  animation-delay: 50ms
+  animation-delay: var(--delay-step)
 }
 
 .stagger-3 {
-  animation-delay: .1s
+  animation-delay: calc(var(--delay-step) * 2)
 }
 
 .stagger-4 {
-  animation-delay: .15s
+  animation-delay: calc(var(--delay-step) * 3)
 }
 
 .stagger-5 {
-  animation-delay: .2s
+  animation-delay: calc(var(--delay-step) * 4)
 }
 
 .stagger-6 {
-  animation-delay: .25s
+  animation-delay: calc(var(--delay-step) * 5)
 }
 
 :focus-visible {
