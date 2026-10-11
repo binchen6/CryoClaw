@@ -1,17 +1,20 @@
 {
   "version": 2,
-  "updatedAt": "2026-10-04T15:54:36.683Z",
+  "updatedAt": "2026-10-11T04:35:34.683Z",
   "note": "WebBridge binary sha256 pins. App fetches this file at repair time (jsDelivr then raw.githubusercontent) and caches it locally for 24h. When upstream rebuilds the `latest` artifacts (same byte length, new Go build ID — observed twice on 2026-09-10), update this file instead of shipping a new app release. Values must be 64-hex sha256 of `https://kimi-web-img.moonshot.cn/webbridge/latest/releases/<name>`.",
   "pins": {
     "kimi-webbridge-windows-amd64.exe": [
+      "0e5645983531e70d3b2e35d0b872fe9115d91cac00386011dafa832110b4b35b",
       "8e9dfc5bb83ca696acd3e873e8cba45933d3d5b379fc1aed88641370d0eeb338",
       "eec1976d5da3338a94ed9981796f7284570b8100cc62706a6de89f3d25a433c6"
     ],
     "kimi-webbridge-darwin-arm64": [
+      "f5b229ea36a3a7a340a292abefabaa01d46e127fe04c66e8e2b0f85f107316bb",
       "f36dfeba6d5925318a38a4cbe688fa83c4b2bb899c8b05be4fac0848980901f0",
       "04532d772d3c7789f6ab61e1e055c56bf73724757596ff0ab64ea29abef0a261"
     ],
     "kimi-webbridge-darwin-amd64": [
+      "04748652cb8008858a499fc8f8ee84bcc98460b5934285b57e9704b111268f6e",
       "ad9aba7d4a2a5c45f60d72fcb00855220610c884f8b832ecb8869b0c1898d4ba",
       "931769e94f5b84cca8f130e94e7151bcdeee9e70bcddaf1f513ac194c3b8cc0c"
     ]
