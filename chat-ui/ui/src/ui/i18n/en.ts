@@ -1216,6 +1216,7 @@ export const enDict: Record<string, string> = {
   "chat.toolExitCode": "Exit code {code}",
   "chat.toolArgs": "Input",
   "chat.toolOpenFull": "Open full output",
+  "chat.toolOutputLines": "{n} lines",
   // Friendly tool-type labels (tool-display.ts::resolveToolDisplay; includes verb
   // segments of unmapped plugin tools)
   "tool.label.read": "Read file",

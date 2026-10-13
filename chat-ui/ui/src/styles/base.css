@@ -48,7 +48,7 @@ html.theme-transition::view-transition-old(theme) {
 html.theme-transition::view-transition-new(theme) {
   mix-blend-mode: normal;
   z-index: 2;
-  animation: theme-circle-transition .4s var(--ease-out) forwards
+  animation: theme-circle-transition var(--duration-slow) var(--ease-out) forwards
 }
 
 @media(prefers-reduced-motion:reduce) {
@@ -65,6 +65,13 @@ html.theme-transition::view-transition-new(theme) {
     animation-duration: .01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: .01ms !important
+  }
+
+  /* 按压回缩在瞬时收敛下会变成瞬跳——reduced-motion 下整体移除按压位移 */
+  .btn:active:not(:disabled),
+  .icon-btn:active:not(:disabled),
+  .chat-compose__send-btn:active:not(:disabled) {
+    transform: none !important
   }
 }
 

@@ -13,7 +13,7 @@ oc-session-panel {
   width: var(--panel-width);
   flex-shrink: 0;
   height: 100vh;
-  animation: oc-panel-enter var(--duration-normal) var(--ease-out);
+  animation: oc-panel-enter var(--duration-normal) var(--ease-standard);
 }
 
 @keyframes oc-panel-enter {
@@ -258,7 +258,8 @@ oc-session-panel {
   cursor: pointer;
   opacity: 0;
   transition: opacity var(--duration-fast) var(--ease-standard),
-    background var(--duration-fast) var(--ease-standard);
+    background var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
 }
 
 .oc-panel__session-item:hover .oc-panel__session-action,

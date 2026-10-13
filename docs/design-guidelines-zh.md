@@ -353,7 +353,17 @@ hairline + radius-12 + `--shadow-lg`，`--text-sm` medium，z-index 10001，
 - 动效时长约定：hover/press 用 `--duration-fast`，面板开合/入场用
   `--duration-normal`，统一走 `--ease-standard`（规范推荐值，存量
   `--ease-out` 不再新增）；pulse/spin/shimmer 等无限循环动画一律
-  `--duration-loop`；popover/dialog 的 scale 入场用 `--ease-spring`。
+  `--duration-loop`；popover/dialog 的 scale 入场用 `--ease-spring`
+  （popover 入场时长沿用 `--duration-fast`：目标小、距离短，fast 档已够，
+  属有意豁免）。
+- **一镜到底（2026.10 动效定型原则）**：元素不瞬现瞬消——入场沿锚定边缘
+  滑入（底部 toast 自下、顶部 toast 自上、抽屉自右），退场沿来路返回
+  （退场需「leaving class + 延迟移除 DOM」两段式，参照 app-toast.ts 的
+  TOAST_EXIT_MS 模式）；状态翻转（spinner→✓）用 scale 轻弹衔接
+  （`oc-status-pop`）而非硬切；流式光标用平滑呼吸（ocStreamCaret
+  ease-in-out），不用硬闪烁。新增按压反馈（transform scale）必须在
+  base.css 的 reduced-motion 块显式登记 `transform: none`（全局 0.01ms
+  收敛会把回缩变成瞬跳）。
 - 拖拽区分工：壳层大面积 `-webkit-app-region: drag` 保证窗口可拖动，所有可交互
   元素必须配 `no-drag`，保证键盘/鼠标可达。
 

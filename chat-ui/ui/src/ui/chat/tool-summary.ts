@@ -39,9 +39,11 @@ export function summarizeToolCards(toolCards: readonly ToolCard[]): ToolSummary 
     const name = names[0];
     const callWithArgs = calls.find((c) => c.name === name && c.args != null) ?? calls[0];
     const display = resolveToolDisplay({ name, args: callWithArgs?.args });
+    const baseLabel = display.source ? `${display.label} · ${display.source}` : display.label;
     return {
       totalTools,
-      label: display.source ? `${display.label} · ${display.source}` : display.label,
+      // 同类多次调用（连读 5 个文件等）：折叠行是唯一的计数出口，标 ×N
+      label: totalTools > 1 ? `${baseLabel} ×${totalTools}` : baseLabel,
       detail: formatToolDetail(display),
       isSingle: true,
       hasError,
@@ -59,6 +61,26 @@ export function summarizeToolCards(toolCards: readonly ToolCard[]): ToolSummary 
       ? displayNames.join(", ")
       : `${displayNames.slice(0, 2).join(", ")} +${displayNames.length - 2} more`;
   return { totalTools, label, isSingle: false, hasError, status };
+}
+
+/** 连续同名工具卡的时间序子分组（折叠区收纳用）。 */
+export type ToolCardRun = { name: string; cards: ToolCard[] };
+
+/**
+ * 把工具卡按「连续同名」并段：保持时间序（不按名全局聚合——工具交错时
+ * 时序即因果，不能重排）。渲染层对 ≥3 张的同名片段收成子折叠。
+ */
+export function groupConsecutiveToolCards(cards: readonly ToolCard[]): ToolCardRun[] {
+  const runs: ToolCardRun[] = [];
+  for (const card of cards) {
+    const last = runs[runs.length - 1];
+    if (last && last.name === card.name) {
+      last.cards.push(card);
+    } else {
+      runs.push({ name: card.name, cards: [card] });
+    }
+  }
+  return runs;
 }
 
 /**

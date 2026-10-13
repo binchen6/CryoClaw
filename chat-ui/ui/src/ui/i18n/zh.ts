@@ -1281,6 +1281,7 @@ export const zhDict: Record<string, string> = {
   "chat.toolExitCode": "退出码 {code}",
   "chat.toolArgs": "输入参数",
   "chat.toolOpenFull": "查看完整输出",
+  "chat.toolOutputLines": "共 {n} 行",
   // 工具类型友好名（tool-display.ts::resolveToolDisplay；含未映射插件的动词段）
   "tool.label.read": "读取文件",
   "tool.label.write": "写入文件",

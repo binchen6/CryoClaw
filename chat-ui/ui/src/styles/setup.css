@@ -427,6 +427,7 @@
   vertical-align: middle;
   color: var(--text-secondary);
   cursor: help;
+  transition: color var(--duration-fast) var(--ease-out);
 }
 .oc-toggle-label .oc-info-icon:hover {
   color: var(--text);

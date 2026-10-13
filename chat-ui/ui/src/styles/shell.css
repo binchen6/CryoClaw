@@ -37,21 +37,9 @@
 
 /* 顶层视图切换入场：keyed(cryoclawView) 保证切视图时重建 DOM（多个视图的根都是
    div，Lit 原位复用不触发动画），动画只在新节点插入时跑一次；同视图内重渲染
-   原位更新，不会反复播放。 */
+   原位更新，不会反复播放。keyframes 复用 base.css 的全局 rise（8px 上浮淡入）。 */
 .cryoclaw-content > * {
-  animation: oc-view-enter var(--duration-normal) var(--ease-out);
-}
-
-@keyframes oc-view-enter {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  animation: rise var(--duration-normal) var(--ease-standard);
 }
 
 .cryoclaw-content > .card.chat {
@@ -520,6 +508,7 @@ oc-rail {
   border-radius: var(--radius-full);
   background: var(--border);
   transition:
+    left var(--duration-fast) var(--ease-standard),
     width var(--duration-fast) var(--ease-standard),
     background-color var(--duration-fast) var(--ease-standard),
     box-shadow var(--duration-fast) var(--ease-standard);
@@ -604,6 +593,8 @@ oc-rail {
   background: transparent;
   color: var(--text-secondary);
   cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
 }
 
 .kernel-auto-banner__close:hover {

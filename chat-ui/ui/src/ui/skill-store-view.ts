@@ -28,7 +28,6 @@ export type SkillStoreState = {
   sort: "updated" | "trending" | "downloads";
   nextCursor: string | null;
   installingSlugs: Set<string>;
-  toastMessage: string | null;
 };
 
 export type SkillStoreCallbacks = {
@@ -153,7 +152,10 @@ export function renderSkillStoreView(
       : nothing}
 
     ${sorted.length === 0 && !state.loading && !state.error
-      ? html`<div class="skill-store__empty">${t("skillStore.empty")}</div>`
+      ? html`<div class="empty-state">
+          <span class="empty-state__icon">${icons.puzzle}</span>
+          <div class="empty-state__title">${t("skillStore.empty")}</div>
+        </div>`
       : nothing}
 
     <div class="skill-store__list">
@@ -170,10 +172,6 @@ export function renderSkillStoreView(
 
     ${state.loading
       ? html`<div class="skill-store__loading">${t("chat.loading")}</div>`
-      : nothing}
-
-    ${state.toastMessage
-      ? html`<div class="skill-store__toast">${state.toastMessage}</div>`
       : nothing}
   `;
 }

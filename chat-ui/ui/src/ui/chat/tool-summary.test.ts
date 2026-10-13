@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { setLocale } from "../i18n/index.ts";
 setLocale("en");
 
-import { resolveActiveToolName, summarizeToolCards } from "./tool-summary.ts";
+import { groupConsecutiveToolCards, resolveActiveToolName, summarizeToolCards } from "./tool-summary.ts";
 import type { ToolCard } from "../types/chat-types.ts";
 
 function card(kind: "call" | "result", name: string, args?: unknown): ToolCard {
@@ -153,4 +153,48 @@ test("tool summary（R83 合并卡）：call 块带 result 载荷 → completed"
   assert.equal(s.status, "completed");
   assert.equal(s.hasError, false);
   assert.equal(s.totalTools, 1);
+});
+
+// ── 同类工具合并（2026.10 收纳优化） ──
+
+test("tool summary：同名多次调用标 ×N（单工具多调用的唯一计数出口）", () => {
+  const s = summarizeToolCards([
+    card("call", "read", { path: "a.ts" }),
+    card("call", "read", { path: "b.ts" }),
+    card("call", "read", { path: "c.ts" }),
+  ]);
+  assert.equal(s.isSingle, true);
+  assert.equal(s.totalTools, 3);
+  assert.equal(s.label, "Read file ×3");
+});
+
+test("tool summary：单次调用不标 ×N", () => {
+  const s = summarizeToolCards([card("call", "read", { path: "a.ts" })]);
+  assert.equal(s.label, "Read file");
+});
+
+test("groupConsecutiveToolCards：连续同名并段，交错不切前序", () => {
+  const runs = groupConsecutiveToolCards([
+    card("call", "read", { path: "a" }),
+    card("call", "read", { path: "b" }),
+    card("call", "exec", { command: "ls" }),
+    card("call", "read", { path: "c" }),
+  ]);
+  assert.equal(runs.length, 3);
+  assert.deepEqual(runs.map((r) => [r.name, r.cards.length]), [
+    ["read", 2],
+    ["exec", 1],
+    ["read", 1],
+  ]);
+});
+
+test("groupConsecutiveToolCards：全同名 → 单段；空组 → 空", () => {
+  const same = groupConsecutiveToolCards([
+    card("call", "exec"),
+    card("call", "exec"),
+    card("call", "exec"),
+  ]);
+  assert.equal(same.length, 1);
+  assert.equal(same[0].cards.length, 3);
+  assert.deepEqual(groupConsecutiveToolCards([]), []);
 });

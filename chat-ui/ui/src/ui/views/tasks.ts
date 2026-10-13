@@ -398,7 +398,10 @@ function renderTasksRuns(props: TasksProps) {
 
       ${visible.length === 0
         ? hasListFilters || props.statusFilter !== "all" || runsStatusGroup !== "all"
-          ? html`<p class="ts-empty panel__empty">${hasListFilters ? t("tasks.noMatch") : t("tasks.emptyFiltered")}</p>`
+          ? html`<div class="empty-state">
+              <span class="empty-state__icon">${icons.search}</span>
+              <div class="empty-state__title">${hasListFilters ? t("tasks.noMatch") : t("tasks.emptyFiltered")}</div>
+            </div>`
           : html`<div class="empty-state">
               <span class="empty-state__icon">${icons.activity}</span>
               <div class="empty-state__title">${t("tasks.noRuns")}</div>

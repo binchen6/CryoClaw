@@ -34,7 +34,8 @@
   transition: background var(--duration-fast) var(--ease-out),
     border-color var(--duration-fast) var(--ease-out),
     color var(--duration-fast) var(--ease-out),
-    opacity var(--duration-fast) var(--ease-out);
+    opacity var(--duration-fast) var(--ease-out),
+    transform var(--duration-fast) var(--ease-out);
 }
 
 .btn:hover:not(:disabled) {
@@ -42,8 +43,11 @@
   border-color: var(--border-strong);
 }
 
+/* 按压反馈：轻微回缩确认点击（reduced-motion 由 base.css 全局块收敛为瞬时，
+   另在 base.css 显式登记 transform:none 防瞬跳） */
 .btn:active:not(:disabled) {
   background: var(--bg-hover);
+  transform: scale(0.97);
 }
 
 .btn:focus-visible {
@@ -154,6 +158,8 @@
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
 }
 
 .cc-dialog__close:hover {
@@ -257,12 +263,18 @@
   -webkit-app-region: no-drag;
   transition: background var(--duration-fast) var(--ease-out),
     color var(--duration-fast) var(--ease-out),
-    opacity var(--duration-fast) var(--ease-out);
+    opacity var(--duration-fast) var(--ease-out),
+    transform var(--duration-fast) var(--ease-out);
 }
 
 .icon-btn:hover:not(:disabled) {
   background: var(--bg-hover);
   color: var(--text);
+}
+
+/* 按压反馈：图标钮目标小，回缩幅度略大于 .btn（0.92 vs 0.97） */
+.icon-btn:active:not(:disabled) {
+  transform: scale(0.92);
 }
 
 .icon-btn:focus-visible {

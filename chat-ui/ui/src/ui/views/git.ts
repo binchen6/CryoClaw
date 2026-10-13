@@ -442,7 +442,10 @@ export function renderGitPanel(props: GitPanelProps, opts?: { showRepoSelect?: b
       ${props.loading && !props.status
         ? html`<div class="gitp-loading">${icons.loader} ${t("git.loading")}</div>`
         : props.repoState === "ok" && groups && !hasChanges
-          ? html`<p class="gitp-empty panel__empty">${t("git.clean")}</p>`
+          ? html`<div class="empty-state">
+              <span class="empty-state__icon">${icons.check}</span>
+              <div class="empty-state__title">${t("git.clean")}</div>
+            </div>`
           : nothing}
 
       ${props.repoState === "ok" && props.statusTruncated

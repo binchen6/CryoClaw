@@ -93,7 +93,7 @@
   display: flex;
   flex-direction: column;
   overflow-y: auto;
-  padding: var(--spacer-20) var(--spacer-32) var(--spacer-48);
+  padding: var(--spacer-20) var(--page-gutter) var(--spacer-48);
   position: relative;
 }
 .oc-settings-content > * {
@@ -127,9 +127,9 @@
   flex: 1 0 auto;
 }
 
-/* 视图标题（页内 h2）：20px semibold */
+/* 视图标题（页内 h2）：18px semibold，与 panel__title 同档（跨视图标题层级统一） */
 .oc-settings__section-title {
-  font-size: var(--heading-lg);
+  font-size: var(--heading-md);
   font-weight: var(--weight-semibold);
   letter-spacing: var(--tracking-tight);
   line-height: var(--leading-title);
@@ -311,10 +311,11 @@
   color: var(--text-strong);
 }
 
-/* 卡片正文（about 页版本号/更新信息等 meta 行） */
+/* 卡片正文（about 页版本号/更新信息等 meta 行）：等宽 11px 元信息约定 */
 .oc-settings__meta {
-  font-size: var(--heading-xs);
-  color: var(--text-secondary);
+  font-family: var(--font-meta);
+  font-size: var(--font-size-meta);
+  color: var(--text-muted);
   line-height: var(--leading-body);
 }
 
@@ -430,6 +431,7 @@
   padding: var(--spacer-24);
   overflow-y: auto;
   z-index: 1000;
+  animation: oc-fade-in var(--duration-normal) var(--ease-standard);
 }
 .oc-modal-dialog {
   background: var(--popover);
@@ -443,6 +445,8 @@
   display: flex;
   flex-direction: column;
   gap: var(--spacer-12);
+  /* 弹窗入场与 cc-dialog 同一语言（scale 入场走 ease-spring 规范） */
+  animation: cc-dialog-in var(--duration-normal) var(--ease-spring);
 }
 
 /* ============================================
@@ -899,7 +903,7 @@
 .oc-provider-group__body {
   display: grid;
   grid-template-rows: 1fr;
-  transition: grid-template-rows var(--duration-normal) var(--ease-out);
+  transition: grid-template-rows var(--duration-normal) var(--ease-standard);
 }
 .oc-provider-group__body-inner {
   min-height: 0;
@@ -921,7 +925,7 @@
 }
 .oc-provider-group__chevron {
   color: var(--text-muted);
-  transition: transform var(--duration-normal) var(--ease-out);
+  transition: transform var(--duration-normal) var(--ease-standard);
   flex-shrink: 0;
 }
 .oc-provider-group__chevron.is-open { transform: rotate(0deg); }
@@ -1220,6 +1224,7 @@
   inset: 0;
   background: rgb(0 0 0 / 0.35);
   z-index: 60;
+  animation: oc-fade-in var(--duration-normal) var(--ease-standard);
 }
 .oc-provider-edit-drawer {
   position: fixed;
@@ -1236,6 +1241,24 @@
   border-left: 1px solid var(--border);
   box-shadow: -8px 0 24px rgb(0 0 0 / 0.18);
   overflow-y: auto;
+  /* 抽屉入场：从右缘外滑入（面板开合统一 ease-standard/normal） */
+  animation: oc-drawer-enter var(--duration-normal) var(--ease-standard);
+}
+
+@keyframes oc-drawer-enter {
+  from {
+    opacity: 0.6;
+    transform: translateX(var(--spacer-32));
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes oc-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 .oc-provider-edit-drawer:focus {
   outline: none;
@@ -2527,6 +2550,8 @@
   background: var(--bg-input);
   color: var(--text-secondary);
   cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
 }
 .oc-memory-chip:hover { background: var(--bg-hover); color: var(--text); }
 .oc-memory-recall-list {
@@ -2548,6 +2573,7 @@
   background: var(--bg-input);
   color: var(--text-secondary);
   cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-out);
 }
 .oc-memory-recall-item__head:hover { background: var(--bg-hover); }
 .oc-memory-recall-item__score {
@@ -2625,6 +2651,7 @@
   background: transparent;
   color: var(--text);
   cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-out);
 }
 .oc-memory-item__head:hover { background: var(--bg-hover); }
 .oc-memory-item__kind {

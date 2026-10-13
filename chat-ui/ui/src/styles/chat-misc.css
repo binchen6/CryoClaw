@@ -31,7 +31,11 @@
    同一模式应用于思考折叠与工具折叠（chat-tools-collapse / chat-tool-msg-collapse
    的选择器与基础样式在 chat.css，本文件层叠顺序在其后）。 */
 .chat-tool-msg-collapse,
-.chat-tools-collapse {
+.chat-tools-collapse,
+.chat-tool-card__args,
+.chat-file-changes,
+.chat-json-collapse,
+.chat-tool-subgroup {
   /* 与 .chat-thinking-collapse 相同：允许 height 在 0 与 auto 关键字间插值，
      否则下方 ::details-content 的过渡对工具折叠不生效（仍是瞬开瞬合） */
   interpolate-size: allow-keywords;
@@ -39,15 +43,23 @@
 
 .chat-thinking-collapse::details-content,
 .chat-tool-msg-collapse::details-content,
-.chat-tools-collapse::details-content {
+.chat-tools-collapse::details-content,
+.chat-tool-card__args::details-content,
+.chat-file-changes::details-content,
+.chat-json-collapse::details-content,
+.chat-tool-subgroup::details-content {
   height: 0;
   overflow: clip;
-  transition: height var(--duration-normal) var(--ease-out);
+  transition: height var(--duration-normal) var(--ease-standard);
 }
 
 .chat-thinking-collapse[open]::details-content,
 .chat-tool-msg-collapse[open]::details-content,
-.chat-tools-collapse[open]::details-content {
+.chat-tools-collapse[open]::details-content,
+.chat-tool-card__args[open]::details-content,
+.chat-file-changes[open]::details-content,
+.chat-json-collapse[open]::details-content,
+.chat-tool-subgroup[open]::details-content {
   height: auto;
 }
 
@@ -144,13 +156,21 @@
   /* 折叠高度过渡与思考块入场渐显一并退化（瞬开瞬合、直接出现） */
   .chat-thinking-collapse,
   .chat-tool-msg-collapse,
-  .chat-tools-collapse {
+  .chat-tools-collapse,
+  .chat-tool-card__args,
+  .chat-file-changes,
+  .chat-json-collapse,
+  .chat-tool-subgroup {
     interpolate-size: auto;
     animation: none;
   }
   .chat-thinking-collapse::details-content,
   .chat-tool-msg-collapse::details-content,
-  .chat-tools-collapse::details-content {
+  .chat-tools-collapse::details-content,
+  .chat-tool-card__args::details-content,
+  .chat-file-changes::details-content,
+  .chat-json-collapse::details-content,
+  .chat-tool-subgroup::details-content {
     transition: none;
   }
 }
@@ -176,6 +196,8 @@
   color: var(--text-muted);
   white-space: pre-wrap;
   word-break: break-word;
+  /* 解说区出现/消失的衔接：条件渲染挂载一次，fade 入场替代瞬现 */
+  animation: chat-thinking-enter var(--duration-fast) var(--ease-out);
 }
 
 /* ── R89 会话仪表盘（board.get + board.changed，会话级 board 面板）── */

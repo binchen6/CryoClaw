@@ -151,7 +151,9 @@
 }
 
 .skill-store__card-meta {
-  font-size: var(--text-sm);
+  /* 版本号/下载量等元信息：等宽 11px 约定 */
+  font-family: var(--font-meta);
+  font-size: var(--font-size-meta);
   color: var(--text-muted);
   margin-top: var(--spacer-2);
   display: flex;
@@ -294,37 +296,6 @@
 @media (prefers-reduced-motion: reduce) {
   .skills-skeleton__avatar::after,
   .skills-skeleton__line::after {
-    animation: none;
-  }
-}
-
-/* 技能商店操作 toast 提示（与 settings 页 toast 风格一致） */
-.skill-store__toast {
-  position: fixed;
-  /* 让开 44px titlebar；限宽避免长文案伸到窗口控制钮下 */
-  top: calc(var(--titlebar-h) + var(--spacer-12));
-  max-width: min(480px, calc(100vw - 160px));
-  left: 50%;
-  transform: translateX(-50%);
-  padding: var(--spacer-10) var(--spacer-20);
-  font-size: var(--heading-xs);
-  font-weight: var(--weight-medium);
-  border-radius: var(--radius-8);
-  color: var(--accent);
-  background: var(--accent-subtle);
-  border: 1px solid color-mix(in srgb, var(--accent) 25%, transparent);
-  z-index: 1000;
-  pointer-events: none;
-  animation: skill-toast-in var(--duration-normal) var(--ease-out) forwards;
-}
-
-@keyframes skill-toast-in {
-  from { opacity: 0; transform: translateX(-50%) translateY(-8px); }
-  to { opacity: 1; transform: translateX(-50%) translateY(0); }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .skill-store__toast {
     animation: none;
   }
 }
@@ -753,6 +724,7 @@
   font-family: inherit;
   cursor: pointer;
   text-align: left;
+  transition: color var(--duration-fast) var(--ease-out);
 }
 
 .oc-plugins__name-btn:hover {
@@ -877,6 +849,7 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  transition: color var(--duration-fast) var(--ease-out);
 }
 
 .skill-store__card-name-btn:hover {

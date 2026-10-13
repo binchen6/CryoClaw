@@ -345,11 +345,22 @@
   display: flex;
   align-items: flex-start;
   gap: var(--spacer-10);
-  padding: var(--spacer-10) var(--spacer-14);
+  /* --spacer-14 不在阶梯内（曾致整条 padding 失效塌 0）：取 10/16 档 */
+  padding: var(--spacer-10) var(--spacer-16);
   /* 活动行左侧 2px accent 强调条（与 accent-subtle 底同语义） */
   border-left: 2px solid transparent;
   /* 入场：rise + stagger-N 延迟（前 6 行渐次出现；既有行原位更新不重复播放） */
   animation: rise var(--duration-normal) var(--ease-out) backwards;
+  transition: background var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out);
+}
+
+.ts-row:hover {
+  background: var(--bg-hover);
+}
+
+.ts-row--active:hover {
+  background: var(--accent-subtle);
 }
 
 .ts-row + .ts-row {
@@ -494,10 +505,6 @@
   align-self: center;
 }
 
-.ts-empty {
-  margin: 0;
-}
-
 @media (max-width: 900px) {
   .ts-row {
     flex-wrap: wrap;
@@ -533,10 +540,11 @@
 /* ── Worktrees（worktree 管理视图） ─────────────────────────────── */
 
 .wt-layout {
-  max-width: var(--page-column);
+  /* 与 tasks/settings 同档（R94 统一宽档；此前 --page-column 1600px 跨视图跳变） */
+  max-width: var(--content-wide);
   margin: 0 auto;
   /* 壳层标题栏已统一占位 44px（2026.9 提案 A），视图不再自行让位 */
-  padding: var(--spacer-16) var(--spacer-24) var(--spacer-48);
+  padding: var(--spacer-16) var(--page-gutter) var(--spacer-48);
   display: flex;
   flex-direction: column;
   gap: var(--spacer-16);
@@ -578,11 +586,15 @@
   border-radius: var(--radius-12);
   box-shadow: var(--shadow-sm);
   padding: var(--spacer-12) var(--spacer-16);
-  transition: border-color var(--duration-fast) var(--ease-out);
+  transition: border-color var(--duration-fast) var(--ease-out),
+    box-shadow var(--duration-fast) var(--ease-out),
+    transform var(--duration-fast) var(--ease-out);
 }
 
 .wt-card:hover {
   border-color: var(--border-strong);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
 }
 
 .wt-card--removed {
@@ -636,10 +648,6 @@
   vertical-align: -2px;
 }
 
-.wt-empty {
-  margin: 0;
-}
-
 @media (max-width: 900px) {
   .wt-card {
     flex-direction: column;
@@ -660,10 +668,11 @@
 /* ── Git 面板（P4，文件级 v1）：索引/审查/提交 ────────────────────── */
 
 .gitp-layout {
-  max-width: 960px;
+  /* 与 tasks/settings/worktrees 同档（960px 孤岛列宽已消除） */
+  max-width: var(--content-wide);
   margin: 0 auto;
   /* 壳层标题栏已统一占位 44px（2026.9 提案 A），视图不再自行让位 */
-  padding: var(--spacer-16) var(--spacer-24) var(--spacer-48);
+  padding: var(--spacer-16) var(--page-gutter) var(--spacer-48);
   display: flex;
   flex-direction: column;
   gap: var(--spacer-20);
@@ -791,6 +800,7 @@
 
 .gitp-file__main--clickable {
   cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-out);
 }
 
 .gitp-file__main--clickable:hover {
@@ -984,10 +994,6 @@
   font-size: var(--text-sm);
 }
 
-.gitp-empty {
-  margin: 0;
-}
-
 .gitp-error-detail {
   margin: var(--spacer-8) 0 0;
   font-family: var(--mono);
@@ -1172,7 +1178,8 @@
   display: flex;
   flex-direction: column;
   gap: var(--spacer-10);
-  padding: var(--spacer-14) var(--spacer-16);
+  /* --spacer-14 不在阶梯内（曾致整条 padding 失效塌 0）：取 12/16 档 */
+  padding: var(--spacer-12) var(--spacer-16);
   background: var(--card);
   border: var(--hairline);
   border-radius: var(--radius-12);

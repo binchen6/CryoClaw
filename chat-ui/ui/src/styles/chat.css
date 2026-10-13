@@ -100,7 +100,8 @@
   align-items: center;
   justify-content: center;
   opacity: 0;
-  transition: opacity var(--duration-fast) var(--ease-out);
+  transition: opacity var(--duration-fast) var(--ease-out),
+    background var(--duration-fast) var(--ease-out);
 }
 
 .chat-attachment:hover .chat-attachment__remove {
@@ -208,6 +209,7 @@
   color: var(--accent);
   text-decoration: underline;
   text-underline-offset: 2px;
+  transition: opacity var(--duration-fast) var(--ease-out);
 }
 
 .chat-text :where(a:hover) {
@@ -307,7 +309,7 @@
 }
 
 .chat-text pre:has(.chat-code-lang) {
-  padding-top: 22px;
+  padding-top: var(--spacer-24); /* 原 22px 贴阶梯 */
 }
 
 /* KaTeX 公式（DOM 层注入，见 chat/math-enhance.ts）：块级可横向滚动防溢出 */
@@ -724,7 +726,7 @@
   contain-intrinsic-block-size: auto 240px;
   /* 新消息入场微动效（repeat 按 key 复用节点，只在元素创建时播放一次；
      prefers-reduced-motion 全局关停） */
-  animation: rise var(--duration-normal) var(--ease-out);
+  animation: rise var(--duration-normal) var(--ease-standard);
 }
 
 .chat-group.user {
@@ -930,6 +932,8 @@ img.chat-avatar {
   font-size: var(--text-base);
   line-height: 1;
   cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
 }
 
 .chat-branch-btn svg {
@@ -1203,6 +1207,8 @@ img.chat-avatar {
   display: inline-flex;
   align-items: center;
   color: var(--ok);
+  /* 与聚合摘要同一语言：spinner → 完成标记轻弹入场 */
+  animation: oc-status-pop var(--duration-fast) var(--ease-spring);
 }
 
 .chat-tool-card__status svg {
@@ -1240,6 +1246,8 @@ img.chat-avatar {
   max-height: 44px;
   line-height: 1.4;
   border: var(--hairline);
+  transition: background var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out);
 }
 
 .chat-tool-card--clickable:hover .chat-tool-card__preview {
@@ -1287,6 +1295,7 @@ img.chat-avatar {
   color: var(--text-muted);
   list-style: none;
   user-select: none;
+  transition: color var(--duration-fast) var(--ease-out);
 }
 
 .chat-tool-card__args summary::-webkit-details-marker {
@@ -1352,6 +1361,22 @@ img.chat-avatar {
   text-decoration: underline;
 }
 
+/* 输出规模元信息行（共 N 行 + 查看完整输出入口） */
+.chat-tool-card__output-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacer-8);
+  padding-top: var(--spacer-4);
+  font-family: var(--font-meta);
+  font-size: var(--font-size-meta);
+  color: var(--text-faint);
+}
+
+.chat-tool-card__output-meta .chat-tool-card__more {
+  padding-top: 0;
+}
+
 /* 摘要行右端聚合状态（执行中/失败/已完成） */
 .chat-tools-summary__status {
   margin-left: auto;
@@ -1379,6 +1404,17 @@ img.chat-avatar {
 
 .chat-tools-summary__status--failed {
   color: var(--destructive);
+}
+
+/* 状态翻转（running → done/failed）：完成标记轻弹入场，替代 spinner 硬切 */
+.chat-tools-summary__status--done,
+.chat-tools-summary__status--failed {
+  animation: oc-status-pop var(--duration-fast) var(--ease-spring);
+}
+
+@keyframes oc-status-pop {
+  from { opacity: 0; transform: scale(0.7); }
+  to { opacity: 1; transform: scale(1); }
 }
 
 .chat-tools-summary__status--running .chat-tool-card__spinner {
@@ -1546,6 +1582,99 @@ img.chat-avatar {
 
 .chat-tools-collapse__body .chat-tool-card:first-child {
   margin-top: var(--spacer-8);
+}
+
+/* ── 同类工具子折叠（≥3 连续同名卡合并收纳，混合工具组内） ── */
+.chat-tool-subgroup {
+  margin-top: var(--spacer-8);
+  border: var(--hairline);
+  border-radius: var(--radius-12);
+  background: var(--bg-secondary);
+  overflow: hidden;
+}
+
+.chat-tool-subgroup__summary {
+  display: flex;
+  align-items: center;
+  gap: var(--spacer-6);
+  padding: var(--spacer-8) var(--spacer-12);
+  cursor: pointer;
+  font-family: var(--font-meta);
+  font-size: var(--font-size-meta);
+  color: var(--text-secondary);
+  user-select: none;
+  list-style: none;
+  transition: color var(--duration-fast) var(--ease-out),
+    background var(--duration-fast) var(--ease-out);
+}
+
+.chat-tool-subgroup__summary::-webkit-details-marker {
+  display: none;
+}
+
+.chat-tool-subgroup__summary::before {
+  content: "▸";
+  font-size: var(--text-2xs);
+  flex-shrink: 0;
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+
+.chat-tool-subgroup[open] > .chat-tool-subgroup__summary::before {
+  transform: rotate(90deg);
+}
+
+.chat-tool-subgroup__summary:hover {
+  color: var(--text);
+  background: var(--glass-sm);
+}
+
+.chat-tool-subgroup__icon {
+  display: inline-flex;
+  align-items: center;
+  width: 14px;
+  height: 14px;
+  color: var(--accent);
+  opacity: .7;
+  flex-shrink: 0;
+}
+
+.chat-tool-subgroup__icon svg {
+  width: 14px;
+  height: 14px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.chat-tool-subgroup__label {
+  font-weight: var(--weight-semibold);
+  color: var(--text);
+  flex-shrink: 0;
+}
+
+.chat-tool-subgroup__detail {
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.chat-tool-subgroup__error {
+  display: inline-flex;
+  color: var(--destructive);
+}
+
+.chat-tool-subgroup__error svg {
+  width: 12px;
+  height: 12px;
+}
+
+.chat-tool-subgroup__body {
+  padding: 0 var(--spacer-8) var(--spacer-8);
+  border-top: var(--hairline);
 }
 
 /* ── 工具结果消息折叠（默认收起，点击展开） ── */
@@ -1817,7 +1946,7 @@ img.chat-avatar {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  transition: flex var(--duration-normal) var(--ease-out);
+  transition: flex var(--duration-normal) var(--ease-standard);
 }
 
 .chat-sidebar {
@@ -1828,7 +1957,7 @@ img.chat-avatar {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  animation: slide-in var(--duration-normal) var(--ease-out);
+  animation: slide-in var(--duration-normal) var(--ease-standard);
 }
 
 @keyframes slide-in {
@@ -1906,7 +2035,7 @@ img.chat-avatar {
   max-width: 640px;
   padding: var(--spacer-24) var(--spacer-20);
   text-align: center;
-  animation: dashboard-enter var(--duration-slower) var(--ease-out) backwards; /* 复用 dashboard-enter keyframes（base.css） */
+  animation: dashboard-enter var(--duration-slower) var(--ease-standard) backwards; /* 复用 dashboard-enter keyframes（base.css） */
 }
 
 .chat-hero__title {
@@ -1961,7 +2090,7 @@ img.chat-avatar {
   border-radius: var(--radius-12);
   box-shadow: var(--shadow-xs);
   cursor: pointer;
-  animation: rise var(--duration-slow) var(--ease-out) backwards;
+  animation: rise var(--duration-slow) var(--ease-standard) backwards;
   transition: border-color var(--duration-fast) var(--ease-out),
     background var(--duration-fast) var(--ease-out),
     box-shadow var(--duration-fast) var(--ease-out),
@@ -2111,10 +2240,6 @@ img.chat-avatar {
   color: var(--danger);
 }
 
-.chat-error-card:hover {
-  background: var(--danger-subtle);
-}
-
 .chat-error-card__icon {
   display: inline-flex;
   flex-shrink: 0;
@@ -2154,6 +2279,7 @@ img.chat-avatar {
   font-size: var(--text-sm);
   line-height: 1.4;
   cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-out);
 }
 
 .chat-error-card__resend:hover {
@@ -2421,7 +2547,8 @@ img.chat-avatar {
   content: "▍";
   margin-left: 2px;
   color: var(--accent);
-  animation: ocStreamCaret var(--duration-loop) steps(2, end) infinite;
+  /* 平滑呼吸取代硬闪烁（steps）：流式指示更沉静，长时间阅读不刺眼 */
+  animation: ocStreamCaret var(--duration-loop) ease-in-out infinite;
 }
 
 /* R41 Task 9 流式安全前缀渐进渲染：容器 pre-wrap 仍服务于未闭合尾部纯文本段，
@@ -2440,7 +2567,7 @@ img.chat-avatar {
 
 @keyframes ocStreamCaret {
   0%, 100% { opacity: 1; }
-  50% { opacity: 0; }
+  50% { opacity: 0.25; }
 }
 
 .chat-streaming-status {
@@ -2451,6 +2578,8 @@ img.chat-avatar {
   font-family: var(--font-meta);
   font-size: var(--font-size-meta);
   color: var(--text-faint);
+  /* 流式开始瞬间的入场衔接（节点在 live 组挂载时创建一次，原位更新不重播） */
+  animation: fade-in var(--duration-normal) var(--ease-standard);
 }
 
 .chat-streaming-status__dot {
@@ -2496,6 +2625,7 @@ img.chat-avatar {
   font-family: var(--font-meta);
   font-size: var(--font-size-meta);
   color: var(--text-muted);
+  transition: color var(--duration-fast) var(--ease-out);
 }
 
 .chat-file-changes > summary::-webkit-details-marker {
@@ -2540,7 +2670,7 @@ img.chat-avatar {
 
 .chat-file-changes__list {
   margin-top: var(--spacer-6);
-  padding-left: 21px;
+  padding-left: var(--spacer-20); /* 原 21px 贴阶梯 */
   display: flex;
   flex-direction: column;
   gap: var(--spacer-3);
@@ -2581,7 +2711,7 @@ img.chat-avatar {
   font-family: var(--font-meta);
   font-size: var(--text-2xs);
   line-height: 1.4;
-  padding: 0 5px;
+  padding: 0 var(--spacer-4); /* 原 5px 贴阶梯 */
   border-radius: var(--radius-6);
   border: 1px solid transparent;
   flex-shrink: 0;
@@ -2762,6 +2892,8 @@ img.chat-avatar {
   color: var(--text-muted);
   cursor: pointer;
   flex-shrink: 0;
+  transition: background var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
 }
 
 .chat-progress-card__dismiss:hover:not(:disabled) {

@@ -343,7 +343,10 @@ export function renderWorktrees(props: WorktreesProps, opts?: { compact?: boolea
       ${props.error ? html`<div class="callout danger">${props.error}</div>` : nothing}
 
       ${props.worktrees.length === 0
-        ? html`<p class="wt-empty panel__empty">${t("worktrees.empty")}</p>`
+        ? html`<div class="empty-state">
+            <span class="empty-state__icon">${icons.gitBranch}</span>
+            <div class="empty-state__title">${t("worktrees.empty")}</div>
+          </div>`
         : props.worktrees.map((w) => renderWorktreeCard(props, w, compact))}
     </div>
   `;

@@ -27,7 +27,7 @@ import {
 } from "./app-session-actions.ts";
 import { openExtensionsView, renderExtensionsView } from "./app-extensions.ts";
 import { openTasksView, renderTasksView } from "./app-tasks.ts";
-import { getToastAction, getToastMessage, hideToast, showToast } from "./app-toast.ts";
+import { getToastAction, getToastMessage, hideToast, isToastLeaving, showToast } from "./app-toast.ts";
 import { buildTranscriptFilename, buildTranscriptMarkdown, copyText, downloadMarkdownFile, tryFetchKernelTranscript } from "./chat/transcript-export.ts";
 import type { TranscriptMessage } from "./chat/transcript-export.ts";
 import { setCryoClawView } from "./app-view-switch.ts";
@@ -433,7 +433,7 @@ export function renderApp(state: AppViewState) {
       ${renderKernelAutoUpgradeBanner(state.kernelAutoUpgrade, () => state.dismissKernelAutoUpgrade())}
       ${renderWebbridgePillModal(state)}
       ${getToastMessage()
-        ? html`<div class="global-toast ${getToastAction() ? "global-toast--action" : ""}">
+        ? html`<div class="global-toast ${getToastAction() ? "global-toast--action" : ""} ${isToastLeaving() ? "global-toast--leaving" : ""}">
             <span>${getToastMessage()}</span>
             ${getToastAction()
               ? html`<button

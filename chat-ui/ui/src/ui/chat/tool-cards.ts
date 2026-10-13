@@ -310,21 +310,28 @@ function renderToolCardOutputBody(
   }
   const capped = raw.length > TOOL_OUTPUT_RENDER_CAP;
   const slice = capped ? raw.slice(0, TOOL_OUTPUT_RENDER_CAP) : raw;
+  // 行数元信息：长输出给用户规模预期（「共 N 行」），截断时与完整输出入口并列
+  const lineCount = raw.trim().split("\n").length;
   return html`
     <div
       class="chat-tool-card__output chat-text"
       ${chatTextEnhanceRef}
       @click=${(event: Event) => event.stopPropagation()}
     >${unsafeHTML(linkifyPaths(toSanitizedMarkdownHtml(toolOutputToMarkdown(slice))))}</div>
-    ${capped
-      ? html`<button
-          class="chat-tool-card__more"
-          type="button"
-          @click=${(event: Event) => {
-            event.stopPropagation();
-            onOpenSidebar?.(formatToolOutputForSidebar(raw, { language }));
-          }}
-        >${t("chat.toolOpenFull")}</button>`
+    ${lineCount > 20 || capped
+      ? html`<div class="chat-tool-card__output-meta">
+          <span>${t("chat.toolOutputLines").replace("{n}", String(lineCount))}</span>
+          ${capped
+            ? html`<button
+                class="chat-tool-card__more"
+                type="button"
+                @click=${(event: Event) => {
+                  event.stopPropagation();
+                  onOpenSidebar?.(formatToolOutputForSidebar(raw, { language }));
+                }}
+              >${t("chat.toolOpenFull")}</button>`
+            : nothing}
+        </div>`
       : nothing}
   `;
 }

@@ -41,7 +41,6 @@ const skillStoreState: SkillStoreState = {
   sort: "trending",
   nextCursor: null,
   installingSlugs: new Set(),
-  toastMessage: null,
 };
 
 let skillStoreDataLoaded = false;
@@ -354,7 +353,10 @@ function renderInstalledSkillsView(state: AppViewState) {
       : nothing}
 
     ${filtered.length === 0 && !state.skillsLoading && !state.skillsError
-      ? html`<div class="skill-store__empty panel__empty">${t("skills.empty")}</div>`
+      ? html`<div class="empty-state">
+          <span class="empty-state__icon">${icons.puzzle}</span>
+          <div class="empty-state__title">${t("skills.empty")}</div>
+        </div>`
       : nothing}
 
     ${groups.map((group) => html`

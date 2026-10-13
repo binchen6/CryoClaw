@@ -21,9 +21,10 @@
   border-radius: var(--radius-12);
   padding: var(--spacer-20);
   box-shadow: var(--shadow-xs);
-  animation: rise var(--duration-slow) var(--ease-out) backwards;
-  transition: border-color var(--duration-normal) var(--ease-out),
-    box-shadow var(--duration-normal) var(--ease-out);
+  animation: rise var(--duration-slow) var(--ease-standard) backwards;
+  /* hover 反馈走 fast 档（规范 §9：hover/press 用 --duration-fast） */
+  transition: border-color var(--duration-fast) var(--ease-standard),
+    box-shadow var(--duration-fast) var(--ease-standard);
 }
 
 .card:hover {
@@ -205,7 +206,7 @@
   box-shadow: var(--shadow-lg);
   z-index: var(--z-toast);
   pointer-events: none;
-  animation: global-toast-in var(--duration-normal) var(--ease-out) forwards;
+  animation: global-toast-in var(--duration-normal) var(--ease-standard) forwards;
 }
 
 @keyframes global-toast-in {
@@ -217,6 +218,24 @@
   to {
     opacity: 1;
     transform: translateX(-50%) translateY(0);
+  }
+}
+
+/* 退场：沿来路下沉淡出（app-toast.ts 挂 --leaving 后延迟 TOAST_EXIT_MS 移除 DOM，
+   时长保持 var(--duration-normal) 同步） */
+.global-toast--leaving {
+  animation: global-toast-out var(--duration-normal) var(--ease-in-out) forwards;
+}
+
+@keyframes global-toast-out {
+  from {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+
+  to {
+    opacity: 0;
+    transform: translateX(-50%) translateY(var(--spacer-8));
   }
 }
 
@@ -439,5 +458,5 @@
 }
 
 .sidebar-markdown pre:has(.chat-code-lang) {
-  padding-top: 22px;
+  padding-top: var(--spacer-24); /* 原 22px 贴阶梯 */
 }

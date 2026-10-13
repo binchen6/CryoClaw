@@ -143,11 +143,11 @@ test("tool summary：call/result 成对时总数取大者不重复计数", () =>
   assert.equal(totalTools, 2);
 });
 
-test("tool summary：同名工具去重", () => {
+test("tool summary：同名工具去重（多次调用标 ×N）", () => {
   const { label } = summarizeToolCards([
     card("call", "exec"),
     card("call", "exec"),
     card("result", "exec"),
   ]);
-  assert.equal(label, "Run command");
+  assert.equal(label, "Run command ×2");
 });

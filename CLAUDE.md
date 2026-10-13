@@ -250,6 +250,18 @@ For comprehensive design guidelines, please refer to:
 
 4. **Default action buttons align right.** In settings pages, action rows should right-align buttons by default (`.btn-row { justify-content: flex-end; }`) for a consistent visual rhythm. Only deviate when an inline/list context explicitly requires local actions.
 
+5. **Motion follows "one continuous take" (一镜到底): elements never pop in or vanish — they travel.** Enter from somewhere (fade + short translate from the edge the element is anchored to), exit the way it came (delayed DOM removal with an exit animation, e.g. toast's leaving state), state swaps cross-fade rather than hard-cut (tool status pop). Everything through the motion tokens (`--ease-standard` for panels/entrances, `--ease-spring` for scale entrances, `--duration-fast/normal` ladder); reduced-motion collapses to instant in `base.css`, and new press/translate feedback must be explicitly registered there.
+
+## Writing Style (changelog, comments, docs)
+
+Release notes, code comments, commit messages, and docs are read by busy people. Write like a good editor:
+
+1. **Glanceable first.** Lead with the outcome; one line says what changed and why it matters. Details and ticket-style archaeology go below the fold.
+2. **Concise and precise.** Short sentences, concrete nouns, no filler ("在…方面进行了优化" is banned). One fact per clause; numbers over adjectives.
+3. **Seasoned, lightly playful.** Competent and calm like a senior engineer's handover note; a dry one-liner is welcome ("删掉幽灵 toast——它从未被任何人调用，也没有人想念它"), but never at the expense of clarity, never cutesy emoji walls, never jokes in error messages or destructive-action warnings.
+4. **Same voice in zh and en.** Release notes ship bilingual (`release-notes.json`): translate meaning, not words; keep humor untranslated rather than forced.
+5. **Comments explain constraints, not mechanics.** Say why a value is pinned or what breaks if removed — not what the next line does. Changelog entries name the user-visible effect first, then the root cause in one clause.
+
 ## Common Gotchas
 
 See [docs/gotchas.md](docs/gotchas.md) for the full list (104 items covering packaging, signing, config, tooltip, design tokens, etc. — the numbered list in gotchas.md is the source of truth).

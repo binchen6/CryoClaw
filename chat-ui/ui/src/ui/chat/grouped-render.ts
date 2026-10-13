@@ -30,8 +30,8 @@ import {
 import type { ChatAttachment } from "../ui-types.ts";
 import { chatTextEnhanceRef } from "./code-block-enhance.ts";
 import { extractToolCards, renderToolCardSidebar } from "./tool-cards.ts";
-import { summarizeToolCards } from "./tool-summary.ts";
-import { resolveToolDisplay } from "../tool-display.ts";
+import { summarizeToolCards, groupConsecutiveToolCards } from "./tool-summary.ts";
+import { formatToolDetail, resolveToolDisplay } from "../tool-display.ts";
 import { t } from "../i18n.ts";
 import "../components/managed-image.ts";
 
@@ -547,10 +547,53 @@ function renderCollapsedToolCards(
   const { totalTools, label: summaryLabel, detail, isSingle, hasError, status } =
     summarizeToolCards(toolCards);
 
-  // 懒渲染：折叠时 body 不挂载（见 replayLazyDetailsBody 头注），
-  // 单条 tool output 上限 120k 字符、一轮可达 50 个工具，此处内存收益最大。
+  // 同类合并收纳：混合组内 ≥3 张连续同名卡收成子折叠（如混合序列里连读 5 个文件
+  // →「Read file ×5 · a.ts, b.ts +3」一行）；整组同名（isSingle）时外层折叠行
+  // 本身就是该组，不再嵌套。子折叠同样懒渲染（嵌套 details 的 body 交由
+  // 外层展开时的 replay 链填充，子组内容始终即时渲染——张数少、文本短）。
+  const runs = groupConsecutiveToolCards(toolCards);
   const bodyFn = () =>
-    html`${toolCards.map((card) => renderToolCardSidebar(card, onOpenSidebar))}`;
+    isSingle
+      ? html`${toolCards.map((card) => renderToolCardSidebar(card, onOpenSidebar))}`
+      : html`${runs.map((run) => {
+          if (run.cards.length < 3) {
+            return run.cards.map((card) => renderToolCardSidebar(card, onOpenSidebar));
+          }
+          const display = resolveToolDisplay({ name: run.name, args: run.cards[0]?.args });
+          const runLabel = display.source ? `${display.label} · ${display.source}` : display.label;
+          const details = run.cards
+            .map((card) =>
+              formatToolDetail(resolveToolDisplay({ name: card.name, args: card.args })),
+            )
+            .filter((d): d is string => Boolean(d));
+          const detailPreview =
+            details.length > 0
+              ? details.length <= 2
+                ? details.join(", ")
+                : `${details.slice(0, 2).join(", ")} +${details.length - 2}`
+              : null;
+          const runFailed = run.cards.some((card) => card.error !== undefined);
+          const runRunning = run.cards.some((card) => card.pending === true);
+          return html`
+            <details class="chat-tool-subgroup">
+              <summary class="chat-tool-subgroup__summary">
+                <span class="chat-tool-subgroup__icon">${icons[display.icon]}</span>
+                <span class="chat-tool-subgroup__label">${runLabel} ×${run.cards.length}</span>
+                ${detailPreview
+                  ? html`<span class="chat-tool-subgroup__detail">${detailPreview}</span>`
+                  : nothing}
+                ${runRunning
+                  ? html`<span class="chat-tool-card__spinner" aria-hidden="true"></span>`
+                  : runFailed
+                    ? html`<span class="chat-tool-subgroup__error">${icons.x}</span>`
+                    : nothing}
+              </summary>
+              <div class="chat-tool-subgroup__body">
+                ${run.cards.map((card) => renderToolCardSidebar(card, onOpenSidebar))}
+              </div>
+            </details>
+          `;
+        })}`;
   const bodySig = toolCardsSignature(toolCards, status, hasError);
   const bodySelector = ":scope > .chat-tools-collapse__body";
 
