@@ -271,3 +271,156 @@ export async function loadRemotePins(opts: LoadRemotePinsOptions): Promise<Remot
   }
   return { pins: null, source: null };
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// schema v3：extension 块（浏览器扩展随 WebBridge 版本同步更新）
+// ═══════════════════════════════════════════════════════════════════
+
+/**
+ * 清单 v3 的 extension 块：
+ *   `{ extension: { id, version, file, sha256: ["<64-hex>", ...], minDaemonVersion? } }`
+ * - file：仓库内相对路径（resources/webbridge/extension/kimi-webbridge-<v>.crx），
+ *   客户端按 pins 清单同源的 jsDelivr/raw 基址推导下载 URL（国内可达，
+ *   不依赖被墙的 clients2.google.com）；
+ * - sha256 多哈希数组（同 pins 的窗口期语义：CI 刚写入、jsDelivr 缓存未过期时
+ *   旧 CRX 仍可能被拉到，相邻代际都放行，仍是精确比对 fail closed）。
+ */
+export interface RemoteExtensionPin {
+  id: string;
+  version: string;
+  file: string;
+  sha256: string[];
+  minDaemonVersion: string | null;
+}
+
+const EXT_CACHE_FILE_NAME = "remote-extension-pin.json";
+const CRX_FILE_RE = /^resources\/webbridge\/extension\/[A-Za-z0-9._-]+\.crx$/;
+const VERSION_RE = /^[0-9]+(\.[0-9]+){0,3}$/;
+const EXT_ID_RE = /^[a-p]{32}$/; // Chrome 扩展 id 字母表
+
+/** 严格解析 extension 块；非法/缺失返回 null（调用方按「清单无扩展信息」处理）。 */
+export function parseExtensionBlock(raw: string): RemoteExtensionPin | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (typeof parsed !== "object" || parsed === null) return null;
+  const ext = (parsed as Record<string, unknown>).extension;
+  if (typeof ext !== "object" || ext === null || Array.isArray(ext)) return null;
+  const e = ext as Record<string, unknown>;
+  const id = typeof e.id === "string" ? e.id.trim() : "";
+  const version = typeof e.version === "string" ? e.version.trim() : "";
+  const file = typeof e.file === "string" ? e.file.trim() : "";
+  const shaList = normalizePinValue(e.sha256);
+  if (!EXT_ID_RE.test(id)) return null;
+  if (!VERSION_RE.test(version)) return null;
+  if (!CRX_FILE_RE.test(file)) return null;
+  if (!shaList || shaList.length === 0) return null;
+  const minDaemonVersion =
+    typeof e.minDaemonVersion === "string" && VERSION_RE.test(e.minDaemonVersion.trim())
+      ? e.minDaemonVersion.trim()
+      : null;
+  return { id, version, file, sha256: shaList, minDaemonVersion };
+}
+
+interface ExtensionCache {
+  fetchedAt: number;
+  extension: RemoteExtensionPin | null; // null = 清单当时没有 extension 块（也是有效缓存）
+}
+
+function readExtensionCache(cachePath: string): ExtensionCache | null {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(cachePath, "utf-8"));
+    if (typeof parsed?.fetchedAt !== "number") return null;
+    // 复验：磁盘内容可能被手工改过
+    const extension =
+      parsed.extension === null
+        ? null
+        : parseExtensionBlock(JSON.stringify({ extension: parsed.extension }));
+    if (parsed.extension !== null && parsed.extension !== undefined && !extension) return null;
+    if (parsed.extension === undefined) return null; // 旧格式缓存作废重拉
+    return { fetchedAt: parsed.fetchedAt, extension };
+  } catch {
+    return null;
+  }
+}
+
+export interface LoadRemoteExtensionOptions {
+  dataDir: string;
+  urls?: string[];
+  maxAgeMs?: number;
+  fetchText?: (url: string) => Promise<string>;
+  forceRefresh?: boolean;
+  logger?: { info: (m: string) => void };
+}
+
+export interface RemoteExtensionResult {
+  extension: RemoteExtensionPin | null;
+  source: string | null; // "cache" | url | "stale-cache" | null（全部失败且无缓存）
+}
+
+/**
+ * 读取清单 v3 的 extension 块（独立缓存文件，与 pins 缓存互不污染；
+ * 24h 新鲜期 / force 绕过 / 过期兜底与 loadRemotePins 同构）。永不抛错。
+ */
+export async function loadRemoteExtensionPin(
+  opts: LoadRemoteExtensionOptions,
+): Promise<RemoteExtensionResult> {
+  const cachePath = path.join(opts.dataDir, EXT_CACHE_FILE_NAME);
+  const cached = readExtensionCache(cachePath);
+  const maxAge = opts.maxAgeMs ?? DEFAULT_MAX_AGE_MS;
+  const force = opts.forceRefresh === true;
+  if (cached && !force && Date.now() - cached.fetchedAt < maxAge) {
+    return { extension: cached.extension, source: "cache" };
+  }
+
+  const fetchText = opts.fetchText ?? fetchTextSmall;
+  for (const url of opts.urls ?? orderPinsUrls(resolvePinsUrls(), force)) {
+    try {
+      const raw = await fetchText(url);
+      const extension = parseExtensionBlock(raw);
+      // 清单整体合法（pins 部分能解析）才算有效拉取——防止半截 JSON 清掉扩展信息
+      if (parsePinsJson(raw)) {
+        writeExtensionCache(cachePath, { fetchedAt: Date.now(), extension });
+        return { extension, source: url };
+      }
+      opts.logger?.info(`[webbridge-pins] 清单格式非法，忽略（${url}）`);
+    } catch (err) {
+      opts.logger?.info(
+        `[webbridge-pins] 扩展清单拉取失败（${url}）: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
+  if (cached) {
+    return { extension: cached.extension, source: "stale-cache" };
+  }
+  return { extension: null, source: null };
+}
+
+function writeExtensionCache(cachePath: string, cache: ExtensionCache): void {
+  try {
+    fs.mkdirSync(path.dirname(cachePath), { recursive: true });
+    fs.writeFileSync(cachePath, JSON.stringify(cache, null, 2), "utf-8");
+  } catch {
+    // 缓存写失败不影响本次结果
+  }
+}
+
+/** 由清单 URL 推导 CRX 下载 URL：同基址替换文件路径（jsDelivr/raw 同构）。 */
+export function extensionCrxUrls(manifestUrl: string, file: string): string {
+  return manifestUrl.replace(/resources\/webbridge-pins\.json$/, file);
+}
+
+/** 数字段版本比较（1.10.0 > 1.9.9）：a<b 返回 -1，相等 0，a>b 返回 1。 */
+export function compareExtensionVersions(a: string, b: string): number {
+  const pa = a.split(".").map((s) => parseInt(s, 10) || 0);
+  const pb = b.split(".").map((s) => parseInt(s, 10) || 0);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const d = (pa[i] ?? 0) - (pb[i] ?? 0);
+    if (d !== 0) return d < 0 ? -1 : 1;
+  }
+  return 0;
+}

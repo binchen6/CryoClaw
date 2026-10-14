@@ -637,11 +637,14 @@ function patchWorkerInputCloneSanitize(gatewayDir) {
   const distDir = path.join(gatewayDir, "node_modules", "openclaw", "dist");
   if (!fs.existsSync(distDir)) return 0;
   const marker = "/* cryoclaw-worker-clone */";
-  const dispatchMarker = "worker.postMessage({\n\t\t\t\t\tinput,\n\t\t\t\t\ttaskId: task.id,";
+  // 派发点锚定「input, + taskId: task.id,」相邻两行、缩进任意深度：2026.9.7
+  // 内核内联在池方法体（5 层 tab），2026.10.3 重构为顶层 postWorkerTaskInput()
+  // （2 层 tab）——硬编码缩进的字面量匹配在 10.3 未命中，正则 + 反向引用兼容两版。
+  const dispatchRe = /worker\.postMessage\(\{\r?\n(\t+)input,\r?\n\1taskId: task\.id,/;
   let patched = 0;
   for (const file of collectJsFilesRecursive(distDir)) {
     let source = fs.readFileSync(file, "utf-8");
-    if (!source.includes(dispatchMarker)) continue;
+    if (!dispatchRe.test(source)) continue;
     if (source.includes(marker)) {
       patched += 1;
       continue;
@@ -689,10 +692,10 @@ function patchWorkerInputCloneSanitize(gatewayDir) {
       "}",
       "",
     ].join("\n");
-    source = source.replace(
-      dispatchMarker,
-      marker + " input = __cryoclawSanitizeWorkerInput(input, new Map());\n\t\t\t\tworker.postMessage({\n\t\t\t\t\tinput,\n\t\t\t\t\ttaskId: task.id,"
-    );
+    source = source.replace(dispatchRe, (match, argIndent) => {
+      const stmtIndent = argIndent.slice(1);
+      return `${marker} input = __cryoclawSanitizeWorkerInput(input, new Map());\n${stmtIndent}worker.postMessage({\n${argIndent}input,\n${argIndent}taskId: task.id,`;
+    });
     // 需要 util.types：文件可能未导入 node:util；命名导入 types 别名 utilTypes
     //（isProxy 检测 structured clone 不支持的 Proxy 包装；重复导入经 ESM 去重）
     if (!source.includes('import { types as utilTypes } from "node:util";')) {

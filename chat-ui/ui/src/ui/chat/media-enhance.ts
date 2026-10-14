@@ -13,6 +13,7 @@
  */
 
 import * as ipc from "../data/ipc-bridge.ts";
+import { runExitAnimation } from "../utils/exit-anim.ts";
 import { t } from "../i18n.ts";
 import { showToastGlobal } from "../app-toast.ts";
 import { decodeHtmlEntities } from "./path-linker.ts";
@@ -274,8 +275,9 @@ function buildLightbox(src: string) {
   // 关闭时同步移除 keydown 监听（点击关闭路径原先泄漏监听器，
   // 会残留到用户下次按 Escape 才自清理）
   const close = () => {
-    overlay.remove();
     document.removeEventListener("keydown", onKey);
+    // 两段式退场：reduced-motion 下 runExitAnimation 直接同步移除
+    runExitAnimation(overlay, () => overlay.remove());
   };
   overlay.addEventListener("click", close);
   document.addEventListener("keydown", onKey);

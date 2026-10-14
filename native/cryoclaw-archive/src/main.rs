@@ -31,8 +31,10 @@ fn main() -> ExitCode {
 
 fn run_command(subcommand: &str) -> ExitCode {
     let stdin = io::stdin();
-    let reader = BufReader::new(stdin.lock());
-    let command = match protocol::read_command(reader) {
+    // BufReader 贯穿整个会话：交互模式 extract 在 command 行之后还要读白名单行，
+    // 同一缓冲 reader 保证预读字节不丢失。
+    let mut reader = BufReader::new(stdin.lock());
+    let command = match protocol::read_command(&mut reader) {
         Ok(command) => command,
         Err(err) => return emit_failure(&err),
     };
@@ -56,7 +58,7 @@ fn run_command(subcommand: &str) -> ExitCode {
             Ok(parsed) => emit_success(Some(zip_reader::to_manifest(&parsed.entries)), None, None),
             Err(err) => emit_failure(&err),
         },
-        Command::Extract(cmd) => match extract::run(&cmd) {
+        Command::Extract(cmd) => match extract::run(&cmd, &mut reader) {
             Ok((entry_names, capture)) => emit_success(None, Some(entry_names), Some(capture)),
             Err(err) => emit_failure(&err),
         },
@@ -120,7 +122,7 @@ mod tests {
     }
 
     fn build_extract_command(zip: &str, output_dir: Option<String>, entries: Vec<ExtractEntry>) -> ExtractCommand {
-        ExtractCommand { zip: zip.to_string(), output_dir, entries, capture: Vec::new(), utc_offset_minutes: 0 }
+        ExtractCommand { zip: zip.to_string(), output_dir, entries: Some(entries), capture: Vec::new(), utc_offset_minutes: 0 }
     }
 
     fn whitelist_of(parsed: &zip_reader::ParsedArchive) -> Vec<ExtractEntry> {
@@ -135,6 +137,11 @@ mod tests {
                 ExtractEntry { name: entry.name.clone(), kind: entry.kind, segments }
             })
             .collect()
+    }
+
+    fn whitelist_line(entries: &[ExtractEntry]) -> String {
+        // 交互模式 stdin 第二行：{"entries":[...]}（serde 序列化，名称转义无手写 JSON）
+        serde_json::to_string(&serde_json::json!({ "entries": entries })).unwrap()
     }
 
     #[test]
@@ -217,20 +224,70 @@ mod tests {
         assert_eq!(manifest[3].crc32, 0x0d4a1185); // "hello world"
         assert_eq!(manifest[3].uncompressed_size, 11);
 
-        // extract：validate 形态（无 outputDir）+ capture marker
+        // extract：validate 形态（无 outputDir）+ capture marker（行内白名单模式）
         let zip_str = zip_path.to_string_lossy().into_owned();
         let mut validate_cmd = build_extract_command(&zip_str, None, whitelist_of(&parsed));
         validate_cmd.capture = vec![".oneclaw-openclaw-state-archive".to_string()];
-        let (entry_names, captured) = extract::run(&validate_cmd).unwrap();
+        let mut empty_stdin: &[u8] = b"";
+        let (entry_names, captured) = extract::run(&validate_cmd, &mut empty_stdin).unwrap();
         assert_eq!(entry_names.len(), 5);
         assert_eq!(captured.len(), 1);
         assert_eq!(captured[0].content_base64, "b25lY2xhdy1vcGVuY2xhdy1zdGF0ZS1hcmNoaXZlL3YxCg==");
 
-        // extract：写盘形态，内容字节往返一致
-        let write_cmd = build_extract_command(&zip_str, Some(restored.to_string_lossy().into_owned()), whitelist_of(&parsed));
-        extract::run(&write_cmd).unwrap();
+        // extract：写盘形态，内容字节往返一致（交互模式：entries=None + stdin 白名单行）
+        let mut interactive_cmd = build_extract_command(&zip_str, Some(restored.to_string_lossy().into_owned()), Vec::new());
+        interactive_cmd.entries = None;
+        let whitelist = whitelist_line(&whitelist_of(&parsed));
+        let mut whitelist_stdin = whitelist.as_bytes();
+        extract::run(&interactive_cmd, &mut whitelist_stdin).unwrap();
         assert_eq!(fs::read(restored.join("hello.txt")).unwrap(), b"hello world");
         assert_eq!(fs::read(restored.join("nested/dir/数据.bin")).unwrap(), vec![0xabu8; 100_000]);
+
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn extract_restores_mtime() {
+        // mtime 恢复跨平台必须生效（Windows 上曾因只读句柄打开而静默失败）
+        let root = unique_tmp_dir("mtime");
+        let source = root.join("source");
+        let restored = root.join("restored");
+        let zip_path = root.join("out.zip");
+        fs::create_dir_all(&source).unwrap();
+        fs::create_dir_all(&restored).unwrap();
+        fs::write(source.join("timed.txt"), b"mtime").unwrap();
+
+        let (dos_date, dos_time) = dos_2026();
+        let create = CreateCommand {
+            output: zip_path.to_string_lossy().into_owned(),
+            entries: vec![CreateEntry {
+                path: source.join("timed.txt").to_string_lossy().into_owned(),
+                rel_path: "timed.txt".to_string(),
+                kind: EntryKind::File,
+                mode: 0o644,
+                dos_date,
+                dos_time,
+                compression: Compression::Store,
+                content_base64: None,
+            }],
+        };
+        zip_writer::create(&create).unwrap();
+
+        let zip_str = zip_path.to_string_lossy().into_owned();
+        let parsed = zip_reader::parse(&zip_str).unwrap();
+        let mut empty_stdin: &[u8] = b"";
+        extract::run(
+            &build_extract_command(&zip_str, Some(restored.to_string_lossy().into_owned()), whitelist_of(&parsed)),
+            &mut empty_stdin,
+        )
+        .unwrap();
+
+        // utcOffsetMinutes=0：DOS 墙钟 2026-10-08 12:00:00 按 UTC+0 换算回 epoch
+        let restored_mtime = fs::metadata(restored.join("timed.txt")).unwrap().modified().unwrap();
+        let expected = UNIX_EPOCH + std::time::Duration::from_secs(20_734 * 86_400 + 12 * 3_600);
+        let delta = restored_mtime.duration_since(expected).unwrap_or_else(|e| e.duration());
+        // DOS 秒粒度为 2 秒；文件系统精度差异再放宽 2 秒
+        assert!(delta <= std::time::Duration::from_secs(4), "mtime delta too large: {delta:?}");
 
         fs::remove_dir_all(&root).unwrap();
     }
@@ -274,7 +331,8 @@ mod tests {
                 segments: vec!["payload.bin".to_string()],
             }],
         );
-        let err = extract::run(&extract_cmd).err().unwrap();
+        let mut empty_stdin: &[u8] = b"";
+        let err = extract::run(&extract_cmd, &mut empty_stdin).err().unwrap();
         assert_eq!(err.code, "crc-mismatch");
         assert_eq!(err.message, "ZIP CRC 校验失败: payload.bin");
 

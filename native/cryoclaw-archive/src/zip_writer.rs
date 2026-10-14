@@ -1,16 +1,19 @@
 // zip_writer.rs — 流式 zip 创建。local header 的 CRC/长度先行占位，条目数据
 // 写完后回 seek 补写（不产出 data descriptor）；产物与 JS fflate 写入器同构：
 // version made by = unix/2.0，UTF-8 名称标记，external attrs = mode<<16 | dirflag。
+// 输出走 256KB BufWriter（数千小文件场景 header/central 小写入不再逐次 syscall；
+// seek 补写由 BufWriter 先 flush 再定位，语义透明）。每条目完成后发 progress
+// 事件（100ms 节流在 EventWriter 内）。
 
 use std::fs::{self, File};
-use std::io::{Read, Seek, SeekFrom, Write};
+use std::io::{BufWriter, Read, Seek, SeekFrom, Write};
 use std::path::Path;
 
 use crc32fast::Hasher;
 use flate2::{Compression, write::DeflateEncoder};
 
 use crate::errors::{ArchiveError, ArchiveResult};
-use crate::protocol::{Compression as EntryCompression, CreateCommand, CreateEntry};
+use crate::protocol::{Compression as EntryCompression, CreateCommand, CreateEntry, EventWriter};
 
 const LOCAL_FILE_SIGNATURE: u32 = 0x04034b50;
 const CENTRAL_FILE_SIGNATURE: u32 = 0x02014b50;
@@ -20,6 +23,9 @@ const FLAG_UTF8: u16 = 1 << 11;
 const METHOD_STORE: u16 = 0;
 const METHOD_DEFLATE: u16 = 8;
 const CHUNK_SIZE: usize = 64 * 1024;
+const OUTPUT_BUFFER_SIZE: usize = 256 * 1024;
+
+type OutputWriter = BufWriter<File>;
 
 struct CentralRecord {
     name: Vec<u8>,
@@ -41,11 +47,13 @@ pub fn create(cmd: &CreateCommand) -> ArchiveResult<u64> {
         }
     }
 
-    let mut file = File::create(output)?;
+    let mut file = BufWriter::with_capacity(OUTPUT_BUFFER_SIZE, File::create(output)?);
     let mut central: Vec<CentralRecord> = Vec::with_capacity(cmd.entries.len());
+    let mut events = EventWriter::new(cmd.entries.len() as u64);
 
-    for entry in &cmd.entries {
+    for (index, entry) in cmd.entries.iter().enumerate() {
         central.push(write_entry(&mut file, entry)?);
+        events.progress(index as u64 + 1, &entry.rel_path)?;
     }
 
     let central_offset = file.stream_position()?;
@@ -75,11 +83,26 @@ pub fn create(cmd: &CreateCommand) -> ArchiveResult<u64> {
     Ok(central_offset + central_size + eocd.len() as u64)
 }
 
-fn write_entry(file: &mut File, entry: &CreateEntry) -> ArchiveResult<CentralRecord> {
-    let name = entry.rel_path.as_bytes().to_vec();
-    if entry.rel_path.is_empty() || entry.rel_path.contains('\\') {
+// 条目名纵深校验：白名单/注册表的权威校验在 JS 侧，这里拒掉会破坏产物结构的
+// 形态（空名/反斜杠/绝对路径/盘符/越界段），fail closed。
+fn validate_rel_path(rel_path: &str) -> ArchiveResult<()> {
+    if rel_path.is_empty() || rel_path.contains('\\') {
         return Err(ArchiveError::invalid_zip_detail("条目名为空或含反斜杠"));
     }
+    if rel_path.starts_with('/') || rel_path.as_bytes().get(1) == Some(&b':') {
+        return Err(ArchiveError::invalid_zip_detail("条目名为绝对路径"));
+    }
+    for segment in rel_path.split('/') {
+        if segment == "." || segment == ".." {
+            return Err(ArchiveError::invalid_zip_detail("条目名含越界段"));
+        }
+    }
+    Ok(())
+}
+
+fn write_entry(file: &mut OutputWriter, entry: &CreateEntry) -> ArchiveResult<CentralRecord> {
+    validate_rel_path(&entry.rel_path)?;
+    let name = entry.rel_path.as_bytes().to_vec();
     // u16 截断会让 header 声明的 name_length 与实际写出的名字字节不一致（zip 结构
     // 损坏且导出无回读校验拦截）：超限一律 fail closed
     let name_len = u16::try_from(name.len())
@@ -144,7 +167,7 @@ fn write_entry(file: &mut File, entry: &CreateEntry) -> ArchiveResult<CentralRec
     })
 }
 
-fn write_file_data(file: &mut File, entry: &CreateEntry, method: u16) -> ArchiveResult<(u32, u64, u64)> {
+fn write_file_data(file: &mut OutputWriter, entry: &CreateEntry, method: u16) -> ArchiveResult<(u32, u64, u64)> {
     let mut hasher = Hasher::new();
     let data_start = file.stream_position()?;
     let uncompressed_size: u64;
@@ -201,7 +224,7 @@ fn write_file_data(file: &mut File, entry: &CreateEntry, method: u16) -> Archive
     Ok((hasher.finalize(), compressed_size, uncompressed_size))
 }
 
-fn write_central_record(file: &mut File, record: &CentralRecord) -> ArchiveResult<()> {
+fn write_central_record(file: &mut OutputWriter, record: &CentralRecord) -> ArchiveResult<()> {
     let mut out = Vec::with_capacity(46 + record.name.len());
     out.extend_from_slice(&CENTRAL_FILE_SIGNATURE.to_le_bytes());
     out.extend_from_slice(&((3u16 << 8) | VERSION).to_le_bytes()); // version made by: unix
@@ -263,7 +286,7 @@ fn base64_decode(input: &str) -> ArchiveResult<Vec<u8>> {
 
 #[cfg(test)]
 mod tests {
-    use super::base64_decode;
+    use super::{base64_decode, validate_rel_path};
 
     #[test]
     fn base64_decodes_rfc4648_vectors() {
@@ -274,5 +297,18 @@ mod tests {
         assert_eq!(base64_decode("Zm9vYg==").unwrap(), b"foob");
         assert_eq!(base64_decode("b25lY2xhdy1vcGVuY2xhdy1zdGF0ZS1hcmNoaXZlL3YxCg==").unwrap(), b"oneclaw-openclaw-state-archive/v1\n");
         assert!(base64_decode("Zm9v!bad").is_err());
+    }
+
+    #[test]
+    fn rel_path_rejects_traversal_and_absolute_forms() {
+        assert!(validate_rel_path("state/a.txt").is_ok());
+        assert!(validate_rel_path("nested/dir/").is_ok());
+        assert!(validate_rel_path("").is_err());
+        assert!(validate_rel_path("a\\b.txt").is_err());
+        assert!(validate_rel_path("/abs.txt").is_err());
+        assert!(validate_rel_path("C:/x.txt").is_err());
+        assert!(validate_rel_path("../evil.txt").is_err());
+        assert!(validate_rel_path("a/../b.txt").is_err());
+        assert!(validate_rel_path("a/./b.txt").is_err());
     }
 }

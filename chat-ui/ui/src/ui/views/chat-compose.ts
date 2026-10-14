@@ -63,9 +63,42 @@ let plusMenuOutsideCloser: ((ev: MouseEvent) => void) | null = null;
 let thinkingPopoverCloser: ((ev: MouseEvent) => void) | null = null;
 let branchPopoverCloser: ((ev: MouseEvent) => void) | null = null;
 
+// popover 退场两段式：--open → --closing（播 chat-popover-out），
+// --duration-fast(120ms) 后摘净。重开时清定时器 + 摘 --closing 防串场。
+const POPOVER_EXIT_MS = 120;
+const popoverExitTimers = new WeakMap<Element, number>();
+
+function animatePopoverOut(el: Element, openClass: string, closingClass: string) {
+  const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (reduced || el.classList.contains(closingClass)) {
+    el.classList.remove(openClass, closingClass);
+    return;
+  }
+  el.classList.remove(openClass);
+  el.classList.add(closingClass);
+  const prev = popoverExitTimers.get(el);
+  if (prev != null) window.clearTimeout(prev);
+  popoverExitTimers.set(
+    el,
+    window.setTimeout(() => {
+      el.classList.remove(closingClass);
+      popoverExitTimers.delete(el);
+    }, POPOVER_EXIT_MS),
+  );
+}
+
+function revivePopover(el: Element, closingClass: string) {
+  const t = popoverExitTimers.get(el);
+  if (t != null) {
+    window.clearTimeout(t);
+    popoverExitTimers.delete(el);
+  }
+  el.classList.remove(closingClass);
+}
+
 function closeThinkingPopover() {
   for (const el of document.querySelectorAll(".chat-compose__thinking-popover--open")) {
-    el.classList.remove("chat-compose__thinking-popover--open");
+    animatePopoverOut(el, "chat-compose__thinking-popover--open", "chat-compose__thinking-popover--closing");
   }
   if (thinkingPopoverCloser) {
     document.removeEventListener("click", thinkingPopoverCloser);
@@ -75,7 +108,7 @@ function closeThinkingPopover() {
 
 function closeBranchPopover() {
   for (const el of document.querySelectorAll(".chat-compose__branch-popover--open")) {
-    el.classList.remove("chat-compose__branch-popover--open");
+    animatePopoverOut(el, "chat-compose__branch-popover--open", "chat-compose__branch-popover--closing");
   }
   if (branchPopoverCloser) {
     document.removeEventListener("click", branchPopoverCloser);
@@ -774,6 +807,7 @@ export function renderCompose(props: ChatProps, ctx: ComposeRenderContext) {
                           closeThinkingPopover();
                         } else {
                           closeThinkingPopover(); // 清掉上一轮可能残留的监听
+                          revivePopover(popover, "chat-compose__thinking-popover--closing");
                           popover.classList.add("chat-compose__thinking-popover--open");
                           const container = el;
                           thinkingPopoverCloser = (ev: MouseEvent) => {
@@ -799,7 +833,7 @@ export function renderCompose(props: ChatProps, ctx: ComposeRenderContext) {
                                 e.stopPropagation();
                                 props.onThinkingLevelChange?.(level);
                                 const popover = (e.currentTarget as HTMLElement).closest(".chat-compose__thinking-popover") as HTMLElement;
-                                if (popover) popover.classList.remove("chat-compose__thinking-popover--open");
+                                if (popover) animatePopoverOut(popover, "chat-compose__thinking-popover--open", "chat-compose__thinking-popover--closing");
                               }}
                             >
                               <span class="chat-compose__thinking-option-check">${level === (props.thinkingToggleLevel ?? "off") ? icons.check : nothing}</span>
@@ -854,6 +888,7 @@ export function renderCompose(props: ChatProps, ctx: ComposeRenderContext) {
                     closeBranchPopover();
                   } else {
                     closeBranchPopover(); // 清掉上一轮可能残留的监听
+                    revivePopover(popover, "chat-compose__branch-popover--closing");
                     popover.classList.add("chat-compose__branch-popover--open");
                     // 打开时拉取最新分支列表
                     props.onOpenSessionBranches?.();

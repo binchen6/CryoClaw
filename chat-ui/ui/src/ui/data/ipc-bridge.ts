@@ -54,6 +54,8 @@ export interface UsageData {
   weekUsage?: { used: number; limit: number };
   rateLimits?: { used: number; limit: number };
   resetAt?: string | number;
+  /** OAuth 会话已过期（refresh token 失效，主进程已清理 token 文件），前端应回到登录态 */
+  authExpired?: boolean;
 }
 
 // R4：渠道/搜索/记忆的 openclaw.json 读写已改走内核 config.get/config.patch，
@@ -85,6 +87,31 @@ export interface EnvInfo {
   kernelVersion: string;
   providerKeys: string[];
   enabledChannels: string[];
+  /** 概览页扩展（2026.10）：主进程老版本可能不返回，消费端一律可选链 */
+  appVersion?: string;
+  packaged?: boolean;
+  versions?: {
+    electron?: string;
+    chromium?: string;
+    node?: string;
+    platform?: string;
+    arch?: string;
+    osType?: string;
+    osRelease?: string;
+  };
+  cpu?: { model: string; cores: number };
+  memory?: { appBytes: number; systemTotal: number; systemUsed: number };
+  /** 主进程（≈应用）已运行秒数 */
+  uptimeSec?: number;
+  paths?: { config: string; dataDir: string; installDir: string; gatewayLog?: string; kernelDir?: string };
+  gatewayRuntime?: { state: string; pid: number | null; uptimeSec: number | null } | null;
+  /** 内核更新态（getKernelUpdateState 快照；main 端失败时为 null） */
+  kernelUpdate?: { latest: string | null; updateAvailable: boolean; rollbackAvailable: boolean; running: boolean } | null;
+  /** 已安装技能数（lockfile 口径） */
+  skillsInstalled?: number;
+  /** 已启用插件数 / 插件条目总数（config.plugins.entries 口径） */
+  pluginsEnabled?: number;
+  pluginsTotal?: number;
 }
 
 export interface WebbridgePrecheckData {
@@ -118,6 +145,11 @@ export interface WebbridgeVersionStatus {
   daemonRunning: boolean;
   daemonVersion: string | null;
   extensionVersion: string | null;
+  /** 扩展：当前生效 CRX 版本（运行时更新过的优先，内置打包兜底） */
+  extensionCurrent?: string | null;
+  /** 扩展：远端清单最新版（清单无 extension 块或不可达为 null） */
+  extensionLatest?: string | null;
+  extensionUpdateAvailable?: boolean;
   updateAvailable: { current: string | null; latest: string | null } | null;
   autoUpdate: boolean;
   lastCheckedAt: string | null;
@@ -373,6 +405,8 @@ interface CryoClawBridgeExtended {
       settingsWebbridgeUpdateCheck?: (params?: Record<string, unknown>) => Promise<any>;
       settingsWebbridgeUpdateApply?: () => Promise<any>;
       settingsWebbridgeRefreshPins?: () => Promise<any>;
+      settingsWebbridgeExtensionCheck?: () => Promise<any>;
+      settingsWebbridgeExtensionUpdate?: () => Promise<any>;
       // Settings: Backup
       settingsListConfigBackups?: () => Promise<any>;
       settingsExportOpenclawState?: () => Promise<any>;
@@ -843,6 +877,35 @@ export async function settingsWebbridgeUpdateApply(): Promise<WebbridgeUpdateApp
 // 刷新钉定（T8）：绕过 24h 缓存强制拉取远端钉定清单。失败不抛异常，返回结构化结果。
 export async function settingsWebbridgeRefreshPins(): Promise<WebbridgeRefreshPinsResult> {
   const result = (await oc().settingsWebbridgeRefreshPins()) as WebbridgeRefreshPinsResult;
+  return result ?? { success: false, message: "no response" };
+}
+
+// 浏览器扩展更新（schema v3：清单 extension 块驱动，CRX 镜像在仓库 resources/webbridge/extension/）
+export interface WebbridgeExtensionCheckResult {
+  success: boolean;
+  data?: {
+    current: string | null;
+    latest: string | null;
+    updateAvailable: boolean;
+    source: string | null;
+  };
+  message?: string;
+}
+
+export interface WebbridgeExtensionUpdateResult {
+  success: boolean;
+  code?: "WEBBRIDGE_BUSY" | "NO_UPDATE" | "PIN_STALE" | "UPDATE_FAILED";
+  message?: string;
+  data?: { from: string | null; to: string; browsersRepointed: string[] };
+}
+
+export async function settingsWebbridgeExtensionCheck(): Promise<WebbridgeExtensionCheckResult> {
+  const result = (await oc().settingsWebbridgeExtensionCheck?.()) as WebbridgeExtensionCheckResult;
+  return result ?? { success: false, message: "no response" };
+}
+
+export async function settingsWebbridgeExtensionUpdate(): Promise<WebbridgeExtensionUpdateResult> {
+  const result = (await oc().settingsWebbridgeExtensionUpdate?.()) as WebbridgeExtensionUpdateResult;
   return result ?? { success: false, message: "no response" };
 }
 

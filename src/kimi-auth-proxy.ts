@@ -157,6 +157,13 @@ function handleRequest(
     (proxyRes) => {
       // 透传上游响应（包括 SSE streaming）
       clientRes.writeHead(proxyRes.statusCode ?? 502, proxyRes.headers);
+      // 上游响应流本身也会出错（socket 半开/重置）——IncomingMessage 的 error
+      // 无监听会升级成主进程 uncaughtException。不设 idle 超时：agentic 工具调用
+      // 期间 SSE 可能数分钟无字节，误杀合法长暂停比挂死连接代价更高。
+      proxyRes.on("error", (err) => {
+        log.error(`[auth-proxy] 上游响应中断: ${err.message}`);
+        clientRes.destroy();
+      });
       proxyRes.pipe(clientRes);
     },
   );

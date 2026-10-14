@@ -1,6 +1,7 @@
 import { html, nothing } from "lit";
 import type { AppViewState } from "../app-view-state.ts";
 import { t } from "../i18n.ts";
+import { runExitAnimation } from "../utils/exit-anim.ts";
 import { icons } from "../icons.ts";
 
 // "What's New" 弹窗：展示自上次打开以来的所有版本更新内容
@@ -13,7 +14,9 @@ export function renderReleaseNotesModal(state: AppViewState) {
   const lang = locale.startsWith("zh") ? "zh" : "en";
 
   const handleDismiss = () => {
-    state.dismissReleaseNotes();
+    runExitAnimation(document.querySelector(".cc-dialog-overlay"), () => {
+      state.dismissReleaseNotes();
+    });
   };
 
   return html`

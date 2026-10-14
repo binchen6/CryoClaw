@@ -305,9 +305,9 @@ function parsePatchResponse(payload: unknown): Omit<ConfigPatchResult, "ok"> {
  * baseHash 冲突时自动重取快照并重放 mutator 一次；再冲突则报中文错误。
  * mutator 直接修改 draft（脱敏快照的深拷贝），REDACTED 哨兵由内核写侧自动还原。
  */
-export async function patchConfig(
+export async function patchConfig<T extends Record<string, unknown> = Record<string, unknown>>(
   client: GatewayBrowserClient,
-  mutator: (draft: Record<string, unknown>) => void,
+  mutator: (draft: T) => void,
   options?: PatchConfigOptions,
 ): Promise<ConfigPatchResult> {
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -315,7 +315,7 @@ export async function patchConfig(
     if (!snapshot) {
       return { ok: false, noop: false, requiresRestart: false, restartScheduled: false, error: t("config.error.snapshotUnavailable") };
     }
-    const draft = structuredClone(snapshot.config);
+    const draft = structuredClone(snapshot.config) as T;
     try {
       mutator(draft);
     } catch (err) {

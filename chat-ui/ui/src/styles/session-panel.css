@@ -28,6 +28,24 @@ oc-session-panel {
   }
 }
 
+/* 退场（一镜到底）：沿入场来路向左滑回。两段式：class 先行，
+   播完后才落 navCollapsed（app-render.ts toggleSessionPanel）。 */
+oc-session-panel.oc-panel--leaving {
+  animation: oc-panel-exit var(--duration-normal) var(--ease-standard) forwards;
+}
+
+@keyframes oc-panel-exit {
+  from {
+    transform: translateX(0);
+    opacity: 1;
+  }
+
+  to {
+    transform: translateX(calc(var(--spacer-16) * -1));
+    opacity: 0;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   oc-session-panel {
     animation: none;
@@ -290,6 +308,8 @@ oc-session-panel {
   position: absolute;
   top: calc(100% + 4px);
   right: 0;
+  transform-origin: top right;
+  animation: chat-popover-in var(--duration-fast) var(--ease-spring);
   min-width: 168px;
   background: var(--bg-elevated);
   border: var(--hairline);
@@ -302,6 +322,7 @@ oc-session-panel {
 .oc-panel__session-menu--up {
   top: auto;
   bottom: calc(100% + 4px);
+  transform-origin: bottom right;
 }
 
 .oc-panel__session-menu-item {
@@ -373,6 +394,8 @@ oc-session-panel {
   position: absolute;
   top: calc(100% + 4px);
   right: 0;
+  transform-origin: top right;
+  animation: chat-popover-in var(--duration-fast) var(--ease-spring);
   min-width: 188px;
   background: var(--bg-elevated);
   border: var(--hairline);

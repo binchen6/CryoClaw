@@ -94,10 +94,13 @@ export function reduceChatStreamDelta(input: ChatStreamDeltaInput): ChatStreamDe
       const prefix = input.frozenPrefix ?? "";
       const base = prefix + current;
       const expectedLen = input.deltaText.length;
+      // Zero-copy form of `slice(len - expectedLen) === deltaText && slice(0, len - expectedLen) === base`:
+      // runs per delta, so avoid materializing two O(n) substring copies each frame.
       const aligned =
         fullText.length >= expectedLen &&
-        fullText.slice(fullText.length - expectedLen) === input.deltaText &&
-        fullText.slice(0, fullText.length - expectedLen) === base;
+        fullText.length - expectedLen === base.length &&
+        fullText.endsWith(input.deltaText) &&
+        fullText.startsWith(base);
       if (!aligned) {
         // Self-heal only when the snapshot is a forward extension of the local
         // base (prefix+current): that is the lost-frame shape (a dropped frame

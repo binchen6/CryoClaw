@@ -38,6 +38,23 @@
   z-index: 1000;
 }
 .wb-modal-overlay.hidden { display: none; }
+
+/* 与全局浮层同一语言：overlay 淡入 + 卡片弹簧入场；退场两段式（cc-leaving） */
+.wb-modal-overlay {
+  animation: oc-fade-in var(--duration-normal) var(--ease-standard);
+}
+
+.wb-modal-card {
+  animation: cc-dialog-in var(--duration-normal) var(--ease-spring);
+}
+
+.wb-modal-overlay.cc-leaving {
+  animation: oc-fade-out var(--duration-normal) var(--ease-in-out) forwards;
+}
+
+.wb-modal-overlay.cc-leaving .wb-modal-card {
+  animation: cc-dialog-out var(--duration-normal) var(--ease-in-out) forwards;
+}
 .wb-modal-card {
   background: var(--popover);
   color: var(--popover-foreground);
@@ -74,15 +91,6 @@
 }
 .wb-health-link:hover { text-decoration: underline; }
 
-/* 修复并启用 / 再次检查 按钮：固定宽度，saving 时 spinner 替换文字，按钮尺寸完全不变 */
-/* 用 width 而不是 min-width，"修复并启用"（zh ~123px）/ "Repair & Enable"（en ~150px）自然宽度都比 min-width 大 */
-.wb-modal-actions .oc-settings__btn,
-.wb-modal-actions .oc-settings__btn--primary {
-  width: 160px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
 .wb-modal-spinner {
   width: 16px;
   height: 16px;

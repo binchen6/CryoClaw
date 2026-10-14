@@ -49,6 +49,60 @@ let skillStoreDataLoaded = false;
 // nextCursor（展示错误排序/旧结果，分页游标错配）。发起前自增，写回前比对。
 let storeRequestToken = 0;
 
+// ── 技能更新（R102）：进入已安装 tab 时后台检查一次，按钮只在有更新时出现 ──
+let skillUpdates: Array<{ slug: string; current: string | null; latest: string }> | null = null;
+let skillUpdatesChecking = false;
+let skillUpdatesApplying = false;
+
+async function checkSkillStoreUpdates(state: AppViewState, opts: { force?: boolean } = {}) {
+  if (!window.cryoclaw?.skillStoreCheckUpdates) return;
+  if (skillUpdatesChecking) return;
+  if (skillUpdates !== null && !opts.force) return;
+  skillUpdatesChecking = true;
+  state.requestUpdate();
+  try {
+    const result = await window.cryoclaw.skillStoreCheckUpdates();
+    skillUpdates = result?.success && Array.isArray(result.data?.updates) ? result.data.updates : [];
+  } catch {
+    skillUpdates = []; // 检查失败静默——不打扰浏览
+  } finally {
+    skillUpdatesChecking = false;
+    state.requestUpdate();
+  }
+}
+
+async function updateAllSkills(state: AppViewState) {
+  if (!window.cryoclaw?.skillStoreUpdate || skillUpdatesApplying) return;
+  const slugs = (skillUpdates ?? []).map((u) => u.slug);
+  if (slugs.length === 0) return;
+  skillUpdatesApplying = true;
+  state.requestUpdate();
+  try {
+    const result = await window.cryoclaw.skillStoreUpdate({ slugs });
+    const failed = result?.data?.failed?.length ?? 0;
+    const updated = result?.data?.updated?.length ?? 0;
+    if (result?.success || updated > 0) {
+      showToast(
+        state,
+        failed > 0
+          ? t("skillStore.updatePartial").replace("{ok}", String(updated)).replace("{fail}", String(failed))
+          : t("skillStore.updateDone").replace("{n}", String(updated)),
+      );
+    } else {
+      showToast(state, t("skillStore.updateFailed"));
+    }
+    skillUpdates = null; // 强制重查（版本表已变）
+    void loadSkills(state);
+    await refreshInstalledSlugs();
+    await checkSkillStoreUpdates(state, { force: true });
+  } catch {
+    showToast(state, t("skillStore.updateFailed"));
+  } finally {
+    skillUpdatesApplying = false;
+    state.requestUpdate();
+  }
+}
+
 // ── 技能推荐（R91）：已装技能名 token 作为个性化 hints ──
 // 停用词：技能名/渠道名里高频出现、无个性化区分度的通用词
 const SKILL_HINT_STOPWORDS = new Set([
@@ -448,6 +502,10 @@ function renderInstalledSkillsView(state: AppViewState) {
 
 // 技能视图根渲染（app-extensions 的扩展视图 skills tab 调用）
 export function renderSkillsView(state: AppViewState) {
+  // 已安装 tab 首开自动后台检查更新（会话内一次；检查后 skillUpdates !== null 不再重复）
+  if (skillsSubTab === "installed" && skillUpdates === null && !skillUpdatesChecking) {
+    void checkSkillStoreUpdates(state);
+  }
   return html`
     <div class="skills-scroll panel" @scroll=${(e: Event) => {
       if (skillsSubTab !== "store") return;
@@ -466,6 +524,7 @@ export function renderSkillsView(state: AppViewState) {
             @click=${() => {
               skillsSubTab = "installed";
               void loadSkills(state);
+              void checkSkillStoreUpdates(state);
               state.requestUpdate();
             }}
           >${t("skills.tabInstalled")}</button>
@@ -484,6 +543,22 @@ export function renderSkillsView(state: AppViewState) {
             ${skillsSubTab === "installed"
               ? html`
                   <span class="skills-count">${t("skills.shown").replace("{n}", String(selectVisibleInstalledSkills(state).length))}</span>
+                  ${skillUpdatesChecking && skillUpdates === null
+                    ? html`<span class="skills-count">${t("skillStore.checkingUpdates")}</span>`
+                    : nothing}
+                  ${skillUpdates && skillUpdates.length > 0
+                    ? html`
+                      <button
+                        class="skill-store__sort-btn skill-store__update-btn"
+                        type="button"
+                        ?disabled=${skillUpdatesApplying}
+                        data-tooltip=${skillUpdates.map((u) => `${u.slug} ${u.current ?? "?"} → ${u.latest}`).join("\n")}
+                        @click=${() => void updateAllSkills(state)}
+                      >${skillUpdatesApplying
+                        ? t("skillStore.updating")
+                        : t("skillStore.updateAll").replace("{n}", String(skillUpdates.length))}</button>
+                    `
+                    : nothing}
                   <button
                     class="skill-store__sort-btn"
                     type="button"

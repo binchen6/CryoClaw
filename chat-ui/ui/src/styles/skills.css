@@ -56,6 +56,17 @@
   color: var(--text-muted);
 }
 
+/* 更新全部按钮：复用 sort-btn 几何，accent 着色 */
+.skill-store__update-btn {
+  color: var(--accent);
+  border-color: var(--accent);
+  font-weight: 500;
+}
+
+.skill-store__update-btn:disabled {
+  opacity: 0.6;
+}
+
 /* 排序按钮：cc-chip 契约（pill、selected = accent-subtle 底 + accent 边/字） */
 .skill-store__sort-btn {
   display: inline-flex;
@@ -232,7 +243,6 @@
 }
 
 .skill-store__loading,
-.skill-store__empty,
 .skill-store__error {
   text-align: center;
   padding: var(--spacer-32) var(--spacer-16);
@@ -556,6 +566,24 @@
 
 .cc-dialog {
   animation: cc-dialog-in var(--duration-normal) var(--ease-spring);
+}
+
+/* 退场两段式（一镜到底）：runExitAnimation 加 .cc-leaving，播完才清状态。
+   退场是入场的镜像：backdrop 淡出，对话沿入场来路（下沉+缩回）返回。 */
+.cc-dialog-overlay.cc-leaving {
+  animation: oc-fade-out var(--duration-normal) var(--ease-in-out) forwards;
+}
+
+.cc-dialog-overlay.cc-leaving .cc-dialog {
+  animation: cc-dialog-out var(--duration-normal) var(--ease-in-out) forwards;
+}
+
+@keyframes oc-fade-out {
+  to { opacity: 0; }
+}
+
+@keyframes cc-dialog-out {
+  to { opacity: 0; transform: translateY(var(--spacer-8)) scale(0.98); }
 }
 
 @keyframes cc-dialog-in {

@@ -19,24 +19,32 @@ stable 工具链即可（无 rust-toolchain 钉定），edition 2021，无 unsaf
 
 ## 协议
 
-argv 子命令 + 单行 stdin JSON command + stdout JSON Lines（进度事件 + 最终结果）。stderr 只有人类可读诊断，协议只走 stdout。
+argv 子命令 + stdin JSON Lines（首行 command）+ stdout JSON Lines（进度事件 + 最终结果）。stderr 只有人类可读诊断，协议只走 stdout。
 
 ```
 cryoclaw-archive --version                 # 输出 "cryoclaw-archive <semver>"（JS 握手用）
 cryoclaw-archive create     < /dev/stdin   # {"cmd":"create","output":"...","entries":[...]}
 cryoclaw-archive manifest   < /dev/stdin   # {"cmd":"manifest","zip":"..."}
-cryoclaw-archive extract    < /dev/stdin   # {"cmd":"extract","zip":"...","outputDir":"?","entries":[...],"capture":[...],"utcOffsetMinutes":-480}
+cryoclaw-archive extract    < /dev/stdin   # {"cmd":"extract","zip":"...","outputDir":"?","entries":[...] | null,"capture":[...],"utcOffsetMinutes":-480}
 ```
 
 输出：
 
 ```
-{"type":"progress","done":12,"total":3000,"entry":"sessions/x.json"}   # ≥100ms 节流
+{"type":"manifest","entries":[...]}                                     # 仅交互模式 extract，握手即发
+{"type":"progress","done":12,"total":3000,"entry":"sessions/x.json"}    # ≥100ms 节流（create/extract 都发）
 {"type":"result","ok":true,...}
 {"type":"result","ok":false,"error":{"code":"invalid-zip","message":"不是有效的 ZIP 数据包"}}
 ```
 
 exit code 与 `ok` 一致（0/1）。
+
+### extract 交互模式（0.2.0 起，JS 集成层默认）
+
+`entries` 为 null 时：sidecar 解析 zip 后先发 `manifest` 事件，阻塞等 stdin 第二行
+`{"entries":[...]}`（JS 对 manifest 跑完路径注册表/白名单校验后回写），再继续解压。
+同一进程同一打开句柄完成解析与解压——zip 只解析一遍，且不存在两次 spawn 之间
+zip 被替换的 TOCTOU 窗口。`entries` 行内携带时保持旧行为（单次命令，测试用）。
 
 ### create 条目
 

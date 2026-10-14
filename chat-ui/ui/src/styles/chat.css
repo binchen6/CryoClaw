@@ -379,7 +379,7 @@
 :is(.chat-text, .chat-message-attachments) .chat-file-card__info {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--spacer-2);
   min-width: 0;
 }
 
@@ -489,7 +489,7 @@
 
 .chat-subagent-card--active .chat-subagent-card__pulse {
   background: var(--accent);
-  animation: ocSubagentPulse var(--duration-loop) ease-in-out infinite;
+  animation: ocSubagentPulse var(--duration-loop) var(--ease-in-out) infinite;
 }
 
 .chat-subagent-card--done .chat-subagent-card__pulse {
@@ -512,7 +512,7 @@
 .chat-subagent-card__body {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--spacer-2);
   min-width: 0;
 }
 
@@ -555,6 +555,21 @@
   justify-content: center;
   background: var(--overlay-heavy);
   cursor: zoom-out;
+  /* 入场：遮罩淡入 + 图片轻放大落位；退场由 close() 两段式驱动（cc-leaving） */
+  animation: oc-fade-in var(--duration-normal) var(--ease-standard);
+}
+
+.chat-media-lightbox img {
+  animation: chat-lightbox-img-in var(--duration-normal) var(--ease-spring);
+}
+
+@keyframes chat-lightbox-img-in {
+  from { transform: scale(0.96); }
+  to { transform: scale(1); }
+}
+
+.chat-media-lightbox.cc-leaving {
+  animation: oc-fade-out var(--duration-normal) var(--ease-in-out) forwards;
 }
 
 .chat-media-lightbox img {
@@ -1179,30 +1194,6 @@ img.chat-avatar {
   stroke-linejoin: round;
 }
 
-.chat-tool-card__action {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--spacer-4);
-  font-size: var(--text-sm);
-  color: var(--accent);
-  opacity: .8;
-  transition: opacity var(--duration-fast) var(--ease-out);
-}
-
-.chat-tool-card__action svg {
-  width: 12px;
-  height: 12px;
-  stroke: currentColor;
-  fill: none;
-  stroke-width: 1.5px;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.chat-tool-card--clickable:hover .chat-tool-card__action {
-  opacity: 1;
-}
-
 .chat-tool-card__status {
   display: inline-flex;
   align-items: center;
@@ -1231,28 +1222,6 @@ img.chat-avatar {
   font-family: var(--font-meta);
   font-size: var(--font-size-meta);
   color: var(--text-muted);
-}
-
-.chat-tool-card__preview {
-  font-family: var(--font-meta);
-  font-size: var(--font-size-meta);
-  color: var(--text-muted);
-  margin-top: var(--spacer-4);
-  padding: var(--spacer-8) var(--spacer-10);
-  background: var(--bg-muted);
-  border-radius: var(--radius-8);
-  white-space: pre-wrap;
-  overflow: hidden;
-  max-height: 44px;
-  line-height: 1.4;
-  border: var(--hairline);
-  transition: background var(--duration-fast) var(--ease-out),
-    border-color var(--duration-fast) var(--ease-out);
-}
-
-.chat-tool-card--clickable:hover .chat-tool-card__preview {
-  background: var(--bg-hover);
-  border-color: var(--border-strong);
 }
 
 .chat-tool-card__inline {
@@ -1662,12 +1631,27 @@ img.chat-avatar {
   min-width: 0;
 }
 
-.chat-tool-subgroup__error {
+.chat-tool-subgroup__error,
+.chat-tool-subgroup__done {
   display: inline-flex;
+}
+
+.chat-tool-subgroup__error {
   color: var(--destructive);
 }
 
-.chat-tool-subgroup__error svg {
+.chat-tool-subgroup__done {
+  color: var(--ok);
+}
+
+/* 与外层聚合摘要同一语言：spinner → ✓/✗ 轻弹衔接，不硬切 */
+.chat-tool-subgroup__error,
+.chat-tool-subgroup__done {
+  animation: oc-status-pop var(--duration-fast) var(--ease-spring);
+}
+
+.chat-tool-subgroup__error svg,
+.chat-tool-subgroup__done svg {
   width: 12px;
   height: 12px;
 }
@@ -1900,7 +1884,7 @@ img.chat-avatar {
   background: var(--accent);
   opacity: .6;
   transform: translateY(0);
-  animation: chatReadingDot var(--duration-loop) ease-in-out infinite;
+  animation: chatReadingDot var(--duration-loop) var(--ease-in-out) infinite;
   will-change: transform, opacity;
 }
 
@@ -1969,6 +1953,23 @@ img.chat-avatar {
   to {
     opacity: 1;
     transform: translate(0);
+  }
+}
+
+/* 侧栏退场：沿入场来路（右侧）滑回。配合 app.ts 的 sidebarLeaving 两段式。 */
+.chat-sidebar--leaving {
+  animation: slide-out-right var(--duration-normal) var(--ease-standard) forwards;
+}
+
+@keyframes slide-out-right {
+  from {
+    opacity: 1;
+    transform: translate(0);
+  }
+
+  to {
+    opacity: 0;
+    transform: translate(20px);
   }
 }
 
@@ -2548,7 +2549,7 @@ img.chat-avatar {
   margin-left: 2px;
   color: var(--accent);
   /* 平滑呼吸取代硬闪烁（steps）：流式指示更沉静，长时间阅读不刺眼 */
-  animation: ocStreamCaret var(--duration-loop) ease-in-out infinite;
+  animation: ocStreamCaret var(--duration-loop) var(--ease-in-out) infinite;
 }
 
 /* R41 Task 9 流式安全前缀渐进渲染：容器 pre-wrap 仍服务于未闭合尾部纯文本段，
@@ -2587,7 +2588,7 @@ img.chat-avatar {
   height: 6px;
   border-radius: var(--radius-full);
   background: var(--accent);
-  animation: ocStreamDot var(--duration-loop) ease-in-out infinite;
+  animation: ocStreamDot var(--duration-loop) var(--ease-in-out) infinite;
 }
 
 @keyframes ocStreamDot {
@@ -2776,6 +2777,13 @@ img.chat-avatar {
    完成态（--done）：状态点与边框转 ok 色。全部 token 化，无硬编码 hex。
    ========================================================================== */
 
+/* dismiss RPC 在途即开始淡出（不等回包）；失败时类名摘除卡片瞬时回位，
+   配合错误提示不突兀。 */
+.chat-progress-card--dismissing {
+  animation: oc-fade-out var(--duration-normal) var(--ease-in-out) forwards;
+  pointer-events: none;
+}
+
 .chat-progress-card {
   margin-bottom: var(--spacer-10);
   /* R58a：与 compose 输入卡同宽对齐（--chat-column 居中列），
@@ -2832,7 +2840,7 @@ img.chat-avatar {
 
 .chat-progress-card__dot--active {
   background: var(--info);
-  animation: chat-progress-card-pulse var(--duration-loop) ease-in-out infinite;
+  animation: oc-pulse-strong var(--duration-loop) var(--ease-in-out) infinite;
 }
 
 .chat-progress-card__dot--done {
@@ -3014,15 +3022,6 @@ img.chat-avatar {
   border-radius: var(--radius-full);
   animation: oc-spin var(--duration-loop) linear infinite;
 }
-@keyframes chat-progress-card-pulse {
-  0%, 100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: .35;
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
   .chat-progress-card,
   .chat-progress-card__spinner,
@@ -3125,7 +3124,7 @@ img.chat-avatar {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 2px;
+  gap: var(--spacer-2);
   padding: var(--spacer-10) var(--spacer-12);
   border: var(--hairline);
   border-radius: var(--radius-8);

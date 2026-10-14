@@ -100,3 +100,50 @@ test("jsonGet: 2xx 非法 JSON 走 parse error reject", async () => {
   const { jsonGet } = await import("./skill-store");
   await expect(jsonGet<unknown>(`http://127.0.0.1:${port}/bad-json`)).rejects.toThrow();
 });
+
+// ── 技能更新：本地版本表读取（lockfile 优先 + _meta.json 回退）──
+
+test("readInstalledSkillVersions: lockfile 优先；_meta.json 补充；损坏条目跳过", async () => {
+  const { readInstalledSkillVersions } = await import("./skill-store");
+  const fs = await import("fs");
+  const os = await import("os");
+  const path = await import("path");
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "skill-versions-"));
+  try {
+    // lockfile 两枚
+    fs.mkdirSync(path.join(root, ".clawhub"), { recursive: true });
+    fs.writeFileSync(
+      path.join(root, ".clawhub", "lock.json"),
+      JSON.stringify({
+        version: 1,
+        skills: { a: { version: "1.0.2" }, b: { version: "2.0.0", installedAt: 1 } },
+      }),
+    );
+    // 目录 c 仅 _meta.json；目录 d 损坏 _meta.json；目录 e 无任何版本痕迹
+    for (const name of ["c", "d", "e"]) fs.mkdirSync(path.join(root, name), { recursive: true });
+    fs.writeFileSync(path.join(root, "c", "_meta.json"), JSON.stringify({ version: "0.9.1" }));
+    fs.writeFileSync(path.join(root, "d", "_meta.json"), "not json{");
+    const out = readInstalledSkillVersions(root);
+    expect(out).toEqual({ a: "1.0.2", b: "2.0.0", c: "0.9.1" });
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("readInstalledSkillVersions: 全空目录 → 空表；lockfile 损坏回退 _meta", async () => {
+  const { readInstalledSkillVersions } = await import("./skill-store");
+  const fs = await import("fs");
+  const os = await import("os");
+  const path = await import("path");
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "skill-versions-empty-"));
+  try {
+    expect(readInstalledSkillVersions(root)).toEqual({});
+    fs.mkdirSync(path.join(root, ".clawhub"), { recursive: true });
+    fs.writeFileSync(path.join(root, ".clawhub", "lock.json"), "{broken");
+    fs.mkdirSync(path.join(root, "x"), { recursive: true });
+    fs.writeFileSync(path.join(root, "x", "_meta.json"), JSON.stringify({ version: "3.1.4" }));
+    expect(readInstalledSkillVersions(root)).toEqual({ x: "3.1.4" });
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});

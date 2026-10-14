@@ -64,7 +64,7 @@ export function renderProgressCard(
 
   return html`
     <div
-      class="chat-progress-card ${stats.allDone ?"chat-progress-card--done" : ""} ${props.collapsed ? "chat-progress-card--collapsed" : ""}"
+      class="chat-progress-card ${stats.allDone ?"chat-progress-card--done" : ""} ${props.collapsed ? "chat-progress-card--collapsed" : ""} ${props.dismissing ? "chat-progress-card--dismissing" : ""}"
       role="status"
       aria-label=${t("progressCard.title")}
     >

@@ -366,7 +366,7 @@ oc-rail {
 
 .oc-rail__conn-step.is-active {
   background: var(--accent);
-  animation: pulse-subtle var(--duration-loop) ease-in-out infinite;
+  animation: pulse-subtle var(--duration-loop) var(--ease-in-out) infinite;
 }
 
 .oc-rail__conn-step-text {
@@ -507,17 +507,17 @@ oc-rail {
   width: 2px;
   border-radius: var(--radius-full);
   background: var(--border);
+  transform-origin: center;
+  /* 宽度变化走 transform 而非 left/width——合成层完成，不触发布局 */
   transition:
-    left var(--duration-fast) var(--ease-standard),
-    width var(--duration-fast) var(--ease-standard),
+    transform var(--duration-fast) var(--ease-standard),
     background-color var(--duration-fast) var(--ease-standard),
     box-shadow var(--duration-fast) var(--ease-standard);
 }
 
 .cryoclaw-panel-resize:hover::after,
 .cryoclaw-panel-resize:active::after {
-  left: 2px;
-  width: 4px;
+  transform: scaleX(2);
   background-color: var(--accent);
   box-shadow: 0 0 12px 2px var(--accent-glow);
 }
@@ -552,7 +552,24 @@ oc-rail {
   background: var(--bg-elevated);
   box-shadow: var(--shadow-lg);
   font-size: var(--text-sm);
+
+  /* 入场：自顶缘锚点下滑淡入（一镜到底：从哪来回哪去） */
+  animation: kernel-banner-in var(--duration-normal) var(--ease-standard);}
+@keyframes kernel-banner-in {
+  from { opacity: 0; transform: translateY(calc(var(--spacer-8) * -1)); }
+  to { opacity: 1; transform: translateY(0); }
 }
+
+/* 退场：沿来路向上滑出（cc-leaving 由 runExitAnimation 加，播完才清状态） */
+.kernel-auto-banner.cc-leaving {
+  animation: kernel-banner-out var(--duration-normal) var(--ease-in-out) forwards;
+}
+
+@keyframes kernel-banner-out {
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(calc(var(--spacer-8) * -1)); }
+}
+
 
 .kernel-auto-banner__head {
   display: flex;

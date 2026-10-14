@@ -2,6 +2,7 @@ import { html, nothing } from "lit";
 import type { AppViewState } from "../app-view-state.ts";
 import { t } from "../i18n.ts";
 import { icons } from "../icons.ts";
+import { runExitAnimation, exitHostFromEvent } from "../utils/exit-anim.ts";
 
 export function renderSharePrompt(state: AppViewState) {
   if (!state.sharePromptVisible) {
@@ -32,7 +33,7 @@ export function renderSharePrompt(state: AppViewState) {
             data-dialog-dismiss
             aria-label=${t("sharePrompt.close")}
             data-tooltip=${t("sharePrompt.close")}
-            @click=${() => state.dismissSharePrompt()}
+            @click=${(e: Event) => runExitAnimation(exitHostFromEvent(e, ".cc-dialog-overlay"), () => state.dismissSharePrompt())}
           >
             ${icons.x}
           </button>

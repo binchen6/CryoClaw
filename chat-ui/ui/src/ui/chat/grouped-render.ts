@@ -586,7 +586,7 @@ function renderCollapsedToolCards(
                   ? html`<span class="chat-tool-card__spinner" aria-hidden="true"></span>`
                   : runFailed
                     ? html`<span class="chat-tool-subgroup__error">${icons.x}</span>`
-                    : nothing}
+                    : html`<span class="chat-tool-subgroup__done">${icons.check}</span>`}
               </summary>
               <div class="chat-tool-subgroup__body">
                 ${run.cards.map((card) => renderToolCardSidebar(card, onOpenSidebar))}

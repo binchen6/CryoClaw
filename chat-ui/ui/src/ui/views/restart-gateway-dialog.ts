@@ -1,18 +1,22 @@
 import { html, nothing } from "lit";
 import type { AppViewState } from "../app-view-state.ts";
 import { t } from "../i18n.ts";
+import { runExitAnimation } from "../utils/exit-anim.ts";
 
 // 重启 Gateway 确认弹窗
 export function renderRestartGatewayDialog(state: AppViewState) {
   if (!state.showRestartGatewayDialog) return nothing;
 
+  // 重启立即触发不等退场动画；弹窗沿来路淡出后再移除 DOM
   const handleRestart = () => {
-    state.showRestartGatewayDialog = false;
     window.cryoclaw?.restartGateway?.();
+    handleDismiss();
   };
 
   const handleDismiss = () => {
-    state.showRestartGatewayDialog = false;
+    runExitAnimation(document.querySelector(".cc-dialog-overlay"), () => {
+      state.showRestartGatewayDialog = false;
+    });
   };
 
   return html`

@@ -92,6 +92,7 @@ export type RustCapturedEntry = {
 
 type ToolEvent =
   | { type: "progress"; done: number; total: number; entry: string }
+  | { type: "manifest"; entries: RustManifestEntry[] }
   | {
       type: "result";
       ok: boolean;
@@ -193,8 +194,18 @@ export async function probeArchiveTool(): Promise<ArchiveToolHandle | null> {
 }
 
 /** 单次 sidecar 会话：写一行 command JSON 到 stdin，收集 stdout 事件流，
- *  返回最终 result 事件。进度事件被解析但不外抛（调用方暂不需要进度）。 */
-function runToolSession(tool: ArchiveToolHandle, subcommand: string, command: unknown): Promise<ToolEvent & { type: "result" }> {
+ *  返回最终 result 事件。进度事件被解析但不外抛（调用方暂不需要进度）。
+ *
+ *  交互模式（options.onManifest 存在时）：command 行不带白名单，sidecar 解析
+ *  后回发 manifest 事件并等待第二行；onManifest 的返回值作为白名单行写回
+ *  stdin 后关流。onManifest 抛错（白名单校验拒绝）→ 终止会话并 reject，
+ *  调用方走既有静默回退 JS 路径由 JS 重跑产生权威文案。 */
+function runToolSession(
+  tool: ArchiveToolHandle,
+  subcommand: string,
+  command: unknown,
+  options?: { onManifest?: (entries: RustManifestEntry[]) => unknown },
+): Promise<ToolEvent & { type: "result" }> {
   return new Promise((resolve, reject) => {
     const child = spawn(tool.binPath, [subcommand], { windowsHide: true });
     let settled = false;
@@ -212,6 +223,7 @@ function runToolSession(tool: ArchiveToolHandle, subcommand: string, command: un
     // stdout 空闲看门狗：sidecar 活着但不输出（AV 锁文件/协议死锁等）会让会话
     // 永不 settle——import 生命周期是 stop gateway → import → start，挂死等于
     // gateway 无限期停摆。超时 kill + reject，调用方走既有静默回退 JS 路径。
+    // 交互模式同理：manifest 校验是纯 CPU 同步操作，远达不到 2 分钟窗口。
     const armIdleWatchdog = () => {
       if (idleTimer !== null) clearTimeout(idleTimer);
       idleTimer = setTimeout(() => {
@@ -246,6 +258,27 @@ function runToolSession(tool: ArchiveToolHandle, subcommand: string, command: un
           child.kill();
           return;
         }
+        if (event.type === "manifest") {
+          // manifest 事件只在交互模式合法（sidecar 只在 command 无白名单时发出）
+          if (!options?.onManifest) {
+            settle(new Error("sidecar 协议漂移：非交互会话收到 manifest 事件"));
+            child.kill();
+            return;
+          }
+          let reply: unknown;
+          try {
+            reply = options.onManifest(event.entries);
+          } catch (err) {
+            settle(err instanceof Error ? err : new Error(String(err)));
+            child.kill();
+            return;
+          }
+          // 回写白名单行并关流；child 提前退出时的 EPIPE 由 exit 事件兜底
+          child.stdin.write(`${JSON.stringify(reply)}\n`, "utf8", () => {
+            child.stdin.end();
+          });
+          continue;
+        }
         lastEvent = event;
       }
     });
@@ -262,11 +295,12 @@ function runToolSession(tool: ArchiveToolHandle, subcommand: string, command: un
       settle(new Error(`sidecar 异常退出 code=${code} signal=${signal}: ${stderrText.trim().slice(0, 500)}`));
     });
 
-    // 异步写 command 行并关流；child 提前退出时的 EPIPE 由 exit 事件兜底
+    // 异步写 command 行；非交互模式随即关流（交互模式等 manifest 回写后再关），
+    // child 提前退出时的 EPIPE 由 exit 事件兜底
     const line = `${JSON.stringify(command)}\n`;
     child.stdin.on("error", () => {});
     child.stdin.write(line, "utf8", () => {
-      child.stdin.end();
+      if (!options?.onManifest) child.stdin.end();
     });
   });
 }
@@ -277,32 +311,32 @@ function toArchiveError(error: { code: string; message: string }): Error {
   return err;
 }
 
-/** manifest 子命令：只解析 central directory + local header 一致性（不解压）。 */
-export async function rustReadManifest(tool: ArchiveToolHandle, zipPath: string): Promise<RustManifestEntry[]> {
-  const result = await runToolSession(tool, "manifest", { cmd: "manifest", zip: zipPath });
-  if (!result.ok) throw toArchiveError(result.error!);
-  return result.entries ?? [];
-}
-
-/** extract 子命令：白名单条目单遍流式解压 + 校验；outputDir 为 null 时
- *  只校验不落盘（validate 形态）。返回条目名（central 顺序）与 capture 内容。 */
+/** extract 子命令（交互式单会话）：command 行不带白名单 → sidecar 解析 zip 后
+ *  回发 manifest 事件 → onManifest 在 JS 侧跑白名单/注册表校验并返回白名单条目
+ *  （写回 stdin 第二行）→ sidecar 单遍流式解压 + 校验。同一进程同一打开句柄
+ *  完成解析与解压：zip 只解析一遍，且不存在两次调用间 zip 被替换的窗口。
+ *  outputDir 为 null 时只校验不落盘（validate 形态）。 */
 export async function rustExtractArchive(
   tool: ArchiveToolHandle,
   params: {
     zipPath: string;
     outputDir: string | null;
-    entries: RustExtractEntry[];
     capture: string[];
+    onManifest: (entries: RustManifestEntry[]) => RustExtractEntry[];
   },
 ): Promise<{ entryNames: string[]; capture: RustCapturedEntry[] }> {
-  const result = await runToolSession(tool, "extract", {
-    cmd: "extract",
-    zip: params.zipPath,
-    outputDir: params.outputDir,
-    entries: params.entries,
-    capture: params.capture,
-    utcOffsetMinutes: new Date().getTimezoneOffset(),
-  });
+  const result = await runToolSession(
+    tool,
+    "extract",
+    {
+      cmd: "extract",
+      zip: params.zipPath,
+      outputDir: params.outputDir,
+      capture: params.capture,
+      utcOffsetMinutes: new Date().getTimezoneOffset(),
+    },
+    { onManifest: (entries) => ({ entries: params.onManifest(entries) }) },
+  );
   if (!result.ok) throw toArchiveError(result.error!);
   return { entryNames: result.entryNames ?? [], capture: result.capture ?? [] };
 }

@@ -37,7 +37,7 @@ import {
   type CacheManifest,
   type ProgressHandler,
 } from "./webbridge";
-import { loadRemotePins } from "./webbridge-pins";
+import { loadRemotePins, loadRemoteExtensionPin, compareExtensionVersions } from "./webbridge-pins";
 import * as log from "./logger";
 
 // ═══════════════════════════════════════════════════════════════════
@@ -257,6 +257,11 @@ export interface WebbridgeVersionStatus {
   daemonRunning: boolean;
   daemonVersion: string | null;
   extensionVersion: string | null;
+  /** 扩展：当前生效 CRX 版本（运行时更新过的优先，内置打包兜底） */
+  extensionCurrent: string | null;
+  /** 扩展：远端清单最新版（缓存优先；清单无 extension 块或不可达为 null） */
+  extensionLatest: string | null;
+  extensionUpdateAvailable: boolean;
   updateAvailable: { current: string | null; latest: string | null } | null;
   autoUpdate: boolean;
   lastCheckedAt: string | null;
@@ -285,6 +290,19 @@ export async function getWebbridgeVersionStatus(opts: {
       ? manifestVersion
       : daemon?.version ?? null;
 
+  // 扩展（schema v3）：当前生效 CRX 版本 + 清单最新版（缓存优先，状态查询不强制触网）。
+  // lazy require：webbridge-extension-update 顶层导入本模块（锁/广播），直接 import 会成环。
+  let extensionCurrent: string | null = null;
+  let extensionLatest: string | null = null;
+  try {
+    const extMod = require("./webbridge-extension-update") as typeof import("./webbridge-extension-update");
+    extensionCurrent = extMod.currentEffectiveExtensionVersion(dataDir);
+    const pin = await loadRemoteExtensionPin({ dataDir });
+    extensionLatest = pin.extension?.version ?? null;
+  } catch {
+    // 扩展状态缺失不阻断主状态
+  }
+
   return {
     installed,
     installedVersion,
@@ -292,6 +310,12 @@ export async function getWebbridgeVersionStatus(opts: {
     daemonRunning: daemon?.running === true,
     daemonVersion: daemon?.version ?? null,
     extensionVersion: daemon?.extensionVersion ?? null,
+    extensionCurrent,
+    extensionLatest,
+    extensionUpdateAvailable:
+      !!extensionLatest && !!extensionCurrent
+        ? compareExtensionVersions(extensionLatest, extensionCurrent) > 0
+        : false,
     updateAvailable: daemon?.updateAvailable ?? checkState.updateAvailable ?? null,
     autoUpdate: checkState.autoUpdate,
     lastCheckedAt: checkState.checkedAt,
@@ -726,6 +750,23 @@ export async function maybeAutoCheckWebbridgeUpdate(): Promise<void> {
     } else if (result.updateAvailable) {
       // autoUpdate 关闭：只广播状态（设置页 / pill 侧自行刷新）
       broadcastWebbridgeStateChanged();
+    }
+
+    // 浏览器扩展随清单同步（schema v3）：daemon 报 version_mismatch 或清单
+    // 里有更新版本时自动换装。与 daemon 换装同一把独占锁——上方刚换装完时
+    // 这里会拿 busy，属预期（下个 24h 周期再补）。
+    try {
+      const { maybeAutoUpdateWebbridgeExtension } = require("./webbridge-extension-update") as typeof import("./webbridge-extension-update");
+      const daemonStatus = await fetchWebbridgeDaemonStatus({ dataDir });
+      await maybeAutoUpdateWebbridgeExtension({
+        dataDir,
+        versionMismatch: daemonStatus?.versionMismatch === true,
+        autoUpdate: readUpdateCheckState(dataDir).autoUpdate,
+      });
+    } catch (err) {
+      log.info(
+        `[webbridge-update] 扩展自动更新失败（忽略）: ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
   } catch (err) {
     log.info(`[webbridge-update] 自动检查失败（忽略）: ${err instanceof Error ? err.message : String(err)}`);

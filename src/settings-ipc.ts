@@ -39,6 +39,6 @@ export function registerSettingsIpc(opts: SettingsIpcOptions): void {
   registerAdvancedIpc(opts);
   registerCliIpc();
   registerBackupIpc(opts);
-  registerAboutIpc();
+  registerAboutIpc(opts);
   registerMemoryIpc();
 }

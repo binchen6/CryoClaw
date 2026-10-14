@@ -2,10 +2,16 @@
 // CRC32/长度校验 + 写盘 + chmod/utimes；目录元数据最后按深度降序恢复。
 // 目标路径一律由 JS 白名单 segments 在 output_dir 下重建，并做规范化前缀
 // 约束（zip slip 防御纵深；权威白名单/注册表校验在 JS 侧）。
+//
+// 白名单两种供给形态：
+//   - entries 随 command 行内联（旧协议，测试与单发场景用）；
+//   - entries 为 null 的交互模式：解析完成后向 stdout 发 manifest 事件，
+//     从 stdin 读白名单行再继续——zip 只解析一遍、文件句柄全程持有，
+//     消除 manifest/extract 两次 spawn 间 zip 被替换的 TOCTOU 窗口。
 
 use std::collections::{HashMap, HashSet};
 use std::fs::{self, File, OpenOptions};
-use std::io::{BufWriter, Read, Seek, SeekFrom, Write};
+use std::io::{BufRead, BufWriter, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -13,19 +19,32 @@ use crc32fast::Hasher;
 use flate2::read::DeflateDecoder;
 
 use crate::errors::{ArchiveError, ArchiveResult};
-use crate::protocol::{CapturedEntry, EntryKind, EventWriter, ExtractCommand, ExtractEntry};
+use crate::protocol::{self, CapturedEntry, EntryKind, EventWriter, ExtractCommand, ExtractEntry};
 use crate::zip_reader::{self, CentralEntry};
 
 const ZIP_COMPRESSION_STORE: u16 = 0;
 const MAX_CAPTURED_ENTRY_BYTES: u64 = 5 * 1024 * 1024;
 const CHUNK_SIZE: usize = 64 * 1024;
 
-pub fn run(cmd: &ExtractCommand) -> ArchiveResult<(Vec<String>, Vec<CapturedEntry>)> {
+pub fn run(cmd: &ExtractCommand, reader: &mut impl BufRead) -> ArchiveResult<(Vec<String>, Vec<CapturedEntry>)> {
     let parsed = zip_reader::parse(&cmd.zip)?;
+
+    let whitelist_storage;
+    let whitelist_source: &[ExtractEntry] = match &cmd.entries {
+        Some(entries) => entries,
+        None => {
+            // 交互模式：先发 manifest（JS 侧跑白名单校验），再等 stdin 回行。
+            // JS 校验失败会 kill 本进程；JS 进程死亡则 stdin 关闭、读行报错退出。
+            let mut events = EventWriter::new(0);
+            events.manifest(zip_reader::to_manifest(&parsed.entries))?;
+            whitelist_storage = protocol::read_whitelist_line(reader)?.entries;
+            &whitelist_storage
+        }
+    };
 
     // central 条目必须全部命中白名单（JS 已逐一校验；未命中 = 双实现漂移，fail closed）
     let whitelist: HashMap<&str, &ExtractEntry> =
-        cmd.entries.iter().map(|entry| (entry.name.as_str(), entry)).collect();
+        whitelist_source.iter().map(|entry| (entry.name.as_str(), entry)).collect();
     for entry in &parsed.entries {
         match whitelist.get(entry.name.as_str()) {
             None => {
@@ -48,6 +67,10 @@ pub fn run(cmd: &ExtractCommand) -> ArchiveResult<(Vec<String>, Vec<CapturedEntr
     let mut capture_out: Vec<CapturedEntry> = Vec::new();
     // 目录元数据收集（entry 借用随 parsed 生命周期，足够覆盖恢复阶段）
     let mut dir_metadata: Vec<(PathBuf, &CentralEntry)> = Vec::new();
+    // 已验证包含性的父目录缓存：同目录数百个文件只 canonicalize 一次（Windows 上
+    // canonicalize 是重 syscall）。词法 parent → canonical 的映射在会话内稳定：
+    // 目标树由本进程单线程创建/重建，无第三方并发写入。
+    let mut verified_parents: HashSet<PathBuf> = HashSet::new();
     let mut done: u64 = 0;
 
     for entry in parsed.entries_by_local_offset() {
@@ -65,11 +88,7 @@ pub fn run(cmd: &ExtractCommand) -> ArchiveResult<(Vec<String>, Vec<CapturedEntr
                 // 与文件分支同一防御纵深：父链可能被盘上既有 junction/符号链接
                 // 重定向——规范化后必须在根内，否则 create_dir_all 会穿透到根外
                 if let Some(parent) = dir.parent() {
-                    fs::create_dir_all(parent)?;
-                    let canonical_parent = fs::canonicalize(parent)?;
-                    if !canonical_parent.starts_with(root) {
-                        return Err(ArchiveError::containment(&entry.name));
-                    }
+                    ensure_parent_contained(root, parent, &mut verified_parents, &entry.name)?;
                 }
                 ensure_dir_target(&dir)?;
                 dir_metadata.push((dir.clone(), entry));
@@ -78,12 +97,8 @@ pub fn run(cmd: &ExtractCommand) -> ArchiveResult<(Vec<String>, Vec<CapturedEntr
             (Some(root), EntryKind::File) => {
                 let target_path = resolve_target(root, &target.segments, &entry.name)?;
                 if let Some(parent) = target_path.parent() {
-                    fs::create_dir_all(parent)?;
                     // 父目录可能被既有符号链接重定向：规范化后必须在根内
-                    let canonical_parent = fs::canonicalize(parent)?;
-                    if !canonical_parent.starts_with(root) {
-                        return Err(ArchiveError::containment(&entry.name));
-                    }
+                    ensure_parent_contained(root, parent, &mut verified_parents, &entry.name)?;
                 }
                 ensure_file_target(&target_path)?;
                 Some(target_path)
@@ -204,6 +219,24 @@ fn pump_stream(
     Ok(())
 }
 
+fn ensure_parent_contained(
+    root: &Path,
+    parent: &Path,
+    verified: &mut HashSet<PathBuf>,
+    entry_name: &str,
+) -> ArchiveResult<()> {
+    if verified.contains(parent) {
+        return Ok(());
+    }
+    fs::create_dir_all(parent)?;
+    let canonical_parent = fs::canonicalize(parent)?;
+    if !canonical_parent.starts_with(root) {
+        return Err(ArchiveError::containment(entry_name));
+    }
+    verified.insert(parent.to_path_buf());
+    Ok(())
+}
+
 fn prepare_output_root(dir: &Path) -> ArchiveResult<PathBuf> {
     // 与 JS ensureOutputRootDir 同语义：不存在则建（递归），存在则必须是真目录
     match fs::symlink_metadata(dir) {
@@ -296,10 +329,30 @@ fn apply_file_metadata(target: &Path, entry: &CentralEntry, utc_offset_minutes: 
         }
     }
     if let Ok(mtime) = dos_to_system_time(entry.dos_date, entry.dos_time, utc_offset_minutes) {
-        if let Ok(file) = File::open(target) {
+        if let Ok(file) = open_for_metadata_write(target) {
             let _ = file.set_modified(mtime);
         }
     }
+}
+
+// set_modified（Windows SetFileTime）要求句柄带 FILE_WRITE_ATTRIBUTES——File::open
+// 的 GENERIC_READ 不含该权限，且普通 CreateFile 打不开目录句柄（需
+// FILE_FLAG_BACKUP_SEMANTICS）；只读打开会让 mtime 恢复在 Windows 上静默失败
+// （JS backend 的 fs.utimesSync 无此限制），双实现因此漂移。Windows 专用打开修复。
+#[cfg(windows)]
+fn open_for_metadata_write(target: &Path) -> std::io::Result<File> {
+    use std::os::windows::fs::OpenOptionsExt;
+    const FILE_WRITE_ATTRIBUTES: u32 = 0x100;
+    const FILE_FLAG_BACKUP_SEMANTICS: u32 = 0x0200_0000;
+    OpenOptions::new()
+        .access_mode(FILE_WRITE_ATTRIBUTES)
+        .custom_flags(FILE_FLAG_BACKUP_SEMANTICS)
+        .open(target)
+}
+
+#[cfg(not(windows))]
+fn open_for_metadata_write(target: &Path) -> std::io::Result<File> {
+    File::open(target)
 }
 
 fn dos_to_system_time(dos_date: u16, dos_time: u16, utc_offset_minutes: i32) -> ArchiveResult<SystemTime> {

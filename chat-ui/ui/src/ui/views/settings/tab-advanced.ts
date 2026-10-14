@@ -14,6 +14,7 @@
 import { html, nothing } from "lit";
 import type { AppViewState } from "../../app-view-state.ts";
 import { t, tWithDetail } from "../../i18n.ts";
+import { runExitAnimation } from "../../utils/exit-anim.ts";
 import * as ipc from "../../data/ipc-bridge.ts";
 import "../../components/toggle-switch.ts";
 import "../../components/message-box.ts";
@@ -110,6 +111,8 @@ function createAdvancedState() {
     // 更新流程命中 PIN_STALE → 版本卡片显示「刷新钉定」按钮
     wbPinStale: false,
     wbRefreshPinsBusy: false,
+    // ── 浏览器扩展更新（schema v3）──
+    wbExtApplyBusy: false,
   };
 }
 
@@ -374,6 +377,35 @@ async function onModalRefreshPins(state: AppViewState) {
   }
 }
 
+// ── 浏览器扩展更新（schema v3）：清单 extension 块驱动，成功文案提示浏览器重启生效 ──
+async function onWbExtensionUpdate(state: AppViewState) {
+  if (s.wbExtApplyBusy || s.wbApplyBusy || s.wbCheckBusy) return;
+  s.wbExtApplyBusy = true;
+  setWbVersionMessage(t("settings.advanced.wbExtUpdateApplying"));
+  state.requestUpdate();
+  try {
+    const res = await ipc.settingsWebbridgeExtensionUpdate();
+    if (res.success && res.data) {
+      setWbVersionMessage(
+        t("settings.advanced.wbExtUpdateDone").replace(/\{version\}/g, res.data.to),
+      );
+      void loadWebbridgeVersion(state);
+    } else if (res.code === "NO_UPDATE") {
+      setWbVersionMessage(t("settings.advanced.wbExtUpdateNoUpdate"));
+    } else {
+      setWbVersionMessage(
+        t("settings.advanced.wbExtUpdateFailed") + (res.message ? `: ${res.message}` : ""),
+        "error",
+      );
+    }
+  } catch (e: any) {
+    setWbVersionMessage(tWithDetail("settings.advanced.wbExtUpdateFailed", e?.message), "error");
+  } finally {
+    s.wbExtApplyBusy = false;
+    state.requestUpdate();
+  }
+}
+
 async function onWbAutoUpdateToggle(state: AppViewState, checked: boolean) {
   if (s.wbAutoUpdateSaving) return;
   s.wbAutoUpdateSaving = true;
@@ -606,7 +638,10 @@ function renderRepairModal(state: AppViewState) {
   const m = s.repairModal;
   if (!m) return nothing;
 
-  const close = () => { if (!m.saving) closeRepairModal(state); };
+  const close = () => {
+    if (m.saving) return;
+    runExitAnimation(document.querySelector(".wb-modal-overlay"), () => closeRepairModal(state));
+  };
 
   if (m.view === "default-unsupported") {
     return html`
@@ -727,6 +762,20 @@ function renderWebbridgeVersionCard(state: AppViewState) {
               ?disabled=${s.wbCheckBusy || s.wbApplyBusy}
               @click=${() => { void onWbApplyUpdate(state); }}>
               ${s.wbApplyBusy ? t("settings.advanced.wbUpdateApplying") : t("settings.advanced.wbUpdateApply")}
+            </button>`
+          : nothing}
+        ${v?.extensionCurrent
+          ? html`<span class="oc-settings__hint oc-font-meta oc-m-0" style="align-self:center">
+              ${t("settings.advanced.wbExtLabel")}: ${v.extensionCurrent}${v.extensionUpdateAvailable && v.extensionLatest
+                ? ` → ${v.extensionLatest}`
+                : ""}
+            </span>`
+          : nothing}
+        ${v?.extensionUpdateAvailable
+          ? html`<button class="btn btn--sm"
+              ?disabled=${s.wbExtApplyBusy || s.wbCheckBusy || s.wbApplyBusy}
+              @click=${() => { void onWbExtensionUpdate(state); }}>
+              ${s.wbExtApplyBusy ? t("settings.advanced.wbExtUpdateApplying") : t("settings.advanced.wbExtUpdateApply")}
             </button>`
           : nothing}
         ${s.wbPinStale

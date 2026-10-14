@@ -10,20 +10,10 @@
   margin-bottom: var(--spacer-10);
   /* live → 完成切换是整块 DOM 替换：历史思考块入场 150ms 渐显衔接，
      避免从实时思考区跳变到历史块时突兀闪现 */
-  animation: chat-thinking-enter var(--duration-fast) var(--ease-out);
+  animation: oc-fade-in var(--duration-fast) var(--ease-out);
   /* 折叠开合真实高度过渡（见下方 ::details-content 规则）：
      Chromium 的 interpolate-size 允许 height 在 0 与 auto 关键字间插值 */
   interpolate-size: allow-keywords;
-}
-
-@keyframes chat-thinking-enter {
-  from {
-    opacity: 0;
-  }
-
-  to {
-    opacity: 1;
-  }
 }
 
 /* 折叠开合真实高度过渡：::details-content 闭合态 height 0、展开态 auto，
@@ -197,7 +187,7 @@
   white-space: pre-wrap;
   word-break: break-word;
   /* 解说区出现/消失的衔接：条件渲染挂载一次，fade 入场替代瞬现 */
-  animation: chat-thinking-enter var(--duration-fast) var(--ease-out);
+  animation: oc-fade-in var(--duration-fast) var(--ease-out);
 }
 
 /* ── R89 会话仪表盘（board.get + board.changed，会话级 board 面板）── */
@@ -288,6 +278,8 @@
   position: absolute;
   bottom: calc(100% + 8px);
   left: 0;
+  transform-origin: bottom left;
+  animation: chat-popover-in var(--duration-fast) var(--ease-spring);
   z-index: 50;
   min-width: 200px;
   background: var(--bg-elevated);
@@ -366,6 +358,8 @@
   position: absolute;
   bottom: calc(100% + 8px);
   left: 0;
+  transform-origin: bottom left;
+  animation: chat-popover-in var(--duration-fast) var(--ease-spring);
   z-index: 51;
   min-width: 240px;
   max-width: 320px;
@@ -430,6 +424,7 @@
 /* ── 目标横幅 ── */
 .chat-goal {
   display: flex;
+  animation: rise var(--duration-normal) var(--ease-standard);
   align-items: center;
   justify-content: space-between;
   gap: var(--spacer-12);
@@ -510,6 +505,7 @@
 /* ── 目标表单 ── */
 .chat-goal-form {
   display: flex;
+  animation: rise var(--duration-normal) var(--ease-standard);
   gap: var(--spacer-8);
   margin-bottom: var(--spacer-10);
   padding: var(--spacer-10);
@@ -573,6 +569,8 @@
   position: absolute;
   bottom: calc(100% + 4px);
   left: 0;
+  transform-origin: bottom left;
+  animation: chat-popover-in var(--duration-fast) var(--ease-spring);
   right: 0;
   z-index: 50;
   max-height: 260px;
@@ -638,6 +636,7 @@
 
 .chat-approval-panel {
   flex: 1;
+  animation: rise var(--duration-normal) var(--ease-standard);
   min-width: 260px;
   /* 多条审批并存时限制高度，避免把消息流挤没 */
   max-height: 40vh;
@@ -670,7 +669,7 @@
 .chat-approval-item__body {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--spacer-2);
   min-width: 0;
 }
 

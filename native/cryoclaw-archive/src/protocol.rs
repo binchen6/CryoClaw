@@ -79,7 +79,11 @@ pub struct ExtractCommand {
     pub output_dir: Option<String>,
     /// JS 白名单条目（已经过路径注册表/类型/大小校验），name 匹配 central 条目，
     /// segments 用于在 output_dir 下重建目标路径（不信任 zip 内名称做拼接）。
-    pub entries: Vec<ExtractEntry>,
+    /// None = 交互模式：sidecar 解析后先向 stdout 发 manifest 事件，再从 stdin
+    /// 读一行白名单 JSON 继续——单进程单解析，文件句柄持有（消除 manifest 与
+    /// extract 两次调用间 zip 被替换的 TOCTOU 窗口）。
+    #[serde(default)]
+    pub entries: Option<Vec<ExtractEntry>>,
     #[serde(default)]
     pub capture: Vec<String>,
     /// JS 侧 `new Date().getTimezoneOffset()`（UTC-本地，分钟）。DOS 时间为本地
@@ -87,14 +91,20 @@ pub struct ExtractCommand {
     pub utc_offset_minutes: i32,
 }
 
+/// 交互模式 stdin 第二行：JS 对 manifest 事件跑完白名单校验后回写。
 #[derive(Debug, Deserialize)]
+pub struct WhitelistLine {
+    pub entries: Vec<ExtractEntry>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
 pub struct ExtractEntry {
     pub name: String,
     pub kind: EntryKind,
     pub segments: Vec<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ManifestEntry {
     pub name: String,
@@ -119,6 +129,9 @@ pub struct CapturedEntry {
 pub enum Event {
     #[serde(rename = "progress")]
     Progress { done: u64, total: u64, entry: String },
+    /// 交互模式 extract：解析完成、等待 stdin 白名单行前发出（不节流）。
+    #[serde(rename = "manifest")]
+    Manifest { entries: Vec<ManifestEntry> },
     #[serde(rename = "result")]
     Result {
         ok: bool,
@@ -146,22 +159,34 @@ impl From<&ArchiveError> for ErrorBody {
 }
 
 pub fn read_command<R: BufRead>(mut reader: R) -> ArchiveResult<Command> {
+    let line = read_protocol_line(&mut reader, "command")?;
+    serde_json::from_str(line.trim()).map_err(|err| ArchiveError::new("protocol", format!("command JSON 解析失败: {err}")))
+}
+
+/// 交互模式 stdin 第二行（白名单）。JS 进程死亡时管道关闭、read_line 返回 0，
+/// 报 protocol 错退出——不会永久阻塞。
+pub fn read_whitelist_line<R: BufRead>(mut reader: R) -> ArchiveResult<WhitelistLine> {
+    let line = read_protocol_line(&mut reader, "whitelist")?;
+    serde_json::from_str(line.trim()).map_err(|err| ArchiveError::new("protocol", format!("whitelist JSON 解析失败: {err}")))
+}
+
+fn read_protocol_line<R: BufRead>(reader: &mut R, what: &str) -> ArchiveResult<String> {
     let mut line = String::new();
     // 条目清单上限 256MB——远超实际归档规模，只防恶意管道无限流。
     const MAX_COMMAND_BYTES: u64 = 256 * 1024 * 1024;
     // UFCS 显式取 &mut R 的 take（Read 为 &mut R 有 blanket impl），避免移动 R
-    let mut limited = Read::take(&mut reader, MAX_COMMAND_BYTES);
+    let mut limited = Read::take(&mut *reader, MAX_COMMAND_BYTES);
     let read = limited.read_line(&mut line).map_err(|err| {
         if err.kind() == io::ErrorKind::UnexpectedEof {
-            ArchiveError::new("protocol", "command 行缺失或超过 256MB 上限")
+            ArchiveError::new("protocol", format!("{what} 行缺失或超过 256MB 上限"))
         } else {
             ArchiveError::from(err)
         }
     })?;
     if read == 0 {
-        return Err(ArchiveError::new("protocol", "stdin 为空：缺少 JSON command 行"));
+        return Err(ArchiveError::new("protocol", format!("stdin 为空：缺少 JSON {what} 行")));
     }
-    serde_json::from_str(line.trim()).map_err(|err| ArchiveError::new("protocol", format!("command JSON 解析失败: {err}")))
+    Ok(line)
 }
 
 /// stdout 事件写出器；progress 节流（距上次 ≥100ms 或最后一条才发）。
@@ -182,6 +207,11 @@ impl EventWriter {
         }
         self.last_flush = Instant::now();
         self.emit(&Event::Progress { done, total: self.total, entry: entry.to_string() })
+    }
+
+    /// manifest 事件：交互模式的握手，必须立即发出（不节流）。
+    pub fn manifest(&mut self, entries: Vec<ManifestEntry>) -> ArchiveResult<()> {
+        self.emit(&Event::Manifest { entries })
     }
 
     fn emit(&mut self, event: &Event) -> ArchiveResult<()> {

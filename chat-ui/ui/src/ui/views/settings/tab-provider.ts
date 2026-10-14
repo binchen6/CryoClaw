@@ -14,6 +14,7 @@ import { repeat } from "lit/directives/repeat.js";
 import { ref } from "lit/directives/ref.js";
 import type { AppViewState } from "../../app-view-state.ts";
 import { t, tWithDetail } from "../../i18n.ts";
+import { runExitAnimation } from "../../utils/exit-anim.ts";
 import * as ipc from "../../data/ipc-bridge.ts";
 import { runKimiOAuthLogin } from "../../data/kimi-oauth-flow.ts";
 import "../../components/toggle-switch.ts";
@@ -41,6 +42,7 @@ import {
   AUTH_PROXY_API_KEY_SENTINEL,
   type AddSelection,
   type ProviderGroup, type GroupedProvider, type ProviderModelEntry, type ProviderGroupId,
+  type OpenclawConfigDraft, type OpenclawProviderEntry, type OpenclawProviderModelEntry,
   deriveProviderView,
 } from "./tab-provider.lib.ts";
 import {
@@ -123,7 +125,7 @@ function createProviderState() {
     oauthSuccess: false,
     oauthNoMembership: false,
     pendingOAuthToken: null as string | null,
-    usageData: null as any,
+    usageData: null as ipc.UsageData | null,
     usageLoading: false,
     // fallback 添加
     fallbackAddKey: "",
@@ -306,7 +308,7 @@ async function loadAgents(state: AppViewState) {
 
 async function runPatch(
   state: AppViewState,
-  mutator: (draft: Record<string, unknown>) => void,
+  mutator: (draft: OpenclawConfigDraft) => void,
   opts?: { replacePaths?: string[] },
 ): Promise<boolean> {
   if (!state.client || s.busy) return false;
@@ -341,9 +343,9 @@ async function runPatch(
 
 async function handleSetDefault(modelKey: string, state: AppViewState) {
   await runPatch(state, draft => {
-    const agents = (draft.agents ??= {}) as Record<string, any>;
-    const defaults = (agents.defaults ??= {}) as Record<string, any>;
-    const model = (defaults.model ??= {}) as Record<string, any>;
+    const agents = (draft.agents ??= {});
+    const defaults = (agents.defaults ??= {});
+    const model = (defaults.model ??= {});
     model.primary = modelKey;
   });
 }
@@ -356,18 +358,17 @@ async function handleDeleteModel(prov: GroupedProvider, entry: ProviderModelEntr
   }
   if (!(await showConfirm(state, t("settings.provider.deleteConfirm"), { danger: true }))) return;
   await runPatch(state, draft => {
-    const providers = (draft.models as any)?.providers ?? {};
+    const providers = draft.models?.providers ?? {};
     const target = providers[prov.providerKey];
     if (!target || !Array.isArray(target.models)) return;
-    target.models = target.models.filter((m: any) => (typeof m === "string" ? m : m?.id) !== entry.id);
+    target.models = target.models.filter(m => (typeof m === "string" ? m : m?.id) !== entry.id);
     if (target.models.length === 0) {
       delete providers[prov.providerKey];
     }
     // 同步从 fallbacks 移除
-    const fallbacks = (draft.agents as any)?.defaults?.model?.fallbacks;
-    if (Array.isArray(fallbacks)) {
-      const next = fallbacks.filter((k: unknown) => k !== entry.key);
-      (draft.agents as any).defaults.model.fallbacks = next;
+    const modelCfg = draft.agents?.defaults?.model;
+    if (modelCfg && Array.isArray(modelCfg.fallbacks)) {
+      modelCfg.fallbacks = modelCfg.fallbacks.filter(k => k !== entry.key);
     }
   });
 }
@@ -382,11 +383,11 @@ async function handleDeleteProvider(prov: GroupedProvider, state: AppViewState) 
   if (!(await showConfirm(state, t("settings.provider.deleteProviderConfirm"), { danger: true }))) return;
   const removedKeys = new Set(prov.models.map(m => m.key));
   await runPatch(state, draft => {
-    const providers = (draft.models as any)?.providers ?? {};
+    const providers = draft.models?.providers ?? {};
     delete providers[prov.providerKey];
-    const model = (draft.agents as any)?.defaults?.model;
-    if (Array.isArray(model?.fallbacks)) {
-      model.fallbacks = model.fallbacks.filter((k: unknown) => typeof k !== "string" || !removedKeys.has(k));
+    const model = draft.agents?.defaults?.model;
+    if (model && Array.isArray(model.fallbacks)) {
+      model.fallbacks = model.fallbacks.filter(k => !removedKeys.has(k));
     }
   });
 }
@@ -401,9 +402,9 @@ async function handleAliasSave(prov: GroupedProvider, entry: ProviderModelEntry,
   const alias = s.aliasDraft.trim();
   s.aliasEditing = null;
   await runPatch(state, draft => {
-    const models = (draft.models as any)?.providers?.[prov.providerKey]?.models;
+    const models = draft.models?.providers?.[prov.providerKey]?.models;
     if (!Array.isArray(models)) return;
-    const idx = models.findIndex((m: any) => (typeof m === "string" ? m : m?.id) === entry.id);
+    const idx = models.findIndex(m => (typeof m === "string" ? m : m?.id) === entry.id);
     if (idx < 0) return;
     let target = models[idx];
     if (typeof target === "string") {
@@ -466,7 +467,7 @@ async function handleKeySaveInner(prov: GroupedProvider, state: AppViewState, ap
   // 先真实 HTTP 验证（保留主进程 IPC）
   const verifyResult = await ipc.settingsVerifyKey(verifyParams);
   if (!verifyResult.success) {
-    s.error = verifyResult.message ?? (verifyResult as any).error ?? t("setup.error.verifyFailed");
+    s.error = verifyResult.message ?? verifyResult.error ?? t("setup.error.verifyFailed");
     state.requestUpdate();
     return;
   }
@@ -480,7 +481,7 @@ async function handleKeySaveInner(prov: GroupedProvider, state: AppViewState, ap
       return;
     }
     const ok = await runPatch(state, draft => {
-      const providers = (draft.models as any)?.providers ?? {};
+      const providers = draft.models?.providers ?? {};
       const target = providers["kimi-coding"];
       if (!target) return;
       target.apiKey = AUTH_PROXY_API_KEY_SENTINEL;
@@ -491,7 +492,7 @@ async function handleKeySaveInner(prov: GroupedProvider, state: AppViewState, ap
     return;
   }
   const ok = await runPatch(state, draft => {
-    const providers = (draft.models as any)?.providers ?? {};
+    const providers = draft.models?.providers ?? {};
     const target = providers[prov.providerKey];
     if (!target) return;
     target.apiKey = apiKey;
@@ -537,9 +538,9 @@ async function handleModelDrop(prov: GroupedProvider, state: AppViewState) {
   const nextIds = reorderIds(ids, drag.id, target.id, target.position);
   if (nextIds === ids) return;
   await runPatch(state, draft => {
-    const models = (draft.models as any)?.providers?.[prov.providerKey]?.models;
+    const models = draft.models?.providers?.[prov.providerKey]?.models;
     if (!Array.isArray(models)) return;
-    const idOf = (m: any) => (typeof m === "string" ? m : m?.id ?? "");
+    const idOf = (m: string | OpenclawProviderModelEntry) => (typeof m === "string" ? m : m?.id ?? "");
     const reordered = applyIdOrder(models, nextIds, idOf);
     models.length = 0;
     models.push(...reordered);
@@ -556,7 +557,7 @@ async function handleFallbackDrop(state: AppViewState) {
   const nextIds = reorderIds(ids, drag.id, target.id, target.position);
   if (nextIds === ids) return;
   await runPatch(state, draft => {
-    const model = ((draft.agents as any).defaults ??= {}).model ??= {};
+    const model = ((draft.agents ??= {}).defaults ??= {}).model ??= {};
     model.fallbacks = nextIds;
   }, { replacePaths: ["agents.defaults.model.fallbacks"] });
 }
@@ -635,7 +636,7 @@ async function handleFallbackAdd(state: AppViewState) {
   if (!key) return;
   s.fallbackAddKey = "";
   await runPatch(state, draft => {
-    const model = ((draft.agents as any).defaults ??= {}).model ??= {};
+    const model = ((draft.agents ??= {}).defaults ??= {}).model ??= {};
     const list = Array.isArray(model.fallbacks) ? model.fallbacks : [];
     if (list.includes(key)) return;
     model.fallbacks = [...list, key];
@@ -644,9 +645,9 @@ async function handleFallbackAdd(state: AppViewState) {
 
 async function handleFallbackRemove(key: string, state: AppViewState) {
   await runPatch(state, draft => {
-    const model = (draft.agents as any)?.defaults?.model;
-    if (!Array.isArray(model?.fallbacks)) return;
-    model.fallbacks = model.fallbacks.filter((k: unknown) => k !== key);
+    const model = draft.agents?.defaults?.model;
+    if (!model || !Array.isArray(model.fallbacks)) return;
+    model.fallbacks = model.fallbacks.filter(k => k !== key);
   });
 }
 
@@ -715,7 +716,7 @@ function initAddCapsFromCatalog(providerKey: string, modelId: string) {
     draft.audio = Array.isArray(cat.input) ? cat.input.includes("audio") : false;
     draft.reasoning = cat.reasoning === true;
     draft.contextWindow = typeof cat.contextWindow === "number" ? String(cat.contextWindow) : "";
-    const efforts = (cat as any)?.compat?.supportedReasoningEfforts;
+    const efforts = cat.compat?.supportedReasoningEfforts;
     if (Array.isArray(efforts)) {
       draft.thinkingLevels = efforts.filter((e: unknown): e is string => typeof e === "string" && e !== "off");
     }
@@ -785,8 +786,9 @@ async function handleAddToGroupSave(state: AppViewState) {
     return;
   }
   const snap = getCachedConfigSnapshot();
-  const existingProv = (snap?.config?.models as any)?.providers?.[providerKey];
-  const hasModel = Array.isArray(existingProv?.models) && existingProv.models.some((m: any) => (typeof m === "string" ? m : m?.id) === modelId);
+  const snapDraft = snap?.config as OpenclawConfigDraft | undefined;
+  const existingProv = snapDraft?.models?.providers?.[providerKey];
+  const hasModel = Array.isArray(existingProv?.models) && existingProv.models.some(m => (typeof m === "string" ? m : m?.id) === modelId);
   if (hasModel) {
     s.error = t("settings.provider.modelExists");
     state.requestUpdate();
@@ -806,19 +808,20 @@ async function handleAddToGroupSave(state: AppViewState) {
       catalogProvider, modelId, s.addAlias.trim(), supportsImage,
       s.addCaps ? buildOverridesFromCaps(s.addCaps, true) : undefined,
     );
-    const hasPrimary = !!(snap?.config?.agents as any)?.defaults?.model?.primary;
+    const hasPrimary = !!snapDraft?.agents?.defaults?.model?.primary;
     // 进入时 provider 是否已存在：patchConfig 在 baseHash 冲突时会用新快照重放 mutator，
     // 若期间 provider 被并发删除，重放不得复活缺 apiKey/baseUrl 的裸块（对齐 handleSyncAddSelected）
     const existedBefore = existingProv != null;
     const ok = await runPatch(state, draft => {
-      const providers = ((draft.models ??= {}) as any).providers ??= {};
+      const providers = (draft.models ??= {}).providers ??= {};
       if (existedBefore && !providers[providerKey]) return; // 并发删除守卫
       const prov = (providers[providerKey] ??= { models: [] });
       if (!Array.isArray(prov.models)) prov.models = [];
-      prov.models.push(entry);
+      prov.models.push(entry as OpenclawProviderModelEntry);
       if (!hasPrimary) {
-        (((draft.agents ??= {}) as any).defaults ??= {}).model ??= {};
-        (draft.agents as any).defaults.model.primary = `${providerKey}/${modelId}`;
+        const agents = (draft.agents ??= {});
+        const defaults = (agents.defaults ??= {});
+        (defaults.model ??= {}).primary = `${providerKey}/${modelId}`;
       }
     });
     if (ok) {
@@ -836,10 +839,14 @@ async function handleAddToGroupSave(state: AppViewState) {
 
 function startModelEdit(prov: GroupedProvider, entry: ProviderModelEntry, state: AppViewState) {
   const snap = getCachedConfigSnapshot();
-  const rawModels = (snap?.config?.models as any)?.providers?.[prov.providerKey]?.models;
+  const rawModels = (snap?.config as OpenclawConfigDraft | undefined)?.models?.providers?.[prov.providerKey]?.models;
   const raw = Array.isArray(rawModels)
-    ? rawModels.find((m: any) => (typeof m === "string" ? m : m?.id) === entry.id)
+    ? rawModels.find(m => (typeof m === "string" ? m : m?.id) === entry.id)
     : undefined;
+  // 退场途中改开另一行：作废旧退场定时器并摘掉 leaving class（节点就地复用）
+  editExitToken++;
+  document.querySelector('.oc-provider-edit-drawer__backdrop')?.classList.remove('cc-leaving');
+  document.querySelector('.oc-provider-edit-drawer')?.classList.remove('cc-leaving');
   s.editingModelKey = entry.key;
   s.editingProviderKey = prov.providerKey;
   s.editDraft = deriveOverridesFromEntry(raw);
@@ -847,10 +854,25 @@ function startModelEdit(prov: GroupedProvider, entry: ProviderModelEntry, state:
   state.requestUpdate();
 }
 
+// 抽屉两段式退场（一镜到底）：backdrop + 抽屉本体一起播退场帧，播完才清状态。
+// 代次守卫：退场途中点开另一行编辑时作废旧定时器，避免误清新编辑态。
+let editExitToken = 0;
+
 function cancelModelEdit(state: AppViewState) {
-  s.editingModelKey = null;
-  s.editDraft = null;
-  state.requestUpdate();
+  const token = ++editExitToken;
+  const closingKey = s.editingModelKey;
+  runExitAnimation(
+    [
+      document.querySelector(".oc-provider-edit-drawer__backdrop"),
+      document.querySelector(".oc-provider-edit-drawer"),
+    ],
+    () => {
+      if (token !== editExitToken || s.editingModelKey !== closingKey) return;
+      s.editingModelKey = null;
+      s.editDraft = null;
+      state.requestUpdate();
+    },
+  );
 }
 
 async function handleModelEditSave(entry: ProviderModelEntry, state: AppViewState) {
@@ -864,19 +886,19 @@ async function handleModelEditSave(entry: ProviderModelEntry, state: AppViewStat
   state.requestUpdate();
   try {
     const ok = await runPatch(state, draft => {
-      const models = (draft.models as any)?.providers?.[providerKey]?.models;
+      const models = draft.models?.providers?.[providerKey]?.models;
       if (!Array.isArray(models)) return;
-      const idx = models.findIndex((m: any) => (typeof m === "string" ? m : m?.id) === entry.id);
+      const idx = models.findIndex(m => (typeof m === "string" ? m : m?.id) === entry.id);
       if (idx < 0) return;
       const raw = models[idx];
       // 裸字符串 entry 升格为对象（内核 schema 要求 {id,name}，顺带修复）
-      const base = typeof raw === "string" ? { id: raw, name: entry.name || raw } : { ...raw };
+      const base: OpenclawProviderModelEntry = typeof raw === "string" ? { id: raw, name: entry.name || raw } : { ...raw };
       if (!base.name) base.name = entry.name || entry.id;
-      models[idx] = applyCapabilityOverrides(base, overrides);
+      models[idx] = applyCapabilityOverrides(base, overrides) as OpenclawProviderModelEntry;
     });
     if (ok) {
-      s.editingModelKey = null;
-      s.editDraft = null;
+      // 保存成功同样走两段式退场，抽屉沿来路滑回
+      cancelModelEdit(state);
     }
   } finally {
     s.editSaving = false;
@@ -925,8 +947,9 @@ async function handleAddSave(state: AppViewState) {
 
   const isKimiCode = isKimiCodeAdd();
   const snap = getCachedConfigSnapshot();
-  const existingProv = (snap?.config?.models as any)?.providers?.[target.providerKey];
-  const hasModel = Array.isArray(existingProv?.models) && existingProv.models.some((m: any) => (typeof m === "string" ? m : m?.id) === modelId);
+  const snapDraft = snap?.config as OpenclawConfigDraft | undefined;
+  const existingProv = snapDraft?.models?.providers?.[target.providerKey];
+  const hasModel = Array.isArray(existingProv?.models) && existingProv.models.some(m => (typeof m === "string" ? m : m?.id) === modelId);
   if (hasModel) {
     s.error = t("settings.provider.modelExists");
     state.requestUpdate();
@@ -965,7 +988,7 @@ async function handleAddSave(state: AppViewState) {
       if (isKimiCode) verifyParams.verifyViaProxy = true;
       const verifyResult = await ipc.settingsVerifyKey(verifyParams);
       if (!verifyResult.success) {
-        const errMsg = verifyResult.message ?? (verifyResult as any).error ?? "";
+        const errMsg = verifyResult.message ?? verifyResult.error ?? "";
         if (isKimiCode && s.pendingOAuthToken && errMsg.includes("401")) {
           s.pendingOAuthToken = null;
           try { await ipc.kimiOAuthLogout(); } catch {}
@@ -984,7 +1007,7 @@ async function handleAddSave(state: AppViewState) {
 
     const alias = s.addAlias.trim();
     const entry = buildModelEntry(target.catalogProvider, modelId, alias, supportsImage);
-    const hasPrimary = !!(snap?.config?.agents as any)?.defaults?.model?.primary;
+    const hasPrimary = !!snapDraft?.agents?.defaults?.model?.primary;
 
     if (isKimiCode && apiKey) {
       // 真实 key 写 sidecar + 注入代理；config 只写占位符
@@ -995,16 +1018,15 @@ async function handleAddSave(state: AppViewState) {
         return;
       }
       const ok = await runPatch(state, draft => {
-        const providers = ((draft.models ??= {}) as any).providers ??= {};
+        const providers = (draft.models ??= {}).providers ??= {};
         const prov = (providers["kimi-coding"] ??= { models: [] });
         prov.apiKey = AUTH_PROXY_API_KEY_SENTINEL;
         prov.baseUrl = `http://127.0.0.1:${proxyPort}/coding`;
         prov.api = "anthropic-messages";
         if (!Array.isArray(prov.models)) prov.models = [];
-        prov.models.push(entry);
+        prov.models.push(entry as OpenclawProviderModelEntry);
         if (!hasPrimary) {
-          (((draft.agents ??= {}) as any).defaults ??= {}).model ??= {};
-          (draft.agents as any).defaults.model.primary = `kimi-coding/${modelId}`;
+          (((draft.agents ??= {}).defaults ??= {}).model ??= {}).primary = `kimi-coding/${modelId}`;
         }
         applyKimiCodeLinkage(draft, proxyPort);
       });
@@ -1016,7 +1038,7 @@ async function handleAddSave(state: AppViewState) {
     }
 
     const ok = await runPatch(state, draft => {
-      const providers = ((draft.models ??= {}) as any).providers ??= {};
+      const providers = (draft.models ??= {}).providers ??= {};
       if (!providers[target.providerKey]) {
         providers[target.providerKey] = {
           apiKey: apiKey || "",
@@ -1031,10 +1053,9 @@ async function handleAddSave(state: AppViewState) {
       if (!prov.baseUrl && target.baseUrl) prov.baseUrl = target.baseUrl;
       if (!prov.api && target.api) prov.api = target.api;
       if (!Array.isArray(prov.models)) prov.models = [];
-      prov.models.push(entry);
+      prov.models.push(entry as OpenclawProviderModelEntry);
       if (!hasPrimary) {
-        (((draft.agents ??= {}) as any).defaults ??= {}).model ??= {};
-        (draft.agents as any).defaults.model.primary = `${target.providerKey}/${modelId}`;
+        (((draft.agents ??= {}).defaults ??= {}).model ??= {}).primary = `${target.providerKey}/${modelId}`;
       }
     });
     if (ok) closeAddPanelAfterSave(state);
@@ -1097,7 +1118,7 @@ async function loadUsage(state: AppViewState) {
     const result = await ipc.kimiGetUsage();
     if (result?.data) {
       s.usageData = result.data;
-    } else if ((result as any)?.authExpired) {
+    } else if (result?.authExpired) {
       // OAuth 会话已过期（refresh token 失效，token 文件已被主进程清理）：
       // 清 loggedIn 让 UI 回到「登录」态引导重新登录，而不是假的「登录成功」
       s.oauthLoggedIn = false;
@@ -1173,16 +1194,16 @@ async function handleSyncAddSelected(prov: GroupedProvider, state: AppViewState)
   const list = s.liveModels[prov.providerKey]?.models ?? [];
   const catalogProvider = catalogProviderForKey(prov.providerKey);
   const ok = await runPatch(state, draft => {
-    const providers = ((draft.models ??= {}) as any).providers ??= {};
+    const providers = (draft.models ??= {}).providers ??= {};
     const target = providers[prov.providerKey];
     // provider 已被并发删除时不复活裸块（缺 apiKey/baseUrl 的残缺条目会被内核落盘）
     if (!target || !Array.isArray(target.models)) return;
-    const existing = new Set(target.models.map((m: any) => (typeof m === "string" ? m : m?.id)));
+    const existing = new Set(target.models.map(m => (typeof m === "string" ? m : m?.id)));
     for (const id of ids) {
       if (existing.has(id)) continue;
       const live = list.find(m => m.id === id);
       const entry = buildModelEntry(catalogProvider, id, live?.name || "", catalogModelSupportsImage(catalogProvider ?? prov.providerKey, id) ?? false);
-      target.models.push(entry);
+      target.models.push(entry as OpenclawProviderModelEntry);
     }
   }, { replacePaths: [`models.providers.${prov.providerKey}.models`] });
   if (ok) {
@@ -1273,7 +1294,7 @@ async function handleFetchUsage(prov: GroupedProvider, state: AppViewState) {
     const res = await ipc.settingsGetProviderUsage(prov.providerKey);
     if (res?.success && res.data?.supported) {
       s.usageByProvider[prov.providerKey] = { info: res.data, at: Date.now() };
-    } else if ((res as any)?.unsupported) {
+    } else if (res?.unsupported) {
       s.usageErrors[prov.providerKey] = t("settings.provider.usage.unsupported");
     } else {
       s.usageErrors[prov.providerKey] = res?.message ?? t("settings.provider.usage.failed");

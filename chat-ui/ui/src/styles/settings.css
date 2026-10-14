@@ -236,14 +236,6 @@
   color: var(--danger);
 }
 
-.oc-settings__btn-row {
-  display: flex;
-  gap: var(--spacer-12);
-  justify-content: flex-end;
-  margin-top: auto;
-  padding-top: var(--spacer-8);
-}
-
 /* R84 按钮收敛：视图私有 oc-settings__btn* 四套平行 kit 全部迁移到全局
    .btn 体系（primitives.css），此处只保留布局容器。 */
 
@@ -727,10 +719,6 @@
   justify-content: space-between;
   gap: var(--spacer-12);
 }
-.oc-settings-backup__card-header .oc-settings__btn--compact {
-  min-width: 80px;
-  justify-content: center;
-}
 .oc-settings-backup__meta {
   font-size: var(--text-sm);
   color: var(--text-muted);
@@ -1115,6 +1103,8 @@
   position: absolute;
   top: calc(100% + var(--spacer-4));
   right: var(--spacer-8);
+  transform-origin: top right;
+  animation: chat-popover-in var(--duration-fast) var(--ease-spring);
   z-index: 30;
   min-width: 160px;
   max-width: 240px;
@@ -1243,6 +1233,36 @@
   overflow-y: auto;
   /* 抽屉入场：从右缘外滑入（面板开合统一 ease-standard/normal） */
   animation: oc-drawer-enter var(--duration-normal) var(--ease-standard);
+}
+
+/* 抽屉退场（一镜到底）：沿来路向右滑回，backdrop 同步淡出。
+   两段式：runExitAnimation 加 cc-leaving，播完才清 editingModelKey。 */
+.oc-provider-edit-drawer__backdrop.cc-leaving {
+  animation: oc-fade-out var(--duration-normal) var(--ease-in-out) forwards;
+}
+
+.oc-provider-edit-drawer.cc-leaving {
+  animation: oc-drawer-exit var(--duration-normal) var(--ease-in-out) forwards;
+}
+
+@keyframes oc-drawer-exit {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  to {
+    opacity: 0.6;
+    transform: translateX(var(--spacer-32));
+  }
+}
+
+/* 设置 modal 退场：与对话框同一语言（oc-modal 入场是 oc-fade-in + cc-dialog-in） */
+.oc-modal-overlay.cc-leaving {
+  animation: oc-fade-out var(--duration-normal) var(--ease-in-out) forwards;
+}
+
+.oc-modal-overlay.cc-leaving .oc-modal-dialog {
+  animation: cc-dialog-out var(--duration-normal) var(--ease-in-out) forwards;
 }
 
 @keyframes oc-drawer-enter {
@@ -1619,7 +1639,7 @@
   display: inline-block;
   width: 10px;
   height: 10px;
-  border-radius: 2px;
+  border-radius: var(--radius-2);
 }
 .oc-usage__tops {
   display: grid;
@@ -2013,14 +2033,6 @@
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
-}
-.oc-plugins__meta {
-  display: flex;
-  gap: var(--spacer-8);
-  margin-top: var(--spacer-4);
-  font-family: var(--font-meta);
-  font-size: var(--font-size-meta);
-  color: var(--text-muted);
 }
 .oc-plugins__row-side {
   display: flex;
@@ -2516,7 +2528,7 @@
 .oc-memory-badge {
   display: inline-block;
   padding: 1px var(--spacer-8);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   font-size: var(--text-sm);
 }
 .oc-memory-badge--ok {
@@ -2546,7 +2558,7 @@
   font-size: var(--text-sm);
   font-family: inherit;
   border: var(--hairline);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--bg-input);
   color: var(--text-secondary);
   cursor: pointer;
@@ -2658,7 +2670,7 @@
   flex: none;
   padding: 0 var(--spacer-6);
   font-size: var(--text-xs);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   border: var(--hairline);
   color: var(--text-muted);
   white-space: nowrap;
@@ -2762,11 +2774,3 @@
   font-size: var(--text-sm);
 }
 
-/* ── R84 补缺失样式：插件市场 meta 子项 ── */
-.oc-plugins__downloads {
-  font-variant-numeric: tabular-nums;
-}
-
-.oc-plugins__owner {
-  color: var(--text-secondary);
-}

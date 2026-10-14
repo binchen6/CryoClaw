@@ -4,6 +4,7 @@
  * 状态数据见 ../plan-stream.ts；样式见 styles/plan.css。
  */
 import { html, nothing } from "lit";
+import { runExitAnimation, exitHostFromEvent } from "../utils/exit-anim.ts";
 import type { PlanStepStatus, PlanStreamState } from "../plan-stream.ts";
 import { icons } from "../icons.ts";
 import { t } from "../i18n.ts";
@@ -66,7 +67,7 @@ export function renderPlanPanel(plan: PlanStreamState | null | undefined, props:
             aria-label=${t("plan.dismiss")}
             @click=${(e: Event) => {
               e.stopPropagation();
-              props.onDismiss?.();
+              runExitAnimation(exitHostFromEvent(e, ".plan-panel"), () => props.onDismiss?.());
             }}
           >
             ${icons.x}

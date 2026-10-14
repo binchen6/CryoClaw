@@ -611,6 +611,36 @@ test("patchWorkerInputCloneSanitize：无派发点的 dist 返回 0", (t) => {
   assert.equal(kdp.patchWorkerInputCloneSanitize(gatewayDir), 0);
 });
 
+// 2026.10.3 内核把派发重构为顶层 postWorkerTaskInput()（2 层 tab 缩进）——
+// 旧锚（5 层 tab 字面量）在该形态下未命中导致打包中止，正则锚须兼容
+const WORKER_POOL_DISPATCH_10_3 = [
+  "function postWorkerTaskInput(worker, slot, task, input, transferList, taskContext) {",
+  "\tconst transferStartedAt = performance.now();",
+  "\tworker.postMessage({",
+  "\t\tinput,",
+  "\t\ttaskId: task.id,",
+  "\t\tinteractive: Boolean(task.options.onRequest || task.options.onRequestSync || task.options.onNotification),",
+  "\t\tnativeSections: slot.nativeSections.buffer,",
+  "\t\ttaskContext,",
+  "\t\tsampleMemory: true",
+  "\t}, transferList);",
+  "}",
+  "",
+].join("\n");
+
+test("patchWorkerInputCloneSanitize：2026.10.3 顶层函数形态同样命中", (t) => {
+  const { gatewayDir } = makeGatewayDist(t, {
+    "src-WCJCjrey.mjs": WORKER_POOL_DISPATCH_10_3,
+  });
+  const poolPath = path.join(gatewayDir, "node_modules", "openclaw", "dist", "src-WCJCjrey.mjs");
+
+  assert.equal(kdp.patchWorkerInputCloneSanitize(gatewayDir), 1);
+  const patched = fs.readFileSync(poolPath, "utf-8");
+  assert.match(patched, /\/\* cryoclaw-worker-clone \*\/ input = __cryoclawSanitizeWorkerInput\(input, new Map\(\)\);/);
+  // 注入语句在函数体内（1 层 tab），派发点保持 2 层参数缩进
+  assert.match(patched, /\n\tworker\.postMessage\(\{\n\t\tinput,\n\t\ttaskId: task\.id,/);
+});
+
 test("补丁 helper 行为：Proxy 快照为纯对象、含 Proxy 的容器重建、纯对象原样返回", async (t) => {
   const { gatewayDir } = makeGatewayDist(t, {
     "worker-task-pool-ABC12345.mjs": WORKER_POOL_DISPATCH,

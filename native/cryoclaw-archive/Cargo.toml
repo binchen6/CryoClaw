@@ -1,6 +1,6 @@
 [package]
 name = "cryoclaw-archive"
-version = "0.1.1"
+version = "0.2.0"
 edition = "2021"
 description = "CryoClaw .openclaw archive sidecar: streaming zip create/manifest/extract over a JSON Lines protocol"
 publish = false

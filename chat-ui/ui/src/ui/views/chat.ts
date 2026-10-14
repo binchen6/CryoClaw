@@ -102,6 +102,7 @@ export type ChatProps = {
   sessions: SessionsListResult | null;
   // Sidebar state
   sidebarOpen?: boolean;
+  sidebarLeaving?: boolean;
   sidebarContent?: string | null;
   sidebarError?: string | null;
   splitRatio?: number;
@@ -167,6 +168,7 @@ export type ChatProps = {
   onOpenGitView?: () => void;
   // Scroll control
   showNewMessages?: boolean;
+  newMessagesLeaving?: boolean;
   onScrollToBottom?: () => void;
   // Event handlers
   onDraftChange: (next: string) => void;
@@ -496,7 +498,7 @@ export function renderChat(props: ChatProps) {
                 .splitRatio=${splitRatio}
                 @resize=${(e: CustomEvent) => props.onSplitRatioChange?.(e.detail.splitRatio)}
               ></oc-resizable-divider>
-              <div class="chat-sidebar">
+              <div class="chat-sidebar ${props.sidebarLeaving ? "chat-sidebar--leaving" : ""}">
                 ${renderMarkdownSidebar({
                   content: props.sidebarContent ?? null,
                   error: props.sidebarError ?? null,
@@ -543,7 +545,7 @@ export function renderChat(props: ChatProps) {
         props.showNewMessages
           ? html`
             <button
-              class="btn chat-new-messages"
+              class="btn chat-new-messages ${props.newMessagesLeaving ? "chat-new-messages--leaving" : ""}"
               type="button"
               aria-label=${t("chat.scrollToBottom")}
               @click=${props.onScrollToBottom}

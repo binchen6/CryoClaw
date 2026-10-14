@@ -199,12 +199,13 @@ const gateway = new GatewayProcess({
       // WebBridge daemon 保活（R86）：webbridge 模式下启动时探测 /status，未运行
       // 则拉起（重启电脑/崩溃后浏览器扩展才能连上）。拉起成功延迟广播 state-changed
       // 让 pill 重新判定可见性。
+      // 内部文档承诺「永不抛错」，但类型系统不担保——兜一个 .catch 让该不变量自维持。
       void ensureWebbridgeDaemonRunning().then((started) => {
         if (!started) return;
         setTimeout(() => {
           broadcastWebbridgeStateChanged();
         }, 3_000);
-      });
+      }).catch((err) => log.warn(`[webbridge] daemon 保活异常: ${err}`));
     }
   },
   // 非预期退出 → 有界自动重启（R71）。此前崩溃后无人重启，用户会一直停在
@@ -1187,6 +1188,7 @@ registerSetupIpc({
 registerSettingsIpc({
   requestGatewayRestart: () => requestGatewayRestart("settings:kimi-search"),
   getGatewayToken: () => gateway.getToken(),
+  getGatewayRuntime: () => ({ state: gateway.getState(), pid: gateway.getPid(), startedAt: gateway.getStartedAt() }),
   importOpenclawState: (filePath) => openclawStateImportLifecycle.importOpenclawState(filePath),
   stopGateway: () => gateway.stop({ waitForStarting: true }),
   cancelScheduledCrashRestart: () => cancelScheduledCrashRestart("settings:restore-config"),

@@ -4,7 +4,6 @@ import { Unzip, UnzipInflate } from "fflate";
 import {
   probeArchiveTool,
   rustExtractArchive,
-  rustReadManifest,
   warnArchiveToolFallbackOnce,
   type ArchiveToolHandle,
   type RustManifestEntry,
@@ -94,9 +93,10 @@ export async function readArchive(
   return readArchiveWithJs(zipPath, rootDir, outputDir, captureEntryNames);
 }
 
-// Rust backend：sidecar manifest 只做结构校验，清单拿回 JS 侧过同一套
-// 路径注册表/条目类型/白名单校验（与 JS backend 的 readCentralDirectory
-// 逐条等价），通过后才授权 sidecar 单遍流式解压。
+// Rust backend：交互式单会话——sidecar 解析 zip 后回发 manifest，JS 侧对清单
+// 跑同一套路径注册表/条目类型/白名单校验（与 JS backend 的 readCentralDirectory
+// 逐条等价），白名单回写后 sidecar 单遍流式解压。单进程单解析，且 zip 句柄
+// 全程持有（无两次调用间文件被替换的窗口）。
 async function readArchiveWithRust(
   tool: ArchiveToolHandle,
   zipPath: string,
@@ -104,22 +104,22 @@ async function readArchiveWithRust(
   outputDir: string | undefined,
   captureEntryNames: ReadonlySet<string>,
 ): Promise<ZipArchiveSummary> {
-  const manifest = await rustReadManifest(tool, zipPath);
   const registry = createPathRegistry(rootDir);
-  const whitelist = manifest.map((raw) => validateRustManifestEntry(raw, registry));
-
-  for (const raw of manifest) {
-    if (captureEntryNames.has(raw.name) && raw.uncompressedSize > MAX_CAPTURED_ENTRY_BYTES) {
-      throw new Error(`ZIP entry 过大: ${raw.name}`);
-    }
-  }
   if (outputDir) ensureOutputRootDir(outputDir);
 
   const { entryNames, capture } = await rustExtractArchive(tool, {
     zipPath,
     outputDir: outputDir ?? null,
-    entries: whitelist,
     capture: [...captureEntryNames],
+    onManifest: (manifest) => {
+      const whitelist = manifest.map((raw) => validateRustManifestEntry(raw, registry));
+      for (const raw of manifest) {
+        if (captureEntryNames.has(raw.name) && raw.uncompressedSize > MAX_CAPTURED_ENTRY_BYTES) {
+          throw new Error(`ZIP entry 过大: ${raw.name}`);
+        }
+      }
+      return whitelist;
+    },
   });
   const entryContents = new Map<string, Buffer>();
   for (const item of capture) {

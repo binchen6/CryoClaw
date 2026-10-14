@@ -44,9 +44,9 @@ import {
 import {
   installWebbridge,
   installWebbridgeSkill,
-  resolveWebbridgeExtensionSpec,
   runWebbridgeSetupTask,
 } from "./webbridge";
+import { resolveEffectiveExtensionSpec } from "./webbridge-extension-update";
 import { readWebbridgeExtensionId } from "./constants";
 import { runWebbridgeExclusive, WebbridgeBusyError } from "./webbridge-update";
 
@@ -562,7 +562,7 @@ export function registerSetupIpc(deps: SetupIpcDeps): void {
             const r = await cleanExtensionBlocklist(target, extId);
             log.info(`[setup] ${target.name} blocklist cleanup: ${r}`);
           }
-          const spec = resolveWebbridgeExtensionSpec();
+          const spec = resolveEffectiveExtensionSpec();
           if (!spec) {
             log.error(
               "[setup] 无法解析 WebBridge ExtensionSpec（build-config 或 CRX 缺失），跳过扩展安装",

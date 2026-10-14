@@ -1,6 +1,7 @@
 import { html, nothing } from "lit";
 import type { AppViewState } from "../app-view-state.ts";
 import { t } from "../i18n.ts";
+import { runExitAnimation } from "../utils/exit-anim.ts";
 
 // 通用确认弹窗：替代原生 window.confirm（渲染进程里原生 confirm 无样式且阻塞）。
 // promise 化 API：const ok = await showConfirm(state, message, { danger: true });
@@ -23,16 +24,27 @@ export function showConfirm(
   // 已有未决弹窗时先按"取消"结算旧请求，避免 promise 悬挂
   pending?.resolve(false);
   return new Promise<boolean>((resolve) => {
+    exitToken++;
+    document.querySelector(".cc-dialog-overlay")?.classList.remove("cc-leaving");
     pending = { message, danger: opts?.danger === true, resolve };
     host.requestUpdate();
   });
 }
 
+// 退场令牌：退场动画进行中若又有新弹窗，作废旧定时器并摘掉 leaving class
+// （Lit 就地 patch 同一 overlay 节点，不摘 class 新弹窗会继承淡出中的状态）。
+let exitToken = 0;
+
 function settle(host: AppViewState, ok: boolean) {
   const p = pending;
-  pending = null;
-  host.requestUpdate();
-  p?.resolve(ok);
+  if (!p) return;
+  p.resolve(ok);
+  const token = ++exitToken;
+  runExitAnimation(document.querySelector(".cc-dialog-overlay"), () => {
+    if (token !== exitToken || pending !== p) return;
+    pending = null;
+    host.requestUpdate();
+  });
 }
 
 export function renderConfirmDialog(state: AppViewState) {

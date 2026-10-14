@@ -14,6 +14,10 @@ on:
   # 发版后跑一次：新版本内嵌钉定表与清单对齐，顺带捕获发版窗口期的上游重建
   release:
     types: [published]
+  # 周期巡检（每 6h 偏移 23 分）：上游重建 latest 或 Chrome Web Store 扩展
+  # 出新版时，清单/镜像在 6h 内自动跟上，无需人工触发或 CryoClaw 发版
+  schedule:
+    - cron: "23 */6 * * *"
 
 permissions:
   contents: write
@@ -38,14 +42,15 @@ jobs:
         run: node scripts/refresh-webbridge-pins.mjs
 
       # 无变化时 git diff 为空 → 跳过提交（避免空提交刷历史）
+      # 扩展镜像（resources/webbridge/extension/*.crx）与清单一并提交
       - name: Commit updated pins
         run: |
-          if git diff --quiet -- resources/webbridge-pins.json; then
+          git add resources/webbridge-pins.json resources/webbridge/extension/ 2>/dev/null || git add resources/webbridge-pins.json
+          if git diff --cached --quiet; then
             echo "pins unchanged; skip commit"
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add resources/webbridge-pins.json
-          git commit -m "chore(webbridge): refresh binary sha256 pins [skip ci]"
+          git commit -m "chore(webbridge): refresh binary sha256 pins + extension mirror [skip ci]"
           git push origin main

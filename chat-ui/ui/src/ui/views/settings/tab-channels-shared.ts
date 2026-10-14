@@ -6,6 +6,7 @@ import { html, nothing } from "lit";
 import type { TemplateResult } from "lit";
 import type { AppViewState } from "../../app-view-state.ts";
 import { t, tWithDetail } from "../../i18n.ts";
+import { runExitAnimation, exitHostFromEvent } from "../../utils/exit-anim.ts";
 import * as ipc from "../../data/ipc-bridge.ts";
 import { getConfigSnapshot, getCachedConfigSnapshot } from "../../controllers/config.ts";
 import { updateChannelEnabled, syncChannelEnabledFromSnapshot } from "./tab-channels.ts";
@@ -277,15 +278,15 @@ export function renderAddGroupDialog(
   },
 ): TemplateResult {
   return html`
-    <div class="oc-modal-overlay" @click=${(e: Event) => { if (e.target === e.currentTarget) opts.onCancel(); }}>
+    <div class="oc-modal-overlay" @click=${(e: Event) => { if (e.target === e.currentTarget) runExitAnimation(e.currentTarget as Element, opts.onCancel); }}>
       <div class="oc-modal-dialog">
         <label class="oc-settings__label">${opts.promptLabel}</label>
         <input class="oc-settings__input" .value=${st.addGroupInput} placeholder=${opts.placeholder}
           @input=${(e: Event) => { st.addGroupInput = (e.target as HTMLInputElement).value; state.requestUpdate(); }}
-          @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter" && !e.isComposing) opts.onConfirm(); if (e.key === "Escape") opts.onCancel(); }} />
+          @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter" && !e.isComposing) opts.onConfirm(); if (e.key === "Escape") runExitAnimation(exitHostFromEvent(e, ".oc-modal-overlay"), opts.onCancel); }} />
         ${st.addGroupError ? html`<div class="oc-settings__field-hint oc-settings__field-hint--danger oc-mt-4">${st.addGroupError}</div>` : nothing}
         <div class="oc-flex oc-gap-8 oc-justify-end oc-mt-12">
-          <button class="btn" @click=${() => opts.onCancel()}>${t("settings.cancel")}</button>
+          <button class="btn" @click=${(e: Event) => runExitAnimation(exitHostFromEvent(e, ".oc-modal-overlay"), opts.onCancel)}>${t("settings.cancel")}</button>
           <button class="btn primary" @click=${() => opts.onConfirm()}>${t("settings.confirm")}</button>
         </div>
       </div>

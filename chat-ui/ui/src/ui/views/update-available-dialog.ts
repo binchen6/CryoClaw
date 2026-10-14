@@ -2,6 +2,7 @@ import { html, nothing } from "lit";
 import type { AppViewState } from "../app-view-state.ts";
 import { getLocale, t, tWithDetail } from "../i18n.ts";
 import { icons } from "../icons.ts";
+import { runExitAnimation } from "../utils/exit-anim.ts";
 
 // 「立即更新」点击后到主进程推送 downloading 态之间的本地 in-flight 标志：
 // 期间禁用按钮防双击重复触发下载；状态迁移（downloading/downloaded/error）时复位，
@@ -21,7 +22,8 @@ export function renderUpdateAvailableDialog(state: AppViewState) {
   const lang = getLocale().startsWith("zh") ? "zh" : "en";
   const notes = us.releaseNotes ? (us.releaseNotes[lang as "zh" | "en"] ?? us.releaseNotes.en ?? "") : "";
 
-  const close = () => state.closeUpdateDialog();
+  const close = () =>
+    runExitAnimation(document.querySelector(".cc-dialog-overlay"), () => state.closeUpdateDialog());
   const downloading = us.status === "downloading";
   const downloaded = us.status === "downloaded";
   const failed = us.status === "error";

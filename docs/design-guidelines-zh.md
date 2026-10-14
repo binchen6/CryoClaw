@@ -360,8 +360,8 @@ hairline + radius-12 + `--shadow-lg`，`--text-sm` medium，z-index 10001，
   滑入（底部 toast 自下、顶部 toast 自上、抽屉自右），退场沿来路返回
   （退场需「leaving class + 延迟移除 DOM」两段式，参照 app-toast.ts 的
   TOAST_EXIT_MS 模式）；状态翻转（spinner→✓）用 scale 轻弹衔接
-  （`oc-status-pop`）而非硬切；流式光标用平滑呼吸（ocStreamCaret
-  ease-in-out），不用硬闪烁。新增按压反馈（transform scale）必须在
+  （`oc-status-pop`）而非硬切；流式光标用平滑呼吸（ocStreamCaret 走
+  `--ease-in-out` 令牌，循环动画一律不写字面 easing），不用硬闪烁。新增按压反馈（transform scale）必须在
   base.css 的 reduced-motion 块显式登记 `transform: none`（全局 0.01ms
   收敛会把回缩变成瞬跳）。
 - 拖拽区分工：壳层大面积 `-webkit-app-region: drag` 保证窗口可拖动，所有可交互

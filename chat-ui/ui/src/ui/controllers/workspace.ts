@@ -81,7 +81,7 @@ export function selectWorkspaceMode(mode: "files" | "git") {
 
 // 列目录
 export async function loadWorkspaceDirectory(state: AppViewState, dirPath: string) {
-  const w = window as any;
+  const w = window;
   if (!w.cryoclaw?.workspaceListDir) return;
 
   const seq = ++dirLoadSeq;
@@ -111,7 +111,7 @@ export async function loadWorkspaceDirectory(state: AppViewState, dirPath: strin
 
 // 初始化：从 gateway 获取 workspace 路径，设定 IPC root 守卫，然后列目录
 export async function initWorkspace(state: AppViewState) {
-  const w = window as any;
+  const w = window;
   workspaceViewState.loading = true;
   workspaceViewState.error = null;
   state.requestUpdate();
@@ -149,7 +149,7 @@ export async function initWorkspace(state: AppViewState) {
 
 // 读取文件内容
 export async function loadWorkspaceFile(state: AppViewState, filePath: string, fileName: string) {
-  const w = window as any;
+  const w = window;
   if (!w.cryoclaw?.workspaceReadFile) return;
 
   const seq = ++fileLoadSeq;

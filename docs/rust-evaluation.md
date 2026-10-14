@@ -2,6 +2,8 @@
 
 日期：2026-10-08。范围：`src/` ~90 个模块 + `scripts/`。结论先行：**唯一够格的 Rust 重写对象是 `.openclaw` 归档导入/导出/校验（openclaw-state-archive*）**，已以「Rust sidecar 双 backend」形态落地（见下文运维章节）；其余模块评估不修及，理由见各表。
 
+> **2026-10-14 增补**：见文末 §10（新增模块复审 + 内核包组成取证）。原结论不变。
+
 ## 1. 评估方法
 
 - 逐模块归类：CPU 密集（压缩/解析/转码/加密）× Rust 高收益；IO/等待型（HTTP、子进程、IPC、定时器、文件元数据）× Rust 无收益（瓶颈不在语言运行时）。
@@ -154,3 +156,39 @@ cargo test                   # 单元测试（CRC、DOS 时间、容器格式往
 - `create` 的条目排序：JS 用 `localeCompare`，Rust 按 bytewise+大小写不敏感序保证自身确定性；两侧产物清单一致（测试断言排序后相等），但 zip 内条目物理顺序可能与 JS 产物不同（不影响任何读取路径）。
 - manifest 命令与 `extract` 是两遍解析（先清单后解压）；未来如需进一步压缩导入耗时，可扩展为「边解压边流式吐清单、JS 校验失败即中止」的双工协议（当前导入耗时已较 JS 大幅降低，暂不必要）。
 - 本机（无 MSVC Build Tools）使用 `stable-x86_64-pc-windows-gnu` 工具链 + MinGW GCC 链接；有 VS Build Tools 的机器直接用默认 msvc 工具链即可，无需改动 crate。
+
+## 10. 增补（2026-10-14）：新增模块复审 + 内核包组成取证
+
+### 10.1 2026-10-08 以来新增/大改模块的 Rust 复审
+
+逐模块复核结论：**无一够格**，均为 IO/等待型或原生加速已覆盖的路径。
+
+| 模块 | 职责 | 瓶颈性质 | 结论 |
+| --- | --- | --- | --- |
+| `src/app-flags.ts` | 远程旗标 manifest 拉取（jsDelivr→raw GitHub，24h 缓存） | 纯网络等待 | 保持 TS |
+| `src/app-updater.ts`（差异更新重启） | electron-updater 编排 + 远程 kill-switch 门控 | 下载由 electron-updater 原生完成，本层只做状态机 | 保持 TS |
+| `src/webbridge-pins.ts` | 钉定 manifest 拉取/校验/缓存 | 纯网络等待 + 小 JSON 解析 | 保持 TS |
+| `src/webbridge-extension-update.ts` | CRX 下载 + sha256 校验 + CRX 头/manifest 解析 + 原子换装 | 下载是 IO；sha256 走 `node:crypto`（原生 OpenSSL）；CRX 内 manifest 读取用 fflate 只解压一个几 KB 的 entry | 保持 TS |
+| `src/skill-store.ts` / `src/plugin-store.ts` | ClawHub/registry 列表、详情、安装（tgz 下载解压）、更新检查 | 网络等待 dominate；tgz 解压为冷路径小文件 | 保持 TS |
+| `src/kernel-updater.ts` | 内核差分换装编排（vendored `kernel-update.mjs` 子进程） | 瓶颈在 npm registry 下载与 asar 重写 IO；编排层只转发进度 | 保持 TS |
+| `src/settings/about.ts`（概览 IPC） | os/process 指标汇总 | 纯系统调用读数 | 保持 TS |
+
+### 10.2 内核包组成取证（gateway.asar，只读不改）
+
+对打包产物做 asar 原始字节级钻取（`@electron/asar` 的 `extractFile` 对合法路径报 not found 时，改用手工 header 解析：dataStart = 8 + headerSize，文件体在 dataStart + offset）：
+
+| 组成 | 未压缩体积 | 说明 |
+| --- | --- | --- |
+| `gateway.asar` 全量 | ≈510.7 MB | 2026.9.9 内核打包态 |
+| 其中 `node_modules/openclaw` | ≈365.9 MB | 内核本体 |
+| — `package-update-activation-recovery.mjs` | 63.3 MB | 单文件巨型 bundle |
+| — `worker/worker.mjs` | 53.0 MB | 单文件巨型 bundle |
+| — `control-ui/assets` | 50.5 MB | 内核自带 Web 控制台静态资源 |
+| — `sqlite-store.worker.mjs` | 47.3 MB | 单文件巨型 bundle（含 wasm？未拆） |
+| — `extensions/feishu` | 20.5 MB | 渠道扩展 |
+| `@trycua`（计算机使用相关依赖） | ≈24.8 MB | 按需加载 |
+
+结论与行动项：
+- 这些是**内核包**（只读约束，本项目零改动）的组成事实，不构成 CryoClaw 侧 Rust 重写对象。
+- 对 CryoClaw 自有代码（`src/` ~38k 行 TS），2026-10-08 的结论维持成立：CPU 密集面只有归档链路一条，且已 Rust 化。
+- 若要进一步压缩安装/更新体积，有效杠杆在**分发层**而非语言层：asar 内巨型 .mjs 无 sourcemap 外链、control-ui 静态资源可按需剥离、内核升级已走差分换装。这些属于内核侧议题，记录备查。

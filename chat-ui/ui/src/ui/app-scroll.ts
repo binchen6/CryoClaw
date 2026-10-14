@@ -14,6 +14,8 @@ type ScrollHost = {
   chatHasAutoScrolled: boolean;
   chatUserNearBottom: boolean;
   chatNewMessagesBelow: boolean;
+  // pill 退场两段式：true 期间 pill 保留并播退出帧（--duration-fast），结束才清 below
+  chatNewMessagesLeaving?: boolean;
 };
 
 export function scheduleChatScroll(host: ScrollHost, force = false, smooth = false) {
@@ -64,6 +66,7 @@ export function scheduleChatScroll(host: ScrollHost, force = false, smooth = fal
 
       if (!shouldStick) {
         // User is scrolled up — flag that new content arrived below.
+        cancelNewMessagesExit(host); // 退场途中又来新内容：反悔，pill 留下
         host.chatNewMessagesBelow = true;
         return;
       }
@@ -82,7 +85,7 @@ export function scheduleChatScroll(host: ScrollHost, force = false, smooth = fal
         target.scrollTop = scrollTop;
       }
       host.chatUserNearBottom = true;
-      host.chatNewMessagesBelow = false;
+      clearNewMessagesBelow(host);
       const retryDelay = effectiveForce ? 150 : 120;
       host.chatScrollTimeout = window.setTimeout(() => {
         host.chatScrollTimeout = null;
@@ -109,6 +112,36 @@ export function scheduleChatScroll(host: ScrollHost, force = false, smooth = fal
   });
 }
 
+let newMessagesExitTimer: number | null = null;
+
+function cancelNewMessagesExit(host: ScrollHost) {
+  if (newMessagesExitTimer != null) {
+    window.clearTimeout(newMessagesExitTimer);
+    newMessagesExitTimer = null;
+  }
+  host.chatNewMessagesLeaving = false;
+}
+
+// pill 是滚动真值的投影，不能为它延迟状态——但可以让 DOM 多留 120ms 播完
+// 退出帧（leaving 期间 pointer-events:none，点击不落在过期状态上）。
+function clearNewMessagesBelow(host: ScrollHost) {
+  if (!host.chatNewMessagesBelow || host.chatNewMessagesLeaving) return;
+  const reduced =
+    typeof window !== "undefined" &&
+    typeof window.matchMedia === "function" &&
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (reduced) {
+    host.chatNewMessagesBelow = false;
+    return;
+  }
+  host.chatNewMessagesLeaving = true;
+  newMessagesExitTimer = window.setTimeout(() => {
+    newMessagesExitTimer = null;
+    host.chatNewMessagesLeaving = false;
+    host.chatNewMessagesBelow = false;
+  }, 120);
+}
+
 export function handleChatScroll(host: ScrollHost, event: Event) {
   const container = event.currentTarget as HTMLElement | null;
   if (!container) {
@@ -118,7 +151,7 @@ export function handleChatScroll(host: ScrollHost, event: Event) {
   host.chatUserNearBottom = distanceFromBottom < NEAR_BOTTOM_THRESHOLD;
   // Clear the "new messages below" indicator when user scrolls back to bottom.
   if (host.chatUserNearBottom) {
-    host.chatNewMessagesBelow = false;
+    clearNewMessagesBelow(host);
   }
 }
 
@@ -128,6 +161,7 @@ export function resetChatScroll(host: ScrollHost) {
   host.chatScrollGeneration += 1;
   host.chatHasAutoScrolled = false;
   host.chatUserNearBottom = true;
+  cancelNewMessagesExit(host);
   host.chatNewMessagesBelow = false;
 }
 

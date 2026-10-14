@@ -65,6 +65,8 @@ declare global {
       skillStoreInstall?: (params?: Record<string, unknown>) => Promise<any>;
       skillStoreUninstall?: (params?: Record<string, unknown>) => Promise<any>;
       skillStoreListInstalled?: () => Promise<any>;
+      skillStoreCheckUpdates?: () => Promise<any>;
+      skillStoreUpdate?: (params?: Record<string, unknown>) => Promise<any>;
       skillStoreDetail?: (params?: Record<string, unknown>) => Promise<any>;
       pluginStoreList?: () => Promise<any>;
       pluginStoreSearch?: (params?: Record<string, unknown>) => Promise<any>;
@@ -94,6 +96,35 @@ declare global {
       restartGateway?: () => void;
     };
   }
+}
+
+// 会话面板两段式收合（一镜到底）：收起时先加 leaving class 播左滑退场，
+// 播完才落 navCollapsed；退场途中再点展开则作废旧定时器、摘 class 立即展开。
+let panelExitTimer: number | null = null;
+
+function toggleSessionPanel(state: AppViewState) {
+  const panel = document.querySelector("oc-session-panel");
+  // 退场途中再点 = 反悔展开：作废旧定时器、摘 leaving class（状态尚未落盘无需回写）
+  if (panelExitTimer != null) {
+    clearTimeout(panelExitTimer);
+    panelExitTimer = null;
+    panel?.classList.remove("oc-panel--leaving");
+    return;
+  }
+  if (state.settings.navCollapsed) {
+    state.applySettings({ ...state.settings, navCollapsed: false });
+    return;
+  }
+  const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (!panel || reduced) {
+    state.applySettings({ ...state.settings, navCollapsed: true });
+    return;
+  }
+  panel.classList.add("oc-panel--leaving");
+  panelExitTimer = window.setTimeout(() => {
+    panelExitTimer = null;
+    state.applySettings({ ...state.settings, navCollapsed: true });
+  }, 200);
 }
 
 // 打开内嵌设置页时可携带目标 tab 提示，减少用户二次定位成本。
@@ -247,12 +278,7 @@ function renderContextBar(
             <button
               class="cc-contextbar__toggle"
               type="button"
-              @click=${() => {
-                state.applySettings({
-                  ...state.settings,
-                  navCollapsed: !state.settings.navCollapsed,
-                });
-              }}
+              @click=${() => toggleSessionPanel(state)}
               data-tooltip=${panelCollapsed ? t("panel.expand") : t("panel.collapse")}
               data-tooltip-pos="bottom"
               aria-label=${panelCollapsed ? t("panel.expand") : t("panel.collapse")}

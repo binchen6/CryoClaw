@@ -41,6 +41,7 @@ import {
 } from "./app-lifecycle.ts";
 import { renderApp } from "./app-render.ts";
 import { showToast } from "./app-toast.ts";
+import { runExitAnimation } from "./utils/exit-anim.ts";
 import {
   handleChatScroll as handleChatScrollInternal,
   resetChatScroll as resetChatScrollInternal,
@@ -229,6 +230,7 @@ export class OpenClawApp extends LitElement {
     thinkingLevels: { state: true },
     isBinaryThinking: { state: true },
     sidebarOpen: { state: true },
+    sidebarLeaving: { state: true },
     sidebarContent: { state: true },
     sidebarError: { state: true },
     splitRatio: { state: true },
@@ -306,6 +308,7 @@ export class OpenClawApp extends LitElement {
     skillMessages: { state: true },
     chatUserNearBottom: { state: true },
     chatNewMessagesBelow: { state: true },
+    chatNewMessagesLeaving: { state: true },
     sharePromptVisible: { state: true },
     sharePromptCopied: { state: true },
     sharePromptCopyError: { state: true },
@@ -434,6 +437,8 @@ export class OpenClawApp extends LitElement {
   onSessionsLoaded = () => this.updateThinkingCapabilities();
   // Sidebar state for tool output viewing
   sidebarOpen = false;
+  // 两段式退场：true 期间节点保留并播 slide-out-right，结束后才 sidebarOpen=false
+  sidebarLeaving = false;
   sidebarContent: string | null = null;
   sidebarError: string | null = null;
   splitRatio = this.settings.splitRatio;
@@ -545,6 +550,7 @@ export class OpenClawApp extends LitElement {
   private chatHasAutoScrolled = false;
   chatUserNearBottom = true;
   chatNewMessagesBelow = false;
+  chatNewMessagesLeaving = false;
   sharePromptVisible = false;
   sharePromptCopied = false;
   sharePromptCopyError: string | null = null;
@@ -712,7 +718,7 @@ export class OpenClawApp extends LitElement {
     if (p.step === "done") {
       this.kernelAutoUpgradeDoneTimer = setTimeout(() => {
         this.kernelAutoUpgradeDoneTimer = null;
-        this.kernelAutoUpgrade = null;
+        this.clearKernelAutoUpgradeAnimated();
       }, 6000);
     }
   }
@@ -723,7 +729,15 @@ export class OpenClawApp extends LitElement {
       clearTimeout(this.kernelAutoUpgradeDoneTimer);
       this.kernelAutoUpgradeDoneTimer = null;
     }
-    this.kernelAutoUpgrade = null;
+    this.clearKernelAutoUpgradeAnimated();
+  }
+
+  // 两段式退场：播完 kernel-banner-out 才清状态（一镜到底）
+  private clearKernelAutoUpgradeAnimated() {
+    if (!this.kernelAutoUpgrade) return;
+    runExitAnimation(document.querySelector(".kernel-auto-banner"), () => {
+      this.kernelAutoUpgrade = null;
+    });
   }
 
   // 「立即更新」：触发下载（autoDownload=false，只此入口），弹窗内转进度条
@@ -1671,21 +1685,27 @@ export class OpenClawApp extends LitElement {
       window.clearTimeout(this.sidebarCloseTimer);
       this.sidebarCloseTimer = null;
     }
+    // 退场途中重开：作废退场，直接复用节点播新入场
+    this.sidebarLeaving = false;
     this.sidebarContent = content;
     this.sidebarError = null;
     this.sidebarOpen = true;
   }
 
   handleCloseSidebar() {
-    this.sidebarOpen = false;
-    // Clear content after transition
-    if (this.sidebarCloseTimer != null) {
-      window.clearTimeout(this.sidebarCloseTimer);
+    if (!this.sidebarOpen || this.sidebarLeaving) return;
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reduced) {
+      this.sidebarOpen = false;
+      this.sidebarContent = null;
+      this.sidebarError = null;
+      return;
     }
+    // 两段式退场：leaving 期间保持 sidebarOpen=true（节点存活），播完再移除
+    this.sidebarLeaving = true;
     this.sidebarCloseTimer = window.setTimeout(() => {
-      if (this.sidebarOpen) {
-        return;
-      }
+      this.sidebarLeaving = false;
+      this.sidebarOpen = false;
       this.sidebarContent = null;
       this.sidebarError = null;
       this.sidebarCloseTimer = null;

@@ -32,13 +32,32 @@ T8 之后钉定清单是**多哈希 schema v2**：`pins[filename]` 为字符串�
 
 `.github/workflows/refresh-webbridge-pins.yml`：
 
-- 触发：`workflow_dispatch`（手动）+ release published。
+- 触发：`workflow_dispatch`（手动）+ release published + cron 每 6h（`23 */6 * * *`）。
 - 动作：跑 `scripts/refresh-webbridge-pins.mjs` → 有变化时把
   `resources/webbridge-pins.json` 直接提交回 main（`GITHUB_TOKEN`，
   `contents: write`；无变化跳过提交）。
 
 上游重建 latest 后用户报 PIN_STALE 时，**第一时间去 Actions 页手动 run 一次
 workflow_dispatch**，然后让用户点应用内「刷新钉定」。
+
+## 浏览器扩展同步（schema v3）
+
+清单的 `extension` 块让浏览器扩展随 WebBridge 版本同步更新，无需 CryoClaw 发版：
+
+- CI（同一 workflow）查询 Chrome Web Store update2 端点拿扩展最新版；发现新版时
+  下载 CRX、sha256、镜像进 `resources/webbridge/extension/kimi-webbridge-<v>.crx`，
+  并把 `{id, version, file, sha256[]}` 写进清单。CWS 从用户网络不可达，但 GitHub
+  runner 可达；用户端经 jsDelivr/raw 拉清单与镜像 CRX（国内可达）。
+- 客户端（`src/webbridge-extension-update.ts`）：24h 缓存读清单 → 与当前生效版本
+  （运行时 CRX 优先，内置打包 CRX 兜底）比较 → 下载镜像 CRX → sha256 钉定 +
+  CRX 内嵌 manifest version 复核 → 落盘 `~/.kimi-webbridge/extension/` →
+  已配置扩展的浏览器重指到新 CRX（external_crx 协议，浏览器下次启动生效）。
+- 自动触发：daemon `/status` 报 `version_mismatch` 或清单版本更新时，随
+  `maybeAutoCheckWebbridgeUpdate` 的 24h 周期自动换装（autoUpdate 开关共用）。
+- 手动入口：设置 → 高级 → WebBridge 版本卡片出现「更新扩展」按钮
+  （`settings:webbridge-extension-check` / `settings:webbridge-extension-update`）。
+- 注意：cron 在 runner 上访问 clients2.google.com；本地 `--dry-run` 时 CWS 不可达
+  属预期（脚本会跳过扩展刷新，pins 轮转不受影响）。
 
 ## 手动轮转（本地）
 

@@ -31,11 +31,11 @@ export const SETTINGS_TABS: SettingsTab[] = [
   { id: "voice", labelKey: "settings.nav.voice", group: "models" },
   { id: "usage", labelKey: "settings.nav.usage", group: "models" },
   { id: "mcp-hooks", labelKey: "settings.nav.mcpHooks", group: "models" },
+  { id: "overview", labelKey: "settings.nav.overview", group: "system" },
   { id: "appearance", labelKey: "settings.nav.appearance", group: "system" },
   { id: "advanced", labelKey: "settings.nav.advanced", group: "system" },
   { id: "approvals", labelKey: "settings.nav.approvals", group: "system" },
   { id: "backup", labelKey: "settings.nav.backup", group: "system" },
-  { id: "env-info", labelKey: "settings.nav.envInfo", group: "system" },
   { id: "about", labelKey: "settings.nav.about", group: "system" },
 ];
 
@@ -59,7 +59,8 @@ const TAB_ICONS: Record<string, TemplateResult> = {
   approvals: icon(svg`<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/>`),
   backup: icon(svg`<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/>`),
   about: icon(svg`<circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>`),
-  "env-info": icon(svg`<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/>`),
+  // 概览：仪表盘/仪表（gauge）——一页看懂运行态
+  overview: icon(svg`<path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/>`),
 };
 
 export function getTabIcon(id: string): TemplateResult | typeof import("lit").nothing {

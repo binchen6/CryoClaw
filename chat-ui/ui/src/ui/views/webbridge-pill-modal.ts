@@ -1,6 +1,7 @@
 import { html, nothing } from "lit";
 import type { AppViewState } from "../app-view-state.ts";
 import { t } from "../i18n.ts";
+import { runExitAnimation } from "../utils/exit-anim.ts";
 
 // Pill 修复后的反馈 modal —— 2026.9 统一 cc-dialog 浮层语言
 // 4 种 kind 决定标题/正文文字；统一一个「知道了」按钮关闭
@@ -52,7 +53,9 @@ export function renderWebbridgePillModal(state: AppViewState) {
     : t(descKey).replace(/\{browser\}/g, browserName);
 
   const close = () => {
-    state.webbridgePillModal = null;
+    runExitAnimation(document.querySelector(".cc-dialog-overlay"), () => {
+      state.webbridgePillModal = null;
+    });
   };
 
   return html`

@@ -35,11 +35,16 @@ import {
   getWebbridgePrecheck,
   installWebbridge,
   installWebbridgeSkill,
-  resolveWebbridgeExtensionSpec,
   runWebbridgeSetupTask,
   type SetupTaskSummary,
 } from "../webbridge";
 import { loadRemotePins } from "../webbridge-pins";
+import {
+  applyWebbridgeExtensionUpdate,
+  checkWebbridgeExtensionUpdate,
+  readRuntimeExtensionSpec,
+  resolveEffectiveExtensionSpec,
+} from "../webbridge-extension-update";
 import {
   applyWebbridgeUpdate,
   checkWebbridgeUpdate,
@@ -76,6 +81,9 @@ export const getCurrentBrowserMode = (): "webbridge" | "openclaw" | "user" => {
   }
 };
 export const specFromExtId = (extId: string): ExtensionSpec => {
+  // 生效 CRX（运行时更新过的扩展优先），没有运行时 CRX 时回退内置包
+  const runtime = readRuntimeExtensionSpec(resolveWebbridgeDataDir());
+  if (runtime && runtime.extId === extId) return runtime;
   const meta = readWebbridgeCrxMetadata();
   return {
     extId,
@@ -177,7 +185,7 @@ const runSelectiveWebbridgeRepair = async (
     // remotePins 注入（R79 去重）：installWebbridge 内部不再重复拉取一次
     installer: () => installWebbridge({ force: false, remotePins }),
     installExtensions: async () => {
-      const spec = resolveWebbridgeExtensionSpec();
+      const spec = resolveEffectiveExtensionSpec();
       if (!spec) {
         log.error(
           "[webbridge-repair] 无法解析 ExtensionSpec（CRX 资源缺失），跳过扩展安装",
@@ -642,6 +650,41 @@ export function registerWebbridgeIpc(opts: SettingsIpcOptions): void {  // ─�
       return {
         success: true,
         data: { count, updatedAt: new Date().toISOString(), source: result.source },
+      };
+    } catch (err: any) {
+      return { success: false, message: err.message || String(err) };
+    }
+  });
+
+  // ── 浏览器扩展检查更新（schema v3）：清单 extension 块 vs 当前生效版本 ──
+  ipcMain.handle("settings:webbridge-extension-check", async (event) => {
+    if (!assertTrustedIpcSender(event, "settings:webbridge-extension-check")) throw new Error("IPC sender not trusted");
+    try {
+      return { success: true, data: await checkWebbridgeExtensionUpdate({ forceRefresh: true }) };
+    } catch (err: any) {
+      return { success: false, message: err.message || String(err) };
+    }
+  });
+
+  // ── 浏览器扩展立即更新：下载镜像 CRX → 钉定校验 → 落盘 → 重指浏览器 ──
+  ipcMain.handle("settings:webbridge-extension-update", async (event) => {
+    if (!assertTrustedIpcSender(event, "settings:webbridge-extension-update")) throw new Error("IPC sender not trusted");
+    try {
+      const result = await applyWebbridgeExtensionUpdate();
+      if (result.ok) {
+        return { success: true, data: result };
+      }
+      return {
+        success: false,
+        code:
+          result.reason === "busy"
+            ? "WEBBRIDGE_BUSY"
+            : result.reason === "no-update"
+              ? "NO_UPDATE"
+              : result.reason === "pin-stale"
+                ? "PIN_STALE"
+                : "UPDATE_FAILED",
+        message: result.message ?? result.reason,
       };
     } catch (err: any) {
       return { success: false, message: err.message || String(err) };

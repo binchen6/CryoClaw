@@ -1,6 +1,7 @@
 import { html, nothing } from "lit";
 import type { AppViewState } from "../app-view-state.ts";
 import { t } from "../i18n.ts";
+import { runExitAnimation, exitHostFromEvent } from "../utils/exit-anim.ts";
 
 export function renderGatewayUrlConfirmation(state: AppViewState) {
   const { pendingGatewayUrl } = state;
@@ -25,13 +26,13 @@ export function renderGatewayUrlConfirmation(state: AppViewState) {
           <button
             class="btn"
             data-dialog-dismiss
-            @click=${() => state.handleGatewayUrlCancel()}
+            @click=${(e: Event) => runExitAnimation(exitHostFromEvent(e, ".cc-dialog-overlay"), () => state.handleGatewayUrlCancel())}
           >
             ${t("settings.cancel")}
           </button>
           <button
             class="btn primary"
-            @click=${() => state.handleGatewayUrlConfirm()}
+            @click=${(e: Event) => runExitAnimation(exitHostFromEvent(e, ".cc-dialog-overlay"), () => state.handleGatewayUrlConfirm())}
           >
             ${t("settings.confirm")}
           </button>

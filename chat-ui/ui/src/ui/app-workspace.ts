@@ -60,10 +60,10 @@ export function renderWorkspaceIntegratedView(state: AppViewState) {
     onOpenRootFolder: () => {
       const root = workspaceViewState.root;
       if (!root) return;
-      void (window as any).cryoclaw?.workspaceOpenFolder?.(root);
+      void window.cryoclaw?.workspaceOpenFolder?.(root);
     },
     onOpenItemFolder: (path) => {
-      void (window as any).cryoclaw?.workspaceOpenFolder?.(path);
+      void window.cryoclaw?.workspaceOpenFolder?.(path);
     },
   });
 }

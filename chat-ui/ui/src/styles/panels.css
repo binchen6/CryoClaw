@@ -157,6 +157,11 @@
   transition: background var(--duration-fast) var(--ease-out), border-color var(--duration-fast) var(--ease-out), box-shadow var(--duration-fast) var(--ease-out);
 }
 
+.chat-new-messages--leaving {
+  animation: oc-fade-out var(--duration-fast) var(--ease-in-out) forwards;
+  pointer-events: none;
+}
+
 @keyframes oc-new-messages-in {
   0% {
     opacity: 0;

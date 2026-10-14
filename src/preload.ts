@@ -144,6 +144,11 @@ contextBridge.exposeInMainWorld("cryoclaw", {
   // 刷新钉定（T8）：绕过 24h 缓存强制拉取远端 WebBridge 钉定清单
   settingsWebbridgeRefreshPins: () =>
     ipcRenderer.invoke("settings:webbridge-refresh-pins"),
+  // 浏览器扩展检查更新 / 立即更新（schema v3：清单 extension 块驱动）
+  settingsWebbridgeExtensionCheck: () =>
+    ipcRenderer.invoke("settings:webbridge-extension-check"),
+  settingsWebbridgeExtensionUpdate: () =>
+    ipcRenderer.invoke("settings:webbridge-extension-update"),
   settingsGetCliStatus: () => ipcRenderer.invoke("settings:get-cli-status"),
   settingsInstallCli: () => ipcRenderer.invoke("settings:install-cli"),
   settingsUninstallCli: () => ipcRenderer.invoke("settings:uninstall-cli"),
@@ -170,6 +175,11 @@ contextBridge.exposeInMainWorld("cryoclaw", {
     ipcRenderer.invoke("skill-store:uninstall", params),
   skillStoreListInstalled: () =>
     ipcRenderer.invoke("skill-store:list-installed"),
+  // 技能更新：检查已安装技能的 registry 新版本 / 升级（slugs 缺省 = 全部可更新项）
+  skillStoreCheckUpdates: () =>
+    ipcRenderer.invoke("skill-store:check-updates"),
+  skillStoreUpdate: (params?: Record<string, unknown>) =>
+    ipcRenderer.invoke("skill-store:update", params),
   // R91：技能详情（readme/tags 等全量字段）
   skillStoreDetail: (params?: Record<string, unknown>) =>
     ipcRenderer.invoke("skill-store:detail", params),

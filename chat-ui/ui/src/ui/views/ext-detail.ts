@@ -10,6 +10,7 @@
 import { html, nothing, type TemplateResult } from "lit";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { t } from "../i18n.ts";
+import { runExitAnimation } from "../utils/exit-anim.ts";
 import { toSanitizedMarkdownHtml } from "../markdown.ts";
 import { formatRelativeTimestamp } from "../format.ts";
 import { setCryoClawView } from "../app-view-switch.ts";
@@ -109,8 +110,28 @@ export function isExtDetailOpen(): boolean {
   return detail !== null;
 }
 
+// 退场代次：与 detailToken 同理，退场动画期间的重新打开作废旧定时器
+let detailExitToken = 0;
+
+/** 用户主动关闭（Escape/关闭按钮）：两段式退场，播完才移除 DOM */
+export function closeExtDetailAnimated(state: AppViewState) {
+  const token = ++detailExitToken;
+  const closing = detail;
+  runExitAnimation(document.querySelector(".cc-dialog-overlay"), () => {
+    if (token !== detailExitToken || detail !== closing) return;
+    closeExtDetail(state);
+  });
+}
+
+/** 打开新详情前摘掉 leaving class 并作废旧退场（Lit 就地复用 overlay 节点） */
+function reviveExtDetailOverlay() {
+  detailExitToken++;
+  document.querySelector(".cc-dialog-overlay")?.classList.remove("cc-leaving");
+}
+
 export function closeExtDetail(state: AppViewState) {
   detailToken++;
+  detailExitToken++;
   detail = null;
   loading = false;
   error = null;
@@ -124,6 +145,7 @@ export function closeExtDetail(state: AppViewState) {
 export function openPluginDetail(state: AppViewState, plugin: { id: string; name: string }) {
   if (!window.cryoclaw?.pluginStoreDetail) return;
   const token = ++detailToken;
+  reviveExtDetailOverlay();
   detail = { kind: "plugin", key: plugin.id, title: plugin.name };
   loading = true;
   error = null;
@@ -156,6 +178,7 @@ export function openPluginDetail(state: AppViewState, plugin: { id: string; name
 export function openMarketPackageDetail(state: AppViewState, pkg: { name: string; displayName?: string }) {
   if (!window.cryoclaw?.pluginStoreMarketDetail) return;
   const token = ++detailToken;
+  reviveExtDetailOverlay();
   detail = { kind: "market-package", key: pkg.name, title: pkg.displayName ?? pkg.name };
   loading = true;
   error = null;
@@ -195,6 +218,7 @@ export function openSkillDetail(state: AppViewState, skill: {
 }) {
   if (!window.cryoclaw?.skillStoreDetail) return;
   const token = ++detailToken;
+  reviveExtDetailOverlay();
   detail = {
     kind: "skill",
     key: skill.slug,
@@ -454,7 +478,7 @@ export function renderExtDetailDialog(state: AppViewState) {
       aria-label=${title}
       tabindex="-1"
       @keydown=${(e: KeyboardEvent) => {
-        if (e.key === "Escape") closeExtDetail(state);
+        if (e.key === "Escape") closeExtDetailAnimated(state);
       }}
     >
       <div class="cc-dialog ext-detail__dialog">
@@ -469,7 +493,7 @@ export function renderExtDetailDialog(state: AppViewState) {
                   ${t("ext.detail.translate")}
                 </button>`
               : nothing}
-            <button class="cc-dialog__close" type="button" aria-label=${t("ext.detail.close")} @click=${() => closeExtDetail(state)}>×</button>
+            <button class="cc-dialog__close" type="button" aria-label=${t("ext.detail.close")} @click=${() => closeExtDetailAnimated(state)}>×</button>
           </div>
         </div>
         <div class="cc-dialog__body ext-detail__body">

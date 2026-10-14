@@ -59,9 +59,14 @@
    gh release view v<version> --json isDraft,assets
    # ③ 草稿实测通过后转正并设为 latest
    gh release edit v<version> --draft=false --latest
-   # ④ API 复核最终状态（isDraft=false、资产完整）
+   # ④ 资产断言（硬门槛，非零退出即不得宣发）：三件套齐全 + latest.yml 版本一致
+   npm run release:assert
+   # ⑤ API 复核最终状态（isDraft=false、资产完整）
    gh api repos/binchen6/CryoClaw/releases/tags/v<version> --jq '{draft:.draft, assets:[.assets[].name]}'
    ```
+
+   `scripts/release-assert.js` 也可在草稿期用 `--allow-draft` 预检（上传完资产后立即跑），
+   加 `--deep` 会下载 exe 重算 sha512 与 latest.yml 比对（慢，重大版本建议跑一次）。
 
    备选（一步直发，跳过草稿实测，不推荐）：`GH_TOKEN=ghp_xxx npx electron-builder --win --x64 --publish always` 会把 exe / blockmap / latest.yml 一并上传到 GitHub Release（默认草稿）。
 

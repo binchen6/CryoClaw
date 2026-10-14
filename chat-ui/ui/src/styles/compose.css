@@ -344,6 +344,34 @@
   }
 }
 
+/* 退场两段式（一镜到底）：JS 先摘 --open 换 --closing（保持显示播退出帧），
+   动画结束后再摘 --closing 归位 display:none。时长沿用 popover 的 fast 豁免档。 */
+.chat-compose__thinking-popover--closing {
+  display: grid;
+  gap: var(--spacer-2);
+}
+
+.chat-compose__branch-popover--closing {
+  display: block;
+}
+
+.chat-compose__thinking-popover--closing,
+.chat-compose__branch-popover--closing {
+  animation: chat-popover-out var(--duration-fast) var(--ease-in-out) forwards;
+}
+
+@keyframes chat-popover-out {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  to {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .chat-compose__thinking-popover--open,
   .chat-compose__branch-popover--open {

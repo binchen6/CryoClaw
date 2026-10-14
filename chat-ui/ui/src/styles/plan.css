@@ -49,7 +49,7 @@
 
 .plan-panel__dot--active {
   background: var(--info);
-  animation: plan-pulse var(--duration-loop) ease-in-out infinite;
+  animation: oc-pulse-strong var(--duration-loop) var(--ease-in-out) infinite;
 }
 
 .plan-panel__dot--done {
@@ -110,6 +110,12 @@
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
   flex-shrink: 0;
+}
+
+/* 退场两段式：runExitAnimation 加 cc-leaving，播完才置 dismissed */
+.plan-panel.cc-leaving {
+  animation: oc-fade-out var(--duration-normal) var(--ease-in-out) forwards;
+  pointer-events: none;
 }
 
 .plan-panel__close {
@@ -185,7 +191,7 @@
 
 .plan-panel__step--in_progress .plan-panel__step-icon {
   color: var(--info);
-  animation: plan-pulse var(--duration-loop) ease-in-out infinite;
+  animation: oc-pulse-strong var(--duration-loop) var(--ease-in-out) infinite;
 }
 
 .plan-panel__step--in_progress .plan-panel__step-text {
@@ -199,15 +205,6 @@
 
 .plan-panel--done .plan-panel__pill {
   border-color: color-mix(in srgb, var(--ok) 35%, transparent);
-}
-
-@keyframes plan-pulse {
-  0%, 100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: .35;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {

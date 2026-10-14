@@ -353,13 +353,6 @@
   color: var(--text-strong);
 }
 
-.setting-row__desc {
-  margin-top: var(--spacer-2);
-  font-size: var(--text-sm);
-  color: var(--text-secondary);
-  line-height: var(--leading-title);
-}
-
 .setting-row__control {
   flex-shrink: 0;
   margin-left: auto;

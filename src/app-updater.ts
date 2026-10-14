@@ -29,6 +29,7 @@ import {
 } from "./app-updater-state";
 import { clearSnooze, isUpdateSnoozed, readSnooze, writeSnooze, SnoozeUntil } from "./update-snooze";
 import { fetchReleaseNotesFromGitHub } from "./app-update-release-notes";
+import { AppFlags, BUNDLED_DEFAULT_FLAGS, loadAppFlags } from "./app-flags";
 
 export type { AppUpdateState } from "./app-updater-state";
 
@@ -51,6 +52,16 @@ let beforeQuitAndInstall: (() => void) | null = null;
 let startupTimer: NodeJS.Timeout | null = null;
 /** 已下载完成的安装器文件名（update-downloaded 事件 info.path，仅文件名） */
 let downloadedInstallerName: string | null = null;
+// 差异更新旗帜：init 时后台拉取（24h 缓存），下载开始前应用。
+// 旗帜加载永不 reject（loadAppFlags 兜底内置默认），这里防御性 catch 只是
+// 为了不让未处理的 rejection 打断启动。
+let appFlagsPromise: Promise<AppFlags> | null = null;
+// 会话内差异失败标记：electron-updater 差异下载失败回退全量后，本次会话的
+// 后续重试直接走全量，避免重复付出「几十 MB 差分 + 全量」双份流量（gotcha #106）
+let differentialFailedThisSession = false;
+
+/** 旗帜拉取最长等待（用户点「更新」时不为旗帜无限等待） */
+const FLAGS_WAIT_TIMEOUT_MS = 3000;
 
 function formatUpdaterError(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
@@ -115,10 +126,40 @@ export function downloadAppUpdate(): void {
   // 事件前有数秒静默期（latest.yml 解析、缓存目录清理、连接建立），期间弹窗
   // 若停在 available 态，用户看不到任何下载迹象（R86 实测差分路径静默 6s+）。
   publish({ type: "download-start" });
-  void autoUpdater.downloadUpdate().catch((err) => {
+  void downloadWithFlags().catch((err) => {
     log.warn(`[app-updater] 下载更新失败: ${formatUpdaterError(err)}`);
     publish({ type: "error", message: formatUpdaterError(err) });
   });
+}
+
+/**
+ * 下载前应用差异更新旗帜（三层叠加，任一否决即全量）：
+ *   1. 远端清单 app-flags.json（kill-switch，改仓库文件即可全局生效，无需发版）；
+ *   2. 本地环境变量 CRYOCLAW_DISABLE_DIFFERENTIAL_UPDATE=1（支持/排障用）；
+ *   3. 会话内差异失败标记（electron-updater 回退全量后，重试不再重复差异尝试）。
+ * 旗帜等待设上限——用户已经点了「更新」，不为网络旗帜无限延迟下载。
+ */
+async function downloadWithFlags(): Promise<void> {
+  let flags = BUNDLED_DEFAULT_FLAGS;
+  try {
+    flags = await Promise.race([
+      appFlagsPromise ?? Promise.resolve(BUNDLED_DEFAULT_FLAGS),
+      new Promise<AppFlags>((resolve) =>
+        setTimeout(() => resolve(BUNDLED_DEFAULT_FLAGS), FLAGS_WAIT_TIMEOUT_MS),
+      ),
+    ]);
+  } catch {
+    // loadAppFlags 不抛错；防御
+  }
+  const localKill = process.env.CRYOCLAW_DISABLE_DIFFERENTIAL_UPDATE === "1";
+  const enableDifferential =
+    flags.differentialDownload && !localKill && !differentialFailedThisSession;
+  autoUpdater.disableDifferentialDownload = !enableDifferential;
+  log.info(
+    `[app-updater] 差异更新${enableDifferential ? "启用" : "禁用"}` +
+      `（远端=${flags.differentialDownload} 本地开关=${localKill ? "禁" : "放"} 会话失败=${differentialFailedThisSession}）`,
+  );
+  await autoUpdater.downloadUpdate();
 }
 
 /** 设置更新提示暂缓（until: epoch ms 或 "forever"），并推送最新快照。 */
@@ -272,20 +313,42 @@ export function initAppUpdater(deps: Deps): void {
   autoUpdater.autoInstallOnAppQuit = false;
   // 不使用 web installer（静默 NSIS 换装），消除 electron-updater 启动警告
   autoUpdater.disableWebInstaller = true;
-  // 禁用差分（blockmap）下载：GitHub Releases CDN 的分段 Range 请求在弱网下
-  // 极不稳定——R86 实测两次差分分别以 ERR_CONNECTION_RESET 和 sha512 校验
-  // 不匹配告终，且每次失败都已付出几十 MB 流量才回退全量（76MB 差分 + 193MB
-  // 全量双份代价）。全量单连接下载本身支持断点续传，进度事件也更平滑
-  // （差分在本地复制旧块阶段不发任何进度）。安装器仍照常发布 .blockmap，
-  // 不影响其他渠道。
+  // 差异（blockmap）下载：R86 曾因 GitHub Releases CDN 分段 Range 请求弱网不稳定
+  // （ERR_CONNECTION_RESET / sha512 不匹配，失败前已付出几十 MB 流量才回退全量）
+  // 客户端硬禁用。现以「远程开关门控」重启（gotcha #106 的演进）：
+  //   - 默认启用；远端清单 resources/app-flags.json 可不发版全局关停（24h 缓存）；
+  //   - 本地 CRYOCLAW_DISABLE_DIFFERENTIAL_UPDATE=1 可单机关停（排障用）；
+  //   - 会话内差异失败过一次后，重试直接全量（不再重复双份流量）。
+  // 此处先置 true（保守初始姿态），init 尾部旗帜就绪后即按旗帜刷新；
+  // 真正生效点在 downloadWithFlags()——autoDownload=false，下载只可能从那里发起。
   autoUpdater.disableDifferentialDownload = true;
   // 内部日志转发到 app.log
   autoUpdater.logger = {
     info: (msg) => log.info(`[app-updater] ${msg}`),
-    warn: (msg) => log.warn(`[app-updater] ${msg}`),
+    warn: (msg) => {
+      log.warn(`[app-updater] ${msg}`);
+      // electron-updater 差异失败回退全量时打 "Cannot download differentially,
+      // fallback to full download"——据此标记会话内失败，后续重试直连全量
+      if (!differentialFailedThisSession && /differential/i.test(msg) && /(fallback|fail)/i.test(msg)) {
+        differentialFailedThisSession = true;
+        log.warn("[app-updater] 本会话差异下载已失败，后续重试将直接使用全量包");
+      }
+    },
     error: (msg) => log.error(`[app-updater] ${msg}`),
     debug: (msg) => log.debug(`[app-updater] ${msg}`),
   };
+
+  // 后台拉取远端特性开关（不阻塞启动）；就绪后先按旗帜刷新一次差异开关
+  appFlagsPromise = loadAppFlags({
+    dataDir: app.getPath("userData"),
+    logger: log,
+  })
+    .then((r) => {
+      log.info(`[app-updater] 特性开关就绪（${r.source}）: differentialDownload=${r.flags.differentialDownload}`);
+      autoUpdater.disableDifferentialDownload = !r.flags.differentialDownload;
+      return r.flags;
+    })
+    .catch(() => BUNDLED_DEFAULT_FLAGS); // loadAppFlags 不抛错；防御
 
   autoUpdater.on("checking-for-update", () => {
     log.info("[app-updater] 正在检查更新...");

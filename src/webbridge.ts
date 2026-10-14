@@ -1272,12 +1272,12 @@ export async function getWebbridgePrecheck(
     : null;
 
   let extMissing: boolean;
-  if (!deps.extensionId || defaultUnsupported) {
+  if (!deps.extensionId || !def) {
     extMissing = true;
   } else {
     try {
       const browsers = await deps.readExtensionStates(deps.extensionId);
-      const targetState = browsers.find((b) => b.browserId === def!.target.id);
+      const targetState = browsers.find((b) => b.browserId === def.target.id);
       // settings 高级页面只关心"CryoClaw 这套组件是否真的坏了 / 缺了 / 被黑名单挡了"。
       // 不再判 presentInChrome：用户在 Chrome 里有没有点"启用"是用户行为，
       // 不是 CryoClaw 能修的状态——左侧栏 pill 单独负责催用户去启用。

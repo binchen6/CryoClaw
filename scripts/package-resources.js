@@ -2174,6 +2174,25 @@ function vendorOfficialPlugin(plugin, gatewayDir, targetId, opts) {
     }
 
     log(`已 vendor 官方插件 ${plugin.id} (${spec})`);
+
+    // 溯源 stamp：记录确切来源 spec 与打包时间，供故障排查/审计回答
+    // 「这个 vendored 插件到底是哪版、从哪来的」——此前只能靠对照 package.json
+    // 间接推断（env 覆盖路径则完全无痕）。
+    fs.writeFileSync(
+      path.join(pluginDir, ".cryoclaw-vendor-stamp.json"),
+      JSON.stringify(
+        {
+          id: plugin.id,
+          packageName: plugin.packageName,
+          source: sourceInfo.stampSource,
+          spec,
+          vendoredAt: new Date().toISOString(),
+        },
+        null,
+        2,
+      ) + "\n",
+      "utf8",
+    );
   } finally {
     rmDir(tmpDir);
   }

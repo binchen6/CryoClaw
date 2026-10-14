@@ -16,4 +16,6 @@ export interface SettingsIpcOptions {
    * 备份可能来自旧版本：不迁移直接重启 gateway 会被 strict 校验拒绝（同导入生命周期）。
    */
   migrateRestoredConfig?: () => void;
+  /** 概览页运行态：gateway 进程状态/pid/启动时间（main.ts 持有 GatewayProcess 实例） */
+  getGatewayRuntime?: () => { state: string; pid: number | null; startedAt: number | null } | null;
 }

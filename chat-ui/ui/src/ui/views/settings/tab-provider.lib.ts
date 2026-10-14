@@ -467,26 +467,76 @@ export function buildProviderConfigForAdd(
   };
 }
 
+/** 内核 config 草稿中单个模型 entry 的结构化投影（仅覆盖 provider 页读写字段） */
+export interface OpenclawProviderModelEntry {
+  id?: string;
+  name?: string;
+  input?: string[];
+  reasoning?: boolean;
+  contextWindow?: number;
+  contextTokens?: number;
+  maxTokens?: number;
+  compat?: { supportedReasoningEfforts?: string[]; [k: string]: unknown };
+  [k: string]: unknown;
+}
+
+/** 内核 config 草稿中单个 provider 的结构化投影 */
+export interface OpenclawProviderEntry {
+  apiKey?: string;
+  baseUrl?: string;
+  api?: string;
+  models?: (string | OpenclawProviderModelEntry)[];
+  [k: string]: unknown;
+}
+
+/**
+ * 内核 config 快照草稿的结构化投影：仅声明 provider 设置页读写的路径，
+ * 其余键经索引签名保持 unknown。配合泛型 patchConfig 让 mutator 免于 as any。
+ */
+export interface OpenclawConfigDraft {
+  models?: { providers?: Record<string, OpenclawProviderEntry>; [k: string]: unknown };
+  agents?: {
+    defaults?: {
+      model?: { primary?: string; fallbacks?: string[]; [k: string]: unknown };
+      [k: string]: unknown;
+    };
+    [k: string]: unknown;
+  };
+  plugins?: {
+    entries?: Record<string, { enabled?: boolean; [k: string]: unknown }>;
+    allow?: string[];
+    [k: string]: unknown;
+  };
+  memory?: {
+    search?: {
+      enabled?: boolean;
+      provider?: string;
+      model?: string;
+      remote?: { baseUrl?: string; apiKey?: string; [k: string]: unknown };
+      [k: string]: unknown;
+    };
+    [k: string]: unknown;
+  };
+  [k: string]: unknown;
+}
+
 /** kimi-code 联动：启用 kimi-search 插件 + memory embedding 走代理 */
-export function applyKimiCodeLinkage(draft: Record<string, unknown>, proxyPort: number): void {
-  const d = draft as any;
-  d.plugins ??= {};
-  d.plugins.entries ??= {};
-  const existing = typeof d.plugins.entries["kimi-search"] === "object" && d.plugins.entries["kimi-search"] !== null
-    ? d.plugins.entries["kimi-search"]
-    : {};
-  d.plugins.entries["kimi-search"] = { ...existing, enabled: true };
+export function applyKimiCodeLinkage(draft: OpenclawConfigDraft, proxyPort: number): void {
+  const plugins = (draft.plugins ??= {});
+  const entries = (plugins.entries ??= {});
+  const existing = entries["kimi-search"] ?? {};
+  entries["kimi-search"] = { ...existing, enabled: true };
   // plugins.allow 已配置白名单时同步补 id（与主进程 syncPluginAllowOnEnable 一致）
-  if (Array.isArray(d.plugins.allow) && d.plugins.allow.length > 0 && !d.plugins.allow.includes("kimi-search")) {
-    d.plugins.allow.push("kimi-search");
+  if (Array.isArray(plugins.allow) && plugins.allow.length > 0 && !plugins.allow.includes("kimi-search")) {
+    plugins.allow.push("kimi-search");
   }
   if (proxyPort > 0) {
     // 语义记忆检索写根级 memory.search（内核 2026.8+ strict schema 不认旧
     // agents.defaults.memorySearch；与主进程 ensureMemorySearchProxyConfig 落位一致）
-    d.memory ??= {};
-    const prevSearch = typeof d.memory.search === "object" && d.memory.search !== null ? d.memory.search : {};
-    const prevRemote = typeof prevSearch.remote === "object" && prevSearch.remote !== null ? prevSearch.remote : {};
-    d.memory.search = {
+    const memory = (draft.memory ??= {});
+    const prevSearch = memory.search ?? {};
+    const prevRemote = prevSearch.remote ?? {};
+    memory.search = {
       ...prevSearch,
       enabled: true,
       provider: "openai",

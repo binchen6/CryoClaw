@@ -55,6 +55,23 @@ function assertCssSelectorsValid(): Plugin {
   };
 }
 
+/**
+ * KaTeX 的 CSS 为同一字体列了 woff2/woff/ttf 三级回退；Chromium 必定命中首个
+ * woff2，后两者从不被请求——20×.ttf + 20×.woff ≈ 876KB 纯随包死重。
+ * 直接从产物里剔除（若未来要支持不认 woff2 的环境，删此插件即可回退）。
+ */
+function dropUnusedKaTeXFonts(): Plugin {
+  return {
+    name: "drop-unused-katex-fonts",
+    enforce: "post",
+    generateBundle(_, bundle) {
+      for (const fileName of Object.keys(bundle)) {
+        if (/KaTeX_.*\.(ttf|woff)$/.test(fileName)) delete bundle[fileName];
+      }
+    },
+  };
+}
+
 // 把重量级第三方库拆成独立 chunk：首帧只需解析 entry + 用到的 vendor，
 // 复用度高的 vendor 走浏览器缓存（file:// 下同 app 内每次启动仍是本地磁盘读取，
 // 但拆分让主 chunk 更小、解析更快，且构建告警阈值不再误报业务代码体积）。
@@ -79,7 +96,7 @@ function vendorChunks(id: string): string | undefined {
 export default defineConfig({
   root: ".",
   base: "./",
-  plugins: [stripCrossorigin(), assertCssSelectorsValid()],
+  plugins: [stripCrossorigin(), assertCssSelectorsValid(), dropUnusedKaTeXFonts()],
   resolve: {
     alias: {
       // The UI source references files outside ui/ via ../../../src/

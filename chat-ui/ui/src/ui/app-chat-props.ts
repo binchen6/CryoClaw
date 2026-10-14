@@ -208,8 +208,10 @@ export function buildChatProps(state: AppViewState): ChatProps {
     // 「上翻期间来了新内容」标记由 app-scroll.ts 维护；chatUserNearBottom 只表示当前
     // 是否贴底（用户上翻但未收到新消息时也会 true→false 反转误亮徽标）
     showNewMessages: state.chatNewMessagesBelow,
+    newMessagesLeaving: state.chatNewMessagesLeaving,
     onScrollToBottom: () => state.scrollToBottom(),
     sidebarOpen: state.sidebarOpen,
+    sidebarLeaving: state.sidebarLeaving,
     sidebarContent: state.sidebarContent,
     sidebarError: state.sidebarError,
     splitRatio: state.splitRatio,

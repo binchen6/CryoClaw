@@ -283,27 +283,6 @@
   background: var(--accent);
 }
 
-.oc-setup-btn-row {
-  display: flex;
-  justify-content: flex-end;
-  align-items: center;
-  gap: var(--spacer-12);
-  padding-top: var(--spacer-24);
-  padding-bottom: var(--spacer-16);
-  width: 100%;
-  flex-shrink: 0;
-  background: var(--bg);
-}
-/* 作为 .oc-setup-step 直接子级的 footer：hairline 分隔 + 额外底部呼吸空间。
-   子组合选择器只影响 step 级 footer，不影响 oauth <details> 内嵌 btn-row。 */
-.oc-setup-step > .oc-setup-btn-row {
-  border-top: var(--hairline);
-  padding-bottom: var(--spacer-32);
-}
-
-/* R84 按钮收敛：oc-setup-btn* 迁移到全局 .btn 体系（primitives.css），
-   仅保留 footer 行容器。 */
-
 .oc-setup-oauth-section {
   width: 100%;
   margin-bottom: var(--spacer-20);

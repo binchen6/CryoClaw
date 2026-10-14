@@ -73,6 +73,15 @@ html.theme-transition::view-transition-new(theme) {
   .chat-compose__send-btn:active:not(:disabled) {
     transform: none !important
   }
+
+  /* hover 位移/放大同理：瞬时收敛会把位移变成瞬跳，整体移除 */
+  .chat-tool-card:hover,
+  .chip:hover,
+  .skill-store__card:hover,
+  .ext-market__card:hover,
+  .chat-compose__send-btn:hover:not(:disabled) {
+    transform: none !important
+  }
 }
 
 openclaw-app {
@@ -140,6 +149,11 @@ select {
   to {
     transform: translateX(100%)
   }
+}
+
+@keyframes oc-pulse-strong {
+  0%, 100% { opacity: 1; }
+  50% { opacity: .35; }
 }
 
 @keyframes pulse-subtle {

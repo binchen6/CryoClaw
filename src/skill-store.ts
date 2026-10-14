@@ -599,6 +599,111 @@ function listInstalledSkills(): string[] {
   }
 }
 
+// ── 技能更新（检查 + 升级）──
+
+// 数字段版本比较（1.10.0 > 1.9.9）：a<b → -1，相等 → 0，a>b → 1
+function compareSkillVersions(a: string, b: string): number {
+  const pa = a.split(".").map((s) => parseInt(s, 10) || 0);
+  const pb = b.split(".").map((s) => parseInt(s, 10) || 0);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const d = (pa[i] ?? 0) - (pb[i] ?? 0);
+    if (d !== 0) return d < 0 ? -1 : 1;
+  }
+  return 0;
+}
+
+// 读取已安装技能的版本表：clawhub lockfile 优先（安装器权威记录），
+// 缺失条目回退各技能目录的 _meta.json（手工拷贝进目录的技能也有版本痕迹）。
+export function readInstalledSkillVersions(base?: string): Record<string, string> {
+  const root = base ?? skillsBaseDir();
+  const out: Record<string, string> = {};
+  try {
+    const lock = JSON.parse(fs.readFileSync(path.join(root, ".clawhub", "lock.json"), "utf-8"));
+    const skills = lock?.skills;
+    if (skills && typeof skills === "object") {
+      for (const [slug, entry] of Object.entries(skills as Record<string, unknown>)) {
+        const v = (entry as any)?.version;
+        if (typeof v === "string" && v.trim()) out[slug] = v.trim();
+      }
+    }
+  } catch {
+    // lockfile 缺失/损坏不阻断——回退逐目录 _meta.json
+  }
+  // 回退/补充：目录内 _meta.json
+  try {
+    if (fs.existsSync(root)) {
+      for (const name of fs.readdirSync(root)) {
+        if (name in out || name.startsWith(".")) continue;
+        try {
+          const meta = JSON.parse(fs.readFileSync(path.join(root, name, "_meta.json"), "utf-8"));
+          const v = typeof meta?.version === "string" ? meta.version.trim() : "";
+          if (v) out[name] = v;
+        } catch { /* 单条目损坏跳过 */ }
+      }
+    }
+  } catch { /* 目录不可读 → 空表 */ }
+  return out;
+}
+
+export interface SkillUpdateEntry {
+  slug: string;
+  current: string | null;
+  latest: string;
+}
+
+// 检查更新：已安装技能逐个查 registry 最新版（并发 4；单条目失败跳过不炸整批）。
+// 版本未知（lockfile/_meta 都没有）的条目按「可能过旧」纳入——current=null 让 UI 提示。
+export async function checkSkillUpdates(): Promise<SkillUpdateEntry[]> {
+  const installed = listInstalledSkills();
+  if (installed.length === 0) return [];
+  const versions = readInstalledSkillVersions();
+  const updates: SkillUpdateEntry[] = [];
+  const CONCURRENCY = 4;
+  for (let i = 0; i < installed.length; i += CONCURRENCY) {
+    const batch = installed.slice(i, i + CONCURRENCY);
+    const results = await Promise.all(
+      batch.map(async (slug) => {
+        try {
+          const detail = await getSkillDetail(slug);
+          const latest = detail.version?.trim() ?? "";
+          if (!latest) return null;
+          const current = versions[slug] ?? null;
+          if (current && compareSkillVersions(latest, current) <= 0) return null;
+          return { slug, current, latest } satisfies SkillUpdateEntry;
+        } catch {
+          return null; // 单条查询失败（下架/网络抖动）跳过
+        }
+      }),
+    );
+    for (const r of results) if (r) updates.push(r);
+  }
+  return updates;
+}
+
+export interface SkillUpdateResult {
+  success: boolean;
+  updated: string[];
+  failed: { slug: string; message: string }[];
+}
+
+// 升级技能：clawhub install <slug> 即拉最新版。串行执行（clawhub 对 skills 目录
+// 有锁语义，并发 install 会相互踩踏）；单个失败不中断后续。
+async function updateSkills(slugs: string[]): Promise<SkillUpdateResult> {
+  const updated: string[] = [];
+  const failed: { slug: string; message: string }[] = [];
+  for (const slug of slugs) {
+    const check = validateSkillSlug(slug);
+    if (!check.ok) {
+      failed.push({ slug, message: check.error });
+      continue;
+    }
+    const r = await installSkill(slug);
+    if (r.success) updated.push(slug);
+    else failed.push({ slug, message: r.message ?? "install failed" });
+  }
+  return { success: failed.length === 0, updated, failed };
+}
+
 // ── IPC 注册 ──
 
 // 列表缓存（R91 性能审查）：list 是纯读 HTTP（sort+limit+cursor 键控），
@@ -686,6 +791,42 @@ export function registerSkillStoreIpc(): void {
     const installed = listInstalledSkills();
     debugLog(`ipc list-installed → [${installed.join(", ")}]`);
     return { success: true, data: installed };
+  });
+
+  // 检查已安装技能的更新（registry 最新版 vs 本地 lockfile/_meta 版本）
+  ipcMain.handle("skill-store:check-updates", async (event) => {
+    if (!assertTrustedIpcSender(event, "skill-store:check-updates")) throw new Error("IPC sender not trusted");
+    try {
+      const updates = await checkSkillUpdates();
+      debugLog(`ipc check-updates → ${updates.length} 项可更新`);
+      return { success: true, data: { updates, checkedAt: new Date().toISOString() } };
+    } catch (err: any) {
+      debugLog(`ipc check-updates → error: ${err?.message}`);
+      return { success: false, message: err?.message ?? String(err) };
+    }
+  });
+
+  // 升级技能：params.slugs 缺省 = 全部可更新项；指定则按名单升级（逐项校验 slug）
+  ipcMain.handle("skill-store:update", async (event, params) => {
+    if (!assertTrustedIpcSender(event, "skill-store:update")) throw new Error("IPC sender not trusted");
+    try {
+      let slugs: string[];
+      if (Array.isArray(params?.slugs) && params.slugs.length > 0) {
+        slugs = params.slugs.filter((x: unknown): x is string => typeof x === "string");
+      } else {
+        slugs = (await checkSkillUpdates()).map((u) => u.slug);
+      }
+      if (slugs.length === 0) {
+        return { success: true, data: { updated: [], failed: [] } };
+      }
+      const result = await updateSkills(slugs);
+      if (result.updated.length > 0) skillListCache.clear();
+      debugLog(`ipc update → updated=[${result.updated.join(",")}] failed=${result.failed.length}`);
+      return { success: result.success, data: result };
+    } catch (err: any) {
+      debugLog(`ipc update → error: ${err?.message}`);
+      return { success: false, message: err?.message ?? String(err) };
+    }
   });
 
   // R91：技能详情。getSkillDetail 早已存在但未暴露；slug 先走 validateSkillSlug

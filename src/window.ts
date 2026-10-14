@@ -108,6 +108,9 @@ export class WindowManager {
         // （均已列入 Electron sandboxed preload 的可用集合），无任何 Node API 依赖，
         // 打开后渲染层拿不到 Node 内建模块与 __dirname 等宿主能力。
         sandbox: true,
+        // AI 聊天客户端无拼写下划线需求；关闭可免去 hunspell 词典常驻内存
+        // 与长输入框逐键检查的开销。
+        spellcheck: false,
         preload: path.join(__dirname, "preload.js"),
       },
     });
@@ -392,8 +395,10 @@ export class WindowManager {
     // 原始 entry URL（含 gateway token）经 encodeURIComponent 写入 fragment，
     // 仅供本页 Retry 回跳使用，不落日志
     errorPageUrl.hash = `#${encodeURIComponent(retryUrl)}`;
+    const win = this.win;
+    if (!win) return;
     try {
-      await this.win!.loadURL(errorPageUrl.toString());
+      await win.loadURL(errorPageUrl.toString());
     } catch (err) {
       // 错误页自身加载失败（极端情况）：不再向上抛，避免吞掉 show() 的原始错误
       log.error(`错误页加载失败: ${err}`);
