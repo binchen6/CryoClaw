@@ -1,7 +1,60 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { extractToolCards } from "./tool-cards.ts";
+import { extractSpawnSessionRef, extractToolCards } from "./tool-cards.ts";
+
+// ── sessions_spawn 子会话引用提取 ──
+
+test("spawn ref：accepted 结果 details.childSessionKey 解析成功", () => {
+  const ref = extractSpawnSessionRef({
+    kind: "result",
+    name: "sessions_spawn",
+    text: JSON.stringify({
+      status: "accepted",
+      details: {
+        status: "accepted",
+        runId: "run-1",
+        childSessionKey: "agent:main:sub:abc",
+        label: "调研子任务",
+        sessionUrl: "https://example.invalid/s/abc",
+      },
+    }),
+  });
+  assert.deepEqual(ref, {
+    sessionKey: "agent:main:sub:abc",
+    label: "调研子任务",
+    sessionUrl: "https://example.invalid/s/abc",
+  });
+});
+
+test("spawn ref：details 缺省时兜底顶层字段；无 label/sessionUrl 可省略", () => {
+  const ref = extractSpawnSessionRef({
+    kind: "result",
+    name: "sessions_spawn",
+    text: JSON.stringify({ childSessionKey: "agent:main:sub:xyz" }),
+  });
+  assert.deepEqual(ref, { sessionKey: "agent:main:sub:xyz", label: undefined, sessionUrl: undefined });
+});
+
+test("spawn ref：非 sessions_spawn 工具 / 非 JSON / 缺 childSessionKey 均返回 null", () => {
+  assert.equal(
+    extractSpawnSessionRef({ kind: "result", name: "read", text: '{"childSessionKey":"x"}' }),
+    null,
+  );
+  assert.equal(
+    extractSpawnSessionRef({ kind: "result", name: "sessions_spawn", text: "not json" }),
+    null,
+  );
+  assert.equal(
+    extractSpawnSessionRef({ kind: "result", name: "sessions_spawn", text: '{"status":"ok"}' }),
+    null,
+  );
+  assert.equal(
+    extractSpawnSessionRef({ kind: "result", name: "sessions_spawn" }),
+    null,
+  );
+});
+
 
 // ── extractToolCards：三态（pending / error）归并 ──
 

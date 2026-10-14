@@ -19,9 +19,56 @@ export type UiSettings = {
   navCollapsed: boolean; // Collapsible sidebar state
   navGroupsCollapsed: Record<string, boolean>; // Which nav groups are collapsed
   sidebarWidth: number; // 侧边栏宽度，拖拽调宽持久化（220-420）；0 = 未自定义哨兵（走 --sidebar-width 与媒体查询）
+  pinnedWorkspaces: PinnedWorkspace[]; // 固定工作区（路径+名称+图标，会话列表按此分组）
+  sessionWorkspaceMap: Record<string, string>; // sessionKey → workspaceId（一对一可选绑定）
+};
+
+/** 固定工作区：用户自定义路径的项目位；会话可一对一绑定，会话列表按工作区分组 */
+export type PinnedWorkspace = {
+  id: string;
+  name: string;
+  icon: string; // emoji 单字符（缺省 📁）
+  path: string;
 };
 
 type LocationLike = Pick<Location, "host" | "protocol" | "search" | "hash">;
+
+// 工作区条目逐项校验：脏数据（缺字段/非字符串）整条丢弃，不污染分组
+function sanitizePinnedWorkspaces(raw: unknown): PinnedWorkspace[] {
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+  const out: PinnedWorkspace[] = [];
+  for (const item of raw) {
+    if (typeof item !== "object" || item === null) {
+      continue;
+    }
+    const w = item as Partial<PinnedWorkspace>;
+    const id = typeof w.id === "string" ? w.id.trim() : "";
+    const name = typeof w.name === "string" ? w.name.trim() : "";
+    const path = typeof w.path === "string" ? w.path.trim() : "";
+    if (!id || !name || !path) {
+      continue;
+    }
+    const icon = typeof w.icon === "string" && w.icon.trim() ? w.icon.trim() : "📁";
+    out.push({ id, name, icon, path });
+  }
+  return out;
+}
+
+// sessionKey → workspaceId 绑定表：仅接受纯 string→string 记录
+function sanitizeSessionWorkspaceMap(raw: unknown): Record<string, string> {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+    return {};
+  }
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof k === "string" && k.trim() && typeof v === "string" && v.trim()) {
+      out[k] = v;
+    }
+  }
+  return out;
+}
 
 // URL 注入只接受主进程可控的 file:// 启动参数，避免网页场景篡改本地视图状态。
 function resolveInjectedCryoclawView(locationLike: LocationLike): UiSettings["cryoclawView"] | null {
@@ -87,6 +134,8 @@ export function parseUiSettings(raw: string | null, locationLike: LocationLike):
     navCollapsed: false,
     navGroupsCollapsed: {},
     sidebarWidth: 0, // 0 哨兵 = 未自定义：不写内联宽度，走 --sidebar-width（含窄窗媒体查询收窄）
+    pinnedWorkspaces: [],
+    sessionWorkspaceMap: {},
   };
 
   try {
@@ -145,6 +194,8 @@ export function parseUiSettings(raw: string | null, locationLike: LocationLike):
         parsed.sidebarWidth >= 220
           ? Math.min(420, Math.round(parsed.sidebarWidth))
           : 0,
+      pinnedWorkspaces: sanitizePinnedWorkspaces(parsed.pinnedWorkspaces),
+      sessionWorkspaceMap: sanitizeSessionWorkspaceMap(parsed.sessionWorkspaceMap),
     };
   } catch {
     return defaults;

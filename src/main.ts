@@ -1007,6 +1007,20 @@ ipcMain.handle("dialog:select-files", async (event, options?: { filters?: Electr
   return result.filePaths;
 });
 
+// 目录选择对话框（固定工作区路径选择；单选，返回绝对路径或 null）
+ipcMain.handle("dialog:select-directory", async (event) => {
+  if (!assertTrustedIpcSender(event, "dialog:select-directory")) throw new Error("IPC sender not trusted");
+  const win = BrowserWindow.fromWebContents(event.sender);
+  const opts: Electron.OpenDialogOptions = { properties: ["openDirectory", "createDirectory"] };
+  const result = win
+    ? await dialog.showOpenDialog(win, opts)
+    : await dialog.showOpenDialog(opts);
+  if (result.canceled || result.filePaths.length === 0) {
+    return null;
+  }
+  return result.filePaths[0];
+});
+
 // 读取剪贴板中的文件路径（macOS: NSFilenamesPboardType, Windows: CF_HDROP）
 ipcMain.handle("clipboard:read-file-paths", (event) => {
   if (!assertTrustedIpcSender(event, "clipboard:read-file-paths")) throw new Error("IPC sender not trusted");

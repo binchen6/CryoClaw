@@ -165,6 +165,9 @@ oc-session-panel.oc-panel--leaving {
   color: var(--text);
   position: relative;
   transition: background var(--duration-fast) var(--ease-standard);
+  /* 入场轻微淡入（opacity-only）：repeat 按 key 复用节点，只在面板挂载 /
+     新会话插入时播放；位移动画在长列表会造成级联噪声，刻意不用 */
+  animation: oc-fade-in var(--duration-fast) var(--ease-out);
 }
 
 .oc-panel__session-item:hover {
@@ -226,6 +229,17 @@ oc-session-panel.oc-panel--leaving {
   display: inline-flex;
   flex-shrink: 0;
   color: var(--text-muted);
+}
+
+/* 子会话嵌套（2026.10.3 谱系）：父会话下同组缩进 + ↳ 标记 */
+.oc-panel__session-item.is-subsession {
+  margin-left: var(--spacer-16);
+}
+
+.oc-panel__subsession-marker {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  font-size: var(--font-size-meta);
 }
 
 .oc-panel__session-pin svg {
@@ -317,6 +331,13 @@ oc-session-panel.oc-panel--leaving {
   box-shadow: var(--shadow-lg);
   padding: var(--spacer-4);
   z-index: 60;
+}
+
+/* 菜单退场（runExitAnimation 两段式：.cc-leaving 播完才清状态移除节点） */
+.oc-panel__session-menu.cc-leaving,
+.oc-panel__more-menu.cc-leaving {
+  animation: chat-popover-out var(--duration-fast) var(--ease-in-out) forwards;
+  pointer-events: none;
 }
 
 .oc-panel__session-menu--up {
@@ -448,4 +469,189 @@ oc-session-panel.oc-panel--leaving {
   :root {
     --panel-width: 220px;
   }
+}
+
+/* ── 固定工作区分组（阶段5）：分组头 + 快速操作 + 新建对话框 ── */
+.oc-panel__workspace-label {
+  display: flex;
+  align-items: center;
+  gap: var(--spacer-4);
+}
+
+.oc-panel__workspace-icon {
+  flex-shrink: 0;
+  font-size: var(--text-xs);
+  line-height: 1;
+}
+
+.oc-panel__workspace-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-transform: none;
+  letter-spacing: normal;
+  color: var(--text-secondary);
+}
+
+.oc-panel__workspace-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0;
+  transition:
+    opacity var(--duration-fast) var(--ease-standard),
+    background var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
+}
+
+.oc-panel__workspace-label:hover .oc-panel__workspace-action,
+.oc-panel__workspace-action:focus-visible {
+  opacity: 1;
+}
+
+.oc-panel__workspace-action:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.oc-panel__workspace-action--danger:hover {
+  color: var(--color-danger, #d64545);
+}
+
+.oc-panel__workspace-action svg {
+  width: 12px;
+  height: 12px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* 新建工作区对话框：面板内嵌浮层（backdrop 点击关闭） */
+.oc-panel__ws-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-dialog);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--overlay-scrim, rgba(15, 18, 25, 0.42));
+  animation: oc-fade-in var(--duration-fast) var(--ease-out);
+}
+
+.oc-panel__ws-dialog {
+  width: min(360px, calc(100vw - 48px));
+  padding: var(--spacer-16);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated, var(--bg-primary));
+  border: 1px solid var(--border-subtle);
+  box-shadow: var(--shadow-lg, 0 12px 32px rgba(15, 18, 25, 0.24));
+  animation: chat-popover-in var(--duration-fast) var(--ease-out);
+}
+
+.oc-panel__ws-dialog-title {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+  margin-bottom: var(--spacer-12);
+}
+
+.oc-panel__ws-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacer-4);
+  margin-bottom: var(--spacer-12);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.oc-panel__ws-field input {
+  padding: var(--spacer-6) var(--spacer-8);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  outline: none;
+  transition: border-color var(--duration-fast) var(--ease-standard);
+}
+
+.oc-panel__ws-field input:focus {
+  border-color: var(--accent, var(--text-accent));
+}
+
+.oc-panel__ws-path-row {
+  display: flex;
+  gap: var(--spacer-6);
+}
+
+.oc-panel__ws-path-row input {
+  flex: 1;
+  min-width: 0;
+}
+
+.oc-panel__ws-browse {
+  flex-shrink: 0;
+  padding: 0 var(--spacer-8);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary, transparent);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-standard);
+}
+
+.oc-panel__ws-browse:hover {
+  background: var(--bg-hover);
+}
+
+.oc-panel__ws-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--spacer-8);
+}
+
+.oc-panel__ws-btn {
+  padding: var(--spacer-6) var(--spacer-12);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  transition:
+    background var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
+}
+
+.oc-panel__ws-btn:hover {
+  background: var(--bg-hover);
+}
+
+.oc-panel__ws-btn--primary {
+  background: var(--accent, var(--text-accent));
+  border-color: transparent;
+  color: var(--text-on-accent, #fff);
+}
+
+.oc-panel__ws-btn--primary:hover {
+  background: var(--accent-hover, var(--accent, var(--text-accent)));
+  filter: brightness(1.06);
+}
+
+.oc-panel__ws-btn--primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }

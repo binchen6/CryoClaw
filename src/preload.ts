@@ -253,6 +253,8 @@ contextBridge.exposeInMainWorld("cryoclaw", {
   // 文件选择
   selectFiles: (options?: { filters?: Array<{ name: string; extensions: string[] }> }) =>
     ipcRenderer.invoke("dialog:select-files", options) as Promise<string[]>,
+  // 目录选择（固定工作区路径；取消返回 null）
+  selectDirectory: () => ipcRenderer.invoke("dialog:select-directory") as Promise<string | null>,
   // 读取剪贴板中的文件路径（Cmd+C / Ctrl+C 复制的文件）
   readClipboardFilePaths: () =>
     ipcRenderer.invoke("clipboard:read-file-paths") as Promise<string[]>,

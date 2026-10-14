@@ -62,6 +62,18 @@ export type GatewaySessionRow = {
   activeRunIds?: string[];
   estimatedCostUsd?: number;
   goal?: SessionGoal | null;
+  // 2026.10.3 子会话谱系（sessions_spawn 派生；行投影见内核 session-row-prepared-read）：
+  // spawnedBy/controlOwnerSessionKey = 父会话 key；childSessions = 子会话 key 列表；
+  // hasActiveSubagentRun = 自身或后代子代理仍有活跃 run；status/startedAt/endedAt/
+  // runtimeMs 为子代理 run 压缩状态（queued/running/interrupted/killed/failed/timeout/done）
+  spawnedBy?: string;
+  controlOwnerSessionKey?: string;
+  childSessions?: string[];
+  hasActiveSubagentRun?: boolean;
+  status?: string;
+  startedAt?: number;
+  endedAt?: number;
+  runtimeMs?: number;
   [key: string]: unknown;
 };
 

@@ -406,7 +406,12 @@ export function stripInFlightStreamDuplicates(
   runStartedAtMs?: number | null,
 ): unknown[] {
   const declared = typeof inFlightRunId === "string" ? inFlightRunId.trim() : "";
-  if (!declared || !activeRunId || declared !== activeRunId) {
+  // 本地 run 活跃即可剔除：内核未声明 inFlightRun（字段缺省/版本差异）时 progressive
+  // persist 中途产物同样会与流式气泡双份——同文/前缀 + 下方归属时间戳双重判定足以
+  // 区分「本轮中途产物」与「上一轮合法回复」，无需内核显式声明背书。
+  // 仅当内核声明的是「另一个 run」时拒绝剔除（本地 run 已陈旧，fresh 列表可能承载
+  // 新 run 的真实内容）。
+  if (!activeRunId || (declared && declared !== activeRunId)) {
     return messages;
   }
   const full = (frozenPrefix ?? "") + (streamText ?? "");
@@ -698,6 +703,9 @@ export async function loadChatHistory(
       getActiveChatStreamText(state),
       state.chatStreamStartedAt,
     );
+    // 终态合成 partial 占位是本地-only 形态，下方整体替换天然将其撤掉；
+    // 防双份由两处承担：stripInFlightStreamDuplicates（在途中途产物）+
+    // final/aborted/error 分支的 historyHasRunReply 追加守卫（真回复先于终态帧落地）。
     // 同会话刷新（终态/看门狗/重连的 mergeIfStale 路径）保留可见数——历史只是
     // 追加/更新，重走 20 条渐进注水会让视图先缩回再补回（闪烁 + 上方插入位移）。
     // 渐进注水仅服务「整段替换」的首屏（切会话/重置/首次加载）。
@@ -1121,9 +1129,19 @@ export function handleChatEvent(state: ChatState, payload?: ChatEventPayload) {
     // frozenPrefix 是流式气泡全文的一部分（工具前正文冻结在时间线上）：
     // partial 占位必须带上，否则终态后可见回复缺工具前正文，直到补拉收敛。
     const fullText = (state.chatStreamFrozenPrefix + flushPendingChatStream(state)).trim();
+    const runStartedAt = state.chatStreamStartedAt;
     noteRunTerminal(state, terminalRunId, state.chatStreamStartedAt);
     resetChatStreamState(state);
-    if (fullText) {
+    // 终态刷新可能先于 final 事件落地（cross-run final/看门狗/补拉在本帧处理前
+    // 已把持久化真回复替换进历史）——此时再追加合成占位会与真回复同屏双份。
+    // 历史已含本 run 回复（runId 精确命中，或 run 起点后的 assistant 条目）则跳过占位。
+    const replyAlreadyInHistory =
+      terminalRunId != null &&
+      historyHasRunReply(state.chatMessages, {
+        runId: terminalRunId,
+        startedAt: runStartedAt ?? Date.now(),
+      });
+    if (fullText && !replyAlreadyInHistory) {
       state.chatMessages = [
         ...state.chatMessages,
         {
@@ -1148,8 +1166,17 @@ export function handleChatEvent(state: ChatState, payload?: ChatEventPayload) {
     // 与 error 的「失败 + 可重发」不同。
     // 同 final：partial 占位要带上 frozenPrefix（工具前正文在时间线上，只在流式态里）
     const partialText = (state.chatStreamFrozenPrefix + getActiveChatStreamText(state)).trim();
+    const abortedRunId = payload.runId || state.chatRunId;
+    const abortedStartedAt = state.chatStreamStartedAt;
     resetChatStreamState(state);
-    if (partialText) {
+    // 同 final 分支：历史已含本 run 落盘回复时跳过占位，防双份。
+    const abortedReplyInHistory =
+      abortedRunId != null &&
+      historyHasRunReply(state.chatMessages, {
+        runId: abortedRunId,
+        startedAt: abortedStartedAt ?? Date.now(),
+      });
+    if (partialText && !abortedReplyInHistory) {
       state.chatMessages = [
         ...state.chatMessages,
         {
@@ -1170,6 +1197,8 @@ export function handleChatEvent(state: ChatState, payload?: ChatEventPayload) {
     noteRunTerminal(state, payload.runId || state.chatRunId, state.chatStreamStartedAt);
     // 同 final：partial 占位要带上 frozenPrefix（工具前正文在时间线上，只在流式态里）
     const partialText = (state.chatStreamFrozenPrefix + getActiveChatStreamText(state)).trim();
+    const errorRunId = payload.runId || state.chatRunId;
+    const errorStartedAt = state.chatStreamStartedAt;
     resetChatStreamState(state);
     const error = payload.errorMessage ?? "chat error";
     // Preserve text already shown before the error card. A failed run may not
@@ -1183,7 +1212,14 @@ export function handleChatEvent(state: ChatState, payload?: ChatEventPayload) {
     // 同步在消息流内注入合成错误消息（cryoclawError → grouped-render 着色卡片），
     // 与 sendChatMessage 失败路径同一形态，对齐 control-ui 的行内错误卡片。
     const terminalMessages: unknown[] = [];
-    if (partialText) {
+    // 同 final 分支：历史已含本 run 落盘回复时跳过 partial 占位（错误卡仍必加）。
+    const errorReplyInHistory =
+      errorRunId != null &&
+      historyHasRunReply(state.chatMessages, {
+        runId: errorRunId,
+        startedAt: errorStartedAt ?? Date.now(),
+      });
+    if (partialText && !errorReplyInHistory) {
       terminalMessages.push({
         role: "assistant",
         content: [{ type: "text", text: partialText }],

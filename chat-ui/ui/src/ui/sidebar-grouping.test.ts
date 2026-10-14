@@ -81,3 +81,104 @@ test("sidebar grouping：跨零点边界（昨天 23:59 不进入今天）", () 
   const groups = groupSidebarSessions([opt("edge", { updatedAt: justBeforeMidnight })], NOW);
   assert.deepEqual(groups.map((g) => g.labelKey), ["sidebar.groupYesterday"]);
 });
+
+// ── 2026.10.3 子会话谱系嵌套 ──
+
+test("sidebar grouping：子会话嵌套在同组父会话之后并标 depth=1", () => {
+  const groups = groupSidebarSessions(
+    [
+      opt("parent", { updatedAt: NOW - 1000 }),
+      opt("other", { updatedAt: NOW - 1500 }),
+      opt("child", { updatedAt: NOW - 2000, spawnedBy: "parent" }),
+    ],
+    NOW,
+  );
+  assert.equal(groups.length, 1);
+  assert.deepEqual(
+    groups[0].items.map((s) => [s.key, s.depth ?? 0]),
+    [
+      ["parent", 0],
+      ["child", 1],
+      ["other", 0],
+    ],
+    "子会话紧随父会话，其余保持原顺序",
+  );
+});
+
+test("sidebar grouping：父会话不在同组时子会话保持顶层（可达性兜底）", () => {
+  const groups = groupSidebarSessions(
+    [
+      opt("child", { updatedAt: NOW - 1000, spawnedBy: "parent" }),
+      opt("parent", { updatedAt: NOW - 30 * DAY_MS }),
+    ],
+    NOW,
+  );
+  assert.deepEqual(
+    groups.map((g) => [g.labelKey, g.items.map((s) => [s.key, s.depth ?? 0])]),
+    [
+      ["sidebar.groupToday", [["child", 0]]],
+      ["sidebar.groupOlder", [["parent", 0]]],
+    ],
+    "跨组不嵌套，子会话不丢",
+  );
+});
+
+test("sidebar grouping：置顶组内同样嵌套；父置顶子不置顶时子留时间组顶层", () => {
+  const groups = groupSidebarSessions(
+    [
+      opt("pinned-parent", { updatedAt: NOW - 1000, pinned: true }),
+      opt("pinned-child", { updatedAt: NOW - 2000, pinned: true, spawnedBy: "pinned-parent" }),
+      opt("plain-child", { updatedAt: NOW - 3000, spawnedBy: "pinned-parent" }),
+    ],
+    NOW,
+  );
+  assert.deepEqual(
+    groups.map((g) => [g.labelKey, g.items.map((s) => [s.key, s.depth ?? 0])]),
+    [
+      ["sidebar.groupPinned", [["pinned-parent", 0], ["pinned-child", 1]]],
+      ["sidebar.groupToday", [["plain-child", 0]]],
+    ],
+  );
+});
+
+test("sidebar grouping：自引用 spawnedBy 不产生嵌套（防环）", () => {
+  const groups = groupSidebarSessions(
+    [opt("self", { updatedAt: NOW - 1000, spawnedBy: "self" })],
+    NOW,
+  );
+  assert.deepEqual(groups[0].items.map((s) => [s.key, s.depth ?? 0]), [["self", 0]]);
+});
+
+test("sidebar grouping：多级派生链递归展开，孙会话不丢（可达性回归）", () => {
+  const groups = groupSidebarSessions(
+    [
+      opt("gp", { updatedAt: NOW - 1000 }),
+      opt("p", { updatedAt: NOW - 2000, spawnedBy: "gp" }),
+      opt("c", { updatedAt: NOW - 3000, spawnedBy: "p" }),
+      opt("other", { updatedAt: NOW - 4000 }),
+    ],
+    NOW,
+  );
+  assert.deepEqual(
+    groups[0].items.map((s) => [s.key, s.depth ?? 0]),
+    [
+      ["gp", 0],
+      ["p", 1],
+      ["c", 2],
+      ["other", 0],
+    ],
+    "孙会话须紧随其父，此前单层展开会把 depth≥2 的会话整条丢弃",
+  );
+});
+
+test("sidebar grouping：谱系互指成环时全部会话保持顶层可达（不死循环不丢项）", () => {
+  const groups = groupSidebarSessions(
+    [
+      opt("a", { updatedAt: NOW - 1000, spawnedBy: "b" }),
+      opt("b", { updatedAt: NOW - 2000, spawnedBy: "a" }),
+    ],
+    NOW,
+  );
+  assert.deepEqual(groups[0].items.map((s) => [s.key, s.depth ?? 0]), [["a", 0], ["b", 0]]);
+});
+

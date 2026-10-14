@@ -476,6 +476,41 @@
   border-radius: var(--radius-12);
   background: var(--bg-elevated);
   box-shadow: var(--shadow-xs);
+  /* 新卡入场（子会话派生/sessions 刷新投影出新行时 repeat 创建节点即播一次） */
+  animation: rise var(--duration-normal) var(--ease-standard);
+  /* 可点击（跳转子会话）：与 .chat-tool-card--clickable 同一交互范式 */
+  cursor: pointer;
+  transition: border-color var(--duration-fast) var(--ease-out),
+    box-shadow var(--duration-fast) var(--ease-out);
+}
+
+.chat-subagent-card:hover {
+  border-color: var(--accent);
+  box-shadow: var(--shadow-sm);
+}
+
+.chat-subagent-card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.chat-subagent-card__open {
+  flex-shrink: 0;
+  align-self: center;
+  display: inline-flex;
+  color: var(--text-muted);
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-out);
+}
+
+.chat-subagent-card:hover .chat-subagent-card__open,
+.chat-subagent-card:focus-visible .chat-subagent-card__open {
+  opacity: 1;
+}
+
+.chat-subagent-card__open svg {
+  width: 14px;
+  height: 14px;
 }
 
 .chat-subagent-card__pulse {
@@ -1848,6 +1883,41 @@ img.chat-avatar {
 
 .chat-path-link:hover {
   opacity: .75;
+}
+
+/* sessions_spawn 消息内子会话引用（点击跳转子会话，线程级委托 .chat-subsession-link） */
+.chat-tool-card__subsession {
+  display: flex;
+  align-items: center;
+  gap: var(--spacer-8);
+  flex-wrap: wrap;
+  padding: var(--spacer-6) 0 0;
+  font-size: var(--font-size-meta);
+}
+
+.chat-tool-card__subsession-label {
+  color: var(--text-muted);
+}
+
+.chat-subsession-link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacer-4);
+  color: var(--accent);
+  text-decoration: none;
+  border-bottom: 1px dashed currentColor;
+  cursor: pointer;
+  transition: opacity var(--duration-fast) var(--ease-out);
+}
+
+.chat-subsession-link:hover {
+  opacity: .75;
+}
+
+.chat-subsession-link svg {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
 }
 
 /* ── 阅读指示器（等待首帧/工具间隙）：卡片底 + 阶段标签 + accent 圆点 ── */

@@ -25,10 +25,6 @@ import { dismissProgressCard } from "./controllers/progress-card.ts";
 import { t } from "./i18n.ts";
 import type { ChatProps } from "./views/chat.ts";
 
-// 2026.9.7：tasks.* 已移除，子代理状态卡无数据源——模块级常量空数组，
-// 引用稳定（buildChatItems memo 按引用比较 props.tasks）
-const EMPTY_TASKS: ChatProps["tasks"] = [];
-
 export function buildChatProps(state: AppViewState): ChatProps {
   return {
     sessionKey: state.sessionKey,
@@ -71,9 +67,7 @@ export function buildChatProps(state: AppViewState): ChatProps {
     messages: state.chatMessages,
     visibleHistoryCount: state.chatVisibleMessageCount,
     toolMessages: state.chatToolMessages,
-    // R23：子代理等待状态卡数据源。2026.9.7 起内核移除 tasks.*，无实时任务数据
-    // 可得——恒传空数组（引用稳定，selectSubagentCards 返回空，卡片自然隐藏）
-    tasks: EMPTY_TASKS,
+    // 子会话状态卡数据源即 props.sessions（sessions.list 谱系投影，views/chat 内 selectSubagentCards）
     runActive: Boolean(state.chatRunId),
     // R61：问答卡片数据源 + resolve 回调
     questionPrompts: state.questionPrompts,
@@ -209,7 +203,7 @@ export function buildChatProps(state: AppViewState): ChatProps {
     // 是否贴底（用户上翻但未收到新消息时也会 true→false 反转误亮徽标）
     showNewMessages: state.chatNewMessagesBelow,
     newMessagesLeaving: state.chatNewMessagesLeaving,
-    onScrollToBottom: () => state.scrollToBottom(),
+    onScrollToBottom: () => state.scrollToBottom({ smooth: true }),
     sidebarOpen: state.sidebarOpen,
     sidebarLeaving: state.sidebarLeaving,
     sidebarContent: state.sidebarContent,

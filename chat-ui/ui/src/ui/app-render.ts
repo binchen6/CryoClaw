@@ -13,8 +13,11 @@ import { keyed } from "lit/directives/keyed.js";
 import type { AppViewState } from "./app-view-state.ts";
 import { buildChatProps } from "./app-chat-props.ts";
 import {
+  bindSessionWorkspace,
   createNewSession,
+  createNewSessionInWorkspace,
   createNewWorktreeSession,
+  createPinnedWorkspace,
   deleteSessionFromSidebar,
   ensureFileDropBridge,
   handleOpenWebUI,
@@ -22,6 +25,7 @@ import {
   handleSessionChange,
   isDeletingSession,
   patchSessionFromSidebar,
+  removePinnedWorkspace,
   resolveSessionOptions,
   updateFileDropState,
 } from "./app-session-actions.ts";
@@ -430,6 +434,17 @@ export function renderApp(state: AppViewState) {
               },
               isDeletingSession: (key: string) => isDeletingSession(key),
               requestUpdate: () => state.requestUpdate(),
+              // 固定工作区：分组数据 + 绑定/新建/移除/快速新建会话
+              pinnedWorkspaces: state.settings.pinnedWorkspaces,
+              sessionWorkspaceMap: state.settings.sessionWorkspaceMap,
+              onNewChatInWorkspace: (workspaceId: string) =>
+                createNewSessionInWorkspace(state, workspaceId),
+              onBindSessionWorkspace: (sessionKey: string, workspaceId: string | null) =>
+                bindSessionWorkspace(state, sessionKey, workspaceId),
+              onCreateWorkspace: (draft: { name: string; icon?: string; path: string }) =>
+                createPinnedWorkspace(state, draft),
+              onRemoveWorkspace: (workspaceId: string) =>
+                removePinnedWorkspace(state, workspaceId),
             }}></oc-session-panel>
           <div
             class="cryoclaw-panel-resize"

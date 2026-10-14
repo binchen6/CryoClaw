@@ -81,8 +81,8 @@ export type ChatProps = {
   messages: unknown[];
   visibleHistoryCount: number;
   toolMessages: unknown[];
-  // R23：任务列表与主 run 活跃标记（子代理等待状态卡投影用，引用稳定供 memo 比较）
-  tasks?: unknown[];
+  // R23/R24 任务列表字段已退役：子会话状态卡改由 sessions.list 谱系投影
+  // （selectSubagentCards(props.sessions?.sessions)），不再依赖 tasks.* RPC
   runActive?: boolean;
   // R61：内核问答卡片（ask_user）——pending 问题按当前会话过滤后出卡；resolve 回调
   questionPrompts?: QuestionPrompt[];
@@ -298,11 +298,9 @@ export function renderChat(props: ChatProps) {
   const activeToolName = resolveActiveToolName(
     Array.isArray(props.toolMessages) ? props.toolMessages : [],
   );
-  // R23：子代理等待状态卡（原在 buildChatItems 内构造）：R41 Task 10 后随流式条目一起
-  // 移出 memo（顺序契约：置于时间线末尾、流式气泡之后，见线程尾部装配）
-  const subagentCards = props.runActive
-    ? selectSubagentCards(props.tasks as Parameters<typeof selectSubagentCards>[0], props.sessionKey)
-    : [];
+  // 子会话状态卡（sessions.list 谱系投影：spawnedBy === 当前会话的行）。
+  // 不以 runActive 为门：异步子代理在主 run 结束后仍可能活跃，卡片应继续可见。
+  const subagentCards = selectSubagentCards(props.sessions?.sessions, props.sessionKey);
   const subagentWaiting = subagentCards.some((c) => c.active);
   // 空会话（无历史/工具/流式/子代理卡且不在加载）：线程区显示居中 hero + starter prompts
   // R41 Task 11：历史子树已移入 <oc-chat-history>，空判定改为直接按源数组判断——
@@ -332,9 +330,16 @@ export function renderChat(props: ChatProps) {
       aria-live="polite"
       @scroll=${props.onChatScroll}
       @keydown=${(e: KeyboardEvent) => {
-        // 路径链接键盘可达：无 href 的 <a tabindex="0"> 不响应 Enter/Space，
+        // 路径链接/子会话引用键盘可达：无 href 的 <a tabindex="0"> 不响应 Enter/Space，
         // 线程级委托补齐（与 media-enhance 文件卡片的键盘处理同语义）。
         if (e.key !== "Enter" && e.key !== " ") {
+          return;
+        }
+        const subsession = (e.target as HTMLElement | null)?.closest?.(".chat-subsession-link");
+        if (subsession) {
+          e.preventDefault();
+          const key = (subsession as HTMLElement).dataset.sessionKey;
+          if (key) props.onSessionKeyChange(key);
           return;
         }
         const link = (e.target as HTMLElement | null)?.closest?.(".chat-path-link");
@@ -350,6 +355,15 @@ export function renderChat(props: ChatProps) {
         if (gitLink) {
           e.preventDefault();
           props.onOpenGitView?.();
+          return;
+        }
+        // sessions_spawn 结果内的子会话引用（R-Stage3）：跳转打开子会话
+        const subsession = (e.target as HTMLElement).closest(".chat-subsession-link");
+        if (subsession) {
+          e.preventDefault();
+          e.stopPropagation();
+          const key = (subsession as HTMLElement).dataset.sessionKey;
+          if (key) props.onSessionKeyChange(key);
           return;
         }
         const link = (e.target as HTMLElement).closest(".chat-path-link");
@@ -458,7 +472,7 @@ export function renderChat(props: ChatProps) {
             ></oc-chat-stream>`
           : nothing
       }
-      ${subagentCards.length > 0 ? renderSubagentCards(subagentCards) : nothing}
+      ${subagentCards.length > 0 ? renderSubagentCards(subagentCards, props.onSessionKeyChange) : nothing}
       ${
         // R61 问答卡片：pending 问题（当前会话过滤）出卡，位于子代理卡之后、compose 之前
         (() => {
@@ -571,20 +585,20 @@ export function renderChat(props: ChatProps) {
   `;
 }
 
-// R23：子代理等待状态卡（主 run 等待子代理期间的进度反馈；终态短暂定格）
+// R23：子会话状态卡（主 run 等待子代理期间的进度反馈；终态短暂定格；点击跳转子会话）
 function subagentStatusLabel(card: SubagentCard): string {
   if (card.active) {
     return t("chat.subagent.running");
   }
   if (isFailedSubagentStatus(card.status)) {
     if (card.status === "cancelled") return t("chat.subagent.cancelled");
-    if (card.status === "timed_out") return t("chat.subagent.timeout");
+    if (card.status === "timed_out" || card.status === "timeout") return t("chat.subagent.timeout");
     return t("chat.subagent.failed");
   }
   return t("chat.subagent.done");
 }
 
-function renderSubagentCards(cards: SubagentCard[]) {
+function renderSubagentCards(cards: SubagentCard[], onOpenSession: (key: string) => void) {
   return html`
     <div class="chat-subagent-cards" role="status" aria-live="polite">
       ${repeat(
@@ -596,6 +610,15 @@ function renderSubagentCards(cards: SubagentCard[]) {
               : isFailedSubagentStatus(card.status)
                 ? "chat-subagent-card--failed"
                 : "chat-subagent-card--done"}"
+            role="button"
+            tabindex="0"
+            title=${t("chat.subagent.open")}
+            @click=${() => onOpenSession(card.sessionKey)}
+            @keydown=${(e: KeyboardEvent) => {
+              if (e.key !== "Enter" && e.key !== " ") return;
+              e.preventDefault();
+              onOpenSession(card.sessionKey);
+            }}
           >
             <span class="chat-subagent-card__pulse" aria-hidden="true"></span>
             <span class="chat-subagent-card__body">
@@ -605,6 +628,7 @@ function renderSubagentCards(cards: SubagentCard[]) {
                 ? html`<span class="chat-subagent-card__progress">${card.progress}</span>`
                 : nothing}
             </span>
+            <span class="chat-subagent-card__open" aria-hidden="true">${icons.externalLink}</span>
           </div>
         `,
       )}

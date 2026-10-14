@@ -238,6 +238,57 @@ test("handleAbortChat：无活跃 run 时不置位（防标记永驻）", async 
   assert.equal(host.chatAbortPending, false, "无活跃 run 置位后无终态事件清零，标记会永驻");
 });
 
+// 内核 2026.10.2 语义对齐：已连接会话中键入 /stop 同时清空排队 follow-up
+// （Stop 按钮仍只中止当前 run，走 handleAbortChat 单 run 路径）。
+test("handleSendChat：已连接键入 /stop 清空待发送队列并中止当前 run", async () => {
+  installBrowserGlobals(new FakeRaf());
+  let abortCalls = 0;
+  const host = makeHost({
+    chatMessage: "/stop",
+    chatRunId: "run-1",
+    chatQueue: [
+      { id: "q1", message: "follow-up 1", text: "follow-up 1", createdAt: 1 },
+      { id: "q2", message: "follow-up 2", text: "follow-up 2", createdAt: 2 },
+    ],
+    client: {
+      request: async (method: string) => {
+        assert.equal(method, "chat.abort");
+        abortCalls++;
+        return {};
+      },
+    },
+  });
+
+  const accepted = await handleSendChat(host);
+
+  assert.equal(accepted, false, "/stop 是控制命令，不走消息发送路径");
+  assert.equal(host.chatQueue.length, 0, "排队 follow-up 应被清空（对齐内核 typed /stop 语义）");
+  assert.equal(abortCalls, 1, "当前 run 应被中止");
+  assert.equal(host.chatMessage, "", "命令发出后输入框应清空");
+});
+
+test("handleSendChat：无活跃 run 时键入 /stop 仅清空队列（不提交 chat.abort）", async () => {
+  installBrowserGlobals(new FakeRaf());
+  let abortCalls = 0;
+  const host = makeHost({
+    chatMessage: "/stop",
+    chatRunId: null,
+    chatQueue: [{ id: "q1", message: "queued", text: "queued", createdAt: 1 }],
+    client: {
+      request: async () => {
+        abortCalls++;
+        return {};
+      },
+    },
+  });
+
+  const accepted = await handleSendChat(host);
+
+  assert.equal(accepted, false);
+  assert.equal(host.chatQueue.length, 0, "无活跃 run 时排队消息同样应被清空");
+  assert.equal(abortCalls, 0, "无活跃 run 不应提交 chat.abort");
+});
+
 // ── 断开连接乐观入队（C3）：compose 保持可编辑，发送进入「待发送」队列，
 // 重连握手后由既有 flushChatQueue 链路自动补发。
 

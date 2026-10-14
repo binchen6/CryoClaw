@@ -3,7 +3,7 @@
 // 单调递增代际号：rAF/timeout 回调落地前比对代际，过期即返回。
 import test from "node:test";
 import assert from "node:assert/strict";
-import { scheduleChatScroll, resetChatScroll } from "./app-scroll.ts";
+import { handleChatScroll, scheduleChatScroll, resetChatScroll } from "./app-scroll.ts";
 
 type RafFn = FrameRequestCallback;
 
@@ -64,6 +64,7 @@ function makeHost(updateComplete: Promise<unknown>) {
     chatHasAutoScrolled: false,
     chatUserNearBottom: true,
     chatNewMessagesBelow: false,
+    chatSmoothScrollUntil: undefined as number | undefined,
   };
 }
 
@@ -117,6 +118,145 @@ test("正常单调度：then → rAF 各落地一次，滚动一次", async () =
 
   assert.equal(scrollCalls.length, 1);
   assert.equal(host.chatScrollFrame, null, "rAF 落地后句柄应复位");
+});
+
+// ── 回到底部按钮：上翻即显 / 回底即隐 ──
+
+function makeScrollHost() {
+  return {
+    chatUserNearBottom: true,
+    chatNewMessagesBelow: false,
+    chatNewMessagesLeaving: false,
+  } as unknown as Parameters<typeof handleChatScroll>[0];
+}
+
+test("handleChatScroll：向上滚动离开底部立即显示回底按钮（不等新消息到达）", () => {
+  const prevWindow = (globalThis as Record<string, unknown>).window;
+  Object.assign(globalThis, {
+    window: { setTimeout: () => 0, clearTimeout: () => {} },
+  });
+  try {
+    const host = makeScrollHost();
+    const container = { scrollHeight: 2000, clientHeight: 500, scrollTop: 0 };
+    handleChatScroll(host, { currentTarget: container } as unknown as Event);
+    assert.equal(host.chatUserNearBottom, false);
+    assert.equal(host.chatNewMessagesBelow, true, "上翻离开底部应立即显示回底按钮");
+  } finally {
+    (globalThis as Record<string, unknown>).window = prevWindow;
+  }
+});
+
+test("handleChatScroll：回底后按钮清除（reduced-motion 下立即生效）", () => {
+  const prevWindow = (globalThis as Record<string, unknown>).window;
+  Object.assign(globalThis, {
+    window: {
+      setTimeout: () => 0,
+      clearTimeout: () => {},
+      matchMedia: () => ({ matches: true }), // prefers-reduced-motion：清除不走退场动画
+    },
+  });
+  try {
+    const host = makeScrollHost();
+    const container = { scrollHeight: 2000, clientHeight: 500, scrollTop: 0 };
+    handleChatScroll(host, { currentTarget: container } as unknown as Event);
+    assert.equal(host.chatNewMessagesBelow, true);
+    container.scrollTop = 2000; // 回到底部（distance 0 < 阈值）
+    handleChatScroll(host, { currentTarget: container } as unknown as Event);
+    assert.equal(host.chatUserNearBottom, true);
+    assert.equal(host.chatNewMessagesBelow, false, "回底后按钮应清除");
+  } finally {
+    (globalThis as Record<string, unknown>).window = prevWindow;
+  }
+});
+
+test("handleChatScroll：退场动画途中上翻——取消退场并保回按钮", () => {
+  const prevWindow = (globalThis as Record<string, unknown>).window;
+  Object.assign(globalThis, {
+    window: { setTimeout: () => 0, clearTimeout: () => {} },
+  });
+  try {
+    const host = { ...makeScrollHost(), chatNewMessagesBelow: false, chatNewMessagesLeaving: true };
+    const container = { scrollHeight: 2000, clientHeight: 500, scrollTop: 100 };
+    handleChatScroll(host, { currentTarget: container } as unknown as Event);
+    assert.equal(host.chatNewMessagesLeaving, false, "上翻应取消退场态");
+    assert.equal(host.chatNewMessagesBelow, true, "上翻后按钮应重新可见");
+  } finally {
+    (globalThis as Record<string, unknown>).window = prevWindow;
+  }
+});
+
+// ── 平滑滚动在途守卫：动画自身的 scroll 事件不是用户上滚 ──
+
+function makeSmoothHost(until: number) {
+  return { ...makeScrollHost(), chatSmoothScrollUntil: until };
+}
+
+function withWindowStub(fn: () => void) {
+  const prevWindow = (globalThis as Record<string, unknown>).window;
+  Object.assign(globalThis, { window: { setTimeout: () => 0, clearTimeout: () => {} } });
+  try {
+    fn();
+  } finally {
+    (globalThis as Record<string, unknown>).window = prevWindow;
+  }
+}
+
+test("handleChatScroll：平滑滚动在途时中间位置不翻转贴底态、不重新点亮回底按钮", () => {
+  withWindowStub(() => {
+    const host = makeSmoothHost(Date.now() + 500);
+    const container = { scrollHeight: 2000, clientHeight: 500, scrollTop: 0 };
+    handleChatScroll(host, { currentTarget: container } as unknown as Event);
+    assert.equal(host.chatUserNearBottom, true, "动画途中应维持贴底意图，流式跟流不中断");
+    assert.equal(host.chatNewMessagesBelow, false, "刚点掉的回底按钮不得在动画途中重新亮起");
+  });
+});
+
+test("handleChatScroll：守卫窗口过期后如实反映用户位置", () => {
+  withWindowStub(() => {
+    const host = makeSmoothHost(Date.now() - 1);
+    const container = { scrollHeight: 2000, clientHeight: 500, scrollTop: 0 };
+    handleChatScroll(host, { currentTarget: container } as unknown as Event);
+    assert.equal(host.chatUserNearBottom, false);
+    assert.equal(host.chatNewMessagesBelow, true, "窗口过后上翻应正常显示按钮");
+  });
+});
+
+test("resetChatScroll：清除平滑滚动守卫（新会话滚动不受旧动画影响）", () => {
+  withWindowStub(() => {
+    const host = {
+      ...makeSmoothHost(Date.now() + 500),
+      chatScrollGeneration: 0,
+      chatHasAutoScrolled: true,
+    };
+    resetChatScroll(host);
+    const container = { scrollHeight: 2000, clientHeight: 500, scrollTop: 0 };
+    handleChatScroll(host, { currentTarget: container } as unknown as Event);
+    assert.equal(host.chatNewMessagesBelow, true, "守卫已清：上翻应如实显示按钮");
+  });
+});
+
+test("scheduleChatScroll：仅 smooth 路径置守卫窗口", async () => {
+  const raf = new FakeRaf();
+  installGlobals(raf);
+  scrollCalls.length = 0;
+
+  const smoothHost = makeHost(Promise.resolve());
+  scheduleChatScroll(smoothHost, true, true);
+  await Promise.resolve();
+  raf.runAll();
+  assert.equal(scrollCalls.length, 1);
+  assert.ok(
+    smoothHost.chatSmoothScrollUntil != null && smoothHost.chatSmoothScrollUntil > Date.now(),
+    "smooth 滚动应打开在途守卫窗口",
+  );
+
+  scrollCalls.length = 0;
+  const instantHost = makeHost(Promise.resolve());
+  scheduleChatScroll(instantHost, true, false);
+  await Promise.resolve();
+  raf.runAll();
+  assert.equal(scrollCalls.length, 1);
+  assert.equal(instantHost.chatSmoothScrollUntil, undefined, "瞬时滚动无需守卫");
 });
 
 // ── 切换会话不断流配套：滚动位置按会话记忆 ──

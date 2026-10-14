@@ -302,23 +302,91 @@ export function renderStreamingGroup(
   `;
 }
 
+type MessageGroupRenderOpts = {
+  onOpenSidebar?: (content: string) => void;
+  showReasoning: boolean;
+  assistantName?: string;
+  assistantAvatar?: string | null;
+  isHydrating?: boolean;
+  fileChanges?: FileChange[];
+  // git 可用时 file-changes 面板尾部带「在 git 中查看」链接（点击由线程级委托处理）
+  gitAvailable?: boolean | null;
+  onQuoteMessage?: (text: string) => void;
+  onResendError?: (text: string, attachments?: ChatAttachment[]) => void;
+  // 消息级分支入口（内核 2026.9.7 branch tree）：entryId 为 transcript 条目 id
+  onRewindToMessage?: (entryId: string) => void;
+  onForkFromMessage?: (entryId: string) => void;
+};
+
+// 纯工具消息（无正文/图片/附件/思考/错误卡，只有工具卡）——连续段可跨消息合并收纳。
+// 此前合并收纳只在单条消息的 cards 数组内并段，而内核每次工具调用是独立消息
+// （1 卡/消息），groupConsecutiveToolCards 永远看不到连续同名段——合并从不生效。
+// 这里在组渲染层把连续纯工具消息的卡聚合后交给同一个 renderCollapsedToolCards，
+// 「连读 5 个文件 → Read ×5 子折叠」才真正落地。带思考块的消息排除：思考在
+// showReasoning 下独立渲染，聚合会让其丢失。
+function isPureToolMessage(message: unknown): boolean {
+  const m = message as Record<string, unknown>;
+  if (m.cryoclawError === true || m.cryoclawPartial === true) {
+    return false;
+  }
+  if (extractToolCards(message).length === 0) {
+    return false;
+  }
+  if (extractTextCached(message)?.trim()) {
+    return false;
+  }
+  if (extractThinkingCached(message)) {
+    return false;
+  }
+  if (extractImages(message).length > 0) {
+    return false;
+  }
+  if (extractMessageMediaAttachments(message).length > 0) {
+    return false;
+  }
+  return true;
+}
+
+function renderGroupMessagesCoalesced(group: MessageGroup, opts: MessageGroupRenderOpts) {
+  const nodes: unknown[] = [];
+  let pendingCards: ToolCard[] = [];
+  const flushPending = () => {
+    if (pendingCards.length === 0) {
+      return;
+    }
+    // 聚合段整体走同一个折叠块：同名连续段在内部收成 ×N 子折叠
+    nodes.push(renderCollapsedToolCards(pendingCards, opts.onOpenSidebar));
+    pendingCards = [];
+  };
+  group.messages.forEach((item, index) => {
+    if (isPureToolMessage(item.message)) {
+      pendingCards.push(...extractToolCards(item.message));
+      return;
+    }
+    flushPending();
+    nodes.push(
+      renderGroupedMessage(
+        item.message,
+        {
+          isStreaming: group.isStreaming && index === group.messages.length - 1,
+          showReasoning: opts.showReasoning,
+          isHydrating: opts.isHydrating,
+          onQuoteMessage: opts.onQuoteMessage,
+          onResendError: opts.onResendError,
+          onRewindToMessage: opts.onRewindToMessage,
+          onForkFromMessage: opts.onForkFromMessage,
+        },
+        opts.onOpenSidebar,
+      ),
+    );
+  });
+  flushPending();
+  return nodes;
+}
+
 export function renderMessageGroup(
   group: MessageGroup,
-  opts: {
-    onOpenSidebar?: (content: string) => void;
-    showReasoning: boolean;
-    assistantName?: string;
-    assistantAvatar?: string | null;
-    isHydrating?: boolean;
-    fileChanges?: FileChange[];
-    // git 可用时 file-changes 面板尾部带「在 git 中查看」链接（点击由线程级委托处理）
-    gitAvailable?: boolean | null;
-    onQuoteMessage?: (text: string) => void;
-    onResendError?: (text: string, attachments?: ChatAttachment[]) => void;
-    // 消息级分支入口（内核 2026.9.7 branch tree）：entryId 为 transcript 条目 id
-    onRewindToMessage?: (entryId: string) => void;
-    onForkFromMessage?: (entryId: string) => void;
-  },
+  opts: MessageGroupRenderOpts,
 ) {
   const normalizedRole = normalizeRoleForGrouping(group.role);
   const assistantName = opts.assistantName ?? "Assistant";
@@ -356,21 +424,7 @@ export function renderMessageGroup(
         avatar: opts.assistantAvatar ?? null,
       })}
       <div class="chat-group-messages">
-        ${group.messages.map((item, index) =>
-          renderGroupedMessage(
-            item.message,
-            {
-              isStreaming: group.isStreaming && index === group.messages.length - 1,
-              showReasoning: opts.showReasoning,
-              isHydrating: opts.isHydrating,
-              onQuoteMessage: opts.onQuoteMessage,
-              onResendError: opts.onResendError,
-              onRewindToMessage: opts.onRewindToMessage,
-              onForkFromMessage: opts.onForkFromMessage,
-            },
-            opts.onOpenSidebar,
-          ),
-        )}
+        ${renderGroupMessagesCoalesced(group, opts)}
         ${opts.fileChanges?.length ? renderFileChanges(opts.fileChanges, opts.gitAvailable) : nothing}
         <div class="chat-group-footer">
           <span class="chat-sender-name">${who}</span>
@@ -547,7 +601,7 @@ function renderCollapsedToolCards(
   const { totalTools, label: summaryLabel, detail, isSingle, hasError, status } =
     summarizeToolCards(toolCards);
 
-  // 同类合并收纳：混合组内 ≥3 张连续同名卡收成子折叠（如混合序列里连读 5 个文件
+  // 同类合并收纳：混合组内 ≥2 张连续同名卡收成子折叠（如混合序列里连读 5 个文件
   // →「Read file ×5 · a.ts, b.ts +3」一行）；整组同名（isSingle）时外层折叠行
   // 本身就是该组，不再嵌套。子折叠同样懒渲染（嵌套 details 的 body 交由
   // 外层展开时的 replay 链填充，子组内容始终即时渲染——张数少、文本短）。
@@ -556,7 +610,7 @@ function renderCollapsedToolCards(
     isSingle
       ? html`${toolCards.map((card) => renderToolCardSidebar(card, onOpenSidebar))}`
       : html`${runs.map((run) => {
-          if (run.cards.length < 3) {
+          if (run.cards.length < 2) {
             return run.cards.map((card) => renderToolCardSidebar(card, onOpenSidebar));
           }
           const display = resolveToolDisplay({ name: run.name, args: run.cards[0]?.args });

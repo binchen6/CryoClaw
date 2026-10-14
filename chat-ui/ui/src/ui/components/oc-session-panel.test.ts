@@ -86,8 +86,79 @@ test("oc-session-panel：disconnectedCallback 清菜单模块态", () => {
   assert.match(panelSrc, /disconnectedCallback\(\)[\s\S]{0,200}?resetMenuState\(\)/, "卸载应清菜单模块态与 document 级监听");
 });
 
-test("oc-session-panel：无 git 时「更多」菜单按钮整体隐藏（gitAvailable === true 门控）", () => {
-  assert.match(panelSrc, /props\.gitAvailable === true\s*\?\s*html`/, "「更多」菜单应按 gitAvailable === true 门控");
+test("oc-session-panel：菜单退场两段式（runExitAnimation + epoch 防误关重开）", () => {
+  assert.match(panelSrc, /runExitAnimation\(document\.querySelector\("\.oc-panel__session-menu"\)/, "会话菜单缺退场两段式");
+  assert.match(panelSrc, /runExitAnimation\(document\.querySelector\("\.oc-panel__more-menu"\)/, "「更多」菜单缺退场两段式");
+  assert.match(panelSrc, /sessionMenuEpoch\+\+/, "会话菜单缺 epoch 防误关");
+  assert.match(panelSrc, /moreMenuEpoch\+\+/, "「更多」菜单缺 epoch 防误关");
+  // CSS 侧退场规则（styles 与 src/ui 平级，需 ../ 跳出）
+  const css = readSrc("../styles/session-panel.css");
+  assert.match(css, /\.oc-panel__session-menu\.cc-leaving[\s\S]{0,120}?chat-popover-out/, "会话菜单缺 cc-leaving 退场规则");
+});
+
+test("oc-session-panel：「更多」菜单常驻（新建工作区入口），worktree 项仍按 gitAvailable === true 门控", () => {
+  // 阶段5 起「更多」菜单承载「新建工作区」，不再整体随 git 可用性隐藏；
+  // git 门控收缩到 worktree 新建单项
+  assert.match(panelSrc, /props\.gitAvailable === true[\s\S]{0,500}?onNewWorktreeChat/, "worktree 新建项应按 gitAvailable === true 门控");
+  assert.match(panelSrc, /workspace\.create/, "「更多」菜单缺新建工作区入口");
+});
+
+// ── 固定工作区（阶段5）──────────────────────────────────────
+
+test("oc-session-panel：工作区分组渲染（splitSessionsByWorkspace + 快速新建/移除按钮）", () => {
+  assert.match(panelSrc, /splitSessionsByWorkspace\(props\.sessionOptions/, "正常视图应按工作区切分会话");
+  assert.match(panelSrc, /oc-panel__workspace-label/, "缺工作区分组头");
+  assert.match(panelSrc, /onNewChatInWorkspace\(section\.workspace\.id\)/, "缺工作区快速新建接线");
+  assert.match(panelSrc, /onRemoveWorkspace\(section\.workspace\.id\)/, "缺工作区移除接线");
+  // 归档/搜索态平铺：分组只在正常视图生效
+  assert.match(panelSrc, /showGrouped/, "归档/搜索态应绕过工作区分组");
+});
+
+test("oc-session-panel：会话菜单「指定工作区」二级模式", () => {
+  assert.match(panelSrc, /sessionMenuMode = "workspace"/, "缺菜单二级模式切换");
+  assert.match(panelSrc, /renderWorkspacePicker\(host, props, s\)/, "缺工作区选择列表渲染");
+  assert.match(panelSrc, /onBindSessionWorkspace\(s\.key, workspaceId\)/, "缺绑定回调接线");
+  assert.match(panelSrc, /workspace\.none/, "缺「无工作区」解绑项");
+});
+
+test("oc-session-panel：新建工作区对话框（名称/图标/路径 + 主进程目录选择）", () => {
+  assert.match(panelSrc, /renderWorkspaceDialog\(host, props\)/, "缺对话框渲染接线");
+  assert.match(panelSrc, /selectDirectory/, "缺目录选择桥调用");
+  assert.match(panelSrc, /onCreateWorkspace\(\{/, "缺创建回调接线");
+  const css = readSrc("../styles/session-panel.css");
+  assert.match(css, /\.oc-panel__ws-dialog-backdrop/, "缺对话框浮层样式");
+  assert.match(css, /\.oc-panel__workspace-action/, "缺工作区操作按钮样式");
+});
+
+test("oc-session-panel：工作区数据字段进 shouldUpdate 比较清单", () => {
+  assert.match(panelSrc, /"pinnedWorkspaces"/, "pinnedWorkspaces 缺比较清单登记");
+  assert.match(panelSrc, /"sessionWorkspaceMap"/, "sessionWorkspaceMap 缺比较清单登记");
+});
+
+test("app-render：工作区 props 装配（数据 + 四回调）", () => {
+  assert.match(appRenderSrc, /pinnedWorkspaces: state\.settings\.pinnedWorkspaces/, "缺 pinnedWorkspaces 装配");
+  assert.match(appRenderSrc, /sessionWorkspaceMap: state\.settings\.sessionWorkspaceMap/, "缺 sessionWorkspaceMap 装配");
+  for (const cb of ["onNewChatInWorkspace", "onBindSessionWorkspace", "onCreateWorkspace", "onRemoveWorkspace"]) {
+    assert.match(appRenderSrc, new RegExp(`${cb}:`), `缺 ${cb} 装配`);
+  }
+});
+
+test("app-session-actions：工作区动作函数（新建会话绑定/绑定解绑/创建/移除）", () => {
+  const actionsSrc = readSrc("app-session-actions.ts");
+  for (const fn of ["createNewSessionInWorkspace", "bindSessionWorkspace", "createPinnedWorkspace", "removePinnedWorkspace"]) {
+    assert.match(actionsSrc, new RegExp(`export function ${fn}\\(`), `缺 ${fn}`);
+  }
+  // 在工作区新建会话必须先 adoptNewSession 再写绑定（绑定表按 newKey 落）
+  assert.match(actionsSrc, /adoptNewSession\(state, newKey\);\s*\n\s*state\.applySettings\(\{[\s\S]{0,200}?sessionWorkspaceMap/, "新建会话后应立即绑定工作区");
+});
+
+test("主进程/preload：dialog:select-directory 通道（工作区路径选择）", () => {
+  // 注意：编译后测试在 chat-ui/ui/.test-dist/ 下运行，回仓库根需 7 级 ..
+  const mainSrc = readFileSync(new URL("../../../../../../../src/main.ts", import.meta.url), "utf8");
+  assert.match(mainSrc, /ipcMain\.handle\("dialog:select-directory"/, "主进程缺目录选择 handler");
+  assert.match(mainSrc, /assertTrustedIpcSender\(event, "dialog:select-directory"\)/, "目录选择缺 IPC 信任校验");
+  const preloadSrc = readFileSync(new URL("../../../../../../../src/preload.ts", import.meta.url), "utf8");
+  assert.match(preloadSrc, /selectDirectory[\s\S]{0,80}dialog:select-directory/, "preload 缺 selectDirectory 桥");
 });
 
 // ── oc-rail 专属 ─────────────────────────────────────────────

@@ -1963,6 +1963,95 @@ async function testTerminalTombstoneRejectsInFlightAdoption() {
   assert.equal(state.chatStream, "hi");
 }
 
+// ── Bug1-A 补强：内核未声明 inFlightRun 时同样剔除在途中途产物 ──
+// （字段缺省/版本差异下声明缺席，progressive persist 产物与流式气泡双份是必现路径）
+
+function testStripInFlightStreamDuplicatesWithoutDeclaration() {
+  const assistant = (text: string, timestamp?: number) => ({
+    role: "assistant",
+    content: [{ type: "text", text }],
+    ...(timestamp !== undefined ? { timestamp } : {}),
+  });
+  // 未声明（null / undefined）+ 本地 run 活跃 → 前缀与同文产物同样剔除
+  let out = stripInFlightStreamDuplicates(
+    [assistant("无关的旧回复"), assistant("abc")],
+    null, "run-1", "", "abcdef",
+  );
+  assert.equal(out.length, 1, "未声明 inFlightRun 时前缀产物同样应剔除");
+  out = stripInFlightStreamDuplicates(
+    [assistant("abcdef")],
+    undefined, "run-1", "", "abcdef",
+  );
+  assert.equal(out.length, 0, "未声明 inFlightRun 时同文产物同样应剔除");
+  // 声明了「另一个 run」→ 不剔（本地 run 陈旧，fresh 列表可能承载新 run 的真实内容）
+  out = stripInFlightStreamDuplicates(
+    [assistant("abc")],
+    "run-2", "run-1", "", "abcdef",
+  );
+  assert.equal(out.length, 1, "声明的是另一个 run 时不得剔除");
+  // 归属时间戳守卫不缺席：早于本轮起点的上一轮回复不得误剔
+  const now = Date.now();
+  out = stripInFlightStreamDuplicates(
+    [assistant("abc", now - 60_000)],
+    null, "run-1", "", "abcdef", now,
+  );
+  assert.equal(out.length, 1, "早于本轮起点的上一轮回复不得误剔");
+}
+
+async function testLoadChatHistoryStripsInFlightWithoutDeclaration() {
+  const raf = new FakeRaf();
+  installBrowserGlobals(raf);
+  const artifact = {
+    role: "assistant",
+    content: [{ type: "text", text: "在途中途产物" }],
+    timestamp: Date.now(),
+  };
+  const state = makeState({
+    client: {
+      // 内核响应不带 inFlightRun（字段缺省/版本差异）
+      request: async () => ({ messages: [artifact] }),
+    },
+  });
+  state.chatStream = "在途中途产物，后续仍在增长";
+  state.chatStreamStartedAt = Date.now() - 50;
+
+  await loadChatHistory(state, { mergeIfStale: true, silent: true });
+
+  assert.equal(state.chatMessages.length, 0, "未声明时中途产物同样剔除，流式气泡为唯一渲染源");
+}
+
+// 终态刷新先于 final 帧落地：历史已含本 run 真持久化回复，final 不得再注入合成占位
+async function testFinalSkipsPartialWhenReplyAlreadyInHistory() {
+  const raf = new FakeRaf();
+  installBrowserGlobals(raf);
+  const { state } = makeTerminalRoundState();
+  state.chatMessages = [
+    ...state.chatMessages,
+    {
+      role: "assistant",
+      content: [{ type: "text", text: "完整回复" }],
+      timestamp: Date.now(),
+      runId: "run-1",
+      stopReason: "stop",
+    },
+  ];
+  state.chatVisibleMessageCount = 2;
+
+  handleChatEvent(state, {
+    runId: "run-1", sessionKey: "session-1", state: "delta",
+    deltaText: "完整回复",
+    message: { role: "assistant", content: [{ type: "text", text: "完整回复" }] },
+  });
+  handleChatEvent(state, { runId: "run-1", sessionKey: "session-1", state: "final" });
+
+  assert.equal(state.chatStream, null, "final 后流式态应清除");
+  assert.equal(state.chatMessages.length, 2, "历史已含本 run 回复时不得再注入合成占位（防双份）");
+  assert.ok(
+    !state.chatMessages.some((m: any) => m.cryoclawPartial),
+    "不得出现与真回复同文的 partial 占位",
+  );
+}
+
 async function main() {
   await testChatStreamIsRafThrottled();
   await testLoadChatHistoryBatchesInitialRender();
@@ -2015,7 +2104,10 @@ async function main() {
   await testConcurrentLoadsLatestGenerationWins();
   await testNewRunResetsMismatchCount();
   testStripInFlightStreamDuplicatesPure();
+  testStripInFlightStreamDuplicatesWithoutDeclaration();
   await testLoadChatHistoryStripsInFlightDuplicates();
+  await testLoadChatHistoryStripsInFlightWithoutDeclaration();
+  await testFinalSkipsPartialWhenReplyAlreadyInHistory();
   await testBodyDeltaInvalidatesFrozenNarrationSegment();
   await testFinalInjectsSyntheticPartialPlaceholder();
   await testMergeIfStaleEqualLengthMissingReplyRetainsLocal();

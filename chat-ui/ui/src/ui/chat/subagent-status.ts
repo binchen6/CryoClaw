@@ -1,18 +1,18 @@
 /**
- * 子代理等待状态卡数据选择（R23）：
- * 从 tasks 列表中选出与当前会话相关的 subagent 任务，投影为聊天区内联卡片。
- * - 活跃（queued/running）任务恒显示（主 run 等待子代理期间的进度反馈）
- * - 终态任务短暂定格展示（grace 窗口），随后由 tick 刷新自然隐藏
- * - 跨会话任务不显示（与 tool / lifecycle 流的会话过滤约定一致）
+ * 子会话（sessions_spawn 派生）状态卡数据选择：
+ * 从 sessions.list 行投影当前会话的子会话为聊天区内联卡片。
+ * - 数据源：GatewaySessionRow.spawnedBy / controlOwnerSessionKey（2026.10.3 起
+ *   内核在行上投影子会话谱系；tasks.* 已于 2026.9.7 移除，旧 TaskSummary 投影废弃）
+ * - 活跃（hasActiveSubagentRun 或 status queued/running）恒显示
+ * - 终态短暂定格展示（grace 窗口），随后由 sessions 刷新自然隐藏
+ * - 仅当前会话的直接子会话显示（跨会话不投影，与 tool / lifecycle 流过滤约定一致）
  */
-import type { TaskSummary } from "../types.ts";
-
-// 2026.9.7 起 tasks.* 已移除，本模块不再有实时数据源（app-chat-props 恒传空数组），
-// 纯函数与测试保留以待内核恢复任务面；活跃判定内联于此（原 controllers/tasks.ts
-// isActiveTask：queued/running 为进行中，缺省按 queued）。
+import type { GatewaySessionRow } from "../types.ts";
 
 export type SubagentCard = {
   id: string;
+  /** 子会话 key（点击卡片跳转打开） */
+  sessionKey: string;
   title: string;
   status: string;
   active: boolean;
@@ -20,8 +20,7 @@ export type SubagentCard = {
 };
 
 // 终态定格窗口：完成后短暂保留卡片展示结果，避免一闪而过。
-// 收敛时机依赖下一次 buildChatItems 重算（新消息/流式/tick 驱动；公共 ticker 周期较长，
-// 实际定格时长 = 窗口 + 至下一次重算的间隔）。
+// 收敛时机依赖下一次 sessions.list 刷新驱动的重渲染。
 const TERMINAL_GRACE_MS = 15_000;
 
 function toMillis(value: unknown): number | null {
@@ -35,53 +34,61 @@ function toMillis(value: unknown): number | null {
   return null;
 }
 
+function isActiveSubagentRow(row: GatewaySessionRow): boolean {
+  if (row.hasActiveSubagentRun === true) {
+    return true;
+  }
+  return row.status === "queued" || row.status === "running";
+}
+
 export function selectSubagentCards(
-  tasks: TaskSummary[] | null | undefined,
+  sessions: GatewaySessionRow[] | null | undefined,
   sessionKey: string,
   now: number = Date.now(),
 ): SubagentCard[] {
-  if (!Array.isArray(tasks) || tasks.length === 0 || !sessionKey) {
+  if (!Array.isArray(sessions) || sessions.length === 0 || !sessionKey) {
     return [];
   }
   const cards: SubagentCard[] = [];
-  for (const task of tasks) {
-    if (task.runtime !== "subagent") {
+  for (const row of sessions) {
+    // 关联判定：行归属父会话为当前会话（spawnedBy 与 controlOwnerSessionKey 同源，
+    // 内核同一赋值；宽容取任一）
+    const parent = row.spawnedBy ?? row.controlOwnerSessionKey;
+    if (!parent || parent !== sessionKey) {
       continue;
     }
-    // 关联判定：任务归属会话或父会话为当前会话
-    if (task.sessionKey !== sessionKey && task.ownerKey !== sessionKey) {
-      continue;
-    }
-    // 无 status 字段视为不可判定，按终态路径走时间窗兜底（防僵尸等待卡：
-    // 缺失 status 若按 queued 算活跃会误判为活跃恒显示）
-    const active = task.status === "queued" || task.status === "running";
+    const active = isActiveSubagentRow(row);
     if (!active) {
-      const ended = toMillis(task.endedAt) ?? toMillis(task.updatedAt);
+      const ended = toMillis(row.endedAt) ?? toMillis(row.updatedAt);
       if (ended === null || now - ended > TERMINAL_GRACE_MS) {
         continue;
       }
     }
-    const id =
-      typeof task.id === "string" && task.id
-        ? task.id
-        : typeof task.taskId === "string" && task.taskId
-          ? task.taskId
-          : `subagent:${cards.length}`;
+    const title =
+      (typeof row.label === "string" && row.label.trim()) ||
+      (typeof row.displayName === "string" && row.displayName.trim()) ||
+      (typeof row.derivedTitle === "string" && row.derivedTitle.trim()) ||
+      row.key;
     cards.push({
-      id,
-      title: task.title || task.kind || "subagent",
-      status: task.status ?? (active ? "running" : "completed"),
+      id: row.key,
+      sessionKey: row.key,
+      title,
+      status: row.status ?? (active ? "running" : "done"),
       active,
       progress:
-        typeof task.progressSummary === "string" && task.progressSummary.trim()
-          ? task.progressSummary
+        typeof row.lastMessagePreview === "string" && row.lastMessagePreview.trim()
+          ? row.lastMessagePreview
           : null,
     });
   }
+  // 活跃优先，其余按最近更新排序（sessions 行本身按 updatedAt 倒序，稳定保留）
+  cards.sort((a, b) => Number(b.active) - Number(a.active));
   return cards;
 }
 
-const FAILED_STATUSES = new Set(["failed", "cancelled", "timed_out"]);
+// 内核 2026.10.3 子代理状态枚举：queued/running/interrupted/killed/failed/timeout/done
+// （兼容旧任务面 cancelled/timed_out 命名）
+const FAILED_STATUSES = new Set(["failed", "cancelled", "timed_out", "timeout", "killed", "interrupted"]);
 
 export function isFailedSubagentStatus(status: string): boolean {
   return FAILED_STATUSES.has(status);

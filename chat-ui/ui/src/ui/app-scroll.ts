@@ -16,7 +16,22 @@ type ScrollHost = {
   chatNewMessagesBelow: boolean;
   // pill 退场两段式：true 期间 pill 保留并播退出帧（--duration-fast），结束才清 below
   chatNewMessagesLeaving?: boolean;
+  // 平滑滚动动画在途的截止时间戳（Date.now() 比较）。动画本身持续产生 scroll
+  // 事件，中途位置离底还很远——不能当成用户上滚，否则刚点掉的回底 pill 会在
+  // 动画途中重新亮起，流式新消息也会因 chatUserNearBottom 被翻转而中断贴底跟流。
+  chatSmoothScrollUntil?: number;
 };
+
+/** 平滑滚动动画的守卫窗口：覆盖浏览器默认动画时长并留余量（内容增高时更久） */
+const SMOOTH_SCROLL_GUARD_MS = 700;
+
+function markSmoothScrollFlight(host: ScrollHost) {
+  host.chatSmoothScrollUntil = Date.now() + SMOOTH_SCROLL_GUARD_MS;
+}
+
+function isSmoothScrollInFlight(host: ScrollHost): boolean {
+  return host.chatSmoothScrollUntil != null && Date.now() < host.chatSmoothScrollUntil;
+}
 
 export function scheduleChatScroll(host: ScrollHost, force = false, smooth = false) {
   if (host.chatScrollFrame) {
@@ -84,6 +99,9 @@ export function scheduleChatScroll(host: ScrollHost, force = false, smooth = fal
       } else {
         target.scrollTop = scrollTop;
       }
+      if (smoothEnabled) {
+        markSmoothScrollFlight(host);
+      }
       host.chatUserNearBottom = true;
       clearNewMessagesBelow(host);
       const retryDelay = effectiveForce ? 150 : 120;
@@ -105,7 +123,14 @@ export function scheduleChatScroll(host: ScrollHost, force = false, smooth = fal
         if (!shouldStickRetry) {
           return;
         }
-        latest.scrollTop = latest.scrollHeight;
+        // 补滚同样走 smooth：平滑动画途中内容增高时，瞬时 scrollTop 赋值会打断动画
+        // 造成「滑到一半突然跳底」的顿挫。
+        if (smoothEnabled && typeof latest.scrollTo === "function") {
+          latest.scrollTo({ top: latest.scrollHeight, behavior: "smooth" });
+          markSmoothScrollFlight(host);
+        } else {
+          latest.scrollTop = latest.scrollHeight;
+        }
         host.chatUserNearBottom = true;
       }, retryDelay);
     });
@@ -148,10 +173,21 @@ export function handleChatScroll(host: ScrollHost, event: Event) {
     return;
   }
   const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
-  host.chatUserNearBottom = distanceFromBottom < NEAR_BOTTOM_THRESHOLD;
-  // Clear the "new messages below" indicator when user scrolls back to bottom.
-  if (host.chatUserNearBottom) {
+  // 程序化平滑滚动在途：中途 scroll 事件不代表用户上滚，维持贴底意图（动画正把
+  // 视图带向底部）。守卫窗口有时限，用户真上滚会在窗口过后如实反映。
+  if (isSmoothScrollInFlight(host)) {
+    host.chatUserNearBottom = true;
     clearNewMessagesBelow(host);
+    return;
+  }
+  host.chatUserNearBottom = distanceFromBottom < NEAR_BOTTOM_THRESHOLD;
+  if (host.chatUserNearBottom) {
+    // Clear the "new messages below" indicator when user scrolls back to bottom.
+    clearNewMessagesBelow(host);
+  } else {
+    // 用户向上滚动离开底部：立即显示回底按钮（不等新消息到达）。
+    cancelNewMessagesExit(host);
+    host.chatNewMessagesBelow = true;
   }
 }
 
@@ -161,6 +197,8 @@ export function resetChatScroll(host: ScrollHost) {
   host.chatScrollGeneration += 1;
   host.chatHasAutoScrolled = false;
   host.chatUserNearBottom = true;
+  // 旧会话的平滑动画守卫不得延用到新会话的滚动事件上
+  host.chatSmoothScrollUntil = 0;
   cancelNewMessagesExit(host);
   host.chatNewMessagesBelow = false;
 }

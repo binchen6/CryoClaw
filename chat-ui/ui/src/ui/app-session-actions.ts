@@ -34,6 +34,7 @@ import {
 } from "./session-jump.ts";
 import { resolveVisibleSessionSelection } from "./session-visibility.ts";
 import { pendingSessionLabels, removePendingSessionLabel } from "./session-pending.ts";
+import { addWorkspace, bindSessionToWorkspace, removeWorkspace } from "./workspace-pinning.ts";
 import { setCryoClawView } from "./app-view-switch.ts";
 import { showConfirm } from "./views/confirm-dialog.ts";
 import { showToast } from "./app-toast.ts";
@@ -97,12 +98,12 @@ function resolveSessionOptionLabel(
 
 export function resolveSessionOptions(
   state: AppViewState,
-): Array<{ key: string; label: string; updatedAt?: number; pinned?: boolean; unread?: boolean; archived?: boolean; worktreeBranch?: string }> {
+): Array<{ key: string; label: string; updatedAt?: number; pinned?: boolean; unread?: boolean; archived?: boolean; worktreeBranch?: string; spawnedBy?: string }> {
   const sessions = state.sessionsResult?.sessions ?? [];
   // sessions.list 行不投影 worktree 字段，徽标数据从 worktrees.list 的 ownerId 反推
   const worktreeBySession = buildWorktreeSessionMap(state.worktrees ?? []);
   const seen = new Set<string>();
-  const options: Array<{ key: string; label: string; updatedAt?: number; pinned?: boolean; unread?: boolean; archived?: boolean; worktreeBranch?: string }> = [];
+  const options: Array<{ key: string; label: string; updatedAt?: number; pinned?: boolean; unread?: boolean; archived?: boolean; worktreeBranch?: string; spawnedBy?: string }> = [];
 
   const pushOption = (
     key: string,
@@ -123,6 +124,11 @@ export function resolveSessionOptions(
       unread: row?.unread === true,
       archived: row?.archived === true,
       worktreeBranch: worktreeBySession.get(trimmedKey)?.branch,
+      // 子会话谱系（2026.10.3）：sidebar-grouping 据此刻画父子嵌套缩进
+      spawnedBy:
+        (typeof row?.spawnedBy === "string" && row.spawnedBy.trim()) ||
+        (typeof row?.controlOwnerSessionKey === "string" && row.controlOwnerSessionKey.trim()) ||
+        undefined,
     });
   };
 
@@ -451,6 +457,58 @@ export async function confirmAndCreateNewSession(state: AppViewState) {
   }
   setCryoClawView(state, "chat");
   return state.handleSendChat("/new", { restoreDraft: true });
+}
+
+// ── 固定工作区（UI 侧组织：路径+名称+图标持久化在 UiSettings，会话一对一可选绑定）──
+
+// 在指定工作区中快速新建会话：沿用普通新建流程，落本地后立即绑定工作区
+export function createNewSessionInWorkspace(state: AppViewState, workspaceId: string) {
+  const ws = state.settings.pinnedWorkspaces.find((w) => w.id === workspaceId);
+  if (!ws) {
+    return;
+  }
+  const newKey = resolveNewSessionKey(state);
+  adoptNewSession(state, newKey);
+  state.applySettings({
+    ...state.settings,
+    sessionWorkspaceMap: bindSessionToWorkspace(state.settings.sessionWorkspaceMap, newKey, workspaceId),
+  });
+}
+
+// 绑定/解绑会话到工作区（workspaceId 为 null 表示解绑）
+export function bindSessionWorkspace(
+  state: AppViewState,
+  sessionKey: string,
+  workspaceId: string | null,
+) {
+  state.applySettings({
+    ...state.settings,
+    sessionWorkspaceMap: bindSessionToWorkspace(state.settings.sessionWorkspaceMap, sessionKey, workspaceId),
+  });
+}
+
+// 新建工作区（名称/路径必填校验在 workspace-pinning.addWorkspace，此处再兜底一次）
+export function createPinnedWorkspace(
+  state: AppViewState,
+  draft: { name: string; icon?: string; path: string },
+) {
+  const next = addWorkspace(state.settings.pinnedWorkspaces, draft);
+  if (next.length === state.settings.pinnedWorkspaces.length) {
+    showToast(state, t("workspace.invalid"));
+    return;
+  }
+  state.applySettings({ ...state.settings, pinnedWorkspaces: next });
+  showToast(state, t("workspace.created"));
+}
+
+// 删除工作区：同时丢弃其全部会话绑定（会话本身不受影响，回落到未分组区）
+export function removePinnedWorkspace(state: AppViewState, workspaceId: string) {
+  const { workspaces, map } = removeWorkspace(
+    state.settings.pinnedWorkspaces,
+    state.settings.sessionWorkspaceMap,
+    workspaceId,
+  );
+  state.applySettings({ ...state.settings, pinnedWorkspaces: workspaces, sessionWorkspaceMap: map });
 }
 
 // 断开连接时尝试重连，3 秒后仍失败则弹窗询问是否重启 Gateway

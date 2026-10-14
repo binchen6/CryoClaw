@@ -5,6 +5,9 @@ import { t } from "../i18n.ts";
 import { activateOnKeydown } from "../a11y.ts";
 import { icons } from "../icons.ts";
 import { groupSidebarSessions } from "../sidebar-grouping.ts";
+import { splitSessionsByWorkspace } from "../workspace-pinning.ts";
+import type { PinnedWorkspace } from "../storage.ts";
+import { runExitAnimation } from "../utils/exit-anim.ts";
 
 // CryoClaw 会话面板组件（2026.9 提案 A 重写，前身 cc-sidebar）。
 // 旧 280px 侧边栏（品牌区+会话列表+底部图标轨）拆分：导航与状态入口迁往
@@ -134,6 +137,10 @@ export type SessionPanelSessionOption = {
   archived?: boolean;
   // 会话持有的活跃 worktree 分支名（由 worktrees.list 的 ownerId 反推，见 app-session-actions）
   worktreeBranch?: string;
+  // 2026.10.3 子会话谱系：spawnedBy = 父会话 key（sessions_spawn 派生）
+  spawnedBy?: string;
+  // 分组后嵌套深度（sidebar-grouping 投影：父会话同组时 depth=1 缩进渲染）
+  depth?: number;
 };
 
 export type SessionPanelProps = {
@@ -160,6 +167,13 @@ export type SessionPanelProps = {
   onSetArchived: (key: string, archived: boolean) => void;
   isDeletingSession: (key: string) => boolean;
   requestUpdate: () => void;
+  // 固定工作区：列表按工作区分组 + 会话「⋯」菜单「指定工作区」+ 快速新建
+  pinnedWorkspaces: PinnedWorkspace[];
+  sessionWorkspaceMap: Record<string, string>;
+  onNewChatInWorkspace: (workspaceId: string) => void;
+  onBindSessionWorkspace: (sessionKey: string, workspaceId: string | null) => void;
+  onCreateWorkspace: (draft: { name: string; icon?: string; path: string }) => void;
+  onRemoveWorkspace: (workspaceId: string) => void;
 };
 
 // shouldUpdate 数据字段比较清单：布尔/数字/字符串按值、数组按引用。
@@ -172,6 +186,8 @@ const DATA_FIELDS = [
   "showArchived",
   "gitAvailable",
   "activeTaskSessions",
+  "pinnedWorkspaces",
+  "sessionWorkspaceMap",
 ] as const;
 
 // 双击会话名触发内联重命名：创建 input 替换 span，Enter 保存，Escape 取消。
@@ -221,21 +237,48 @@ function startInlineRename(
 
 // 会话项「⋯」菜单的本地状态（非响应式，渲染由组件更新驱动）。
 // document 级点击外部关闭，关闭即注销监听。
+// 退场两段式（runExitAnimation）：先加 .cc-leaving 播退场帧，finalize 才清 key 移除节点；
+// epoch 在开/关时递增，使在途 finalize 失效——退场 200ms 内重开不会被误关。
 let sessionMenuKey: string | null = null;
+let sessionMenuEpoch = 0;
 let sessionMenuOutsideCloser: ((ev: MouseEvent) => void) | null = null;
+// 菜单二级模式：root = 常规操作项；workspace = 「指定工作区」选择列表
+let sessionMenuMode: "root" | "workspace" = "root";
 
 function closeSessionMenu(requestUpdate: () => void) {
-  sessionMenuKey = null;
+  const closingKey = sessionMenuKey;
+  sessionMenuEpoch++;
   if (sessionMenuOutsideCloser) {
     document.removeEventListener("click", sessionMenuOutsideCloser);
     sessionMenuOutsideCloser = null;
   }
-  requestUpdate();
+  if (closingKey == null) {
+    sessionMenuMode = "root";
+    requestUpdate();
+    return;
+  }
+  const epoch = sessionMenuEpoch;
+  runExitAnimation(document.querySelector(".oc-panel__session-menu"), () => {
+    if (sessionMenuEpoch === epoch && sessionMenuKey === closingKey) {
+      sessionMenuKey = null;
+      // 模式复位推迟到退场结束：退场期间菜单节点仍在 DOM，提前翻回 root 会让
+      // 「指定工作区」选择列表在淡出途中跳回常规菜单
+      sessionMenuMode = "root";
+    }
+    requestUpdate();
+  });
 }
 
 function openSessionMenu(key: string, requestUpdate: () => void) {
   // 对称互斥：打开会话菜单先关「更多」菜单（两菜单同时开会互相屏蔽 outsideCloser）
   closeMoreMenu(requestUpdate);
+  sessionMenuEpoch++;
+  // 退场途中重开同一会话菜单：节点被 Lit 复用且带 cc-leaving（forwards 终态不可见），
+  // 剥掉退场类恢复可见；在途 finalize 已由 epoch 递增失效
+  document
+    .querySelectorAll(".oc-panel__session-menu.cc-leaving")
+    .forEach((el) => el.classList.remove("cc-leaving"));
+  if (sessionMenuKey !== key) sessionMenuMode = "root";
   sessionMenuKey = key;
   // 延迟一帧注册，避免触发本次打开的 click 立刻把菜单关掉。
   requestAnimationFrame(() => {
@@ -261,17 +304,29 @@ function openSessionMenu(key: string, requestUpdate: () => void) {
   });
 }
 
-// ── 「更多」菜单本地状态（与会话菜单同一模式） ──
+// ── 「更多」菜单本地状态（与会话菜单同一模式 + 退场两段式） ──
 let moreMenuOpen = false;
+let moreMenuEpoch = 0;
 let moreMenuOutsideCloser: ((ev: MouseEvent) => void) | null = null;
 
 function closeMoreMenu(requestUpdate: () => void) {
-  moreMenuOpen = false;
+  const wasOpen = moreMenuOpen;
+  moreMenuEpoch++;
   if (moreMenuOutsideCloser) {
     document.removeEventListener("click", moreMenuOutsideCloser);
     moreMenuOutsideCloser = null;
   }
-  requestUpdate();
+  if (!wasOpen) {
+    requestUpdate();
+    return;
+  }
+  const epoch = moreMenuEpoch;
+  runExitAnimation(document.querySelector(".oc-panel__more-menu"), () => {
+    if (moreMenuEpoch === epoch && moreMenuOpen) {
+      moreMenuOpen = false;
+    }
+    requestUpdate();
+  });
 }
 
 function toggleMoreMenu(host: OcSessionPanel) {
@@ -281,6 +336,10 @@ function toggleMoreMenu(host: OcSessionPanel) {
   }
   // 双菜单互斥：打开「更多」菜单先关会话菜单
   closeSessionMenu(host.bump);
+  moreMenuEpoch++;
+  document
+    .querySelectorAll(".oc-panel__more-menu.cc-leaving")
+    .forEach((el) => el.classList.remove("cc-leaving"));
   moreMenuOpen = true;
   requestAnimationFrame(() => {
     if (!moreMenuOpen || moreMenuOutsideCloser) return;
@@ -296,7 +355,9 @@ function toggleMoreMenu(host: OcSessionPanel) {
 // 组件卸载清掉菜单模块态与 document 级监听
 function resetMenuState() {
   sessionMenuKey = null;
+  sessionMenuMode = "root";
   moreMenuOpen = false;
+  closeWorkspaceDialogState();
   if (sessionMenuOutsideCloser) {
     document.removeEventListener("click", sessionMenuOutsideCloser);
     sessionMenuOutsideCloser = null;
@@ -304,6 +365,47 @@ function resetMenuState() {
   if (moreMenuOutsideCloser) {
     document.removeEventListener("click", moreMenuOutsideCloser);
     moreMenuOutsideCloser = null;
+  }
+}
+
+// ── 新建工作区对话框本地状态（草稿为纯 UI 态，提交才回调 props.onCreateWorkspace）──
+let workspaceDialogOpen = false;
+let workspaceDraftName = "";
+let workspaceDraftIcon = "";
+let workspaceDraftPath = "";
+
+function openWorkspaceDialog(host: OcSessionPanel) {
+  workspaceDialogOpen = true;
+  workspaceDraftName = "";
+  workspaceDraftIcon = "";
+  workspaceDraftPath = "";
+  host.bump();
+}
+
+function closeWorkspaceDialogState() {
+  workspaceDialogOpen = false;
+}
+
+function closeWorkspaceDialog(host: OcSessionPanel) {
+  workspaceDialogOpen = false;
+  host.bump();
+}
+
+// 目录选择走 Electron 主进程 dialog（preload 桥 selectDirectory）；非桌面环境无桥时静默忽略
+async function pickWorkspaceDirectory(host: OcSessionPanel) {
+  const w = window as unknown as Record<string, unknown>;
+  const bridge = w.cryoclaw as { selectDirectory?: () => Promise<string | null> } | undefined;
+  if (!bridge?.selectDirectory) {
+    return;
+  }
+  try {
+    const dir = await bridge.selectDirectory();
+    if (dir) {
+      workspaceDraftPath = dir;
+      host.bump();
+    }
+  } catch {
+    // 用户取消/对话框失败：草稿保持原样
   }
 }
 
@@ -321,7 +423,7 @@ function renderSessionItem(
   const deleting = props.isDeletingSession(s.key);
   return html`
     <div
-      class="oc-panel__session-item ${isActive ?"active" : ""} ${menuOpen ? "menu-open" : ""} ${s.archived ? "is-archived" : ""}"
+      class="oc-panel__session-item ${isActive ?"active" : ""} ${menuOpen ? "menu-open" : ""} ${s.archived ? "is-archived" : ""} ${s.depth ? "is-subsession" : ""}"
       role="button"
       tabindex="0"
       aria-current=${isActive ? "true" : nothing}
@@ -331,7 +433,7 @@ function renderSessionItem(
       <span
         class="oc-panel__session-name"
         title=${s.label}
-      >${s.unread ? html`<span class="oc-panel__unread-dot" aria-label=${t("sidebar.unread")}></span>` : nothing}<span class="oc-panel__session-label">${s.label}</span>${s.pinned ? html`<span class="oc-panel__session-pin" aria-label=${t("sidebar.pinned")}>${icons.pin}</span>` : nothing}${s.worktreeBranch ? html`<span class="oc-panel__session-worktree" title=${s.worktreeBranch}>${icons.gitBranch}${s.worktreeBranch}</span>` : nothing}</span>
+      >${s.depth ? html`<span class="oc-panel__subsession-marker" aria-hidden="true">↳</span>` : nothing}${s.unread ? html`<span class="oc-panel__unread-dot" aria-label=${t("sidebar.unread")}></span>` : nothing}<span class="oc-panel__session-label">${s.label}</span>${s.pinned ? html`<span class="oc-panel__session-pin" aria-label=${t("sidebar.pinned")}>${icons.pin}</span>` : nothing}${s.worktreeBranch ? html`<span class="oc-panel__session-worktree" title=${s.worktreeBranch}>${icons.gitBranch}${s.worktreeBranch}</span>` : nothing}</span>
       <span class="oc-panel__session-menu-wrap">
         <button
           class="oc-panel__session-action ${menuOpen ?"is-open" : ""} ${deleting ? "is-loading" : ""}"
@@ -357,6 +459,9 @@ function renderSessionItem(
         ${menuOpen
           ? html`
             <div class="oc-panel__session-menu" role="menu" @click=${(e: Event) => e.stopPropagation()}>
+              ${sessionMenuMode === "workspace"
+                ? renderWorkspacePicker(host, props, s)
+                : html`
               ${!s.archived
                 ? html`
                   <button class="oc-panel__session-menu-item" type="button" role="menuitem"
@@ -379,6 +484,16 @@ function renderSessionItem(
                     <span class="oc-panel__session-menu-icon">${icons.edit}</span>
                     <span>${t("sidebar.rename")}</span>
                   </button>
+                  ${props.pinnedWorkspaces.length > 0
+                    ? html`
+                      <button class="oc-panel__session-menu-item" type="button" role="menuitem"
+                        aria-haspopup="true"
+                        @click=${() => { sessionMenuMode = "workspace"; host.bump(); }}>
+                        <span class="oc-panel__session-menu-icon">${icons.folder}</span>
+                        <span>${t("workspace.assign")}</span>
+                      </button>
+                    `
+                    : nothing}
                   ${!isMain
                     ? html`
                       <button class="oc-panel__session-menu-item" type="button" role="menuitem"
@@ -410,6 +525,7 @@ function renderSessionItem(
                     <span>${t("sidebar.delete")}</span>
                   </button>
                 `}
+              `}
             </div>
           `
           : nothing}
@@ -418,8 +534,135 @@ function renderSessionItem(
   `;
 }
 
+// 会话「⋯」菜单二级：指定工作区选择列表（含「无工作区」解绑项；当前绑定打勾）
+function renderWorkspacePicker(
+  host: OcSessionPanel,
+  props: SessionPanelProps,
+  s: SessionPanelSessionOption,
+) {
+  const currentWs = props.sessionWorkspaceMap[s.key] ?? null;
+  const bind = (workspaceId: string | null) => {
+    closeSessionMenu(host.bump);
+    props.onBindSessionWorkspace(s.key, workspaceId);
+  };
+  return html`
+    <button class="oc-panel__session-menu-item" type="button" role="menuitem"
+      @click=${() => { sessionMenuMode = "root"; host.bump(); }}>
+      <span class="oc-panel__session-menu-icon">${icons.arrowLeft}</span>
+      <span>${t("workspace.assign")}</span>
+    </button>
+    <button class="oc-panel__session-menu-item" type="button" role="menuitemradio"
+      aria-checked=${currentWs == null ? "true" : "false"}
+      @click=${() => bind(null)}>
+      <span class="oc-panel__session-menu-icon">${currentWs == null ? icons.check : nothing}</span>
+      <span>${t("workspace.none")}</span>
+    </button>
+    ${props.pinnedWorkspaces.map(
+      (ws) => html`
+        <button class="oc-panel__session-menu-item" type="button" role="menuitemradio"
+          aria-checked=${currentWs === ws.id ? "true" : "false"}
+          title=${ws.path}
+          @click=${() => bind(ws.id)}>
+          <span class="oc-panel__session-menu-icon">${currentWs === ws.id ? icons.check : nothing}</span>
+          <span>${ws.icon} ${ws.name}</span>
+        </button>
+      `,
+    )}
+  `;
+}
+
+// 新建工作区对话框（面板内嵌浮层；路径可手输或经主进程目录选择器）
+function renderWorkspaceDialog(host: OcSessionPanel, props: SessionPanelProps) {
+  if (!workspaceDialogOpen) {
+    return nothing;
+  }
+  const canSubmit = workspaceDraftName.trim().length > 0 && workspaceDraftPath.trim().length > 0;
+  const submit = () => {
+    if (!canSubmit) return;
+    props.onCreateWorkspace({
+      name: workspaceDraftName.trim(),
+      icon: workspaceDraftIcon.trim() || undefined,
+      path: workspaceDraftPath.trim(),
+    });
+    closeWorkspaceDialog(host);
+  };
+  return html`
+    <div class="oc-panel__ws-dialog-backdrop" @click=${() => closeWorkspaceDialog(host)}>
+      <div
+        class="oc-panel__ws-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-label=${t("workspace.createTitle")}
+        @click=${(e: Event) => e.stopPropagation()}
+        @keydown=${(e: KeyboardEvent) => {
+          if (e.key === "Escape") {
+            e.stopPropagation();
+            closeWorkspaceDialog(host);
+          } else if (e.key === "Enter" && (e.target as HTMLElement).tagName === "INPUT") {
+            e.preventDefault();
+            submit();
+          }
+        }}
+      >
+        <div class="oc-panel__ws-dialog-title">${t("workspace.createTitle")}</div>
+        <label class="oc-panel__ws-field">
+          <span>${t("workspace.nameLabel")}</span>
+          <input
+            type="text"
+            .value=${workspaceDraftName}
+            placeholder=${t("workspace.namePlaceholder")}
+            @input=${(e: Event) => { workspaceDraftName = (e.target as HTMLInputElement).value; host.bump(); }}
+          />
+        </label>
+        <label class="oc-panel__ws-field">
+          <span>${t("workspace.iconLabel")}</span>
+          <input
+            type="text"
+            .value=${workspaceDraftIcon}
+            placeholder="📁"
+            maxlength="4"
+            @input=${(e: Event) => { workspaceDraftIcon = (e.target as HTMLInputElement).value; host.bump(); }}
+          />
+        </label>
+        <label class="oc-panel__ws-field">
+          <span>${t("workspace.pathLabel")}</span>
+          <span class="oc-panel__ws-path-row">
+            <input
+              type="text"
+              .value=${workspaceDraftPath}
+              placeholder=${t("workspace.pathPlaceholder")}
+              @input=${(e: Event) => { workspaceDraftPath = (e.target as HTMLInputElement).value; host.bump(); }}
+            />
+            <button
+              class="oc-panel__ws-browse"
+              type="button"
+              @click=${() => void pickWorkspaceDirectory(host)}
+            >${t("workspace.browse")}</button>
+          </span>
+        </label>
+        <div class="oc-panel__ws-dialog-actions">
+          <button type="button" class="oc-panel__ws-btn" @click=${() => closeWorkspaceDialog(host)}>
+            ${t("workspace.cancel")}
+          </button>
+          <button
+            type="button"
+            class="oc-panel__ws-btn oc-panel__ws-btn--primary"
+            ?disabled=${!canSubmit}
+            @click=${submit}
+          >${t("workspace.create")}</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
 // 会话面板模板主体：面板头（标题 + 新会话/「更多」菜单）+ 归档切换 + 搜索 + 会话列表。
 function renderPanelInner(host: OcSessionPanel, props: SessionPanelProps) {
+  const showGrouped = !props.showArchived && !props.sessionSearch.trim();
+  // 工作区分组只作用于正常视图：归档/搜索态平铺便于扫读
+  const wsSplit = showGrouped
+    ? splitSessionsByWorkspace(props.sessionOptions, props.pinnedWorkspaces, props.sessionWorkspaceMap)
+    : null;
   return html`
     <aside class="oc-panel" aria-label=${t("sidebar.agent")}>
       <div class="oc-panel__header">
@@ -435,33 +678,39 @@ function renderPanelInner(host: OcSessionPanel, props: SessionPanelProps) {
           >
             ${icons.messagePlus}
           </button>
-          ${props.gitAvailable === true
-            ? html`<div class="oc-panel__more-wrap">
-              <button
-                class="icon-btn icon-btn--sm ${moreMenuOpen ?"is-open" : ""}"
-                type="button"
-                aria-haspopup="menu"
-                aria-expanded=${moreMenuOpen ? "true" : "false"}
-                aria-label=${t("sidebar.more")}
-                data-tooltip=${t("sidebar.more")}
-                data-tooltip-pos="bottom"
-                @click=${(e: Event) => {
-                  e.stopPropagation();
-                  toggleMoreMenu(host);
-                }}
-              >${icons.moreHorizontal}</button>
-              ${moreMenuOpen
-                ? html`<div class="oc-panel__more-menu" role="menu" @click=${(e: Event) => e.stopPropagation()}>
-                    <button class="oc-panel__more-item" type="button" role="menuitem"
-                      data-tooltip=${t("sidebar.newWorktreeChatHint")}
-                      data-tooltip-wide="true"
-                      @click=${() => { closeMoreMenu(host.bump); props.onNewWorktreeChat(); }}>
-                      ${icons.gitBranch} ${t("sidebar.newWorktreeChat")}
-                    </button>
-                  </div>`
-                : nothing}
-            </div>`
-            : nothing}
+          <div class="oc-panel__more-wrap">
+            <button
+              class="icon-btn icon-btn--sm ${moreMenuOpen ?"is-open" : ""}"
+              type="button"
+              aria-haspopup="menu"
+              aria-expanded=${moreMenuOpen ? "true" : "false"}
+              aria-label=${t("sidebar.more")}
+              data-tooltip=${t("sidebar.more")}
+              data-tooltip-pos="bottom"
+              @click=${(e: Event) => {
+                e.stopPropagation();
+                toggleMoreMenu(host);
+              }}
+            >${icons.moreHorizontal}</button>
+            ${moreMenuOpen
+              ? html`<div class="oc-panel__more-menu" role="menu" @click=${(e: Event) => e.stopPropagation()}>
+                  <button class="oc-panel__more-item" type="button" role="menuitem"
+                    data-tooltip=${t("workspace.createHint")}
+                    data-tooltip-wide="true"
+                    @click=${() => { closeMoreMenu(host.bump); openWorkspaceDialog(host); }}>
+                    ${icons.folder} ${t("workspace.create")}
+                  </button>
+                  ${props.gitAvailable === true
+                    ? html`<button class="oc-panel__more-item" type="button" role="menuitem"
+                        data-tooltip=${t("sidebar.newWorktreeChatHint")}
+                        data-tooltip-wide="true"
+                        @click=${() => { closeMoreMenu(host.bump); props.onNewWorktreeChat(); }}>
+                        ${icons.gitBranch} ${t("sidebar.newWorktreeChat")}
+                      </button>`
+                    : nothing}
+                </div>`
+              : nothing}
+          </div>
           <button
             class="icon-btn icon-btn--sm ${props.showArchived ?"active" : ""}"
             type="button"
@@ -492,20 +741,47 @@ function renderPanelInner(host: OcSessionPanel, props: SessionPanelProps) {
 
       <!-- 会话列表 -->
       <div class="oc-panel__list">
-        ${props.sessionOptions.length === 0
+        ${props.sessionOptions.length === 0 && (!showGrouped || props.pinnedWorkspaces.length === 0)
           ? html`<div class="oc-panel__empty">${props.showArchived ? t("sidebar.noArchivedSessions") : t("sidebar.noSessions")}</div>`
           : nothing}
-        ${props.showArchived || props.sessionSearch.trim()
+        ${!showGrouped
           ? // 归档视图 / 搜索态：平铺列表，便于扫读
             repeat(props.sessionOptions, (s) => s.key, (s) => renderSessionItem(host, props, s))
-          : // 正常视图：置顶 + 时间分组
-            groupSidebarSessions(props.sessionOptions).map(
+          : html`
+            ${wsSplit!.sections.map(
+              (section) => html`
+                <div class="oc-panel__group-label oc-panel__workspace-label">
+                  <span class="oc-panel__workspace-icon" aria-hidden="true">${section.workspace.icon}</span>
+                  <span class="oc-panel__workspace-name" title=${section.workspace.path}>${section.workspace.name}</span>
+                  <button
+                    class="oc-panel__workspace-action"
+                    type="button"
+                    data-tooltip=${t("workspace.newSessionHere")}
+                    data-tooltip-pos="bottom"
+                    aria-label=${t("workspace.newSessionHere")}
+                    @click=${() => props.onNewChatInWorkspace(section.workspace.id)}
+                  >${icons.plus}</button>
+                  <button
+                    class="oc-panel__workspace-action oc-panel__workspace-action--danger"
+                    type="button"
+                    data-tooltip=${t("workspace.remove")}
+                    data-tooltip-pos="bottom"
+                    aria-label=${t("workspace.remove")}
+                    @click=${() => props.onRemoveWorkspace(section.workspace.id)}
+                  >${icons.x}</button>
+                </div>
+                ${repeat(section.items, (s) => s.key, (s) => renderSessionItem(host, props, s))}
+              `,
+            )}
+            ${groupSidebarSessions(wsSplit!.unbound).map(
               (group) => html`
                 <div class="oc-panel__group-label">${t(group.labelKey)}</div>
                 ${repeat(group.items, (s) => s.key, (s) => renderSessionItem(host, props, s))}
               `,
             )}
+          `}
       </div>
+      ${renderWorkspaceDialog(host, props)}
     </aside>
   `;
 }

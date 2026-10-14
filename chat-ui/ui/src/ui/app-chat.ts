@@ -421,6 +421,11 @@ export async function handleSendChat(
   if (isChatStopCommand(message)) {
     // stop 命令本身占着输入框：命令发出后清掉它（中止操作本身保留草稿，见 handleAbortChat）
     host.chatMessage = "";
+    // 内核 2026.10.2 语义：已连接会话中键入 /stop 同时清空排队 follow-up
+    // （Stop 按钮仍只中止当前 run）。我方排队是客户端 chatQueue，此处同步清空对齐。
+    if (host.chatQueue.length > 0) {
+      host.chatQueue = [];
+    }
     await handleAbortChat(host);
     return false;
   }

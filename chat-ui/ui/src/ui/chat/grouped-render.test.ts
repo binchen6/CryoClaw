@@ -200,6 +200,126 @@ test("折叠 tool 消息（带文本）：body 内的 markdown 文本同样延�
   );
 });
 
+// ── 阶段2：连续纯工具消息跨消息合并收纳 ──
+// 内核每次工具调用是独立消息（1 卡/消息）——合并若只在单消息内并段永不生效；
+// 组渲染层把连续纯工具消息的卡聚合进同一个折叠块，×N 合并才真正落地。
+
+function makePureToolCallMessage(key: string, name: string, path: string) {
+  return {
+    key,
+    message: {
+      role: "assistant",
+      content: [{ type: "toolCall", name, arguments: { path }, text: "ok" }],
+      timestamp: 1,
+    },
+  };
+}
+
+function countCollapseBlocks(result: Collected): number {
+  // body 占位是 class="chat-tools-collapse__body"，带右引号的精确匹配只命中外层 details
+  return result.strings.filter((s) => s.includes('class="chat-tools-collapse"')).length;
+}
+
+test("连续纯工具消息合并为单一折叠块（跨消息聚合，×N 生效）", () => {
+  const group = {
+    kind: "group" as const,
+    key: "group:assistant:merge1",
+    role: "assistant",
+    messages: [
+      makePureToolCallMessage("k1", "read", "a.ts"),
+      makePureToolCallMessage("k2", "read", "b.ts"),
+      makePureToolCallMessage("k3", "read", "c.ts"),
+      {
+        key: "k4",
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: "读完了三个文件" }],
+          timestamp: 1,
+        },
+      },
+    ],
+    timestamp: 1,
+    isStreaming: false,
+  };
+  const result = collect(renderMessageGroup(group, { showReasoning: false }));
+
+  assert.equal(countCollapseBlocks(result), 1, "3 条连续纯工具消息应合并为 1 个折叠块");
+  assert.ok(
+    result.values.some((v) => typeof v === "string" && v.includes("×3")),
+    "单工具聚合折叠行应带 ×3 计数",
+  );
+  assert.ok(
+    serialize(result).includes("读完了三个文件"),
+    "非工具消息不受影响照常渲染",
+  );
+});
+
+test("文本消息打断合并段：两侧各成折叠块", () => {
+  const group = {
+    kind: "group" as const,
+    key: "group:assistant:merge2",
+    role: "assistant",
+    messages: [
+      makePureToolCallMessage("k1", "read", "a.ts"),
+      makePureToolCallMessage("k2", "read", "b.ts"),
+      {
+        key: "k3",
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: "中间说明" }],
+          timestamp: 1,
+        },
+      },
+      makePureToolCallMessage("k4", "exec", "npm test"),
+    ],
+    timestamp: 1,
+    isStreaming: false,
+  };
+  const result = collect(renderMessageGroup(group, { showReasoning: false }));
+
+  assert.equal(countCollapseBlocks(result), 2, "文本两侧的纯工具段各自成块（时序即因果，不跨文本合并）");
+});
+
+test("带思考块/错误卡/有正文的消息不参与合并", () => {
+  const group = {
+    kind: "group" as const,
+    key: "group:assistant:merge3",
+    role: "assistant",
+    messages: [
+      {
+        key: "k1",
+        message: {
+          role: "assistant",
+          content: [
+            { type: "thinking", thinking: "先想想" },
+            { type: "toolCall", name: "read", arguments: { path: "a.ts" }, text: "ok" },
+          ],
+          timestamp: 1,
+        },
+      },
+      makePureToolCallMessage("k2", "read", "b.ts"),
+      {
+        key: "k3",
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: "Error: boom" }],
+          cryoclawError: true,
+          timestamp: 1,
+        },
+      },
+      makePureToolCallMessage("k4", "read", "c.ts"),
+    ],
+    timestamp: 1,
+    isStreaming: false,
+  };
+  const result = collect(renderMessageGroup(group, { showReasoning: false }));
+
+  // k1 带思考不纯（独立渲染，内含 1 折叠块）、k2 纯工具（1 折叠块）、
+  // k3 错误卡（无折叠块）、k4 纯工具（1 折叠块）——共 3 块，且互不合并
+  assert.equal(countCollapseBlocks(result), 3, "思考/错误卡打断合并，各消息独立成块");
+  assert.ok(serialize(result).includes("boom"), "错误卡照常渲染");
+});
+
 // ── R90 实时思考区折叠单行 tail 提取 ──
 test("thinkingTail：短文本原样返回", async () => {
   const { thinkingTail } = await import("./grouped-render.ts");

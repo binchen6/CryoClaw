@@ -142,3 +142,52 @@ test("saveSettings 不持久化 cryoclawView（初始视图由主进程 URL/IPC 
     (globalThis as Record<string, unknown>).localStorage = original;
   }
 });
+
+const LOC = { protocol: "file:", host: "", search: "", hash: "" };
+
+test("工作区字段缺省为空数组/空表（旧版本设置无这两个字段）", () => {
+  const settings = parseUiSettings(JSON.stringify({ token: "t" }), LOC);
+  assert.deepEqual(settings.pinnedWorkspaces, []);
+  assert.deepEqual(settings.sessionWorkspaceMap, {});
+});
+
+test("pinnedWorkspaces sanitize：缺字段/非字符串整条丢弃，icon 缺省 📁", () => {
+  const settings = parseUiSettings(
+    JSON.stringify({
+      pinnedWorkspaces: [
+        { id: "a", name: "前端", path: "/repo/fe" },
+        { id: "b", name: "带图标", icon: "🚀", path: "/p" },
+        { id: "c", name: "缺路径" },
+        { id: "", name: "空 id", path: "/p" },
+        "not-an-object",
+        42,
+      ],
+    }),
+    LOC,
+  );
+  assert.deepEqual(
+    settings.pinnedWorkspaces,
+    [
+      { id: "a", name: "前端", icon: "📁", path: "/repo/fe" },
+      { id: "b", name: "带图标", icon: "🚀", path: "/p" },
+    ],
+  );
+});
+
+test("pinnedWorkspaces 非数组脏数据回退空数组", () => {
+  const settings = parseUiSettings(JSON.stringify({ pinnedWorkspaces: { id: "a" } }), LOC);
+  assert.deepEqual(settings.pinnedWorkspaces, []);
+});
+
+test("sessionWorkspaceMap sanitize：仅保留 string→string，非对象回退空表", () => {
+  const settings = parseUiSettings(
+    JSON.stringify({
+      sessionWorkspaceMap: { s1: "a", s2: 1, "": "blank-key", s3: null, s4: "  " },
+    }),
+    LOC,
+  );
+  assert.deepEqual(settings.sessionWorkspaceMap, { s1: "a" });
+
+  const bad = parseUiSettings(JSON.stringify({ sessionWorkspaceMap: ["a"] }), LOC);
+  assert.deepEqual(bad.sessionWorkspaceMap, {});
+});

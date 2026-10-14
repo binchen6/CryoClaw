@@ -132,6 +132,66 @@ function extractToolCardsUncached(message: unknown): ToolCard[] {
   return cards;
 }
 
+// ── sessions_spawn 子会话引用卡 ──
+
+export type SpawnSessionRef = {
+  sessionKey: string;
+  label?: string;
+  sessionUrl?: string;
+};
+
+// 从 sessions_spawn 结果文本（JSON）中解析子会话引用。内核 accepted 结果形态：
+// { details: { status: "accepted", runId, childSessionKey, sessionUrl?, label? } }
+// （宽容解析：details 缺省时兜底顶层字段；非 JSON / 无 childSessionKey → null）
+export function extractSpawnSessionRef(card: ToolCard): SpawnSessionRef | null {
+  if (card.name !== "sessions_spawn" || !card.text) {
+    return null;
+  }
+  const trimmed = card.text.trim();
+  if (!trimmed.startsWith("{")) {
+    return null;
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    return null;
+  }
+  if (!parsed || typeof parsed !== "object") {
+    return null;
+  }
+  const root = parsed as Record<string, unknown>;
+  const details =
+    root.details && typeof root.details === "object"
+      ? (root.details as Record<string, unknown>)
+      : root;
+  const childSessionKey = asNonEmptyString(details.childSessionKey);
+  if (!childSessionKey) {
+    return null;
+  }
+  return {
+    sessionKey: childSessionKey,
+    label: asNonEmptyString(details.label),
+    sessionUrl: asNonEmptyString(details.sessionUrl),
+  };
+}
+
+// 消息内子会话引用块：点击经线程级 .chat-subsession-link 委托跳转子会话
+function renderSpawnSessionRef(ref: SpawnSessionRef) {
+  return html`
+    <div class="chat-tool-card__subsession">
+      <span class="chat-tool-card__subsession-label">${t("chat.subagent.spawned")}</span>
+      <a
+        class="chat-subsession-link"
+        data-session-key=${ref.sessionKey}
+        title=${ref.sessionKey}
+        tabindex="0"
+        role="button"
+      >${icons.externalLink}<span>${ref.label?.trim() || ref.sessionKey}</span></a>
+    </div>
+  `;
+}
+
 // R52 T4：复制按钮反馈时长（与 code-block-enhance / copy-as-markdown 一致）
 const COPY_FEEDBACK_MS = 1500;
 const COPY_ERROR_FEEDBACK_MS = 2000;
@@ -262,16 +322,32 @@ function formatToolArgsJson(args: unknown): string | null {
     : trimmed;
 }
 
-// 纯 JSON 输出包成代码围栏再走 markdown（否则 JSON 被折成零散段落）
-function toolOutputToMarkdown(text: string): string {
+// 纯 JSON 输出包成代码围栏再走 markdown（否则 JSON 被折成零散段落）；
+// 已知语言（read/write/edit 按文件扩展名推断、exec → bash 等）的多行输出
+// 同样围栏化——卡内即时获得 hljs 语法高亮，不必点开 sidebar。
+// 围栏长度动态取「内容中最长反引号串 + 1」（min 3），内容自带 ``` 不会截断围栏。
+function codeFenceFor(text: string): string {
+  let longest = 0;
+  for (const m of text.matchAll(/`+/g)) {
+    longest = Math.max(longest, m[0].length);
+  }
+  return "`".repeat(Math.max(3, longest + 1));
+}
+
+function toolOutputToMarkdown(text: string, language?: string): string {
   const t = text.trim();
   if ((t.startsWith("{") && t.endsWith("}")) || (t.startsWith("[") && t.endsWith("]"))) {
     try {
       JSON.parse(t);
-      return "```json\n" + t + "\n```";
+      const fence = codeFenceFor(t);
+      return `${fence}json\n${t}\n${fence}`;
     } catch {
       // 非合法 JSON 按普通文本渲染
     }
+  }
+  if (language && t.includes("\n")) {
+    const fence = codeFenceFor(t);
+    return `${fence}${language}\n${t}\n${fence}`;
   }
   return text;
 }
@@ -317,7 +393,7 @@ function renderToolCardOutputBody(
       class="chat-tool-card__output chat-text"
       ${chatTextEnhanceRef}
       @click=${(event: Event) => event.stopPropagation()}
-    >${unsafeHTML(linkifyPaths(toSanitizedMarkdownHtml(toolOutputToMarkdown(slice))))}</div>
+    >${unsafeHTML(linkifyPaths(toSanitizedMarkdownHtml(toolOutputToMarkdown(slice, language))))}</div>
     ${lineCount > 20 || capped
       ? html`<div class="chat-tool-card__output-meta">
           <span>${t("chat.toolOutputLines").replace("{n}", String(lineCount))}</span>
@@ -349,10 +425,19 @@ export function renderToolCardSidebar(card: ToolCard, onOpenSidebar?: (content: 
   const hasRawOutput = Boolean(card.text?.trim());
   // read/write/edit/apply_patch 类按文件扩展名推断 sidebar 代码围栏语言
   const language = resolveToolLanguage(card.name, card.args);
+  // sessions_spawn accepted 结果 → 消息内子会话引用块（点击跳转，线程级委托）
+  const spawnRef = extractSpawnSessionRef(card);
 
   const canClick = Boolean(onOpenSidebar) && !isRunning;
   const handleClick = canClick
-    ? () => {
+    ? (event?: Event) => {
+        // 子会话引用链接走线程级委托跳转会话，不触发整卡 sidebar 打开
+        if (
+          event &&
+          (event.target as HTMLElement | null)?.closest?.(".chat-subsession-link")
+        ) {
+          return;
+        }
         if (hasRawOutput) {
           onOpenSidebar!(formatToolOutputForSidebar(card.text!, { language }));
           return;
@@ -408,7 +493,7 @@ export function renderToolCardSidebar(card: ToolCard, onOpenSidebar?: (content: 
                 return;
               }
               e.preventDefault();
-              handleClick?.();
+              handleClick?.(e);
             }
           : nothing
       }
@@ -439,6 +524,7 @@ export function renderToolCardSidebar(card: ToolCard, onOpenSidebar?: (content: 
         </div>
       </div>
       ${detail ? html`<div class="chat-tool-card__detail">${detail}</div>` : nothing}
+      ${!isRunning && spawnRef ? renderSpawnSessionRef(spawnRef) : nothing}
       ${
         isRunning
           ? html`
