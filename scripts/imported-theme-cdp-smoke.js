@@ -48,8 +48,25 @@ const {launch,connect,waitForPageTarget,waitForAppReady,waitForSettle,setViewpor
     await upload(JSON.stringify({format:'cryoclaw-theme',version:1,name:'Reset recovery QA',appearance:{components:{[panelId]:{x:30,y:0,radius:12}}}}));
     await cdp.evaluate(`[...document.querySelectorAll('.oc-theme-customize button')].find(button=>/重置主题设置|Reset customization/.test(button.textContent)).click()`);await waitForSettle(cdp,200);
     assert.equal(await cdp.evaluate(`document.querySelector('.oc-settings__section').style.translate`),'','reset also clears imported component positions during preview');
+    const dropTheme=async contents=>{await cdp.evaluate(`(() => {const module=document.querySelector('.oc-theme-module'),transfer=new DataTransfer();transfer.items.add(new File([${JSON.stringify(contents)}],'dropped-theme.json',{type:'application/json'}));module.dispatchEvent(new DragEvent('dragover',{bubbles:true,cancelable:true,dataTransfer:transfer}));module.dispatchEvent(new DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:transfer}));})()`);await waitForSettle(cdp,350);};
+    const cardsNow=()=>cdp.evaluate(`document.querySelectorAll('.oc-theme-card').length`);
+    const beforeDrop=await cardsNow();
+    await dropTheme(JSON.stringify({format:'cryoclaw-theme',version:1,name:'Drop QA',description:'拖放导入的描述',appearance:{mode:'light',colors:{background:'#f7fbff',surface:'#eef5ff',text:'#26384d',muted:'#63758a'},density:.95,shadow:'none',borderWidth:2}}));
+    assert.equal(await cardsNow(),beforeDrop+1,'dropping a .json package imports it');
+    assert.ok(await cdp.evaluate(`!!document.querySelector('.theme-preview-banner')`),'dropped packages preview with the reversible banner');
+    assert.ok(await cdp.evaluate(`(() => {const card=document.querySelector('.oc-theme-card[aria-pressed=true]');return card?.querySelector('.oc-theme-card__description')?.textContent.includes('拖放导入的描述');})()`),'imported description is kept on the theme card');
+    assert.equal(await cdp.evaluate(`document.documentElement.style.getPropertyValue('--spacer-8')`),'7.6px','density scales the spacer ladder');
+    assert.equal(await cdp.evaluate(`document.documentElement.style.getPropertyValue('--shadow-md')`),'none','shadow none disables the shadow ladder');
+    assert.equal(await cdp.evaluate(`document.documentElement.style.getPropertyValue('--hairline')`),'2px solid var(--border)','borderWidth drives the hairline token');
+    assert.ok(await cdp.evaluate(`document.querySelector('.global-toast--success[role=status]')?.textContent.includes('Drop QA')`),'imports raise an explicit success toast');
+    await dropTheme('{invalid json');
+    assert.equal(await cardsNow(),beforeDrop+1,'invalid drops preserve the current theme and library');
+    assert.equal(await cdp.evaluate(`document.documentElement.style.getPropertyValue('--bg')`),'#f7fbff','invalid drops keep the active preview');
+    assert.ok(await cdp.evaluate(`!!document.querySelector('.global-toast--error[role=alert]')`),'invalid drops raise an error toast');
+    await dropTheme('x'.repeat(70000));
+    assert.equal(await cardsNow(),beforeDrop+1,'oversized drops are rejected before touching the library');
     assert.equal(cdp.exceptions.length,0);
-    console.log(JSON.stringify({importCards:true,legacyColors:true,fallback:true,duplicateSafe:true,longNames:true,invalidPreservesTheme:true,pairedOnly:true,reload:true,reversiblePreview:true,hiddenLayoutRecovery:true,componentReset:true,widths:[1200,800],rendererExceptions:0}));
+    console.log(JSON.stringify({importCards:true,legacyColors:true,fallback:true,duplicateSafe:true,longNames:true,invalidPreservesTheme:true,pairedOnly:true,reload:true,reversiblePreview:true,hiddenLayoutRecovery:true,componentReset:true,dragDropImport:true,importDescription:true,packageFields:true,invalidDropPreserved:true,oversizedDropRejected:true,widths:[1200,800],rendererExceptions:0}));
   }finally{
     if(cdp && backup!==undefined)try{await cdp.evaluate(backup===null?`localStorage.removeItem('cryoclaw.theme-library.v1')`:`localStorage.setItem('cryoclaw.theme-library.v1',${JSON.stringify(backup)})`);}catch{}
     ws?.close();cleanup();

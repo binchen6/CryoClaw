@@ -242,6 +242,9 @@ contextBridge.exposeInMainWorld("cryoclaw", {
   gitPull: (cwd: string) => ipcRenderer.invoke("git:pull", cwd),
   gitDiscard: (cwd: string, paths: string[]) => ipcRenderer.invoke("git:discard", cwd, paths),
   gitClean: (cwd: string, paths: string[]) => ipcRenderer.invoke("git:clean", cwd, paths),
+  // 本轮改动胶囊：按文件统计相对 HEAD 的增删行数（路径匹配/未跟踪计行在主进程完成）
+  gitChangeStats: (cwd: string, paths: string[]) =>
+    ipcRenderer.invoke("git:change-stats", cwd, paths),
 
   onSettingsNavigate: (cb: (payload: { tab: string; notice: string }) => void) => {
     const handler = (_e: Electron.IpcRendererEvent, payload: { tab: string; notice: string }) => cb(payload);

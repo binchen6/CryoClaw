@@ -290,12 +290,14 @@ oc-message-box { display: none; }
    全部走设计 token（--ok/--danger/--bg-elevated/--hairline 等），无硬编码 hex。
    ========================================================================== */
 
-/* 工具卡 header 右侧元信息容器：与标题两端分布（header 本身是 space-between） */
+/* 工具卡 header 右侧元信息容器：与标题两端分布（header 本身是 space-between）；
+   不收缩不换行——标题侧负责省略，徽标/复制/状态保持完整 */
 .chat-tool-card__meta {
   display: inline-flex;
   align-items: center;
   gap: var(--spacer-8);
   flex-shrink: 0;
+  flex-wrap: nowrap;
 }
 
 /* diff 徽标：+added 绿（--ok）/ −removed 红（--danger），mono 小号 */
@@ -307,6 +309,8 @@ oc-message-box { display: none; }
   font-size: var(--font-size-meta);
   line-height: 1;
   user-select: none;
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .chat-tool-card__diff-added {
@@ -330,6 +334,8 @@ oc-message-box { display: none; }
   background: var(--bg-muted);
   color: var(--text-muted);
   user-select: none;
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .chat-tool-card__exit--failed {
@@ -344,6 +350,7 @@ oc-message-box { display: none; }
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
   width: 22px;
   height: 22px;
   padding: 0;

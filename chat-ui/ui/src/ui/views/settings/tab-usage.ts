@@ -87,12 +87,15 @@ function formatDateTime(ms: number): string {
 // ── 渲染 ──
 
 function renderRangeSwitch(state: AppViewState) {
+  // 区间选择是「单选按钮组」而不是 tablist：内容区没有 tabpanel 语义，
+  // 用 role=tablist 会让屏幕阅读器宣布不可用的 tab 交互（箭头切换等）。
   return html`
-    <div class="oc-usage__ranges" role="tablist">
+    <div class="oc-usage__ranges" role="group" aria-label=${t("settings.usage.rangeLabel")}>
       ${USAGE_RANGE_IDS.map((id) => html`
         <button
           class="oc-usage__range ${s.range === id ? "oc-usage__range--active" : ""}"
           type="button"
+          aria-pressed=${s.range === id ? "true" : "false"}
           @click=${() => {
             if (s.range === id) return;
             s.range = id;
@@ -260,14 +263,22 @@ export function renderTabUsage(state: AppViewState) {
   const showSkeleton = s.loadingState === "loading" && !s.sessions.rows.length;
 
   return html`
-    <div class="oc-settings__section">
+    <div class="oc-settings__section" aria-busy=${showSkeleton ? "true" : nothing}>
       <h2 class="oc-settings__section-title">${t("settings.usage.pageTitle")}</h2>
       <p class="oc-settings__hint">${t("settings.usage.pageDesc")}</p>
 
       ${renderRangeSwitch(state)}
 
       ${showSkeleton
-        ? html`<div class="oc-usage__empty">…</div>`
+        ? html`
+            <div class="oc-usage__stats" role="status" aria-live="polite">
+              ${renderStatCard(t("settings.usage.statTokens"), "…")}
+              ${renderStatCard(t("settings.usage.statCost"), "…")}
+              ${renderStatCard(t("settings.usage.statSessions"), "…")}
+              ${renderStatCard(t("settings.usage.statMessages"), "…")}
+            </div>
+            <div class="oc-usage__empty">${t("settings.usage.loading")}</div>
+          `
         : html`
             ${renderMetrics(totals, s.sessions.aggregates, s.sessions.rows.length)}
             ${renderDaily(s.cost.daily)}

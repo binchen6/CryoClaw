@@ -1113,6 +1113,11 @@ img.chat-avatar {
 .chat-tool-card {
   display: grid;
   gap: var(--spacer-4);
+  /* 卡与网格子项默认 min-width:auto：长内容（紧凑 JSON、围栏单行、长路径）的
+     min-content 宽度会被当成隐式 auto 列的最小尺寸，列被撑宽后卡内容横向溢出
+     阅读列、右侧被裁切。容器先归零最小宽度，子项见下方分组规则。 */
+  min-width: 0;
+  max-width: 100%;
   border: var(--hairline);
   border-radius: var(--radius-12);
   padding: var(--spacer-10) var(--spacer-12);
@@ -1123,6 +1128,24 @@ img.chat-avatar {
     background var(--duration-fast) var(--ease-out),
     box-shadow var(--duration-fast) var(--ease-out),
     transform var(--duration-fast) var(--ease-out);
+}
+
+/* 网格子项防溢出：min-width 归零让隐式列可收缩到卡宽，溢出留在块内
+   （参数块/输出区自行换行或横向滚动），不再把整卡撑出阅读列。 */
+.chat-tool-card > :where(
+  .chat-tool-card__header,
+  .chat-tool-card__title,
+  .chat-tool-card__meta,
+  .chat-tool-card__detail,
+  .chat-tool-card__status-text,
+  .chat-tool-card__subsession,
+  .chat-tool-card__args,
+  .chat-tool-card__output,
+  .chat-tool-card__inline,
+  .chat-tool-card__output-meta
+) {
+  min-width: 0;
+  max-width: 100%;
 }
 
 .chat-tool-card:hover {
@@ -1156,6 +1179,8 @@ img.chat-avatar {
   display: inline-flex;
   align-items: center;
   gap: var(--spacer-6);
+  /* 插件/MCP 工具名可能很长：标题行按剩余宽度省略，不把 header 撑宽 */
+  min-width: 0;
   font-family: var(--font-meta);
   font-weight: var(--weight-medium);
   font-size: var(--text-sm);
@@ -1163,11 +1188,19 @@ img.chat-avatar {
   color: var(--text-secondary);
 }
 
+/* 工具名主体：极长名称省略（完整名走 title 提示），图标/来源徽标不参与收缩 */
+.chat-tool-card__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* R85：插件/MCP 工具来源徽标（anysearch__search 的 anysearch 段），
    弱化为小号 muted 胶囊——类型名为主，来源为辅 */
 .chat-tool-card__source {
   display: inline-flex;
   align-items: center;
+  flex-shrink: 0;
   height: 18px;
   padding: 0 var(--spacer-6);
   border-radius: var(--radius-pill);
@@ -1200,6 +1233,9 @@ img.chat-avatar {
 .chat-tool-card__status {
   display: inline-flex;
   align-items: center;
+  /* header 右端状态不换行、不被标题挤压 */
+  flex-shrink: 0;
+  white-space: nowrap;
   color: var(--ok);
   /* 与聚合摘要同一语言：spinner → 完成标记轻弹入场 */
   animation: oc-status-pop var(--duration-fast) var(--ease-spring);
@@ -1219,12 +1255,23 @@ img.chat-avatar {
   font-family: var(--font-meta);
   font-size: var(--font-size-meta);
   margin-top: var(--spacer-4);
+  /* 失败卡展示的错误摘要可能是长命令/紧凑 JSON 单行：允许任意位置断行 */
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .chat-tool-card__detail {
   font-family: var(--font-meta);
   font-size: var(--font-size-meta);
   color: var(--text-muted);
+  /* 超长路径/命令省略显示，完整值走 title 提示（渲染层已写 title） */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .chat-tool-card__inline {
@@ -1236,7 +1283,10 @@ img.chat-avatar {
   background: var(--bg-muted);
   border-radius: var(--radius-8);
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
   word-break: break-word;
+  min-width: 0;
+  max-width: 100%;
 }
 
 /* ── R83 合并卡：完成态徽标 / 输入参数块 / 卡内输出渲染 ── */
@@ -1260,10 +1310,13 @@ img.chat-avatar {
 .chat-tool-card__args summary {
   display: flex;
   align-items: center;
+  /* 箭头与文案用 gap 对齐（原先箭头 margin-right + 不同字号导致基线错位） */
+  gap: var(--spacer-4);
   padding: var(--spacer-4) var(--spacer-8);
   cursor: pointer;
   font-family: var(--font-meta);
   font-size: var(--font-size-meta);
+  line-height: var(--leading-tight);
   color: var(--text-muted);
   list-style: none;
   user-select: none;
@@ -1276,8 +1329,10 @@ img.chat-avatar {
 
 .chat-tool-card__args summary::before {
   content: "▸";
+  display: inline-block;
+  flex-shrink: 0;
   font-size: var(--text-2xs);
-  margin-right: var(--spacer-4);
+  line-height: 1;
   transition: transform var(--duration-fast) var(--ease-out);
 }
 
@@ -1298,9 +1353,15 @@ img.chat-avatar {
   line-height: 1.5;
   color: var(--text-secondary);
   white-space: pre-wrap;
+  /* 紧凑 JSON / 无空格长串按任意字符换行：保留 pre-wrap 的可读缩进，
+     同时不再产生超出卡宽的 min-content（横向溢出根因之一） */
+  overflow-wrap: anywhere;
   word-break: break-word;
+  min-width: 0;
+  max-width: 100%;
   max-height: 220px;
   overflow: auto;
+  overscroll-behavior: contain;
 }
 
 /* 卡内长输出渲染（markdown/JSON 围栏）：视觉上与折叠组的输出区块一致 */
@@ -1311,10 +1372,23 @@ img.chat-avatar {
   border-radius: var(--radius-8);
   background: var(--bg-muted);
   font-size: var(--text-sm);
+  min-width: 0;
+  max-width: 100%;
 }
 
+/* 围栏代码块内的长单行 JSON/文本：块内横向滚动，不把整卡撑宽。
+   pre 宽度上限跟随输出区，滚动条留在 pre 内部，不溢出父级。 */
 .chat-tool-card__output pre {
   margin: var(--spacer-4) 0;
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+
+/* 输出区图片同样不得撑破卡片（markdown 图片无全局限宽） */
+.chat-tool-card__output img {
+  max-width: 100%;
+  height: auto;
 }
 
 .chat-tool-card__more {
@@ -1343,9 +1417,20 @@ img.chat-avatar {
   font-family: var(--font-meta);
   font-size: var(--font-size-meta);
   color: var(--text-faint);
+  min-width: 0;
+  /* 窄窗下两项各自保持完整，空间不足时整体换行而不是互相挤压 */
+  flex-wrap: wrap;
+}
+
+.chat-tool-card__output-meta > span {
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .chat-tool-card__output-meta .chat-tool-card__more {
+  flex-shrink: 0;
+  margin-left: auto;
+  white-space: nowrap;
   padding-top: 0;
 }
 
@@ -1465,6 +1550,15 @@ img.chat-avatar {
 }
 
 /* ── Tool 调用折叠组（多 tool card 合并展示） ── */
+/* 折叠容器自身也是消息列里的块级子项：与卡片同样归零最小宽度，
+   内部卡片的溢出不会把折叠组撑出阅读列。 */
+.chat-tools-collapse,
+.chat-tool-subgroup,
+.chat-tool-msg-collapse {
+  min-width: 0;
+  max-width: 100%;
+}
+
 .chat-tools-summary {
   display: flex;
   align-items: center;
@@ -1477,6 +1571,7 @@ img.chat-avatar {
   user-select: none;
   list-style: none;
   border-radius: var(--radius-8);
+  min-width: 0;
   transition: color var(--duration-fast) var(--ease-out), background var(--duration-fast) var(--ease-out);
 }
 
@@ -1525,6 +1620,8 @@ img.chat-avatar {
   font-size: var(--font-size-meta);
   font-weight: var(--weight-semibold);
   color: var(--text);
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .chat-tools-summary__names {
@@ -1532,6 +1629,8 @@ img.chat-avatar {
   font-size: var(--font-size-meta);
   color: var(--text-muted);
   font-weight: var(--weight-regular);
+  flex: 0 1 auto;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1541,6 +1640,7 @@ img.chat-avatar {
   font-family: var(--font-meta);
   font-size: var(--font-size-meta);
   color: var(--text-faint);
+  flex: 0 1 auto;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1550,6 +1650,8 @@ img.chat-avatar {
 .chat-tools-collapse__body {
   padding: var(--spacer-4) var(--spacer-12) var(--spacer-12);
   border-top: var(--hairline);
+  min-width: 0;
+  max-width: 100%;
 }
 
 .chat-tools-collapse__body .chat-tool-card:first-child {
@@ -1576,6 +1678,7 @@ img.chat-avatar {
   color: var(--text-secondary);
   user-select: none;
   list-style: none;
+  min-width: 0;
   transition: color var(--duration-fast) var(--ease-out),
     background var(--duration-fast) var(--ease-out);
 }
@@ -1623,11 +1726,17 @@ img.chat-avatar {
 .chat-tool-subgroup__label {
   font-weight: var(--weight-semibold);
   color: var(--text);
-  flex-shrink: 0;
+  /* 极长工具名/插件名按剩余宽度省略，详情仍可收缩，不产生横向溢出 */
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex-shrink: 1;
 }
 
 .chat-tool-subgroup__detail {
   color: var(--text-muted);
+  flex: 0 1 auto;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1637,6 +1746,7 @@ img.chat-avatar {
 .chat-tool-subgroup__error,
 .chat-tool-subgroup__done {
   display: inline-flex;
+  flex-shrink: 0;
 }
 
 .chat-tool-subgroup__error {
@@ -1662,6 +1772,8 @@ img.chat-avatar {
 .chat-tool-subgroup__body {
   padding: 0 var(--spacer-8) var(--spacer-8);
   border-top: var(--hairline);
+  min-width: 0;
+  max-width: 100%;
 }
 
 /* ── 工具结果消息折叠（默认收起，点击展开） ── */
@@ -1682,6 +1794,7 @@ img.chat-avatar {
   border: none;
   border-radius: var(--radius-8);
   background: transparent;
+  min-width: 0;
   transition: color var(--duration-fast) var(--ease-out), background var(--duration-fast) var(--ease-out);
 }
 
@@ -1756,6 +1869,8 @@ img.chat-avatar {
 
 .chat-tool-msg-body {
   padding-top: var(--spacer-8);
+  min-width: 0;
+  max-width: 100%;
 }
 
 /* ── JSON 折叠块 ── */
@@ -1861,10 +1976,13 @@ img.chat-avatar {
   flex-wrap: wrap;
   padding: var(--spacer-6) 0 0;
   font-size: var(--font-size-meta);
+  min-width: 0;
+  max-width: 100%;
 }
 
 .chat-tool-card__subsession-label {
   color: var(--text-muted);
+  flex-shrink: 0;
 }
 
 .chat-subsession-link {
@@ -1875,7 +1993,21 @@ img.chat-avatar {
   text-decoration: none;
   border-bottom: 1px dashed currentColor;
   cursor: pointer;
+  min-width: 0;
+  max-width: 100%;
   transition: opacity var(--duration-fast) var(--ease-out);
+}
+
+/* 极长 sessionKey/label 省略，完整值在 title（渲染层已写 sessionKey） */
+.chat-subsession-link > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-subsession-link > svg {
+  flex-shrink: 0;
 }
 
 .chat-subsession-link:hover {
@@ -3229,24 +3361,43 @@ img.chat-avatar {
 }
 /* Account quota is distinct from the session context meter. */
 oc-model-quota { display: inline-flex; align-items: center; }
-.chat-quota__trigger { display: grid; place-items: center; width: 32px; height: 32px; padding: 0; border: 0; border-radius: var(--radius-full); background: transparent; color: var(--text-muted); cursor: pointer; transition: background var(--duration-fast) var(--ease-standard), color var(--duration-fast) var(--ease-standard); }
+.chat-quota__trigger { display: inline-flex; align-items: center; justify-content: center; gap: var(--spacer-6); height: 30px; padding: 0 var(--spacer-4); border: 0; border-radius: var(--radius-full); background: transparent; color: var(--text-muted); cursor: pointer; transition: background var(--duration-fast) var(--ease-standard), color var(--duration-fast) var(--ease-standard); }
 .chat-quota__trigger:hover, .chat-quota__trigger[aria-expanded="true"] { background: var(--bg-hover); color: var(--text); }
-.chat-quota__trigger svg { width: 30px; height: 30px; overflow: visible; transition: opacity var(--duration-fast) var(--ease-standard), transform var(--duration-normal) var(--ease-standard); }
-.chat-quota__trigger[data-state=unknown] svg { opacity: .42; transform: scale(.82); }
-.chat-quota__trigger[data-state=unknown] .chat-quota__track { stroke-width: 1.5; stroke-dasharray: 3 7; }
-.chat-quota__trigger[data-state=unknown]:is(:hover,:focus-visible,[aria-expanded=true]) svg { opacity: .9; }
+.chat-quota__trigger[data-kind=balance] { padding: 0 var(--spacer-8) 0 var(--spacer-4); }
+.chat-quota__ring { width: 22px; height: 22px; flex: none; overflow: visible; transition: opacity var(--duration-fast) var(--ease-standard), transform var(--duration-normal) var(--ease-standard); }
+.chat-quota__trigger[data-kind=unknown] .chat-quota__ring { opacity: .42; transform: scale(.86); }
+.chat-quota__trigger[data-kind=unknown] .chat-quota__track { stroke-width: 1.4; stroke-dasharray: 3 7; }
+.chat-quota__trigger[data-kind=unknown]:is(:hover,:focus-visible,[aria-expanded=true]) .chat-quota__ring { opacity: .9; }
 .chat-quota__trigger:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.chat-quota__track, .chat-quota__fill { fill: none; stroke-width: 2.5; }
+.chat-quota__track, .chat-quota__fill { fill: none; stroke-width: 2.2; }
 .chat-quota__track { stroke: var(--border); }
-.chat-quota__fill { stroke: var(--accent); stroke-linecap: round; transform: rotate(-90deg); transform-origin: center; transition: stroke-dasharray var(--duration-normal) var(--ease-standard); }
-.chat-quota__trigger text { fill: currentColor; font-size: 9px; font-family: var(--font-mono); }
+.chat-quota__fill { stroke: var(--accent); stroke-linecap: round; transform: rotate(-90deg); transform-origin: center; transition: stroke var(--duration-fast) var(--ease-standard), stroke-dasharray var(--duration-normal) var(--ease-standard); }
+.chat-quota__trigger[data-tone=warn] .chat-quota__fill { stroke: var(--warn); }
+.chat-quota__trigger[data-tone=danger] .chat-quota__fill { stroke: var(--destructive); }
+.chat-quota__center { fill: currentColor; font-size: 9.5px; font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
 .chat-quota__details { position: fixed; inset: auto; margin: 0; width: min(320px,calc(100vw - 24px)); max-height: min(420px,calc(100vh - 48px)); overflow: auto; box-sizing: border-box; padding: var(--spacer-16); border: var(--hairline); border-radius: var(--radius-12); background: var(--bg-elevated, var(--bg)); color: var(--text); opacity: 0; transform: translateY(4px); transition: opacity var(--duration-fast) var(--ease-standard), transform var(--duration-fast) var(--ease-standard), display var(--duration-fast) allow-discrete, overlay var(--duration-fast) allow-discrete; }
 .chat-quota__details:popover-open { opacity: 1; transform: translateY(0); }
 @starting-style { .chat-quota__details:popover-open { opacity: 0; transform: translateY(4px); } }
 .chat-quota__header { display: flex; align-items: center; justify-content: space-between; gap: var(--spacer-12); }
+.chat-quota__amount { display: flex; align-items: baseline; gap: var(--spacer-8); margin-top: var(--spacer-8); color: var(--text); font-size: var(--heading-lg); font-weight: var(--weight-semibold); letter-spacing: var(--tracking-tight); font-variant-numeric: tabular-nums; }
+.chat-quota__amount small { color: var(--text-muted); font-size: var(--text-sm); font-weight: var(--weight-regular); letter-spacing: normal; }
+.chat-quota__balance-block[data-tone=warn] .chat-quota__amount { color: var(--warn); }
+.chat-quota__balance-block[data-tone=danger] .chat-quota__amount { color: var(--destructive); }
+.chat-quota__hint { margin: var(--spacer-4) 0 0; font-size: var(--text-sm); color: var(--text-muted); }
+.chat-quota__hint[data-tone=warn] { color: var(--warn); }
+.chat-quota__hint[data-tone=danger] { color: var(--destructive); }
+.chat-quota__legend { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacer-6) var(--spacer-8); margin-top: var(--spacer-12); padding: var(--spacer-8) var(--spacer-10); border: var(--hairline); border-radius: var(--radius-8); color: var(--text-muted); font-size: var(--text-2xs); }
+.chat-quota__legend-title { flex-basis: 100%; line-height: var(--leading-body); }
+.chat-quota__legend-item { display: inline-flex; align-items: center; gap: var(--spacer-4); }
+.chat-quota__dot { width: 6px; height: 6px; border-radius: var(--radius-full); background: var(--accent); }
+.chat-quota__legend-item[data-tone=warn] .chat-quota__dot { background: var(--warn); }
+.chat-quota__legend-item[data-tone=danger] .chat-quota__dot { background: var(--destructive); }
 .chat-quota__window { display: grid; grid-template-columns: 1fr auto; gap: var(--spacer-8); margin: var(--spacer-16) 0; }
 .chat-quota__window progress { grid-column: 1 / -1; width: 100%; height: 6px; accent-color: var(--accent); }
+.chat-quota__window[data-tone=warn] progress { accent-color: var(--warn); }
+.chat-quota__window[data-tone=danger] progress { accent-color: var(--destructive); }
 .chat-quota__window small { grid-column: 1 / -1; color: var(--text-muted); }
+.chat-quota__synced { display: block; margin-top: var(--spacer-12); }
 .chat-compose { position: relative; }
 .chat-compose__drop-hint { position: absolute; inset: 0; z-index: 5; display: flex; align-items: center; justify-content: center; padding: var(--spacer-24); border: 2px dashed var(--accent); border-radius: var(--radius-16); background: color-mix(in srgb,var(--bg) 82%,transparent); backdrop-filter: blur(6px); color: var(--text-strong); text-align: center; font-weight: 600; pointer-events: none; opacity: 0; visibility: hidden; transform: translateY(6px); transition: opacity var(--duration-fast) var(--ease-standard),transform var(--duration-normal) var(--ease-standard),visibility var(--duration-normal) allow-discrete; }
 .chat-compose[data-file-drag=true] > .chat-compose__drop-hint { opacity: 1; visibility: visible; transform: translateY(0); }
@@ -3262,8 +3413,9 @@ oc-model-quota { display: inline-flex; align-items: center; }
 .chat-message-actions { transition: height var(--duration-fast) var(--ease-standard); }
 @media (hover:none) { .chat-message-actions { height: 28px; } }
 @media (prefers-reduced-motion:reduce) { .chat-message-actions { transition: none; } }
-.chat-quota__trigger[data-kind=balance] { width: auto; gap: 3px; padding-inline: 2px 7px; }
-.chat-quota__balance { font-size: var(--text-xs); white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--text-muted); }
+.chat-quota__balance { max-width: 96px; overflow: hidden; font-size: var(--text-xs); line-height: 1; white-space: nowrap; text-overflow: ellipsis; font-variant-numeric: tabular-nums; color: var(--text-muted); }
+.chat-quota__trigger[data-tone=warn] .chat-quota__balance { color: var(--warn); }
+.chat-quota__trigger[data-tone=danger] .chat-quota__balance { color: var(--destructive); }
 .chat-group.user .chat-message-actions { justify-content: flex-end; }
 .chat-message-actions .chat-branch-btns { position: static; }
 .chat-message-shell:focus-within .chat-message-actions :is(.chat-quote-btn,.chat-copy-btn,.chat-branch-btns) { opacity: 1; pointer-events: auto; }
@@ -3287,19 +3439,29 @@ oc-model-quota { display: inline-flex; align-items: center; }
 .oc-settings__input { background: var(--theme-input,var(--bg-input)); }
 .chat-thread { overscroll-behavior-y: contain; overflow-anchor: auto; }
 
-/* A quiet anchor above the composer; details stay available to touch and keyboard. */
-oc-turn-files { display:block; position:relative; z-index:20; width:100%; max-width:var(--chat-compose-max-width,960px); margin:0 auto; }
-.chat-turn-files { position:relative; width:fit-content; margin:0 20px 8px; font-size:var(--text-sm); }
+/* A quiet anchor above the composer; details stay available to touch and keyboard.
+   胶囊在聊天列内水平居中：宿主与进度卡/输入卡同用 --chat-column 居中列，
+   details 用 fit-content + auto margin 居中。宿主不再建 stacking context（原 z-index:20），
+   浮层层级见 .chat-turn-files__popover。 */
+oc-turn-files { display:block; width:100%; max-width:var(--chat-column); margin:0 auto; }
+.chat-turn-files { position:relative; width:fit-content; margin:0 auto var(--spacer-8); font-size:var(--text-sm); }
 .chat-turn-files > summary { display:flex; align-items:center; gap:8px; list-style:none; cursor:pointer; padding:7px 12px; background:var(--bg-elevated); border:1px solid var(--border); border-radius:999px; color:var(--text-secondary); box-shadow:var(--shadow-sm); }
 .chat-turn-files > summary::-webkit-details-marker { display:none; }
-.chat-turn-files svg { width:15px; height:15px; }
-.chat-turn-files__popover { position:absolute; bottom:100%; left:0; min-width:min(380px,75vw); padding:12px; background:var(--bg-elevated); color:var(--text); border:1px solid var(--border); border-radius:var(--radius-lg); box-shadow:var(--shadow-lg); }
+/* 增删行数：等宽数字 + 语义色（绿=新增、红=删除），与浮层行内统计共用 */
+.chat-turn-files__stat { font-family:var(--font-meta); font-size:var(--font-size-meta); font-variant-numeric:tabular-nums; line-height:1; }
+.chat-turn-files__stat--added { color:var(--ok); }
+.chat-turn-files__stat--deleted { color:var(--destructive); }
+/* 浮层落「消息内容层」（5）：高于消息操作按钮（2），低于 plan(30)/对话信息(35)/
+   视图菜单(50-60)/主题编辑器(179)/模态(--z-dialog 1000)/toast(--z-toast 10001)，
+   向上展开时不会盖住任何浮层或模态，也不会遮挡胶囊本身（bottom:100% 贴胶囊上缘）。 */
+.chat-turn-files__popover { position:absolute; bottom:100%; left:50%; transform:translateX(-50%); z-index:5; min-width:min(380px,75vw); padding:12px; background:var(--bg-elevated); color:var(--text); border:1px solid var(--border); border-radius:var(--radius-lg); box-shadow:var(--shadow-lg); }
 .chat-turn-files:not([open]):hover > .chat-turn-files__popover { display:block; }
 /* Chromium hides the anonymous details wrapper independently of its children. */
 .chat-turn-files:not([open]):hover::details-content { content-visibility:visible; }
 .chat-turn-files__list { max-height:240px; overflow:auto; margin-bottom:8px; }
 .chat-turn-files__row { display:flex; align-items:center; gap:10px; padding:7px 0; }
 .chat-turn-files__path { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:300px; }
+.chat-turn-files__row-stat { display:inline-flex; gap:var(--spacer-6); margin-left:auto; flex-shrink:0; }
 
 .chat-conversation-info { position:absolute; z-index:35; top:14px; right:18px; width:min(320px,calc(100% - 32px)); max-height:calc(100% - 40px); overflow:auto; padding:16px; background:var(--bg-elevated); border:1px solid var(--border); border-radius:var(--radius-xl); box-shadow:var(--shadow-lg); animation:chat-info-enter var(--duration-normal) var(--ease-standard) both; }
 .chat-conversation-info.is-leaving { animation:chat-info-exit 160ms var(--ease-standard) both; pointer-events:none; }

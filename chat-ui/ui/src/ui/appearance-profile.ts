@@ -5,12 +5,23 @@ export interface AppearanceProfile {
   palettes?:Partial<Record<"light"|"dark",AppearanceProfile["colors"]>>;
   paletteMode?:"light"|"dark";
   radius:number;
+  /** Spacing multiplier for the spacer token scale; 1 (the default) keeps the current rhythm. */
+  density?:number;
+  /** Shadow intensity mapping for the --shadow-* token ladder; "default" keeps the built-in ladder. */
+  shadow?:"none"|"soft"|"default"|"strong";
+  /** Thickness of the --hairline border shorthand in px; 1 (the default) keeps the built-in 1px hairline. */
+  borderWidth?:number;
   components?:Record<string,ComponentAppearance>;
 }
 export interface ComponentAppearance {x:number;y:number;radius:number;background?:string;color?:string;width?:number;height?:number;padding?:number;opacity?:number;borderWidth?:number;borderColor?:string;fontSize?:number;fontWeight?:number;zIndex?:number;gap?:number;margin?:number;strokeWidth?:number;iconSize?:number;borderStyle?:"solid"|"dashed"|"none";fontStyle?:"normal"|"italic";textAlign?:"left"|"center"|"right"}
 export const COMPONENT_SELECTORS={composer:".chat-compose",navigation:"oc-rail",sessions:"oc-session-panel",toolbar:".chat-compose__toolbar",card:".oc-settings__card",input:".oc-settings__input",button:".btn",workspaceTree:".wk-nav",workspacePreview:".wk-main",heading:".oc-settings__section-title,.cryoclaw-titlebar",badge:".cc-tag",rangeControl:"oc-range-control",control:"button,input,select,textarea",panel:".oc-settings__section,.wk-layout",code:"pre",userBubble:".chat-group.user .chat-bubble",assistantBubble:".chat-group.assistant .chat-bubble",composerField:".chat-compose__field",messageText:".chat-text",icon:"svg.cryo-icon,.chat-compose svg,.oc-rail__item svg"} as const;
 export const DEFAULT_APPEARANCE:AppearanceProfile={font:"studio",size:14,weight:400,italic:false,lineHeight:1.55,colors:{},radius:12,components:{}};
+/** Bounds for the optional layout-feel fields; defaults are omitted so old packages keep the current look. */
+export const APPEARANCE_LIMITS={density:{min:.9,max:1.1,default:1},shadow:{values:["none","soft","default","strong"] as const,default:"default"},borderWidth:{min:0,max:2,default:1}} as const;
+export type AppearanceShadow=(typeof APPEARANCE_LIMITS.shadow.values)[number];
+export const MAX_THEME_DESCRIPTION=120;
 const bounded=(value:unknown,fallback:number,min:number,max:number)=>typeof value==="number" && Number.isFinite(value)?Math.min(max,Math.max(min,value)):fallback;
+const rounded=(value:number,digits=2)=>Math.round(value*10**digits)/10**digits;
 export function normalizeAppearance(raw:unknown):AppearanceProfile {
   const value=raw && typeof raw==="object"?raw as Record<string,unknown>:{};
   const colors:AppearanceProfile["colors"]={};
@@ -41,10 +52,19 @@ export function normalizeAppearance(raw:unknown):AppearanceProfile {
   const paletteMode=value.paletteMode==="dark" || value.paletteMode!=="light" && value.mode==="dark"?"dark":"light";
   if((!value.colors || typeof value.colors!=="object" || Array.isArray(value.colors)) && palettes[paletteMode])Object.assign(colors,palettes[paletteMode]);
   if(value.mode==="system" && !Object.keys(palettes).length && Object.keys(colors).length)palettes.light={...colors};
+  // Layout-feel fields are clamped to their ladders and omitted at their defaults: a profile
+  // without them renders exactly like before these fields existed (old themes, old libraries).
+  const density=typeof value.density==="number" && Number.isFinite(value.density)?rounded(bounded(value.density,1,APPEARANCE_LIMITS.density.min,APPEARANCE_LIMITS.density.max)):undefined;
+  const shadow=typeof value.shadow==="string" && (APPEARANCE_LIMITS.shadow.values as readonly string[]).includes(value.shadow)?value.shadow as AppearanceShadow:undefined;
+  const borderWidth=typeof value.borderWidth==="number" && Number.isFinite(value.borderWidth)?rounded(bounded(value.borderWidth,1,APPEARANCE_LIMITS.borderWidth.min,APPEARANCE_LIMITS.borderWidth.max)):undefined;
   return {font:value.font==="system"?"system":"studio",size:bounded(value.size,14,12,22),weight:bounded(value.weight,400,100,900),
     ...(Object.keys(palettes).length?{palettes,paletteMode}:{}),
     ...(value.mode==="light" || value.mode==="dark" || value.mode==="system"?{mode:value.mode}:{}),
-    italic:value.italic===true,lineHeight:bounded(value.lineHeight,1.55,1.3,2),radius:bounded(value.radius,12,0,48),colors,components};
+    italic:value.italic===true,lineHeight:bounded(value.lineHeight,1.55,1.3,2),radius:bounded(value.radius,12,0,48),
+    ...(density!==undefined && density!==APPEARANCE_LIMITS.density.default?{density}:{}),
+    ...(shadow!==undefined && shadow!==APPEARANCE_LIMITS.shadow.default?{shadow}:{}),
+    ...(borderWidth!==undefined && borderWidth!==APPEARANCE_LIMITS.borderWidth.default?{borderWidth}:{}),
+    colors,components};
 }
 export const COLOR_TOKENS={accent:"--accent",secondary:"--accent-2",background:"--bg",surface:"--bg-secondary",text:"--text",muted:"--text-muted",userBubble:"--theme-user-bubble",assistantBubble:"--theme-assistant-bubble",userText:"--theme-user-text",assistantText:"--theme-assistant-text",composer:"--theme-composer",input:"--theme-input",icon:"--theme-icon",border:"--theme-border"} as const;
 export function accentForeground(color:string):string {
@@ -65,11 +85,80 @@ export function withAppearanceMode(raw:unknown,mode:"light"|"dark"|"system",dark
   return {...profile,mode,palettes,paletteMode:target,colors:{...palettes[target]}};
 }
 const appliedProfiles=new WeakMap<HTMLElement,string>();
+// Spacing rhythm is scaled through the spacer ladder rather than raw paddings, so components
+// keep their token discipline while density breathes the whole shell in or out.
+const DENSITY_SPACERS=[2,3,4,6,8,10,12,16,20,24,32,40,48,64] as const;
+const SHADOW_TOKENS=["xs","sm","md","lg","xl","dialog"] as const;
+type ShadowToken=(typeof SHADOW_TOKENS)[number];
+const SHADOW_GEOMETRY:Record<ShadowToken,string>={
+  xs:"0 var(--spacer-2) var(--spacer-3)",
+  sm:"0 var(--spacer-2) var(--spacer-4)",
+  md:"0 var(--spacer-4) var(--spacer-12)",
+  lg:"0 var(--spacer-12) var(--spacer-24) calc(var(--spacer-4) * -1)",
+  xl:"0 var(--spacer-24) var(--spacer-48) calc(var(--spacer-8) * -1)",
+  dialog:"0 var(--spacer-24) var(--spacer-48) calc(var(--spacer-8) * -1)",
+};
+const SHADOW_GEOMETRY_STRONG:Record<ShadowToken,string>={
+  ...SHADOW_GEOMETRY,
+  xs:"0 var(--spacer-2) var(--spacer-4)",
+  sm:"0 var(--spacer-3) var(--spacer-6)",
+  md:"0 var(--spacer-6) var(--spacer-16)",
+  lg:"0 var(--spacer-16) var(--spacer-32) calc(var(--spacer-4) * -1)",
+  xl:"0 var(--spacer-32) var(--spacer-64) calc(var(--spacer-8) * -1)",
+  dialog:"0 var(--spacer-32) var(--spacer-64) calc(var(--spacer-8) * -1)",
+};
+// Percentage of --overlay-heavy mixed into transparent. That token already adapts per theme, so
+// geometry (from the spacer ladder) and these percentages carry the intensity; "default" leaves
+// the stylesheet shadow ladder untouched.
+const SHADOW_PERCENT:{
+  light:Record<"soft"|"strong",Record<ShadowToken,number>>;
+  dark:Record<"soft"|"strong",Record<ShadowToken,number>>;
+}={
+  light:{
+    soft:{xs:4,sm:5,md:7,lg:9,xl:12,dialog:16},
+    strong:{xs:16,sm:20,md:26,lg:32,xl:40,dialog:52},
+  },
+  dark:{
+    soft:{xs:4,sm:5,md:7,lg:9,xl:12,dialog:16},
+    strong:{xs:28,sm:38,md:48,lg:62,xl:72,dialog:82},
+  },
+};
+function applyDensity(density:number|undefined,root:HTMLElement):void {
+  const scale=density??APPEARANCE_LIMITS.density.default;
+  for(const size of DENSITY_SPACERS){
+    if(scale===1)root.style.removeProperty(`--spacer-${size}`);
+    else root.style.setProperty(`--spacer-${size}`,`${rounded(size*scale,2)}px`);
+  }
+}
+function applyShadow(shadow:AppearanceShadow|undefined,darkMode:boolean,root:HTMLElement):void {
+  if(!shadow || shadow==="default"){
+    for(const token of SHADOW_TOKENS)root.style.removeProperty(`--shadow-${token}`);
+    return;
+  }
+  if(shadow==="none"){
+    for(const token of SHADOW_TOKENS)root.style.setProperty(`--shadow-${token}`,"none");
+    return;
+  }
+  const percent=SHADOW_PERCENT[darkMode?"dark":"light"][shadow],geometry=shadow==="strong"?SHADOW_GEOMETRY_STRONG:SHADOW_GEOMETRY;
+  for(const token of SHADOW_TOKENS)root.style.setProperty(`--shadow-${token}`,`${geometry[token]} color-mix(in srgb, var(--overlay-heavy) ${percent[token]}%, transparent)`);
+}
+function applyBorderWidth(borderWidth:number|undefined,root:HTMLElement):void {
+  const width=borderWidth??APPEARANCE_LIMITS.borderWidth.default;
+  // 1px is the built-in hairline; dropping the override keeps dark-theme borders exactly as authored.
+  if(width===1){root.style.removeProperty("--hairline");root.style.removeProperty("--hairline-strong");return;}
+  root.style.setProperty("--hairline",`${width}px solid var(--border)`);
+  root.style.setProperty("--hairline-strong",`${width}px solid var(--border-strong)`);
+}
 export function applyAppearance(raw:unknown,root:HTMLElement=document.documentElement):void {
   const profile=normalizeAppearance(raw);
   const dark=typeof window!=="undefined" && typeof window.matchMedia==="function" && window.matchMedia("(prefers-color-scheme: dark)").matches;
   const colors=appearanceColors(profile,dark);
-  const key=JSON.stringify([profile,profile.mode==="system"?dark:null]);if(appliedProfiles.get(root)===key)return;appliedProfiles.set(root,key);
+  // Shadow intensity depends on the resolved theme, so the cache key includes it; otherwise a
+  // dark/light switch without a profile change would keep the previous mode's shadow ladder.
+  const resolvedMode=profile.mode==="system"?(dark?"dark":"light"):profile.mode;
+  const appliedTheme=root.dataset?.theme;
+  const darkMode=resolvedMode?resolvedMode==="dark":appliedTheme?appliedTheme==="dark":dark;
+  const key=JSON.stringify([profile,darkMode]);if(appliedProfiles.get(root)===key)return;appliedProfiles.set(root,key);
   if(profile.mode){const mode=profile.mode==="system"?(window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light"):profile.mode;root.dataset.theme=mode;root.style.colorScheme=mode;}
   const body=profile.font==="system"?'system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif':'"Cryo Inter", "Cryo MiSans", system-ui, sans-serif';
   root.style.setProperty("--font-body",body);root.style.setProperty("--font-display",body);
@@ -103,6 +192,9 @@ export function applyAppearance(raw:unknown,root:HTMLElement=document.documentEl
   };
   for(const [token,value] of Object.entries(derived))value?root.style.setProperty(token,value):root.style.removeProperty(token);
   for(const size of [4,6,8,10,12,16,20,24,32])root.style.setProperty(`--radius-${size}`,`${Math.round(size*profile.radius/12)}px`);
+  applyDensity(profile.density,root);
+  applyShadow(profile.shadow,darkMode,root);
+  applyBorderWidth(profile.borderWidth,root);
   applyComponentAppearance(profile,root);
 }
 
@@ -151,16 +243,29 @@ function applyComponentAppearance(profile:AppearanceProfile,root:HTMLElement):vo
   }
   update();
 }
-export function exportAppearance(profile:unknown,name="My theme"):string {
-  return JSON.stringify({format:"cryoclaw-theme",version:1,name:cleanThemeName(name),appearance:normalizeAppearance(profile)},null,2);
+export function cleanThemeDescription(description:string):string {
+  return Array.from(String(description??"").replace(/[\u0000-\u001f\u007f]/g," ").replace(/\s+/g," ").trim()).slice(0,MAX_THEME_DESCRIPTION).join("");
 }
+/** File-system safe name for an exported package; Chinese names and emoji survive. */
+export function themeFileName(name:string):string {
+  const base=Array.from(cleanThemeName(name)).slice(0,60).join("").replace(/[\\/:*?"<>|]/g,"-").replace(/^\.+/,"").replace(/[. ]+$/,"").trim();
+  const safe=base||"cryoclaw-theme";
+  // Windows device names are unusable as file names even with an extension.
+  return `${/^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i.test(safe)?`_${safe}`:safe}.json`;
+}
+export function exportAppearance(profile:unknown,name="My theme",description=""):string {
+  const cleanDescription=cleanThemeDescription(description);
+  return JSON.stringify({format:"cryoclaw-theme",version:1,name:cleanThemeName(name),...(cleanDescription?{description:cleanDescription}:{}),appearance:normalizeAppearance(profile)},null,2);
+}
+export interface AppearancePackage {name:string;description?:string;appearance:AppearanceProfile;}
 export function importAppearance(text:string):AppearanceProfile {
   return readAppearancePackage(text).appearance;
 }
 export function cleanThemeName(name:string):string {return Array.from(name.replace(/[\u0000-\u001f\u007f]/g," ").replace(/\s+/g," ").trim()).slice(0,80).join("");}
-export function readAppearancePackage(text:string):{name:string;appearance:AppearanceProfile} {
+export function readAppearancePackage(text:string):AppearancePackage {
   if(new TextEncoder().encode(text).length>65536)throw new Error("主题包不能超过 64 KiB / Theme package exceeds 64 KiB");
   let data;try{data=JSON.parse(text.replace(/^\uFEFF/,""));}catch{throw new Error("主题包不是有效的 JSON，请重新导出 / Invalid JSON theme package");}
   if(data?.format!=="cryoclaw-theme" || data.version!==1 || !data.appearance || typeof data.appearance!=="object" || Array.isArray(data.appearance))throw new Error("无效或不支持的主题包 / Invalid or unsupported theme package");
-  return {name:typeof data.name==="string"?cleanThemeName(data.name):"",appearance:normalizeAppearance(data.appearance)};
+  const description=cleanThemeDescription(typeof data.description==="string"?data.description:"");
+  return {name:typeof data.name==="string"?cleanThemeName(data.name):"",...(description?{description}:{}),appearance:normalizeAppearance(data.appearance)};
 }

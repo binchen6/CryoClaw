@@ -42,3 +42,33 @@ test("kept Agent themes retain their source and never overwrite another named th
   assert.notEqual(first.id,next.id);assert.equal(next.name,"Agent forest · 2");
   assert.equal(readThemeLibrary()[0].source,"agent");assert.equal(readThemeLibrary()[0].appearance.colors.accent,"#33745c");
 }));
+test("imported packages keep a bounded description that the library cards can render",()=>storageTest(()=>{
+  const theme=importThemeToLibrary(exportAppearance({mode:"light",colors:{accent:"#123456"}},"Described","克制而通透的冰蓝主题"));
+  assert.equal(theme.description,"克制而通透的冰蓝主题");
+  assert.equal(readThemeLibrary()[0].description,"克制而通透的冰蓝主题");
+  assert.equal(readThemeLibrary()[0].source,"imported");
+  const long=importThemeToLibrary(exportAppearance({},"Long","字".repeat(300)));
+  assert.equal(Array.from(long.description??"").length,120);
+  const controls=importThemeToLibrary(exportAppearance({},"Control","a\u0000b\nc"));
+  assert.equal(controls.description,"a b c");
+  const legacy=importThemeToLibrary(exportAppearance({},"Legacy"));
+  assert.equal(legacy.description,undefined);
+}));
+test("saved and Agent themes keep layout-feel fields and an edited description",()=>storageTest(()=>{
+  const first=saveThemeToLibrary("Mine",{density:.95,shadow:"strong",borderWidth:1.5},"第一版");
+  assert.equal(first.description,"第一版");
+  const stored=readThemeLibrary()[0].appearance;
+  assert.equal(stored.density,.95);assert.equal(stored.shadow,"strong");assert.equal(stored.borderWidth,1.5);
+  saveThemeToLibrary("Mine",{}, "");assert.equal(readThemeLibrary()[0].description,"第一版");
+  saveThemeToLibrary("Mine",{},"第二版");assert.equal(readThemeLibrary()[0].description,"第二版");
+  saveGeneratedTheme("Agent theme",normalizeAppearance({shadow:"soft"}),"Agent 描述");
+  assert.equal(readThemeLibrary().find(theme=>theme.name==="Agent theme")?.description,"Agent 描述");
+  assert.equal(readThemeLibrary().find(theme=>theme.name==="Agent theme")?.appearance.shadow,"soft");
+}));
+test("legacy v1 packages without the new package fields still import with current defaults",()=>storageTest(()=>{
+  const legacy=JSON.stringify({format:"cryoclaw-theme",version:1,name:"Old pack",appearance:{mode:"dark",colors:{background:"#101012"},components:{}}});
+  const theme=importThemeToLibrary(legacy);
+  assert.equal(theme.name,"Old pack");assert.equal(theme.description,undefined);
+  assert.equal(theme.appearance.density,undefined);assert.equal(theme.appearance.shadow,undefined);assert.equal(theme.appearance.borderWidth,undefined);
+  assert.equal(theme.appearance.mode,"dark");assert.equal(theme.appearance.colors.background,"#101012");
+}));

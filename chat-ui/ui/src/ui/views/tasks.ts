@@ -379,12 +379,14 @@ function renderTasksRuns(props: TasksProps) {
           <input
             class="ts-search"
             type="text"
+            aria-label=${t("tasks.searchLabel")}
             placeholder=${t("tasks.searchPlaceholder")}
             .value=${runsSearchInput}
             @input=${(e: Event) => onSearchInput(props, (e.target as HTMLInputElement).value)}
           />
           <select
             class="ts-select"
+            aria-label=${t("tasks.statusFilter")}
             .value=${props.statusFilter}
             @change=${(e: Event) => {
               // 单状态 select 与统计 chip 分组互斥：select 生效时清分组态，避免叠加过滤

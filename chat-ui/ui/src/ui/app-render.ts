@@ -490,7 +490,7 @@ export function renderApp(state: AppViewState) {
       ${getToastMessage()
         ? html`<div popover="manual" role=${getToastKind()==="error"?"alert":"status"} aria-live=${getToastKind()==="error"?"assertive":"polite"} aria-atomic="true" class="global-toast global-toast--${getToastKind()} ${getToastAction() ? "global-toast--action" : ""} ${isToastLeaving() ? "global-toast--leaving" : ""}" ${ref(element=>{if(element)queueMicrotask(()=>{if(element.isConnected && !element.matches(':popover-open'))(element as HTMLElement).showPopover();});})}>
             <span>${getToastMessage()}</span>
-            <button class="icon-btn icon-btn--sm" aria-label=${t("settings.cancel")} @click=${()=>hideToast(state)}>×</button>
+            <button class="icon-btn icon-btn--sm" aria-label=${t("toast.dismiss")} @click=${()=>hideToast(state)}>${icons.x}</button>
             ${getToastAction()
               ? html`<button
                   class="global-toast__action"

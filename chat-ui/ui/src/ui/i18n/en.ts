@@ -2,6 +2,7 @@
 export const enDict: Record<string, string> = {
   // App
   "app.windowTitle": "CryoClaw - One-click installer for OpenClaw",
+  "toast.dismiss": "Dismiss notification",
 
   // Rail (icon rail, 2026.9 proposal A)
   "rail.nav": "Main navigation",
@@ -374,6 +375,10 @@ export const enDict: Record<string, string> = {
   "settings.appearance.desc": "Adjust theme and chat display settings",
   "settings.appearance.theme": "Theme",
   "settings.appearance.showThinking": "Show thinking process",
+  "settings.appearance.themeAgent.referenceLimit": "Up to {count} reference images.",
+  "settings.appearance.themeAgent.referenceType": "Reference images must be image files.",
+  "settings.appearance.themeAgent.referenceSize": "Each reference image must be 4 MB or smaller.",
+  "settings.appearance.themeAgent.referenceReadFailed": "The reference image could not be read; try again.",
 
   // Settings: Search
   "settings.search.title": "Search Configuration",
@@ -713,6 +718,8 @@ export const enDict: Record<string, string> = {
   // Settings: Session Usage
   "settings.usage.pageTitle": "Usage",
   "settings.usage.pageDesc": "Token usage and cost overview (powered by gateway usage stats)",
+  "settings.usage.rangeLabel": "Usage range",
+  "settings.usage.loading": "Loading usage data…",
   "settings.usage.range.today": "Today",
   "settings.usage.range.7d": "Last 7 days",
   "settings.usage.range.30d": "Last 30 days",
@@ -1131,6 +1138,40 @@ export const enDict: Record<string, string> = {
   "chat.send": "Send",
   "chat.sendQueued": "Queue (sends when reconnected)",
   "chat.stop": "Stop",
+
+  // Composer quota ring (balance comfort + window remaining percentage)
+  "quota.ariaLimits": "Current model account limits",
+  "quota.ariaUnknown": "Quota unknown; view details",
+  "quota.availableBalance": "Available balance",
+  "quota.remainingLabel": "Remaining",
+  "quota.level.ok": "Comfortable",
+  "quota.level.warn": "Getting low",
+  "quota.level.danger": "Low",
+  "quota.details.balance": "Account balance",
+  "quota.details.limits": "Account limits",
+  "quota.details.refresh": "Refresh",
+  "quota.details.loading": "Loading…",
+  "quota.details.syncing": "Syncing provider limits…",
+  "quota.details.keyLimitUnset": "This key has no spending cap. View account credits in the OpenRouter dashboard.",
+  "quota.details.noLimits": "Quota unknown: this provider returned no queryable limits or balance.",
+  "quota.details.synced": "Synced",
+  "quota.details.scopeKey": "Current API key limits",
+  "quota.details.scopeAccount": "Provider account or model limits",
+  "quota.details.scopeBalance": "Provider account balance",
+  "quota.details.stale": "Refresh failed. Showing the last successful result.",
+  "quota.details.lowBalance": "Balance is low — top up to keep using paid models.",
+  "quota.details.lowBalanceWarn": "Balance is getting low — keep an eye on usage.",
+  "quota.legend.title": "Ring legend: balance comfort level, not a usage percentage",
+  "quota.legend.fullRing": "Full ring at",
+  "quota.legend.other": "Not normalized for this currency; the ring always shows full.",
+  "quota.currency.cny": "Chinese yuan",
+  "quota.currency.usd": "US dollar",
+  "quota.currency.other": "Other currency",
+  "quota.currency.unknown": "Unknown currency",
+  "quota.window.remaining": "remaining",
+  "quota.window.unknown": "Unknown",
+  "quota.window.reset": "Resets",
+  "quota.window.requests": "requests",
   "chat.scrollToBottom": "Jump to latest",
   "chat.newSession": "New session",
   "chat.confirmNewSession":
@@ -1286,6 +1327,11 @@ export const enDict: Record<string, string> = {
   "chat.fileChange.added": "added",
   "chat.fileChange.modified": "modified",
   "chat.fileChange.deleted": "deleted",
+  "chat.fileChange.addedLines": "{n} lines added",
+  "chat.fileChange.deletedLines": "{n} lines deleted",
+  "chat.fileChange.addedFiles": "{n} files added",
+  "chat.fileChange.deletedFiles": "{n} files deleted",
+  "chat.fileChange.linesUnavailable": "Line stats unavailable; showing added/deleted file counts",
   "chat.cancel": "Cancel",
   "chat.openPathFailed": "Unable to open this path",
   "chat.historyTruncated": "Showing last {n} messages ({m} hidden).",
@@ -1382,6 +1428,8 @@ export const enDict: Record<string, string> = {
 
   // Tasks module enhancements (R92)
   "tasks.searchPlaceholder": "Search job / summary / session…",
+  "tasks.searchLabel": "Search run history",
+  "tasks.statusFilter": "Filter by status",
   "tasks.stats.ok": "Succeeded",
   "tasks.stats.error": "Failed",
   "tasks.stats.skipped": "Skipped",
@@ -1525,6 +1573,7 @@ export const enDict: Record<string, string> = {
   "settings.overview.loading": "Loading…",
   "settings.overview.refresh": "Refresh",
   "settings.overview.copy": "Copy",
+  "settings.overview.copied": "Copied",
   "settings.overview.hero.meta": "Kernel {kernel} · Electron {electron}",
   "settings.overview.uptime.label": "Up",
   "settings.overview.uptime.dh": "{d}d {h}h",

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {loadModelQuota,quotaProvider,quotaRemaining,invalidateModelQuota,quotaWindowsForModel} from "./model-quota.ts";
+import {loadModelQuota,quotaProvider,quotaRemaining,invalidateModelQuota,quotaWindowsForModel,summarizeModelQuota,type ModelQuota} from "./model-quota.ts";
 import type {GatewayBrowserClient} from "../gateway.ts";
 
 test("quota uses the current session provider and the tightest known account window",()=>{
@@ -28,6 +28,23 @@ test("quota requests coalesce per connection and provider and share native usage
   assert.equal(first,second);assert.equal(calls,1);assert.equal(quotaRemaining(first.windows),48);
   await loadModelQuota(client,"another");assert.equal(calls,1);
   await loadModelQuota(client,"openai-codex",true);assert.equal(calls,2);
+});
+test("pay-as-you-go providers never expose quota windows (DeepSeek has no weekly limit)",()=>{
+  // 回归：余额型 provider 即使上游/旧缓存误带窗口，也不能渲染成「每周额度」。
+  const balance={kind:"balance",supported:true,currency:"CNY",available:"8.63"} as const;
+  for(const provider of ["deepseek","moonshot","siliconflow"]){
+    const summary=summarizeModelQuota({provider,at:1,windows:[{label:"Week",usedPercent:95}],balance}, "model-x");
+    assert.deepEqual(summary.windows,[],`${provider} must ignore window data`);
+    assert.equal(summary.remaining,null);
+    assert.equal(summary.balance?.available,"8.63","balance survives while windows are dropped");
+  }
+  // 没有余额数据时同样不能把窗口画出来（应显示 unknown，而不是伪造 5% 剩余）。
+  const windowsOnly=summarizeModelQuota({provider:"deepseek",at:1,windows:[{label:"Week",usedPercent:95}]},"model-x");
+  assert.deepEqual(windowsOnly.windows,[]);assert.equal(windowsOnly.remaining,null);assert.equal(windowsOnly.balance,null);
+  // 非余额型 provider 的窗口不受影响，大小写不同的 provider 名也能识别。
+  const codex=summarizeModelQuota({provider:"openai-codex",at:1,windows:[{label:"5h",usedPercent:52}]},"model-x");
+  assert.equal(codex.windows.length,1);assert.equal(codex.remaining,48);
+  assert.deepEqual(summarizeModelQuota({provider:"DeepSeek",at:1,windows:[{label:"Week",usedPercent:95}]},"m").windows,[]);
 });
 test("API balance fallback is displayed as money without inventing a percentage",async()=>{
   const previous=globalThis.window;
@@ -93,4 +110,34 @@ test("a native refresh marker is re-read rather than cached as unsupported",asyn
   t.mock.timers.tick(800);
   const value=await loading;
   assert.equal(calls,2);assert.equal(quotaRemaining(value.windows),90);
+});
+
+test("composer summary keeps each currency and a real zero balance for the ring",async()=>{
+  const previous=globalThis.window;
+  const balances:Record<string,{available:string;currency?:string}>={deepseek:{available:"8.63",currency:"CNY"},
+    moonshot:{available:"3.20",currency:"USD"},siliconflow:{available:"500",currency:"JPY"},"custom-zero":{available:"0",currency:"CNY"}};
+  try {
+    Object.assign(globalThis,{window:{cryoclaw:{settingsGetProviderUsage:async(args:{providerKey:string})=>({success:true,
+      data:{supported:true,kind:"balance",...balances[args.providerKey]}})}}});
+    const client={async request(){return {providers:[]};}} as unknown as GatewayBrowserClient;
+    const cny=summarizeModelQuota(await loadModelQuota(client,"deepseek"),"deepseek/deepseek-chat");
+    assert.equal(cny.balance?.available,"8.63");assert.equal(cny.balance?.currency,"CNY");
+    assert.equal(cny.remaining,null,"金额余额不能换算成窗口百分比");assert.deepEqual(cny.windows,[]);
+    const usd=summarizeModelQuota(await loadModelQuota(client,"moonshot"),"moonshot/kimi-k2");
+    assert.equal(usd.balance?.currency,"USD");assert.equal(usd.remaining,null);
+    const other=summarizeModelQuota(await loadModelQuota(client,"siliconflow"),"");
+    assert.equal(other.balance?.currency,"JPY","未返回的币种按原样透传，不猜测");
+    const zero=summarizeModelQuota(await loadModelQuota(client,"custom-zero"),"");
+    assert.equal(zero.balance?.available,"0","实际为零的已知余额不能被当作未知");
+  } finally {Object.assign(globalThis,{window:previous});}
+});
+
+test("composer summary filters windows by model and reports unknown providers as empty",()=>{
+  const value:ModelQuota={provider:"openai",at:Date.now(),windows:[
+    {label:"5h",usedPercent:52},{label:"free",usedPercent:100,model:":free"}]};
+  const summary=summarizeModelQuota(value,"openai/gpt-5");
+  assert.equal(summary.windows.length,1);assert.equal(summary.remaining,48);assert.equal(summary.balance,null);
+  assert.deepEqual(summarizeModelQuota(null,"gpt-5"),{windows:[],remaining:null,balance:null});
+  const unsupported=summarizeModelQuota({provider:"x",at:1,windows:[],unsupported:true},"m");
+  assert.equal(unsupported.remaining,null);assert.equal(unsupported.balance,null);
 });

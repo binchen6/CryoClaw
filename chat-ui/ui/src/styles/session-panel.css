@@ -475,7 +475,7 @@ oc-session-panel.oc-panel--leaving {
 .oc-panel__workspace-label {
   display: flex;
   align-items: center;
-  gap: var(--spacer-4);
+  gap: var(--spacer-2);
 }
 
 .oc-panel__workspace-icon {
@@ -495,19 +495,12 @@ oc-session-panel.oc-panel--leaving {
   color: var(--text-secondary);
 }
 
+/* 分组头操作钮：尺寸/颜色/焦点环复用全局 .icon-btn--xs（24px 命中区；触控指针由
+   base.css 的 pointer:coarse 块统一抬到 40px），本类只负责「hover/焦点才显现」
+   与危险色，避免再养一套私有按钮规格。 */
 .oc-panel__workspace-action {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  padding: 0;
-  border: none;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
   opacity: 0;
+  color: var(--text-muted);
   transition:
     opacity var(--duration-fast) var(--ease-standard),
     background var(--duration-fast) var(--ease-standard),
@@ -520,25 +513,16 @@ oc-session-panel.oc-panel--leaving {
 }
 
 .oc-panel__workspace-action:hover {
-  background: var(--bg-hover);
-  color: var(--text-primary);
+  color: var(--text);
 }
 
 .oc-panel__workspace-action--danger:hover {
-  color: var(--color-danger, #d64545);
+  color: var(--destructive);
 }
 
-.oc-panel__workspace-action svg {
-  width: 12px;
-  height: 12px;
-  stroke: currentColor;
-  fill: none;
-  stroke-width: var(--icon-stroke);
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-/* 新建工作区对话框：面板内嵌浮层（backdrop 点击关闭） */
+/* 新建工作区对话框：面板内嵌浮层（backdrop 点击关闭）。
+   backdrop/卡片必须显式 no-drag：祖先 .oc-panel 是窗口拖拽区，缺这条时
+   输入框与按钮收不到鼠标事件（只在 Electron 里复现，浏览器预览看不出来）。 */
 .oc-panel__ws-dialog-backdrop {
   position: fixed;
   inset: 0;
@@ -546,25 +530,26 @@ oc-session-panel.oc-panel--leaving {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--overlay-scrim, rgba(15, 18, 25, 0.42));
-  animation: oc-fade-in var(--duration-fast) var(--ease-out);
+  background: var(--overlay);
+  -webkit-app-region: no-drag;
+  animation: oc-fade-in var(--duration-fast) var(--ease-standard);
 }
 
 .oc-panel__ws-dialog {
-  width: min(360px, calc(100vw - 48px));
+  width: min(360px, calc(100vw - var(--spacer-48)));
   padding: var(--spacer-16);
-  border-radius: var(--radius-lg);
-  background: var(--bg-elevated, var(--bg-primary));
-  border: 1px solid var(--border-subtle);
-  box-shadow: var(--shadow-lg, 0 12px 32px rgba(15, 18, 25, 0.24));
-  animation: chat-popover-in var(--duration-fast) var(--ease-out);
+  border: var(--hairline);
+  border-radius: var(--radius-16);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-xl);
+  animation: chat-popover-in var(--duration-fast) var(--ease-spring);
 }
 
 .oc-panel__ws-dialog-title {
+  margin-bottom: var(--spacer-12);
   font-size: var(--text-sm);
   font-weight: var(--weight-semibold);
-  color: var(--text-primary);
-  margin-bottom: var(--spacer-12);
+  color: var(--text-strong);
 }
 
 .oc-panel__ws-field {
@@ -573,26 +558,32 @@ oc-session-panel.oc-panel--leaving {
   gap: var(--spacer-4);
   margin-bottom: var(--spacer-12);
   font-size: var(--text-xs);
-  color: var(--text-secondary);
+  color: var(--text-muted);
 }
 
 .oc-panel__ws-field input {
-  padding: var(--spacer-6) var(--spacer-8);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-sm);
-  background: var(--bg-primary);
-  color: var(--text-primary);
+  min-height: 32px;
+  padding: 0 var(--spacer-8);
+  border: var(--hairline);
+  border-radius: var(--radius-8);
+  background: var(--bg-input);
+  color: var(--text);
+  font-family: inherit;
   font-size: var(--text-sm);
   outline: none;
-  transition: border-color var(--duration-fast) var(--ease-standard);
+  transition:
+    border-color var(--duration-fast) var(--ease-standard),
+    box-shadow var(--duration-fast) var(--ease-standard);
 }
 
 .oc-panel__ws-field input:focus {
-  border-color: var(--accent, var(--text-accent));
+  border-color: var(--border-focus);
+  box-shadow: var(--focus-ring);
 }
 
 .oc-panel__ws-path-row {
   display: flex;
+  align-items: center;
   gap: var(--spacer-6);
 }
 
@@ -601,57 +592,14 @@ oc-session-panel.oc-panel--leaving {
   min-width: 0;
 }
 
-.oc-panel__ws-browse {
+/* 「浏览」按钮不参与收缩，路径输入框独吞剩余宽度 */
+.oc-panel__ws-path-row .btn {
   flex-shrink: 0;
-  padding: 0 var(--spacer-8);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-sm);
-  background: var(--bg-secondary, transparent);
-  color: var(--text-secondary);
-  font-size: var(--text-xs);
-  cursor: pointer;
-  transition: background var(--duration-fast) var(--ease-standard);
 }
 
-.oc-panel__ws-browse:hover {
-  background: var(--bg-hover);
-}
-
+/* 对话框按钮复用全局 .btn kit（R84 起禁止视图私有按钮规格） */
 .oc-panel__ws-dialog-actions {
   display: flex;
   justify-content: flex-end;
   gap: var(--spacer-8);
-}
-
-.oc-panel__ws-btn {
-  padding: var(--spacer-6) var(--spacer-12);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--text-secondary);
-  font-size: var(--text-sm);
-  cursor: pointer;
-  transition:
-    background var(--duration-fast) var(--ease-standard),
-    color var(--duration-fast) var(--ease-standard);
-}
-
-.oc-panel__ws-btn:hover {
-  background: var(--bg-hover);
-}
-
-.oc-panel__ws-btn--primary {
-  background: var(--accent, var(--text-accent));
-  border-color: transparent;
-  color: var(--text-on-accent, #fff);
-}
-
-.oc-panel__ws-btn--primary:hover {
-  background: var(--accent-hover, var(--accent, var(--text-accent)));
-  filter: brightness(1.06);
-}
-
-.oc-panel__ws-btn--primary:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
 }

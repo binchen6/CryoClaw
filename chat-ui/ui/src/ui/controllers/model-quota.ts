@@ -46,6 +46,21 @@ export function quotaWindowLabel(label:string,zh:boolean):string {
   return ({Week:"每周额度","5h":"5 小时额度","Rate limit":"短周期额度",Usage:"用量",
     "API key (USD)":"密钥金额上限","Effective budget (USD)":"当前有效预算","Free model requests":"免费模型请求"} as Record<string,string>)[label]??label;
 }
+export interface ModelQuotaSummary {windows:QuotaWindow[];remaining:number | null;balance:NonNullable<ModelQuota["balance"]> | null}
+// 按量付费 provider 只有「余额」这一种额度语义，官方接口不返回 5 小时/每周窗口。
+// 上游、旧缓存或第三方转发若误带 windows，也绝不能渲染成「每周额度」——
+// 那会把余额误读成限额百分比（截图事故：deepseek 显示「每周额度 5% 剩余」）。
+export const BALANCE_ONLY_PROVIDERS:ReadonlySet<string>=new Set(["deepseek","moonshot","siliconflow"]);
+export function isBalanceOnlyProvider(provider:string):boolean {
+  return BALANCE_ONLY_PROVIDERS.has(String(provider??"").trim().toLowerCase());
+}
+/** 输入框圆环只取当前模型的窗口、最紧剩余比例和原始余额；币种符号与色阶在 chat/quota-ring 计算。 */
+export function summarizeModelQuota(value:ModelQuota | null,model:string):ModelQuotaSummary {
+  if(!value)return {windows:[],remaining:null,balance:null};
+  // 余额型 provider 永不展示窗口：即使没有余额数据也返回 unknown，而不是伪造额度窗口。
+  const windows=isBalanceOnlyProvider(value.provider)?[]:quotaWindowsForModel(value.windows,model);
+  return {windows,remaining:quotaRemaining(windows),balance:value.balance??null};
+}
 function normalizeWindows(windows:any):QuotaWindow[] {
   if(!Array.isArray(windows))return [];
   return windows.filter(w=>w && typeof w==="object").slice(0,128).map(w=>({label:typeof w.label==="string"?w.label:"Usage",
@@ -97,6 +112,9 @@ export async function loadModelQuota(client:GatewayBrowserClient,provider:string
         } else if(!fallback.unsupported && fallback.message)result.error=fallback.message;
       }
     } catch(error) {if(!result.error)result.error=error instanceof Error?error.message:String(error);}
+    // 按量付费 provider 的额度只有余额语义：丢弃任何误带的窗口，避免下游渲染出
+    // 「每周额度」这种不存在的限额（余额在 result.balance，不影响余额展示）。
+    if(isBalanceOnlyProvider(provider))result.windows=[];
     // Keep the timestamp and disclose staleness. Never turn a failed request into zero usage.
     if(result.error && hit?.value && (hit.value.balance || hit.value.windows.some(w=>w.usedPercent!==null))) {
       return {...hit.value,error:result.error,stale:true};

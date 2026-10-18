@@ -124,6 +124,7 @@ function renderPathRow(key: string, label: string, value: string, state: AppView
           class="ov-copy-btn ${copied ? "ov-copy-btn--ok" : ""}"
           type="button"
           title=${t("settings.overview.copy")}
+          aria-label=${copied ? t("settings.overview.copied") : t("settings.overview.copy")}
           @click=${() => void copyPath(key, value, state)}
         >
           ${copied

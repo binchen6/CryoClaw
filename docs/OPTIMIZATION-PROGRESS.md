@@ -5,6 +5,14 @@
 
 ## 🚀 快速上手
 
+### 2026-10-18 2026.1018.2 交互修复与主题升级（round2）
+
+- 用户四项反馈 + 一条补充要求全部落地：①「本轮改动」胶囊去掉左右图标、聊天列居中、优先显示 git 行数绿色 +N / 红色 −M（无 git 时退回新增/删除文件数）；新增只读 IPC `git:change-stats`（trusted sender + cwd 白名单 + 200 路径/1024 字符/24KB argv/未跟踪 1MiB 与 8MiB 预算），行数不可得时整体降级而非半截统计。补充要求：任务进度卡在最底、改动胶囊在其上，`oc-turn-files` 去掉 z-index:20 与 position，浮层用消息内容层 z-index:5，不再压过对话信息/菜单/编辑器/模态/toast。②额度圆环：按量付费余额不再在 32px 固定高度里排成两行——单行 30px trigger（22px 圆环 + 12px tabular 金额）；新增通用余额充裕度圆环（CNY 100 / USD 20 满环的对数刻度、CNY <10/<30 与 USD <2/<6 绝对语义色、图例说明非限额百分比），额度窗口型圆环统一 22px 并在 <20%/<8% 转 warn/destructive。③工具卡详情：grid 子项 min-width:auto + 紧凑 JSON 无断点导致卡片撑破聊天列；补齐 min-width/max-width/overflow-wrap 防线、JSON 字符串先 parse 再 pretty-print、长内容围栏内滚动；并修复点「输入参数」/键盘 Enter 冒泡触发整卡打开 sidebar 的交互 bug。④主题模块：主题包 v1 扩展 `description` 与 `density`(0.9–1.1)/`shadow`(none|soft|default|strong)/`borderWidth`(0–2) 有界字段（缺省=旧观感），导入支持拖放与描述、导出用安全文件名；「让 Agent 设计主题」改为 8 项填空 + 3 预设 + 最多 4 张参考图（数据随消息附件发送，不写回主题包），提示词、内置技能与文档同步；新增守护测试。
+- 整体 UI 审查修 13 项：固定工作区 UI token 化与 no-drag/焦点、800px「固定工作区」不再隐藏、Worktrees 工具行换行、概览 uppercase 移除、用量页加载占位与 `role=group`+aria-pressed、任务/概览可访问名、对话窄窗工具栏换行兜底、toast 关闭文案与图标等。
+- 收口修复（用户截图反馈）：DeepSeek 等按量付费 provider 只有余额语义，新增 `BALANCE_ONLY_PROVIDERS` 守卫——controller 丢弃任何误报窗口（含旧缓存/第三方转发），组件层余额与窗口禁止混排（有余额时绝不渲染 quota 行），面板标题按语义显示「账户余额 / 账户额度」。CDP 真机实测：真实 DeepSeek 余额只显示余额与图例、0 个「每周额度」；伪造 balance+windows 与纯 windows 均被丢弃（unknown）；openai-codex 的窗口型额度仍正常显示每周额度。版本号提升 `2026.1018.2` 并提交（不打包/不发布）。
+- 验证：`npm test` 274 vitest + 374 node（4 skip）+ 1109 chat-ui 全通过；scripts 150/151，唯一失败是 `gateway-asar-smoke` 在 DSH 沙箱下 Electron-as-Node 子进程无法写 `%LOCALAPPDATA%\OpenClaw\locks`（EPERM，已用 5 行子进程探针独立复现，与本轮改动无关，见 gotchas #139）；typecheck 与 `npm run build` 通过。CDP 真机：胶囊 `+709 −17`/居中/顺序正确、圆环三态单行、工具卡 1440/800 无横向溢出且点参数不弹 sidebar、主题填空/参考图/初始禁用与预设启用、主题页 1440/800 无溢出，截图在 `out/ui-qa/round2/`（gitignored）。
+- 遗留（下轮候补）：workspace.ts 34 处 + chat-compose.ts 8 处内联 `text(cn,en)` 的 i18n 债；会话项 role=button 内嵌 button 的嵌套交互结构。
+
 ### 2026-10-18 2026.1018.1 发布验收
 
 - 内核与官方提供商插件升级 2026.10.4；嵌套数组能力保存、主模型即时反馈、配置刷新卡片保留、底部四色通知、黑字白面板已完成桌面专项。

@@ -27,6 +27,7 @@ import {
   sanitizeGitRefName,
   sanitizeGitRelPaths,
 } from "./git-parse";
+import { computeGitChangeStats } from "./git-change-stats";
 import * as log from "./logger";
 
 const GIT_TIMEOUT_MS = 15_000;
@@ -316,6 +317,31 @@ export function registerGitIpc(): void {
       return { success: true };
     } catch (err) {
       return gitCatchResp("git:clean", err);
+    }
+  });
+
+  // 本轮改动胶囊的行数统计：入参是渲染层工具参数里的路径（绝对/仓库相对/反斜杠均可），
+  // 匹配与 numstat 解析在 git-change-stats.ts（纯逻辑、单测覆盖）。
+  // 只读通道：`--` 后只放从 git status 解析出的仓库相对路径，渲染层原始字符串不进 argv。
+  // 错误码沿用 git 面板协议（no-git / denied / not-found / not-a-repo / git-error），
+  // 另加 invalid-input（路径数组超限）；渲染层任何失败都静默退回文件数。
+  ipcMain.handle("git:change-stats", async (event, cwd: unknown, rawPaths: unknown) => {
+    const g = await guardGitOp(event, "git:change-stats", cwd);
+    if (!g.ok) return g.resp;
+    try {
+      const outcome = await computeGitChangeStats(g.dir, rawPaths, {
+        runGit: (args) => runGit(g.dir, args, GIT_TIMEOUT_MS, GIT_MAX_BUFFER),
+      });
+      if (!outcome.ok) {
+        return {
+          success: false,
+          error: outcome.error,
+          ...(outcome.message ? { message: outcome.message } : {}),
+        };
+      }
+      return { success: true, data: outcome.data };
+    } catch (err) {
+      return gitCatchResp("git:change-stats", err);
     }
   });
 }

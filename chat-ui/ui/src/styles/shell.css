@@ -339,6 +339,8 @@ oc-rail {
   border-radius: var(--radius-12);
   box-shadow: var(--shadow-lg);
   font-size: var(--text-sm);
+  /* 浮层内有「重试」按钮：祖先 .oc-rail 是窗口拖拽区，缺 no-drag 时按钮点不到 */
+  -webkit-app-region: no-drag;
 }
 
 .oc-rail__conn-wrap:hover .oc-rail__conn-popup,

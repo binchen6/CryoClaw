@@ -1,5 +1,12 @@
 [
   {
+    "version": "2026.1018.2",
+    "notes": {
+      "zh": "交互与主题修复批次。DeepSeek 等按量付费提供商只显示余额：即使上游误报窗口，也绝不渲染「每周额度」，面板标题按余额/额度语义切换；输入框余额圆环改为单行显示、按余额充裕度着色，并附非限额百分比说明。本轮改动胶囊去掉左右图标、居中显示 git 新增/删除行数（无 git 时退回文件数），任务进度卡回到最贴近输入框的位置，改动浮层改用消息内容层、不再压过其他浮层。工具卡参数与长 JSON 不再撑破聊天列，点「输入参数」不再误开右侧输出面板。主题包新增可选间距密度、阴影强度、边框粗细与描述字段，支持拖放导入与按主题名导出；「让 Agent 设计主题」改为填空式表单并支持参考图（随消息发送，不写入主题包）。整体 UI 修复 13 项：固定工作区样式/点击区/焦点、800px 下固定工作区可见、Worktrees 工具行换行、概览标签大小写、用量页加载占位与无障碍、窄窗输入区工具栏换行等。",
+      "en": "Interaction and theme fix batch. Pay-as-you-go providers such as DeepSeek show balance only: even if an upstream misreports windows, a weekly quota is never rendered, and the panel title follows balance vs. limit semantics. The composer balance ring is now single-line, colored by balance health, and explains that it is not a percentage of a limit. The turn-changes pill drops its side icons, centers, and shows git additions/deletions (falling back to file counts when git is unavailable); the progress card sits closest to the composer, and the changes popover moves to the message content layer so it no longer covers other overlays. Tool-card arguments and long JSON no longer burst the chat column, and expanding Input no longer pops the output sidebar. Theme packages gain optional spacing density, shadow strength, border width and description fields, drag-and-drop import and name-based export; Let an agent design a theme is now a fill-in-the-blank form with reference images (sent with the message, never stored in the package). Thirteen UI fixes: pinned-workspace styling/hit areas/focus, the pin-workspace button at 800px, wrapping worktree toolbars, overview label casing, usage loading placeholders and accessibility, and a wrapping composer toolbar in narrow windows."
+    }
+  },
+  {
     "version": "2026.1018.1",
     "notes": {
       "zh": "升级 OpenClaw 至 2026.10.4，同步官方提供商插件。修复模型能力保存时缺少数组替换声明，默认模型设置即时显示进度，配置刷新保留模型卡片。操作通知统一为底部悬浮提示，按信息、成功、警告、错误区分颜色。默认浅色主题使用纯黑正文和纯白面板；主题包扩展气泡、图标、输入区等角色颜色和控件微调。修复 Kimi 额度、API 余额和切换模型后的额度刷新。命令补全支持原生命令参数、已配置模型、光标位置和输入法；工作区新建对话将目录传给内核，Git 切换仓库隔离迟到写入响应。文件变更移至输入框上方胶囊，右上角改为会话信息面板，展示工作区、子智能体与来源文件。缩减消息下方空白，修复快速转场中断异常，减少滚动和主题扫描的重复工作。",

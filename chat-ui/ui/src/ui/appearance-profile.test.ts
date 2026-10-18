@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {normalizeAppearance,exportAppearance,importAppearance,DEFAULT_APPEARANCE,withAppearanceMode,appearanceColors,accentForeground} from "./appearance-profile.ts";
+import {normalizeAppearance,exportAppearance,importAppearance,applyAppearance,readAppearancePackage,themeFileName,DEFAULT_APPEARANCE,withAppearanceMode,appearanceColors,accentForeground} from "./appearance-profile.ts";
 import {BUILTIN_THEMES} from "./theme-library.ts";
 
 test("expanded semantic theme colors and icon/bubble controls survive export/import with bounds",()=>{
@@ -71,4 +71,69 @@ test("built-in themes pair distinct readable palettes and accessible primary lab
   }
   assert.equal(backgrounds.size,6,"the three curated themes have independent light/dark surfaces");
   for(const color of ["#777777","#ffffff","#000000","#1a6fd0","#8fc9ff"])assert.ok(contrast(accentForeground(color),color)>=4.5);
+});
+test("layout-feel fields are optional, bounded, and omitted at their defaults for old themes",()=>{
+  const plain=normalizeAppearance({});
+  assert.equal(plain.density,undefined);assert.equal(plain.shadow,undefined);assert.equal(plain.borderWidth,undefined);
+  assert.deepEqual(normalizeAppearance({density:1,shadow:"default",borderWidth:1}),plain);
+  for(const theme of BUILTIN_THEMES)for(const key of ["density","shadow","borderWidth"] as const)assert.equal(theme.appearance[key],undefined,`${theme.id} keeps the current look`);
+  const clamped=normalizeAppearance({density:2,shadow:"harsh",borderWidth:99});
+  assert.equal(clamped.density,1.1);assert.equal(clamped.shadow,undefined);assert.equal(clamped.borderWidth,2);
+  assert.equal(normalizeAppearance({density:.5}).density,.9);
+  assert.equal(normalizeAppearance({density:.937}).density,.94);
+  assert.equal(normalizeAppearance({borderWidth:-1}).borderWidth,0);
+  assert.equal(normalizeAppearance({density:"0.95"}).density,undefined);
+  assert.equal(normalizeAppearance({density:NaN}).density,undefined);
+  for(const shadow of ["none","soft","default","strong"] as const)assert.equal(normalizeAppearance({shadow}).shadow,shadow==="default"?undefined:shadow);
+  const profile=normalizeAppearance({density:.95,shadow:"strong",borderWidth:1.5});
+  assert.deepEqual(importAppearance(exportAppearance(profile)),profile);
+  assert.deepEqual(importAppearance(exportAppearance({mode:"dark",colors:{background:"#101012"}})),{mode:"dark",font:"studio",size:14,weight:400,italic:false,lineHeight:1.55,radius:12,colors:{background:"#101012"},components:{}});
+});
+test("theme packages carry an optional bounded description while staying v1-compatible",()=>{
+  const text=exportAppearance({colors:{accent:"#1a6fd0"}},"Named","克制而通透的冰蓝主题");
+  const packed=readAppearancePackage(text);
+  assert.equal(packed.name,"Named");assert.equal(packed.description,"克制而通透的冰蓝主题");
+  assert.equal(packed.appearance.colors.accent,"#1a6fd0");
+  const parsed=JSON.parse(text);assert.equal(parsed.format,"cryoclaw-theme");assert.equal(parsed.version,1);assert.equal(parsed.description,"克制而通透的冰蓝主题");
+  assert.equal(readAppearancePackage(exportAppearance({})).description,undefined);
+  const bounded=readAppearancePackage(exportAppearance({},"N","字".repeat(300)));
+  assert.equal(Array.from(bounded.description??"").length,120);
+  const legacy=readAppearancePackage(JSON.stringify({format:"cryoclaw-theme",version:1,name:"Old",appearance:{radius:12,colors:{accent:"#1a6fd0"},components:{}}}));
+  assert.equal(legacy.description,undefined);assert.equal(legacy.appearance.density,undefined);assert.equal(legacy.appearance.shadow,undefined);assert.equal(legacy.appearance.borderWidth,undefined);
+  assert.deepEqual(legacy.appearance,normalizeAppearance({radius:12,colors:{accent:"#1a6fd0"}}));
+});
+test("exported file names are safe on every platform and keep readable names",()=>{
+  assert.equal(themeFileName("冰川 · Glacier"),"冰川 · Glacier.json");
+  const unsafe=themeFileName('bad<>:"/\\|?* name');
+  assert.ok(!/[\\/:*?"<>|]/.test(unsafe));assert.ok(unsafe.endsWith("name.json"));
+  assert.equal(themeFileName("   "),"cryoclaw-theme.json");
+  assert.equal(themeFileName("."),"cryoclaw-theme.json");
+  const traversal=themeFileName("..\\..\\evil");
+  assert.ok(!traversal.startsWith("."));assert.ok(!/[\\/:*?"<>|]/.test(traversal));
+  assert.equal(themeFileName("CON"),"_CON.json");
+  assert.ok(themeFileName("x".repeat(200)).length<=65);
+});
+test("applyAppearance scales spacers, maps shadow strength and hairline width, and clears overrides at defaults",()=>{
+  const observer=globalThis.MutationObserver;
+  (globalThis as any).MutationObserver=class{observe(){}disconnect(){}takeRecords(){return [];}};
+  const capture=()=>{
+    const values=new Map<string,string>();
+    const root={dataset:{} as DOMStringMap,style:{setProperty:(name:string,value:string)=>values.set(name,value),removeProperty:(name:string)=>values.delete(name),getPropertyValue:(name:string)=>values.get(name)??""},querySelector:()=>null,querySelectorAll:()=>[]} as unknown as HTMLElement;
+    return {root,values};
+  };
+  try{
+    const styled=capture();applyAppearance({density:.95,shadow:"none",borderWidth:2},styled.root);
+    assert.equal(styled.values.get("--spacer-8"),"7.6px");
+    assert.equal(styled.values.get("--spacer-64"),"60.8px");
+    assert.equal(styled.values.get("--shadow-md"),"none");
+    assert.equal(styled.values.get("--hairline"),"2px solid var(--border)");
+    assert.equal(styled.values.get("--hairline-strong"),"2px solid var(--border-strong)");
+    const strong=capture();applyAppearance({shadow:"strong"},strong.root);
+    assert.match(strong.values.get("--shadow-lg")??"",/^0 var\(--spacer-16\).*color-mix\(in srgb, var\(--overlay-heavy\) \d+(?:\.\d+)?%, transparent\)$/);
+    const soft=capture();applyAppearance({shadow:"soft"},soft.root);
+    assert.match(soft.values.get("--shadow-md")??"",/color-mix\(in srgb, var\(--overlay-heavy\) 7%, transparent\)$/);
+    assert.notEqual(soft.values.get("--shadow-md"),strong.values.get("--shadow-md"));
+    const plain=capture();applyAppearance({},plain.root);
+    for(const token of ["--spacer-8","--spacer-16","--shadow-md","--shadow-lg","--hairline","--hairline-strong"])assert.equal(plain.values.has(token),false,`${token} stays on the stylesheet default`);
+  } finally {(globalThis as any).MutationObserver=observer;}
 });

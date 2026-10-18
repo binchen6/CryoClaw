@@ -1,6 +1,6 @@
 import {icons} from "./icons.ts";
 import {html,nothing} from "lit";
-import {applyAppearance,exportAppearance,importAppearance,normalizeAppearance,cleanThemeName,getAppliedAppearance,COMPONENT_SELECTORS,type AppearanceProfile} from "./appearance-profile.ts";
+import {applyAppearance,exportAppearance,readAppearancePackage,normalizeAppearance,getAppliedAppearance,COMPONENT_SELECTORS,type AppearanceProfile} from "./appearance-profile.ts";
 import type {AppViewState} from "./app-view-state.ts";
 import {getLocale} from "./i18n.ts";
 import "./components/range-control.ts";
@@ -9,7 +9,7 @@ import {saveGeneratedTheme} from "./theme-library.ts";
 import {showToast} from "./app-toast.ts";
 import {runExitAnimation} from "./utils/exit-anim.ts";
 
-type Preview={name:string;editorVisible:boolean;source:"manual"|"agent"|"imported";profile:AppearanceProfile;original:AppearanceProfile;savedKey:string;picking:boolean;target:string|null;timer:ReturnType<typeof setTimeout>|null;tab:"layout"|"style"|"text";history:AppearanceProfile[];future:AppearanceProfile[];baseline:AppearanceProfile|null;geometry:{width:number;height:number};leaving:boolean};
+type Preview={name:string;description?:string;editorVisible:boolean;source:"manual"|"agent"|"imported";profile:AppearanceProfile;original:AppearanceProfile;savedKey:string;picking:boolean;target:string|null;timer:ReturnType<typeof setTimeout>|null;tab:"layout"|"style"|"text";history:AppearanceProfile[];future:AppearanceProfile[];baseline:AppearanceProfile|null;geometry:{width:number;height:number};leaving:boolean};
 const copy=(profile:AppearanceProfile)=>normalizeAppearance(JSON.parse(JSON.stringify(profile)));
 function beginChange(preview:Preview){preview.baseline??=copy(preview.profile);}
 function commitChange(preview:Preview){if(preview.baseline && JSON.stringify(preview.baseline)!==JSON.stringify(preview.profile)){preview.history.push(preview.baseline);if(preview.history.length>30)preview.history.shift();preview.future=[];}preview.baseline=null;}
@@ -29,7 +29,7 @@ export function endThemePreview(host:AppViewState,save=false,animate=true):void 
   if(preview.timer)clearTimeout(preview.timer);
   if(save){
     host.applySettings({...host.settings,appearance:normalizeAppearance(preview.profile)});
-    if(preview.source==="agent")try{saveGeneratedTheme(preview.name,preview.profile);showToast(host,text("主题已应用并加入主题库", "Theme applied and added to your library"));}
+    if(preview.source==="agent")try{saveGeneratedTheme(preview.name,preview.profile,preview.description??"");showToast(host,text("主题已应用并加入主题库", "Theme applied and added to your library"));}
     catch{showToast(host,text("主题已应用；主题库暂未保存，可在外观设置导出备份。", "Theme applied. The library could not be saved; export a copy in Appearance settings."));}
   }
   else applyAppearance(preview.savedKey===JSON.stringify({appearance:host.settings.appearance,theme:host.settings.theme})?preview.original:{...normalizeAppearance(host.settings.appearance),mode:host.settings.theme});
@@ -38,16 +38,16 @@ export function endThemePreview(host:AppViewState,save=false,animate=true):void 
   preview.leaving=true;host.requestUpdate();
   if(animate)runExitAnimation([document.querySelector(".theme-editor"),document.querySelector(".theme-preview-banner")],finish);else finish();
 }
-export function startThemeEditor(host:AppViewState,profile:unknown=host.settings.appearance,name=text("可视化主题编辑", "Visual theme editor"),expires=true,editorVisible=true,source:Preview["source"]="manual"):void {
+export function startThemeEditor(host:AppViewState,profile:unknown=host.settings.appearance,name=text("可视化主题编辑", "Visual theme editor"),expires=true,editorVisible=true,source:Preview["source"]="manual",description=""):void {
   endThemePreview(host,false,false);
   document.querySelectorAll(".theme-editor.cc-leaving,.theme-preview-banner.cc-leaving").forEach(element=>element.classList.remove("cc-leaving"));
   const current=getAppliedAppearance();
   const original={...current,mode:current.mode??host.settings.theme};
-  const preview:Preview={name,editorVisible,source,profile:normalizeAppearance(profile),original,savedKey:JSON.stringify({appearance:host.settings.appearance,theme:host.settings.theme}),picking:false,target:null,timer:null,tab:"layout",history:[],future:[],baseline:null,geometry:{width:200,height:40},leaving:false};
+  const preview:Preview={name,description:description||undefined,editorVisible,source,profile:normalizeAppearance(profile),original,savedKey:JSON.stringify({appearance:host.settings.appearance,theme:host.settings.theme}),picking:false,target:null,timer:null,tab:"layout",history:[],future:[],baseline:null,geometry:{width:200,height:40},leaving:false};
   if(expires)preview.timer=setTimeout(()=>endThemePreview(host),60000);
   previews.set(host,preview);applyAppearance(preview.profile);host.requestUpdate();
 }
-export function previewImportedTheme(host:AppViewState,profile:AppearanceProfile,name:string):void {startThemeEditor(host,profile,name,true,false,"imported");}
+export function previewImportedTheme(host:AppViewState,profile:AppearanceProfile,name:string,description=""):void {startThemeEditor(host,profile,name,true,false,"imported",description);}
 export function attachThemeUi(host:AppViewState):void {
   detachThemeUi(host);
   const bridge=(window as any).cryoclaw;
@@ -58,11 +58,11 @@ export function attachThemeUi(host:AppViewState):void {
     try {
       const payload=request.payload;
       if(payload.action==="preview") {
-        const profile=importAppearance(JSON.stringify(payload.theme));
-        startThemeEditor(host,profile,typeof payload.theme?.name==="string"?cleanThemeName(payload.theme.name):"Agent theme preview",true,true,"agent");
+        const pkg=readAppearancePackage(JSON.stringify(payload.theme));
+        startThemeEditor(host,pkg.appearance,pkg.name||"Agent theme preview",true,true,"agent",pkg.description);
       } else if(payload.action==="restore")endThemePreview(host);
       else if(payload.action!=="inspect")throw new Error("Unknown theme action");
-      bridge.themeResult({id:request.id,value:{theme:JSON.parse(exportAppearance(hasThemePreview(host)?previews.get(host)!.profile:getAppliedAppearance(),previews.get(host)?.name??"Current theme")),targets:Object.keys(COMPONENT_SELECTORS),elements:Array.from(document.querySelectorAll<HTMLElement>("[data-theme-node]")).map(element=>element.dataset.themeNode).slice(0,100),preview:hasThemePreview(host),expiresInSeconds:hasThemePreview(host) && previews.get(host)?.timer?60:0}});
+      bridge.themeResult({id:request.id,value:{theme:JSON.parse(exportAppearance(hasThemePreview(host)?previews.get(host)!.profile:getAppliedAppearance(),previews.get(host)?.name??"Current theme",previews.get(host)?.description??"")),targets:Object.keys(COMPONENT_SELECTORS),elements:Array.from(document.querySelectorAll<HTMLElement>("[data-theme-node]")).map(element=>element.dataset.themeNode).slice(0,100),preview:hasThemePreview(host),expiresInSeconds:hasThemePreview(host) && previews.get(host)?.timer?60:0}});
     } catch(error){bridge.themeResult({id:request.id,error:error instanceof Error?error.message:String(error)});}
   });
   const pick=(event:PointerEvent)=>{

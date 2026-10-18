@@ -526,5 +526,14 @@
 .wk-image-preview { display: flex; min-height: 100%; align-items: center; justify-content: center; padding: var(--spacer-24); box-sizing: border-box; }
 .wk-image-preview img { max-width: 100%; max-height: 70vh; object-fit: contain; border-radius: var(--radius-8); }
 .wk-preview .empty-state { flex: 1; }
-.wk-layout :is(button,input,textarea,select):focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-@media(max-width:800px) { .wk-browser-toolbar { flex-wrap: wrap; } .wk-browser-toolbar > .btn { display: none; } .wk-file-search { max-width: none; } }
+/* 窄窗：左栏收窄下限、防横向溢出；工具行换行而不是隐藏功能入口
+   （旧规则 .wk-browser-toolbar > .btn { display:none } 会在 800px 最小窗口
+   静默去掉「固定工作区」——用户无从操作，属功能丢失而非降级） */
+@media (max-width: 800px) {
+  .wk-browser-toolbar {
+    flex-wrap: wrap;
+  }
+  .wk-file-search {
+    max-width: none;
+  }
+}

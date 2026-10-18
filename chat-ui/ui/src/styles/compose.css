@@ -140,11 +140,16 @@
   cursor: not-allowed;
 }
 
-/* ── 底部工具栏：加号菜单 / 思考档 / 模型选择器 / 回放 ｜ 发送按钮 ── */
+/* ── 底部工具栏：加号菜单 / 思考档 / 模型选择器 / 回放 ｜ 发送按钮 ──
+   窄窗防线：左右两组都允许内部换行、左侧可收缩（min-width:0），右侧动作组
+   不收缩。800px 最小窗口 + 长模型名 + busy 双发送键时不会横向溢出，常规宽
+   度下单行布局与视觉节奏不变。 */
 .chat-compose__toolbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
+  row-gap: var(--spacer-4);
   padding: var(--spacer-4) 0 0;
   gap: var(--spacer-4);
 }
@@ -152,12 +157,17 @@
 .chat-compose__toolbar-left {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
+  row-gap: var(--spacer-2);
+  min-width: 0;
   gap: var(--spacer-2);
 }
 
 .chat-compose__toolbar-right {
   display: flex;
   align-items: center;
+  flex-shrink: 0;
+  margin-left: auto;
   gap: var(--spacer-8);
 }
 
@@ -218,6 +228,8 @@
   transition: color var(--duration-fast) var(--ease-out),
     background var(--duration-fast) var(--ease-out);
   max-width: 180px;
+  /* 长模型名可收缩（min-width:auto 时 select 按内容取宽，挤爆工具栏） */
+  min-width: 0;
 }
 
 .field .chat-compose__model-select:hover:not(:disabled) {
@@ -597,5 +609,12 @@
 @media (max-width: 768px) {
   .chat-compose {
     padding: var(--spacer-8) var(--spacer-12) var(--spacer-12);
+  }
+}
+
+/* 窄窗（≤900px）模型选择器进一步收窄：给思考档 / 回放 / 额度圆环 / 发送键让位 */
+@media (max-width: 900px) {
+  .field .chat-compose__model-select {
+    max-width: 120px;
   }
 }

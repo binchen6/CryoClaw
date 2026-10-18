@@ -492,6 +492,8 @@ export function renderChat(props: ChatProps) {
     </div>
   `;
 
+  // 底部堆叠顺序（自上而下）：本轮改动胶囊 → 任务进度卡 → 输入框。
+  // 进度卡是最贴近输入框的浮卡（用户截图要求），胶囊在其上方；两者都是消息流之后的文档流兄弟。
   return html`
     <section class="card chat">
       ${renderGatewayCallout(props)}
@@ -544,15 +546,6 @@ export function renderChat(props: ChatProps) {
 
       ${renderConversationInfo(props)}
 
-      ${renderProgressCard(props.progressCard ?? null, {
-        sessionKey: props.sessionKey,
-        collapsed: props.progressCardCollapsed ?? false,
-        runActive: props.runActive ?? false,
-        dismissing: props.progressCard?.dismissing,
-        onToggleCollapse: props.onToggleProgressCardCollapse,
-        onDismiss: props.onDismissProgressCard,
-      })}
-
       ${renderBoardPanel(props)}
 
       ${
@@ -576,8 +569,17 @@ export function renderChat(props: ChatProps) {
 
       <oc-turn-files .messages=${props.messages} .toolMessages=${props.toolMessages}
         .visibleHistoryCount=${props.visibleHistoryCount} .locale=${getLocale()}
+        .workspacePath=${props.workspacePath ?? ""}
         .gitAvailable=${props.gitAvailable === true} .onOpenGit=${props.onOpenGitView}
         .onOpenFile=${(path: string) => openChatPath(path, props)}></oc-turn-files>
+      ${renderProgressCard(props.progressCard ?? null, {
+        sessionKey: props.sessionKey,
+        collapsed: props.progressCardCollapsed ?? false,
+        runActive: props.runActive ?? false,
+        dismissing: props.progressCard?.dismissing,
+        onToggleCollapse: props.onToggleProgressCardCollapse,
+        onDismiss: props.onDismissProgressCard,
+      })}
       ${renderCompose(props, {
         activeSession,
         composePlaceholder,

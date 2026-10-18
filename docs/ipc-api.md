@@ -281,6 +281,7 @@
 | `gitPull(cwd)` | `git:pull` | invoke（R58） |
 | `gitDiscard(cwd, paths)` | `git:discard` | invoke（R58，destructive） |
 | `gitClean(cwd, paths)` | `git:clean` | invoke（R58，destructive） |
+| `gitChangeStats(cwd, paths)` | `git:change-stats` | invoke（只读；本轮改动胶囊行数统计） |
 
 > 全部通道 `assertTrustedIpcSender` 校验 + `cwd` 必须 ∈ workspace 白名单根
 > （`workspace-ipc.ts resolveAllowedDir`：path 校验 + realpath 复核防 symlink）。
@@ -295,6 +296,18 @@
 > 文件路径入参只接受仓库相对路径（`sanitizeGitRelPaths` 拒绝绝对路径与 `..` 逃逸）。
 > `git:unstage` 用 `restore --staged`（要求 git ≥ 2.23）；空仓库（unborn HEAD）自动回退
 > `rm --cached`。
+>
+> `git:change-stats`（只读，本轮改动胶囊用）：入参 `paths[]` 是渲染层工具参数里的路径
+> （绝对 / 仓库相对 / Windows 反斜杠均可），主进程先 `git rev-parse --show-toplevel` 找
+> 仓库根、`git status --porcelain=v2 -z` 列改动（含未跟踪 / 重命名），把路径按
+> 「绝对路径归一 / 最长后缀」匹配到改动项，再一次性 `git diff HEAD --numstat -z`
+> 取 tracked 文件增删行数。未跟踪文件按读文件行数计新增（单文件 ≤1MiB、前 8000 字节
+> NUL 嗅探二进制、单次总读取预算 8MiB）；二进制文件标记 `binary: true` 且行数为 0。
+> 返回 `{success:true, data:{stats:[{path, additions, deletions, binary?}], truncated?}}`，
+> `stats[].path` 原样回传入参路径（渲染层据此与列表对应）；行数不可用的路径不出现在
+> stats 里。上限：单次 ≤200 个路径、每路径 ≤1024 字符、diff argv 总长 ≤24000 字符
+> （超限置 `truncated: true`，渲染层整体退回「新增/删除文件数」）。
+> 错误协议沿用上方 git 通道，另加 `invalid-input`（paths 非法/超限）。
 
 > `file:read-base64`：读取本地文件为 base64，供聊天文件附件走内核 apiAttachments。
 > 仅接受已存在的绝对路径普通文件，大小 ≤16MB（stat 预判 + 读后复核双道）；超限返回 `{ error: "too-large", size }`

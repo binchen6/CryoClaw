@@ -299,13 +299,34 @@ function countMeaningfulArgs(args: unknown): number {
   ).length;
 }
 
-function formatToolArgsJson(args: unknown): string | null {
+// args 是字符串时先尝试 parse：合法 JSON 对象/数组统一 pretty-print（2 空格），
+// 弱类型工具参数（内核透传的 JSON 字符串）不再以单行紧凑形态塞进参数块——
+// 单行无断点内容会把卡片撑出阅读列，展开成多行才有可换行位置。
+function prettyPrintJsonString(raw: string): string | null {
+  const trimmed = raw.trim();
+  if (
+    !(
+      (trimmed.startsWith("{") && trimmed.endsWith("}")) ||
+      (trimmed.startsWith("[") && trimmed.endsWith("]"))
+    )
+  ) {
+    return null;
+  }
+  try {
+    return JSON.stringify(JSON.parse(trimmed), null, 2);
+  } catch {
+    return null;
+  }
+}
+
+// 纯格式化函数，无副作用；导出供 node 测试直接锁定 pretty-print/截断行为。
+export function formatToolArgsJson(args: unknown): string | null {
   if (args === undefined || args === null) {
     return null;
   }
   let pretty: string;
   if (typeof args === "string") {
-    pretty = args;
+    pretty = prettyPrintJsonString(args) ?? args;
   } else {
     try {
       pretty = JSON.stringify(args, null, 2);
@@ -317,6 +338,7 @@ function formatToolArgsJson(args: unknown): string | null {
   if (!trimmed || trimmed === "{}") {
     return null;
   }
+  // 超长截断保留 pretty-print 的换行（截断点可能落在行中，以 … 明示未完整展示）
   return trimmed.length > TOOL_ARGS_RENDER_CAP
     ? `${trimmed.slice(0, TOOL_ARGS_RENDER_CAP)}…`
     : trimmed;
@@ -364,7 +386,11 @@ function renderToolCardArgsBlock(card: ToolCard, detail: string | undefined) {
     return nothing;
   }
   return html`
-    <details class="chat-tool-card__args">
+    <details
+      class="chat-tool-card__args"
+      @click=${(event: Event) => event.stopPropagation()}
+      @keydown=${(event: KeyboardEvent) => event.stopPropagation()}
+    >
       <summary>${t("chat.toolArgs")}</summary>
       <pre class="chat-tool-card__args-body mono">${argsJson}</pre>
     </details>
@@ -412,6 +438,35 @@ function renderToolCardOutputBody(
   `;
 }
 
+// 卡内「交互归控件自己」的后代：折叠 summary、链接、按钮、表单控件。
+// 这些位置的事件冒泡到整卡时不得再触发「打开输出 sidebar」（参数展开时误弹回归）。
+const CARD_NESTED_CONTROL_SELECTOR = "details, summary, a, button, input, select, textarea";
+
+// 卡内嵌套控件判定（纯函数，便于 node 单测）。cardRoot 排除两种情况：
+// 1. 卡片根节点自身——它带 role=button，整卡点击仍应打开 sidebar；
+// 2. 卡片外层的工具折叠组 <details>——它是卡片祖先，closest 会命中，
+//    但不是卡内控件，不能误吞整卡点击。
+export function isNestedToolCardControl(target: unknown, cardRoot?: unknown): boolean {
+  if (!target || typeof target !== "object" || target === cardRoot) {
+    return false;
+  }
+  const el = target as { closest?: (selector: string) => unknown };
+  if (typeof el.closest !== "function") {
+    return false;
+  }
+  let found: unknown;
+  try {
+    found = el.closest(CARD_NESTED_CONTROL_SELECTOR);
+  } catch {
+    return false;
+  }
+  if (!found || found === cardRoot) {
+    return false;
+  }
+  const root = cardRoot as { contains?: (node: unknown) => boolean } | undefined;
+  return typeof root?.contains === "function" ? root.contains(found) : true;
+}
+
 export function renderToolCardSidebar(card: ToolCard, onOpenSidebar?: (content: string) => void) {
   const display = resolveToolDisplay({ name: card.name, args: card.args });
   const detail = formatToolDetail(display);
@@ -431,6 +486,11 @@ export function renderToolCardSidebar(card: ToolCard, onOpenSidebar?: (content: 
   const canClick = Boolean(onOpenSidebar) && !isRunning;
   const handleClick = canClick
     ? (event?: Event) => {
+        // 卡内嵌套控件（参数折叠 summary、输出区代码块复制/链接按钮等）自己处理
+        // 交互，冒泡到整卡不再打开输出 sidebar（CDP 复测 bug：展开输入参数误弹 sidebar）
+        if (event && isNestedToolCardControl(event.target, event.currentTarget)) {
+          return;
+        }
         // 子会话引用链接走线程级委托跳转会话，不触发整卡 sidebar 打开
         if (
           event &&
@@ -492,6 +552,11 @@ export function renderToolCardSidebar(card: ToolCard, onOpenSidebar?: (content: 
               if (e.key !== "Enter" && e.key !== " ") {
                 return;
               }
+              // summary/按钮/链接上的 Enter/Space 归控件自己（原生展开/复制/跳转），
+              // 不能变成整卡「打开 sidebar」——键盘复现路径
+              if (isNestedToolCardControl(e.target, e.currentTarget)) {
+                return;
+              }
               e.preventDefault();
               handleClick?.(e);
             }
@@ -501,7 +566,7 @@ export function renderToolCardSidebar(card: ToolCard, onOpenSidebar?: (content: 
       <div class="chat-tool-card__header">
         <div class="chat-tool-card__title" title=${display.name}>
           <span class="chat-tool-card__icon">${icons[display.icon]}</span>
-          <span>${display.label}</span>
+          <span class="chat-tool-card__label" title=${display.label}>${display.label}</span>
           ${display.source
             ? html`<span class="chat-tool-card__source">${display.source}</span>`
             : nothing}
@@ -523,7 +588,7 @@ export function renderToolCardSidebar(card: ToolCard, onOpenSidebar?: (content: 
           }
         </div>
       </div>
-      ${detail ? html`<div class="chat-tool-card__detail">${detail}</div>` : nothing}
+      ${detail ? html`<div class="chat-tool-card__detail" title=${detail}>${detail}</div>` : nothing}
       ${!isRunning && spawnRef ? renderSpawnSessionRef(spawnRef) : nothing}
       ${
         isRunning

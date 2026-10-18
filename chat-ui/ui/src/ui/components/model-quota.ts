@@ -1,8 +1,9 @@
 import {LitElement,html,svg,nothing} from "lit";
 import {customElement,property,state} from "lit/decorators.js";
 import type {GatewayBrowserClient} from "../gateway.ts";
-import {loadModelQuota,quotaRemaining,quotaWindowLabel,quotaWindowsForModel,type ModelQuota} from "../controllers/model-quota.ts";
-import {getLocale} from "../i18n.ts";
+import {loadModelQuota,quotaRemaining,quotaWindowLabel,summarizeModelQuota,type ModelQuota} from "../controllers/model-quota.ts";
+import {balanceAriaLabel,balanceRingView,comfortTone,currencyKey,quotaAriaLabel,quotaComfort,quotaCurrencyProfile,quotaRingView} from "../chat/quota-ring.ts";
+import {getLocale,t} from "../i18n.ts";
 let nextId=0;
 
 @customElement("oc-model-quota")
@@ -18,7 +19,6 @@ export class ModelQuotaMeter extends LitElement {
   private epoch=0;
   private timer:ReturnType<typeof setInterval> | null=null;
   private readonly panelId=`model-quota-${++nextId}`;
-  private text(cn:string,en:string){return getLocale().startsWith("zh")?cn:en;}
   connectedCallback(){super.connectedCallback();this.timer=setInterval(()=>{if(!document.hidden)void this.load();},60_000);}
   disconnectedCallback(){super.disconnectedCallback();++this.epoch;if(this.timer)clearInterval(this.timer);this.timer=null;}
   protected updated(changed:Map<PropertyKey,unknown>){
@@ -43,32 +43,46 @@ export class ModelQuotaMeter extends LitElement {
     panel.showPopover();
   }
   render(){
+    // 余额与窗口是两条口径：有余额就按余额画（绝不把金额换算成限额百分比），否则按最紧窗口画。
     const value=this.value?.provider===this.provider?this.value:null;
-    const windows=value?quotaWindowsForModel(value.windows,this.model):[];
-    const remaining=value?quotaRemaining(windows):null;
-    const amount=value?.balance?.available;
-    const balance=amount!==undefined && amount!==null && String(amount).trim()!==""?Number(amount):NaN;
-    const hasBalance=Number.isFinite(balance);
-    const balanceText=hasBalance?`${value?.balance?.currency==="CNY"?"¥":value?.balance?.currency==="USD"?"$":value?.balance?.currency??""}${balance.toLocaleString(undefined,{maximumFractionDigits:2,minimumFractionDigits:2})}`:"";
-    const unknown=remaining===null && !hasBalance;
-    const label=this.text("当前模型账户额度", "Current model account limits");
-    const triggerLabel=unknown?this.text("额度未知，点击查看详情", "Quota unknown; view details"):label;
-    return html`<button class="chat-quota__trigger" data-state=${unknown?"unknown":"known"} data-kind=${hasBalance?"balance":"quota"} aria-label=${hasBalance?`${label} · ${balanceText}`:triggerLabel} title=${hasBalance?balanceText:triggerLabel} aria-haspopup="dialog" aria-expanded=${this.open} aria-controls=${this.panelId} @click=${()=>this.toggle()}>
-      <svg viewBox="0 0 32 32" aria-hidden="true"><circle class="chat-quota__track" cx="16" cy="16" r="12" pathLength="100"></circle>
-        ${remaining!==null?svg`<circle class="chat-quota__fill" cx="16" cy="16" r="12" pathLength="100" stroke-dasharray=${`${remaining} 100`}></circle>`:nothing}
-        <text x="16" y="20" text-anchor="middle">${remaining!==null?Math.round(remaining):hasBalance?(value!.balance!.currency==="CNY"?"¥":value!.balance!.currency==="USD"?"$":"¤"):this.busy?"…":"·"}</text></svg>${hasBalance?html`<span class="chat-quota__balance">${balanceText}</span>`:nothing}
-    </button><div id=${this.panelId} class="chat-quota__details" popover="auto" role="dialog" aria-label=${label}
+    const summary=summarizeModelQuota(value,this.model);
+    const balance=balanceRingView(summary.balance);
+    const quota=quotaRingView(summary.remaining);
+    const kind=balance?"balance":quota?"quota":"unknown";
+    const tone=balance?.tone ?? quota?.tone;
+    const ratio=balance?.ratio ?? quota?.ratio ?? 0;
+    const aria=balance?balanceAriaLabel(balance,t):quotaAriaLabel(summary.remaining,t);
+    const center=balance?balance.symbol:quota?`${quota.percent}`:this.busy?"…":"·";
+    const profile=quotaCurrencyProfile(summary.balance?.currency);
+    const legend=profile.ceiling!==null && profile.warnBelow!==null && profile.dangerBelow!==null
+      ?{symbol:profile.symbol,ceiling:profile.ceiling,warnBelow:profile.warnBelow,dangerBelow:profile.dangerBelow}:null;
+    const currencyName=profile.currency?`${profile.currency} · ${t(currencyKey(profile.currency))}`:t(currencyKey(profile.currency));
+    const panelLabel=balance?t("quota.details.balance"):t("quota.details.limits");
+    const zh=getLocale().startsWith("zh");
+    return html`<button class="chat-quota__trigger" data-kind=${kind} data-tone=${tone ?? nothing} aria-label=${aria} title=${aria} aria-haspopup="dialog" aria-expanded=${this.open} aria-controls=${this.panelId} @click=${()=>this.toggle()}>
+      <svg class="chat-quota__ring" viewBox="0 0 24 24" aria-hidden="true"><circle class="chat-quota__track" cx="12" cy="12" r="10" pathLength="100"></circle>
+        ${ratio>0?svg`<circle class="chat-quota__fill" cx="12" cy="12" r="10" pathLength="100" stroke-dasharray=${`${ratio*100} 100`}></circle>`:nothing}
+        <text class="chat-quota__center" x="12" y="12" text-anchor="middle" dominant-baseline="central">${center}</text></svg>${balance?html`<span class="chat-quota__balance">${balance.display}</span>`:nothing}
+    </button><div id=${this.panelId} class="chat-quota__details" popover="auto" role="dialog" aria-label=${panelLabel}
       @toggle=${(event:Event)=>{this.open=(event as ToggleEvent).newState==="open";}}>
-      <div class="chat-quota__header"><strong>${this.text("账户额度", "Account limits")}</strong><button class="btn btn--sm" ?disabled=${this.busy || !this.connected} @click=${()=>void this.load(true)}>${this.busy?this.text("查询中…", "Loading…"):this.text("刷新", "Refresh")}</button></div>
+      <div class="chat-quota__header"><strong>${panelLabel}</strong><button class="btn btn--sm" ?disabled=${this.busy || !this.connected} @click=${()=>void this.load(true)}>${this.busy?t("quota.details.loading"):t("quota.details.refresh")}</button></div>
       <p class="muted">${this.provider}${value?.plan?` · ${value.plan}`:""}</p>
-      ${windows.map(w=>{const pct=quotaRemaining([w]);return html`<div class="chat-quota__window"><span>${quotaWindowLabel(w.label,getLocale().startsWith("zh"))}</span><strong>${pct===null?this.text("未知", "Unknown"):`${Math.round(pct)}% ${this.text("剩余", "remaining")}`}</strong>
-        ${w.remaining!==undefined && w.total!==undefined?html`<small>${w.unit==="USD"?"USD ":""}${w.remaining.toLocaleString()} / ${w.total.toLocaleString()}${w.unit==="requests"?this.text(" 次", " requests"):""}</small>`:nothing}
-        ${pct!==null?html`<progress max="100" value=${pct} aria-label=${w.label}></progress>`:nothing}${w.resetAt?html`<small>${this.text("重置", "Resets")} ${new Date(w.resetAt).toLocaleString()}</small>`:nothing}</div>`;})}
-      ${value?.balance?html`<p>${this.text("可用余额", "Available balance")} <strong>${value.balance.currency??""} ${value.balance.available??this.text("未知", "Unknown")}</strong></p>`:nothing}
+      ${balance?html`<div class="chat-quota__balance-block" data-tone=${balance.tone}>
+        <div class="chat-quota__amount"><span>${balance.display}</span><small>${currencyName}</small></div>
+        ${balance.comfort!=="ok"?html`<p class="chat-quota__hint" data-tone=${balance.tone}>${t(balance.comfort==="danger"?"quota.details.lowBalance":"quota.details.lowBalanceWarn")}</p>`:nothing}
+        <div class="chat-quota__legend" role="note"><span class="chat-quota__legend-title">${t("quota.legend.title")}${legend?` · ${t("quota.legend.fullRing")} ${legend.symbol}${legend.ceiling}`:""}</span>
+          ${legend?html`<span class="chat-quota__legend-item" data-tone="accent"><i class="chat-quota__dot" aria-hidden="true"></i>${t("quota.level.ok")} ≥ ${legend.symbol}${legend.warnBelow}</span>
+            <span class="chat-quota__legend-item" data-tone="warn"><i class="chat-quota__dot" aria-hidden="true"></i>${t("quota.level.warn")} ${legend.symbol}${legend.dangerBelow}–${legend.symbol}${legend.warnBelow}</span>
+            <span class="chat-quota__legend-item" data-tone="danger"><i class="chat-quota__dot" aria-hidden="true"></i>${t("quota.level.danger")} &lt; ${legend.symbol}${legend.dangerBelow}</span>`
+          :html`<span class="chat-quota__legend-item" data-tone="accent"><i class="chat-quota__dot" aria-hidden="true"></i>${t("quota.legend.other")}</span>`}
+        </div></div>`:nothing}
+      ${!balance?summary.windows.map(w=>{const pct=quotaRemaining([w]);const comfort=quotaComfort(pct);return html`<div class="chat-quota__window" data-tone=${comfort==="ok"?nothing:comfortTone(comfort)}><span>${quotaWindowLabel(w.label,zh)}</span><strong>${pct===null?t("quota.window.unknown"):`${Math.round(pct)}% ${t("quota.window.remaining")}`}</strong>
+        ${w.remaining!==undefined && w.total!==undefined?html`<small>${w.unit==="USD"?"USD ":""}${w.remaining.toLocaleString()} / ${w.total.toLocaleString()}${w.unit==="requests"?` ${t("quota.window.requests")}`:""}</small>`:nothing}
+        ${pct!==null?html`<progress max="100" value=${pct} aria-label=${quotaWindowLabel(w.label,zh)}></progress>`:nothing}${w.resetAt?html`<small>${t("quota.window.reset")} ${new Date(w.resetAt).toLocaleString()}</small>`:nothing}</div>`;}):nothing}
+      ${!summary.windows.length && !balance && !value?.error?html`<p class="muted">${this.busy?t("quota.details.syncing"):value?.notice==="key-limit-unset"?t("quota.details.keyLimitUnset"):t("quota.details.noLimits")}</p>`:nothing}
       ${value?.error?html`<p role="status">${value.error}</p>`:nothing}
-      ${value?.stale?html`<p class="muted" role="status">${this.text("暂时无法更新，当前显示上次成功查询的数据。", "Refresh failed. Showing the last successful result.")}</p>`:nothing}
-      ${!windows.length && !value?.balance?html`<p class="muted">${this.busy?this.text("正在同步此提供商的额度…", "Syncing provider limits…"):value?.notice==="key-limit-unset"?this.text("此密钥未设置金额限额。账户余额请前往 OpenRouter 控制台查看。", "This key has no spending cap. View account credits in the OpenRouter dashboard."):this.text("此提供商暂未返回当前模型可查询的额度，无法计算剩余比例。", "This provider has not returned limits for this model; remaining capacity is unknown.")}</p>`:nothing}
-      ${value?html`<small class="muted">${this.text("同步于", "Synced")} ${new Date(value.at).toLocaleTimeString()} · ${value.scope==="key"?this.text("当前 API 密钥额度", "Current API key limits"):this.text("提供商返回的账户或模型额度", "Provider account or model limits")}</small>`:nothing}
+      ${value?.stale?html`<p class="muted" role="status">${t("quota.details.stale")}</p>`:nothing}
+      ${value?html`<small class="muted chat-quota__synced">${t("quota.details.synced")} ${new Date(value.at).toLocaleTimeString()} · ${balance?t("quota.details.scopeBalance"):value.scope==="key"?t("quota.details.scopeKey"):t("quota.details.scopeAccount")}</small>`:nothing}
     </div>`;
   }
 }

@@ -407,3 +407,10 @@ Things that are easy to get wrong or forget when working on CryoClaw.
 135. **工作区分组和内核工作目录是两件事。** 新会话要通过 sessions.create 传 cwd，成功后再绑定侧栏；displayName 使用用户可读的新对话名，避免远端列表刷新把本地名称替换成内部会话键。
 
 136. **关闭的 details 只改子元素 display，不能保证 Chromium 中可见。** 新 Chromium 用 ::details-content 的 content-visibility 隐藏内容，子元素仍可能有尺寸但 checkVisibility 返回 false。悬停详情需同步恢复匿名包装层的 content-visibility；验收要用真实鼠标移动和可见性断言，不能只检查尺寸或点击展开。
+137. **grid 子项默认 min-width:auto 会让长单行内容撑破卡片列宽。** 工具卡是 display:grid，参数区 pre 只有 pre-wrap；紧凑 JSON 没有空格断点，min-content 被当作隐式列宽，卡片超出聊天列后被 overflow 裁剪。修复需同时给卡片与网格子项 min-width:0/max-width:100%，pre 加 overflow-wrap:anywhere 或围栏内 overflow-x:auto；只加 overflow:hidden 会把内容裁掉而不是折行。
+
+138. **整卡点击手势必须区分内部 summary/details 交互。** 工具卡根节点统一 @click 打开 sidebar 时，点「输入参数」summary 会同时展开参数并打开 sidebar；键盘 Enter/Space 在 summary 上同样冒泡。要对 details 加 click/keydown stopPropagation，并在卡根入口忽略内层 details/summary/a/button/input/select/textarea（用 cardRoot.contains 排除外层折叠 details，否则全卡点击被吞）。
+
+139. **DSH 沙箱里 Electron-as-Node 子进程写不了全局 OpenClaw 锁目录。** 本会话跑 `scripts/gateway-asar-smoke.test.js` 时 gateway 稳定在 bootstrap 阶段报 EPERM `%LOCALAPPDATA%\OpenClaw\locks\openclaw-state-owners\*.lock`；单独用 5 行 ELECTRON_RUN_AS_NODE 探针写同一路径同样 EPERM，而父 pwsh 写同目录成功——说明是沙箱对子进程的宿主路径写入限制，不是代码回归。完整回归时该条可作为环境豁免；沙箱外（正常 CI/本机）应保持通过。
+140. **按量付费 provider 的余额与窗口额度不能混排。** DeepSeek / Moonshot / SiliconFlow 只有余额语义，官方接口不返回 5 小时/每周窗口；第三方转发或旧缓存若误带 windows，直接渲染会出现「每周额度 5% 剩余」这种不存在的限额，把余额误读成比例。修复分两层：controller 对余额型 provider 清空 windows；组件层「有余额即只画余额」、窗口行只在无余额时渲染，标题按语义切换账户余额/账户额度。
+

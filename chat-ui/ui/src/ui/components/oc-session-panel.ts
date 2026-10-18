@@ -358,6 +358,7 @@ function resetMenuState() {
   sessionMenuMode = "root";
   moreMenuOpen = false;
   closeWorkspaceDialogState();
+  workspaceDialogReturnFocus = null;
   if (sessionMenuOutsideCloser) {
     document.removeEventListener("click", sessionMenuOutsideCloser);
     sessionMenuOutsideCloser = null;
@@ -373,13 +374,25 @@ let workspaceDialogOpen = false;
 let workspaceDraftName = "";
 let workspaceDraftIcon = "";
 let workspaceDraftPath = "";
+// 打开前的焦点：优先「更多」按钮（菜单项退场后会被移除，指针不可靠），
+// 关闭对话框后归还焦点，键盘用户不会掉回 body。
+let workspaceDialogReturnFocus: HTMLElement | null = null;
 
 function openWorkspaceDialog(host: OcSessionPanel) {
   workspaceDialogOpen = true;
   workspaceDraftName = "";
   workspaceDraftIcon = "";
   workspaceDraftPath = "";
+  workspaceDialogReturnFocus =
+    document.querySelector<HTMLElement>(".oc-panel__more-wrap .icon-btn") ??
+    (document.activeElement instanceof HTMLElement ? document.activeElement : null);
   host.bump();
+  // 「更多」菜单已关闭，对话框打开后把焦点送进名称输入框（role=dialog + aria-modal 的
+  // 键盘入口；不做焦点陷阱——面板内浮层按 Esc/backdrop 关闭，结构保持扁平）
+  requestAnimationFrame(() => {
+    if (!workspaceDialogOpen) return;
+    document.querySelector<HTMLInputElement>(".oc-panel__ws-dialog .oc-panel__ws-field input")?.focus();
+  });
 }
 
 function closeWorkspaceDialogState() {
@@ -389,6 +402,9 @@ function closeWorkspaceDialogState() {
 function closeWorkspaceDialog(host: OcSessionPanel) {
   workspaceDialogOpen = false;
   host.bump();
+  const target = workspaceDialogReturnFocus;
+  workspaceDialogReturnFocus = null;
+  requestAnimationFrame(() => target?.isConnected && target.focus());
 }
 
 // 目录选择走 Electron 主进程 dialog（preload 桥 selectDirectory）；非桌面环境无桥时静默忽略
@@ -434,7 +450,7 @@ function renderSessionItem(
       <span
         class="oc-panel__session-name"
         title=${s.label}
-      >${s.depth ? html`<span class="oc-panel__subsession-marker" aria-hidden="true">↳</span>` : nothing}${s.unread ? html`<span class="oc-panel__unread-dot" aria-label=${t("sidebar.unread")}></span>` : nothing}<span class="oc-panel__session-label">${s.label}</span>${s.pinned ? html`<span class="oc-panel__session-pin" aria-label=${t("sidebar.pinned")}>${icons.pin}</span>` : nothing}${s.worktreeBranch ? html`<span class="oc-panel__session-worktree" title=${s.worktreeBranch}>${icons.gitBranch}${s.worktreeBranch}</span>` : nothing}</span>
+      >${s.depth ? html`<span class="oc-panel__subsession-marker" aria-hidden="true">↳</span>` : nothing}${s.unread ? html`<span class="oc-panel__unread-dot" role="img" aria-label=${t("sidebar.unread")}></span>` : nothing}<span class="oc-panel__session-label">${s.label}</span>${s.pinned ? html`<span class="oc-panel__session-pin" role="img" aria-label=${t("sidebar.pinned")}>${icons.pin}</span>` : nothing}${s.worktreeBranch ? html`<span class="oc-panel__session-worktree" title=${s.worktreeBranch}>${icons.gitBranch}${s.worktreeBranch}</span>` : nothing}</span>
       <span class="oc-panel__session-menu-wrap">
         <button
           class="oc-panel__session-action ${menuOpen ?"is-open" : ""} ${deleting ? "is-loading" : ""}"
@@ -635,19 +651,19 @@ function renderWorkspaceDialog(host: OcSessionPanel, props: SessionPanelProps) {
               @input=${(e: Event) => { workspaceDraftPath = (e.target as HTMLInputElement).value; host.bump(); }}
             />
             <button
-              class="oc-panel__ws-browse"
+              class="btn btn--sm"
               type="button"
               @click=${() => void pickWorkspaceDirectory(host)}
             >${t("workspace.browse")}</button>
           </span>
         </label>
         <div class="oc-panel__ws-dialog-actions">
-          <button type="button" class="oc-panel__ws-btn" @click=${() => closeWorkspaceDialog(host)}>
+          <button type="button" class="btn btn--sm" @click=${() => closeWorkspaceDialog(host)}>
             ${t("workspace.cancel")}
           </button>
           <button
             type="button"
-            class="oc-panel__ws-btn oc-panel__ws-btn--primary"
+            class="btn btn--sm primary"
             ?disabled=${!canSubmit}
             @click=${submit}
           >${t("workspace.create")}</button>
@@ -755,7 +771,7 @@ function renderPanelInner(host: OcSessionPanel, props: SessionPanelProps) {
                   <span class="oc-panel__workspace-icon" aria-hidden="true">${section.workspace.icon}</span>
                   <span class="oc-panel__workspace-name" title=${section.workspace.path}>${section.workspace.name}</span>
                   <button
-                    class="oc-panel__workspace-action"
+                    class="icon-btn icon-btn--xs oc-panel__workspace-action"
                     type="button"
                     data-tooltip=${t("workspace.newSessionHere")}
                     data-tooltip-pos="bottom"
@@ -763,7 +779,7 @@ function renderPanelInner(host: OcSessionPanel, props: SessionPanelProps) {
                     @click=${() => props.onNewChatInWorkspace(section.workspace.id)}
                   >${icons.plus}</button>
                   <button
-                    class="oc-panel__workspace-action oc-panel__workspace-action--danger"
+                    class="icon-btn icon-btn--xs oc-panel__workspace-action oc-panel__workspace-action--danger"
                     type="button"
                     data-tooltip=${t("workspace.remove")}
                     data-tooltip-pos="bottom"
