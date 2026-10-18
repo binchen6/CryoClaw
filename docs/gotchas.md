@@ -405,3 +405,5 @@ Things that are easy to get wrong or forget when working on CryoClaw.
 134. **命令目录异步完成必须通知视图，且按连接隔离。** 用户先输入 /、目录后到时，没有 requestUpdate 就只能等其他交互触发候选。补全只替换当前 token，保留后缀；IME、选区、多行与 Escape 不应误触发送或替换。
 
 135. **工作区分组和内核工作目录是两件事。** 新会话要通过 sessions.create 传 cwd，成功后再绑定侧栏；displayName 使用用户可读的新对话名，避免远端列表刷新把本地名称替换成内部会话键。
+
+136. **关闭的 details 只改子元素 display，不能保证 Chromium 中可见。** 新 Chromium 用 ::details-content 的 content-visibility 隐藏内容，子元素仍可能有尺寸但 checkVisibility 返回 false。悬停详情需同步恢复匿名包装层的 content-visibility；验收要用真实鼠标移动和可见性断言，不能只检查尺寸或点击展开。

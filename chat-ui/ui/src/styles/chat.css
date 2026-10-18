@@ -3295,6 +3295,8 @@ oc-turn-files { display:block; position:relative; z-index:20; width:100%; max-wi
 .chat-turn-files svg { width:15px; height:15px; }
 .chat-turn-files__popover { position:absolute; bottom:100%; left:0; min-width:min(380px,75vw); padding:12px; background:var(--bg-elevated); color:var(--text); border:1px solid var(--border); border-radius:var(--radius-lg); box-shadow:var(--shadow-lg); }
 .chat-turn-files:not([open]):hover > .chat-turn-files__popover { display:block; }
+/* Chromium hides the anonymous details wrapper independently of its children. */
+.chat-turn-files:not([open]):hover::details-content { content-visibility:visible; }
 .chat-turn-files__list { max-height:240px; overflow:auto; margin-bottom:8px; }
 .chat-turn-files__row { display:flex; align-items:center; gap:10px; padding:7px 0; }
 .chat-turn-files__path { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:300px; }

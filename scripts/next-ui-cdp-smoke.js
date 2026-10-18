@@ -39,10 +39,14 @@ const { arg, launch, connect, waitForPageTarget, waitForAppReady, waitForSettle,
     await cdp.evaluate(`(()=>{const app=document.querySelector('openclaw-app');app.chatMessages=[{role:'user',content:[{type:'text',text:'Update file'}],timestamp:Date.now()},{role:'assistant',content:[{type:'toolcall',name:'write',arguments:{path:'src/changed.ts',content:'example'}}],timestamp:Date.now()+1}];app.chatToolMessages=[];app.requestUpdate();})()`);
     await until(`!!document.querySelector('oc-turn-files .chat-turn-files')`, "Turn file capsule");
     assert.equal(await cdp.evaluate(`document.querySelectorAll('.chat-group .chat-file-changes').length`), 0);
+    const summaryBounds = await cdp.evaluate(`(()=>{const r=document.querySelector('.chat-turn-files summary').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2};})()`);
+    await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", ...summaryBounds });
+    await waitForSettle(cdp, 200);
+    assert.ok(await cdp.evaluate(`document.querySelector('.chat-turn-files__popover').checkVisibility()`), "Hover opens the visible details without clicking");
     await cdp.evaluate(`document.querySelector('.chat-turn-files summary').click()`);
     assert.ok(await cdp.evaluate(`document.querySelector('.chat-turn-files__path').textContent.includes('src/changed.ts')`));
     for (const width of [800, 1200]) { await setViewport(cdp, width); await waitForSettle(cdp, 150); assert.ok(await cdp.evaluate(`document.documentElement.scrollWidth<=innerWidth`)); }
     assert.deepEqual(cdp.exceptions, []);
-    console.log(JSON.stringify({ nativeSlashCatalog: true, modelCompletion: true, escape: true, conversationInfo: true, interruptibleExit: true, nativeWorkspaceCwd: true, turnFileCapsule: true, widths: [800, 1200], rendererExceptions: 0 }));
+    console.log(JSON.stringify({ nativeSlashCatalog: true, modelCompletion: true, escape: true, conversationInfo: true, interruptibleExit: true, nativeWorkspaceCwd: true, turnFileCapsule: true, hoverDetails: true, widths: [800, 1200], rendererExceptions: 0 }));
   } finally { ws?.close(); cleanup(); }
 })().catch(error => { console.error(error.stack); process.exitCode = 1; });

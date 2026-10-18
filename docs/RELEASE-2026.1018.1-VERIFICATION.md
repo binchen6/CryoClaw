@@ -23,7 +23,9 @@
 ## 发布验收
 
 - 四套桌面 QA 全部通过：布局 20 场景、设置 14 页签、交互 8 步、截图 28 张；0 渲染异常、0 重叠、0 裸翻译键、0 页面横向溢出、0 低对比度告警。两处文本裁切告警只涉及骨架闪光层，已人工复核。截图报告 out/ui-qa/2026-10-18T08-51/report.json。
-- 最终安装包 out/release-20261018-1/CryoClaw-Setup-2026.1018.1-x64.exe，260482562 字节。静默安装返回 OK，安装版 2026.1018.1、内核 2026.10.4、Helper Node v24.18.1，UI 与最终构建一致。安装包未配置 Authenticode 签名，与既有发行方式一致。
+- 最终安装包 out/release-20261018-1/CryoClaw-Setup-2026.1018.1-x64.exe，260480190 字节。静默安装返回 OK，安装版 2026.1018.1、内核 2026.10.4、Helper Node v24.18.1，UI 与最终构建一致。安装包未配置 Authenticode 签名，与既有发行方式一致。
 - 实际安装版模型、主题额度、命令工作区三套专项再次通过，0 渲染异常。日志 .cache/release-20261018-1-installed-{model,theme,chat}.log；安装日志 .cache/release-20261018-1-install.log。
 - 源码提交 9c446b6 的 [GitHub CI](https://github.com/binchen6/CryoClaw/actions/runs/39113456916) 成功。发布草稿三资产断言通过；latest.yml 的 SHA-512 与本地安装包一致，GitHub 为三资产计算的 SHA-256 及大小逐一与本地一致。
 - [2026.1018.1 发行页](https://github.com/binchen6/CryoClaw/releases/tag/v2026.1018.1)。发布时将草稿转正、设为 latest，再复核公开资产与远端标签。用户 .zcode/、.zcodeignore 和账户 QA 状态均保留，未进入提交或发行包。
+
+- 末轮悬停补测发现 Chromium 的 ::details-content 独立隐藏规则，已在关闭但悬停时显式恢复 content-visibility。新增真实鼠标移动与 checkVisibility 断言；修复后的打包窗口 .cache/release-20261018-1-hover-fixed-native.log 全项通过，含 hoverDetails:true、800/1200px 与 0 渲染异常。安装版补测记录使用 .cache/release-20261018-1-hover-installed.log。
