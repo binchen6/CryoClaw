@@ -397,3 +397,11 @@ Things that are easy to get wrong or forget when working on CryoClaw.
 130. **受控滑块必须保留尚未提交的手势值。** 父组件重绘可能在下一帧前把旧 value 写回来；用独立 pendingValue 保存输入，同帧合并为一次提交。无关会话设置同步不应重新应用已保存外观，否则会覆盖未保存的实时预览。字体微小数值直接设置可变字体 wght 轴，避免 CSS font-weight 选择值量化；保留标题和按钮的独立字重层级。
 
 131. **大备份的容量和写入安全要同时升级。** 归档 0.2.2 的 JS/Rust 统一 1GiB/条、3GiB/包、50000 条目及 32MiB 目录元数据，继续以 64KiB 分块读写；整体仍在经典 ZIP 的偏移和计数范围内。备份排除根级内核 tmp 捕获缓存，保留用户 workspace/tmp。先完成临时归档再原子换装目标，失败不破坏现有备份；界面只显示真实阶段、条目和可获取的字节进度。
+
+132. **模型数组整体替换仍要声明内层删减路径。** config.patch 把 models.providers.p.models 放进 replacePaths，并不能替代 models.providers.p.models[].input。内核删减护栏逐层扫描；同长度的 image→audio 也删除旧条目。构造补丁时递归收集准确路径，保存后核对实际落盘而不是只看抽屉消失。快照重试期间保留上一份显示快照，避免编辑器和卡片因缓存失效一起消失。
+
+133. **View Transition 被打断时要处理三条 Promise。** ready、updateCallbackDone 和 finished 都可能拒绝；只捕获 finished，快速切页仍会产生未处理 InvalidStateError。新转场作废旧转场，旧回调完成后不得清掉新转场引用。
+
+134. **命令目录异步完成必须通知视图，且按连接隔离。** 用户先输入 /、目录后到时，没有 requestUpdate 就只能等其他交互触发候选。补全只替换当前 token，保留后缀；IME、选区、多行与 Escape 不应误触发送或替换。
+
+135. **工作区分组和内核工作目录是两件事。** 新会话要通过 sessions.create 传 cwd，成功后再绑定侧栏；displayName 使用用户可读的新对话名，避免远端列表刷新把本地名称替换成内部会话键。
