@@ -204,7 +204,7 @@ function runToolSession(
   tool: ArchiveToolHandle,
   subcommand: string,
   command: unknown,
-  options?: { onManifest?: (entries: RustManifestEntry[]) => unknown },
+  options?: { onManifest?: (entries: RustManifestEntry[]) => unknown;onProgress?:(done:number,total:number)=>void },
 ): Promise<ToolEvent & { type: "result" }> {
   return new Promise((resolve, reject) => {
     const child = spawn(tool.binPath, [subcommand], { windowsHide: true });
@@ -279,6 +279,7 @@ function runToolSession(
           });
           continue;
         }
+        if(event.type==="progress")try{options?.onProgress?.(event.done,event.total);}catch{}
         lastEvent = event;
       }
     });
@@ -323,6 +324,7 @@ export async function rustExtractArchive(
     outputDir: string | null;
     capture: string[];
     onManifest: (entries: RustManifestEntry[]) => RustExtractEntry[];
+    onProgress?:(done:number,total:number)=>void;
   },
 ): Promise<{ entryNames: string[]; capture: RustCapturedEntry[] }> {
   const result = await runToolSession(
@@ -335,7 +337,7 @@ export async function rustExtractArchive(
       capture: params.capture,
       utcOffsetMinutes: new Date().getTimezoneOffset(),
     },
-    { onManifest: (entries) => ({ entries: params.onManifest(entries) }) },
+    { onManifest: (entries) => ({ entries: params.onManifest(entries) }),onProgress:params.onProgress },
   );
   if (!result.ok) throw toArchiveError(result.error!);
   return { entryNames: result.entryNames ?? [], capture: result.capture ?? [] };
@@ -344,13 +346,13 @@ export async function rustExtractArchive(
 /** create 子命令：按 JS 收集的条目清单流式写 zip。 */
 export async function rustCreateArchive(
   tool: ArchiveToolHandle,
-  params: { outputPath: string; entries: RustCreateEntry[] },
+  params: { outputPath: string; entries: RustCreateEntry[];onProgress?:(done:number,total:number)=>void },
 ): Promise<void> {
   const result = await runToolSession(tool, "create", {
     cmd: "create",
     output: params.outputPath,
     entries: params.entries,
-  });
+  },{onProgress:params.onProgress});
   if (!result.ok) throw toArchiveError(result.error!);
 }
 

@@ -7,6 +7,8 @@ import { writeFileAtomicSync } from "./atomic-write";
 // ── 类型定义 ──
 
 export interface CryoclawConfig {
+  approvedWorkspaceRoots?:string[];
+  openaiProxy?: { mode: "system" | "direct" | "custom"; url: string };
   setupCompletedAt?: string;
   cliPreference?: "installed" | "uninstalled";
   updateChannel?: "stable" | "dev" | "off";

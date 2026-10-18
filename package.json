@@ -1,6 +1,6 @@
 {
   "name": "cryoclaw",
-  "version": "2026.1014.2",
+  "version": "2026.1018.0",
   "private": true,
   "description": "CryoClaw desktop app — cross-platform Electron shell for openclaw",
   "main": "dist/main.js",
@@ -64,7 +64,7 @@
     "weixin": "2.4.10",
     "wecom": "2026.9.15",
     "officecli": "1.0.157",
-    "archiveTool": "0.2.0",
+    "archiveTool": "0.2.2",
     "feishuPlugin": "2026.10.3",
     "qqbotPlugin": "2026.7.1",
     "moonshotProviderPlugin": "2026.10.3",

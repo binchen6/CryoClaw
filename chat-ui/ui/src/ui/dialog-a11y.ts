@@ -55,6 +55,28 @@ export function focusOpenDialogIfNeeded(doc: Document = document): boolean {
   return doc.activeElement === dialog;
 }
 
+/** Keep keyboard navigation inside the top modal, including its exit animation. */
+export function trapDialogTab(event: KeyboardEvent, doc: Document = document): boolean {
+  if (event.key !== "Tab" || event.ctrlKey || event.metaKey || event.altKey) return false;
+  const dialog = findOpenDialog(doc);
+  if (!dialog) return false;
+  const controls = Array.from(dialog.querySelectorAll<HTMLElement>(
+    'button, a[href], input, select, textarea, [tabindex], [contenteditable="true"]',
+  )).filter(el => el.tabIndex >= 0 && !el.matches(":disabled, [aria-disabled='true']")
+    && !el.closest("[inert]") && el.getClientRects().length > 0
+    && doc.defaultView?.getComputedStyle(el).visibility !== "hidden");
+  const first = controls[0];
+  const last = controls[controls.length - 1];
+  const active = doc.activeElement;
+  if (!first || !active || !controls.includes(active as HTMLElement)
+    || (event.shiftKey ? active === first : active === last)) {
+    event.preventDefault();
+    (event.shiftKey ? last ?? dialog : first ?? dialog).focus();
+    return true;
+  }
+  return false;
+}
+
 /** Escape 键判定（含旧式 keyCode 兜底）。 */
 export function isEscapeKey(event: { key?: string; keyCode?: number }): boolean {
   return event.key === "Escape" || event.key === "Esc" || event.keyCode === 27;

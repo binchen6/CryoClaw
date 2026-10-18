@@ -11,19 +11,25 @@
 }
 
 html,
+@font-face { font-family: "Cryo Inter"; src: url("/fonts/InterVariable.ttf") format("truetype"); font-weight: 100 900; font-display: swap; }
+@font-face { font-family: "Cryo MiSans"; src: url("/fonts/MiSans-VF.ttf") format("truetype"); font-weight: 100 900; font-display: swap; }
+@font-face { font-family: "Cryo JetBrains Mono"; src: url("/fonts/JetBrainsMono-Regular.ttf") format("truetype"); font-weight: 400; font-display: swap; }
 body {
   height: 100%
 }
 
 body {
   margin: 0;
-  font: 400 14px/1.55 var(--font-body);
+  font: var(--appearance-style,normal) var(--appearance-weight,400) var(--font-size-body,14px)/var(--appearance-line-height,1.55) var(--font-body);
+  font-variation-settings: var(--appearance-variation,normal);
   letter-spacing: -.02em;
   background: var(--bg);
   color: var(--text);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale
 }
+/* Explicit hierarchy keeps its own weight while body text follows the exact VF axis. */
+strong,b,h1,h2,h3,h4,h5,h6,button,[role=button],.cc-tag,.empty-state__title { font-variation-settings: normal; }
 
 @keyframes theme-circle-transition {
   0% {
@@ -82,6 +88,7 @@ html.theme-transition::view-transition-new(theme) {
   .chat-compose__send-btn:hover:not(:disabled) {
     transform: none !important
   }
+  .chat-quota__details { transform: none !important; }
 }
 
 openclaw-app {
@@ -196,3 +203,8 @@ select {
   outline: none;
   box-shadow: var(--focus-ring)
 }
+
+/* Decorative glyphs inherit the accessible name of their owning control. */
+.cryo-icon { display: inline-block; width: 1em; height: 1em; flex-shrink: 0; vertical-align: -.125em; stroke-width: var(--icon-stroke); }
+.cryo-icon:not([fill=currentColor]) { fill: none; }
+@media(pointer:coarse) { .icon-btn,.icon-btn--sm,.icon-btn--xs { min-width: 40px; min-height: 40px; } }

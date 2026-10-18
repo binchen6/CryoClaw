@@ -3,6 +3,7 @@
  */
 
 export type ChatAttachment = {
+  thumbnailUrl?:string;
   id: string;
   name?: string;
   type?: string;

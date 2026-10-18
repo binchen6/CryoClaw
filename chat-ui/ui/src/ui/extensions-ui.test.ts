@@ -27,7 +27,7 @@ test("registry：extensions 视图 id + meta（2026.9：非 fullpage，rail 常�
 test("app-render：renderActiveView 分发 extensions + rail 接线", () => {
   const s = src("app-render.ts");
   assert.match(s, /case "extensions":\s*\n\s*return renderExtensionsView\(state\)/, "缺少渲染分支");
-  assert.match(s, /onOpenExtensions: \(\) => openExtensionsView\(state\)/, "缺少 onOpenExtensions prop");
+  assert.match(s, /onOpenExtensions:\s*\(\)\s*=>[^\n]*openExtensionsView\(state\)/, "缺少 onOpenExtensions prop");
   assert.match(s, /activeView: cryoclawView/, "应向 oc-rail 传 activeView");
 });
 

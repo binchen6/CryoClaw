@@ -93,7 +93,7 @@
   height: var(--icon-size-16);
   stroke: currentColor;
   fill: none;
-  stroke-width: 1.5;
+  stroke-width: var(--icon-stroke);
   stroke-linecap: round;
   stroke-linejoin: round;
   flex-shrink: 0;
@@ -378,7 +378,7 @@
   height: 12px;
   stroke: currentColor;
   fill: none;
-  stroke-width: 2px;
+  stroke-width: var(--icon-stroke);
   stroke-linecap: round;
   stroke-linejoin: round;
 }

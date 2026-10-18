@@ -46,6 +46,8 @@ export interface OAuthStatus {
 }
 
 export interface UsageData {
+  success?: boolean;
+  message?: string;
   data?: {
     weekUsage?: { used: number; limit: number };
     rateLimits?: { used: number; limit: number };
@@ -221,6 +223,7 @@ export interface KernelUpdateState {
   rollbackAvailable: boolean;
   running: boolean;
   checkError?: string | null;
+  stableSource?:string|null;
 }
 
 export type KernelUpdateResult =
@@ -594,6 +597,7 @@ export type ProviderUsageInfo =
       toppedUp?: string;
       currency?: string;
       sufficient?: boolean;
+      scope?: "account" | "key";
     }
   | {
       supported: true;
@@ -601,6 +605,9 @@ export type ProviderUsageInfo =
       pct?: number;
       plan?: string;
       resetSeconds?: number;
+      scope?: "account" | "key";
+      windows?: Array<{label:string;usedPercent:number|null;resetAt?:number;model?:string;remaining?:number;total?:number;unit?:"USD"|"requests"}>;
+      notice?: "key-limit-unset";
     };
 
 /** 从提供商 /models 端点拉实时模型列表（params 与 verify-key 同构 + providerKey） */
@@ -611,6 +618,10 @@ export function settingsFetchProviderModels(params: Record<string, unknown>): Pr
 /** 查询提供商订阅用量 / 余额；unsupported=true 表示该提供商暂无受支持的查询端点 */
 export function settingsGetProviderUsage(providerKey: string): Promise<{ success: boolean; data?: ProviderUsageInfo; message?: string; unsupported?: boolean }> {
   return oc().settingsGetProviderUsage({ providerKey });
+}
+export type ArchiveProgress={phase:string;filesDone?:number;filesTotal?:number;bytesDone?:number;bytesTotal?:number};
+export function onArchiveProgress(callback:(progress:ArchiveProgress)=>void):()=>void {
+  return (window as any).cryoclaw?.onArchiveProgress?.(callback)??(()=>{});
 }
 
 // ---------------------------------------------------------------------------
@@ -1067,7 +1078,15 @@ export function onNavigate(cb: (payload: NavigatePayload) => void): () => void {
 }
 
 export function onSettingsNavigate(cb: (payload: { tab: string; notice: string }) => void): () => void {
-  return oc().onSettingsNavigate(cb);
+  return oc()?.onSettingsNavigate?.(cb) ?? (() => {});
+}
+
+export interface OpenAIProxyConfig { mode: "system" | "direct" | "custom"; url: string }
+export async function openaiProxy(action: "get" | "save" | "test", config?: OpenAIProxyConfig): Promise<any> {
+  const bridge = oc() as any;
+  const method = bridge?.[{get:"openaiProxyGet",save:"openaiProxySave",test:"openaiProxyTest"}[action]];
+  if (!method) throw new Error("此设置需要新版 CryoClaw 桌面客户端");
+  return unwrapData(await method(config));
 }
 
 

@@ -2763,6 +2763,9 @@ async function packGatewayAsar(gatewayDir, targetBase, platform, arch) {
   // 补丁 fs-safe pinned-open：asar 虚拟路径映射到 .asar.unpacked 真实路径
   // （2026.9.2+ 插件公开构件身份校验需要真实 dev/ino，见 R56）
   const fsSafePatched = kernelDistPatch.patchFsSafeAsarUnpacked(gatewayDir);
+  kernelDistPatch.patchFsSafeAsarWalk(gatewayDir);
+  kernelDistPatch.patchPluginArtifactAsarIdentity(gatewayDir);
+  kernelDistPatch.patchPluginNativeAsarHost(gatewayDir);
   log(`fs-safe pinned-open asar→unpacked 补丁: ${fsSafePatched > 0 ? "已注入" : "跳过（形态未命中）"}`);
 
   // 补丁 worker 输入 Proxy 清理：Windows 上 env Proxy 经 session-store-target 请求
@@ -2791,7 +2794,7 @@ async function packGatewayAsar(gatewayDir, targetBase, platform, arch) {
   log("正在打包 gateway.asar ...");
   await asar.createPackageWithOptions(gatewayDir, asarPath, {
     unpack: "{**/*.node,**/*.exe,**/*.dll,**/*.dylib,**/*.so,**/spawn-helper}",
-    unpackDir: "{node_modules/openclaw/dist/extensions,node_modules/@openclaw/fs-safe/dist/extensions}",
+    unpackDir: "{node_modules/openclaw/dist/extensions,node_modules/@openclaw/fs-safe/dist/extensions,node_modules/openclaw/skills}",
   });
 
   const asarSize = (fs.statSync(asarPath).size / 1048576).toFixed(1);

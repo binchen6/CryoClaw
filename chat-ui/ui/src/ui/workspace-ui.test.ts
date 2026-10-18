@@ -147,7 +147,9 @@ test("views/workspace.ts：文件树保留刷新/打开根目录/逐项打开能
 
 test("app-workspace.ts：worktree 节点选中 → 切仓库 + 右区切 git（联动补全）", () => {
   const s = src("app-workspace.ts");
-  assert.match(s, /selectGitRepo\(state, repoPath\)/, "worktree 节点应切换 git 仓库上下文");
+  assert.match(s, /switchWorkspaceRepository\(state,\s*repoPath\)/, "worktree 节点应切换工作区与 git 上下文");
+  assert.match(s, /setWorkspaceRoot\(state,\s*path,\s*true\)/, "选择仓库时文件浏览根也应同步");
+  assert.match(s, /selectGitRepo\(state,\s*path\)/, "仓库切换应调用 git 控制器");
   assert.match(s, /selectWorkspaceMode\("git"\)/, "右区应切 git 面板");
 });
 

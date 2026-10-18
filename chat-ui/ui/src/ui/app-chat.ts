@@ -9,7 +9,7 @@ import { requeueChatMessageForSession } from "./run-state-store.ts";
 import { abortChatRun, loadChatHistory, sendChatMessage } from "./controllers/chat.ts";
 import { loadSessions, patchSession } from "./controllers/sessions.ts";
 import { normalizeBasePath } from "./navigation.ts";
-import { managedMediaHttpOrigin } from "./chat/managed-media.ts";
+import { managedMediaHttpOrigin,fetchGatewayAvatarMeta,fetchManagedImageObjectUrl } from "./chat/managed-media.ts";
 import { pendingSessionLabels, pendingSessionResets } from "./session-pending.ts";
 import { generateUUID } from "./uuid.ts";
 
@@ -487,8 +487,9 @@ function resolveAgentIdForSession(host: ChatHost): string | null {
   return fallback || "main";
 }
 
-function buildAvatarMetaUrl(basePath: string, agentId: string): string {
-  const base = normalizeBasePath(basePath);
+export function buildAvatarMetaUrl(basePath: string, agentId: string, protocol = typeof location === "undefined" ? "" : location.protocol): string {
+  // file:// basePath is the installation directory, not a gateway URL prefix.
+  const base = protocol === "file:" ? "" : normalizeBasePath(basePath);
   const encoded = encodeURIComponent(agentId);
   return base ? `${base}/avatar/${encoded}?meta=1` : `/avatar/${encoded}?meta=1`;
 }
@@ -512,15 +513,14 @@ export async function refreshChatAvatar(host: ChatHost) {
   // file:// 加载形态下相对 URL 会落到本地文件系统而恒失败：拼上网关 HTTP origin
   // （与托管图片同一配置源；未配置时回退相对路径，保持 dev 同源行为）
   const origin = managedMediaHttpOrigin() ?? "";
-  const url = `${origin}${buildAvatarMetaUrl(host.basePath, agentId)}`;
   // 竞态守卫：fetch 期间会话可能已切换，落地前再比对一次当前 agentId
-  const isStale = () => resolveAgentIdForSession(host) !== agentId;
+  const isStale = () => !host.connected || (managedMediaHttpOrigin() ?? "") !== origin || resolveAgentIdForSession(host) !== agentId;
   try {
-    const res = await fetch(url, { method: "GET" });
+    const res = await fetchGatewayAvatarMeta(buildAvatarMetaUrl(host.basePath, agentId));
     if (isStale()) {
       return;
     }
-    if (!res.ok) {
+    if (!res?.ok) {
       host.chatAvatarUrl = null;
       host.chatAvatarAgentId = agentId;
       return;
@@ -530,7 +530,15 @@ export async function refreshChatAvatar(host: ChatHost) {
       return;
     }
     const avatarUrl = typeof data.avatarUrl === "string" ? data.avatarUrl.trim() : "";
-    host.chatAvatarUrl = avatarUrl || null;
+    let resolved = avatarUrl || null;
+    if (avatarUrl && origin) {
+      const candidate = new URL(avatarUrl, origin);
+      if (candidate.origin === new URL(origin).origin && /\/avatar\/[^/]+$/.test(candidate.pathname)) {
+        resolved = await fetchManagedImageObjectUrl(candidate.href);
+      }
+    }
+    if (isStale()) return;
+    host.chatAvatarUrl = resolved;
     host.chatAvatarAgentId = agentId;
   } catch {
     if (isStale()) {

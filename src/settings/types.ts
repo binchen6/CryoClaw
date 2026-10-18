@@ -4,7 +4,7 @@
  * 由它把同一份 opts 分发给 src/settings/ 下的各域注册函数。
  */
 export interface SettingsIpcOptions {
-  importOpenclawState: (filePath: string) => Promise<void>;
+  importOpenclawState: (filePath: string,progress?:import("../archive-progress").ArchiveProgressCallback) => Promise<void>;
   requestGatewayRestart?: () => void;
   getGatewayToken?: () => string;
   /** 停止 gateway（恢复出厂等删配置场景必须先停，防内核 config observer 写回复活） */

@@ -24,10 +24,37 @@ use crate::zip_reader::{self, CentralEntry};
 
 const ZIP_COMPRESSION_STORE: u16 = 0;
 const MAX_CAPTURED_ENTRY_BYTES: u64 = 5 * 1024 * 1024;
+const MAX_ENTRY_BYTES: u64 = 1024 * 1024 * 1024;
+const MAX_TOTAL_BYTES: u64 = 3 * 1024 * 1024 * 1024;
+const MAX_ENTRY_COUNT: usize = 50_000;
+
+#[cfg(test)]
+mod output_budget_tests {
+    use super::*;
+    #[test]
+    fn uncaptured_output_stops_at_declared_size() {
+        let mut state = EntryState::begin(false);
+        state.expected_size = 2;
+        assert!(pump_stream(&b"abc"[..], &mut state, None, None, "data.bin").is_err());
+        let mut valid = EntryState::begin(false);
+        valid.expected_size = 3;
+        assert!(pump_stream(&b"abc"[..], &mut valid, None, None, "data.bin").is_ok());
+    }
+}
 const CHUNK_SIZE: usize = 64 * 1024;
 
 pub fn run(cmd: &ExtractCommand, reader: &mut impl BufRead) -> ArchiveResult<(Vec<String>, Vec<CapturedEntry>)> {
     let parsed = zip_reader::parse(&cmd.zip)?;
+    let mut total_bytes = 0u64;
+    if parsed.entries.len() > MAX_ENTRY_COUNT {
+        return Err(ArchiveError::new("resource-limit", "ZIP entry count exceeds resource limit"));
+    }
+    for entry in &parsed.entries {
+        total_bytes = total_bytes.saturating_add(entry.uncompressed_size);
+        if entry.uncompressed_size > MAX_ENTRY_BYTES || total_bytes > MAX_TOTAL_BYTES {
+            return Err(ArchiveError::new("resource-limit", "ZIP output exceeds resource limit"));
+        }
+    }
 
     let whitelist_storage;
     let whitelist_source: &[ExtractEntry] = match &cmd.entries {
@@ -109,6 +136,7 @@ pub fn run(cmd: &ExtractCommand, reader: &mut impl BufRead) -> ArchiveResult<(Ve
         // 数据泵：store 直接拷，deflate 经 DeflateDecoder；validate 形态（无
         // output_dir）只校验不落盘；目录条目只校验（且任何数据字节都拒绝）
         let mut state = EntryState::begin(capture.contains(entry.name.as_str()));
+        state.expected_size = entry.uncompressed_size;
         {
             let mut file = &parsed.file;
             file.seek(SeekFrom::Start(entry.data_start))?;
@@ -147,6 +175,7 @@ pub fn run(cmd: &ExtractCommand, reader: &mut impl BufRead) -> ArchiveResult<(Ve
 }
 
 struct EntryState {
+    expected_size: u64,
     hasher: Hasher,
     size: u64,
     captured: Option<Vec<u8>>,
@@ -155,6 +184,7 @@ struct EntryState {
 impl EntryState {
     fn begin(want_capture: bool) -> Self {
         EntryState {
+            expected_size: 0,
             hasher: Hasher::new(),
             size: 0,
             captured: if want_capture { Some(Vec::new()) } else { None },
@@ -200,6 +230,9 @@ fn pump_stream(
         }
         state.hasher.update(&buf[..n]);
         state.size += n as u64;
+        if state.size > state.expected_size {
+            return Err(ArchiveError::size_mismatch(entry_name));
+        }
         if let Some(bytes) = state.captured.as_mut() {
             bytes.extend_from_slice(&buf[..n]);
             // 流式上限：central 声明的 uncompressed_size 可为伪造小值（JS 的 5MB

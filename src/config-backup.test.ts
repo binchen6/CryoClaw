@@ -164,6 +164,15 @@ test("backupCurrentUserConfig 去重：距上一份 < 60s 的连写不再新增�
   fs.rmSync(cfgPath, { force: true });
 });
 
+test("backupCurrentUserConfig tolerates subsecond filesystem clock skew",async()=>{
+  const {backupCurrentUserConfig}=await import("./config-backup");
+  resetBackupFixture(JSON.stringify({step:0}));backupCurrentUserConfig();
+  const first=backupFiles()[0],future=new Date(Date.now()+500);
+  fs.utimesSync(path.join(backupDir,first),future,future);
+  fs.writeFileSync(cfgPath,JSON.stringify({step:1}),"utf8");backupCurrentUserConfig();
+  expect(backupFiles()).toEqual([first]);
+});
+
 test("backupCurrentUserConfig：连写窗口已过且内容变化时仍新增备份", async () => {
   const { backupCurrentUserConfig } = await import("./config-backup");
   resetBackupFixture(JSON.stringify({ version: 1 }));

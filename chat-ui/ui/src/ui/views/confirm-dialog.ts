@@ -12,6 +12,7 @@ interface PendingConfirm {
   message: string;
   danger: boolean;
   resolve: (ok: boolean) => void;
+  settled?: boolean;
 }
 
 let pending: PendingConfirm | null = null;
@@ -25,7 +26,7 @@ export function showConfirm(
   pending?.resolve(false);
   return new Promise<boolean>((resolve) => {
     exitToken++;
-    document.querySelector(".cc-dialog-overlay")?.classList.remove("cc-leaving");
+    document.querySelector("[data-confirm-dialog]")?.classList.remove("cc-leaving");
     pending = { message, danger: opts?.danger === true, resolve };
     host.requestUpdate();
   });
@@ -37,10 +38,11 @@ let exitToken = 0;
 
 function settle(host: AppViewState, ok: boolean) {
   const p = pending;
-  if (!p) return;
+  if (!p || p.settled) return;
+  p.settled = true;
   p.resolve(ok);
   const token = ++exitToken;
-  runExitAnimation(document.querySelector(".cc-dialog-overlay"), () => {
+  runExitAnimation(document.querySelector("[data-confirm-dialog]"), () => {
     if (token !== exitToken || pending !== p) return;
     pending = null;
     host.requestUpdate();
@@ -51,12 +53,13 @@ export function renderConfirmDialog(state: AppViewState) {
   if (!pending) return nothing;
   const { message, danger } = pending;
   return html`
-    <div class="cc-dialog-overlay" role="dialog" aria-modal="true" tabindex="-1">
+    <div class="cc-dialog-overlay" data-confirm-dialog role="dialog" aria-modal="true"
+      aria-labelledby="confirm-dialog-title" aria-describedby="confirm-dialog-message" tabindex="-1">
       <div class="cc-dialog cc-dialog--sm">
         <div class="cc-dialog__head">
-          <div class="cc-dialog__title">${t("confirm.title")}</div>
+          <div class="cc-dialog__title" id="confirm-dialog-title">${t("confirm.title")}</div>
         </div>
-        <div class="cc-dialog__body">${message}</div>
+        <div class="cc-dialog__body" id="confirm-dialog-message">${message}</div>
         <div class="cc-dialog__foot">
           <button class="btn" data-dialog-dismiss @click=${() => settle(state, false)}>
             ${t("settings.cancel")}

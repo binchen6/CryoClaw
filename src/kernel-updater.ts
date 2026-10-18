@@ -33,6 +33,7 @@ export type KernelUpdateState = {
   running: boolean;
   /** 最近一次 registry 查询失败原因 */
   checkError?: string | null;
+  stableSource?: string | null;
 };
 
 export type KernelUpdateProgress = {
@@ -94,6 +95,7 @@ export function getKernelUpdateState(): KernelUpdateState {
     rollbackAvailable: lastCheck.rollbackAvailable ?? false,
     running,
     checkError: lastCheck.checkError ?? null,
+    stableSource: lastCheck.stableSource ?? null,
   };
 }
 
@@ -101,7 +103,7 @@ export function getKernelUpdateState(): KernelUpdateState {
 
 type UpdaterEvent =
   | { type: "progress"; step: string; pct: number; msg: string }
-  | { type: "state"; current: string; latest: string | null; updateAvailable: boolean; rollbackAvailable?: boolean; checkError?: string }
+  | { type: "state"; current: string; latest: string | null; updateAvailable: boolean; rollbackAvailable?: boolean; checkError?: string;stableSource?:string }
   | { type: "done"; action: "update" | "rollback"; from: string; to: string }
   | { type: "error"; message: string };
 
@@ -218,12 +220,13 @@ export async function checkKernelUpdate(): Promise<KernelUpdateState> {
       updateAvailable: state.updateAvailable,
       rollbackAvailable: state.rollbackAvailable ?? false,
       checkError: state.checkError ?? null,
+      stableSource: state.stableSource ?? null,
     };
   }
   return getKernelUpdateState();
 }
 
-/** 升级（tag 为空 = latest）或回退的公共编排。 */
+/** Upgrade to the curated stable pin when tag is absent, or roll back. */
 async function orchestrate(args: string[], source: "auto" | "manual" = "manual"): Promise<KernelUpdateResult> {
   if (!deps) return { ok: false, error: "kernel-updater 未初始化" };
   if (running) return { ok: false, error: "已有内核升级任务进行中" };

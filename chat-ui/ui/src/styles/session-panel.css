@@ -310,7 +310,7 @@ oc-session-panel.oc-panel--leaving {
   height: 14px;
   stroke: currentColor;
   fill: none;
-  stroke-width: 1.5;
+  stroke-width: var(--icon-stroke);
   stroke-linecap: round;
   stroke-linejoin: round;
 }
@@ -384,7 +384,7 @@ oc-session-panel.oc-panel--leaving {
   height: 14px;
   stroke: currentColor;
   fill: none;
-  stroke-width: 1.5;
+  stroke-width: var(--icon-stroke);
   stroke-linecap: round;
   stroke-linejoin: round;
 }
@@ -453,7 +453,7 @@ oc-session-panel.oc-panel--leaving {
   flex-shrink: 0;
   stroke: currentColor;
   fill: none;
-  stroke-width: 1.5;
+  stroke-width: var(--icon-stroke);
   stroke-linecap: round;
   stroke-linejoin: round;
 }
@@ -533,7 +533,7 @@ oc-session-panel.oc-panel--leaving {
   height: 12px;
   stroke: currentColor;
   fill: none;
-  stroke-width: 1.5;
+  stroke-width: var(--icon-stroke);
   stroke-linecap: round;
   stroke-linejoin: round;
 }

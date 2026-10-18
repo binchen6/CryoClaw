@@ -3,12 +3,9 @@
    所有 CSS 文件通过 @import 引用此文件
    修改此文件 = 全局生效
 
-   2026.9 重写（提案 A）→ 2026.9 R2 品牌焕新 → R2b 混色升级：视觉语言定型为
-   「中性灰 + CryoBlue 蓝青混色强调色」——主色 brand-600 #1a6fd0（蓝向青偏移，
-   为高效与工作服务的沉稳蓝，活力但不抢眼），辅色 cyan（tokens-ext --accent-2），
-   品牌签名渐变 蓝→青 仅用于品牌时刻（Linear/Notion 式清爽现代风）。
-   token 名称保持不变（下游零改名成本），值全面重调；
-   浅色为默认一等主题，暗色为独立调参的近黑中性主题。
+   CryoBlue：恢复原蓝色主色 #1A6FD0，绿色仅作少量辅助点缀。
+   中性表面承担阅读层次；深色主题的文字/轮廓使用同色系亮阶保证可读性。
+   中性表面、统一线性图标与可自定义的深浅主题共同构成界面层次。
 
    设计规范：数值阶梯（radius/spacer/text）+ 语义 token 双层结构；
    双通道主题：[data-theme=dark] 或 prefers-color-scheme 切换。
@@ -51,6 +48,9 @@
   --spacer-48: 48px;
   --spacer-64: 64px;
 
+  --icon-stroke: 1.75;
+  --control-height: 34px;
+  --control-hit-size: 32px;
   /* icon 尺寸阶梯 */
   --icon-size-12: 12px;
   --icon-size-14: 14px;
@@ -135,8 +135,10 @@
   --glass-blur-sm: 8px;
   --glass-blur-md: 16px;
 
-  /* 品牌色阶 —— 沉稳蓝（单一强调色，为高效与工作服务） */
-  /* CryoBlue 自绘色阶：蓝 × 青混色（比纯蓝更活，低饱和耐看） */
+  /* Original CryoBlue palette, with restrained green secondary accents. */
+  --brand: #1a6fd0;
+  --brand-hover: #1659b1;
+  --brand-on: #ffffff;
   --brand-50: #eef6fd;
   --brand-100: #d8ebfb;
   --brand-200: #b3daf6;
@@ -167,23 +169,23 @@
 :root {
   /* 背景：纸白层级（app 白 / 次级浅灰 / 浮层白 / hover 浅灰） */
   --bg: #ffffff;
-  --bg-secondary: var(--grey-50);
+  --bg-secondary: #f7f8fc;
   --bg-elevated: #ffffff;
-  --bg-hover: var(--grey-100);
-  --bg-input: var(--grey-100);
+  --bg-hover: #edf0f7;
+  --bg-input: #f3f5fa;
   --bg-muted: var(--grey-100);
 
   /* 文字：中性灰五级 */
-  --text: var(--grey-700);
-  --text-strong: var(--grey-900);
-  --text-secondary: var(--grey-600);
-  --text-muted: var(--grey-400);
+  --text: #3b455b;
+  --text-strong: #17223a;
+  --text-secondary: #566077;
+  --text-muted: #687080;
   --text-faint: var(--grey-300);
   --text-on-accent: #ffffff;
 
   /* 边框：hairline 优先 */
-  --border: var(--grey-200);
-  --border-strong: var(--grey-300);
+  --border: #e2e6ef;
+  --border-strong: #c4ccdb;
   --border-hover: var(--grey-400);
   --border-focus: var(--accent);
 
@@ -194,8 +196,8 @@
   /* 强调色 —— 沉稳蓝 */
   --accent: var(--brand-600);
   --accent-hover: var(--brand-700);
-  --accent-subtle: rgba(26, 111, 208, 0.08);
-  --accent-glow: rgba(26, 111, 208, 0.16);
+  --accent-subtle: rgba(26, 111, 208, 0.07);
+  --accent-glow: rgba(26, 111, 208, 0.18);
 
   /* 语义色 */
   --ok: #16a34a;
@@ -236,23 +238,23 @@
 /* 方式 1：data-theme 属性切换（Chat UI 使用） */
 :root[data-theme=dark] {
   /* 背景：四档深度阶梯（app < secondary < elevated < hover） */
-  --bg: #101012;
-  --bg-secondary: #17171a;
-  --bg-elevated: #1e1e22;
-  --bg-hover: #26262b;
-  --bg-input: #0b0b0d;
-  --bg-muted: #1b1b1f;
+  --bg: #13161e;
+  --bg-secondary: #191e29;
+  --bg-elevated: #202735;
+  --bg-hover: #293344;
+  --bg-input: #141a25;
+  --bg-muted: #1c2330;
 
   /* 文字：五级灰阶 */
   --text: #d4d4d8;
   --text-strong: #fafafa;
   --text-secondary: #a1a1aa;
-  --text-muted: #71717a;
+  --text-muted: #9da7b6;
   --text-faint: #52525b;
-  --text-on-accent: #ffffff;
+  --text-on-accent: #081524;
 
-  --border: #26262b;
-  --border-strong: #3f3f46;
+  --border: #293344;
+  --border-strong: #465167;
   --border-hover: #52525b;
 
   --hairline: 1px solid var(--border);
@@ -301,22 +303,22 @@
 /* 方式 2：OS 系统偏好切换（Settings/Setup iframe 使用） */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme=light]) {
-    --bg: #101012;
-    --bg-secondary: #17171a;
-    --bg-elevated: #1e1e22;
-    --bg-hover: #26262b;
-    --bg-input: #0b0b0d;
-    --bg-muted: #1b1b1f;
+    --bg: #13161e;
+    --bg-secondary: #191e29;
+    --bg-elevated: #202735;
+    --bg-hover: #293344;
+    --bg-input: #141a25;
+    --bg-muted: #1c2330;
 
     --text: #d4d4d8;
     --text-strong: #fafafa;
     --text-secondary: #a1a1aa;
-    --text-muted: #71717a;
+    --text-muted: #9da7b6;
     --text-faint: #52525b;
-    --text-on-accent: #ffffff;
+    --text-on-accent: #081524;
 
-    --border: #26262b;
-    --border-strong: #3f3f46;
+    --border: #293344;
+    --border-strong: #465167;
     --border-hover: #52525b;
 
     --hairline: 1px solid var(--border);

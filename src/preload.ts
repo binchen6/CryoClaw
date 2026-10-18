@@ -117,6 +117,9 @@ contextBridge.exposeInMainWorld("cryoclaw", {
   memoryRepairPlugin: () => ipcRenderer.invoke("memory:repair-plugin"),
   settingsGetAboutInfo: () => ipcRenderer.invoke("settings:get-about-info"),
   settingsGetAdvanced: () => ipcRenderer.invoke("settings:get-advanced"),
+  openaiProxyGet: () => ipcRenderer.invoke("settings:openai-proxy-get"),
+  openaiProxySave: (params: unknown) => ipcRenderer.invoke("settings:openai-proxy-save", params),
+  openaiProxyTest: (params: unknown) => ipcRenderer.invoke("settings:openai-proxy-test", params),
   settingsSaveAdvanced: (params: Record<string, unknown>) =>
     ipcRenderer.invoke("settings:save-advanced", params),
   settingsGetEnvInfo: () => ipcRenderer.invoke("settings:get-env-info"),
@@ -213,10 +216,13 @@ contextBridge.exposeInMainWorld("cryoclaw", {
     ipcRenderer.invoke("workspace:set-root", root),
   workspaceOpenFolder: (filePath: string) =>
     ipcRenderer.invoke("workspace:open-folder", filePath),
-  workspaceListDir: (dirPath: string) =>
-    ipcRenderer.invoke("workspace:list-dir", dirPath),
+    workspaceListDir: (dirPath: string,options?:{showHidden?:boolean}) =>
+      ipcRenderer.invoke("workspace:list-dir", dirPath,options),
   workspaceReadFile: (filePath: string) =>
     ipcRenderer.invoke("workspace:read-file", filePath),
+    workspaceWriteFile:(params:{path:string;content:string;baseHash:string})=>ipcRenderer.invoke("workspace:write-file",params),
+    workspaceSaveDraft:(params:{path:string;draft:string|null;baseHash:string})=>ipcRenderer.invoke("workspace:save-draft",params),
+    workspaceFindFiles:(params:{root:string;query:string;showHidden?:boolean})=>ipcRenderer.invoke("workspace:find-files",params),
 
   // git CLI 探测（缓存结果；worktree 入口降级依据）
   gitDetect: () => ipcRenderer.invoke("git:detect"),
@@ -260,6 +266,7 @@ contextBridge.exposeInMainWorld("cryoclaw", {
     ipcRenderer.invoke("clipboard:read-file-paths") as Promise<string[]>,
   // 读取本地文件为 base64（文件附件走内核 apiAttachments；≤16MB，超限返回 { error:"too-large" }）
   readFileBase64: (path: string) => ipcRenderer.invoke("file:read-base64", path),
+  fileThumbnail:(path:string)=>ipcRenderer.invoke("file:thumbnail",path),
 
   // Release Notes
   getReleaseNotes: (opts?: { all?: boolean }) => ipcRenderer.invoke("app:get-release-notes", opts),
@@ -310,6 +317,15 @@ contextBridge.exposeInMainWorld("cryoclaw", {
     };
     ipcRenderer.on("kernel:update-progress", listener);
     return () => ipcRenderer.removeListener("kernel:update-progress", listener);
+  },
+  onThemeRequest:(cb:(request:{id:string;payload:unknown})=>void)=>{
+    const listener=(_event:Electron.IpcRendererEvent,request:{id:string;payload:unknown})=>cb(request);
+    ipcRenderer.on("theme:request",listener);return()=>ipcRenderer.removeListener("theme:request",listener);
+  },
+  themeResult:(response:{id:string;value?:unknown;error?:string})=>ipcRenderer.send("theme:result",response),
+  onArchiveProgress:(cb:(progress:unknown)=>void)=>{
+    const listener=(_event:Electron.IpcRendererEvent,progress:unknown)=>cb(progress);
+    ipcRenderer.on("settings:archive-progress",listener);return()=>ipcRenderer.removeListener("settings:archive-progress",listener);
   },
   // 主进程推送 App 自动更新状态快照
   onAppUpdateState: (cb: (payload: unknown) => void) => {

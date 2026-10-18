@@ -620,6 +620,48 @@ function patchFsSafeAsarUnpacked(gatewayDir) {
   return 1;
 }
 
+// Electron does not implement opendir for virtual ASAR directories. Keep entry
+// paths virtual for module resolution, but walk already-unpacked directories on
+// disk, preserving the existing symlink and resource-budget checks.
+function patchFsSafeAsarWalk(gatewayDir) {
+  const file = path.join(gatewayDir, "node_modules", "@openclaw", "fs-safe", "dist", "walk.js");
+  if (!fs.existsSync(file)) return 0;
+  let source = fs.readFileSync(file, "utf8");
+  const marker = "/* cryoclaw-asar-walk */";
+  if (source.includes(marker)) return 1;
+  const needle = "const operationPath = pathForWindowsFilesystem(dir);";
+  if (!source.includes(needle)) throw new Error("Unsupported fs-safe directory walker; ASAR walk patch was not applied");
+  source = source.split(needle).join("const operationPath = cryoclawAsarWalkPath(pathForWindowsFilesystem(dir));");
+  source += `\n${marker}\nfunction cryoclawAsarWalkPath(value) {\n` +
+    `    if (!/\\.asar[\\\\/]/i.test(value)) return value;\n` +
+    `    const unpacked = value.replace(/\\.asar([\\\\/])/i, '.asar.unpacked$1');\n` +
+    `    try { if (fsSync.lstatSync(unpacked).isDirectory()) return unpacked; } catch {}\n` +
+    `    return value;\n}\n`;
+  fs.writeFileSync(file, source);
+  return 1;
+}
+
+// Artifact hashing compares the opened descriptor's physical identity. Map this
+// read only; exported module paths must keep their virtual resolution context.
+function patchPluginArtifactAsarIdentity(gatewayDir) {
+  const dist=path.join(gatewayDir,"node_modules","openclaw","dist");
+  if(!fs.existsSync(dist))return 0;
+  const needle="function hashRuntimeArtifactFile(params) {";
+  const marker="/* cryoclaw-artifact-identity */";
+  let patched=0;
+  for(const file of collectJsFilesRecursive(dist)) {
+    const source=fs.readFileSync(file,"utf8");
+    if(!source.includes(needle))continue;
+    if(source.includes(marker)){patched++;continue;}
+    const injection=`${needle}\n\t${marker}\n`+
+      `\tif (/\\.asar[\\\\/]/i.test(params.rootDir)) {\n`+
+      `\t\tconst physical = params.rootDir.replace(/\\.asar([\\\\/])/i, '.asar.unpacked$1');\n`+
+      `\t\ttry { if (fs.lstatSync(physical).isDirectory()) params = { ...params, rootDir: physical, rootRealPath: fs.realpathSync(physical) }; } catch {}\n\t}\n`;
+    fs.writeFileSync(file,source.replace(needle,injection));patched++;
+  }
+  return patched;
+}
+
 // ─── worker 输入 Proxy 清理补丁（openclaw ≥2026.9.7，Windows 专属消息级崩溃）───
 //
 // 背景（2026.1004.0 真机复现）：Windows 上 cloneEnvWithPlatformSemantics（config-env-vars）
@@ -707,6 +749,39 @@ function patchWorkerInputCloneSanitize(gatewayDir) {
   return patched;
 }
 
+// NTFS junctions cannot traverse an ASAR file. Resolve only a direct junction
+// to a verified virtual OpenClaw root; callers still compare the selected host.
+function patchPluginNativeAsarHost(gatewayDir) {
+  const directory = path.join(gatewayDir, "node_modules", "openclaw", "dist");
+  if (!fs.existsSync(directory)) return 0;
+  let patched = 0;
+  for (const name of fs.readdirSync(directory)) {
+    if (!/^plugin-generation-artifact-.*\.(?:m?js)$/.test(name)) continue;
+    const file = path.join(directory, name);
+    let source = fs.readFileSync(file, "utf8");
+    if (source.includes("/* cryoclaw-native-asar-host */")) { patched++; continue; }
+    const marker = "if (fs.existsSync(candidate)) return fs.realpathSync(candidate);";
+    if (!source.includes("function resolveNativeHost(filename) {") || !source.includes(marker)) throw new Error("Native plugin host resolver changed; review ASAR compatibility");
+    source = source.replace(marker, "const resolved = cryoclawResolveNativeHostPath(candidate);\n\t\tif (resolved) return resolved;");
+    source = source.replaceAll("fs.realpathSync(link)", "cryoclawResolveNativeHostPath(link)");
+    source += `
+/* cryoclaw-native-asar-host */
+function cryoclawResolveNativeHostPath(candidate) {
+  try { return fs.realpathSync(candidate); } catch {}
+  try {
+    if (!fs.lstatSync(candidate).isSymbolicLink()) return;
+    const target = path.resolve(path.dirname(candidate), fs.readlinkSync(candidate));
+    if (!/\\.asar[\\\\/]node_modules[\\\\/]openclaw$/i.test(target)) return;
+    if (!fs.statSync(target).isDirectory()) return;
+    return fs.realpathSync(target);
+  } catch { return; }
+}
+`;
+    fs.writeFileSync(file, source, "utf8");patched++;
+  }
+  return patched;
+}
+
 module.exports = {
   patchWindowsOpenclawArtifacts,
   patchWindowsHideGlobal,
@@ -717,5 +792,8 @@ module.exports = {
   assertAsarBoundaryCoverage,
   patchKimiThinkingProfile,
   patchFsSafeAsarUnpacked,
+  patchFsSafeAsarWalk,
+  patchPluginArtifactAsarIdentity,
+  patchPluginNativeAsarHost,
   patchWorkerInputCloneSanitize,
 };

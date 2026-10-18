@@ -9,6 +9,10 @@ import { isInsideAnyRoot } from "./workspace-ipc.ts";
 const workspaceRoot = path.join(path.sep, "home", "u", ".openclaw", "workspace");
 const worktreesRoot = path.join(path.sep, "home", "u", ".openclaw", "worktrees");
 const roots = [workspaceRoot, worktreesRoot];
+test("filesystem roots authorize their children without duplicating a trailing separator",()=>{
+  const root=path.parse(process.cwd()).root;
+  assert.equal(isInsideAnyRoot(path.join(root,"child","file.txt"),[root]),true);
+});
 
 test("isInsideAnyRoot：workspace 根内的路径通过", () => {
   assert.equal(isInsideAnyRoot(path.join(workspaceRoot, "a.txt"), roots), true);

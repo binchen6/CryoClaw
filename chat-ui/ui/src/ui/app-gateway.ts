@@ -1,4 +1,5 @@
 import type { OpenClawApp } from "./app.ts";
+import {schedulePagePreloads,stopPagePreloads} from "./page-preload.ts";
 import type { ExecApprovalRequest } from "./controllers/exec-approval.ts";
 import type { GatewayEventFrame, GatewayHelloOk } from "./gateway.ts";
 import type { Tab } from "./navigation.ts";
@@ -663,6 +664,7 @@ export function connectGateway(host: GatewayHost) {
         }
       });
       startTicker();
+      schedulePagePreloads(host as unknown as import("./app-view-state.ts").AppViewState);
       initTickerVisibilityHook();
     },
     onClose: ({ code, reason }) => {
@@ -671,6 +673,7 @@ export function connectGateway(host: GatewayHost) {
         return;
       }
       host.connected = false;
+      stopPagePreloads(host as unknown as import("./app-view-state.ts").AppViewState);
       // R41：新断连作废上轮重连的挂起探测（下一轮 onHello 会重新调度）
       cancelReconnectOrphanProbe();
       // 断开连接时注销 tick handler 并停止客户端定时器（与 onHello 注册对称）

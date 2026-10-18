@@ -70,7 +70,7 @@ const UNPACK_GLOB = "{**/*.node,**/*.exe,**/*.dll,**/*.dylib,**/*.so,**/spawn-he
 // extensions 整目录 unpack：2026.9.2+ fs-safe 公开构件身份校验要求真实文件身份
 // （asar 虚拟路径的 lstat 返回伪造 dev/ino，见 R56）。目录级 unpack 必须走
 // unpackDir（asar 库的 unpack 选项对复合 glob 内的目录段不可靠）。
-const UNPACK_DIR_GLOB = "{node_modules/openclaw/dist/extensions,node_modules/@openclaw/fs-safe/dist/extensions}";
+const UNPACK_DIR_GLOB = "{node_modules/openclaw/dist/extensions,node_modules/@openclaw/fs-safe/dist/extensions,node_modules/openclaw/skills}";
 const SMOKE_TIMEOUT_MS = 180_000;
 const HTTP_TIMEOUT_MS = 20_000;
 const NPM_TIMEOUT_MS = 600_000;
@@ -576,6 +576,9 @@ async function cmdUpdate(tag) {
     // fs-safe pinned-open asar→unpacked 映射（2026.9.2+ 身份校验需要真实文件身份；
     // 旧内核无此文件形态时未命中属预期，不告警）
     const fsSafePatched = kdp.patchFsSafeAsarUnpacked(stagingGateway);
+    kdp.patchFsSafeAsarWalk(stagingGateway);
+    kdp.patchPluginArtifactAsarIdentity(stagingGateway);
+    kdp.patchPluginNativeAsarHost(stagingGateway);
     progress("patch", 46, `fs-safe asar→unpacked 补丁: ${fsSafePatched > 0 ? "已注入" : "未命中（跳过）"}`);
     // kimi 思考档位补丁为行为增强（非 asar 必需），未命中仅告警不中止
     if (kdp.patchKimiThinkingProfile(stagingGateway) === 0) {

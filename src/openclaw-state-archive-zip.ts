@@ -1,6 +1,8 @@
 import * as fs from "fs";
 import * as path from "path";
 import { Unzip, UnzipInflate } from "fflate";
+import { ArchiveResourceBudget, validateArchiveDirectory } from "./archive-resource-budget";
+import {reportArchiveProgress,type ArchiveProgressCallback} from "./archive-progress";
 import {
   probeArchiveTool,
   rustExtractArchive,
@@ -74,6 +76,7 @@ export async function readArchive(
   rootDir: string,
   outputDir?: string,
   captureEntryNames: ReadonlySet<string> = new Set(),
+  progress?:ArchiveProgressCallback,
 ): Promise<ZipArchiveSummary> {
   if (!fs.existsSync(zipPath)) {
     throw new Error("ZIP 文件不存在");
@@ -84,13 +87,13 @@ export async function readArchive(
   const tool = await probeArchiveTool();
   if (tool) {
     try {
-      return await readArchiveWithRust(tool, zipPath, rootDir, outputDir, captureEntryNames);
+      return await readArchiveWithRust(tool, zipPath, rootDir, outputDir, captureEntryNames,progress);
     } catch (err) {
       // 静默回退：用户可见行为等价于 sidecar 不存在（回退告警见 archive-backend）
       warnArchiveToolFallbackOnce(err);
     }
   }
-  return readArchiveWithJs(zipPath, rootDir, outputDir, captureEntryNames);
+  return readArchiveWithJs(zipPath, rootDir, outputDir, captureEntryNames,progress);
 }
 
 // Rust backend：交互式单会话——sidecar 解析 zip 后回发 manifest，JS 侧对清单
@@ -103,15 +106,19 @@ async function readArchiveWithRust(
   rootDir: string,
   outputDir: string | undefined,
   captureEntryNames: ReadonlySet<string>,
+  progress?:ArchiveProgressCallback,
 ): Promise<ZipArchiveSummary> {
   const registry = createPathRegistry(rootDir);
   if (outputDir) ensureOutputRootDir(outputDir);
 
   const { entryNames, capture } = await rustExtractArchive(tool, {
+    onProgress:(done,total)=>reportArchiveProgress(progress,{phase:outputDir?"restore":"verify",filesDone:done,filesTotal:total}),
     zipPath,
     outputDir: outputDir ?? null,
     capture: [...captureEntryNames],
     onManifest: (manifest) => {
+      const budget = new ArchiveResourceBudget();
+      for (const entry of manifest) budget.add(entry.uncompressedSize);
       const whitelist = manifest.map((raw) => validateRustManifestEntry(raw, registry));
       for (const raw of manifest) {
         if (captureEntryNames.has(raw.name) && raw.uncompressedSize > MAX_CAPTURED_ENTRY_BYTES) {
@@ -167,10 +174,12 @@ export async function readArchiveWithJs(
   rootDir: string,
   outputDir?: string,
   captureEntryNames: ReadonlySet<string> = new Set(),
+  progress?:ArchiveProgressCallback,
 ): Promise<ZipArchiveSummary> {
   // Treat the central directory as the manifest, then require every streamed
   // local entry to match it. This keeps validation identical for dry-run and write.
   const centralDirectory = readCentralDirectory(zipPath, rootDir);
+  const bytesTotal=[...centralDirectory.entries.values()].reduce((total,entry)=>total+entry.uncompressedSize,0);let bytesDone=0,filesDone=0;
   const entryContents = new Map<string, Buffer>();
   const openFiles = new Set<number>();
   if (outputDir) ensureOutputRootDir(outputDir);
@@ -245,6 +254,8 @@ export async function readArchiveWithJs(
           if (err) { fail(err); return; }
           try { handleArchiveChunk(streamState, chunk, final, openFiles); }
           catch (chunkErr) { fail(chunkErr); }
+          bytesDone+=chunk?.length??0;if(final)filesDone++;
+          reportArchiveProgress(progress,{phase:outputDir?"restore":"verify",filesDone,filesTotal:centralDirectory.entries.size,bytesDone,bytesTotal});
         };
 
         file.start();
@@ -311,6 +322,7 @@ function readCentralDirectory(zipPath: string, rootDir: string): ZipCentralDirec
     throw new Error("不是有效的 ZIP 数据包");
   }
 
+  validateArchiveDirectory(totalEntryCount, centralSize);
   const central = readFileSlice(zipPath, centralOffset, centralSize);
   const registry = createPathRegistry(rootDir);
   const entries = new Map<string, ZipCentralEntry>();
@@ -364,6 +376,8 @@ function readCentralDirectory(zipPath: string, rootDir: string): ZipCentralDirec
 
   if (offset !== central.length) throw new Error("不是有效的 ZIP 数据包");
   validateLocalHeaders(zipPath, [...entries.values()], centralOffset);
+  const budget = new ArchiveResourceBudget();
+  for (const entry of entries.values()) budget.add(entry.uncompressedSize);
   return { entries };
 }
 
@@ -441,6 +455,7 @@ function handleArchiveChunk(state: StreamEntryState, chunk: Uint8Array | null | 
     if (state.entry.kind === "dir") throw new Error(`目录 entry 不能包含数据: ${state.entry.name}`);
     state.crc = updateCrc32(state.crc, data);
     state.size += data.length;
+    if (state.size > state.entry.uncompressedSize) throw new Error(`ZIP entry 长度校验失败: ${state.entry.name}`);
     if (state.capture) {
       if (state.size > MAX_CAPTURED_ENTRY_BYTES) throw new Error(`ZIP entry 过大: ${state.entry.name}`);
       state.capture.chunks.push(Buffer.from(data));

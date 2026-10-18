@@ -18,8 +18,9 @@
   align-items: center;
   justify-content: center;
   gap: var(--spacer-8);
-  height: 32px;
-  padding: 0 var(--spacer-12);
+  min-height: var(--control-height);
+  height: auto;
+  padding: var(--spacer-6) var(--spacer-12);
   border: var(--hairline);
   border-radius: var(--radius-8);
   background: var(--bg-elevated);
@@ -65,7 +66,7 @@
   height: var(--icon-size-16);
   stroke: currentColor;
   fill: none;
-  stroke-width: 1.5;
+  stroke-width: var(--icon-stroke);
   stroke-linecap: round;
   stroke-linejoin: round;
   flex-shrink: 0;
@@ -99,6 +100,7 @@
 }
 
 .btn--sm {
+  min-height: 28px;
   height: 28px;
   padding: 0 var(--spacer-10);
   gap: var(--spacer-6);
@@ -181,6 +183,33 @@
   padding: var(--spacer-12) var(--spacer-20);
 }
 
+/* Keep confirmation actions visible while long messages scroll in short windows. */
+[data-confirm-dialog] .cc-dialog {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100dvh - var(--spacer-48));
+  min-width: 0;
+}
+
+[data-confirm-dialog] .cc-dialog__head,
+[data-confirm-dialog] .cc-dialog__foot {
+  flex-shrink: 0;
+}
+
+[data-confirm-dialog] .cc-dialog__body {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+[data-confirm-dialog] .cc-dialog__foot {
+  flex-wrap: wrap;
+  border-top: var(--hairline);
+  background: var(--bg-secondary);
+}
+
 /* ── 徽章（radius-full 小胶囊仅用于徽章/chip；subtle 底 + 语义文字色） ── */
 .cc-tag {
   display: inline-flex;
@@ -255,7 +284,7 @@
   border: none;
   border-radius: var(--radius-8);
   background: transparent;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   font-family: inherit;
   cursor: pointer;
   flex-shrink: 0;
@@ -274,7 +303,7 @@
 
 /* 按压反馈：图标钮目标小，回缩幅度略大于 .btn（0.92 vs 0.97） */
 .icon-btn:active:not(:disabled) {
-  transform: scale(0.92);
+  transform: scale(0.96);
 }
 
 .icon-btn:focus-visible {
@@ -292,7 +321,7 @@
   height: var(--icon-size-16);
   stroke: currentColor;
   fill: none;
-  stroke-width: 1.5;
+  stroke-width: var(--icon-stroke);
   stroke-linecap: round;
   stroke-linejoin: round;
 }
@@ -385,7 +414,7 @@
   height: 100%;
   stroke: currentColor;
   fill: none;
-  stroke-width: 1.5;
+  stroke-width: var(--icon-stroke);
   stroke-linecap: round;
   stroke-linejoin: round;
 }

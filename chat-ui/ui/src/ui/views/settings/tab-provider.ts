@@ -1,3 +1,4 @@
+import {icons} from "../../icons.ts";
 /**
  * Settings: Provider Tab — 分组模型管理。
  *
@@ -13,10 +14,13 @@ import { html, nothing } from "lit";
 import { repeat } from "lit/directives/repeat.js";
 import { ref } from "lit/directives/ref.js";
 import type { AppViewState } from "../../app-view-state.ts";
-import { t, tWithDetail } from "../../i18n.ts";
+import { t, tWithDetail, getLocale } from "../../i18n.ts";
 import { runExitAnimation } from "../../utils/exit-anim.ts";
 import * as ipc from "../../data/ipc-bridge.ts";
 import { runKimiOAuthLogin } from "../../data/kimi-oauth-flow.ts";
+import { renderSubscriptionAccount } from "./subscription-account.ts";
+import {renderModelRoles} from "./model-roles.ts";
+import {loadModelQuota,quotaRemaining,quotaWindowLabel} from "../../controllers/model-quota.ts";
 import "../../components/toggle-switch.ts";
 import "../../components/password-input.ts";
 import "../../components/message-box.ts";
@@ -1291,9 +1295,13 @@ async function handleFetchUsage(prov: GroupedProvider, state: AppViewState) {
   delete s.usageErrors[prov.providerKey];
   state.requestUpdate();
   try {
-    const res = await ipc.settingsGetProviderUsage(prov.providerKey);
+    const quota=state.client?await loadModelQuota(state.client,prov.providerKey,true):null;
+    const res = quota ? {success:!!quota.balance || quota.windows.length>0 || !!quota.notice,data:quota.balance??{supported:true as const,kind:"progress" as const,
+      pct:quotaRemaining(quota.windows)===null?undefined:100-quotaRemaining(quota.windows)!,windows:quota.windows,plan:quota.plan,scope:quota.scope,notice:quota.notice},unsupported:quota.unsupported,message:quota.error}
+      : await ipc.settingsGetProviderUsage(prov.providerKey);
     if (res?.success && res.data?.supported) {
-      s.usageByProvider[prov.providerKey] = { info: res.data, at: Date.now() };
+      s.usageByProvider[prov.providerKey] = { info: res.data, at: quota?.at??Date.now() };
+      if(quota?.stale)s.usageErrors[prov.providerKey]=getLocale().startsWith("zh")?"暂时无法更新，显示上次成功查询的数据。":"Refresh failed. Showing the last successful result.";
     } else if (res?.unsupported) {
       s.usageErrors[prov.providerKey] = t("settings.provider.usage.unsupported");
     } else {
@@ -1321,9 +1329,11 @@ export function renderTabProvider(state: AppViewState) {
   const fallbackRank = view?.fallbackRank ?? new Map<string, number>();
   const defaultEntry = view?.defaultEntry;
   const totalModels = view?.totalModels ?? 0;
+  const text=(cn:string,en:string)=>getLocale().startsWith("zh")?cn:en;
+  const matchingModels=groups.flatMap(group=>group.providers).reduce((count,provider)=>count+provider.models.filter(model=>modelMatchesFilter(model,provider)).length,0);
 
   return html`
-    <div class="oc-settings__section">
+    <div class="oc-settings__section oc-model-settings">
       <div class="oc-provider-header">
         <div>
           <h2 class="oc-settings__section-title">${t("settings.provider.title")}</h2>
@@ -1334,9 +1344,10 @@ export function renderTabProvider(state: AppViewState) {
         </button>
       </div>
 
-      ${defaultEntry ? html`
-        <div class="oc-provider-status">${t("settings.provider.currentUsing")}${defaultEntry.name} <span class="oc-provider-status__key">${defaultEntry.key}</span></div>
-      ` : nothing}
+      <div class="oc-model-overview"><div class="oc-model-overview__primary">${icons.cpu}<div><small>${text("当前主模型", "Primary model")}</small><strong>${defaultEntry?.name??text("尚未选择", "Choose a model")}</strong>${defaultEntry?html`<span class="oc-provider-status__key" title=${defaultEntry.key}>${defaultEntry.key}</span>`:nothing}</div></div><div class="oc-model-overview__stat"><strong>${totalModels}</strong><span>${text("已配置模型", "Configured models")}</span></div></div>
+
+      ${renderSubscriptionAccount(state)}
+      ${renderModelRoles(state,html`${renderFallbacks(state,fallbacks)}${renderAgentMapping(state)}`)}
 
       ${s.loading && !snap ? html`<div class="oc-provider-loading">${t("settings.loading")}</div>` : nothing}
 
@@ -1346,20 +1357,21 @@ export function renderTabProvider(state: AppViewState) {
         <div class="cc-alert cc-alert--warn">${t("settings.provider.configUnavailable")}</div>
       ` : nothing}
 
-      ${snap ? renderOrgManager(state) : nothing}
-
+      <div class="oc-model-library-heading"><div><h3 class="oc-settings__section-subtitle">${text("模型库", "Model library")}</h3><p class="oc-settings__hint">${text("按供应商管理模型，星标设为主模型。", "Manage models by provider; use the star to set your primary model.")}</p></div></div>
       ${totalModels > 0 ? html`
         <div class="oc-provider-filter">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-          <input class="oc-provider-filter__input" .value=${s.filterQuery} placeholder=${t("settings.provider.filterPlaceholder")}
+          ${icons.search}
+          <input class="oc-provider-filter__input" aria-label=${t("settings.provider.filterPlaceholder")} .value=${s.filterQuery} placeholder=${t("settings.provider.filterPlaceholder")}
             @input=${(e: Event) => { s.filterQuery = (e.target as HTMLInputElement).value; state.requestUpdate(); }} />
+          ${s.filterQuery?html`<span class="oc-model-filter-count" role="status">${matchingModels} / ${totalModels}</span><button class="icon-btn" aria-label=${text("清除搜索", "Clear search")} @click=${()=>{s.filterQuery="";state.requestUpdate();}}>${icons.x}</button>`:nothing}
         </div>
       ` : nothing}
 
+      ${snap ? renderOrgManager(state) : nothing}
+
       ${groups.map(group => renderGroup(group, state, fallbackRank))}
 
-      ${snap ? renderFallbacks(state, fallbacks) : nothing}
-      ${snap ? renderAgentMapping(state) : nothing}
+      ${snap && matchingModels===0?html`<div class="oc-model-library-empty" role="status">${s.filterQuery?text("没有找到匹配的模型，试试其他名称或供应商。", "No matching models. Try another model or provider name."):text("从订阅账户同步，或点击“添加模型”连接供应商。", "Sync a subscription account or add a provider model to get started.")}</div>`:nothing}
 
       <oc-message-box .message=${s.error ?? ""} .type=${"error"} .visible=${!!s.error}></oc-message-box>
       <oc-message-box .message=${s.successMsg ?? ""} .type=${"success"} .visible=${!!s.successMsg}></oc-message-box>
@@ -1412,7 +1424,7 @@ function renderOrgManager(state: AppViewState) {
                 @dragover=${(e: DragEvent) => onCardDragOver("org-group", group.id, e, state)}
                 @drop=${(e: DragEvent) => { e.preventDefault(); handleOrgGroupDrop(state); }}
                 @dragend=${() => onDragEnd(state)}>
-                <svg class="oc-provider-card__grip" width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="5" r="1.5"/><circle cx="15" cy="5" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="9" cy="19" r="1.5"/><circle cx="15" cy="19" r="1.5"/></svg>
+                <span class="oc-provider-card__grip" aria-hidden="true">${icons.gripVertical}</span>
                 ${renaming ? html`
                   <input class="oc-settings__input oc-provider-org__rename" .value=${s.orgRenameDraft}
                     @input=${(e: Event) => { s.orgRenameDraft = (e.target as HTMLInputElement).value; state.requestUpdate(); }}
@@ -1425,13 +1437,13 @@ function renderOrgManager(state: AppViewState) {
                   <span class="oc-provider-org__name">${group.name}</span>
                   <span class="cc-tag">${modelCountOf(group.id)}</span>
                   <span class="oc-provider-block__actions">
-                    <button class="oc-provider-list-item__action-btn" data-tooltip=${t("settings.provider.customGroups.rename")}
+                    <button class="oc-provider-list-item__action-btn" aria-label=${t("settings.provider.customGroups.rename")} data-tooltip=${t("settings.provider.customGroups.rename")}
                       @click=${() => startOrgRename(group.id, state)}>
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+                      ${icons.edit}
                     </button>
-                    <button class="oc-provider-list-item__action-btn oc-provider-list-item__delete-btn" data-tooltip=${t("settings.provider.customGroups.remove")}
+                    <button class="oc-provider-list-item__action-btn oc-provider-list-item__delete-btn" aria-label=${t("settings.provider.customGroups.remove")} data-tooltip=${t("settings.provider.customGroups.remove")}
                       @click=${() => handleOrgRemove(group.id, state)}>
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                      ${icons.trash}
                     </button>
                   </span>
                 `}
@@ -1460,8 +1472,12 @@ function renderModelEditDrawer(state: AppViewState, groups: ProviderGroup[]) {
   const entry = prov?.models.find(m => m.key === entryKey);
   if (!prov || !entry) return nothing;
   return html`
-    <div class="oc-provider-edit-drawer__backdrop" @click=${() => cancelModelEdit(state)}></div>
-    <aside class="oc-provider-edit-drawer" role="dialog" aria-modal="true"
+    <dialog class="oc-provider-edit-drawer__backdrop" role="dialog" aria-modal="true"
+      aria-label=${t("settings.provider.editModel")}
+      ${ref(el=>{if(el)queueMicrotask(()=>{const dialog=el as HTMLDialogElement;if(dialog.isConnected && !dialog.open)dialog.showModal();});})}
+      @cancel=${(event:Event)=>{event.preventDefault();cancelModelEdit(state);}}
+      @click=${(event:MouseEvent)=>{if(event.target===event.currentTarget)cancelModelEdit(state);}}>
+    <aside class="oc-provider-edit-drawer"
       tabindex="-1"
       aria-label=${t("settings.provider.editModel")}
       ${ref((el) => {
@@ -1470,7 +1486,7 @@ function renderModelEditDrawer(state: AppViewState, groups: ProviderGroup[]) {
         if (node && !node.contains(document.activeElement)) node.focus();
       })}
       @keydown=${(e: KeyboardEvent) => { if (e.key === "Escape") cancelModelEdit(state); }}>
-      <div class="oc-provider-edit-panel__title">${t("settings.provider.editModel")} · ${entry.name}</div>
+      <header class="oc-provider-edit-panel__header"><div><div class="oc-provider-edit-panel__title">${t("settings.provider.editModel")}</div><div class="oc-settings__hint">${entry.name}</div></div><button class="icon-btn" data-dialog-dismiss aria-label=${t("settings.cancel")} @click=${()=>cancelModelEdit(state)}>${icons.x}</button></header>
       ${renderCapsEditor(s.editDraft, state)}
       <div class="btn-row">
         <button class="btn" @click=${() => cancelModelEdit(state)}>${t("settings.cancel")}</button>
@@ -1480,6 +1496,7 @@ function renderModelEditDrawer(state: AppViewState, groups: ProviderGroup[]) {
         </button>
       </div>
     </aside>
+    </dialog>
   `;
 }
 
@@ -1500,7 +1517,8 @@ function renderGroup(group: ProviderGroup, state: AppViewState, fallbackRank: Ma
     : null;
   return html`
     <div class="oc-provider-group">
-      <div class="oc-provider-group__header"
+      <div class="oc-provider-group__header">
+      <button type="button" class="oc-provider-group__toggle" aria-expanded=${!collapsed} aria-controls=${`provider-group-${group.groupId}`}
         @click=${() => {
           if (collapsed) s.collapsedGroups.delete(group.groupId);
           else s.collapsedGroups.add(group.groupId);
@@ -1509,17 +1527,18 @@ function renderGroup(group: ProviderGroup, state: AppViewState, fallbackRank: Ma
         <svg class="oc-provider-group__chevron ${collapsed ?"" : "is-open"}" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
         <span class="oc-provider-group__label">${groupLabel(group.groupId)}</span>
         <span class="cc-tag">${count}</span>
+      </button>
         ${singleProv ? html`
-          <button class="oc-provider-group__add-btn" data-tooltip=${t("settings.provider.addModelToGroup")}
+          <button class="oc-provider-group__add-btn" aria-label=${t("settings.provider.addModelToGroup")} data-tooltip=${t("settings.provider.addModelToGroup")}
             @click=${(e: Event) => { e.stopPropagation(); startAddToGroup(singleProv, state); }}>
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            <svg class="cryo-icon" aria-hidden="true" focusable="false" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
             ${t("settings.provider.addModel")}
           </button>
         ` : nothing}
       </div>
       <!-- 组体常驻 DOM（折叠时 0fr 收起），grid-template-rows 过渡出真实高度动画；
            折叠交互态见 settings.css 的 .oc-provider-group__body 规则 -->
-      <div class="oc-provider-group__body ${collapsed ? "is-collapsed" : ""}">
+      <div id=${`provider-group-${group.groupId}`} class="oc-provider-group__body ${collapsed ? "is-collapsed" : ""}" ?inert=${collapsed}>
         <div class="oc-provider-group__body-inner">
           ${visibleProviders.map(prov => renderProvider(prov, group, state, fallbackRank))}
         </div>
@@ -1548,7 +1567,7 @@ function renderProvider(prov: GroupedProvider, group: ProviderGroup, state: AppV
               <button class="oc-provider-block__pill-btn ${s.syncOpenFor === prov.providerKey ?"is-active" : ""}"
                 ?disabled=${s.syncFetching.has(prov.providerKey)}
                 @click=${() => toggleSyncPanel(prov, state)}>
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <svg class="cryo-icon" aria-hidden="true" focusable="false" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   ${s.syncFetching.has(prov.providerKey)
                     ? html`<path d="M21 12a9 9 0 1 1-6.2-8.56"/>`
                     : html`<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>`}
@@ -1560,7 +1579,7 @@ function renderProvider(prov: GroupedProvider, group: ProviderGroup, state: AppV
               <button class="oc-provider-block__pill-btn"
                 ?disabled=${s.usageLoadingFor === prov.providerKey}
                 @click=${() => handleFetchUsage(prov, state)}>
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <svg class="cryo-icon" aria-hidden="true" focusable="false" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   ${s.usageLoadingFor === prov.providerKey
                     ? html`<path d="M21 12a9 9 0 1 1-6.2-8.56"/>`
                     : html`<path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/><path d="M3 21v-5h5"/>`}
@@ -1568,19 +1587,19 @@ function renderProvider(prov: GroupedProvider, group: ProviderGroup, state: AppV
                 ${t("settings.provider.usage.queryShort")}
               </button>
             ` : nothing}
-            <button class="oc-provider-list-item__action-btn" data-tooltip=${t("settings.provider.addModelToGroup")}
+            <button class="oc-provider-list-item__action-btn" aria-label=${t("settings.provider.addModelToGroup")} data-tooltip=${t("settings.provider.addModelToGroup")}
               @click=${() => startAddToGroup(prov, state)}>
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              <svg class="cryo-icon" aria-hidden="true" focusable="false" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
             </button>
             ${!isKimiCoding ? html`
-              <button class="oc-provider-list-item__action-btn" data-tooltip=${t("settings.provider.editKey")}
+              <button class="oc-provider-list-item__action-btn" aria-label=${t("settings.provider.editKey")} data-tooltip=${t("settings.provider.editKey")}
                 @click=${() => startKeyEdit(prov, state)}>
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+                ${icons.edit}
               </button>
             ` : nothing}
-            <button class="oc-provider-list-item__action-btn oc-provider-list-item__delete-btn" data-tooltip=${t("settings.provider.deleteProvider")}
+            <button class="oc-provider-list-item__action-btn oc-provider-list-item__delete-btn" aria-label=${t("settings.provider.deleteProvider")} data-tooltip=${t("settings.provider.deleteProvider")}
               @click=${() => handleDeleteProvider(prov, state)}>
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+              ${icons.trash}
             </button>
           </span>
         </div>
@@ -1634,7 +1653,7 @@ function renderModelCard(prov: GroupedProvider, entry: ProviderModelEntry, state
       @dragover=${(e: DragEvent) => onCardDragOver("model", entry.id, e, state)}
       @drop=${(e: DragEvent) => { e.preventDefault(); handleModelDrop(prov, state); }}
       @dragend=${() => onDragEnd(state)}>
-      <svg class="oc-provider-card__grip" width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="5" r="1.5"/><circle cx="15" cy="5" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="9" cy="19" r="1.5"/><circle cx="15" cy="19" r="1.5"/></svg>
+      <span class="oc-provider-card__grip" aria-hidden="true">${icons.gripVertical}</span>
       <div class="oc-provider-card__info">
         ${s.aliasEditing === entry.key ? html`
           <div class="oc-provider-card__alias-edit">
@@ -1658,29 +1677,29 @@ function renderModelCard(prov: GroupedProvider, entry: ProviderModelEntry, state
         </div>
       </div>
       <div class="oc-provider-card__actions">
-        <button class="oc-provider-list-item__action-btn" data-tooltip=${t("settings.provider.editModel")}
+        <button class="oc-provider-list-item__action-btn" aria-label=${t("settings.provider.editModel")} data-tooltip=${t("settings.provider.editModel")}
           @click=${() => s.editingModelKey === entry.key ? cancelModelEdit(state) : startModelEdit(prov, entry, state)}>
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
+          ${icons.sliders}
         </button>
         <button class="oc-provider-list-item__action-btn ${assignedGroup ?"is-assigned" : ""}"
-          data-tooltip=${t("settings.provider.customGroups.assign")}
+          aria-label=${t("settings.provider.customGroups.assign")} data-tooltip=${t("settings.provider.customGroups.assign")}
           @click=${() => toggleAssignMenu(entry.key, state)}>
           ${assignedGroup
             ? html`<span class="oc-provider-card__group-chip">${assignedGroup.name}</span>`
-            : html`<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>`}
+            : html`${icons.folder}`}
         </button>
-        <button class="oc-provider-list-item__action-btn" data-tooltip=${t("settings.provider.modelAlias")}
+        <button class="oc-provider-list-item__action-btn" aria-label=${t("settings.provider.modelAlias")} data-tooltip=${t("settings.provider.modelAlias")}
           @click=${() => startAliasEdit(entry, state)}>
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+          ${icons.edit}
         </button>
         ${!entry.isDefault ? html`
-          <button class="oc-provider-list-item__action-btn oc-provider-list-item__delete-btn" data-tooltip=${t("settings.provider.deleteModel")}
+          <button class="oc-provider-list-item__action-btn oc-provider-list-item__delete-btn" aria-label=${t("settings.provider.deleteModel")} data-tooltip=${t("settings.provider.deleteModel")}
             @click=${() => handleDeleteModel(prov, entry, state)}>
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+            ${icons.trash}
           </button>
         ` : nothing}
         <button class="oc-provider-list-item__action-btn ${entry.isDefault ?"is-default" : ""}" ?disabled=${entry.isDefault || s.busy}
-          data-tooltip=${t("settings.provider.setDefault")}
+          aria-label=${t("settings.provider.setDefault")} data-tooltip=${t("settings.provider.setDefault")}
           @click=${() => handleSetDefault(entry.key, state)}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="${entry.isDefault ? "currentColor" : "none"}" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
         </button>
@@ -1818,9 +1837,11 @@ function renderProviderUsage(prov: GroupedProvider) {
   return html`
     <div class="oc-provider-usage-row">
       ${info.plan ? html`<span class="cc-tag">${info.plan}</span>` : nothing}
-      <div class="oc-provider-usage-bar"><div class="oc-provider-usage-bar-fill" style="width:${pct ?? 0}%"></div></div>
-      <span class="oc-provider-usage-row__text">${pct !== undefined ? `${pct}%` : ""}${info.resetSeconds ? ` · ${formatResetText(info.resetSeconds, usageLabels())}` : ""}</span>
+      ${pct !== undefined ? html`<div class="oc-provider-usage-bar"><div class="oc-provider-usage-bar-fill" style="width:${pct}%"></div></div>` : nothing}
+      <span class="oc-provider-usage-row__text">${pct !== undefined ? `${pct}% ${getLocale().startsWith("zh")?"已用":"used"}` : info.notice==="key-limit-unset"?(getLocale().startsWith("zh")?"此密钥未设置金额限额；账户余额请前往 OpenRouter 控制台查看。":"This key has no spending cap; view credits in the OpenRouter dashboard."):""}${info.resetSeconds ? ` · ${formatResetText(info.resetSeconds, usageLabels())}` : ""}</span>
       <span class="oc-provider-usage-row__at">${formatUsageAt(entry.at)}</span>
+      ${info.scope==="key"?html`<small>${getLocale().startsWith("zh")?"当前 API 密钥额度":"Current API key limits"}</small>`:nothing}
+      ${info.windows?.length ? html`<div class="oc-provider-usage-windows">${info.windows.map(w=>html`<div><span>${w.model?`${w.model} · `:""}${quotaWindowLabel(w.label,getLocale().startsWith("zh"))}</span><span>${typeof w.usedPercent==="number" && Number.isFinite(w.usedPercent)?`${Math.max(0,Math.min(100,100-w.usedPercent)).toFixed(0)}% ${getLocale().startsWith("zh")?"剩余":"remaining"}`:"—"}</span>${w.remaining!==undefined && w.total!==undefined?html`<small>${w.unit==="USD"?"USD ":""}${w.remaining.toLocaleString()} / ${w.total.toLocaleString()}</small>`:nothing}${w.resetAt?html`<small>${new Date(w.resetAt).toLocaleString()}</small>`:nothing}</div>`)}</div>`:nothing}
     </div>
   `;
 }
@@ -1908,7 +1929,7 @@ function renderUsagePanel(state: AppViewState) {
           ?disabled=${s.usageLoading}
           @click=${() => loadUsage(state)}
         >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+          <svg class="cryo-icon" aria-hidden="true" focusable="false" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M3 12a9 9 0 0 1 15-6.7L21 8"/>
             <path d="M21 3v5h-5"/>
@@ -1969,7 +1990,7 @@ function renderAddModelSelect(
             ?disabled=${hooks.fetchBusy}
             title=${t("settings.provider.fetchFromProvider")}
             @click=${hooks.onFetch}>
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <svg class="cryo-icon" aria-hidden="true" focusable="false" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               ${hooks.fetchBusy
                 ? html`<path d="M21 12a9 9 0 1 1-6.2-8.56"/>`
                 : html`<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>`}
@@ -2261,15 +2282,15 @@ function renderFallbacks(state: AppViewState, fallbacks: string[]) {
                 @dragover=${(e: DragEvent) => onCardDragOver("fallback", key, e, state)}
                 @drop=${(e: DragEvent) => { e.preventDefault(); handleFallbackDrop(state); }}
                 @dragend=${() => onDragEnd(state)}>
-                <svg class="oc-provider-card__grip" width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="5" r="1.5"/><circle cx="15" cy="5" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="9" cy="19" r="1.5"/><circle cx="15" cy="19" r="1.5"/></svg>
+                <span class="oc-provider-card__grip" aria-hidden="true">${icons.gripVertical}</span>
                 <div class="oc-provider-card__info">
                   <div class="oc-provider-card__name">${nameOf.get(key) ?? key}</div>
                   <div class="oc-provider-card__meta"><span>${key}</span></div>
                 </div>
                 <div class="oc-provider-card__actions">
-                  <button class="oc-provider-list-item__action-btn oc-provider-list-item__delete-btn" data-tooltip=${t("settings.provider.fallbacks.remove")}
+                  <button class="oc-provider-list-item__action-btn oc-provider-list-item__delete-btn" aria-label=${t("settings.provider.fallbacks.remove")} data-tooltip=${t("settings.provider.fallbacks.remove")}
                     @click=${() => handleFallbackRemove(key, state)}>
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                    <svg class="cryo-icon" aria-hidden="true" focusable="false" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                   </button>
                 </div>
               </div>
@@ -2284,7 +2305,7 @@ function renderFallbacks(state: AppViewState, fallbacks: string[]) {
             <option value="" ?selected=${!s.fallbackAddKey}>${t("settings.provider.fallbacks.addPlaceholder")}</option>
             ${renderModelOptionsGrouped(addable.map(k => ({ key: k, name: nameOf.get(k) ?? k })), s.org, s.fallbackAddKey || undefined)}
           </select>
-          <button class="btn" ?disabled=${!s.fallbackAddKey || s.busy}
+          <button class="btn" ?disabled=${!s.fallbackAddKey || s.busy || !state.connected}
             @click=${() => handleFallbackAdd(state)}>${t("settings.provider.fallbacks.add")}</button>
         </div>
       ` : nothing}

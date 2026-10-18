@@ -91,7 +91,7 @@ async function waitForPageTarget(port, timeoutMs = 90_000) {
 }
 
 /** 轮询 gateway 直到 200 或超时；返回是否就绪（超时不抛，由各脚本决定阻断与否）。 */
-async function waitForGateway(url = "http://127.0.0.1:18789/", timeoutMs = 60_000, intervalMs = 2000) {
+async function waitForGateway(url = `http://127.0.0.1:${process.env.OPENCLAW_GATEWAY_PORT || 18789}/`, timeoutMs = 60_000, intervalMs = 2000) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     if (await httpCheckOk(url)) return true;
@@ -122,7 +122,9 @@ class Cdp {
       } else if (msg.method === "Runtime.consoleAPICalled" && msg.params.type === "error") {
         this.consoleErrors.push((msg.params.args || []).map((a) => a.value ?? a.description ?? "").join(" "));
       } else if (msg.method === "Log.entryAdded" && msg.params.entry.level === "error") {
-        this.consoleErrors.push(msg.params.entry.text);
+        const entry = msg.params.entry;
+        const location = entry.url ? ` (${entry.url.split("?")[0]})` : "";
+        this.consoleErrors.push(entry.text + location);
       }
     });
   }
@@ -168,13 +170,14 @@ async function connect(page) {
  * 替代各脚本的固定 sleep(8000~20000)——冷启动快时提前开跑，慢时等到超时。
  * 返回 true=就绪；超时返回 false（调用方自行决定是否继续）。
  */
-async function waitForAppReady(cdp, { timeoutMs = 30_000, minRailItems = 4 } = {}) {
+async function waitForAppReady(cdp, { timeoutMs = 90_000, minRailItems = 4 } = {}) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     try {
       const ready = await cdp.evaluate(`(async () => {
         if (document.readyState !== "complete") return false;
         if (document.querySelectorAll(".oc-rail__item").length < ${minRailItems}) return false;
+        if (!document.querySelector("openclaw-app")?.connected) return false;
         await document.fonts.ready;
         return true;
       })()`);

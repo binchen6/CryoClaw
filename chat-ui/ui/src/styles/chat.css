@@ -49,6 +49,8 @@
 /* 空会话线程：flex 容器供 hero 居中 */
 .chat-thread--empty {
   display: flex;
+  /* Main-axis auto margins collapse on overflow, keeping the hero's start reachable. */
+  flex-direction: column;
 }
 
 /* compose 容器/输入卡片/工具栏/context meter 样式统一在 compose.css */
@@ -117,7 +119,7 @@
   height: 12px;
   stroke: currentColor;
   fill: none;
-  stroke-width: 2px;
+  stroke-width: var(--icon-stroke);
 }
 
 /* 文件附件（非图片） */
@@ -147,7 +149,7 @@
   height: 16px;
   stroke: currentColor;
   fill: none;
-  stroke-width: 1.5px;
+  stroke-width: var(--icon-stroke);
 }
 
 .chat-attachment__file-name {
@@ -892,20 +894,12 @@ img.chat-avatar {
   word-wrap: break-word;
 }
 
-.chat-bubble.has-copy,
-.chat-bubble.has-quote {
-  padding-right: var(--spacer-40);
-}
-
 .chat-bubble:hover {
   background: var(--bg-hover);
 }
 
 /* 引用按钮（消息引用）：与复制按钮同款悬浮交互；助手气泡同时有复制时左移避让 */
 .chat-quote-btn {
-  position: absolute;
-  top: var(--spacer-6);
-  right: var(--spacer-8);
   border: var(--hairline);
   background: var(--bg);
   color: var(--text-muted);
@@ -924,16 +918,12 @@ img.chat-avatar {
   height: 14px;
   stroke: currentColor;
   fill: none;
-  stroke-width: 1.5px;
+  stroke-width: var(--icon-stroke);
   stroke-linecap: round;
   stroke-linejoin: round;
 }
 
-.chat-bubble.has-copy .chat-quote-btn {
-  right: 44px;
-}
-
-.chat-bubble:hover .chat-quote-btn {
+.chat-message-shell:hover .chat-quote-btn {
   opacity: 1;
   pointer-events: auto;
 }
@@ -958,14 +948,7 @@ img.chat-avatar {
 
 /* 分支按钮（用户消息：回退编辑 / 分叉新会话）— 与引用/复制按钮同款悬浮交互，
    成组绝对定位在最右；复制/引用按钮按组合左移避让 */
-.chat-bubble.has-branch {
-  padding-right: 76px;
-}
-
 .chat-branch-btns {
-  position: absolute;
-  top: var(--spacer-6);
-  right: var(--spacer-8);
   display: flex;
   gap: var(--spacer-4);
   opacity: 0;
@@ -991,12 +974,12 @@ img.chat-avatar {
   height: 14px;
   stroke: currentColor;
   fill: none;
-  stroke-width: 1.5px;
+  stroke-width: var(--icon-stroke);
   stroke-linecap: round;
   stroke-linejoin: round;
 }
 
-.chat-bubble:hover .chat-branch-btns {
+.chat-message-shell:hover .chat-branch-btns {
   opacity: 1;
   pointer-events: auto;
 }
@@ -1011,18 +994,6 @@ img.chat-avatar {
 }
 
 /* 有分支按钮时，复制/引用按钮依次左移避让（引用与复制并存时再让一段） */
-.chat-bubble.has-copy.has-branch .chat-copy-btn {
-  right: 76px;
-}
-
-.chat-bubble.has-copy.has-branch .chat-quote-btn {
-  right: 112px;
-}
-
-.chat-bubble.has-branch.has-quote:not(.has-copy) .chat-quote-btn {
-  right: 76px;
-}
-
 @media (hover: none) {
   .chat-branch-btns {
     opacity: 1;
@@ -1031,9 +1002,6 @@ img.chat-avatar {
 }
 
 .chat-copy-btn {
-  position: absolute;
-  top: var(--spacer-6);
-  right: var(--spacer-8);
   border: var(--hairline);
   background: var(--bg);
   color: var(--text-muted);
@@ -1059,7 +1027,7 @@ img.chat-avatar {
   height: 14px;
   stroke: currentColor;
   fill: none;
-  stroke-width: 1.5px;
+  stroke-width: var(--icon-stroke);
   stroke-linecap: round;
   stroke-linejoin: round;
 }
@@ -1081,7 +1049,7 @@ img.chat-avatar {
   opacity: 1;
 }
 
-.chat-bubble:hover .chat-copy-btn {
+.chat-message-shell:hover .chat-copy-btn {
   opacity: 1;
   pointer-events: auto;
 }
@@ -1224,7 +1192,7 @@ img.chat-avatar {
   height: 14px;
   stroke: currentColor;
   fill: none;
-  stroke-width: 1.5px;
+  stroke-width: var(--icon-stroke);
   stroke-linecap: round;
   stroke-linejoin: round;
 }
@@ -1242,7 +1210,7 @@ img.chat-avatar {
   height: 14px;
   stroke: currentColor;
   fill: none;
-  stroke-width: 2px;
+  stroke-width: var(--icon-stroke);
   stroke-linecap: round;
   stroke-linejoin: round;
 }
@@ -1397,7 +1365,7 @@ img.chat-avatar {
   height: 13px;
   stroke: currentColor;
   fill: none;
-  stroke-width: 2px;
+  stroke-width: var(--icon-stroke);
   stroke-linecap: round;
   stroke-linejoin: round;
 }
@@ -1547,7 +1515,7 @@ img.chat-avatar {
   height: 14px;
   stroke: currentColor;
   fill: none;
-  stroke-width: 1.5px;
+  stroke-width: var(--icon-stroke);
   stroke-linecap: round;
   stroke-linejoin: round;
 }
@@ -1647,7 +1615,7 @@ img.chat-avatar {
   height: 14px;
   stroke: currentColor;
   fill: none;
-  stroke-width: 1.5;
+  stroke-width: var(--icon-stroke);
   stroke-linecap: round;
   stroke-linejoin: round;
 }
@@ -1753,7 +1721,7 @@ img.chat-avatar {
   height: 14px;
   stroke: currentColor;
   fill: none;
-  stroke-width: 1.5px;
+  stroke-width: var(--icon-stroke);
   stroke-linecap: round;
   stroke-linejoin: round;
 }
@@ -2102,6 +2070,7 @@ img.chat-avatar {
 
 /* ── 空会话 hero + starter prompts（display 排版阶梯 + 细腻入场节奏） ── */
 .chat-hero {
+  flex-shrink: 0;
   margin: auto;
   max-width: 640px;
   padding: var(--spacer-24) var(--spacer-20);
@@ -2126,8 +2095,8 @@ img.chat-avatar {
   height: var(--spacer-8);
   margin-left: var(--spacer-10);
   border-radius: var(--radius-full);
-  background: var(--accent);
-  box-shadow: 0 0 12px var(--accent-glow);
+  background: var(--accent-2);
+  box-shadow: 0 0 12px var(--accent-2-subtle);
 }
 
 .chat-hero__subtitle {
@@ -2169,10 +2138,14 @@ img.chat-avatar {
 }
 
 .chat-hero__chip-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   flex-shrink: 0;
   width: var(--icon-size-16);
   height: var(--icon-size-16);
   color: var(--text-muted);
+  background: transparent;
   transition: color var(--duration-fast) var(--ease-out);
 }
 
@@ -2185,7 +2158,7 @@ img.chat-avatar {
   height: 100%;
   stroke: currentColor;
   fill: none;
-  stroke-width: 1.5;
+  stroke-width: var(--icon-stroke);
   stroke-linecap: round;
   stroke-linejoin: round;
 }
@@ -2296,7 +2269,7 @@ img.chat-avatar {
   height: 14px;
   stroke: currentColor;
   fill: none;
-  stroke-width: 2px;
+  stroke-width: var(--icon-stroke);
   stroke-linecap: round;
   stroke-linejoin: round;
 }
@@ -2322,7 +2295,7 @@ img.chat-avatar {
   height: 16px;
   stroke: currentColor;
   fill: none;
-  stroke-width: 2px;
+  stroke-width: var(--icon-stroke);
   stroke-linecap: round;
   stroke-linejoin: round;
 }
@@ -2362,7 +2335,7 @@ img.chat-avatar {
   height: 12px;
   stroke: currentColor;
   fill: none;
-  stroke-width: 2px;
+  stroke-width: var(--icon-stroke);
   stroke-linecap: round;
   stroke-linejoin: round;
 }
@@ -2395,7 +2368,7 @@ img.chat-avatar {
   height: 16px;
   stroke: currentColor;
   fill: none;
-  stroke-width: 2px;
+  stroke-width: var(--icon-stroke);
   stroke-linecap: round;
   stroke-linejoin: round;
 }
@@ -2427,7 +2400,7 @@ img.chat-avatar {
   height: 16px;
   stroke: currentColor;
   fill: none;
-  stroke-width: 2px;
+  stroke-width: var(--icon-stroke);
   stroke-linecap: round;
   stroke-linejoin: round;
 }
@@ -3254,3 +3227,43 @@ img.chat-avatar {
   color: var(--text-faint);
   opacity: .8;
 }
+/* Account quota is distinct from the session context meter. */
+oc-model-quota { display: inline-flex; align-items: center; }
+.chat-quota__trigger { display: grid; place-items: center; width: 32px; height: 32px; padding: 0; border: 0; border-radius: var(--radius-full); background: transparent; color: var(--text-muted); cursor: pointer; transition: background var(--duration-fast) var(--ease-standard), color var(--duration-fast) var(--ease-standard); }
+.chat-quota__trigger:hover, .chat-quota__trigger[aria-expanded="true"] { background: var(--bg-hover); color: var(--text); }
+.chat-quota__trigger svg { width: 30px; height: 30px; overflow: visible; transition: opacity var(--duration-fast) var(--ease-standard), transform var(--duration-normal) var(--ease-standard); }
+.chat-quota__trigger[data-state=unknown] svg { opacity: .42; transform: scale(.82); }
+.chat-quota__trigger[data-state=unknown] .chat-quota__track { stroke-width: 1.5; stroke-dasharray: 3 7; }
+.chat-quota__trigger[data-state=unknown]:is(:hover,:focus-visible,[aria-expanded=true]) svg { opacity: .9; }
+.chat-quota__trigger:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.chat-quota__track, .chat-quota__fill { fill: none; stroke-width: 2.5; }
+.chat-quota__track { stroke: var(--border); }
+.chat-quota__fill { stroke: var(--accent); stroke-linecap: round; transform: rotate(-90deg); transform-origin: center; transition: stroke-dasharray var(--duration-normal) var(--ease-standard); }
+.chat-quota__trigger text { fill: currentColor; font-size: 9px; font-family: var(--font-mono); }
+.chat-quota__details { position: fixed; inset: auto; margin: 0; width: min(320px,calc(100vw - 24px)); max-height: min(420px,calc(100vh - 48px)); overflow: auto; box-sizing: border-box; padding: var(--spacer-16); border: var(--hairline); border-radius: var(--radius-12); background: var(--bg-elevated, var(--bg)); color: var(--text); opacity: 0; transform: translateY(4px); transition: opacity var(--duration-fast) var(--ease-standard), transform var(--duration-fast) var(--ease-standard), display var(--duration-fast) allow-discrete, overlay var(--duration-fast) allow-discrete; }
+.chat-quota__details:popover-open { opacity: 1; transform: translateY(0); }
+@starting-style { .chat-quota__details:popover-open { opacity: 0; transform: translateY(4px); } }
+.chat-quota__header { display: flex; align-items: center; justify-content: space-between; gap: var(--spacer-12); }
+.chat-quota__window { display: grid; grid-template-columns: 1fr auto; gap: var(--spacer-8); margin: var(--spacer-16) 0; }
+.chat-quota__window progress { grid-column: 1 / -1; width: 100%; height: 6px; accent-color: var(--accent); }
+.chat-quota__window small { grid-column: 1 / -1; color: var(--text-muted); }
+.chat-compose { position: relative; }
+.chat-compose__drop-hint { position: absolute; inset: 0; z-index: 5; display: flex; align-items: center; justify-content: center; padding: var(--spacer-24); border: 2px dashed var(--accent); border-radius: var(--radius-16); background: color-mix(in srgb,var(--bg) 82%,transparent); backdrop-filter: blur(6px); color: var(--text-strong); text-align: center; font-weight: 600; pointer-events: none; opacity: 0; visibility: hidden; transform: translateY(6px); transition: opacity var(--duration-fast) var(--ease-standard),transform var(--duration-normal) var(--ease-standard),visibility var(--duration-normal) allow-discrete; }
+.chat-compose[data-file-drag=true] > .chat-compose__drop-hint { opacity: 1; visibility: visible; transform: translateY(0); }
+@media(prefers-reduced-motion:reduce) { .chat-compose__drop-hint { transform: none; backdrop-filter: none; } }
+.chat-attachment { interpolate-size: allow-keywords; transition: width var(--duration-normal) var(--ease-standard),height var(--duration-normal) var(--ease-standard),background var(--duration-fast) var(--ease-standard); }
+.chat-attachment__img { animation: rise var(--duration-fast) var(--ease-standard); }
+.chat-attachment:focus-within .chat-attachment__remove { opacity: 1; }
+
+/* Reserve an action row below the body so hover never covers content or shifts it. */
+.chat-message-actions { display: flex; align-items: center; flex-wrap: wrap; gap: var(--spacer-6); min-height: 28px; margin-top: var(--spacer-8); }
+.chat-group.user .chat-message-actions { justify-content: flex-end; }
+.chat-message-actions .chat-branch-btns { position: static; }
+.chat-message-shell:focus-within .chat-message-actions :is(.chat-quote-btn,.chat-copy-btn,.chat-branch-btns) { opacity: 1; pointer-events: auto; }
+.chat-message-actions :is(.chat-quote-btn,.chat-copy-btn,.chat-branch-btn) { display: inline-flex; align-items: center; justify-content: center; min-width: 28px; min-height: 28px; }
+
+.chat-hero__chip:nth-child(2) .chat-hero__chip-icon,
+.chat-hero__chip:nth-child(2):hover:not(:disabled) .chat-hero__chip-icon { color: var(--accent-2); }
+
+.chat-message-shell { display: flex; flex-direction: column; min-width: 0; max-width: 100%; }
+.chat-group.user .chat-message-shell { align-items: flex-end; }

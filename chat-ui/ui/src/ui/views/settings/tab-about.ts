@@ -315,6 +315,8 @@ function renderKernelCard(state: AppViewState) {
       <div class="oc-flex-col oc-gap-6 oc-settings__meta">
         <div><strong>${t("settings.about.kernelCurrent")}</strong>: ${ks.current ?? "-"}</div>
         <div><strong>${t("settings.about.kernelLatest")}</strong>: ${ks.latest ?? t("settings.about.kernelLatestNotChecked")}</div>
+        <div>${getLocale().startsWith("zh")?"更新目标使用 CryoClaw 稳定版本钉定，在线检查可更新钉定；网络不可用时保留内置版本。":"Updates follow CryoClaw’s stable version pin. Online checks refresh the pin; the bundled pin remains available offline."}</div>
+        ${ks.stableSource?html`<div>${getLocale().startsWith("zh")?"钉定来源":"Pin source"}: ${ks.stableSource==="builtin-fallback"?(getLocale().startsWith("zh")?"应用内置（离线回退）":"Bundled (offline fallback)"):ks.stableSource}</div>`:""}
         ${ks.checkError
           ? html`<div class="oc-text-danger">${tWithDetail("settings.about.kernelCheckFailed", ks.checkError)}</div>`
           : ""}

@@ -20,6 +20,7 @@ import {
 } from "./provider-config";
 import { readKimiApiKey } from "./kimi-config";
 import { startAuthProxy, getProxyPort } from "./kimi-auth-proxy";
+import {resolveUsageAdapter,parseExtendedProviderUsage,type ExtendedProviderUsage} from "./provider-usage-adapters";
 
 export interface LiveModel {
   id: string;
@@ -204,6 +205,7 @@ export async function fetchProviderModels(params: FetchModelsParams): Promise<Li
 /* ── 用量 / 余额查询 ── */
 
 export type ProviderUsage =
+  | ExtendedProviderUsage
   | { supported: false }
   | {
       supported: true;
@@ -313,12 +315,18 @@ export async function fetchProviderUsage(providerKey: string): Promise<ProviderU
   const endpoint = resolveConfiguredEndpoint(providerKey);
   if (!endpoint) return { supported: false };
   const base = endpoint.baseUrl.replace(/\/+$/, "");
+  let host="";try {host=new URL(base).hostname.toLowerCase();}catch {return {supported:false};}
+  const adapter=resolveUsageAdapter(base);
+  if(adapter && endpoint.apiKey) {
+    const payload=await jsonRequestBody(adapter.url,{headers:{Authorization:`Bearer ${endpoint.apiKey}`}});
+    return parseExtendedProviderUsage(adapter.adapter,payload);
+  }
 
-  if (providerKey === "moonshot") {
+  if (["moonshot","moonshot-cn","moonshot-ai"].includes(providerKey) || ["api.moonshot.cn","api.moonshot.ai"].includes(host)) {
     if (!endpoint.apiKey) return { supported: false };
     return fetchMoonshotUsage(endpoint);
   }
-  if (providerKey === "deepseek") {
+  if (providerKey === "deepseek" || host === "api.deepseek.com") {
     if (!endpoint.apiKey) return { supported: false };
     return fetchDeepseekUsage(endpoint);
   }

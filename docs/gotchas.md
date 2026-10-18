@@ -371,3 +371,29 @@ Things that are easy to get wrong or forget when working on CryoClaw.
 117. **改 Rust sidecar 代码必须同步 bump `cryoclaw.archiveTool` pin 与 Cargo.toml version——打包 stamp 只含「版本号-平台-架构」，同版本重打包会直接跳过拷贝。** R97 实例：修改 extract.rs 修解压炸弹后重跑打包，prepareArchiveTool 见 stamp `0.1.0-win32-x64` 匹配且 outputBin 存在 → 日志「已是 0.1.0，跳过」，把**修复前**的二进制打进包（本机 target/release 已是新的也没用，拷贝发生在 stamp 判定之后）。修复：archiveTool 0.1.0→0.1.1（Cargo.toml version 同步——运行时握手按 pin 精确比对，不符即 fail-closed 回退 JS），并加双保险：verifyOutput 对 win32-x64 硬性要求 sidecar 存在。判别：发版后归档走 JS 回退（每进程一条 `[archive-backend]` warn）→ 查安装目录 `resources/archive-tool/cryoclaw-archive.exe --version` 是否等于 pin。
 
 118. **用「本端 Date.now() 起点时间戳」判定内核落盘条目归属时，必须留时钟容忍窗——内核条目时间戳是内核侧时钟。** R97 实例：stripInFlightStreamDuplicates 新增「timestamp < run 起点 ⇒ 上一轮回复不剔除」后单测立刻红——夹具内核中途产物 timestamp = now−100、run 起点 = now−50，产物比起点早 50ms 被误判为上一轮。真实链路同样存在偏移：startedAt 是本地 Date.now()，落盘时间戳来自内核进程。修复：容忍窗 5s（`ts < startedAt − 5000` 才判上一轮；分钟级旧物仍被正确豁免，几十 ms 偏移的本轮产物仍被剔除）。判别：凡「拿本地时钟当锚、对比外部时间戳」的新旧/归属判定（等长滞后、收养、strip），单测夹具要显式包含「外部时间戳略早于本地起点」的负龄样本。
+
+119. **重复关闭必须保留原退场截止时间，并更新最终回调。** 立即 finalize 会提前移除 DOM；完全忽略第二次关闭又会让调用方递增后的 epoch 守卫拒绝第一次回调，浮层永久不关。runExitAnimation 合并回调并保留原计时器；移除 leaving class 后重新关闭则取消旧计时器。
+
+120. **异步列表刷新须按 state 隔离排队标记，并在写回前检查连接身份。** 运行记录原用模块级布尔值排队，另一个状态对象的请求完成后可能消耗该标记。现在使用 WeakSet；成功和失败写回均校验发起请求的 client 与当前连接一致，避免网关切换后的旧响应覆盖页面。
+
+121. **更新下载的防重标记必须跟随命令生命周期，不能在渲染时按 status 清除。** error 态重试会先 await 更新检查，期间渲染若清掉标记，用户可再次提交；反过来 IPC 失败而状态仍为 available 时，旧标记不会清除，按钮永久无法重试。update-download.ts 按 host 隔离标记，开始时触发渲染，在 finally 中释放并再次渲染；测试覆盖连点、拒绝后重试和实例隔离。
+
+122. **可滚动空态的 flex 主轴必须与滚动方向一致。** chat-thread--empty 原为默认横向 flex，欢迎区在交叉轴用 margin:auto 居中；高度不足时顶部可能落到滚动容器之外，标题不可达。改为纵向 flex 并禁止 hero 收缩：有空间时 auto margin 居中，空间不足时从顶部自然溢出。已在本地构建预览中复验，hero 顶部位于 thread 可滚动区域内。
+
+123. **输入框自动高度缓存不能只比较字符数和换行数。** 等长替换仍可能因字形宽度、单词断行改变 soft-wrap；占位提示也会改变空输入框的 scrollHeight。使用 WeakMap 缓存完整 value、placeholder 和 clientWidth，跳过断开或零宽元素，避免把草稿写入 DOM data 属性。回归覆盖等长编辑、宽度/提示变化及隐藏后恢复。
+
+124. **renderer 控制台警告不应统一落为 ERROR。** Electron legacy level 2 是 warning，3 才是 error。实际桌面冒烟中，正常网关启动期的重连 warning 曾被标 ERROR，干扰故障定位；现在通过 consoleLogSeverity 保留 warn/error 分级，回归覆盖 0–3 全部级别。
+
+125. **首次 OAuth 登录完成不代表目录 worker 已重新读取共享凭据归属。** OpenClaw 2026.10.3 可在首次登录时将凭据从 agent DB 迁入 state DB；向导成功、凭据已保存，但旧 worker 仍返回 missing-auth。先走原生 models.authRefresh；若仍无账户记录，重连网关一次，下一轮读取已保存账户，无需再次授权。不要用前端“登录成功”布尔值伪造 connected 或模型可用状态。
+
+126. **额度与认证状态使用不同缓存。** models.authStatus 的额度采用后台更新，第一次通常为空。usage.status 可等待冷查询；按 providers[].windows 读取，并区分 refreshing、缺失与上游错误。百分比是已用，resetAt 是毫秒。
+
+127. **居中页面必须明确宽度，避免空态决定整页宽度。** 任务页 max-width 配合 margin:auto、缺少 width 时会收缩到内容宽度；空态与列表宽度差异又造成切换跳变。统一 width:100%、border-box 和稳定内容区，再对状态与页签切换做动效。
+
+128. **强制结束 Windows 网关不会触发 Node 的正常退出缓存写入。** 编译缓存虽已启用，首次加载的模块仍可能丢失缓存。启动引导在 15/60/120 秒进行有限次数 flushCompileCache，计时器 unref，不阻止退出；不修改内核的 V8 安全策略。实际启动时间仍需区分编译、插件、磁盘与网络耗时。
+
+129. **ASAR 内存在技能文件，不代表原生内核能发现技能。** skills 加载链会做原生目录遍历与文件身份校验，虚拟 ASAR 路径可能被静默跳过。将 `node_modules/openclaw/skills` 与扩展目录一起 unpack；Gateway 的 `OPENCLAW_BUNDLED_SKILLS_DIR` 指向存在的真实 unpacked 目录，开发散文件模式保留原路径。打包和内核更新使用同一 glob。验收必须读取真实 `skills.status`，不能只检查 ASAR 文件清单。
+
+130. **受控滑块必须保留尚未提交的手势值。** 父组件重绘可能在下一帧前把旧 value 写回来；用独立 pendingValue 保存输入，同帧合并为一次提交。无关会话设置同步不应重新应用已保存外观，否则会覆盖未保存的实时预览。字体微小数值直接设置可变字体 wght 轴，避免 CSS font-weight 选择值量化；保留标题和按钮的独立字重层级。
+
+131. **大备份的容量和写入安全要同时升级。** 归档 0.2.2 的 JS/Rust 统一 1GiB/条、3GiB/包、50000 条目及 32MiB 目录元数据，继续以 64KiB 分块读写；整体仍在经典 ZIP 的偏移和计数范围内。备份排除根级内核 tmp 捕获缓存，保留用户 workspace/tmp。先完成临时归档再原子换装目标，失败不破坏现有备份；界面只显示真实阶段、条目和可获取的字节进度。

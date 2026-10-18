@@ -12,9 +12,10 @@
  */
 import { html, nothing } from "lit";
 import { ref } from "lit/directives/ref.js";
+import { adjustTextareaHeight } from "../utils/textarea-height.ts";
 import type { GatewaySessionRow } from "../types.ts";
 import { icons } from "../icons.ts";
-import { t } from "../i18n.ts";
+import { t,getLocale } from "../i18n.ts";
 import { detectTextDirection } from "../text-direction.ts";
 import { resolveContextMeterStats } from "../context-meter.ts";
 import type { CommandEntry } from "../types.ts";
@@ -30,6 +31,9 @@ import { renderConfiguredModelOptions } from "../model-options.ts";
 import { loadModelOrg } from "./settings/model-org.lib.ts";
 import { KNOWN_THINKING_LEVELS } from "../chat/thinking-levels.ts";
 import type { ChatProps } from "./chat.ts";
+import "../components/model-quota.ts";
+import {quotaProvider} from "../controllers/model-quota.ts";
+import {hydrateAttachmentThumbnails} from "../chat/attachment-thumbnails.ts";
 
 // renderChat 已派生好的 compose 上下文（模型选择器/占位文案/忙碌态在装配层算好传入）
 export type ComposeRenderContext = {
@@ -45,12 +49,14 @@ let plusMenuOpen = false;
 let goalFormOpen = false;
 let goalDraft = "";
 
-// 加号菜单「引用技能」子面板状态：技能列表缓存于模块级，
-// 每次打开时若未加载过则拉取一次（skills.status 变化频率低）
+// Refresh on opening; late responses from closed menus must not cross sessions.
 let skillPickerOpen = false;
 let skillPickerLoading = false;
 let skillPickerItems: Array<{ key: string; name: string; description?: string; emoji?: string }> = [];
-let skillPickerLoaded = false;
+let skillPickerGeneration = 0;
+let skillPickerQuery = "";
+let skillPickerIndex = 0;
+let skillPickerError = false;
 
 // 加号菜单「点击外部关闭」的 document 监听句柄；菜单关闭时必须同步注销，
 // 否则监听会残留到下一次外部点击才被清掉（并持有过期 props 闭包）。
@@ -119,6 +125,8 @@ function closeBranchPopover() {
 function closePlusMenu(props: { onRequestUpdate?: () => void }) {
   plusMenuOpen = false;
   skillPickerOpen = false;
+  skillPickerGeneration++;
+  skillPickerLoading = false;
   if (plusMenuOutsideCloser) {
     document.removeEventListener("click", plusMenuOutsideCloser);
     plusMenuOutsideCloser = null;
@@ -152,40 +160,20 @@ export function resetComposeTransient(props: { onRequestUpdate?: () => void }) {
   goalDraft = "";
   commandSuggestions = [];
   commandIndex = 0;
+  commandDraft = null;
 }
 
 // / 命令补全状态
 let commandSuggestions: CommandEntry[] = [];
 let commandIndex = 0;
+let commandDraft:string|null=null;
+let commandSource:ChatProps["commands"];
 
 // 思考档位标签：已知档走 i18n（chat.thinkLevel.*），未知档原样显示内核 id
 function thinkingLevelLabel(level: string): string {
   return (KNOWN_THINKING_LEVELS as readonly string[]).includes(level)
     ? t(`chat.thinkLevel.${level}`)
     : level;
-}
-
-// 自适应高度（首次挂载时延迟到下一帧，确保 CSS 已应用）。
-// lit ref 回调是内联箭头函数，每次渲染 commit 都会重新执行——流式期间每帧
-// 重渲染都会调度一次 rAF 布局，而 draft 未变时高度必然不变。用 value+宽度+换行数
-// 指纹跳过冗余布局（style 类与字体均不变，指纹不变则高度不变）。
-function adjustTextareaHeight(el: HTMLTextAreaElement, deferred = false) {
-  const apply = () => {
-    // 指纹含换行数：等长但换行数不同的 value 高度不同（scrollHeight 随 soft-wrap 变化），
-    // 只有长度+宽度会漏掉这种碰撞
-    const fingerprint = `${el.value.length}:${el.clientWidth}:${el.value.split("\n").length - 1}`;
-    if (el.dataset.hAdjust === fingerprint) {
-      return;
-    }
-    el.dataset.hAdjust = fingerprint;
-    el.style.height = "auto";
-    el.style.height = `${el.scrollHeight}px`;
-  };
-  if (deferred) {
-    requestAnimationFrame(apply);
-  } else {
-    apply();
-  }
 }
 
 /**
@@ -295,6 +283,7 @@ function handlePaste(e: ClipboardEvent, props: ChatProps) {
     }));
     // 函数式更新：基于最新附件列表合并，快速连贴不会互相覆盖
     props.onAttachmentsChange?.((prev) => [...prev, ...additions]);
+    if(props.onAttachmentsChange)hydrateAttachmentThumbnails(additions,props.onAttachmentsChange);
   }).catch(() => {
     // 读取剪贴板文件路径失败时静默忽略（用户可重试粘贴）
   });
@@ -310,11 +299,11 @@ function renderAttachmentPreview(props: ChatProps) {
     <div class="chat-attachments">
       ${attachments.map(
         (att) => html`
-          <div class="chat-attachment ${att.filePath && !att.dataUrl ?"chat-attachment--file" : ""}">
+          <div class="chat-attachment ${att.filePath && !att.dataUrl && !att.thumbnailUrl ?"chat-attachment--file" : ""}">
             ${
-              att.dataUrl
+              att.dataUrl || att.thumbnailUrl
                 ? html`<img
-                    src=${att.dataUrl}
+                    src=${att.thumbnailUrl??att.dataUrl}
                     alt=${t("chat.attachmentPreview")}
                     class="chat-attachment__img"
                   />`
@@ -408,19 +397,30 @@ function renderBranchPopover(props: ChatProps) {
 // ── 引用技能子面板（加号菜单 → 引用技能） ──
 async function openSkillPicker(props: ChatProps) {
   skillPickerOpen = true;
-  if (!skillPickerLoaded && !skillPickerLoading && props.onListSkills) {
+  skillPickerQuery="";skillPickerIndex=0;skillPickerError=false;skillPickerItems=[];
+  const generation=++skillPickerGeneration;
+  requestAnimationFrame(()=>document.querySelector<HTMLInputElement>(".chat-plus__skill-search")?.focus());
+  if (props.onListSkills) {
     skillPickerLoading = true;
     props.onRequestUpdate?.();
     try {
-      skillPickerItems = await props.onListSkills();
-      skillPickerLoaded = true;
+      const items = await props.onListSkills();
+      if(generation!==skillPickerGeneration)return;
+      skillPickerItems = items;
     } catch {
+      if(generation!==skillPickerGeneration)return;
       skillPickerItems = [];
+      skillPickerError=true;
     } finally {
-      skillPickerLoading = false;
+      if(generation===skillPickerGeneration)skillPickerLoading = false;
     }
   }
   props.onRequestUpdate?.();
+}
+
+function closeSkillPicker(props:ChatProps) {
+  skillPickerOpen=false;skillPickerGeneration++;skillPickerLoading=false;props.onRequestUpdate?.();
+  requestAnimationFrame(()=>document.querySelector<HTMLButtonElement>('[data-skill-picker-trigger]')?.focus());
 }
 
 function insertSkillReference(props: ChatProps, name: string) {
@@ -444,15 +444,25 @@ function renderSkillPicker(props: ChatProps) {
   if (!skillPickerOpen) {
     return nothing;
   }
+  const text=(cn:string,en:string)=>getLocale().startsWith("zh")?cn:en;
+  const query=skillPickerQuery.trim().toLocaleLowerCase();
+  const filtered=skillPickerItems.filter(skill=>`${skill.name} ${skill.description??""}`.toLocaleLowerCase().includes(query));
+  skillPickerIndex=Math.max(0,Math.min(skillPickerIndex,filtered.length-1));
   return html`
-    <div class="chat-plus__skill-picker" @click=${(e: Event) => e.stopPropagation()}>
-      <div class="chat-plus__skill-picker-title">${t("chat.plusSkillPickerTitle")}</div>
+    <div class="chat-plus__skill-picker" @click=${(e: Event) => e.stopPropagation()}
+      @keydown=${(event:KeyboardEvent)=>{if(event.key==="Escape"){event.preventDefault();event.stopPropagation();closeSkillPicker(props);}}}>
+      <div class="chat-plus__skill-picker-title">${t("chat.plusSkillPickerTitle")}<button type="button" class="icon-btn icon-btn--sm" aria-label=${text("关闭技能列表", "Close skills")} @click=${()=>closeSkillPicker(props)}>${icons.x}</button></div>
+      <input class="chat-plus__skill-search" type="search" role="combobox" aria-label=${text("搜索技能", "Search skills")} aria-autocomplete="list" aria-expanded="true" aria-controls="chat-skill-options" aria-activedescendant=${filtered.length?`chat-skill-option-${skillPickerIndex}`:nothing} placeholder=${text("搜索名称或用途…", "Search name or purpose…")} .value=${skillPickerQuery}
+        @input=${(event:Event)=>{skillPickerQuery=(event.target as HTMLInputElement).value;skillPickerIndex=0;props.onRequestUpdate?.();}}
+        @keydown=${(event:KeyboardEvent)=>{if(event.isComposing)return;if((event.key==="ArrowDown" || event.key==="ArrowUp") && filtered.length){event.preventDefault();skillPickerIndex=(skillPickerIndex+(event.key==="ArrowDown"?1:-1)+filtered.length)%filtered.length;props.onRequestUpdate?.();requestAnimationFrame(()=>document.getElementById(`chat-skill-option-${skillPickerIndex}`)?.scrollIntoView({block:"nearest"}));}else if(event.key==="Enter" && filtered.length){event.preventDefault();insertSkillReference(props,filtered[skillPickerIndex].name);}}} />
+      <div class="chat-plus__skill-list" role="listbox" id="chat-skill-options" aria-label=${t("chat.plusSkillPickerTitle")} aria-busy=${skillPickerLoading}>
       ${skillPickerLoading
         ? html`<div class="chat-plus__skill-picker-status">${t("chat.loading")}</div>`
-        : skillPickerItems.length === 0
-          ? html`<div class="chat-plus__skill-picker-status">${t("chat.plusSkillEmpty")}</div>`
-          : skillPickerItems.map((skill) => html`
-            <button class="chat-plus__skill-item" type="button"
+        : skillPickerError?html`<div class="chat-plus__skill-picker-status" role="alert">${text("技能列表暂时无法加载，请重试。", "Skills could not be loaded. Try again.")}<button class="btn btn--sm" @click=${()=>void openSkillPicker(props)}>${text("重试", "Retry")}</button></div>`
+        : filtered.length === 0
+          ? html`<div class="chat-plus__skill-picker-status" role="status">${query?text("没有匹配的技能", "No matching skills"):t("chat.plusSkillEmpty")}</div>`
+          : filtered.map((skill,index) => html`
+            <button class="chat-plus__skill-item" type="button" role="option" id=${`chat-skill-option-${index}`} aria-selected=${index===skillPickerIndex}
               @click=${() => insertSkillReference(props, skill.name)}>
               <span class="chat-plus__skill-item-name">${skill.emoji ? `${skill.emoji} ` : nothing}${skill.name}</span>
               ${skill.description
@@ -460,6 +470,7 @@ function renderSkillPicker(props: ChatProps) {
                 : nothing}
             </button>
           `)}
+      </div>
     </div>
   `;
 }
@@ -557,6 +568,7 @@ function renderPlusMenu(props: ChatProps) {
       }));
       // 函数式更新：基于最新附件列表合并，避免闭包旧值覆盖并发新增的附件
       props.onAttachmentsChange?.((prev) => [...prev, ...additions]);
+      if(props.onAttachmentsChange)hydrateAttachmentThumbnails(additions,props.onAttachmentsChange);
     } catch {
       // 选文件失败（含用户取消外的异常）静默忽略，用户可重试
     }
@@ -603,10 +615,9 @@ function renderPlusMenu(props: ChatProps) {
               </button>
               ${props.onListSkills
                 ? html`
-                  <button class="chat-plus__item ${skillPickerOpen ?"chat-plus__item--active" : ""}" type="button" @click=${() => {
+                  <button class="chat-plus__item ${skillPickerOpen ?"chat-plus__item--active" : ""}" type="button" data-skill-picker-trigger @click=${() => {
                     if (skillPickerOpen) {
-                      skillPickerOpen = false;
-                      props.onRequestUpdate?.();
+                      closeSkillPicker(props);
                     } else {
                       void openSkillPicker(props);
                     }
@@ -651,6 +662,7 @@ function renderPlusMenu(props: ChatProps) {
 }
 
 function refreshCommandSuggestions(props: ChatProps, draft: string) {
+  commandDraft=draft;commandSource=props.commands;
   const m = /^\/(\S*)$/.exec(draft);
   if (!m || !props.commands?.length) {
     commandSuggestions = [];
@@ -682,12 +694,13 @@ function renderCommandSuggestions(props: ChatProps) {
     return nothing;
   }
   return html`
-    <div class="chat-cmd-suggest" role="listbox">
+    <div id="chat-command-options" class="chat-cmd-suggest" role="listbox" aria-label=${getLocale().startsWith("zh")?"命令候选":"Command suggestions"}>
       ${commandSuggestions.map((cmdEntry, idx) => html`
         <button
           class="chat-cmd-suggest__item ${idx === commandIndex ?"chat-cmd-suggest__item--active" : ""}"
           type="button"
           role="option"
+          id=${`chat-command-option-${idx}`}
           ?aria-selected=${idx === commandIndex}
           @mousedown=${(e: Event) => {
             e.preventDefault();
@@ -706,8 +719,14 @@ function renderCommandSuggestions(props: ChatProps) {
 
 // ── compose 主体：输入框 + 工具条（纯模板装配，事件全走 props 回调） ──
 export function renderCompose(props: ChatProps, ctx: ComposeRenderContext) {
+  if(commandDraft!==props.draft || commandSource!==props.commands)refreshCommandSuggestions(props,props.draft??"");
   return html`
-    <div class="chat-compose">
+    <div class="chat-compose"
+      @dragenter=${(event:DragEvent)=>{if(!event.dataTransfer?.types.includes("Files"))return;const root=event.currentTarget as HTMLElement;root.dataset.dragDepth=String(Number(root.dataset.dragDepth??0)+1);root.dataset.fileDrag="true";}}
+      @dragover=${(event:DragEvent)=>{if(event.dataTransfer?.types.includes("Files")){event.preventDefault();event.dataTransfer.dropEffect="copy";}}}
+      @dragleave=${(event:DragEvent)=>{const root=event.currentTarget as HTMLElement;const depth=Math.max(0,Number(root.dataset.dragDepth??0)-1);root.dataset.dragDepth=String(depth);if(!depth)delete root.dataset.fileDrag;}}
+      @drop=${(event:DragEvent)=>{const root=event.currentTarget as HTMLElement;delete root.dataset.fileDrag;delete root.dataset.dragDepth;}}>
+      <div class="chat-compose__drop-hint" role="status">${getLocale().startsWith("zh")?"松开鼠标，将文件添加到当前会话":"Drop to attach files to this conversation"}</div>
       ${renderAttachmentPreview(props)}
       ${renderContextMeter(ctx.activeSession, props.dirtyMeterSessions)}
       <div class="field chat-compose__field">
@@ -716,7 +735,12 @@ export function renderCompose(props: ChatProps, ctx: ComposeRenderContext) {
           ${ref((el) => el && adjustTextareaHeight(el as HTMLTextAreaElement, true))}
           .value=${props.draft}
           dir=${detectTextDirection(props.draft)}
+          aria-autocomplete="list"
+          aria-controls="chat-command-options"
+          aria-activedescendant=${commandSuggestions.length?`chat-command-option-${commandIndex}`:nothing}
           @keydown=${(e: KeyboardEvent) => {
+            // IME owns its candidate keys before either completion or send handles them.
+            if(e.isComposing || e.keyCode===229)return;
             // 程序化改 draft（引用消息/插入技能/发送清空）不触发 @input，过期建议
             // 须先作废——否则 Enter 会把 draft 替换成损坏文本（与下方
             // renderCommandSuggestions 的 /^\/(\S*)$/ 防御同款，两处缺一不可：
@@ -729,7 +753,7 @@ export function renderCompose(props: ChatProps, ctx: ComposeRenderContext) {
               commandIndex = 0;
             }
             if (commandSuggestions.length > 0) {
-              if (e.key === "Tab" || e.key === "Enter") {
+              if (!e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey && (e.key === "Tab" || e.key === "Enter")) {
                 e.preventDefault();
                 const pick = commandSuggestions[commandIndex];
                 if (pick) {
@@ -738,13 +762,13 @@ export function renderCompose(props: ChatProps, ctx: ComposeRenderContext) {
                 }
                 return;
               }
-              if (e.key === "ArrowDown") {
+              if (e.key === "ArrowDown" && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
                 e.preventDefault();
                 commandIndex = (commandIndex + 1) % commandSuggestions.length;
                 props.onRequestUpdate?.();
                 return;
               }
-              if (e.key === "ArrowUp") {
+              if (e.key === "ArrowUp" && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
                 e.preventDefault();
                 commandIndex = (commandIndex - 1 + commandSuggestions.length) % commandSuggestions.length;
                 props.onRequestUpdate?.();
@@ -758,9 +782,6 @@ export function renderCompose(props: ChatProps, ctx: ComposeRenderContext) {
               }
             }
             if (e.key !== "Enter") {
-              return;
-            }
-            if (e.isComposing || e.keyCode === 229) {
               return;
             }
             if (e.shiftKey) {
@@ -909,6 +930,9 @@ export function renderCompose(props: ChatProps, ctx: ComposeRenderContext) {
             </div>
           </div>
           <div class="chat-compose__toolbar-right">
+            <oc-model-quota .client=${props.quotaClient ?? null} .connected=${props.connected}
+              .model=${ctx.modelSelectValue?.includes("/")?ctx.modelSelectValue.slice(ctx.modelSelectValue.indexOf("/")+1):ctx.modelSelectValue??""}
+              .provider=${quotaProvider(ctx.modelSelectValue,ctx.activeSession?.modelProvider)}></oc-model-quota>
             ${
               // busy 时停止键与发送键并存（kimi web UI 契约）：发送=入队，不再被停止键替换
               ctx.showStop

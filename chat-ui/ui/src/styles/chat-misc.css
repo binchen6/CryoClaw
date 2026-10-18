@@ -375,12 +375,21 @@
 }
 
 .chat-plus__skill-picker-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   padding: var(--spacer-6) var(--spacer-10) var(--spacer-4);
   font-size: var(--text-2xs);
   font-weight: var(--weight-semibold);
   letter-spacing: var(--tracking-wide);
   color: var(--text-muted);
 }
+.chat-plus__skill-picker { width: min(340px,calc(100vw - 48px)); max-width: none; overflow: hidden; }
+.chat-plus__skill-list { min-height: 0; overflow-y: auto; max-height: 220px; }
+.chat-plus__skill-search { box-sizing: border-box; width: calc(100% - 12px); margin: 0 6px 6px; padding: 8px 10px; border: var(--hairline); border-radius: var(--radius-8); background: var(--bg-input); color: var(--text); font: inherit; font-size: var(--text-sm); }
+.chat-plus__skill-search:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.chat-plus__skill-item[aria-selected=true],.chat-plus__skill-item:focus-visible { background: var(--bg-hover); outline: none; }
+.chat-plus__skill-picker-status .btn { margin-top: 8px; display: flex; }
 
 .chat-plus__skill-picker-status {
   padding: var(--spacer-10);

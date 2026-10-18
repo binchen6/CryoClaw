@@ -20,7 +20,7 @@ const h = vi.hoisted(() => ({
   latestChild: null as any,
 }));
 
-vi.mock("electron", () => ({ app: { isPackaged: false } }));
+vi.mock("electron", () => ({ app: { isPackaged: false, getAppPath: () => process.cwd() } }));
 
 vi.mock("./constants", () => ({
   DEFAULT_PORT: 18789,
@@ -34,6 +34,7 @@ vi.mock("./constants", () => ({
   resolveNpmBin: () => "npm",
   resolveGatewayEntry: () => h.entry,
   resolveGatewayCwd: () => h.stateDir,
+  resolveGatewayPackageDir: () => h.stateDir,
   resolveResourcesPath: () => h.stateDir,
   resolveClawhubEntry: () => path.join(h.stateDir, "no-such-clawhub.js"),
   resolveUserBinDir: () => path.join(h.stateDir, "bin"),

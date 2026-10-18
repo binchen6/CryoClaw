@@ -556,6 +556,7 @@ export function ensureFileDropBridge(state: AppViewState) {
       name: p.split(/[/\\]/).pop() || p,
     }));
     latestState.chatAttachments = [...current, ...additions];
+    hydrateAttachmentThumbnails(additions,mutator=>{latestState.chatAttachments=mutator(latestState.chatAttachments);});
   }) as EventListener);
 }
 
@@ -563,3 +564,4 @@ export function updateFileDropState(state: AppViewState) {
   (window as unknown as { __cryoclawFileDropState?: { update: (s: AppViewState) => void } })
     .__cryoclawFileDropState?.update(state);
 }
+import {hydrateAttachmentThumbnails} from "./chat/attachment-thumbnails.ts";

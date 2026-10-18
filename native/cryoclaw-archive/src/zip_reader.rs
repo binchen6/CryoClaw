@@ -99,6 +99,10 @@ pub fn parse(zip_path: &str) -> ArchiveResult<ParsedArchive> {
         return Err(ArchiveError::invalid_zip());
     }
 
+    // Bound allocation before reading untrusted central-directory metadata.
+    if total_entry_count > 50_000 || central_size > 32 * 1024 * 1024 {
+        return Err(ArchiveError::new("resource-limit", "ZIP directory exceeds resource limits (50000 entries, 32 MiB metadata)"));
+    }
     let mut central = vec![0u8; central_size as usize];
     file.seek(SeekFrom::Start(central_offset))?;
     file.read_exact(&mut central)?;

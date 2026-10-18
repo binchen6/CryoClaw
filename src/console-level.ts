@@ -4,3 +4,9 @@ export function formatConsoleLevel(level: number): string {
   const map = ["VERBOSE", "INFO", "WARNING", "ERROR"];
   return map[level] ?? `LEVEL_${level}`;
 }
+
+export function consoleLogSeverity(level: number): "info" | "warn" | "error" {
+  if (level >= 3) return "error";
+  if (level === 2) return "warn";
+  return "info";
+}

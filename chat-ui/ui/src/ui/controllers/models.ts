@@ -3,6 +3,7 @@
  * gateway 不可达或 RPC 失败时返回 null，调用方回退到 setup-constants 的硬编码预设。
  */
 import type { GatewayBrowserClient } from "../gateway.ts";
+import type { ConfiguredModel } from "../ui-types.ts";
 
 /** provider id → 模型 id 列表（与 PROVIDERS/CUSTOM_PRESETS 的 models 结构对齐） */
 export type GatewayModelCatalog = Record<string, string[]>;
@@ -27,6 +28,8 @@ const MODELS_RETRY_AFTER_FAILURE_MS = 30_000;
 let cache: { at: number; catalog: GatewayModelCatalog; entries: Record<string, GatewayModelEntry[]> } | null = null;
 let lastFailureAt = 0;
 let inflight: Promise<GatewayModelCatalog | null> | null = null;
+let cacheClient: GatewayBrowserClient | null = null;
+let cacheEpoch = 0;
 
 /** 解析 models.list 返回：{ models: [{ provider, id, name?, input?, ... }] } → 按 provider 分组 */
 function parseCatalog(payload: unknown): { catalog: GatewayModelCatalog; entries: Record<string, GatewayModelEntry[]> } | null {
@@ -92,6 +95,9 @@ export async function loadGatewayModels(
   client: GatewayBrowserClient,
   opts?: { force?: boolean },
 ): Promise<GatewayModelCatalog | null> {
+  if (cacheClient !== client) {
+    cacheClient = client; cache = null; inflight = null; lastFailureAt = 0; ++cacheEpoch;
+  }
   if (!opts?.force) {
     const cached = getCachedGatewayModels();
     if (cached) {
@@ -104,11 +110,23 @@ export async function loadGatewayModels(
   if (inflight) {
     return inflight;
   }
+  const epoch = cacheEpoch;
   inflight = (async () => {
     try {
       // view: "all" 拉全量目录，覆盖尚未配置密钥的 provider
-      const payload = await client.request("models.list", { view: "all" });
+      let payload: unknown;
+      const delays=[300,1000,2500,5000];
+      for(let attempt=0;;attempt++) {
+        try {payload=await client.request("models.list", { view: "all", ...(opts?.force ? { refresh: true } : {}) });break;}
+        catch(error) {
+          // Auth refresh publishes a new native metadata generation. Retry only
+          // its explicit transient refusal, never permission/config failures.
+          if(epoch!==cacheEpoch || attempt>=delays.length || !/metadata access changed while preparing|publication.*superseded/i.test(String(error)))throw error;
+          await new Promise(resolve=>setTimeout(resolve,delays[attempt]));
+        }
+      }
       const parsed = parseCatalog(payload);
+      if (epoch !== cacheEpoch) return null;
       if (parsed) {
         cache = { at: Date.now(), catalog: parsed.catalog, entries: parsed.entries };
       } else {
@@ -116,13 +134,33 @@ export async function loadGatewayModels(
       }
       return parsed?.catalog ?? null;
     } catch {
+      if (epoch !== cacheEpoch) return null;
       lastFailureAt = Date.now();
       return getCachedGatewayModels();
     } finally {
-      inflight = null;
+      if (epoch === cacheEpoch) inflight = null;
     }
   })();
   return inflight;
+}
+
+/** Account-backed built-ins need no models.providers/API-key entry. Trust the
+ * kernel's configured view for access policy and readiness, never the all catalog. */
+export function mergeAccountModels(configured: ConfiguredModel[], payload: unknown, primary: unknown,
+  settings?: Record<string, {alias?: string}>): ConfiguredModel[] {
+  const result = [...configured];
+  const keys = new Set(result.map(model => model.key));
+  const models = (payload as { models?: GatewayModelEntry[] } | null)?.models;
+  if (!Array.isArray(models)) return result;
+  for (const model of models) {
+    if (!model || !["openai", "openai-codex"].includes(model.provider) || model.available !== true
+      || typeof model.id !== "string" || !model.id) continue;
+    const key = `${model.provider}/${model.id}`;
+    if (keys.has(key)) continue;
+    keys.add(key);
+    result.push({ key, name: settings?.[key]?.alias || model.name || model.id, provider: model.provider, isDefault: key === primary });
+  }
+  return result;
 }
 
 // ── R89：composer 模型选择器的显示值解析 ──

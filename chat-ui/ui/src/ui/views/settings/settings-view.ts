@@ -3,6 +3,8 @@
  * Replaces the old iframe-based settings page.
  */
 import { html, nothing } from "lit";
+import { keyed } from "lit/directives/keyed.js";
+import { transitionView } from "../../utils/view-transition.ts";
 import type { AppViewState } from "../../app-view-state.ts";
 import { t } from "../../i18n.ts";
 import * as ipc from "../../data/ipc-bridge.ts";
@@ -160,7 +162,7 @@ export function renderSettingsView(state: AppViewState) {
   consumeNavigationHints(state);
 
   return html`
-    <div class="oc-settings-container">
+    <div class="oc-settings-container" data-settings-tab=${s.activeTab}>
       <nav class="oc-settings-nav">
         ${SETTINGS_TABS.map((tab, idx) => {
           const prev = SETTINGS_TABS[idx - 1];
@@ -170,13 +172,13 @@ export function renderSettingsView(state: AppViewState) {
           return html`${groupLabel}
             <button
               class="oc-settings-nav-item ${s.activeTab === tab.id ? 'oc-settings-nav-item--active' : ''}"
-              @click=${() => { if (s.activeTab !== tab.id) { cleanupTab(s.activeTab); s.activeTab = tab.id; s.notice = null; state.requestUpdate(); } }}
+              @click=${() => { if (s.activeTab !== tab.id) transitionView(() => { cleanupTab(s.activeTab); s.activeTab = tab.id; s.notice = null; state.requestUpdate(); }); }}
             >${getTabIcon(tab.id)}${t(tab.labelKey)}</button>
           `;
         })}
       </nav>
       <div class="oc-settings-content">
-        ${renderActiveTab(state)}
+        ${keyed(s.activeTab,renderActiveTab(state))}
       </div>
     </div>
   `;

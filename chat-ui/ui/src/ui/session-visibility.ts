@@ -48,7 +48,9 @@ export function resolveVisibleSessionFallback(
   if (firstVisible) {
     return firstVisible;
   }
-  return "main";
+  // A new gateway can have no persisted rows yet. Keep its canonical main key
+  // rather than switching to an alias and resetting the current draft/attachments.
+  return mainSessionKey || "main";
 }
 
 export function resolveVisibleSessionSelection(

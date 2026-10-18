@@ -184,7 +184,7 @@
   height: 18px;
   stroke: currentColor;
   fill: none;
-  stroke-width: 2px;
+  stroke-width: var(--icon-stroke);
   stroke-linecap: round;
   stroke-linejoin: round;
 }
@@ -303,7 +303,7 @@
   flex-shrink: 0;
   fill: none;
   stroke: currentColor;
-  stroke-width: 1.5px;
+  stroke-width: var(--icon-stroke);
   transition: fill var(--duration-fast) var(--ease-out),
     stroke var(--duration-fast) var(--ease-out);
 }
@@ -545,7 +545,7 @@
   height: 12px;
   stroke: currentColor;
   fill: none;
-  stroke-width: 2px;
+  stroke-width: var(--icon-stroke);
 }
 
 /* 发送/停止按钮 — accent 实心圆形 */

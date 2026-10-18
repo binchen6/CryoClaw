@@ -5,7 +5,7 @@ import { unsafeSVG } from "lit/directives/unsafe-svg.js";
 // CryoIcons — CryoClaw 自绘图标体系（2026.9 R2 设计规范）
 //
 // 规范：
-//   - 24x24 viewBox，2px 描边，round linecap/linejoin，stroke="currentColor"
+//   - 24x24 viewBox，统一 --icon-stroke（默认 1.75），圆端点与圆连接
 //   - 纯几何构造（直线 / 圆 / 圆弧 / 圆角矩形），克制、工程感，与沉稳蓝品牌一致
 //   - 静态字符串，无用户输入，无 XSS 面（配合 grouped-render.test.ts 审计说明）
 // 全部图标为本项目原创绘制，无任何第三方图标库依赖。
@@ -13,7 +13,7 @@ import { unsafeSVG } from "lit/directives/unsafe-svg.js";
 
 function renderIcon(inner: string): TemplateResult {
   return html`${unsafeSVG(
-    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${inner}</svg>`,
+    `<svg class="cryo-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">${inner}</svg>`,
   )}`;
 }
 
@@ -52,6 +52,19 @@ export const icons = {
   ),
 
   // ── 通用 UI ──
+
+  arrowRight: renderIcon('<path d="M4 12h15.5"/><path d="m13.5 6 6 6-6 6"/>'),
+  chevronDown: renderIcon('<path d="m6 9 6 6 6-6"/>'),
+  chevronRight: renderIcon('<path d="m9 6 6 6-6 6"/>'),
+  palette: renderIcon('<path d="M12 3a9 9 0 1 0 0 18h1a2 2 0 0 0 0-4h-.5a1.5 1.5 0 0 1 0-3H16a5 5 0 0 0 5-5c0-3.3-4-6-9-6Z"/><path d="M7.5 8h.01M12 6.5h.01M16.5 8h.01M6.5 12h.01"/>'),
+  sliders: renderIcon('<path d="M4 6h3m4 0h9M4 12h9m4 0h3M4 18h2m4 0h10"/><circle cx="9" cy="6" r="2"/><circle cx="15" cy="12" r="2"/><circle cx="8" cy="18" r="2"/>'),
+  mic: renderIcon('<rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5.5 10.5v1a6.5 6.5 0 0 0 13 0v-1M12 18v3m-3 0h6"/>'),
+  shieldCheck: renderIcon('<path d="M12 3 4.5 6v6c0 4.5 3.5 7 7.5 9 4-2 7.5-4.5 7.5-9V6z"/><path d="m8.5 12 2.5 2.5 4.5-5"/>'),
+  gauge: renderIcon('<path d="M4.5 19a9.5 9.5 0 1 1 15 0M12 13l4-5"/><circle cx="12" cy="13" r="1"/>'),
+  plug: renderIcon('<path d="M9 3v5m6-5v5M6 8h12v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4zM12 17v4"/>'),
+  gripVertical: renderIcon('<path d="M9 5h.01M15 5h.01M9 12h.01M15 12h.01M9 19h.01M15 19h.01"/>'),
+  move: renderIcon('<path d="M12 3v18M3 12h18m-12-6 3-3 3 3m-9 3-3 3 3 3m3 3 3 3 3-3m3-9 3 3-3 3"/>'),
+  resize: renderIcon('<path d="M14 4h6v6m0-6-7 7M4 14v6h6m-6 0 7-7"/>'),
 
   x: renderIcon('<path d="M6 6l12 12"/><path d="M18 6 6 18"/>'),
   check: renderIcon('<path d="M4 12.8 9.5 18.3 20 6"/>'),

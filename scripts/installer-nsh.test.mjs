@@ -50,3 +50,10 @@ test("customInit 仍清理三个镜像名（主进程 / Helper / CLI）", () => 
     assert.ok(body.includes(image), `customInit 应包含 ${image}`);
   }
 });
+
+test("uninstall PATH cleanup executes constant code without a shared temp script", () => {
+  assert.doesNotMatch(nsh, /FileOpen[^\n]*cryoclaw-uninstall-path/);
+  assert.doesNotMatch(nsh, /-File[^\n]*\$TEMP/);
+  assert.match(nsh, /\$SYSDIR\\WindowsPowerShell\\v1\.0\\powershell\.exe/);
+  assert.match(nsh, /\$\$targets -notcontains \$\$_\.Trim\(\)\.TrimEnd/);
+});

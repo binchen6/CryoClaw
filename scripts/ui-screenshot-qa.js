@@ -48,7 +48,7 @@ async function main() {
   if (!page) { console.error("[ui-qa] 页面 target 未出现"); cleanup(); process.exit(1); }
   const { ws, cdp } = await connect(page);
   await waitForAppReady(cdp);
-  await waitForGateway("http://127.0.0.1:18789/", 60_000);
+  await waitForGateway(undefined, 60_000);
 
   const overlapExpr = overlapCheckExpr();
   const overflowExpr = textOverflowScanExpr();

@@ -34,6 +34,18 @@ export function managedMediaHttpOrigin(): string | null {
   return config?.httpOrigin ?? null;
 }
 
+/** Avatar metadata shares the gateway HTTP authentication contract. */
+export async function fetchGatewayAvatarMeta(relativePath:string):Promise<Response|null> {
+  if(!relativePath.startsWith('/') || relativePath.startsWith('//') || !/\/avatar\/[^/?#]+\?meta=1$/.test(relativePath))return null;
+  const current=config;
+  if(!current){try{return await fetch(relativePath);}catch{return null;}}
+  const target=new URL(relativePath,current.httpOrigin);
+  if(target.origin!==new URL(current.httpOrigin).origin)return null;
+  const tokens=await resolveBearerTokenCandidates();
+  if(config!==current)return null;
+  return fetchWithTokenFallback(target.href,tokens);
+}
+
 /** 网关 WS URL → HTTP origin */
 export function wsUrlToHttpOrigin(wsUrl: string): string {
   if (wsUrl.startsWith("wss://")) {
@@ -94,7 +106,7 @@ let preferredCandidateIndex = 0;
 
 // 按候选顺序尝试鉴权拉取：401/403 视为「凭证不被接受」换下一候选；其余状态
 // 直接返回（404/5xx 换凭证无意义，保持调用方既有 !ok 语义）；网络层异常直接放弃。
-// 导出供测试直接覆盖回退语义（生产仅经 fetchManagedImageObjectUrl 调用）。
+// 托管图片与头像元数据共用；导出供测试覆盖凭证回退语义。
 export async function fetchWithTokenFallback(
   absolute: string,
   tokens: string[],

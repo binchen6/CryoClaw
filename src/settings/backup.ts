@@ -25,6 +25,12 @@ import {
 } from "../openclaw-state-export-target";
 import { assertTrustedIpcSender } from "../ipc-sender-guard";
 import type { SettingsIpcOptions } from "./types";
+import type {ArchiveProgressCallback} from "../archive-progress";
+function progressSender(sender:Electron.WebContents):ArchiveProgressCallback {
+  let last=0,phase="";
+  return progress=>{const now=Date.now();if(progress.phase===phase && now-last<100 && progress.filesDone!==progress.filesTotal)return;
+    phase=progress.phase;last=now;if(!sender.isDestroyed())sender.send("settings:archive-progress",progress);};
+}
 
 // 弹出保存对话框（导出状态包 / 导出诊断包共用）：取消时返回 canceled。
 async function pickExportSavePath(
@@ -85,7 +91,7 @@ export function registerBackupIpc(opts: SettingsIpcOptions): void {
         }
       }
 
-      await exportOpenclawStateToArchive(resolveUserStateDir(), target.filePath);
+      await exportOpenclawStateToArchive(resolveUserStateDir(), target.filePath,progressSender(event.sender));
       return { success: true, data: { canceled: false, filePath: target.filePath } };
     } catch (err: any) {
       return { success: false, message: err.message || String(err) };
@@ -140,7 +146,7 @@ export function registerBackupIpc(opts: SettingsIpcOptions): void {
       if (!filePath) {
         return { success: false, message: "请选择要导入的 ZIP 数据包。" };
       }
-      await opts.importOpenclawState(filePath);
+      await opts.importOpenclawState(filePath,progressSender(event.sender));
       return { success: true };
     } catch (err: any) {
       return { success: false, message: err.message || String(err) };

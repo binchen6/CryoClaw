@@ -150,8 +150,8 @@ test("tab-about.ts：「查看更新详情」重开更新弹窗（弹窗关闭�
 
 test("update-available-dialog.ts：「立即更新」点击后到 downloading 推送之间禁用按钮（防双击）", () => {
   const s = src("views/update-available-dialog.ts");
-  assert.match(s, /let updateDownloadInFlight = false/, "应有本地 in-flight 标志");
-  assert.match(s, /us\.status !== "available"\) updateDownloadInFlight = false/, "状态迁移时应复位 in-flight");
+  assert.match(s, /isUpdateDownloadPending\(state\)/, "读取当前实例的在途状态");
+  assert.match(s, /requestUpdateDownload\(state\)/, "下载和重试共用命令生命周期守卫");
   assert.match(s, /\?disabled=\$\{updateNowDisabled\}/, "按钮应随 in-flight 禁用");
 });
 

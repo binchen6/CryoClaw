@@ -53,6 +53,10 @@ test("Windows afterPack 应保留展开的 gateway node_modules 而不是生成 
 
   fs.mkdirSync(scriptDir, { recursive: true });
   fs.copyFileSync(path.join(__dirname, "afterPack.js"), scriptPath);
+  fs.mkdirSync(path.join(tmpRoot, "shared"), { recursive: true });
+  for (const name of ["openai-proxy.cjs", "openai-proxy-bootstrap.cjs"]) {
+    fs.copyFileSync(path.join(__dirname, "..", "shared", name), path.join(tmpRoot, "shared", name));
+  }
 
   fs.mkdirSync(path.join(runtimeDir, "node_modules", "npm", "bin"), { recursive: true });
   fs.writeFileSync(path.join(runtimeDir, "node.exe"), "node");
@@ -92,6 +96,7 @@ test("Windows afterPack 应保留展开的 gateway node_modules 而不是生成 
   const packagedGatewayDir = path.join(appOutDir, "resources", "resources", "gateway");
   assert.equal(fs.existsSync(path.join(packagedGatewayDir, "node_modules")), true);
   assert.equal(fs.existsSync(path.join(packagedGatewayDir, "node_modules.tar")), false);
+  assert.equal(fs.existsSync(path.join(appOutDir, "resources", "resources", "openai-proxy-bootstrap.cjs")), true);
 
   fs.rmSync(tmpRoot, { recursive: true, force: true });
 });

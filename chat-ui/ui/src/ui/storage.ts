@@ -2,6 +2,7 @@
 const KEY = "openclaw.control.settings.v1";
 
 import type { ThemeMode } from "./theme.ts";
+import {normalizeAppearance,type AppearanceProfile} from "./appearance-profile.ts";
 import { isAcceptableGatewayUrl } from "./gateway-url-policy.ts";
 import { isInjectableViewId, type CryoClawViewId } from "./views/registry.ts";
 
@@ -12,6 +13,7 @@ export type UiSettings = {
   lastActiveSessionKey: string;
   cryoclawView: CryoClawViewId;
   theme: ThemeMode;
+  appearance?:AppearanceProfile;
   chatFocusMode: boolean;
   chatShowThinking: boolean;
   chatProgressCardCollapsed: boolean; // Progress Card 折叠态（compose 上方浮卡，跨会话共用偏好）
@@ -127,6 +129,7 @@ export function parseUiSettings(raw: string | null, locationLike: LocationLike):
     lastActiveSessionKey: "main",
     cryoclawView: injectedView ?? "chat",
     theme: "light",
+    appearance:normalizeAppearance(undefined),
     chatFocusMode: false,
     chatShowThinking: true,
     chatProgressCardCollapsed: false,
@@ -161,6 +164,7 @@ export function parseUiSettings(raw: string | null, locationLike: LocationLike):
           : (typeof parsed.sessionKey === "string" && parsed.sessionKey.trim()) ||
             defaults.lastActiveSessionKey,
       cryoclawView: defaults.cryoclawView,
+      appearance:normalizeAppearance(parsed.appearance),
       theme:
         parsed.theme === "light" || parsed.theme === "dark" || parsed.theme === "system"
           ? parsed.theme

@@ -8,6 +8,54 @@ const os = require("node:os");
 const path = require("node:path");
 
 const kdp = require("./lib/kernel-dist-patch");
+test("native companion host resolution preserves exact host checks across ASAR junctions",t=>{
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),"cryo-native-host-"));
+  t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+  const dist=path.join(root,"node_modules/openclaw/dist");fs.mkdirSync(dist,{recursive:true});
+  const file=path.join(dist,"plugin-generation-artifact-test.mjs");
+  fs.writeFileSync(file,'function resolveNativeHost(filename) {\nfor(const candidate of []) { if (fs.existsSync(candidate)) return fs.realpathSync(candidate); }\n}\nfunction check(target,expectedHost) { if (expectedHost && resolveNativeHost(target) !== expectedHost) throw new Error("host mismatch"); }');
+  assert.equal(kdp.patchPluginNativeAsarHost(root),1);
+  const patched=fs.readFileSync(file,"utf8");assert.equal(kdp.patchPluginNativeAsarHost(root),1);assert.equal(fs.readFileSync(file,"utf8"),patched);
+  assert.ok(patched.includes("resolveNativeHost(target) !== expectedHost"));
+  const vm=require("node:vm");let link=path.join(root,"gateway.asar","node_modules","openclaw"),symlink=true;
+  const io={realpathSync(p){if(p===link)return link;throw Error("unresolved junction");},lstatSync(){return {isSymbolicLink:()=>symlink};},readlinkSync(){return link;},statSync(){return {isDirectory:()=>true};}};
+  const context=vm.createContext({fs:io,path});vm.runInContext(patched.slice(patched.indexOf("/* cryoclaw-native-asar-host */")),context);
+  const candidate=path.join(root,"capture/node_modules/openclaw");
+  assert.equal(context.cryoclawResolveNativeHostPath(candidate),link);
+  link=path.join(root,"unrelated");assert.equal(context.cryoclawResolveNativeHostPath(candidate),undefined);
+  symlink=false;assert.equal(context.cryoclawResolveNativeHostPath(candidate),undefined);
+});
+
+test("plugin artifact hashes observe unpacked identities without changing ordinary roots",async()=>{
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),"cryoclaw-identity-"));
+  try {
+    const dist=path.join(root,"node_modules","openclaw","dist");fs.mkdirSync(dist,{recursive:true});
+    const file=path.join(dist,"plugin.mjs");fs.writeFileSync(file,`import fs from 'node:fs';export function hashRuntimeArtifactFile(params) { return params; }`);
+    assert.equal(kdp.patchPluginArtifactAsarIdentity(root),1);const source=fs.readFileSync(file,"utf8");
+    assert.equal(kdp.patchPluginArtifactAsarIdentity(root),1);assert.equal(fs.readFileSync(file,"utf8"),source);
+    const {hashRuntimeArtifactFile:read}=await import('data:text/javascript,'+encodeURIComponent(source));
+    const virtual=path.join(root,"gateway.asar","plugins");const physical=virtual.replace('.asar','.asar.unpacked');fs.mkdirSync(physical,{recursive:true});
+    assert.equal(read({rootDir:virtual,rootRealPath:virtual}).rootDir,physical);
+    assert.equal(read({rootDir:root,rootRealPath:root}).rootDir,root);
+  } finally {fs.rmSync(root,{recursive:true,force:true});}
+});
+
+test("ASAR directory walks use physical unpacked directories while retaining virtual entry paths", async()=>{
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),"cryoclaw-walk-"));
+  try {
+    const dist=path.join(root,"node_modules","@openclaw","fs-safe","dist");fs.mkdirSync(dist,{recursive:true});
+    const file=path.join(dist,"walk.js");
+    fs.writeFileSync(file,`import fsSync from 'node:fs';\nconst pathForWindowsFilesystem=v=>v;\nexport function walk(dir) { const operationPath = pathForWindowsFilesystem(dir); return {operationPath, virtual:dir}; }\n`);
+    assert.equal(kdp.patchFsSafeAsarWalk(root),1);
+    const source=fs.readFileSync(file,"utf8");assert.equal(kdp.patchFsSafeAsarWalk(root),1);assert.equal(fs.readFileSync(file,"utf8"),source);
+    const {walk}=await import('data:text/javascript,'+encodeURIComponent(source));
+    const virtual=path.join(root,"gateway.asar","plugins","openai");
+    const physical=virtual.replace(".asar", ".asar.unpacked");fs.mkdirSync(physical,{recursive:true});
+    assert.deepEqual(walk(virtual),{operationPath:physical,virtual});
+    assert.equal(walk(path.join(root,"missing.asar","plugin")).operationPath,path.join(root,"missing.asar","plugin"));
+    assert.equal(walk(root).operationPath,root);
+  } finally {fs.rmSync(root,{recursive:true,force:true});}
+});
 
 const KIMI_INDEX = [
   "var kimi_coding_default = definePluginEntry({",

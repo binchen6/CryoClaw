@@ -41,6 +41,7 @@ export class ToggleSwitch extends LitElement {
       <div class="oc-toggle ${this.disabled ?"oc-toggle--disabled" : ""}"
         role="switch"
         aria-checked=${this.checked ? "true" : "false"}
+        aria-disabled=${this.disabled ? "true" : "false"}
         aria-label=${this.ariaLabel || nothing}
         tabindex=${this.disabled ? "-1" : "0"}
         @click=${this.toggle}

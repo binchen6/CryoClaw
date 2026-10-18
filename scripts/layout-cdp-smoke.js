@@ -59,13 +59,13 @@ async function main() {
     cleanup();
     process.exit(1);
   }
-  console.log(`[layout-cdp-smoke] 已连接页面: ${page.url}`);
+  console.log(`[layout-cdp-smoke] 已连接页面: ${page.url.split("?")[0]}`);
 
   const { ws, cdp } = await connect(page);
   // 就绪轮询（readyState + rail + 字体），替代固定 sleep(8000)
   const appReady = await waitForAppReady(cdp);
   console.log(`[layout-cdp-smoke] 首屏就绪: ${appReady ? "是" : "超时（继续诊断）"}`);
-  const gatewayOk = await waitForGateway("http://127.0.0.1:18789/", gatewayWaitMs);
+  const gatewayOk = await waitForGateway(undefined, gatewayWaitMs);
   console.log(`[layout-cdp-smoke] gateway GET / : ${gatewayOk ? "200 OK" : "未就绪（不阻断布局诊断）"}`);
 
   const runDiagnostics = () =>

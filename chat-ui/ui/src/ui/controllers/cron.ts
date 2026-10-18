@@ -39,7 +39,7 @@ export async function loadCronStatus(state: CronState) {
 // 事件驱动重入补跑（对齐 loadRunHistory 的 runsRefreshPending）：cron 广播恰在
 // 在途窗口到达时标记补跑，落地后再拉一轮，避免任务列表最长陈旧一个 tick 周期。
 // chat-ui 按单 app 实例设计，模块级瞬态变量依赖单挂载前提。
-let cronJobsRefreshPending = false;
+const cronJobsRefreshPending = new WeakSet<CronState>();
 
 export async function loadCronJobs(state: CronState) {
   if (!state.client || !state.connected) {
@@ -49,22 +49,23 @@ export async function loadCronJobs(state: CronState) {
     return;
   }
   if (state.cronLoading) {
-    cronJobsRefreshPending = true;
+    cronJobsRefreshPending.add(state);
     return;
   }
   state.cronLoading = true;
+  const client = state.client;
   state.cronError = null;
   try {
-    const res = await state.client.request<{ jobs?: Array<CronJob> }>("cron.list", {
+    const res = await client.request<{ jobs?: Array<CronJob> }>("cron.list", {
       includeDisabled: true,
     });
-    state.cronJobs = Array.isArray(res.jobs) ? res.jobs : [];
+    if (state.client === client && state.connected) state.cronJobs = Array.isArray(res.jobs) ? res.jobs : [];
   } catch (err) {
-    state.cronError = String(err);
+    if (state.client === client && state.connected) state.cronError = String(err);
   } finally {
     state.cronLoading = false;
-    if (cronJobsRefreshPending) {
-      cronJobsRefreshPending = false;
+    if (cronJobsRefreshPending.has(state)) {
+      cronJobsRefreshPending.delete(state);
       void loadCronJobs(state);
     }
   }

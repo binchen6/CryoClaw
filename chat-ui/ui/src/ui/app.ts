@@ -69,11 +69,11 @@ import { emptyBoardState, type BoardState } from "./controllers/board.ts";
 import { resolveInjectedAssistantIdentity } from "./assistant-identity.ts";
 import { loadAssistantIdentity as loadAssistantIdentityInternal } from "./controllers/assistant-identity.ts";
 import { getConfigSnapshot, deriveConfiguredModels, patchConfig } from "./controllers/config.ts";
-import { getCachedGatewayModelEntries, resolveModelSelectKey } from "./controllers/models.ts";
+import { getCachedGatewayModelEntries, resolveModelSelectKey, mergeAccountModels } from "./controllers/models.ts";
 import { extractAdvancedView, applyAdvancedSave } from "./views/settings/tab-channels.lib.ts";
 import { markSessionMeterDirty } from "./context-meter.ts";
 import { isWebbridgePinStaleError } from "./webbridge-error.ts";
-import { closeTopDialog, focusOpenDialogIfNeeded, isEscapeKey } from "./dialog-a11y.ts";
+import { closeTopDialog, focusOpenDialogIfNeeded, isEscapeKey, trapDialogTab } from "./dialog-a11y.ts";
 import { resolveThinkingCapabilities } from "./chat/thinking-levels.ts";
 import { loadChatHistory as loadChatHistoryInternal } from "./controllers/chat.ts";
 import { getLocale, t, tWithDetail } from "./i18n.ts";
@@ -1064,6 +1064,8 @@ export class OpenClawApp extends LitElement {
   private bindDialogKeyboard() {
     if (this.dialogKeydownHandler) return;
     this.dialogKeydownHandler = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || e.isComposing) return;
+      if (trapDialogTab(e, document)) return;
       if (!isEscapeKey(e)) return;
       if (closeTopDialog(document)) e.preventDefault();
     };
@@ -1232,8 +1234,14 @@ export class OpenClawApp extends LitElement {
       return;
     }
     try {
-      const snap = await getConfigSnapshot(this.client);
-      this.configuredModels = snap ? deriveConfiguredModels(snap.config) : [];
+      const client = this.client;
+      const [snap, catalog] = await Promise.all([
+        getConfigSnapshot(client),
+        client.request("models.list", { view: "configured" }).catch(() => null),
+      ]);
+      if (client !== this.client || !this.connected) return;
+      const defaults = snap?.config.agents as { defaults?: { model?: { primary?: string }; models?: Record<string,{alias?:string}> } } | undefined;
+      this.configuredModels = mergeAccountModels(snap ? deriveConfiguredModels(snap.config) : [], catalog, defaults?.defaults?.model?.primary, defaults?.defaults?.models);
       // 没有手动选择时，默认选中 isDefault 的模型
       if (!this.currentModel && this.configuredModels.length > 0) {
         const defaultModel = this.configuredModels.find((m) => m.isDefault);

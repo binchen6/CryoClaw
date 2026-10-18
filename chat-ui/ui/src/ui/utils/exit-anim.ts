@@ -10,12 +10,13 @@
  *   runExitAnimation(closeButtonElOrNull, ".cc-dialog-overlay", () => { state.x = null; });
  * finalize 负责清状态 + 触发重渲染（与原来立即关闭时相同）。
  *
- * 幂等：元素已在退场（含 cc-leaving）或找不到元素时立即 finalize，不叠定时器。
+ * 幂等：重复关闭保留原截止时间，并用最新 finalize（含调用方代次）结算。
  * reduced-motion 下跳过动画直接 finalize（全局 0.01ms 收敛下等待无意义）。
  */
 
 // 与 --duration-normal 对齐：退场曲线用 ease-in-out，时长 normal 档。
 const EXIT_MS = 200;
+const exits = new WeakMap<Element, { finalize: () => void; timer: ReturnType<typeof setTimeout> }>();
 
 export function runExitAnimation(
   els: Element | null | Array<Element | null | undefined>,
@@ -25,12 +26,27 @@ export function runExitAnimation(
     (el): el is Element => el != null,
   );
   const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  if (list.length === 0 || reduced || list[0].classList.contains("cc-leaving")) {
+  const current = list[0] ? exits.get(list[0]) : undefined;
+  if (current) {
+    if (list[0].classList.contains("cc-leaving")) {
+      // Callers advance their close epoch on every request; retain the latest guard.
+      current.finalize = finalize;
+      return;
+    }
+    clearTimeout(current.timer);
+    exits.delete(list[0]);
+  }
+  if (list.some(el => el.classList.contains("cc-leaving"))) return;
+  if (list.length === 0 || reduced) {
     finalize();
     return;
   }
   for (const el of list) el.classList.add("cc-leaving");
-  setTimeout(finalize, EXIT_MS);
+  const exit = { finalize, timer: setTimeout(() => {
+    exits.delete(list[0]);
+    exit.finalize();
+  }, EXIT_MS) };
+  exits.set(list[0], exit);
 }
 
 /** 从事件目标出发找最近的带退场动画的浮层宿主（overlay/drawer/panel）。 */

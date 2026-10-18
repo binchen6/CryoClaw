@@ -957,7 +957,7 @@ export function renderTabAdvanced(state: AppViewState) {
         <p class="oc-settings__hint oc-m-0 oc-mb-8">${t("settings.advanced.diagnosticsDesc")}</p>
         <div>
           <button class="btn btn--sm" ?disabled=${s.diagnosticsBusy} @click=${() => handleExportDiagnostics(state)}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v6h16v-6"/><path d="m8 7 4-4 4 4"/><path d="M12 3v9"/></svg>
+            <svg class="cryo-icon" aria-hidden="true" focusable="false" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v6h16v-6"/><path d="m8 7 4-4 4 4"/><path d="M12 3v9"/></svg>
             ${t("settings.advanced.diagnosticsExport")}
           </button>
         </div>

@@ -5,6 +5,7 @@ import * as http from "http";
 import * as path from "path";
 import * as fs from "fs";
 import { app } from "electron";
+import { resolveCryoclawConfigPath } from "./cryoclaw-config";
 import {
   DEFAULT_PORT,
   HEALTH_TIMEOUT_MS,
@@ -17,6 +18,7 @@ import {
   resolveNpmBin,
   resolveGatewayEntry,
   resolveGatewayCwd,
+  resolveGatewayPackageDir,
   resolveResourcesPath,
   resolveClawhubEntry,
   resolveUserBinDir,
@@ -359,7 +361,10 @@ export class GatewayProcess {
     // stat 转换使用已弃用的 fs.Stats 构造器，gateway（ELECTRON_RUN_AS_NODE）每轮
     // 扫描 asar 内插件清单都会刷 DEP0180 警告污染 gateway.log；内核是 vendored
     // 依赖，其弃用告警不可行动，直接静音。
-    const args = ["--no-deprecation", entry, "gateway", "run"];
+    const proxyBootstrap = app.isPackaged
+      ? path.join(resolveResourcesPath(), "openai-proxy-bootstrap.cjs")
+      : path.join(app.getAppPath(), "shared", "openai-proxy-bootstrap.cjs");
+    const args = ["--no-deprecation", "--require", proxyBootstrap, entry, "gateway", "run"];
     diagLog(`spawn: ${nodeBin} ${args.join(" ")} (gen=${gen})`);
     this.emitProgress("spawn");
 
@@ -367,6 +372,8 @@ export class GatewayProcess {
       cwd,
       env: {
         ...process.env,
+        CRYOCLAW_NODE_BIN: resolveNodeBin(),
+        OPENCLAW_BUNDLED_SKILLS_DIR: (()=>{const root=path.join(resolveGatewayPackageDir(),"skills");const physical=root.replace(/\.asar(?=[\\/])/i,".asar.unpacked");return fs.existsSync(physical)?physical:root;})(),
         ...resolveNodeExtraEnv(),
         NODE_ENV: "production",
         // 禁止 openclaw 入口在子进程内二次 respawn，避免 Windows 闪烁控制台窗口
@@ -376,6 +383,8 @@ export class GatewayProcess {
         // CryoClaw 用 USERPROFILE 写配置，openclaw 用 HOME 优先读配置，
         // 显式传入 OPENCLAW_STATE_DIR 消除歧义。
         OPENCLAW_STATE_DIR: resolveUserStateDir(),
+        CRYOCLAW_OPENAI_PROXY_CONFIG: resolveCryoclawConfigPath(),
+        CRYOCLAW_OPENAI_GATEWAY_ROOT: resolveGatewayPackageDir(),
         // V8 编译缓存（R20）：加速 gateway 热启动；内核换装后由 updater 清空
         NODE_COMPILE_CACHE: path.join(resolveUserStateDir(), "cache", "v8-compile"),
         // 告诉 openclaw 安装根目录，使 extensions 路径解析不依赖 __dirname（asar 内会失败）

@@ -31,6 +31,7 @@ export interface GatewayControlStatus {
 }
 
 export interface GatewayControlDeps {
+  themeUi?: (payload:unknown)=>Promise<unknown>;
   getStatus: () => GatewayControlStatus;
   /** 托管重启：停 gateway → ensureGatewayRunning（失败应抛错） */
   restart: () => Promise<void>;
@@ -141,8 +142,9 @@ function buildWebuiHandoffLocation(port: number, token: string): string {
 function isAuthorized(req: http.IncomingMessage, token: string): boolean {
   const header = req.headers.authorization ?? "";
   const expected = `Bearer ${token}`;
-  if (header.length !== expected.length) return false;
-  return crypto.timingSafeEqual(Buffer.from(header), Buffer.from(expected));
+  const actualBytes=Buffer.from(header),expectedBytes=Buffer.from(expected);
+  if (actualBytes.length !== expectedBytes.length) return false;
+  return crypto.timingSafeEqual(actualBytes,expectedBytes);
 }
 
 function sendJson(res: http.ServerResponse, statusCode: number, payload: unknown): void {
@@ -224,6 +226,22 @@ export function createGatewayControlRequestHandler(
       }
       if (!isAuthorized(req, token)) {
         sendJson(res, 401, { ok: false, error: "unauthorized" });
+        return;
+      }
+      if(req.method==="POST" && url==="/ui/theme") {
+        if(!deps.themeUi){sendJson(res,503,{ok:false,error:"UI unavailable"});return;}
+        const chunks:Buffer[]=[];let size=0;
+        try {
+          const payload=await new Promise<unknown>((resolve,reject)=>{
+            const timer=setTimeout(()=>{reject(new Error("body timeout"));req.resume();},5000);
+            const fail=(error:Error)=>{clearTimeout(timer);reject(error);};
+            req.on("data",(chunk:Buffer)=>{size+=chunk.length;if(size>65536){fail(new Error("body too large"));return;}chunks.push(chunk);});
+            req.once("error",fail);req.once("aborted",()=>fail(new Error("request aborted")));
+            req.once("end",()=>{clearTimeout(timer);try{resolve(JSON.parse(Buffer.concat(chunks).toString("utf8")));}catch{reject(new Error("invalid JSON"));}});
+          });
+          if(!payload || typeof payload!=="object" || !["inspect","preview","restore"].includes((payload as any).action)){sendJson(res,400,{ok:false,error:"Invalid theme action"});return;}
+          const result=await deps.themeUi(payload);sendJson(res,200,{ok:true,result});
+        } catch(error){sendJson(res,size>65536?413:400,{ok:false,error:error instanceof Error?error.message:"Theme request failed"});}
         return;
       }
       if (req.method === "GET" && url === "/gateway/status") {

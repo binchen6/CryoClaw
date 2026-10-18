@@ -31,7 +31,7 @@ if (!fs.existsSync(exe)) {
   const { ws, cdp } = await connect(page);
   await waitForAppReady(cdp);
   // 等网关就绪（冷启动约 12s），否则「连接失败」弹窗会挡住审查
-  const gatewayOk0 = await waitForGateway("http://127.0.0.1:18789/", 60_000, 3000);
+  const gatewayOk0 = await waitForGateway(undefined, 60_000, 3000);
   if (!gatewayOk0) console.log("WARN  网关 60s 未就绪，后续步骤可能受连接弹窗干扰");
   await setViewport(cdp, 1440);
   await waitForSettle(cdp, 600);
@@ -103,7 +103,7 @@ if (!fs.existsSync(exe)) {
   // 确认危险操作未执行：应用仍在运行、网关仍在线（页面未重载）
   const stillAlive = await cdp.evaluate("document.querySelectorAll('.oc-rail__item').length >= 5");
   // 设置页「搜索」tab 会触发热应用重启（by design）；轮询等网关恢复，最多 30s
-  const gatewayOk = await waitForGateway("http://127.0.0.1:18789/", 30_000, 3000);
+  const gatewayOk = await waitForGateway(undefined, 30_000, 3000);
   step("取消后应用与网关均未受影响", stillAlive && gatewayOk, `rail=${stillAlive} gateway200=${gatewayOk}`);
 
   const failed = steps.filter((x) => !x.ok);

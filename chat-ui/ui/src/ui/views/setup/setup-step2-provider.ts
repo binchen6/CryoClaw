@@ -549,7 +549,7 @@ function renderOAuthSection(state: AppViewState, goToStep: (step: number) => voi
         </div>
       ` : s.oauthSuccess ? html`
         <div class="oc-setup-oauth-status oc-setup-oauth-status--success">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg>
+          <svg class="cryo-icon" aria-hidden="true" focusable="false" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg>
           <span>${t("setup.provider.oauth.success")}</span>
         </div>
       ` : html`

@@ -191,6 +191,9 @@ async function refreshStatus(state: AppViewState, probe: boolean) {
   s.statusProbing = false;
   state.requestUpdate();
 }
+export async function refreshMemoryAfterGatewayReady(state:AppViewState):Promise<void> {
+  await loadMemoryStatus(s,state,()=>state.requestUpdate(),{force:true});
+}
 
 async function loadWorkspaceList(state: AppViewState, force = false) {
   if (s.wsLoading || (s.wsLoaded && !force)) return;

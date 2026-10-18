@@ -3,7 +3,17 @@
 > Preload (`src/preload.ts`) 通过 `contextBridge.exposeInMainWorld("cryoclaw", {...})` 暴露的完整 IPC 接口清单。
 > Electron 43 默认 sandbox 模式，所有渲染进程与主进程的交互必须经过此桥接层。
 
-## Gateway 控制
+## OpenAI / Codex 独立代理
+
+| 方法 | IPC 通道 | 说明 |
+|---|---|---|
+| `openaiProxyGet()` | `settings:openai-proxy-get` | 读取壳层代理配置 |
+| `openaiProxySave(config)` | `settings:openai-proxy-save` | 校验并保存 `{mode: system/direct/custom, url}`，请求网关重启 |
+| `openaiProxyTest(config)` | `settings:openai-proxy-test` | 最长 8 秒测试 HTTP(S) CONNECT；不携带账户凭据 |
+
+三个通道均校验可信发送方；自定义地址拒绝 SOCKS、URL 用户密码、路径、查询及 fragment。
+
+## Gateway 控制方法
 
 | 方法 | IPC 通道 | 方向 |
 |---|---|---|

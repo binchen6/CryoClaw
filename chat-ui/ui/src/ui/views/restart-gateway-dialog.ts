@@ -9,23 +9,25 @@ export function renderRestartGatewayDialog(state: AppViewState) {
 
   // 重启立即触发不等退场动画；弹窗沿来路淡出后再移除 DOM
   const handleRestart = () => {
+    if (document.querySelector("[data-restart-dialog]")?.classList.contains("cc-leaving")) return;
     window.cryoclaw?.restartGateway?.();
     handleDismiss();
   };
 
   const handleDismiss = () => {
-    runExitAnimation(document.querySelector(".cc-dialog-overlay"), () => {
+    runExitAnimation(document.querySelector("[data-restart-dialog]"), () => {
       state.showRestartGatewayDialog = false;
     });
   };
 
   return html`
-    <div class="cc-dialog-overlay" role="dialog" aria-modal="true" tabindex="-1">
+    <div class="cc-dialog-overlay" data-restart-dialog role="dialog" aria-modal="true"
+      aria-labelledby="restart-dialog-title" aria-describedby="restart-dialog-description" tabindex="-1">
       <div class="cc-dialog cc-dialog--sm">
         <div class="cc-dialog__head">
-          <div class="cc-dialog__title">${t("restartDialog.title")}</div>
+          <div class="cc-dialog__title" id="restart-dialog-title">${t("restartDialog.title")}</div>
         </div>
-        <div class="cc-dialog__body">${t("restartDialog.subtitle")}</div>
+        <div class="cc-dialog__body" id="restart-dialog-description">${t("restartDialog.subtitle")}</div>
         <div class="cc-dialog__foot">
           <button class="btn" data-dialog-dismiss @click=${handleDismiss}>
             ${t("restartDialog.dismiss")}

@@ -38,6 +38,7 @@ export type MemoryStatusState = {
   statusLoaded: boolean;
   statusFailed: boolean;
 };
+const statusCache = new WeakMap<GatewayBrowserClient, MemoryStatus>();
 
 // 拉取记忆系统状态；RPC 失败时降级为提示文字，不影响设置页其他开关。
 // probe=true 时深测 embedding 连通性（doctor.memory.status { probe: true }）。
@@ -51,13 +52,20 @@ export async function loadMemoryStatus(
   if (state.statusLoading || (!opts?.force && state.statusLoaded) || !client || !gateway.connected) {
     return;
   }
+  if (!opts?.force && statusCache.has(client)) {
+    state.memoryStatus=statusCache.get(client)!;state.statusLoaded=true;state.statusFailed=false;requestUpdate();return;
+  }
   state.statusLoading = true;
   requestUpdate();
   try {
-    state.memoryStatus = (await client.request("doctor.memory.status", opts?.probe ? { probe: true } : {})) as MemoryStatus;
+    const status = (await client.request("doctor.memory.status", opts?.probe ? { probe: true } : {})) as MemoryStatus;
+    if(gateway.client!==client || !gateway.connected)return;
+    state.memoryStatus = status;
+    statusCache.set(client,status);
     state.statusLoaded = true;
     state.statusFailed = false;
   } catch {
+    if(gateway.client!==client || !gateway.connected)return;
     state.memoryStatus = null;
     state.statusLoaded = true;
     state.statusFailed = true;

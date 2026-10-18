@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
-import { removeFailedSendArtifacts, handleAbortChat, flushChatQueueForEvent, handleSendChat } from "./app-chat.ts";
+import { removeFailedSendArtifacts, handleAbortChat, flushChatQueueForEvent, handleSendChat, buildAvatarMetaUrl } from "./app-chat.ts";
+
+test("desktop avatar requests do not send the install directory to the gateway", () => {
+  assert.equal(buildAvatarMetaUrl("/C:/Apps/CryoClaw/resources/app.asar/chat-ui/dist", "main", "file:"), "/avatar/main?meta=1");
+  assert.equal(buildAvatarMetaUrl("/control", "agent name", "https:"), "/control/avatar/agent%20name?meta=1");
+});
 
 // 与 controllers/chat.test.ts 同款的最小帧调度器/浏览器全局打桩。
 class FakeRaf {

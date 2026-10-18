@@ -1,6 +1,8 @@
 import type { Tab } from "./navigation.ts";
 import { connectGateway } from "./app-gateway.ts";
 import { scheduleChatScroll } from "./app-scroll.ts";
+import {stopPagePreloads} from "./page-preload.ts";
+import {attachThemeUi,detachThemeUi} from "./theme-live.ts";
 import {
   applySettingsFromUrl,
   attachThemeListener,
@@ -26,6 +28,7 @@ type LifecycleHost = {
 };
 
 export function handleConnected(host: LifecycleHost) {
+  attachThemeUi(host as unknown as import("./app-view-state.ts").AppViewState);
   host.basePath = inferBasePath();
   applySettingsFromUrl(host as unknown as Parameters<typeof applySettingsFromUrl>[0]);
   syncTabWithLocation(host as unknown as Parameters<typeof syncTabWithLocation>[0], true);
@@ -47,6 +50,8 @@ export function deferredGatewayConnect(host: LifecycleHost) {
 }
 
 export function handleDisconnected(host: LifecycleHost) {
+  detachThemeUi(host as unknown as import("./app-view-state.ts").AppViewState);
+  stopPagePreloads(host as unknown as import("./app-view-state.ts").AppViewState);
   window.removeEventListener("popstate", host.popStateHandler);
   detachThemeListener(host as unknown as Parameters<typeof detachThemeListener>[0]);
 }

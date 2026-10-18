@@ -1,4 +1,5 @@
 import { refreshChat } from "./app-chat.ts";
+import {applyAppearance,getAppliedAppearance,withAppearanceMode} from "./appearance-profile.ts";
 import { scheduleChatScroll } from "./app-scroll.ts";
 import {
   inferBasePathFromPathname,
@@ -16,6 +17,7 @@ import { resolveTheme, type ResolvedTheme, type ThemeMode } from "./theme.ts";
 import { isInjectableViewId } from "./views/registry.ts";
 
 type SettingsHost = {
+  requestUpdate?:()=>void;
   settings: UiSettings;
   password?: string;
   theme: ThemeMode;
@@ -77,19 +79,27 @@ function cleanInjectedCryoclawViewFromUrl() {
 }
 
 export function applySettings(host: SettingsHost, next: UiSettings) {
+  const themeChanged=next.theme!==host.settings.theme;
+  const sameAppearance=next.appearance===host.settings.appearance || JSON.stringify(next.appearance)===JSON.stringify(host.settings.appearance);
+  const appearance=themeChanged && next.appearance
+    ? (sameAppearance?withAppearanceMode(next.appearance,next.theme,typeof window!=="undefined" && window.matchMedia?.("(prefers-color-scheme: dark)").matches):{...next.appearance,mode:next.theme}):next.appearance;
+  const appearanceChanged=appearance!==host.settings.appearance && JSON.stringify(appearance)!==JSON.stringify(host.settings.appearance);
   const previousView = host.settings.cryoclawView;
   const normalized = {
     ...next,
+    appearance,
+    theme:themeChanged?next.theme:appearance?.mode??next.theme,
     lastActiveSessionKey: next.lastActiveSessionKey?.trim() || next.sessionKey.trim() || "main",
   };
   host.settings = normalized;
   saveSettings(normalized);
+  if(typeof document!=="undefined" && appearanceChanged && appearance!==undefined)applyAppearance(appearance);
   if (previousView === "setup" && normalized.cryoclawView !== "setup") {
     cleanInjectedCryoclawViewFromUrl();
   }
-  if (next.theme !== host.theme) {
-    host.theme = next.theme;
-    applyResolvedTheme(host, resolveTheme(next.theme));
+  if (normalized.theme !== host.theme) {
+    host.theme = normalized.theme;
+    applyResolvedTheme(host, resolveTheme(normalized.theme));
   }
   host.applySessionKey = host.settings.lastActiveSessionKey;
 }
@@ -220,7 +230,8 @@ export function inferBasePath() {
 }
 
 export function syncThemeWithSettings(host: SettingsHost) {
-  host.theme = host.settings.theme ?? "light";
+  if(typeof document!=="undefined")applyAppearance(host.settings.appearance);
+  host.theme = host.settings.appearance?.mode??host.settings.theme ?? "light";
   applyResolvedTheme(host, resolveTheme(host.theme));
 }
 
@@ -240,10 +251,12 @@ export function attachThemeListener(host: SettingsHost) {
   }
   host.themeMedia = window.matchMedia("(prefers-color-scheme: dark)");
   host.themeMediaHandler = (event) => {
-    if (host.theme !== "system") {
+    if ((getAppliedAppearance().mode??host.theme) !== "system") {
       return;
     }
     applyResolvedTheme(host, event.matches ? "dark" : "light");
+    applyAppearance(getAppliedAppearance());
+    host.requestUpdate?.();
   };
   if (typeof host.themeMedia.addEventListener === "function") {
     host.themeMedia.addEventListener("change", host.themeMediaHandler);

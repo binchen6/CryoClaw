@@ -44,12 +44,12 @@ CryoClaw 是在 **[OneClaw](https://github.com/oneclaw/oneclaw)**（AGPL-3.0）�
 | 设置架构 | 主进程自研读写 IPC | 全面切换内核 `config.get`/`config.patch`（乐观锁 + RFC7396 diff），退役 15+ 自研 IPC |
 | 流式渲染 | 逐帧全量 markdown | 逐帧纯文本流式 + 终态一次性排版（消除 O(n²) 卡顿），折叠区懒渲染 |
 | 存储体积 | — | gateway.asar 按需裁剪（剔除非目标平台原生包/冗余类型声明/sourcemap/.pdb 调试符号，幅度随内核版本浮动） |
-| 模型管理 | 基础列表 | provider 分组 + 拖拽排序 + 自定义分组 + fallback 链 + 搜索 + 能力徽标（思考/上下文窗口/图像）+ 密钥有效性探测 + 四处选择器联动 |
+| 模型管理 | 基础列表 | provider 分组 + 拖拽排序 + 自定义分组 + fallback 链 + 搜索 + 能力徽标 + 密钥有效性探测 + 选择器联动；ChatGPT/Codex 原生账户与额度同步、独立 HTTP(S) 代理（真实账户验收状态见 docs/CODEX-SUBSCRIPTION-INTEGRATION.md） |
 | 思考强度 | 部分模型被误限为开/关二值 | 按模型能力开放全档位（Kimi K3：low/medium/high/xhigh/max），thinkingLevelMap 正确路由 |
 | CLI | `openclaw` PATH 注入 | 额外提供 gateway CLI 托管（127.0.0.1 控制面，`openclaw gateway restart/status` 不再报错） |
 | 启动速度 | — | 窗口先行（首屏创建早于同步迁移与扩展 reconcile）+ 内核并行启动 + V8 编译缓存热启动，约 0.6s 看到界面 |
 | 插件管理 | 命令行 | 设置页「插件」tab：已安装插件清单 + 启停/卸载 + **ClawHub 插件市场**（搜索/一键安装） |
-| 测试 | — | 1617 个用例全量回归（vitest + node:test + typecheck），0 fail 为硬指标 |
+| 测试 | — | 1716 个用例通过、4 项跳过的全量回归（vitest + node:test + typecheck），0 fail 为硬指标 |
 | 代码质量 | — | jscpd 重复率度量与防回退（全源码重复率 1.30%，阈值 5%，`npm run dupcheck`） |
 
 ### 🚀 快速上手

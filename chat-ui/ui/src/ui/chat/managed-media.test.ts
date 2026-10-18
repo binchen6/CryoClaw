@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   configureManagedMedia,
+  fetchGatewayAvatarMeta,
   fetchManagedImageObjectUrl,
   fetchWithTokenFallback,
   isManagedMediaUrl,
@@ -10,6 +11,18 @@ import {
   toAbsoluteMediaUrl,
   wsUrlToHttpOrigin,
 } from "./managed-media.ts";
+
+test("avatar metadata sends gateway authorization only to a scoped avatar endpoint",async()=>{
+  resetManagedMedia();configureManagedMedia({httpOrigin:"http://127.0.0.1:18789",sharedToken:"qa-avatar-token"});
+  const original=globalThis.fetch;const calls:Array<{url:string;authorization:unknown}>=[];
+  globalThis.fetch=(async(url:any,options:any)=>{calls.push({url:String(url),authorization:options?.headers?.Authorization});return new Response('{"avatarUrl":null}',{headers:{'content-type':'application/json'}});}) as typeof fetch;
+  try {
+    const response=await fetchGatewayAvatarMeta('/avatar/main?meta=1');assert.equal(response?.status,200);
+    assert.deepEqual(calls,[{url:'http://127.0.0.1:18789/avatar/main?meta=1',authorization:'Bearer qa-avatar-token'}]);
+    assert.equal(await fetchGatewayAvatarMeta('//external.test/avatar/main?meta=1'),null);
+    assert.equal(await fetchGatewayAvatarMeta('/other'),null);assert.equal(calls.length,1);
+  }finally{globalThis.fetch=original;resetManagedMedia();}
+});
 
 // ── wsUrlToHttpOrigin ──
 

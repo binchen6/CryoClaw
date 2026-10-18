@@ -1,6 +1,7 @@
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
+import {randomUUID} from "node:crypto";
 import { Zip, ZipDeflate, ZipPassThrough } from "fflate";
 import {
   probeArchiveTool,
@@ -19,6 +20,8 @@ import {
   validatePortablePath,
 } from "./openclaw-state-archive-paths";
 import { readArchive } from "./openclaw-state-archive-zip";
+import { ArchiveResourceBudget } from "./archive-resource-budget";
+import {reportArchiveProgress,type ArchiveProgressCallback} from "./archive-progress";
 import { formatTimestamp } from "./time-format";
 
 export { buildOpenclawStateArchiveDefaultFileName };
@@ -29,6 +32,7 @@ type OpenclawStateEntry = {
   kind: EntryKind;
   mode: number;
   mtime: Date;
+  size?:number;
 };
 
 const ZIP_CHUNK_SIZE = 64 * 1024;
@@ -40,17 +44,22 @@ const PRE_IMPORT_BACKUP_KEEP = 2;
 // Runtime-only locks/logs are host-specific; they are skipped on export and
 // stripped again after import in case a third-party archive includes them.
 // "logs" 是整个日志目录（R20 起 app.log/gateway.log 与内核日志都归集于此）。
-const VOLATILE_RUNTIME_FILES = new Set(["app.log", "gateway.lock", "gateway.log", "logs", "cache"]);
+// tmp contains rebuildable native plugin captures, including complete dependency
+// trees. Exporting it can exhaust entry/size budgets without preserving user data.
+const VOLATILE_RUNTIME_FILES = new Set(["app.log", "gateway.lock", "gateway.log", "logs", "cache", "tmp"]);
 
 export async function exportOpenclawStateToArchive(
   stateDir: string,
   targetZipPath: string,
+  progress?:ArchiveProgressCallback,
 ): Promise<void> {
   assertArchiveOutsideStateDir(targetZipPath, stateDir);
   const snapshotRoot = fs.mkdtempSync(path.join(os.tmpdir(), "cryoclaw-openclaw-export-"));
   const snapshotDir = path.join(snapshotRoot, "state");
+  const stagingZipPath=targetZipPath+".tmp-"+randomUUID();
 
   try {
+    reportArchiveProgress(progress,{phase:"snapshot"});
     if (fs.existsSync(stateDir)) {
       const stateRoot = path.resolve(stateDir);
       // 异步复制：.openclaw 含 workspace/sessions/extensions 可达数百 MB，
@@ -79,7 +88,10 @@ export async function exportOpenclawStateToArchive(
         },
       });
     }
+    reportArchiveProgress(progress,{phase:"scan"});
     const entries = await collectOpenclawStateEntries(snapshotDir);
+    const bytesTotal=entries.reduce((total,entry)=>total+(entry.size??0),0);
+    reportArchiveProgress(progress,{phase:"write",filesDone:0,filesTotal:entries.length,bytesTotal});
 
     fs.mkdirSync(path.dirname(targetZipPath), { recursive: true });
     // 双 backend：Rust sidecar 可用时直写目标路径（流式 deflate + 硬件级 CRC）；
@@ -88,21 +100,26 @@ export async function exportOpenclawStateToArchive(
     const tool = await probeArchiveTool();
     if (tool) {
       try {
-        await rustCreateArchive(tool, { outputPath: targetZipPath, entries: buildRustCreateEntries(entries) });
+        await rustCreateArchive(tool, { outputPath: stagingZipPath, entries: buildRustCreateEntries(entries),onProgress:(done,total)=>reportArchiveProgress(progress,{phase:"write",filesDone:done,filesTotal:total,bytesTotal}) });
+        await fs.promises.rename(stagingZipPath,targetZipPath);
+        reportArchiveProgress(progress,{phase:"done",bytesDone:bytesTotal,bytesTotal});
         return;
       } catch (err) {
         warnArchiveToolFallbackOnce(err);
       }
     }
-    const fd = fs.openSync(targetZipPath, "w");
+    const fd = fs.openSync(stagingZipPath, "w");
     try {
-      await writeZip(entries, fd);
+      await writeZip(entries, fd,progress);
     } finally {
       fs.closeSync(fd);
     }
+    await fs.promises.rename(stagingZipPath,targetZipPath);
+    reportArchiveProgress(progress,{phase:"done",bytesDone:bytesTotal,bytesTotal});
   } catch (err) {
     throw toError(err);
   } finally {
+    await fs.promises.rm(stagingZipPath,{force:true}).catch(()=>{});
     // 异步清理：数百 MB 快照目录的 rmSync 同样会冻结主进程（与上方 cp 的理由一致）
     await fs.promises.rm(snapshotRoot, { recursive: true, force: true, maxRetries: 3 }).catch(() => {});
   }
@@ -111,6 +128,7 @@ export async function exportOpenclawStateToArchive(
 export async function validateOpenclawStateArchive(
   zipPath: string,
   stateDir: string,
+  progress?:ArchiveProgressCallback,
 ): Promise<void> {
   assertArchiveOutsideStateDir(zipPath, stateDir);
   const archive = await readArchive(
@@ -118,6 +136,7 @@ export async function validateOpenclawStateArchive(
     stateDir,
     undefined,
     new Set([ARCHIVE_MARKER_NAME, "openclaw.json"]),
+    progress,
   );
   validateArchiveMarker(archive.entryNames, archive.entryContents);
 }
@@ -126,16 +145,19 @@ export async function importOpenclawStateFromArchive(
   zipPath: string,
   stateDir: string,
   emergencyBackupDir: string,
+  progress?:ArchiveProgressCallback,
 ): Promise<void> {
   assertArchiveOutsideStateDir(zipPath, stateDir);
   // Revalidate at the destructive boundary: the selected ZIP path can change
   // while the gateway is stopping, and clearing the current state is irreversible.
-  await validateOpenclawStateArchive(zipPath, stateDir);
+  reportArchiveProgress(progress,{phase:"verify"});
+  await validateOpenclawStateArchive(zipPath, stateDir,progress);
 
   // 清空状态目录不可逆：先把当前状态导出为应急归档（状态目录之外，滚动保留
   // 最近 PRE_IMPORT_BACKUP_KEEP 份）。导出失败则中止导入——不做无保护清空。
   let backupZip: string;
   try {
+    reportArchiveProgress(progress,{phase:"backup"});
     backupZip = await createPreImportEmergencyBackup(stateDir, emergencyBackupDir);
   } catch (err) {
     throw new Error(`导入前备份当前 .openclaw 失败，已中止导入（现有状态未改动）: ${toError(err).message}`);
@@ -143,7 +165,8 @@ export async function importOpenclawStateFromArchive(
 
   try {
     clearStateDirForImport(stateDir);
-    await readArchive(zipPath, stateDir, stateDir);
+    reportArchiveProgress(progress,{phase:"restore"});
+    await readArchive(zipPath, stateDir, stateDir,new Set(),progress);
     removeVolatileRuntimeFiles(stateDir);
     removeArchiveMarker(stateDir);
   } catch (err) {
@@ -237,6 +260,8 @@ async function collectOpenclawStateEntries(stateDir: string): Promise<OpenclawSt
   }
 
   const entries: OpenclawStateEntry[] = [];
+  const budget = new ArchiveResourceBudget();
+  budget.add(Buffer.byteLength(ARCHIVE_MARKER_CONTENT));
   // 收集阶段只输出受控的 relPath（relative + 正斜杠归一），后续 zip 写入与
   // 导入校验均以此为准，不再拼接绝对路径。
   const registry = createPathRegistry(stateDir);
@@ -277,6 +302,7 @@ async function collectOpenclawStateEntries(stateDir: string): Promise<OpenclawSt
       }
 
       if (stat.isDirectory()) {
+        budget.add(0);
         const dirRelPath = `${relPath}/`;
         validatePortablePath(dirRelPath, "dir", registry);
         entries.push({ absPath, relPath: dirRelPath, kind: "dir", mode: stat.mode, mtime: stat.mtime });
@@ -285,8 +311,9 @@ async function collectOpenclawStateEntries(stateDir: string): Promise<OpenclawSt
       }
 
       if (stat.isFile()) {
+        budget.add(stat.size);
         validatePortablePath(relPath, "file", registry);
-        entries.push({ absPath, relPath, kind: "file", mode: stat.mode, mtime: stat.mtime });
+        entries.push({ absPath, relPath, kind: "file", mode: stat.mode, mtime: stat.mtime,size:stat.size });
         continue;
       }
 
@@ -369,7 +396,8 @@ function buildRustCreateEntries(entries: OpenclawStateEntry[]): RustCreateEntry[
   return out;
 }
 
-async function writeZip(entries: OpenclawStateEntry[], fd: number): Promise<void> {
+async function writeZip(entries: OpenclawStateEntry[], fd: number,progress?:ArchiveProgressCallback): Promise<void> {
+  const bytesTotal=entries.reduce((sum,entry)=>sum+(entry.size??0),0);let bytesDone=0,filesDone=0;
   // fflate emits ZIP bytes through callbacks while file data is read
   // asynchronously; the Promise bridges those two lifecycles.
   await new Promise<void>((resolve, reject) => {
@@ -400,8 +428,9 @@ async function writeZip(entries: OpenclawStateEntry[], fd: number): Promise<void
             const fileEntry = new ZipDeflate(entry.relPath, { level: 6 });
             applyZipAttributes(fileEntry, entry);
             zip.add(fileEntry);
-            await pushFileToZip(entry.absPath, fileEntry);
+            await pushFileToZip(entry.absPath, fileEntry,bytes=>{bytesDone+=bytes;reportArchiveProgress(progress,{phase:"write",filesDone,filesTotal:entries.length,bytesDone,bytesTotal});});
           }
+          filesDone++;reportArchiveProgress(progress,{phase:"write",filesDone,filesTotal:entries.length,bytesDone,bytesTotal});
         }
         zip.end();
       } catch (err) {
@@ -431,7 +460,7 @@ function applyZipAttributes(zipEntry: ZipPassThrough | ZipDeflate, entry: Opencl
   zipEntry.attrs = (permissionBits << 16) | directoryFlag;
 }
 
-async function pushFileToZip(absPath: string, zipEntry: ZipDeflate): Promise<void> {
+async function pushFileToZip(absPath: string, zipEntry: ZipDeflate,onBytes?:(bytes:number)=>void): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     const input = fs.createReadStream(absPath, { highWaterMark: ZIP_CHUNK_SIZE });
     // fflate 内部 throw（如流已被终结后再 push）在这里不捕获会变成主进程
@@ -439,6 +468,7 @@ async function pushFileToZip(absPath: string, zipEntry: ZipDeflate): Promise<voi
     input.on("data", (chunk) => {
       try {
         zipEntry.push(asUint8Array(chunk));
+        onBytes?.(chunk.length);
       } catch (err) {
         reject(err as Error);
         input.destroy();

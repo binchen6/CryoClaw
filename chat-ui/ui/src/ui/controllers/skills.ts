@@ -104,20 +104,21 @@ export async function loadSkills(state: SkillsState, options?: LoadSkillsOptions
     return;
   }
   state.skillsLoading = true;
+  const client = state.client;
   state.skillsError = null;
   try {
     const res = await withLoadTimeout(
-      state.client.request<SkillStatusReport | undefined>("skills.status", {}),
+      client.request<SkillStatusReport | undefined>("skills.status", {}),
       SKILLS_LOAD_TIMEOUT_MS,
     );
-    if (res) {
+    if (res && state.client === client && state.connected) {
       state.skillsReport = res;
     }
   } catch (err) {
     // 裸错误（gateway request timeout / Error: unknown method ...）只进 console，
     // UI 统一走友好文案 + 重试（渲染层 skillsError → skill-store__error 出重试按钮）
     console.warn("[skills] skills.status failed:", err);
-    state.skillsError = t("skillStore.error");
+    if (state.client === client && state.connected) state.skillsError = t("skillStore.error");
   } finally {
     state.skillsLoading = false;
   }
@@ -159,7 +160,7 @@ export type EligibleSkillOption = {
 
 /**
  * 引用技能列表：走官方 skills.status，过滤 disabled / ineligible 后供对话页加号菜单展示。
- * 请求失败时返回空数组（菜单降级为空，不打断对话）。
+ * Bound the load and reject errors so the menu can show a retry action.
  */
 export async function listEligibleSkills(
   state: Pick<SkillsState, "client" | "connected">,
@@ -167,11 +168,13 @@ export async function listEligibleSkills(
   if (!state.client || !state.connected) {
     return [];
   }
+  const client=state.client;
   try {
-    const res = await state.client.request<{ skills?: SkillStatusEntry[] } | undefined>(
+    const res = await withLoadTimeout(client.request<{ skills?: SkillStatusEntry[] } | undefined>(
       "skills.status",
       {},
-    );
+    ),SKILLS_LOAD_TIMEOUT_MS);
+    if(state.client!==client || !state.connected)return [];
     const skills = res?.skills ?? [];
     return skills
       .filter((sk) => sk.eligible !== false && !sk.disabled)
@@ -182,7 +185,7 @@ export async function listEligibleSkills(
         emoji: typeof sk.emoji === "string" ? sk.emoji : undefined,
       }));
   } catch {
-    return [];
+    throw new Error(t("skillStore.error"));
   }
 }
 

@@ -47,6 +47,9 @@ test("parseChannelManifest 解析合法清单", () => {
 });
 
 test("parseChannelManifest 拒绝坏清单", () => {
+  for (const version of ["2026.10.3-rc.1","2026.10.3-beta.1","2026.10.3-alpha"])
+    assert.throws(()=>kch.parseChannelManifest({stable:version}));
+  assert.equal(kch.parseChannelManifest({stable:"2026.7.1-2"}).stable,"2026.7.1-2");
   assert.throws(() => kch.parseChannelManifest(null));
   assert.throws(() => kch.parseChannelManifest({}));
   assert.throws(() => kch.parseChannelManifest({ stable: "latest" }));

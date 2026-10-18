@@ -2,7 +2,22 @@
 // 技能区空白）。loadSkills 15s 超时落友好错误（重试出按钮），裸 English 错误只进 console。
 import test from "node:test";
 import assert from "node:assert/strict";
-import { loadSkills, withLoadTimeout, SKILLS_LOAD_TIMEOUT_MS } from "./skills.ts";
+import { loadSkills, listEligibleSkills, withLoadTimeout, SKILLS_LOAD_TIMEOUT_MS } from "./skills.ts";
+
+test("skill references refresh eligibility and do not leak a replaced connection's response",async()=>{
+  let resolve!:(value:unknown)=>void;
+  const state=makeState({client:{request:()=>new Promise(done=>{resolve=done;})}});
+  const pending=listEligibleSkills(state as never);
+  state.client={request:async()=>({skills:[{skillKey:"enabled",name:"Current"},{skillKey:"disabled",disabled:true},{skillKey:"missing",eligible:false}]})};
+  resolve({skills:[{skillKey:"old",name:"Old connection"}]});
+  assert.deepEqual(await pending,[]);
+  assert.deepEqual(await listEligibleSkills(state as never),[{key:"enabled",name:"Current",description:undefined,emoji:undefined}]);
+});
+
+test("skill reference loading surfaces a safe retry error instead of an empty list",async()=>{
+  const state=makeState({client:{request:async()=>{throw new Error("private gateway details");}}});
+  await assert.rejects(listEligibleSkills(state as never),error=>error instanceof Error && !error.message.includes("private gateway"));
+});
 
 function makeState(overrides: Record<string, unknown> = {}) {
   return {

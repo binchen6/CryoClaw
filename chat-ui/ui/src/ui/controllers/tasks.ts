@@ -158,9 +158,7 @@ export function enrichRunJobNames(
 
 // 在途刷新期间若再被请求刷新（如 cron 事件触发），置脏标记并在完成后补跑一轮：
 // 否则旧请求晚到的响应会整体覆盖事件增量（列表陈旧最长一个 ticker 周期）。
-// chat-ui 按单 app 实例设计：模块级瞬态变量依赖单挂载前提（sessions.ts 已改用
-// WeakMap keyed by state；若未来出现多实例需求，这里需同样改造）
-let runsRefreshPending = false;
+const runsRefreshPending = new WeakSet<RunHistoryState>();
 
 export async function loadRunHistory(state: RunHistoryState) {
   if (!state.client || !state.connected) {
@@ -175,26 +173,28 @@ export async function loadRunHistory(state: RunHistoryState) {
   }
   state.runsUnsupported = false;
   if (state.runsLoading) {
-    runsRefreshPending = true;
+    runsRefreshPending.add(state);
     return;
   }
   state.runsLoading = true;
   state.runsError = null;
+  const client = state.client;
   try {
     // 始终拉全量（status 过滤在客户端做）：统计条计数与筛选互不影响。
     // 不传 id 时内核缺省 scope:"all"，返回全部任务的运行记录分页（上限 200）
-    const res = await state.client.request<CronRunHistoryResult>("cron.runs", {
+    const res = await client.request<CronRunHistoryResult>("cron.runs", {
       scope: "all",
       limit: 200,
     });
+    // A response from the previous gateway must not replace the current view.
+    if (state.client !== client || !state.connected) return;
     const entries = Array.isArray(res.entries) ? res.entries : [];
     state.runHistory = enrichRunJobNames(sortRunsByTimestamp(entries), state.cronJobs);
   } catch (err) {
-    state.runsError = String(err);
+    if (state.client === client && state.connected) state.runsError = String(err);
   } finally {
     state.runsLoading = false;
-    if (runsRefreshPending) {
-      runsRefreshPending = false;
+    if (runsRefreshPending.delete(state)) {
       void loadRunHistory(state);
     }
   }

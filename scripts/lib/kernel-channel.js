@@ -35,6 +35,9 @@ function parseChannelManifest(data) {
   if (!isValidKernelVersion(data.stable)) {
     throw new Error(`策展清单 stable 字段非法: ${JSON.stringify(data.stable)}`);
   }
+  if (!/^\d+\.\d+\.\d+(?:-\d+)?$/.test(data.stable)) {
+    throw new Error("稳定频道不能钉定 alpha、beta 或 RC 预发行版");
+  }
   const out = { stable: data.stable };
   if (data.minSupported !== undefined) {
     if (!isValidKernelVersion(data.minSupported)) {

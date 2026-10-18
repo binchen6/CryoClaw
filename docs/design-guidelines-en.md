@@ -1,13 +1,9 @@
 # CryoClaw Design Guidelines (2026.9 R2 brand refresh)
 
-CryoClaw's design language = **neutral grey + the CryoBlue blue-cyan blended accent**
-(Linear/Notion-style clean and modern). The brand color is a calm, work-oriented blue shifted
-towards cyan (self-drawn CryoBlue scale; light-theme primary `#1a6fd0`, secondary cyan
-`#0891b2`) — cool, trustworthy, lively yet never garish, easy on the eyes for long sessions.
-The signature gradient (blue→cyan `#2a89dd → #06b6d4`) is reserved for brand moments
-(logo / website hero / installer); inside the UI only the solid accent is used. Light is the
-default first-class theme; dark is an independently tuned near-black neutral theme. The two themes
-are defined separately at the token layer — dark is not "light plus a patch". This document mirrors
+CryoClaw uses **CryoBlue `#1A6FD0`, quiet neutral surfaces, and MiSans/Inter typography**.
+Default CryoBlue is restored, with restrained green secondary accents. Each built-in theme pairs
+its own light and dark surfaces. Primary controls follow the selected accent, with readable foregrounds. See [VISUAL-SYSTEM.md](VISUAL-SYSTEM.md) for the current specification;
+it supersedes historical stage values below. This document mirrors
 the current code; the sources of truth are `shared/design-tokens.css`,
 `chat-ui/ui/src/styles/tokens-ext.css`, `chat-ui/ui/src/styles/primitives.css`,
 `chat-ui/ui/src/ui/icons.ts` (the CryoIcons self-drawn icon system), and the binding contract
@@ -89,9 +85,9 @@ were fully retuned.
 
 ### 2.2 Palette
 
-- **Brand CryoBlue scale** (self-drawn blue × cyan blend, not a stock library scale):
+- **Brand CryoBlue scale** (original CryoBlue tonal scale):
   `--brand-50 … --brand-950` (`#eef6fd` … `#0f2a4e`), light-theme primary
-  **`--brand-600: #1a6fd0`** (≈4.6:1 on white, passes AA), base `--brand-500: #2a89dd`.
+  **`--brand-600: #1a6fd0`** (≈4.95:1 on white, passes AA), base `--brand-500: #2a89dd`.
 - **Neutral grey scale** (zero hue, Notion-style paper feel): `--grey-50 … --grey-950`
   (`#fafafa` … `#0a0a0a`).
 - Semantic colors: `--ok` (`#16a34a`), `--destructive` (`#dc2626`), `--warn` (`#d97706`),
@@ -162,7 +158,7 @@ scale (check the file for the live set; dead classes are pruned). Functional sty
 
 ## 3. Theme & color usage
 
-- The accent is always the steady blue `--accent`; cyan `--accent-2` is second emphasis
+- The brand baseline `--brand` uses original CryoBlue; `--accent` is the customizable theme ink
   only; red/green/amber are semantic status colors only (error/ok/warn), never theme colors.
 - Large white space + hairline dividers + subtle tonal separation instead of hard lines;
   hover feedback = slight background tint (`--bg-hover`) + stronger border
@@ -316,7 +312,7 @@ Since the 2026.9 R2 refresh, **all app icons are drawn in-house**
 ### 6.1 Drawing spec (hard rules)
 
 - **Canvas**: `viewBox="0 0 24 24"`, content inside the ~2.5–21.5 safe area.
-- **Stroke**: `stroke="currentColor"`, `stroke-width="2"`, `stroke-linecap="round"`,
+- **Stroke**: `stroke="currentColor"`, `stroke-width="1.75"`, `stroke-linecap="round"`,
   `stroke-linejoin="round"`, `fill="none"`; icons always inherit text color — never
   hardcode a color.
 - **Geometry language**: pure primitives — straight lines, circles/arcs, rounded

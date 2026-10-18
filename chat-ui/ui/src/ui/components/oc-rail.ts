@@ -88,6 +88,7 @@ export type RailProps = {
   onOpenWorkspace: () => void;
   onOpenExtensions: () => void;
   onOpenSettings: () => void;
+  onPreload?: (view:CryoClawViewId)=>void;
   onOpenWebUI: () => void;
   onReconnect: () => void;
 };
@@ -153,6 +154,8 @@ function railItem(
       class="oc-rail__item ${active ?"active" : ""} ${opts.extraClass ?? ""}"
       type="button"
       @click=${opts.onClick}
+      @pointerenter=${()=>{if(opts.view && !active)props.onPreload?.(opts.view);}}
+      @focus=${()=>{if(opts.view && !active)props.onPreload?.(opts.view);}}
       aria-current=${active ? "page" : nothing}
       data-tooltip=${opts.label}
       data-tooltip-pos="right"

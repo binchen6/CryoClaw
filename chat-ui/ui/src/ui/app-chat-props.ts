@@ -118,6 +118,7 @@ export function buildChatProps(state: AppViewState): ChatProps {
     onDraftChange: (next) => (state.chatMessage = next),
     configuredModels: state.configuredModels,
     currentModel: state.currentModel,
+    quotaClient: state.client,
     dirtyMeterSessions: state.dirtyMeterSessions,
     onModelChange: (modelKey) => state.handleModelChange(modelKey),
     thinkingToggleLevel: state.thinkingLevel,

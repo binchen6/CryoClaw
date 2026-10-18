@@ -3,11 +3,7 @@ import type { AppViewState } from "../app-view-state.ts";
 import { getLocale, t, tWithDetail } from "../i18n.ts";
 import { icons } from "../icons.ts";
 import { runExitAnimation } from "../utils/exit-anim.ts";
-
-// 「立即更新」点击后到主进程推送 downloading 态之间的本地 in-flight 标志：
-// 期间禁用按钮防双击重复触发下载；状态迁移（downloading/downloaded/error）时复位，
-// error 态按钮恢复可点（重试）。
-let updateDownloadInFlight = false;
+import { isUpdateDownloadPending, requestUpdateDownload } from "../update-download.ts";
 
 // 「发现新版本」弹窗：启动自动检查发现新版本时弹出（暂缓期内主进程不检查，不会到这）。
 // 状态流转（同一弹窗内完成）：
@@ -23,13 +19,11 @@ export function renderUpdateAvailableDialog(state: AppViewState) {
   const notes = us.releaseNotes ? (us.releaseNotes[lang as "zh" | "en"] ?? us.releaseNotes.en ?? "") : "";
 
   const close = () =>
-    runExitAnimation(document.querySelector(".cc-dialog-overlay"), () => state.closeUpdateDialog());
+    runExitAnimation(document.querySelector("[data-update-dialog]"), () => state.closeUpdateDialog());
   const downloading = us.status === "downloading";
   const downloaded = us.status === "downloaded";
   const failed = us.status === "error";
-  // 状态一旦离开 available 说明主进程已响应（成功转下载或失败转 error），复位 in-flight
-  if (us.status !== "available") updateDownloadInFlight = false;
-  const updateNowDisabled = updateDownloadInFlight && !failed;
+  const updateNowDisabled = isUpdateDownloadPending(state);
 
   const fmtMB = (n: number) => (n / 1048576).toFixed(1);
   // total 为 0 是 download-start 的占位进度（electron-updater 首个真实进度前），
@@ -40,11 +34,12 @@ export function renderUpdateAvailableDialog(state: AppViewState) {
       : "";
 
   return html`
-    <div class="cc-dialog-overlay" role="dialog" aria-modal="true" tabindex="-1" @click=${() => !downloading && close()}>
+    <div class="cc-dialog-overlay" data-update-dialog role="dialog" aria-modal="true"
+      aria-labelledby="update-dialog-title" tabindex="-1" @click=${() => !downloading && close()}>
       <div class="cc-dialog release-notes-dialog update-available-dialog" @click=${(e: Event) => e.stopPropagation()}>
         <div class="cc-dialog__head">
           <div class="oc-flex-1">
-            <div class="cc-dialog__title">${t("appUpdate.dialogTitle")}</div>
+            <div class="cc-dialog__title" id="update-dialog-title">${t("appUpdate.dialogTitle")}</div>
             <div class="cc-dialog__subtitle">v${us.currentVersion} → v${us.version}</div>
           </div>
           ${!downloading
@@ -104,11 +99,8 @@ export function renderUpdateAvailableDialog(state: AppViewState) {
                   class="btn primary"
                   type="button"
                   ?disabled=${updateNowDisabled}
-                  @click=${() => {
-                    if (updateDownloadInFlight) return;
-                    updateDownloadInFlight = true;
-                    void state.startUpdateDownload();
-                  }}
+                  aria-busy=${updateNowDisabled}
+                  @click=${() => void requestUpdateDownload(state)}
                 >
                   ${failed ? t("appUpdate.retryDownload") : t("appUpdate.updateNow")}
                 </button>

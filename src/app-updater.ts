@@ -17,6 +17,7 @@
 import { app } from "electron";
 import { autoUpdater } from "electron-updater";
 import { spawn } from "child_process";
+import { launchInstaller } from "./installer-launch";
 import * as fs from "fs";
 import * as path from "path";
 import * as log from "./logger";
@@ -264,20 +265,19 @@ export function quitAndInstallAppUpdate(): void {
   const installerPath = getPendingInstallerPath();
   if (installerPath) {
     log.info(`[app-updater] 启动安装器（带进度窗口）: ${installerPath}`);
-    try {
-      const child = spawn(installerPath, ["--updated", "--force-run"], {
+    launchInstaller(() => spawn(installerPath, ["--updated", "--force-run"], {
         detached: true,
         stdio: "ignore",
-      });
-      child.unref();
+      }), () => {
       armInstallExitConfirmation();
       beforeQuitAndInstall?.();
       app.quit();
-      return;
-    } catch (err) {
+    }, (err) => {
       installInFlight = false;
-      log.warn(`[app-updater] 自启动安装器失败，回退 quitAndInstall: ${formatUpdaterError(err)}`);
-    }
+      log.warn(`[app-updater] 安装器启动失败: ${formatUpdaterError(err)}`);
+      publish({ type: "error", message: `安装器启动失败: ${formatUpdaterError(err)}` });
+    });
+    return;
   } else {
     log.warn("[app-updater] 未找到 pending 安装器，回退 quitAndInstall");
   }

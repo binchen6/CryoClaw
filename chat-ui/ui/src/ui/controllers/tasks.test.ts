@@ -20,6 +20,47 @@ function run(overrides: Partial<CronRunLogEntry> = {}): CronRunLogEntry {
   return { ts: 1000, jobId: "job-1", status: "ok", ...overrides };
 }
 
+test("loadRunHistory ignores responses and errors from a replaced connection", async () => {
+  for (const fail of [false, true]) {
+    const state = fakeState(null);
+    let finish!: (value: any) => void;
+    state.client = { request: () => new Promise((resolve, reject) => {
+      finish = fail ? reject : resolve;
+    }) } as unknown as RunHistoryState["client"];
+    const loading = loadRunHistory(state);
+    state.client = fakeState(null).client;
+    state.runHistory = [run({ ts: 999 })];
+    finish(fail ? new Error("old connection") : { entries: [run({ ts: 1 })] });
+    await loading;
+    assert.equal(state.runHistory[0].ts, 999);
+    assert.equal(state.runsError, null);
+    assert.equal(state.runsLoading, false);
+  }
+});
+
+test("queued refresh belongs to its requesting state and coalesces repeated requests", async () => {
+  const a = fakeState(null);
+  const b = fakeState(null);
+  const finish: Array<(value: any) => void> = [];
+  let calls = 0;
+  a.client = { request: () => {
+    calls++;
+    return new Promise(resolve => finish.push(resolve));
+  } } as unknown as RunHistoryState["client"];
+  const loading = loadRunHistory(a);
+  await loadRunHistory(a);
+  await loadRunHistory(a);
+  await loadRunHistory(b);
+  assert.equal(b.requests.length, 1, "another view must not consume the queued refresh");
+  finish[0]({ entries: [] });
+  await loading;
+  assert.equal(calls, 2, "coalesce refresh requests into one follow-up");
+  finish[1]({ entries: [run({ ts: 123 })] });
+  await Promise.resolve();
+  assert.equal(a.runHistory[0].ts, 123);
+  assert.equal(a.runsLoading, false);
+});
+
 test("sortRunsByTimestamp 按 ts 降序，runAtMs 兜底，缺失时间戳排在末尾", () => {
   const a = run({ ts: 100 });
   const b = run({ ts: 300 });

@@ -63,6 +63,10 @@ exports.default = async function afterPack(context) {
       : path.join(appOutDir, "resources");
 
   const targetBase = path.join(resourcesDir, "resources");
+  fs.mkdirSync(targetBase, { recursive: true });
+  for (const name of ["openai-proxy.cjs", "openai-proxy-bootstrap.cjs"]) {
+    fs.copyFileSync(path.join(__dirname, "..", "shared", name), path.join(targetBase, name));
+  }
   const sourceBase = path.join(__dirname, "..", "resources", "targets", targetId);
   if (!fs.existsSync(sourceBase)) {
     throw new Error(

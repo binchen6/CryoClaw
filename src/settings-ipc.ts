@@ -25,6 +25,7 @@ import { registerCliIpc } from "./settings/cli";
 import { registerBackupIpc } from "./settings/backup";
 import { registerAboutIpc } from "./settings/about";
 import { registerMemoryIpc } from "./settings/memory";
+import { registerOpenAIProxyIpc } from "./settings/openai-proxy";
 
 export type { SettingsIpcOptions } from "./settings/types";
 
@@ -41,4 +42,5 @@ export function registerSettingsIpc(opts: SettingsIpcOptions): void {
   registerBackupIpc(opts);
   registerAboutIpc(opts);
   registerMemoryIpc();
+  registerOpenAIProxyIpc(opts);
 }

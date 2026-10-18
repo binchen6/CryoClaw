@@ -190,7 +190,7 @@
   height: 16px;
   stroke: currentColor;
   fill: none;
-  stroke-width: 1.5px;
+  stroke-width: var(--icon-stroke);
   stroke-linecap: round;
   stroke-linejoin: round;
   flex-shrink: 0;

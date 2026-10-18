@@ -298,27 +298,13 @@
     Delete "$PROFILE\.openclaw\bin\clawhub.cmd"
     RMDir "$PROFILE\.openclaw\bin"
 
-    ; 写入临时 PowerShell 脚本，从用户级 PATH 移除 bin 目录
-    ; 逻辑与 cli-integration.ts buildWinPathEnvScript("remove") 保持一致
-    FileOpen $0 "$TEMP\cryoclaw-uninstall-path.ps1" w
-    FileWrite $0 "function Remove-FromPath([string]$$target) {$\r$\n"
-    FileWrite $0 "  $$current = [Environment]::GetEnvironmentVariable('Path', 'User')$\r$\n"
-    FileWrite $0 "  if (-not $$current) { return }$\r$\n"
-    FileWrite $0 "  $$parts = $$current -split ';' | ForEach-Object { $$_.Trim() } | Where-Object { $$_ -ne '' }$\r$\n"
-    FileWrite $0 "  try { $$tn = ([System.IO.Path]::GetFullPath($$target)).TrimEnd('\').ToLowerInvariant() } catch { $$tn = $$target.Trim().TrimEnd('\').ToLowerInvariant() }$\r$\n"
-    FileWrite $0 "  $$filtered = @()$\r$\n"
-    FileWrite $0 "  foreach ($$p in $$parts) {$\r$\n"
-    FileWrite $0 "    try { $$n = ([System.IO.Path]::GetFullPath($$p)).TrimEnd('\').ToLowerInvariant() } catch { $$n = $$p.Trim().TrimEnd('\').ToLowerInvariant() }$\r$\n"
-    FileWrite $0 "    if ($$n -ne $$tn) { $$filtered += $$p }$\r$\n"
-    FileWrite $0 "  }$\r$\n"
-    FileWrite $0 "  [Environment]::SetEnvironmentVariable('Path', ($$filtered -join ';'), 'User')$\r$\n"
-    FileWrite $0 "}$\r$\n"
-    FileWrite $0 "Remove-FromPath $$env:LOCALAPPDATA\CryoClaw\bin$\r$\n"
-    FileWrite $0 "Remove-FromPath $$env:USERPROFILE\.openclaw\bin$\r$\n"
-    FileClose $0
-
-    nsExec::ExecToLog 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$TEMP\cryoclaw-uninstall-path.ps1"'
-    Delete "$TEMP\cryoclaw-uninstall-path.ps1"
+    ; 常量命令直接清理用户 PATH：不执行可被同用户低权限进程替换的临时脚本。
+    ; 环境路径只作为 Join-Path 的数据，不插入 PowerShell 源代码。
+    nsExec::ExecToLog `"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -Command "$$ErrorActionPreference='Stop'; $$targets=@((Join-Path $$env:LOCALAPPDATA 'CryoClaw\bin'),(Join-Path $$env:USERPROFILE '.openclaw\bin')) | ForEach-Object { $$_.TrimEnd('\') }; $$current=[Environment]::GetEnvironmentVariable('Path','User'); if ($$null -ne $$current) { $$next=($$current -split ';' | Where-Object { $$targets -notcontains $$_.Trim().TrimEnd('\') }) -join ';'; [Environment]::SetEnvironmentVariable('Path',$$next,'User') }"`
+    Pop $0
+    ${if} $0 != 0
+      DetailPrint "WARNING: user PATH cleanup failed (exit=$0); command wrappers were removed"
+    ${endif}
     ${endif}
   SectionEnd
 

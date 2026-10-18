@@ -10,6 +10,9 @@
  */
 import { html, nothing } from "lit";
 import { keyed } from "lit/directives/keyed.js";
+import { transitionView } from "./utils/view-transition.ts";
+import { preloadPage } from "./page-preload.ts";
+import {renderThemeUi} from "./theme-live.ts";
 import type { AppViewState } from "./app-view-state.ts";
 import { buildChatProps } from "./app-chat-props.ts";
 import {
@@ -84,9 +87,13 @@ declare global {
       pluginStoreMarketBrowse?: (params?: Record<string, unknown>) => Promise<any>;
       pluginStoreMarketDetail?: (params?: Record<string, unknown>) => Promise<any>;
       workspaceSetRoot?: (root: string) => Promise<any>;
+      selectDirectory?: () => Promise<string|null>;
       workspaceOpenFolder?: (filePath: string) => Promise<any>;
-      workspaceListDir?: (dirPath: string) => Promise<any>;
+      workspaceListDir?: (dirPath: string,options?:{showHidden?:boolean}) => Promise<any>;
       workspaceReadFile?: (filePath: string) => Promise<any>;
+      workspaceWriteFile?:(params:{path:string;content:string;baseHash:string})=>Promise<any>;
+      workspaceSaveDraft?:(params:{path:string;draft:string|null;baseHash:string})=>Promise<any>;
+      workspaceFindFiles?:(params:{root:string;query:string;showHidden?:boolean})=>Promise<any>;
       gitDetect?: () => Promise<any>;
       // git 面板（P4）：status/diff 返回主进程解析后的结构化数据
       gitStatus?: (cwd: string) => Promise<any>;
@@ -366,6 +373,7 @@ export function renderApp(state: AppViewState) {
         : html`<oc-rail
             .props=${{
               activeView: cryoclawView,
+              onPreload: (view: import("./views/registry.ts").CryoClawViewId)=>preloadPage(state,view),
               tasksRunningCount: ACTIVE_TASKS_RUNNING_COUNT,
               connected: state.connected,
               errors: [] as string[],
@@ -378,13 +386,13 @@ export function renderApp(state: AppViewState) {
               settingsBadge: weixinBadgeUnseen(),
               // App 更新角标：有待装/下载中更新时常驻，状态复位后消失
               settingsUpdateBadge: state.appUpdateBadge,
-              onOpenChat: () => setCryoClawView(state, "chat"),
-              onOpenTasks: () => openTasksView(state),
-              onOpenWorkspace: () => openWorkspaceView(state),
-              onOpenExtensions: () => openExtensionsView(state),
+              onOpenChat: () => {if(cryoclawView!=="chat")transitionView(()=>setCryoClawView(state, "chat"));},
+              onOpenTasks: () => {if(cryoclawView!=="tasks")transitionView(()=>openTasksView(state));},
+              onOpenWorkspace: () => {if(cryoclawView!=="workspace")transitionView(()=>openWorkspaceView(state));},
+              onOpenExtensions: () => {if(cryoclawView!=="extensions")transitionView(()=>openExtensionsView(state));},
               onOpenSettings: () => {
                 weixinBadgeMarkSeen();
-                openSettingsView(state, null);
+                if(cryoclawView!=="settings")transitionView(()=>openSettingsView(state, null));
               },
               onOpenWebUI: () => void handleOpenWebUI(state),
               onReconnect: () => handleReconnect(state),
@@ -472,6 +480,7 @@ export function renderApp(state: AppViewState) {
       ${renderReleaseNotesModal(state)}
       ${renderUpdateAvailableDialog(state)}
       ${renderKernelAutoUpgradeBanner(state.kernelAutoUpgrade, () => state.dismissKernelAutoUpgrade())}
+      ${renderThemeUi(state)}
       ${renderWebbridgePillModal(state)}
       ${getToastMessage()
         ? html`<div class="global-toast ${getToastAction() ? "global-toast--action" : ""} ${isToastLeaving() ? "global-toast--leaving" : ""}">

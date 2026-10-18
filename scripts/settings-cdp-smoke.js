@@ -39,7 +39,7 @@ async function main() {
   if (!page) { console.error("[settings-smoke] 90s 内未发现页面 target"); cleanup(); process.exit(1); }
   const { ws, cdp } = await connect(page);
   await waitForAppReady(cdp);
-  await waitForGateway("http://127.0.0.1:18789/", 40_000);
+  await waitForGateway(undefined, 40_000);
 
   // 设置入口：footer 直接子 button 的最后一个（有可用更新时设置项 aria-label 变成
   // 「有可用更新」，按 settings|设置 文案匹配会失效；webbridge/conn 状态项不是
@@ -87,6 +87,7 @@ async function main() {
   };
   console.log("[settings-smoke] 摘要（脱敏）:");
   console.log(JSON.stringify(summary, null, 2));
+  for (const line of cdp.consoleErrors) console.error("  console: " + line);
   if (cdp.exceptions.length) {
     for (const line of uniqueExceptionLines(cdp)) console.error("  renderer: " + line);
   }

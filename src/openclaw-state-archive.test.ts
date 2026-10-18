@@ -30,6 +30,33 @@ async function loadArchive() {
   return import("./openclaw-state-archive");
 }
 
+test("runtime plugin captures are excluded while user workspace tmp files survive backup",async()=>{
+  const {exportOpenclawStateToArchive,importOpenclawStateFromArchive}=await loadArchive();
+  fs.mkdirSync(path.join(stateDir,"tmp/plugin-captures/native/node_modules"),{recursive:true});
+  fs.writeFileSync(path.join(stateDir,"tmp/plugin-captures/native/node_modules/runtime.js"),"rebuildable");
+  fs.mkdirSync(path.join(stateDir,"workspace/tmp"),{recursive:true});
+  fs.writeFileSync(path.join(stateDir,"workspace/tmp/notes.txt"),"user content");
+  const zip=path.join(tmpDir,"portable.zip"),restored=path.join(tmpDir,"restored");
+  await exportOpenclawStateToArchive(stateDir,zip);
+  await importOpenclawStateFromArchive(zip,restored,path.join(tmpDir,"restore-backups"));
+  expect(fs.existsSync(path.join(restored,"tmp/plugin-captures"))).toBe(false);
+  expect(fs.readFileSync(path.join(restored,"workspace/tmp/notes.txt"),"utf8")).toBe("user content");
+});
+test("a database larger than the former 256 MiB limit round-trips with streaming progress",async()=>{
+  const {exportOpenclawStateToArchive,importOpenclawStateFromArchive}=await loadArchive();
+  const size=256*1024*1024+65536;
+  const source=path.join(stateDir,"large-database.bin");const fd=fs.openSync(source,"w");
+  try{fs.ftruncateSync(fd,size);fs.writeSync(fd,Buffer.from("first"),0,5,0);fs.writeSync(fd,Buffer.from("last"),0,4,size-4);}finally{fs.closeSync(fd);}
+  const phases:string[]=[];
+  const zip=path.join(tmpDir,"large.zip"),restored=path.join(tmpDir,"restored-large");
+  await exportOpenclawStateToArchive(stateDir,zip,progress=>phases.push(progress.phase));
+  expect(phases).toContain("snapshot");expect(phases).toContain("write");expect(phases.at(-1)).toBe("done");
+  await importOpenclawStateFromArchive(zip,restored,path.join(tmpDir,"large-emergency"));
+  const target=path.join(restored,"large-database.bin");expect(fs.statSync(target).size).toBe(size);
+  const output=fs.openSync(target,"r"),tail=Buffer.alloc(4);
+  try{fs.readSync(output,tail,0,4,size-4);expect(tail.toString()).toBe("last");}finally{fs.closeSync(output);}
+},60000);
+
 let tmpDir: string;
 let stateDir: string;
 let backupDir: string;

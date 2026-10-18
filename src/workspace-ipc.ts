@@ -7,6 +7,10 @@ import * as log from "./logger";
 import { resolveUserStateDir } from "./constants";
 import { assertTrustedIpcSender } from "./ipc-sender-guard";
 import { isSafeOpenExt } from "./safe-open";
+import {readUserConfig} from "./provider-config";
+import {readCryoclawConfig,writeCryoclawConfig} from "./cryoclaw-config";
+import {readWorkspaceText,saveWorkspaceText,findWorkspaceFiles,readWorkspaceDraft,writeWorkspaceDraft} from "./workspace-files";
+import * as os from "node:os";
 
 // workspace 根路径由渲染进程首次调用 workspace:set-root 设定
 let workspaceRoot: string | null = null;
@@ -27,7 +31,8 @@ const CASE_INSENSITIVE_PLATFORM = process.platform === "win32" || process.platfo
 function isInsideRoot(target: string, root: string, caseInsensitive = CASE_INSENSITIVE_PLATFORM): boolean {
   const resolved = normalizeForContainment(target, caseInsensitive);
   const resolvedRoot = normalizeForContainment(root, caseInsensitive);
-  return resolved === resolvedRoot || resolved.startsWith(resolvedRoot + path.sep);
+  const prefix=resolvedRoot.endsWith(path.sep)?resolvedRoot:resolvedRoot+path.sep;
+  return resolved===resolvedRoot || resolved.startsWith(prefix);
 }
 
 function normalizeForContainment(input: string, caseInsensitive: boolean): string {
@@ -52,12 +57,22 @@ function allowedRoots(): string[] {
     roots.push(workspaceRoot);
   }
   roots.push(path.join(resolveUserStateDir(), "worktrees"));
-  return roots;
+  roots.push(path.join(resolveUserStateDir(),"workspace"));
+  const config=readUserConfig();
+  const configured=[config?.agents?.defaults?.workspace,...(Array.isArray(config?.agents?.list)?config.agents.list.map((agent:any)=>agent.workspace):[])];
+  const approved=readCryoclawConfig()?.approvedWorkspaceRoots;
+  for(const value of [...configured,...(Array.isArray(approved)?approved.slice(0,40):[])])if(typeof value==="string" && value){const expanded=value.replace(/^~(?=[\\/]|$)/,os.homedir()).replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g,(match,key)=>process.env[key]??match);if(path.isAbsolute(expanded))roots.push(path.resolve(expanded));}
+  return [...new Set(roots.flatMap(root=>{try{return [root,fs.realpathSync(root)];}catch{return [root];}}))];
 }
+export function authorizeWorkspaceRoot(root:string):void {
+  const canonical=fs.realpathSync(root);if(!fs.statSync(canonical).isDirectory())return;
+  const config=readCryoclawConfig()??{};config.approvedWorkspaceRoots=[...new Set([...(Array.isArray(config.approvedWorkspaceRoots)?config.approvedWorkspaceRoots:[]),canonical])].slice(-40);writeCryoclawConfig(config);
+}
+export function resetWorkspaceAccessForImport():void {workspaceRoot=null;const config=readCryoclawConfig();if(config?.approvedWorkspaceRoots){delete config.approvedWorkspaceRoots;writeCryoclawConfig(config);}}
 
 // 公共守卫：检查路径合法性（workspace 根或 worktrees 根之内）
 function guardPath(filePath: string): { ok: true } | { ok: false; error: { success: false; message: string } } {
-  if (!isInsideAnyRoot(filePath, allowedRoots())) {
+  if (typeof filePath!=="string" || !filePath || !isInsideAnyRoot(filePath, allowedRoots())) {
     log.error(`workspace: path traversal blocked: ${filePath}`);
     return { ok: false, error: { success: false, message: "Access denied" } };
   }
@@ -112,14 +127,13 @@ export async function resolveAllowedDir(dirPath: string): Promise<string | null>
 
 export function registerWorkspaceIpc(): void {
   // 设置 workspace 根路径（渲染进程从 gateway 获取后传入）
-  // 安全面：root 必须在 ~/.openclaw/workspace/ 内，阻止渲染进程任意改根目录绕过 traversal 守卫
+  // Only configured workspaces, worktrees and folders granted by the native picker.
   ipcMain.handle("workspace:set-root", (event, root: string) => {
     if (!assertTrustedIpcSender(event, "workspace:set-root")) throw new Error("IPC sender not trusted");
-    const allowedRoot = path.join(resolveUserStateDir(), "workspace");
+    if(typeof root!=="string" || !root || !path.isAbsolute(root))return {success:false,message:"Invalid workspace path"};
     const resolved = path.resolve(root);
-    if (!isInsideRoot(resolved, allowedRoot)) {
-      log.error(`workspace: set-root 拒绝非 workspace 子目录: ${resolved}（允许范围: ${allowedRoot}）`);
-      return { success: false, message: "Workspace root must be inside ~/.openclaw/workspace/" };
+    if (!isInsideAnyRoot(resolved,allowedRoots())) {
+      return { success: false, message: "请通过文件夹选择器授权此工作区 / Select this folder to grant workspace access" };
     }
     workspaceRoot = resolved;
     log.info(`workspace root set: ${resolved}`);
@@ -140,16 +154,19 @@ export function registerWorkspaceIpc(): void {
   });
 
   // 列出目录内容（支持子目录浏览）
-  ipcMain.handle("workspace:list-dir", async (event, dirPath: string) => {
+  ipcMain.handle("workspace:list-dir", async (event, dirPath: string,options?:{showHidden?:boolean}) => {
     if (!assertTrustedIpcSender(event, "workspace:list-dir")) throw new Error("IPC sender not trusted");
     const check = await guardRealPath(dirPath);
     if (!check.ok) return check.error;
     const target = check.target;
     try {
-      const entries = await fs.promises.readdir(target, { withFileTypes: true });
+      const entries:fs.Dirent[]=[];let truncated=false,visited=0;const started=Date.now();
+      for await(const entry of await fs.promises.opendir(target)){
+        if(++visited>20000 || entries.length>=5000 || visited%64===0 && Date.now()-started>1500){truncated=true;break;}
+        if(options?.showHidden || !entry.name.startsWith(".") && !["node_modules","dist","build","vendor"].includes(entry.name))entries.push(entry);
+      }
       const items = entries
         // 隐藏点目录与依赖目录：预览面板面向用户产物，node_modules 展开即数千项噪音
-        .filter((e) => !e.name.startsWith(".") && e.name !== "node_modules")
         .map((e) => ({
           name: e.name,
           isDir: e.isDirectory(),
@@ -160,7 +177,7 @@ export function registerWorkspaceIpc(): void {
           if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
           return a.name.localeCompare(b.name);
         });
-      return { success: true, data: { items, root: target } };
+      return { success: true, data: { items, root: target,truncated } };
     } catch (err: any) {
       log.error(`workspace:list-dir failed: ${err?.message}`);
       return { success: false, message: err?.message ?? String(err) };
@@ -174,16 +191,35 @@ export function registerWorkspaceIpc(): void {
     if (!check.ok) return check.error;
     const target = check.target;
     try {
-      const stat = await fs.promises.stat(target);
-      if (stat.size > 1024 * 1024) {
-        return { success: false, message: "File too large (>1MB)" };
-      }
-      const content = await fs.promises.readFile(target, "utf-8");
-      return { success: true, data: { content, name: path.basename(target), path: filePath } };
+      const data=await readWorkspaceText(target);
+      const draft=await readWorkspaceDraft(target,resolveUserStateDir());
+      return { success: true, data: {...data,name:path.basename(target),path:filePath,...(draft?{draft:draft.draft,draftBaseHash:draft.baseHash}:{})} };
     } catch (err: any) {
       log.error(`workspace:read-file failed: ${err?.message}`);
       return { success: false, message: err?.message ?? String(err) };
     }
+  });
+  ipcMain.handle("workspace:write-file",async(event,params)=>{
+    if(!assertTrustedIpcSender(event,"workspace:write-file"))throw new Error("IPC sender not trusted");
+    try {const check=await guardRealPath(params?.path);if(!check.ok)return check.error;
+      const result=await saveWorkspaceText(check.target,params?.content,params?.baseHash,async()=>{const current=await guardRealPath(params.path);return current.ok && current.target===check.target;});
+      if(result.success)await writeWorkspaceDraft(check.target,resolveUserStateDir(),null,"").catch(()=>{});return result;
+    } catch(error){return {success:false,message:error instanceof Error?error.message:String(error)};}
+  });
+  ipcMain.handle("workspace:save-draft",async(event,params)=>{
+    if(!assertTrustedIpcSender(event,"workspace:save-draft"))throw new Error("IPC sender not trusted");
+    try{const check=await guardRealPath(params?.path);if(!check.ok)return check.error;await writeWorkspaceDraft(check.target,resolveUserStateDir(),params?.draft,params?.baseHash);return {success:true};}
+    catch(error){return {success:false,message:error instanceof Error?error.message:String(error)};}
+  });
+  const searches=new WeakMap<Electron.WebContents,number>();
+  ipcMain.handle("workspace:find-files",async(event,params)=>{
+    if(!assertTrustedIpcSender(event,"workspace:find-files"))throw new Error("IPC sender not trusted");
+    try {const check=await guardRealPath(params?.root);if(!check.ok)return check.error;
+      if(typeof params?.query!=="string" || params.query.length>200)return {success:false,message:"无效的搜索条件"};
+      const generation=(searches.get(event.sender)??0)+1;searches.set(event.sender,generation);
+      const data=await findWorkspaceFiles(check.target,params.query,params.showHidden===true,()=>searches.get(event.sender)!==generation);
+      return {success:true,data};
+    }catch(error){return {success:false,message:error instanceof Error?error.message:String(error)};}
   });
 }
 

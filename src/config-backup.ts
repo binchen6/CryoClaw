@@ -100,7 +100,9 @@ function shouldSkipBackup(raw: string, force: boolean): boolean {
 
   if (force) return false;
   const ageMs = Date.now() - Date.parse(latest.createdAt);
-  return Number.isFinite(ageMs) && ageMs >= 0 && ageMs < BACKUP_MIN_INTERVAL_MS;
+  // NTFS timestamps may be slightly ahead of Date.now() after a write. Treat
+  // subsecond skew as the same burst, rather than filling every backup slot.
+  return Number.isFinite(ageMs) && ageMs >= -1_000 && ageMs < BACKUP_MIN_INTERVAL_MS;
 }
 
 // 列出历史备份，按时间倒序返回，供设置页恢复 UI 展示。

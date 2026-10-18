@@ -25,7 +25,7 @@ dependencies = [
 
 [[package]]
 name = "cryoclaw-archive"
-version = "0.2.0"
+version = "0.2.2"
 dependencies = [
  "crc32fast",
  "flate2",

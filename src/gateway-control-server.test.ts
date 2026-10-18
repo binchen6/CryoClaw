@@ -24,7 +24,7 @@ interface TestResponse {
 
 function request(
   port: number,
-  opts: { method?: string; path?: string; token?: string } = {},
+  opts: { method?: string; path?: string; token?: string;body?:unknown } = {},
 ): Promise<TestResponse> {
   return new Promise((resolve, reject) => {
     const req = http.request(
@@ -52,9 +52,22 @@ function request(
       },
     );
     req.on("error", reject);
-    req.end();
+    req.end(opts.body===undefined?undefined:JSON.stringify(opts.body));
   });
 }
+
+test("theme API requires authentication and bounds both action and request size",async()=>{
+  let calls=0;
+  const server=await startTestServer({getStatus:()=>({running:true,pid:1,port:18789,uptimeMs:1}),restart:async()=>{},themeUi:async payload=>{calls++;return {preview:(payload as any).action==="preview"};}});
+  try {
+    assert.equal((await request(server.port,{method:"POST",path:"/ui/theme",body:{action:"inspect"}})).statusCode,401);
+    assert.equal(calls,0);
+    assert.equal((await request(server.port,{method:"POST",path:"/ui/theme",token:TEST_TOKEN,body:{action:"execute",script:"bad"}})).statusCode,400);
+    assert.equal((await request(server.port,{method:"POST",path:"/ui/theme",token:TEST_TOKEN,body:{action:"preview",theme:"x".repeat(65536)}})).statusCode,413);
+    const result=await request(server.port,{method:"POST",path:"/ui/theme",token:TEST_TOKEN,body:{action:"preview",theme:{}}});
+    assert.equal(result.statusCode,200);assert.deepEqual(result.body,{ok:true,result:{preview:true}});assert.equal(calls,1);
+  } finally {await server.close();}
+});
 
 // 起测试服务器：随机空闲端口，返回端口与关闭函数
 async function startTestServer(

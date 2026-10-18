@@ -36,7 +36,7 @@ import { registerSetupIpc } from "./setup-ipc";
 import { registerSettingsIpc } from "./settings-ipc";
 import { registerSkillStoreIpc } from "./skill-store";
 import { registerPluginStoreIpc, killTrackedKernelCliChildren } from "./plugin-store";
-import { registerWorkspaceIpc } from "./workspace-ipc";
+import { registerWorkspaceIpc,authorizeWorkspaceRoot,resetWorkspaceAccessForImport } from "./workspace-ipc";
 import { registerGitIpc } from "./git-ipc";
 import { detectGitCached } from "./git-detector";
 import { isSetupComplete, resolveGatewayPort, resolveGatewayLogPath, resolveUserStateDir, resolveUserConfigPath, resolveGatewayRoot } from "./constants";
@@ -64,6 +64,8 @@ import { isAutoKernelUpgradeBackoffActive, recordAutoKernelUpgradeFailure, clear
 import { initAppUpdater, quitAndInstallAppUpdate } from "./app-updater";
 import { maybeAutoCheckWebbridgeUpdate, ensureWebbridgeDaemonRunning, broadcastWebbridgeStateChanged } from "./webbridge-update";
 import { startGatewayControlServer, stopGatewayControlServer, buildWebuiHandoffUrl } from "./gateway-control-server";
+import {requestThemeUi} from "./theme-preview-bridge";
+import {registerAttachmentThumbnailIpc} from "./attachment-thumbnail";
 import { migrateOpenclawConfigForKernelUpgrade } from "./openclaw-config-migration";
 import { assertTrustedIpcSender, chatUiEntryUrlPrefix, isTrustedChatUiUrl } from "./ipc-sender-guard";
 import { isSafeOpenExt } from "./safe-open";
@@ -75,7 +77,7 @@ import { createOpenclawStateImportLifecycle } from "./openclaw-state-import-life
 import { reconcileHostStateAfterOpenclawImport } from "./openclaw-state-import-host-reconcile";
 import * as log from "./logger";
 import * as analytics from "./analytics";
-import { formatConsoleLevel } from "./console-level";
+import { formatConsoleLevel, consoleLogSeverity } from "./console-level";
 
 // 过滤渲染层高频日志，避免 onEvent/request 等每秒数百次的消息阻塞主进程
 function isNoisyRendererConsoleMessage(message: string): boolean {
@@ -95,11 +97,7 @@ function attachRendererDebugHandlers(label: string, webContents: Electron.WebCon
     const tag = `[renderer:${label}] console.${formatConsoleLevel(level)}`;
     const safeMessage = sanitizeLogText(message);
     const safeSource = sanitizeLogText(sourceId);
-    if (level >= 2) {
-      log.error(`${tag}: ${safeMessage} (${safeSource}:${lineNumber})`);
-      return;
-    }
-    log.info(`${tag}: ${safeMessage} (${safeSource}:${lineNumber})`);
+    log[consoleLogSeverity(level)](`${tag}: ${safeMessage} (${safeSource}:${lineNumber})`);
   });
 
   webContents.on("preload-error", (_event, path, error) => {
@@ -720,15 +718,15 @@ const openclawStateImportLifecycle = createOpenclawStateImportLifecycle({
     cancelPendingGatewayRestart("settings:import-openclaw-state");
     await inflightGatewayOp;
   },
-  validateArchive: (filePath) => validateOpenclawStateArchive(filePath, resolveUserStateDir()),
+  validateArchive: (filePath,progress) => validateOpenclawStateArchive(filePath, resolveUserStateDir(),progress),
   stopGateway: () => gateway.stop({ waitForStarting: true }),
-  importArchive: (filePath) => log.withFileLoggingPaused(async () => {
+  importArchive: (filePath,progress) => log.withFileLoggingPaused(async () => {
     // Windows：gateway.log 诊断流若不关闭，fs.rm 清空状态目录会因句柄占用
     // EBUSY/EPERM 失败（app.log 流由 withFileLoggingPaused 关闭，这里补齐另一半）
     await closeDiagLogStream();
-    return importOpenclawStateFromArchive(filePath, resolveUserStateDir(), resolveOpenclawImportBackupDir());
+    return importOpenclawStateFromArchive(filePath, resolveUserStateDir(), resolveOpenclawImportBackupDir(),progress);
   }),
-  reconcileHostState: reconcileHostStateAfterOpenclawImport,
+  reconcileHostState: async()=>{resetWorkspaceAccessForImport();await reconcileHostStateAfterOpenclawImport();},
   syncImportedConfigState: () => syncOpenClawStateAfterWrite(resolveUserConfigPath()),
   startGateway: async () => {
     const running = await ensureGatewayRunning("settings:import-openclaw-state");
@@ -1018,6 +1016,7 @@ ipcMain.handle("dialog:select-directory", async (event) => {
   if (result.canceled || result.filePaths.length === 0) {
     return null;
   }
+  authorizeWorkspaceRoot(result.filePaths[0]);
   return result.filePaths[0];
 });
 
@@ -1199,11 +1198,12 @@ registerSetupIpc({
   onOAuthLoginSuccess: ensureOAuthTokenRefresh,
   onBrowserModeChanged: () => requestGatewayRestart("setup:webbridge-fallback"),
 });
+registerAttachmentThumbnailIpc();
 registerSettingsIpc({
   requestGatewayRestart: () => requestGatewayRestart("settings:kimi-search"),
   getGatewayToken: () => gateway.getToken(),
   getGatewayRuntime: () => ({ state: gateway.getState(), pid: gateway.getPid(), startedAt: gateway.getStartedAt() }),
-  importOpenclawState: (filePath) => openclawStateImportLifecycle.importOpenclawState(filePath),
+  importOpenclawState: (filePath,progress) => openclawStateImportLifecycle.importOpenclawState(filePath,progress),
   stopGateway: () => gateway.stop({ waitForStarting: true }),
   cancelScheduledCrashRestart: () => cancelScheduledCrashRestart("settings:restore-config"),
   // 恢复备份后跑存量迁移（备份可能产自旧内核/旧版本，strict 校验起不来）
@@ -1430,6 +1430,11 @@ app.whenReady().then(async () => {
   // 走与内核升级同款的托管停启路径（内核原生 daemon 模型在 asar 内嵌部署下不可用）。
   // 服务本身不依赖 gateway 已运行（status/restart 读实时状态），失败不阻塞启动。
   void startGatewayControlServer({
+    themeUi:async payload=>{
+      const target=BrowserWindow.getAllWindows().find(window=>!window.isDestroyed() && isTrustedChatUiUrl(window.webContents.getURL(),chatUiEntryUrlPrefix()));
+      if(!target)throw new Error("Open the CryoClaw window to preview a theme");
+      return requestThemeUi(target.webContents,payload);
+    },
     getStatus: () => {
       const startedAt = gateway.getStartedAt();
       return {

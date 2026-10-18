@@ -51,6 +51,8 @@ const RETRY_AFTER_FAILURE_MS = 10_000;
 let cache: ConfigSnapshot | null = null;
 let lastFailureAt = 0;
 let inflight: Promise<ConfigSnapshot | null> | null = null;
+let cacheClient: GatewayBrowserClient | null = null;
+let cacheEpoch = 0;
 
 /** 同步读缓存（无 TTL，配置一致性由 baseHash 乐观锁保证） */
 export function getCachedConfigSnapshot(): ConfigSnapshot | null {
@@ -59,8 +61,10 @@ export function getCachedConfigSnapshot(): ConfigSnapshot | null {
 
 /** 使缓存失效（patch 成功后调用，下次读取重新拉取最新 hash）；同时重置失败节流 */
 export function invalidateConfigSnapshotCache(): void {
+  ++cacheEpoch;
   cache = null;
   lastFailureAt = 0;
+  inflight = null;
 }
 
 function parseSnapshot(payload: unknown): ConfigSnapshot | null {
@@ -83,15 +87,21 @@ export async function getConfigSnapshot(
   client: GatewayBrowserClient,
   opts?: { force?: boolean },
 ): Promise<ConfigSnapshot | null> {
+  if (cacheClient !== client) {
+    invalidateConfigSnapshotCache();
+    cacheClient = client;
+  }
   if (!opts?.force) {
     if (cache) return cache;
     if (Date.now() - lastFailureAt < RETRY_AFTER_FAILURE_MS) return null;
   }
   if (inflight) return inflight;
+  const epoch = cacheEpoch;
   inflight = (async () => {
     try {
       const payload = await client.request("config.get", {});
       const snapshot = parseSnapshot(payload);
+      if (epoch !== cacheEpoch || cacheClient !== client) return null;
       if (snapshot) {
         cache = snapshot;
       } else {
@@ -99,10 +109,11 @@ export async function getConfigSnapshot(
       }
       return snapshot;
     } catch {
+      if (epoch !== cacheEpoch || cacheClient !== client) return null;
       lastFailureAt = Date.now();
       return cache;
     } finally {
-      inflight = null;
+      if (epoch === cacheEpoch) inflight = null;
     }
   })();
   return inflight;

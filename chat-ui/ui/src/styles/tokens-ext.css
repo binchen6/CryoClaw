@@ -73,9 +73,9 @@
   --primary-foreground: var(--text-on-accent);
   --secondary: var(--grey-100);
   --secondary-foreground: var(--text);
-  --accent-2: #0891b2;
-  --accent-2-muted: rgba(8, 145, 178, 0.75);
-  --accent-2-subtle: rgba(8, 145, 178, 0.1);
+  --accent-2: #218363;
+  --accent-2-muted: rgba(33, 131, 99, 0.75);
+  --accent-2-subtle: rgba(33, 131, 99, 0.1);
   --destructive-foreground: var(--text-strong);
   --danger: var(--destructive);
   --danger-muted: rgba(220, 38, 38, 0.75);
@@ -111,9 +111,9 @@
   --primary-foreground: var(--text-on-accent);
   --secondary: var(--bg-elevated);
   --secondary-foreground: var(--text-strong);
-  --accent-2: #22d3ee;
-  --accent-2-muted: rgba(34, 211, 238, 0.7);
-  --accent-2-subtle: rgba(34, 211, 238, 0.14);
+  --accent-2: #71c6a3;
+  --accent-2-muted: rgba(113, 198, 163, 0.7);
+  --accent-2-subtle: rgba(113, 198, 163, 0.14);
   --destructive-foreground: var(--text-strong);
   --danger: var(--destructive);
   --danger-muted: rgba(248, 113, 113, 0.75);
@@ -150,9 +150,9 @@
     --primary-foreground: var(--text-on-accent);
     --secondary: var(--bg-elevated);
     --secondary-foreground: var(--text-strong);
-    --accent-2: #22d3ee;
-    --accent-2-muted: rgba(34, 211, 238, 0.7);
-    --accent-2-subtle: rgba(34, 211, 238, 0.14);
+    --accent-2: #71c6a3;
+    --accent-2-muted: rgba(113, 198, 163, 0.7);
+    --accent-2-subtle: rgba(113, 198, 163, 0.14);
     --destructive-foreground: var(--text-strong);
     --danger: var(--destructive);
     --danger-muted: rgba(248, 113, 113, 0.75);

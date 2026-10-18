@@ -3,7 +3,7 @@
  */
 import { html, nothing } from "lit";
 import type { AppViewState } from "../../app-view-state.ts";
-import { t, tWithDetail } from "../../i18n.ts";
+import { t, tWithDetail,getLocale } from "../../i18n.ts";
 import * as ipc from "../../data/ipc-bridge.ts";
 import type { BackupEntry, GatewayState, GatewayStateInfo } from "../../data/ipc-bridge.ts";
 import { showConfirm } from "../confirm-dialog.ts";
@@ -11,6 +11,7 @@ import { registerTickHandler, unregisterTickHandler } from "../../client-ticker.
 import "../../components/message-box.ts";
 import { invalidateAllSettings } from "./settings-view.ts";
 import { runOpenclawStateImport } from "./tab-backup-openclaw-state.lib.ts";
+import {archiveProgressView} from "../../utils/archive-progress.ts";
 
 const s = {
   backups: [] as BackupEntry[],
@@ -20,6 +21,8 @@ const s = {
   restoring: false,
   resetting: false,
   openclawStateBusy: false,
+  archiveProgress:null as ipc.ArchiveProgress|null,
+  unsubscribeProgress:null as (()=>void)|null,
   error: null as string | null,
   successMsg: null as string | null,
   initialized: false,
@@ -39,6 +42,7 @@ async function init(state: AppViewState) {
   if (s.initialized) return;
   s.initialized = true;
   s.stateRef = state;
+  s.unsubscribeProgress?.();s.unsubscribeProgress=ipc.onArchiveProgress(progress=>{if(s.openclawStateBusy){s.archiveProgress=progress;state.requestUpdate();}});
   const gen = ++initGeneration;
   try {
     const [backup, gw] = await Promise.all([ipc.settingsListConfigBackups(), ipc.getGatewayState()]);
@@ -112,6 +116,7 @@ async function handleResetConfig(state: AppViewState) {
 async function handleExportOpenclawState(state: AppViewState) {
   if (s.openclawStateBusy) return;
   s.openclawStateBusy = true;
+  s.archiveProgress=null;
   s.error = null;
   s.successMsg = null;
   state.requestUpdate();
@@ -132,6 +137,7 @@ async function handleImportOpenclawState(state: AppViewState) {
   if (s.openclawStateBusy) return;
 
   s.openclawStateBusy = true;
+  s.archiveProgress=null;
   s.error = null;
   s.successMsg = null;
   state.requestUpdate();
@@ -185,6 +191,7 @@ function readGatewayState(info: GatewayStateInfo | GatewayState): GatewayState {
 }
 
 export function cleanupBackupTab() {
+  s.unsubscribeProgress?.();s.unsubscribeProgress=null;
   initGeneration++;
   unregisterTickHandler(TICK_HANDLER_NAME);
   for (const t of s.refreshTimers) clearTimeout(t);
@@ -208,6 +215,7 @@ function mapRecoveryNotice(notice: string): string {
 }
 
 export function renderTabBackup(state: AppViewState, notice: string | null) {
+  const archiveProgress=archiveProgressView(s.archiveProgress,getLocale().startsWith("zh"));
   if (!s.initialized) init(state);
   const gw = s.gatewayState;
   const actionDisabled = s.openclawStateBusy || s.restoring || s.resetting;
@@ -250,17 +258,17 @@ export function renderTabBackup(state: AppViewState, notice: string | null) {
           <div class="oc-flex oc-gap-8">
             ${gw === "running" ? html`
               <button class="btn primary btn--sm" ?disabled=${actionDisabled} @click=${() => handleGatewayAction(state, "restart")}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+                <svg class="cryo-icon" aria-hidden="true" focusable="false" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
                 ${t("settings.backup.restart")}
               </button>
               <button class="btn primary btn--sm" ?disabled=${actionDisabled} @click=${() => handleGatewayAction(state, "stop")}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
+                <svg class="cryo-icon" aria-hidden="true" focusable="false" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
                 ${t("settings.backup.stop")}
               </button>
             ` : nothing}
             ${gw === "stopped" ? html`
               <button class="btn primary btn--sm" ?disabled=${actionDisabled} @click=${() => handleGatewayAction(state, "start")}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                <svg class="cryo-icon" aria-hidden="true" focusable="false" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
                 ${t("settings.backup.start")}
               </button>
             ` : nothing}
@@ -270,6 +278,7 @@ export function renderTabBackup(state: AppViewState, notice: string | null) {
 
       <!-- .openclaw Import / Export -->
       <div class="oc-settings__card">
+        ${s.openclawStateBusy?html`<div class="oc-backup-progress" aria-busy="true"><p role="status">${archiveProgress.label}</p><progress max="100" value=${archiveProgress.percent??nothing} aria-label=${archiveProgress.label}></progress><small>${archiveProgress.detail}</small></div>`:nothing}
         <div class="oc-settings-backup__card-header">
           <div>
             <div class="oc-settings__card-title">${t("settings.backup.openclawStateTitle")}</div>
@@ -277,11 +286,11 @@ export function renderTabBackup(state: AppViewState, notice: string | null) {
           </div>
           <div class="oc-settings-backup__openclaw-state-actions">
             <button class="btn primary btn--sm" ?disabled=${actionDisabled} @click=${() => handleExportOpenclawState(state)}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v6h16v-6"/><path d="m8 7 4-4 4 4"/><path d="M12 3v9"/></svg>
+              <svg class="cryo-icon" aria-hidden="true" focusable="false" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v6h16v-6"/><path d="m8 7 4-4 4 4"/><path d="M12 3v9"/></svg>
               ${t("settings.backup.openclawStateExport")}
             </button>
             <button class="btn primary btn--sm" ?disabled=${actionDisabled} @click=${() => handleImportOpenclawState(state)}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v6h16v-6"/><path d="M12 3v9"/><path d="m8 8 4 4 4-4"/></svg>
+              <svg class="cryo-icon" aria-hidden="true" focusable="false" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v6h16v-6"/><path d="M12 3v9"/><path d="m8 8 4 4 4-4"/></svg>
               ${t("settings.backup.openclawStateImport")}
             </button>
           </div>

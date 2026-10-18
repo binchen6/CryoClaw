@@ -1002,9 +1002,7 @@ function renderGroupedMessage(
     ].join(":");
     const bodySelector = ":scope > .chat-tool-msg-body";
     return html`
-      <div class="${bubbleClasses}">
-        ${canCopyMarkdown ? renderCopyAsMarkdownButton(markdown!) : nothing}
-        ${quoteButton}
+      <div class="chat-message-shell"><div class="${bubbleClasses}">
         <details
           class="chat-tool-msg-collapse"
           ${lazyDetailsBodyRef(bodySelector, bodySig, bodyFn)}
@@ -1029,15 +1027,13 @@ function renderGroupedMessage(
           </summary>
           <div class="chat-tool-msg-body"></div>
         </details>
+        </div>${canCopyMarkdown || canQuote ? html`<div class="chat-message-actions">${canCopyMarkdown ? renderCopyAsMarkdownButton(markdown!) : nothing}${quoteButton}</div>` : nothing}
       </div>
     `;
   }
 
   return html`
-    <div class="${bubbleClasses}">
-      ${canCopyMarkdown ? renderCopyAsMarkdownButton(markdown!) : nothing}
-      ${quoteButton}
-      ${branchButtons}
+    <div class="chat-message-shell"><div class="${bubbleClasses}">
       ${renderMessageBodyParts({
         images,
         mediaAttachments,
@@ -1048,6 +1044,7 @@ function renderGroupedMessage(
         hasToolCards,
         onOpenSidebar,
       })}
+      </div>${canCopyMarkdown || canQuote || canBranch ? html`<div class="chat-message-actions">${quoteButton}${canCopyMarkdown ? renderCopyAsMarkdownButton(markdown!) : nothing}${branchButtons}</div>` : nothing}
     </div>
   `;
 }

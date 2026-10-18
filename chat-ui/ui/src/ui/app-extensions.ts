@@ -5,6 +5,8 @@
  * （原 cleanupSettingsView 的 resetPluginsTab 语义迁移）。
  */
 import { html } from "lit";
+import {keyed} from "lit/directives/keyed.js";
+import {transitionView} from "./utils/view-transition.ts";
 import type { AppViewState } from "./app-view-state.ts";
 import { renderSkillsView } from "./app-skills.ts";
 import {
@@ -41,24 +43,24 @@ export function renderExtensionsView(state: AppViewState) {
           type="button"
           role="tab"
           aria-selected=${extensionsViewTab === "skills" ? "true" : "false"}
-          @click=${() => {
+          @click=${() => {if(extensionsViewTab!=="skills")transitionView(()=>{
             extensionsViewTab = "skills";
             void loadSkills(state);
             state.requestUpdate();
-          }}
+          });}}
         >${t("extensions.tabSkills")}</button>
         <button
           class="ext-tab ${extensionsViewTab === "plugins" ? "active" : ""}"
           type="button"
           role="tab"
           aria-selected=${extensionsViewTab === "plugins" ? "true" : "false"}
-          @click=${() => {
+          @click=${() => {if(extensionsViewTab!=="plugins")transitionView(()=>{
             extensionsViewTab = "plugins";
             state.requestUpdate();
-          }}
+          });}}
         >${t("extensions.tabPlugins")}</button>
       </div>
-      ${extensionsViewTab === "skills" ? renderSkillsView(state) : renderPluginsView(state)}
+      ${keyed(extensionsViewTab,extensionsViewTab === "skills" ? renderSkillsView(state) : renderPluginsView(state))}
     </div>
   `;
 }

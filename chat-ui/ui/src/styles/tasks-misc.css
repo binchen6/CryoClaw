@@ -9,6 +9,11 @@
 /* ── Tasks（任务实时视图） ─────────────────────────────── */
 
 .ts-layout {
+  width: 100%;
+  box-sizing: border-box;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
   /* R94：内容列并入统一宽档 --content-wide（原 --page-column 1600px 过散） */
   max-width: var(--content-wide);
   margin: 0 auto;
@@ -19,6 +24,23 @@
   gap: var(--spacer-20);
   color: var(--text);
 }
+
+.ts-content {
+  flex: 1;
+  min-height: 360px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacer-20);
+  view-transition-name: task-content;
+}
+.ts-content > .empty-state { flex: 1; min-height: 280px; }
+.ts-content > .cm-layout { flex: 1; min-height: 360px; }
+.ts-content > .cm-empty { flex: 1; min-height: 360px; }
+.ts-content > .ts-list, .ts-content > .empty-state, .ts-content > .cm-empty,
+.cm-layout__detail > * { animation: rise var(--duration-normal) var(--ease-standard); }
+::view-transition-old(task-content) { animation: task-content-out var(--duration-fast) var(--ease-standard) both; }
+::view-transition-new(task-content) { animation: rise var(--duration-normal) var(--ease-standard) both; }
+@keyframes task-content-out { to {opacity: 0; transform: translateY(-4px);} }
 
 /* 顶层双 tab：分段控件（muted 底胶囊轨道 + 浮起激活段） */
 .ts-tabs {

@@ -12,6 +12,8 @@ import type { CronJob, CronRunLogEntry } from "../types.ts";
 import { formatRelativeTimestamp, formatDurationHuman } from "../format.ts";
 import { icons } from "../icons.ts";
 import { t } from "../i18n.ts";
+import {keyed} from "lit/directives/keyed.js";
+import {transitionView} from "../utils/view-transition.ts";
 import "../components/toggle-switch.ts";
 import {
   deriveRunStats,
@@ -426,19 +428,19 @@ export function renderTasks(props: TasksProps) {
           type="button"
           role="tab"
           aria-selected=${props.tab === "runs" ? "true" : "false"}
-          @click=${() => props.onTabChange("runs")}
+          @click=${() => {if(props.tab !== "runs")transitionView(()=>props.onTabChange("runs"));}}
         >${t("tasks.runsTab")}</button>
         <button
           class="ts-tab ${props.tab ==="cron" ? "ts-tab--active" : ""}"
           type="button"
           role="tab"
           aria-selected=${props.tab === "cron" ? "true" : "false"}
-          @click=${() => props.onTabChange("cron")}
+          @click=${() => {if(props.tab !== "cron")transitionView(()=>props.onTabChange("cron"));}}
         >${t("tasks.cronTab")}${props.cronJobCount > 0
           ? html`<span class="ts-tab__badge">${props.cronJobCount}</span>`
           : nothing}</button>
       </div>
-      ${props.tab === "cron" ? props.cronSlot : renderTasksRuns(props)}
+      <div class="ts-content">${keyed(props.tab, props.tab === "cron" ? props.cronSlot : renderTasksRuns(props))}</div>
     </div>
   `;
 }

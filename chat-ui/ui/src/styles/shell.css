@@ -29,10 +29,24 @@
 }
 
 .cryoclaw-content {
+  view-transition-name: page-content;
   flex: 1;
   overflow: hidden;
   display: flex;
   flex-direction: column;
+}
+
+::view-transition-group(page-content),
+::view-transition-group(settings-content),
+::view-transition-group(task-content) {
+  animation-duration: var(--duration-normal);
+  animation-timing-function: var(--ease-standard);
+}
+::view-transition-old(page-content), ::view-transition-old(settings-content) {
+  animation: oc-fade-out var(--duration-fast) var(--ease-standard) both;
+}
+::view-transition-new(page-content), ::view-transition-new(settings-content) {
+  animation: rise var(--duration-normal) var(--ease-standard) both;
 }
 
 /* 顶层视图切换入场：keyed(cryoclawView) 保证切视图时重建 DOM（多个视图的根都是
@@ -112,7 +126,7 @@
   height: 16px;
   stroke: currentColor;
   fill: none;
-  stroke-width: 1.5;
+  stroke-width: var(--icon-stroke);
   stroke-linecap: round;
   stroke-linejoin: round;
 }
@@ -263,7 +277,7 @@ oc-rail {
   height: 20px;
   stroke: currentColor;
   fill: none;
-  stroke-width: 1.5;
+  stroke-width: var(--icon-stroke);
   stroke-linecap: round;
   stroke-linejoin: round;
 }
@@ -361,7 +375,7 @@ oc-rail {
 }
 
 .oc-rail__conn-step.is-done {
-  background: var(--accent);
+  background: var(--accent-2);
 }
 
 .oc-rail__conn-step.is-active {

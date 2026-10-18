@@ -1,11 +1,8 @@
 # CryoClaw 设计规范（2026.9 R2 品牌焕新版）
 
-CryoClaw 的设计语言 = **中性灰 + CryoBlue 蓝青混色强调色**（Linear/Notion 式清爽现代风）。
-品牌色为「为高效和工作服务的沉稳蓝」向青侧偏移的混色（自绘 CryoBlue 色阶，浅色主色
-`#1a6fd0`，辅色 cyan `#0891b2`）——冷静、可信、有活力但不喧闹，长时间工作不疲劳。
-品牌签名渐变（蓝→青 `#2a89dd → #06b6d4`）仅用于品牌时刻（logo / 官网 hero / 安装器），
-UI 内部只用纯色 accent。浅色是默认一等主题，暗色是独立调参的近黑中性
-主题，两者在 token 层各自定义，不是「浅色 + 暗色补丁」。本文档与代码现状对齐；事实
+CryoClaw 的设计语言为 **CryoBlue 蓝色 `#1A6FD0` + 中性灰表面 + MiSans/Inter 排版**。
+默认主题保留原蓝色，绿色作为辅助点缀；内置主题配有各自的深浅表面、文字和控件。
+主题包可自定义界面强调色，主操作与控件随之切换。当前细则见 [VISUAL-SYSTEM.md](VISUAL-SYSTEM.md)，其说明优先于本文历史阶段数值。事实
 来源是 `shared/design-tokens.css`、`chat-ui/ui/src/styles/tokens-ext.css`、
 `chat-ui/ui/src/styles/primitives.css`、`chat-ui/ui/src/ui/icons.ts`（CryoIcons
 自绘图标体系）与强制契约 `docs/archive/ui-rewrite-2026.9-contract.md`（已完成存档），
@@ -79,7 +76,7 @@ token 分两层：**基础层 `shared/design-tokens.css`**（全局唯一事实�
 
 - **brand CryoBlue 自绘色阶**（蓝 × 青混色，非现成库色阶）：
   `--brand-50 … --brand-950`（`#eef6fd` … `#0f2a4e`），
-  浅色主色 **`--brand-600: #1a6fd0`**（白底对比度 ≈4.6:1，过 AA），
+  浅色主色 **`--brand-600: #1a6fd0`**（白底对比度 ≈4.95:1，过 AA），
   基准色 `--brand-500: #2a89dd`。
 - **中性灰阶**（零色相，Notion 式纸感）：`--grey-50 … --grey-950`
   （`#fafafa` … `#0a0a0a`）。
@@ -147,15 +144,14 @@ R75 清理后原子类只保留现行使用的 15 个（flex 骨架 `oc-flex(-co
 ### 2.6 按钮体系（R84 收敛）
 
 按钮一律用 `primitives.css` 的 `.btn` kit：`.btn`（hairline 描边默认）/
-`.btn.primary`（accent 实心）/ `.btn.danger`（语义危险）/ `.btn--sm`（28px 小号）/
+`.btn.primary`（主题强调色实心）/ `.btn.danger`（语义危险）/ `.btn--sm`（28px 小号）/
 `.btn--text`（无边框低强调文本动作）。历史上并存的四套视图私有 kit
 （`oc-settings__btn*` / `oc-setup-btn*` / `cron-form__btn*` / `chat-goal__btn`）
 已于 R84 全量迁移删除，**不要再新建视图私有按钮类**。
 
 ## 3. 主题与配色使用
 
-- 强调色永远是沉稳蓝 `--accent`；cyan `--accent-2` 只作第二强调；红/绿/黄只属于
-  语义状态（error/ok/warn），不得当主题色。
+- 品牌基准 `--brand` 使用原 CryoBlue；`--accent` 负责可自定义的主题强调。红/绿/黄用于语义状态（error/ok/warn）。
 - 大面积留白 + hairline 细分隔线 + 微小明暗对比分区；hover 反馈 = 底色微调
   （`--bg-hover`）+ 边框加深（`--border-strong`）。区块间距 ≥ `--spacer-24`。
 - 旧「indigo 品牌色 `#6366f1`」「冰蓝（ice-blue）品牌色 `#0EA5E9`」与更早的
@@ -293,7 +289,7 @@ hairline + radius-12 + `--shadow-lg`，`--text-sm` medium，z-index 10001，
 ### 6.1 绘制规范（硬性）
 
 - **画布**：`viewBox="0 0 24 24"`，内容安全区约 2.5–21.5。
-- **描边**：`stroke="currentColor"`、`stroke-width="2"`、`stroke-linecap="round"`、
+- **描边**：`stroke="currentColor"`、`stroke-width="1.75"`、`stroke-linecap="round"`、
   `stroke-linejoin="round"`、`fill="none"`；颜色永远继承文字色，不上色。
 - **造型语言**：纯几何构造——直线、圆/圆弧、圆角矩形（rx 1.2–2）；
   不用填充色块堆叠、不用渐变、不用投影。
