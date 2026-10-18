@@ -30,13 +30,14 @@
 
 ## 发布门槛
 
-- 最新完整源码回归：1789 通过，4 跳过，0 失败；`.cache/release-20261018-final-tests.log`。
+- 本地回归合计 1791 通过，4 跳过，0 失败（274 + 347 + 1019 + 151）。应用完整回归见 `.cache/release-20261018-final-tests.log`；最后仅发布脚本变更，151 项脚本回归见 `.cache/release-assert-final-scripts-tests.log`。首个发布提交的 GitHub Actions 完整测试已通过；[当前 CI](https://github.com/binchen6/CryoClaw/actions/workflows/tests.yml)。
 - 正式安装包、blockmap 与 latest.yml 已生成，版本和 SHA-512 本地核对通过。
 - 最终主题专项通过，包括全白实验配色下编辑器/撤销入口仍可读；0 渲染异常。
 - 头像认证、就绪后 5000ms 单次记忆刷新和在线稳定钉定已在新目录构建实测通过；`.cache/release-final-preload-kernel-cdp-smoke.log`。
 - 头像修复后的最终四套全页面检查通过：设置页 14 项、布局 20 场景、交互 8 步、截图 28 张；无渲染异常、重叠、未翻译 key 或横向溢出，0 项低对比度提示。剩余一处裁切软提示来自无正文的动画骨架，已复看截图。日志 `.cache/release-final-*-cdp-smoke.log` 与 `.cache/release-final-ui-screenshot-qa.log`。
 - 静默升级已通过，安装位 app.asar 版本核对为 2026.1018.0；`.cache/release-final-silent-install.log`。安装版启动、头像认证、5000ms 单次记忆刷新、在线稳定钉定与 0 渲染异常均通过，见 `.cache/release-final-installed-ui.log`。Rust GNU 工具链的 10 项测试通过，见 `.cache/release-final-rust-tests.log`。
 - 发布使用 `v2026.1018.0`，同批上传 exe、blockmap、latest.yml；本地版本及 SHA-512 已核对。公开前使用 `scripts/release-assert.js 2026.1018.0 --allow-draft`，公开后再次断言与核对 GitHub 状态；[版本页](https://github.com/binchen6/CryoClaw/releases/tag/v2026.1018.0) 为外部发布状态的权威来源。
+- 草稿三资产断言已通过；GitHub 返回的安装包 SHA-256 与本地文件一致。发布脚本已支持尚未创建 tag 的草稿及资产 API 下载，授权头仅发送给 HTTPS GitHub API，不向资产重定向主机转发。此脚本与文档不进入安装包，最终补充不改变已验收的运行文件。
 
 ## 本地资料边界
 

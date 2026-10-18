@@ -36,18 +36,27 @@ function ok(msg) {
   console.log(`✔ ${msg}`);
 }
 
+function requestHeaders(url, accept, token = process.env.GH_TOKEN) {
+  const headers = { "User-Agent": "cryoclaw-release-assert", Accept: accept };
+  const target = new URL(url);
+  if (target.protocol === "https:" && target.hostname === "api.github.com" && token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+  return headers;
+}
+
+function assetDownloadUrl(release, asset) {
+  return release.draft ? asset.url : asset.browser_download_url;
+}
+
 function fetchJson(url) {
   return new Promise((resolve, reject) => {
-    const headers = {
-      "User-Agent": "cryoclaw-release-assert",
-      Accept: "application/vnd.github+json",
-    };
-    if (process.env.GH_TOKEN) headers.Authorization = `Bearer ${process.env.GH_TOKEN}`;
+    const headers = requestHeaders(url, "application/vnd.github+json");
     https
       .get(url, { headers }, (res) => {
         if (res.statusCode === 301 || res.statusCode === 302) {
           res.resume();
-          return fetchJson(res.headers.location).then(resolve, reject);
+          return fetchJson(new URL(res.headers.location, url).href).then(resolve, reject);
         }
         if (res.statusCode !== 200) {
           res.resume();
@@ -70,13 +79,12 @@ function fetchJson(url) {
 
 function fetchBuffer(url, maxBytes) {
   return new Promise((resolve, reject) => {
-    const headers = { "User-Agent": "cryoclaw-release-assert" };
-    if (process.env.GH_TOKEN) headers.Authorization = `Bearer ${process.env.GH_TOKEN}`;
+    const headers = requestHeaders(url, "application/octet-stream");
     https
       .get(url, { headers }, (res) => {
         if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
           res.resume();
-          return fetchBuffer(res.headers.location, maxBytes).then(resolve, reject);
+          return fetchBuffer(new URL(res.headers.location, url).href, maxBytes).then(resolve, reject);
         }
         if (res.statusCode !== 200) {
           res.resume();
@@ -111,9 +119,13 @@ async function main() {
   console.log(`release-assert: ${OWNER}/${REPO} ${tag}\n`);
 
   // 1. Release 存在 + draft 状态
-  const rel = await fetchJson(
-    `https://api.github.com/repos/${OWNER}/${REPO}/releases/tags/${encodeURIComponent(tag)}`,
+  // Draft tags are not necessarily created yet; resolve them from the authenticated list.
+  const releasesUrl = `https://api.github.com/repos/${OWNER}/${REPO}/releases`;
+  const rel = await (allowDraft
+    ? fetchJson(`${releasesUrl}?per_page=100`).then((releases) => releases.find((release) => release.tag_name === tag))
+    : fetchJson(`${releasesUrl}/tags/${encodeURIComponent(tag)}`)
   ).catch((e) => die(`Release ${tag} 不存在或不可达: ${e.message}`));
+  if (!rel) die(`Release ${tag} 不存在`);
   if (rel.draft && !allowDraft) die("Release 仍是 draft（草稿期核对请加 --allow-draft）");
   ok(`Release 存在（draft=${rel.draft}）`);
 
@@ -129,7 +141,7 @@ async function main() {
 
   // 3. latest.yml 下载 + 解析 + 版本一致
   const ymlAsset = rel.assets.find((a) => a.name === "latest.yml");
-  const ymlBuf = await fetchBuffer(ymlAsset.browser_download_url, 256 * 1024).catch((e) =>
+  const ymlBuf = await fetchBuffer(assetDownloadUrl(rel, ymlAsset), 256 * 1024).catch((e) =>
     die(`latest.yml 下载失败: ${e.message}`),
   );
   let yml;
@@ -155,7 +167,7 @@ async function main() {
   if (deep) {
     const exeAsset = rel.assets.find((a) => a.name === exeName);
     console.log(`下载 ${exeName}（${(exeAsset.size / 1048576).toFixed(0)}MB）校验 sha512…`);
-    const exeBuf = await fetchBuffer(exeAsset.browser_download_url, 0).catch((e) =>
+    const exeBuf = await fetchBuffer(assetDownloadUrl(rel, exeAsset), 0).catch((e) =>
       die(`exe 下载失败: ${e.message}`),
     );
     const crypto = require("crypto");
@@ -169,4 +181,5 @@ async function main() {
   console.log(`\n✓ ${tag} 资产断言全部通过`);
 }
 
-main().catch((e) => die(e.message));
+module.exports = { requestHeaders, assetDownloadUrl };
+if (require.main === module) main().catch((e) => die(e.message));
