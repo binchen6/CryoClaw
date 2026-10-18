@@ -49,6 +49,7 @@ function httpCheckOk(url, timeoutMs = 4000) {
       resolve(res.statusCode === 200);
     });
     req.on("error", () => resolve(false));
+    req.on("timeout", () => req.destroy(new Error("timeout")));
   });
 }
 
@@ -103,12 +104,21 @@ async function waitForGateway(url = `http://127.0.0.1:${process.env.OPENCLAW_GAT
 }
 
 class Cdp {
-  constructor(ws) {
+  constructor(ws, timeoutMs = 30_000) {
     this.ws = ws;
     this.nextId = 1;
     this.pending = new Map();
     this.exceptions = [];
     this.consoleErrors = [];
+    this.timeoutMs = timeoutMs;
+    this.closed = false;
+    const disconnect = () => {
+      this.closed = true;
+      for (const request of this.pending.values()) request.reject(new Error("CDP connection closed"));
+      this.pending.clear();
+    };
+    ws.addEventListener("close", disconnect);
+    ws.addEventListener("error", disconnect);
     ws.addEventListener("message", (ev) => {
       const msg = JSON.parse(ev.data);
       if (msg.id && this.pending.has(msg.id)) {
@@ -132,10 +142,21 @@ class Cdp {
   }
 
   send(method, params = {}) {
+    if (this.closed) return Promise.reject(new Error("CDP connection closed"));
     const id = this.nextId++;
     return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject });
-      this.ws.send(JSON.stringify({ id, method, params }));
+      const timer = setTimeout(() => {
+        this.pending.delete(id);
+        reject(new Error(`CDP request timed out: ${method}`));
+      }, this.timeoutMs);
+      const settle = fn => value => { clearTimeout(timer); fn(value); };
+      this.pending.set(id, { resolve: settle(resolve), reject: settle(reject) });
+      try {
+        this.ws.send(JSON.stringify({ id, method, params }));
+      } catch (error) {
+        this.pending.get(id)?.reject(error);
+        this.pending.delete(id);
+      }
     });
   }
 

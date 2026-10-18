@@ -1,5 +1,12 @@
 [
   {
+    "version": "2026.1018.3",
+    "notes": {
+      "zh": "修复工作区快速切换文件及放弃草稿时的异步竞争，避免旧操作覆盖新选择。Worktrees 列表仅接受最新请求与当前连接的结果。更新暂缓在写盘失败时仍在本次会话生效，清除暂缓后立即恢复自动检查。完善发布资产的大小、校验和与多架构一致性校验，并为验收工具补齐断线与超时处理。",
+      "en": "Fix races when switching workspace files or discarding drafts, keeping later selections intact. Worktree lists accept only the latest request from the current connection. Update snooze remains effective for the session if persistence fails, and clearing it resumes automatic checks. Release validation now checks asset sizes, checksums and architecture consistency; smoke tools handle disconnects and timeouts."
+    }
+  },
+  {
     "version": "2026.1018.2",
     "notes": {
       "zh": "交互与主题修复批次。DeepSeek 等按量付费提供商只显示余额：即使上游误报窗口，也绝不渲染「每周额度」，面板标题按余额/额度语义切换；输入框余额圆环改为单行显示、按余额充裕度着色，并附非限额百分比说明。本轮改动胶囊去掉左右图标、居中显示 git 新增/删除行数（无 git 时退回文件数），任务进度卡回到最贴近输入框的位置，改动浮层改用消息内容层、不再压过其他浮层。工具卡参数与长 JSON 不再撑破聊天列，点「输入参数」不再误开右侧输出面板。主题包新增可选间距密度、阴影强度、边框粗细与描述字段，支持拖放导入与按主题名导出；「让 Agent 设计主题」改为填空式表单并支持参考图（随消息发送，不写入主题包）。整体 UI 修复 13 项：固定工作区样式/点击区/焦点、800px 下固定工作区可见、Worktrees 工具行换行、概览标签大小写、用量页加载占位与无障碍、窄窗输入区工具栏换行等。",

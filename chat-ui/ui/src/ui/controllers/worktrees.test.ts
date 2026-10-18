@@ -42,6 +42,32 @@ function mockState(handler: (method: string, params: unknown) => Promise<unknown
   };
 }
 
+test("overlapping worktree lists keep the latest response and loading state", async () => {
+  const pending: Array<(value: unknown) => void> = [];
+  const state = mockState(() => new Promise(resolve => pending.push(resolve)));
+  const older = loadWorktrees(state);
+  const newer = loadWorktrees(state);
+  pending[0]({ worktrees: [wt("stale")] });
+  await older;
+  assert.equal(state.worktreesLoading, true);
+  assert.equal(state.worktrees.length, 0);
+  pending[1]({ worktrees: [wt("fresh")] });
+  await newer;
+  assert.equal(state.worktreesLoading, false);
+  assert.equal(state.worktrees[0].id, "fresh");
+});
+
+test("a replaced gateway client cannot publish worktree results or errors", async () => {
+  let reject!: (error: Error) => void;
+  const state = mockState(() => new Promise((_, fail) => { reject = fail; }));
+  const loading = loadWorktrees(state);
+  state.client = mockState(async () => ({})).client;
+  reject(new Error("old connection closed"));
+  await loading;
+  assert.equal(state.worktreesError, null);
+  assert.equal(state.worktreesLoading, false);
+});
+
 test("isLiveWorktree / isRestorableWorktree 状态判定", () => {
   assert.equal(isLiveWorktree(wt("a")), true);
   assert.equal(isLiveWorktree(wt("a", { removedAt: 200 })), false);

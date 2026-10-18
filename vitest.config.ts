@@ -5,6 +5,7 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   test: {
     include: [
+      "src/app-updater-snooze.test.ts",
       "src/theme-preview-bridge.test.ts",
       "src/docker-check.test.ts",
       "src/kimi-config.test.ts",

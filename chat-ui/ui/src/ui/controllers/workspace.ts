@@ -80,7 +80,7 @@ export async function loadWorkspaceDirectory(state:AppViewState,dirPath:string,f
   finally{if(seq===dirLoadSeq){ws.loading=false;state.requestUpdate();}}
 }
 export async function setWorkspaceRoot(state:AppViewState,root:string,custom=true):Promise<boolean>{
-  if(ws.fileSaving)return false;await flushDraft(state);const generation=++initSeq;
+  if(ws.fileSaving)return false;const generation=++initSeq;await flushDraft(state);if(generation!==initSeq)return false;
   const result=await window.cryoclaw?.workspaceSetRoot?.(root);if(generation!==initSeq)return false;
   if(!result?.success){ws.error=result?.message??t("workspace.error");ws.loading=false;state.requestUpdate();return false;}
   if(ws.root!==root){++fileLoadSeq;++dirLoadSeq;++searchSeq;if(searchTimer)clearTimeout(searchTimer);ws.root=root;ws.currentPath=root;ws.items=[];ws.history=[];ws.historyIndex=-1;ws.selectedFile=null;ws.fileContent=null;ws.imagePreview=null;ws.recentFiles=[];ws.editing=false;ws.fileLoading=false;ws.fileError=null;ws.search="";ws.searchResults=[];ws.searchLoading=false;}
@@ -101,7 +101,7 @@ export async function initWorkspace(state:AppViewState,force=false){
   finally{if(seq===initSeq){ws.loading=false;state.requestUpdate();}}
 }
 export async function loadWorkspaceFile(state:AppViewState,filePath:string,fileName:string){
-  if(ws.fileSaving)return;await flushDraft(state);const seq=++fileLoadSeq;
+  if(ws.fileSaving)return;const seq=++fileLoadSeq;await flushDraft(state);if(seq!==fileLoadSeq)return;
   ws.selectedFile=filePath;ws.selectedFileName=fileName;ws.fileContent=null;ws.imagePreview=null;ws.fileLoading=true;ws.fileError=null;ws.editing=false;ws.fileHash="";ws.baseHash="";ws.draftStatus="";ws.fileQuery="";ws.mode="files";
   if(!ws.recentFiles.some(file=>file.path===filePath))ws.recentFiles=[...ws.recentFiles,{path:filePath,name:fileName,isDir:false}].slice(-8);state.requestUpdate();
   try {
@@ -133,9 +133,13 @@ export async function saveWorkspaceFile(state:AppViewState){
   }catch(error){ws.fileError=error instanceof Error?error.message:String(error);}finally{ws.fileSaving=false;state.requestUpdate();}
 }
 export async function discardWorkspaceDraft(state:AppViewState){
-  if(!ws.selectedFile || ws.fileSaving)return;if(workspaceDirty() && !await showConfirm(state,label("放弃此文件未保存的草稿并重新加载？", "Discard this file's unsaved draft and reload?")))return;
-  try{if(draftTimer)clearTimeout(draftTimer);draftTimer=null;const path=ws.selectedFile;await draftWrites.get(path);const result=await window.cryoclaw?.workspaceSaveDraft?.({path,draft:null,baseHash:ws.baseHash});if(result && !result.success)throw new Error(result.message);drafts.delete(path);ws.editing=false;ws.draft=ws.fileContent??"";await loadWorkspaceFile(state,path,ws.selectedFileName??"");}
-  catch(error){ws.fileError=String(error);state.requestUpdate();}
+  if(!ws.selectedFile || ws.fileSaving)return;
+  const path=ws.selectedFile,seq=fileLoadSeq,baseHash=ws.baseHash,draft=ws.draft;
+  const current=()=>ws.selectedFile===path && seq===fileLoadSeq && ws.draft===draft;
+  if(workspaceDirty() && !await showConfirm(state,label("放弃此文件未保存的草稿并重新加载？", "Discard this file's unsaved draft and reload?")))return;
+  if(!current())return;
+  try{if(draftTimer)clearTimeout(draftTimer);draftTimer=null;await draftWrites.get(path);if(!current())return;const result=await window.cryoclaw?.workspaceSaveDraft?.({path,draft:null,baseHash});if(!result?.success)throw new Error(result?.message??"Draft backup unavailable");if(!current())return;drafts.delete(path);ws.editing=false;ws.draft=ws.fileContent??"";await loadWorkspaceFile(state,path,ws.selectedFileName??"");}
+  catch(error){if(current()){ws.fileError=String(error);state.requestUpdate();}}
 }
 export function closeWorkspaceFile(state:AppViewState,path:string){if(ws.fileSaving)return;void flushDraft(state);ws.recentFiles=ws.recentFiles.filter(file=>file.path!==path);if(ws.selectedFile===path){++fileLoadSeq;ws.selectedFile=null;ws.fileContent=null;ws.imagePreview=null;ws.editing=false;const next=ws.recentFiles.at(-1);if(next)void loadWorkspaceFile(state,next.path,next.name);}state.requestUpdate();}
 export function leaveWorkspace(state:AppViewState):void{void flushDraft(state);if(searchTimer)clearTimeout(searchTimer);++searchSeq;ws.searchLoading=false;persistWorkspacePreferences();}

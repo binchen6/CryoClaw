@@ -28,7 +28,7 @@ import {
   reduceAppUpdateState,
   shouldSkipPeriodicCheck,
 } from "./app-updater-state";
-import { clearSnooze, isUpdateSnoozed, readSnooze, writeSnooze, SnoozeUntil } from "./update-snooze";
+import { clearSnooze, isSnoozeActive, readSnooze, writeSnooze, SnoozeUntil } from "./update-snooze";
 import { fetchReleaseNotesFromGitHub } from "./app-update-release-notes";
 import { AppFlags, BUNDLED_DEFAULT_FLAGS, loadAppFlags } from "./app-flags";
 
@@ -395,7 +395,7 @@ export function initAppUpdater(deps: Deps): void {
   // 启动后自动检查一次；暂缓期内跳过（手动检查不受影响）。
   // 失败由 error 事件 + catch 记日志，不弹窗打扰用户
   startupTimer = setTimeout(() => {
-    if (isUpdateSnoozed()) {
+    if (isSnoozeActive(cachedSnoozeUntil === null ? null : { until: cachedSnoozeUntil, setAt: 0 }, Date.now())) {
       log.info("[app-updater] 更新提示暂缓中，跳过启动自动检查");
       return;
     }
@@ -411,7 +411,7 @@ export function initAppUpdater(deps: Deps): void {
     if (shouldSkipPeriodicCheck(state.status)) {
       return;
     }
-    if (isUpdateSnoozed()) {
+    if (isSnoozeActive(cachedSnoozeUntil === null ? null : { until: cachedSnoozeUntil, setAt: 0 }, Date.now())) {
       log.info("[app-updater] 更新提示暂缓中，跳过周期自动检查");
       return;
     }

@@ -74,7 +74,7 @@ function mainSrc(rel: string): string {
 test("主进程 app-updater.ts：autoDownload=false + 启动检查受暂缓门控", () => {
   const s = mainSrc("app-updater.ts");
   assert.match(s, /autoUpdater\.autoDownload = false/, "应关闭自动下载（用户点「更新」才下载）");
-  assert.match(s, /isUpdateSnoozed\(\)/, "启动自动检查应查暂缓状态");
+  assert.match(s, /isSnoozeActive\(cachedSnoozeUntil/, "自动检查应使用内存暂缓状态，写盘失败仍生效");
   assert.match(s, /downloadAppUpdate\(\)[\s\S]*?autoUpdater\.downloadUpdate\(\)/, "downloadAppUpdate 应调 downloadUpdate");
   assert.match(s, /snoozeAppUpdate[\s\S]*?writeSnooze/, "snoozeAppUpdate 应持久化暂缓");
 });

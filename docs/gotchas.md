@@ -414,3 +414,7 @@ Things that are easy to get wrong or forget when working on CryoClaw.
 139. **DSH 沙箱里 Electron-as-Node 子进程写不了全局 OpenClaw 锁目录。** 本会话跑 `scripts/gateway-asar-smoke.test.js` 时 gateway 稳定在 bootstrap 阶段报 EPERM `%LOCALAPPDATA%\OpenClaw\locks\openclaw-state-owners\*.lock`；单独用 5 行 ELECTRON_RUN_AS_NODE 探针写同一路径同样 EPERM，而父 pwsh 写同目录成功——说明是沙箱对子进程的宿主路径写入限制，不是代码回归。完整回归时该条可作为环境豁免；沙箱外（正常 CI/本机）应保持通过。
 140. **按量付费 provider 的余额与窗口额度不能混排。** DeepSeek / Moonshot / SiliconFlow 只有余额语义，官方接口不返回 5 小时/每周窗口；第三方转发或旧缓存若误带 windows，直接渲染会出现「每周额度 5% 剩余」这种不存在的限额，把余额误读成比例。修复分两层：controller 对余额型 provider 清空 windows；组件层「有余额即只画余额」、窗口行只在无余额时渲染，标题按语义切换账户余额/账户额度。
 
+
+140. **隔离状态目录还不够，内核锁也依赖 home。** OpenClaw 2026.10.4 的 Windows state-owner 锁直接用 os.homedir()/AppData/Local/OpenClaw/locks，覆盖 LOCALAPPDATA 或 OPENCLAW_STATE_DIR 都不能隔离它。ASAR 冒烟需同时设置 HOME、USERPROFILE、LOCALAPPDATA 与 OPENCLAW_STATE_DIR 到专用临时目录；这样测试不触碰用户锁目录，也避开该目录的 EPERM。
+
+141. **低完整性标签跟着构建文件走，提权 shell 并不保证子进程获得中完整性。** Codex 沙箱工作区的输出目录可能继承 Low Mandatory Level；从中启动 NSIS，进程完整性 RID 仍为 4096，无法覆盖普通安装目录里的文件。表现为 uninstallerIcon.ico 写入失败；/S 可返回 0 而安装位仍是旧版本。用 icacls 和进程 token 确认，不要修改用户安装目录 ACL 或忽略报错。经授权在普通用户 Temp 创建安装包副本，校验哈希一致，再对副本运行 silent-install.js 并核对版本。本次 2026.1018.3 实测通过。

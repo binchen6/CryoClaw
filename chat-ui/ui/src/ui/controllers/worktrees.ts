@@ -89,19 +89,26 @@ export function isNotGitCheckoutError(err: unknown): boolean {
   return /not a git checkout|not a git repository/i.test(msg);
 }
 
+const listRequests = new WeakMap<WorktreesState, object>();
+
 export async function loadWorktrees(state: WorktreesState) {
   if (!state.client || !state.connected) {
     return;
   }
+  const client = state.client;
+  const request = {};
+  listRequests.set(state, request);
+  const current = () => listRequests.get(state) === request && state.client === client && state.connected;
   state.worktreesLoading = true;
   state.worktreesError = null;
   try {
-    const res = await state.client.request<{ worktrees?: WorktreeRecord[] }>("worktrees.list", {});
+    const res = await client.request<{ worktrees?: WorktreeRecord[] }>("worktrees.list", {});
+    if (!current()) return;
     state.worktrees = sortWorktrees(Array.isArray(res?.worktrees) ? res.worktrees : []);
   } catch (err) {
-    state.worktreesError = String(err);
+    if (current()) state.worktreesError = String(err);
   } finally {
-    state.worktreesLoading = false;
+    if (listRequests.get(state) === request) state.worktreesLoading = false;
   }
 }
 

@@ -85,7 +85,7 @@ maybe("asar 冒烟：openclaw --version 在 asar 形态可执行", { timeout: 60
   t.after(() => cleanupDir(stateDir));
   const out = execCaptured(`"${NODE_BIN}" "${ENTRY}" --version`, {
     cwd: stateDir,
-    env: { ...NODE_ENV, OPENCLAW_STATE_DIR: stateDir },
+    env: { ...NODE_ENV, HOME: stateDir, USERPROFILE: stateDir, LOCALAPPDATA: stateDir, OPENCLAW_STATE_DIR: stateDir },
     encoding: "utf-8",
     timeout: 55_000,
   });
@@ -132,7 +132,8 @@ maybe(
           cwd: stateDir,
           // 内核忽略 child cwd，默认用 ~/.openclaw；必须显式隔离状态目录，
           // 否则测试会读写用户真实配置
-          env: { ...NODE_ENV, OPENCLAW_DEBUG: "1", OPENCLAW_STATE_DIR: stateDir },
+          // 内核 10.4 按 os.homedir() 写 Windows 进程锁，必须连同配置一起隔离。
+          env: { ...NODE_ENV, HOME: stateDir, USERPROFILE: stateDir, LOCALAPPDATA: stateDir, OPENCLAW_DEBUG: "1", OPENCLAW_STATE_DIR: stateDir },
           windowsHide: true,
         });
         t.after(() => killTree(child));
@@ -165,14 +166,14 @@ maybe(
       last = await runOnce();
       assert.ok(
         !/paths\[0\].*must be of type string/.test(last.stderr),
-        `asar 形态 gateway 启动崩溃（rootRealPath undefined 回归）\nstderr 尾部: ${last.stderr.slice(-800)}`
+        `asar 形态 gateway 启动崩溃（rootRealPath undefined 回归）\nstderr 尾部: ${last.stderr.slice(-4000)}`
       );
       ready = last.kind === "ready";
     }
 
     assert.ok(
       ready,
-      `gateway 3 轮内未 ready（末轮=${last && last.kind}）\nstdout 尾部: ${last && last.stdout.slice(-800)}\nstderr 尾部: ${last && last.stderr.slice(-800)}`
+      `gateway 3 轮内未 ready（末轮=${last && last.kind}）\nstdout 尾部: ${last && last.stdout.slice(-800)}\nstderr 尾部: ${last && last.stderr.slice(-4000)}`
     );
   }
 );

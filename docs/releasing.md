@@ -36,6 +36,8 @@
 
    脚本自动杀残留进程 → Node spawn 原样传参真静默安装（等待退出）→ 读安装位 app.asar 校验版本一致。
 
+   Codex Windows 沙箱生成的输出目录可能继承 `Low Mandatory Level`。即使获准在沙箱外调用该 exe，Windows 也可能按文件标签启动低完整性进程，导致它无法覆盖普通安装目录里的 `uninstallerIcon.ico` 等文件；`/S` 甚至可能返回 0 而版本未变。先用 `icacls <installer.exe>` 核对标签；经授权在普通用户 Temp 目录创建副本，再对副本运行上述安装脚本，并校验源与副本哈希一致。不要修改安装目录权限或忽略写入错误。
+
    3.6. **CDP 冒烟 + UI 截图 QA（发版固定四步）**：
    ```bash
    node scripts/layout-cdp-smoke.js --port 9227       # 主视图 rail 巡览 × 宽度/主题/DPI/动效/语言
