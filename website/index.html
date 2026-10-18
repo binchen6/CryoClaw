@@ -8,26 +8,18 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data:; connect-src 'self' https://api.github.com; font-src 'self'; base-uri 'self'; form-action 'none'" />
 <title>CryoClaw — 高效·易用·纯净的 OpenClaw 桌面客户端</title>
 <meta name="description" content="CryoClaw 是基于 openclaw 内核的高效、易用、纯净 harness。一分钟装好，即刻开聊。零配置、零依赖的 OpenClaw 桌面客户端，不需要 Node.js，不需要 npm。" />
-<link rel="icon" type="image/png" href="assets/icon.png" />
-<link rel="stylesheet" href="design-tokens.css" />
-<link rel="stylesheet" href="styles.css" />
+<link rel="icon" type="image/png" href="/CryoClaw/assets/icon.png" />
+<link rel="stylesheet" href="/CryoClaw/design-tokens.css?v=20261018" />
+<link rel="stylesheet" href="/CryoClaw/styles.css?v=20261018" />
 </head>
 <body>
+<a class="skip-link" href="#top">跳到主要内容</a>
 
 <!-- ═══════════ 全局背景（渐变网格 + 光斑 + 噪点） ═══════════ -->
-<div class="bg" id="bg" aria-hidden="true">
-  <div class="bg__mesh"></div>
-  <div class="bg__orb bg__orb--1"></div>
-  <div class="bg__orb bg__orb--2"></div>
-  <div class="bg__orb bg__orb--3"></div>
-  <div class="bg__grid"></div>
-  <div class="bg__grain"></div>
-</div>
-
 <!-- ═══════════ 导航（玻璃） ═══════════ -->
 <header class="nav" id="nav">
   <a class="nav__brand" href="#top">
-    <img src="assets/icon.png" alt="CryoClaw" class="nav__logo" />
+    <img src="/CryoClaw/assets/icon.png" alt="CryoClaw" class="nav__logo" />
     <span class="nav__name">CryoClaw</span>
     <span class="nav__tag">Pure Harness</span>
   </a>
@@ -53,18 +45,18 @@
     <div class="hero__copy">
       <div class="hero__badge reveal">
         <span class="pulse-dot" aria-hidden="true"></span>
-        <span id="hero-version">v2026.1017.0</span> 已发布 · GitHub Releases
+        <span id="hero-version">v2026.1018.0</span> 已发布 · GitHub Releases
       </div>
       <h1 class="hero__title">
-        <span class="hero__line reveal" style="--d:.08s">一秒装好，</span>
-        <span class="hero__line reveal" style="--d:.18s">即刻<em data-glow>开聊</em>。</span>
+        <span class="hero__line reveal" style="--d:.08s">把 AI 带到桌面，</span>
+        <span class="hero__line reveal" style="--d:.18s">专注<em>手头的事</em>。</span>
       </h1>
       <p class="hero__sub reveal" style="--d:.26s">
-        CryoClaw 是基于 <strong>openclaw 内核</strong> 的高效 harness。<br />
-        零配置、零依赖的 OpenClaw 桌面客户端 —— 不用装 Node.js，不用碰 npm。
+        对话、任务、技能，一个 <strong>OpenClaw 桌面工作台</strong>。<br />
+        内置运行环境，安装后选择模型即可开始。无需 Node.js 或 npm。
       </p>
       <div class="hero__cta reveal" style="--d:.34s">
-        <a class="btn btn--primary btn--lg" id="download-hero" data-magnetic href="https://github.com/binchen6/CryoClaw/releases/latest" target="_blank" rel="noopener">
+        <a class="btn btn--primary btn--lg" id="download-hero" href="/api/cryoclaw-dl" target="_blank" rel="noopener">
           <span class="btn__shine" aria-hidden="true"></span>
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
           下载 Windows 版
@@ -83,7 +75,7 @@
       <div class="tilt" id="tilt">
         <div class="mock mock--glow">
           <div class="mock__bar">
-            <img src="assets/icon.png" alt="" class="mock__icon" />
+            <img src="/CryoClaw/assets/icon.png" alt="" class="mock__icon" />
             <span class="mock__title">CryoClaw</span>
             <span class="mock__status"><span class="mock__dot"></span>streaming</span>
             <span class="mock__controls" aria-hidden="true">
@@ -117,7 +109,7 @@
               <div class="mock__stream">
                 <div class="mock__msg mock__msg--user">帮我总结这份周报的重点</div>
                 <div class="mock__msg mock__msg--ai">
-                  <span id="stream-text"></span><span class="caret" aria-hidden="true"></span>
+                  <span id="stream-text">本周重点已整理：<br /><br />完成桌面工作台改版，统一对话与任务入口。<br />下一步：检查发布清单，准备团队同步。</span><span class="caret" aria-hidden="true"></span>
                 </div>
               </div>
               <div class="mock__composer">
@@ -141,13 +133,7 @@
   </div>
 
   <!-- 统计条 -->
-  <div class="stats reveal" style="--d:.46s">
-    <div class="stat"><span class="stat__num" data-count="0.6" data-suffix="s">0s</span><span class="stat__label">冷启动见界面</span></div>
-    <div class="stat"><span class="stat__num" data-count="903">0</span><span class="stat__label">测试用例全绿</span></div>
-    <div class="stat"><span class="stat__num" data-count="326">0</span><span class="stat__label">内核 RPC 方法</span></div>
-    <div class="stat"><span class="stat__num" data-count="49">0</span><span class="stat__label">CryoIcons 自绘图标</span></div>
-  </div>
-</section>
+  <div class="stats"><div class="stat"><span class="stat__num">开箱即用</span><span class="stat__label">内置运行环境</span></div><div class="stat"><span class="stat__num">自由选择</span><span class="stat__label">连接自己的模型</span></div><div class="stat"><span class="stat__num">本地运行</span><span class="stat__label">掌握工作空间</span></div><div class="stat"><span class="stat__num">开放源码</span><span class="stat__label">AGPL-3.0</span></div></div></section>
 
 <!-- ═══════════ 特性（Bento 网格） ═══════════ -->
 <section class="section section--features" id="features">
@@ -164,7 +150,7 @@
       <h3>丝滑流式渲染</h3>
       <p>逐帧纯文本流式 + 终态一次性排版，消除逐帧全量 markdown 的 O(n²) 卡顿；折叠区懒渲染，长对话也稳。</p>
       <div class="terminal" aria-hidden="true">
-        <div class="terminal__bar"><span class="terminal__dots"><i></i><i></i><i></i></span><span class="terminal__title" id="terminal-version">streaming — v2026.1017.0</span></div>
+        <div class="terminal__bar"><span class="terminal__dots"><i></i><i></i><i></i></span><span class="terminal__title" id="terminal-version">streaming — v2026.1018.0</span></div>
         <div class="terminal__body" id="terminal-body">
           <div class="terminal__line"><span class="terminal__prompt">›</span> typography: markdown-terminal layout</div>
           <div class="terminal__line terminal__line--ok"><span class="terminal__prompt">✓</span> stream: 0.6s cold start · no O(n²)</div>
@@ -290,19 +276,19 @@
   <div class="cta reveal">
     <div class="cta__glow" aria-hidden="true"></div>
     <div class="cta__grid" aria-hidden="true"></div>
-    <img src="assets/icon.png" alt="" class="cta__logo" />
+    <img src="/CryoClaw/assets/icon.png" alt="" class="cta__logo" />
     <h2>现在就开始</h2>
     <p>下载安装包 → 选择服务商，输入 API Key → 开始对话。<br />不需要 Node.js，不需要 npm，不需要配置环境变量。</p>
     <div class="cta__actions">
-      <a class="btn btn--primary btn--lg" id="download-cta" data-magnetic href="https://github.com/binchen6/CryoClaw/releases/latest" target="_blank" rel="noopener">
+      <a class="btn btn--primary btn--lg" id="download-cta" href="/api/cryoclaw-dl" target="_blank" rel="noopener">
         <span class="btn__shine" aria-hidden="true"></span>
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-        <span id="download-label" data-prefix="下载 CryoClaw">下载 CryoClaw for Windows</span>
+        <span id="download-label" data-prefix="下载 CryoClaw">高速下载 · Windows x64</span>
       </a>
-      <a class="btn btn--ghost btn--lg" href="https://github.com/binchen6/CryoClaw/releases" target="_blank" rel="noopener">全部版本</a>
+      <a class="btn btn--ghost btn--lg" href="https://github.com/binchen6/CryoClaw/releases" target="_blank" rel="noopener" id="download-official">GitHub 官方下载</a>
     </div>
     <div class="cta__meta">
-      <span id="download-version">最新版本 v2026.1017.0</span><i>·</i><span id="download-size">Windows 10/11 x64</span><i>·</i><span id="download-date">GitHub Releases 同步</span><i>·</i><span>AGPL-3.0</span>
+      <span id="download-version">最新版本 v2026.1018.0</span><i>·</i><span id="download-size">Windows 10/11 x64</span><i>·</i><span id="download-date">GitHub Releases 同步</span><i>·</i><span>AGPL-3.0</span>
     </div>
     <p class="cta__whatsnew" id="whatsnew" aria-live="polite"></p>
   </div>
@@ -312,7 +298,7 @@
 <footer class="footer">
   <div class="footer__inner">
     <div class="footer__brand">
-      <img src="assets/icon.png" alt="" class="footer__logo" />
+      <img src="/CryoClaw/assets/icon.png" alt="" class="footer__logo" />
       <div>
         <div class="footer__name">CryoClaw</div>
         <div class="footer__slogan">高效、易用、纯净的 OpenClaw harness</div>
@@ -328,6 +314,6 @@
   <div class="footer__copy">© 2026 CryoClaw · AGPL-3.0-only · 基于 OneClaw 二改重构，内核 openclaw 零改动</div>
 </footer>
 
-<script src="app.js"></script>
+<script src="/CryoClaw/app.js?v=20261018" defer></script>
 </body>
 </html>
