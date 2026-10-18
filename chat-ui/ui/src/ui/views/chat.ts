@@ -14,6 +14,7 @@ import "../components/oc-chat-stream.ts";
 // 历史消息/工具时间线列表独立组件（R41 Task 11）：草稿敲击/连接态等高频更新不再重求值这棵最重子树，
 // 历史 memo 调用点也随之移入组件（接线见 renderChat 线程内 hero 与 <oc-chat-stream> 之间）
 import "../components/oc-chat-history.ts";
+import "../components/oc-turn-files.ts";
 import { computeStopButtonVisible } from "./chat-stop-button-gate.ts";
 import { resolveModelSelectKey } from "../controllers/models.ts";
 import { resolveActiveToolName } from "../chat/tool-summary.ts";
@@ -23,7 +24,7 @@ import { isFailedSubagentStatus, selectSubagentCards, type SubagentCard } from "
 import { isStreamTextDuplicatedInHistory } from "../chat/stream-bubble-guard.ts";
 import { selectPendingQuestions, type QuestionPrompt } from "../chat/question-cards.ts";
 import { renderQuestionCards } from "./question-card.ts";
-import { renderPlanPanel } from "./plan-panel.ts";
+import { renderConversationInfo } from "./conversation-info.ts";
 import type { PlanStreamState } from "../plan-stream.ts";
 import { renderProgressCard } from "./progress-card.ts";
 import type { ProgressCardState } from "../controllers/progress-card.ts";
@@ -56,6 +57,8 @@ export type GatewayConnectionProps = {
 } | null;
 
 export type ChatProps = {
+  workspaceName?: string;
+  workspacePath?: string;
   sessionKey: string;
   onSessionKeyChange: (next: string) => void;
   thinkingLevel: string | null;
@@ -205,7 +208,10 @@ function handleQuoteMessage(props: ChatProps, text: string) {
 // 路径链接打开（.chat-path-link 点击与 Enter/Space 键盘委托共用）：
 // 经预加载桥 cryoclaw.openPath 走主进程 shell.openPath
 function openChatPathLink(link: HTMLElement, props: ChatProps) {
-  const path = link.dataset.path;
+  openChatPath(link.dataset.path, props);
+}
+
+function openChatPath(path: string | undefined, props: ChatProps) {
   if (!path) {
     return;
   }
@@ -376,7 +382,7 @@ export function renderChat(props: ChatProps) {
       }}
     >
       ${
-        props.loading
+        props.loading && props.messages.length===0
           ? html`
               <div class="chat-loading" role="status" aria-label=${t("chat.loading")}>
                 <div class="chat-loading__row">
@@ -536,14 +542,7 @@ export function renderChat(props: ChatProps) {
       ${renderCompactionIndicator(props.compactionStatus)}
       ${renderFallbackNotice(props.fallbackNotice)}
 
-      ${
-        !hasProgressCardForSession
-          ? renderPlanPanel(props.plan ?? null, {
-              sessionKey: props.sessionKey,
-              onDismiss: props.onDismissPlan,
-            })
-          : nothing
-      }
+      ${renderConversationInfo(props)}
 
       ${renderProgressCard(props.progressCard ?? null, {
         sessionKey: props.sessionKey,
@@ -575,6 +574,10 @@ export function renderChat(props: ChatProps) {
       ${renderGoalBanner(props)}
       ${renderGoalForm(props)}
 
+      <oc-turn-files .messages=${props.messages} .toolMessages=${props.toolMessages}
+        .visibleHistoryCount=${props.visibleHistoryCount} .locale=${getLocale()}
+        .gitAvailable=${props.gitAvailable === true} .onOpenGit=${props.onOpenGitView}
+        .onOpenFile=${(path: string) => openChatPath(path, props)}></oc-turn-files>
       ${renderCompose(props, {
         activeSession,
         composePlaceholder,

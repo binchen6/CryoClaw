@@ -7,9 +7,32 @@ import {
   gitFileKey,
   groupGitEntries,
   isGitIdentityError,
+  stageGitFiles,
+  selectGitRepo,
+  type GitPanelState,
   type GitStatusEntry,
 } from "./git.ts";
 import type { WorktreeRecord } from "./worktrees.ts";
+
+test("a late mutation from the previous repository cannot overwrite errors or busy paths", async () => {
+  let finish!: (value: unknown) => void;
+  const original = globalThis.window;
+  (globalThis as any).window = { cryoclaw: {
+    gitStage: () => new Promise(resolve => { finish = resolve; }),
+    gitStatus: async () => ({ success: true, data: { branch: {}, entries: [] } }),
+  } };
+  try {
+    const state = { gitRepoPath: "/old", gitBusyPaths: new Set(), gitErrorKind: null, gitErrorDetail: null } as unknown as GitPanelState;
+    const pending = stageGitFiles(state, ["a.ts"]);
+    await selectGitRepo(state, "/new");
+    state.gitErrorDetail = "new repository issue";
+    state.gitBusyPaths = new Set(["a.ts"]);
+    finish({ success: false, message: "old repository issue" });
+    assert.equal(await pending, false);
+    assert.equal(state.gitErrorDetail, "new repository issue");
+    assert.deepEqual([...state.gitBusyPaths], ["a.ts"]);
+  } finally { (globalThis as any).window = original; }
+});
 
 function entry(overrides: Partial<GitStatusEntry>): GitStatusEntry {
   return { kind: "tracked", index: ".", worktree: ".", path: "a.ts", ...overrides };

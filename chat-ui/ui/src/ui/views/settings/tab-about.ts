@@ -258,7 +258,7 @@ function renderAppUpdateCard(state: AppViewState) {
             </div>`
           : ""}
         ${us.status === "error"
-          ? html`<div class="oc-text-danger">${tWithDetail("settings.about.appUpdateError", us.error)}</div>`
+          ? html`<oc-message-box .visible=${true} type="error" .message=${tWithDetail("settings.about.appUpdateError", us.error)}></oc-message-box>`
           : ""}
         <div class="oc-flex oc-gap-8 oc-mt-4">
           <button class="btn btn--sm" ?disabled=${checking || downloading} @click=${() => handleAppUpdateCheck(state)}>${checking ? t("settings.about.appUpdateChecking") : us.status === "error" ? t("settings.about.appUpdateRetry") : t("settings.about.appUpdateCheck")}</button>
@@ -289,7 +289,7 @@ function renderAppUpdateCard(state: AppViewState) {
             `
           : ""}
         ${s.appUpdateMsg
-          ? html`<div class=${s.appUpdateMsg.ok ? "" : "oc-text-danger"}>${s.appUpdateMsg.text}</div>`
+          ? html`<oc-message-box .visible=${true} .type=${s.appUpdateMsg.ok?'success':'error'} .message=${s.appUpdateMsg.text}></oc-message-box>`
           : ""}
       </div>
     </div>
@@ -340,7 +340,7 @@ function renderKernelCard(state: AppViewState) {
             `
           : ""}
         ${s.resultMsg
-          ? html`<div class=${s.resultMsg.ok ? "" : "oc-text-danger"}>${s.resultMsg.text}</div>`
+          ? html`<oc-message-box .visible=${true} .type=${s.resultMsg.ok?'success':'error'} .message=${s.resultMsg.text}></oc-message-box>`
           : ""}
       </div>
     </div>

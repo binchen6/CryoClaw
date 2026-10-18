@@ -1,5 +1,12 @@
 [
   {
+    "version": "2026.1018.1",
+    "notes": {
+      "zh": "升级 OpenClaw 至 2026.10.4，同步官方提供商插件。修复模型能力保存时缺少数组替换声明，默认模型设置即时显示进度，配置刷新保留模型卡片。操作通知统一为底部悬浮提示，按信息、成功、警告、错误区分颜色。默认浅色主题使用纯黑正文和纯白面板；主题包扩展气泡、图标、输入区等角色颜色和控件微调。修复 Kimi 额度、API 余额和切换模型后的额度刷新。命令补全支持原生命令参数、已配置模型、光标位置和输入法；工作区新建对话将目录传给内核，Git 切换仓库隔离迟到写入响应。文件变更移至输入框上方胶囊，右上角改为会话信息面板，展示工作区、子智能体与来源文件。缩减消息下方空白，修复快速转场中断异常，减少滚动和主题扫描的重复工作。",
+      "en": "Upgraded OpenClaw and official provider plugins to 2026.10.4. Fixed capability saves with explicit nested array replacement paths. Default-model changes show immediate progress and model cards remain visible during refresh. Operation feedback uses color-coded global bottom notifications. Default light appearance uses black body text and white panels; theme packages gain bubble, icon and composer colors plus component refinements. Fixed Kimi usage, API balance display and quota refresh on model changes. Command completion supports native arguments, configured models, caret position and IME. Workspace conversations pass their directory to the kernel; Git mutations discard stale responses after repository switches. Turn file changes appear above the composer; a conversation information panel replaces the legacy plan overlay. Reduced message-action spacing, handled interrupted transitions and removed redundant scroll and theme scans."
+    }
+  },
+  {
     "version": "2026.1018.0",
     "notes": {
       "zh": "模型设置整合订阅账户、主模型概览、辅助/决策模型与备用链，支持搜索、分组折叠和更多供应商额度查询；对话输入框同步展示额度，未知时弱化显示。外观设置新增 MiSans 可变字体、连续字重与精确滑块，四套成对深浅主题、主题包导入导出、可撤销预览和可视化元素编辑；Agent 可从外观页进入主题设计，内置技能具备检查、重试和错误修复引导。工作区支持多根目录、文件搜索、编辑保存、草稿恢复与外部修改冲突保护；技能引用支持搜索和键盘操作，附件展示图片缩略图与文件卡片。优化页面预载、连续转场、控件与图标，消息操作按钮移到正文下方；网关就绪后自动刷新记忆状态。备份导入导出增加阶段进度，统一流式归档上限并修复大文件失败；内核支持在线稳定版本钉定。Windows 更新修复已关闭应用仍提示占用的问题，安装器启动失败可恢复。",

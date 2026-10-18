@@ -224,6 +224,7 @@ let diffSeq = 0;
 // 分支列表 / 提交历史加载序号：仓库切换后旧响应不得落入新仓库
 let branchSeq = 0;
 let logSeq = 0;
+let repoEpoch = 0;
 
 /** 初始化 git 面板选项：workspace 根由调用方（工作区页）解析并注册白名单一次，
  * 这里只组装仓库选项（workspace 根 + 活跃 worktree）并首刷 status。 */
@@ -291,6 +292,14 @@ export async function refreshGitStatus(state: GitPanelState): Promise<void> {
 /** 切换仓库（下拉选择） */
 export async function selectGitRepo(state: GitPanelState, repoPath: string): Promise<void> {
   if (state.gitRepoPath === repoPath) return;
+  ++repoEpoch;
+  state.gitBusyPaths = new Set();
+  state.gitCommitting = false;
+  state.gitNetworkBusy = null;
+  state.gitCheckingOutBranch = null;
+  state.gitDiffLoading = false;
+  state.gitBranchesLoading = false;
+  state.gitLogLoading = false;
   state.gitRepoPath = repoPath;
   state.gitSelectedFile = null;
   state.gitDiffFiles = null;
@@ -364,8 +373,11 @@ async function runGitMutation(
   state.gitBusyPaths = next;
   state.gitErrorKind = null;
   state.gitErrorDetail = null;
+  const operationEpoch = repoEpoch;
+  const repoPath = state.gitRepoPath;
   try {
-    const res = await fn(state.gitRepoPath, paths);
+    const res = await fn(repoPath, paths);
+    if (operationEpoch !== repoEpoch) return false;
     if (!res?.success) {
       state.gitErrorKind = "generic";
       state.gitErrorDetail = res?.message ?? null;
@@ -374,13 +386,16 @@ async function runGitMutation(
     await refreshGitStatus(state);
     return true;
   } catch (err) {
+    if (operationEpoch !== repoEpoch) return false;
     state.gitErrorKind = "generic";
     state.gitErrorDetail = err instanceof Error ? err.message : String(err);
     return false;
   } finally {
-    const after = new Set(state.gitBusyPaths);
-    for (const p of paths) after.delete(p);
-    state.gitBusyPaths = after;
+    if (operationEpoch === repoEpoch) {
+      const after = new Set(state.gitBusyPaths);
+      for (const p of paths) after.delete(p);
+      state.gitBusyPaths = after;
+    }
   }
 }
 
@@ -400,8 +415,11 @@ export async function commitGitChanges(state: GitPanelState): Promise<boolean> {
   state.gitCommitting = true;
   state.gitErrorKind = null;
   state.gitErrorDetail = null;
+  const operationEpoch = repoEpoch;
+  const repoPath = state.gitRepoPath;
   try {
-    const res = await b.gitCommit(state.gitRepoPath, message);
+    const res = await b.gitCommit(repoPath, message);
+    if (operationEpoch !== repoEpoch) return false;
     if (!res?.success) {
       const detail = res?.message ?? null;
       state.gitErrorKind = detail && isGitIdentityError(detail) ? "identity" : "generic";
@@ -412,11 +430,12 @@ export async function commitGitChanges(state: GitPanelState): Promise<boolean> {
     await refreshGitStatus(state);
     return true;
   } catch (err) {
+    if (operationEpoch !== repoEpoch) return false;
     state.gitErrorKind = "generic";
     state.gitErrorDetail = err instanceof Error ? err.message : String(err);
     return false;
   } finally {
-    state.gitCommitting = false;
+    if (operationEpoch === repoEpoch) state.gitCommitting = false;
   }
 }
 
@@ -460,8 +479,11 @@ export async function checkoutGitBranch(state: GitPanelState, branch: string): P
   state.gitCheckingOutBranch = branch;
   state.gitErrorKind = null;
   state.gitErrorDetail = null;
+  const operationEpoch = repoEpoch;
+  const repoPath = state.gitRepoPath;
   try {
-    const res = await b.gitCheckout(state.gitRepoPath, branch);
+    const res = await b.gitCheckout(repoPath, branch);
+    if (operationEpoch !== repoEpoch) return false;
     if (!res?.success) {
       state.gitErrorKind = "generic";
       state.gitErrorDetail = res?.message ?? null;
@@ -470,11 +492,12 @@ export async function checkoutGitBranch(state: GitPanelState, branch: string): P
     await Promise.all([refreshGitStatus(state), loadGitBranches(state), loadGitLog(state)]);
     return true;
   } catch (err) {
+    if (operationEpoch !== repoEpoch) return false;
     state.gitErrorKind = "generic";
     state.gitErrorDetail = err instanceof Error ? err.message : String(err);
     return false;
   } finally {
-    state.gitCheckingOutBranch = null;
+    if (operationEpoch === repoEpoch) state.gitCheckingOutBranch = null;
   }
 }
 
@@ -509,10 +532,13 @@ async function runGitNetworkOp(
   state.gitNetworkBusy = op;
   state.gitErrorKind = null;
   state.gitErrorDetail = null;
+  const operationEpoch = repoEpoch;
+  const repoPath = state.gitRepoPath;
   try {
     const res = op === "push"
-      ? await b!.gitPush!(state.gitRepoPath, opts)
-      : await b!.gitPull!(state.gitRepoPath);
+      ? await b!.gitPush!(repoPath, opts)
+      : await b!.gitPull!(repoPath);
+    if (operationEpoch !== repoEpoch) return false;
     if (!res?.success) {
       state.gitErrorKind = "generic";
       state.gitErrorDetail = res?.message ?? null;
@@ -521,11 +547,12 @@ async function runGitNetworkOp(
     await Promise.all([refreshGitStatus(state), loadGitLog(state)]);
     return true;
   } catch (err) {
+    if (operationEpoch !== repoEpoch) return false;
     state.gitErrorKind = "generic";
     state.gitErrorDetail = err instanceof Error ? err.message : String(err);
     return false;
   } finally {
-    state.gitNetworkBusy = null;
+    if (operationEpoch === repoEpoch) state.gitNetworkBusy = null;
   }
 }
 
@@ -576,8 +603,11 @@ async function runDestructiveGitOp(
   state.gitBusyPaths = next;
   state.gitErrorKind = null;
   state.gitErrorDetail = null;
+  const operationEpoch = repoEpoch;
+  const repoPath = state.gitRepoPath;
   try {
-    const res = await fn(state.gitRepoPath, paths);
+    const res = await fn(repoPath, paths);
+    if (operationEpoch !== repoEpoch) return false;
     if (!res?.success) {
       state.gitErrorKind = "generic";
       state.gitErrorDetail = res?.message ?? null;
@@ -586,12 +616,15 @@ async function runDestructiveGitOp(
     await refreshGitStatus(state);
     return true;
   } catch (err) {
+    if (operationEpoch !== repoEpoch) return false;
     state.gitErrorKind = "generic";
     state.gitErrorDetail = err instanceof Error ? err.message : String(err);
     return false;
   } finally {
-    const after = new Set(state.gitBusyPaths);
-    for (const p of paths) after.delete(p);
-    state.gitBusyPaths = after;
+    if (operationEpoch === repoEpoch) {
+      const after = new Set(state.gitBusyPaths);
+      for (const p of paths) after.delete(p);
+      state.gitBusyPaths = after;
+    }
   }
 }

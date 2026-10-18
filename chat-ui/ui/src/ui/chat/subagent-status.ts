@@ -45,6 +45,7 @@ export function selectSubagentCards(
   sessions: GatewaySessionRow[] | null | undefined,
   sessionKey: string,
   now: number = Date.now(),
+  terminalGraceMs: number = TERMINAL_GRACE_MS,
 ): SubagentCard[] {
   if (!Array.isArray(sessions) || sessions.length === 0 || !sessionKey) {
     return [];
@@ -60,7 +61,7 @@ export function selectSubagentCards(
     const active = isActiveSubagentRow(row);
     if (!active) {
       const ended = toMillis(row.endedAt) ?? toMillis(row.updatedAt);
-      if (ended === null || now - ended > TERMINAL_GRACE_MS) {
+      if (terminalGraceMs !== Infinity && (ended === null || now - ended > terminalGraceMs)) {
         continue;
       }
     }

@@ -99,6 +99,14 @@ function testBuildMergePatchArrayAppendNoReplace() {
 }
 
 function testBuildMergePatchArrayRemoveAutoReplace() {
+  const nestedBase={models:{providers:{p:{models:[{id:'vision',input:['text','image'],capabilities:{thinking:['low','high']}}]}}}};
+  const nestedNext=structuredClone(nestedBase);nestedNext.models.providers.p.models[0].input=['text'];
+  assert.deepEqual(buildMergePatch(nestedBase,nestedNext).replacePaths,['models.providers.p.models','models.providers.p.models[].input'],'nested removals require the gateway exact wildcard path');
+  nestedNext.models.providers.p.models[0].input=['text','audio'];
+  assert.deepEqual(buildMergePatch(nestedBase,nestedNext).replacePaths,['models.providers.p.models','models.providers.p.models[].input'],'equal-size capability substitutions also remove old entries');
+  assert.deepEqual(buildMergePatch({models:[{id:'a'},{id:'b'}]},{models:[{id:'a'},{id:'c'}]}).replacePaths,['models']);
+  const thinkingNext=structuredClone(nestedBase);thinkingNext.models.providers.p.models[0].capabilities.thinking=['low'];
+  assert.deepEqual(buildMergePatch(nestedBase,thinkingNext).replacePaths,['models.providers.p.models','models.providers.p.models[].capabilities.thinking']);
   const base = { models: { providers: { p: { models: [{ id: "a" }, { id: "b" }] } } } };
   const next = { models: { providers: { p: { models: [{ id: "a" }] } } } };
   const { replacePaths } = buildMergePatch(base as any, next as any);
@@ -234,6 +242,16 @@ async function testPatchConfigRetriesOnceOnHashConflict() {
 }
 
 async function testPatchConfigDoubleConflictFails() {
+  for(const rolledBack of [true,false]){
+    invalidateConfigSnapshotCache();let attempts=0;
+    const {client}=makeClientWithErrors(method=>{
+      if(method==='config.get')return {ok:true,value:SNAPSHOT};
+      attempts++;if(attempts===1)return {ok:false,message:'config publication identity changed'+(rolledBack?' The config write was rolled back.':'')};
+      return {ok:true,value:{ok:true}};
+    });
+    const result=await patchConfig(client,draft=>{(draft.agents as any).defaults.model.primary='moonshot/kimi-k2.5';});
+    assert.equal(result.ok,rolledBack);assert.equal(attempts,rolledBack?2:1,'unconfirmed publication failures must not be retried');
+  }
   invalidateConfigSnapshotCache();
   const { client } = makeClientWithErrors((method) => {
     if (method === "config.get") return { ok: true, value: SNAPSHOT };

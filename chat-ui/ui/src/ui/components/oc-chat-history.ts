@@ -95,7 +95,6 @@ export class OcChatHistory extends LitElement {
       visibleHistoryCount: this.visibleHistoryCount,
     });
     // 本轮改动文件列表：按组扫描 tool cards 派生（详见 chat/file-changes.ts 头注）
-    const fileChangesByGroup = computeSessionFileChangesMemoized(chatItems);
     const totalHistory = Array.isArray(this.messages) ? this.messages.length : 0;
     const isHydrating = this.visibleHistoryCount > 0 && this.visibleHistoryCount < totalHistory;
     return html`${repeat(
@@ -119,7 +118,6 @@ export class OcChatHistory extends LitElement {
             assistantName: this.assistantName,
             assistantAvatar: this.assistantAvatar,
             isHydrating,
-            fileChanges: fileChangesByGroup.get(item.key),
             gitAvailable: this.gitAvailable,
             onQuoteMessage: this.onQuoteMessage,
             onResendError: this.onResendError,

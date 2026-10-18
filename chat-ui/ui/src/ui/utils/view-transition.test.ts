@@ -2,6 +2,14 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {transitionView} from "./view-transition.ts";
 
+test("aborted snapshot promises do not become unhandled renderer failures",async()=>{
+  const previousWindow=globalThis.window,previousDocument=globalThis.document;let actions=0;
+  try{
+    Object.assign(globalThis,{window:{matchMedia:()=>({matches:false})},document:{startViewTransition(update:()=>Promise<void>){return {ready:Promise.reject(new Error('snapshot aborted')),updateCallbackDone:update(),finished:Promise.resolve(),skipTransition(){}};}}});
+    transitionView(()=>actions++);await new Promise(resolve=>setTimeout(resolve,0));assert.equal(actions,1);
+  }finally{Object.assign(globalThis,{window:previousWindow,document:previousDocument});}
+});
+
 test("navigation respects reduced motion and unsupported browsers",()=>{
   const previousWindow=globalThis.window,previousDocument=globalThis.document;
   let actions=0,snapshots=0;

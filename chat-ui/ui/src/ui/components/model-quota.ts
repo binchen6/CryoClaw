@@ -22,8 +22,8 @@ export class ModelQuotaMeter extends LitElement {
   connectedCallback(){super.connectedCallback();this.timer=setInterval(()=>{if(!document.hidden)void this.load();},60_000);}
   disconnectedCallback(){super.disconnectedCallback();++this.epoch;if(this.timer)clearInterval(this.timer);this.timer=null;}
   protected updated(changed:Map<PropertyKey,unknown>){
-    if(changed.has("client"))this.value=null;
-    if(changed.has("provider") || changed.has("client") || changed.has("connected"))void this.load();
+    if(changed.has("client") || changed.has("provider") || changed.has("model") || !this.connected)this.value=null;
+    if(changed.has("provider") || changed.has("model") || changed.has("client") || changed.has("connected"))void this.load(changed.has("model"));
   }
   private async load(force=false){
     const epoch=++this.epoch,client=this.client,provider=this.provider;
@@ -46,14 +46,17 @@ export class ModelQuotaMeter extends LitElement {
     const value=this.value?.provider===this.provider?this.value:null;
     const windows=value?quotaWindowsForModel(value.windows,this.model):[];
     const remaining=value?quotaRemaining(windows):null;
-    const hasBalance=typeof value?.balance?.available==="number" && Number.isFinite(value.balance.available);
+    const amount=value?.balance?.available;
+    const balance=amount!==undefined && amount!==null && String(amount).trim()!==""?Number(amount):NaN;
+    const hasBalance=Number.isFinite(balance);
+    const balanceText=hasBalance?`${value?.balance?.currency==="CNY"?"¥":value?.balance?.currency==="USD"?"$":value?.balance?.currency??""}${balance.toLocaleString(undefined,{maximumFractionDigits:2,minimumFractionDigits:2})}`:"";
     const unknown=remaining===null && !hasBalance;
     const label=this.text("当前模型账户额度", "Current model account limits");
     const triggerLabel=unknown?this.text("额度未知，点击查看详情", "Quota unknown; view details"):label;
-    return html`<button class="chat-quota__trigger" data-state=${unknown?"unknown":"known"} aria-label=${triggerLabel} title=${triggerLabel} aria-haspopup="dialog" aria-expanded=${this.open} aria-controls=${this.panelId} @click=${()=>this.toggle()}>
+    return html`<button class="chat-quota__trigger" data-state=${unknown?"unknown":"known"} data-kind=${hasBalance?"balance":"quota"} aria-label=${hasBalance?`${label} · ${balanceText}`:triggerLabel} title=${hasBalance?balanceText:triggerLabel} aria-haspopup="dialog" aria-expanded=${this.open} aria-controls=${this.panelId} @click=${()=>this.toggle()}>
       <svg viewBox="0 0 32 32" aria-hidden="true"><circle class="chat-quota__track" cx="16" cy="16" r="12" pathLength="100"></circle>
         ${remaining!==null?svg`<circle class="chat-quota__fill" cx="16" cy="16" r="12" pathLength="100" stroke-dasharray=${`${remaining} 100`}></circle>`:nothing}
-        <text x="16" y="20" text-anchor="middle">${remaining!==null?Math.round(remaining):hasBalance?(value!.balance!.currency==="CNY"?"¥":value!.balance!.currency==="USD"?"$":"¤"):this.busy?"…":"·"}</text></svg>
+        <text x="16" y="20" text-anchor="middle">${remaining!==null?Math.round(remaining):hasBalance?(value!.balance!.currency==="CNY"?"¥":value!.balance!.currency==="USD"?"$":"¤"):this.busy?"…":"·"}</text></svg>${hasBalance?html`<span class="chat-quota__balance">${balanceText}</span>`:nothing}
     </button><div id=${this.panelId} class="chat-quota__details" popover="auto" role="dialog" aria-label=${label}
       @toggle=${(event:Event)=>{this.open=(event as ToggleEvent).newState==="open";}}>
       <div class="chat-quota__header"><strong>${this.text("账户额度", "Account limits")}</strong><button class="btn btn--sm" ?disabled=${this.busy || !this.connected} @click=${()=>void this.load(true)}>${this.busy?this.text("查询中…", "Loading…"):this.text("刷新", "Refresh")}</button></div>

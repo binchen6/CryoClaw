@@ -87,16 +87,17 @@ async function updateAllSkills(state: AppViewState) {
         failed > 0
           ? t("skillStore.updatePartial").replace("{ok}", String(updated)).replace("{fail}", String(failed))
           : t("skillStore.updateDone").replace("{n}", String(updated)),
+        undefined,failed>0?"warning":"success",
       );
     } else {
-      showToast(state, t("skillStore.updateFailed"));
+      showToast(state, t("skillStore.updateFailed"),undefined,"error");
     }
     skillUpdates = null; // 强制重查（版本表已变）
     void loadSkills(state);
     await refreshInstalledSlugs();
     await checkSkillStoreUpdates(state, { force: true });
   } catch {
-    showToast(state, t("skillStore.updateFailed"));
+      showToast(state, t("skillStore.updateFailed"),undefined,"error");
   } finally {
     skillUpdatesApplying = false;
     state.requestUpdate();
@@ -264,12 +265,12 @@ async function installSkillFromStore(state: AppViewState, slug: string) {
     const result = await window.cryoclaw.skillStoreInstall({ slug });
     if (result?.success) {
       skillStoreState.installedSlugs.add(slug);
-      showToast(state, t("skillStore.installSuccess"));
+      showToast(state, t("skillStore.installSuccess"),undefined,"success");
     } else {
-      showToast(state, t("skillStore.installFailed"));
+      showToast(state, t("skillStore.installFailed"),undefined,"error");
     }
   } catch {
-    showToast(state, t("skillStore.installFailed"));
+      showToast(state, t("skillStore.installFailed"),undefined,"error");
   }
   skillStoreState.installingSlugs.delete(slug);
   state.requestUpdate();
@@ -284,12 +285,12 @@ async function uninstallSkillFromStore(state: AppViewState, slug: string) {
     const result = await window.cryoclaw.skillStoreUninstall({ slug });
     if (result?.success) {
       skillStoreState.installedSlugs.delete(slug);
-      showToast(state, t("skillStore.uninstallSuccess"));
+      showToast(state, t("skillStore.uninstallSuccess"),undefined,"success");
     } else {
-      showToast(state, t("skillStore.uninstallFailed"));
+      showToast(state, t("skillStore.uninstallFailed"),undefined,"error");
     }
   } catch {
-    showToast(state, t("skillStore.uninstallFailed"));
+      showToast(state, t("skillStore.uninstallFailed"),undefined,"error");
   }
   skillStoreState.installingSlugs.delete(slug);
   state.requestUpdate();
@@ -306,12 +307,12 @@ async function uninstallLocalSkill(state: AppViewState, slug: string) {
       // 刷新已安装列表和商店已安装标记
       void loadSkills(state);
       await refreshInstalledSlugs();
-      showToast(state, t("skillStore.uninstallSuccess"));
+      showToast(state, t("skillStore.uninstallSuccess"),undefined,"success");
     } else {
-      showToast(state, t("skillStore.uninstallFailed"));
+      showToast(state, t("skillStore.uninstallFailed"),undefined,"error");
     }
   } catch {
-    showToast(state, t("skillStore.uninstallFailed"));
+      showToast(state, t("skillStore.uninstallFailed"),undefined,"error");
   }
   state.skillsBusyKey = "";
   state.requestUpdate();

@@ -94,9 +94,9 @@ export function scheduleChatScroll(host: ScrollHost, force = false, smooth = fal
           typeof window.matchMedia !== "function" ||
           !window.matchMedia("(prefers-reduced-motion: reduce)").matches);
       const scrollTop = target.scrollHeight;
-      if (typeof target.scrollTo === "function") {
-        target.scrollTo({ top: scrollTop, behavior: smoothEnabled ? "smooth" : "auto" });
-      } else {
+      if (Math.abs(distanceFromBottom)>1 && typeof target.scrollTo === "function") {
+        target.scrollTo({ top: scrollTop, behavior: smoothEnabled ? "smooth" : "instant" });
+      } else if(Math.abs(distanceFromBottom)>1) {
         target.scrollTop = scrollTop;
       }
       if (smoothEnabled) {
@@ -125,10 +125,10 @@ export function scheduleChatScroll(host: ScrollHost, force = false, smooth = fal
         }
         // 补滚同样走 smooth：平滑动画途中内容增高时，瞬时 scrollTop 赋值会打断动画
         // 造成「滑到一半突然跳底」的顿挫。
-        if (smoothEnabled && typeof latest.scrollTo === "function") {
+        if (latestDistanceFromBottom>1 && smoothEnabled && typeof latest.scrollTo === "function") {
           latest.scrollTo({ top: latest.scrollHeight, behavior: "smooth" });
           markSmoothScrollFlight(host);
-        } else {
+        } else if(latestDistanceFromBottom>1) {
           latest.scrollTop = latest.scrollHeight;
         }
         host.chatUserNearBottom = true;

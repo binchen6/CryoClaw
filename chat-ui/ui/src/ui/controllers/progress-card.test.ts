@@ -419,11 +419,8 @@ test("views/chat.ts：Progress Card 优先替代旧 plan，旧内核与历史会
     /const hasProgressCardForSession =[\s\S]*?props\.progressCard\.card\?\.sessionKey === props\.sessionKey/,
     "有效新卡必须按当前会话确认",
   );
-  assert.match(
-    s,
-    /!hasProgressCardForSession[\s\S]*?\? renderPlanPanel\(props\.plan[\s\S]*?: nothing[\s\S]*?renderProgressCard\(props\.progressCard[\s\S]*?renderExecStrip\(props\)/,
-    "新卡存在时应隐藏 legacy plan；无卡时回退旧 plan，并仍在审批弹条前渲染",
-  );
+  assert.match(s, /renderConversationInfo\(props\)/);
+  assert.doesNotMatch(s, /renderPlanPanel\(/);
   assert.match(s, /runActive: props\.runActive/, "无活跃 run 降级 paused 依赖 runActive 透传");
 });
 

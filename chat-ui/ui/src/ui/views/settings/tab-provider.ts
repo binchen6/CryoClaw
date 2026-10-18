@@ -1,4 +1,5 @@
 import {icons} from "../../icons.ts";
+import {showToast} from "../../app-toast.ts";
 /**
  * Settings: Provider Tab — 分组模型管理。
  *
@@ -85,8 +86,10 @@ interface DropTarget {
 function createProviderState() {
   return {
     initialized: false,
+    snapshot: null as import("../../controllers/config.ts").ConfigSnapshot | null,
     loading: false,
     busy: false,
+    pendingDefault: "",
     error: null as string | null,
     successMsg: null as string | null,
     /** 内核 restart 要求提示（热应用 / 平滑重启 / 需重启） */
@@ -211,7 +214,7 @@ function getAddModelId(): string {
 }
 
 function allConfiguredKeys(): string[] {
-  const snap = getCachedConfigSnapshot();
+  const snap = getProviderSnapshot();
   if (!snap) return [];
   const keys: string[] = [];
   for (const group of groupProvidersFromConfig(snap.config)) {
@@ -226,6 +229,12 @@ function groupLabel(groupId: ProviderGroupId): string {
   return t(`settings.provider.group.${groupId}`);
 }
 
+function getProviderSnapshot() {
+  const snapshot = getCachedConfigSnapshot();
+  if (snapshot) s.snapshot = snapshot;
+  return snapshot ?? s.snapshot;
+}
+
 /* ── 数据加载 ── */
 
 async function refreshSnapshot(state: AppViewState) {
@@ -234,7 +243,7 @@ async function refreshSnapshot(state: AppViewState) {
   pruneOrgAgainstConfig();
   // 主应用模型选择器（compose/cron）同步刷新
   try {
-    await state.loadConfiguredModels?.();
+    void state.loadConfiguredModels?.().catch(()=>{});
   } catch {}
 }
 
@@ -327,6 +336,7 @@ async function runPatch(
       s.error = result.error ?? t("setup.error.connection");
       return false;
     }
+    showToast(state,t("settings.saved"),undefined,"success");
     await refreshSnapshot(state);
     s.successMsg = t("settings.saved");
     if (result.restartScheduled) {
@@ -336,7 +346,10 @@ async function runPatch(
     } else if (!result.noop) {
       s.restartHint = t("settings.patch.appliedHot");
     }
+    if (s.restartHint) s.successMsg = `${s.successMsg} · ${s.restartHint}`;
     return true;
+  } catch(error) {
+    s.error=error instanceof Error?error.message:String(error);showToast(state,s.error,undefined,"error");return false;
   } finally {
     s.busy = false;
     state.requestUpdate();
@@ -346,12 +359,14 @@ async function runPatch(
 /* ── 模型操作 ── */
 
 async function handleSetDefault(modelKey: string, state: AppViewState) {
-  await runPatch(state, draft => {
+  if(s.busy || s.pendingDefault)return;
+  s.pendingDefault=modelKey;showToast(state,getLocale().startsWith("zh")?"正在设置默认模型…":"Setting default model…");state.requestUpdate();
+  try{await runPatch(state, draft => {
     const agents = (draft.agents ??= {});
     const defaults = (agents.defaults ??= {});
     const model = (defaults.model ??= {});
     model.primary = modelKey;
-  });
+  });}finally{s.pendingDefault="";state.requestUpdate();}
 }
 
 async function handleDeleteModel(prov: GroupedProvider, entry: ProviderModelEntry, state: AppViewState) {
@@ -556,7 +571,7 @@ async function handleFallbackDrop(state: AppViewState) {
   const target = s.dropTarget;
   onDragEnd(state);
   if (!drag || drag.kind !== "fallback" || !target || target.kind !== "fallback") return;
-  const snap = getCachedConfigSnapshot();
+  const snap = getProviderSnapshot();
   const ids = readFallbacks(snap?.config);
   const nextIds = reorderIds(ids, drag.id, target.id, target.position);
   if (nextIds === ids) return;
@@ -789,7 +804,7 @@ async function handleAddToGroupSave(state: AppViewState) {
     state.requestUpdate();
     return;
   }
-  const snap = getCachedConfigSnapshot();
+  const snap = getProviderSnapshot();
   const snapDraft = snap?.config as OpenclawConfigDraft | undefined;
   const existingProv = snapDraft?.models?.providers?.[providerKey];
   const hasModel = Array.isArray(existingProv?.models) && existingProv.models.some(m => (typeof m === "string" ? m : m?.id) === modelId);
@@ -842,7 +857,7 @@ async function handleAddToGroupSave(state: AppViewState) {
 /* ── 模型能力编辑 ── */
 
 function startModelEdit(prov: GroupedProvider, entry: ProviderModelEntry, state: AppViewState) {
-  const snap = getCachedConfigSnapshot();
+  const snap = getProviderSnapshot();
   const rawModels = (snap?.config as OpenclawConfigDraft | undefined)?.models?.providers?.[prov.providerKey]?.models;
   const raw = Array.isArray(rawModels)
     ? rawModels.find(m => (typeof m === "string" ? m : m?.id) === entry.id)
@@ -899,7 +914,7 @@ async function handleModelEditSave(entry: ProviderModelEntry, state: AppViewStat
       const base: OpenclawProviderModelEntry = typeof raw === "string" ? { id: raw, name: entry.name || raw } : { ...raw };
       if (!base.name) base.name = entry.name || entry.id;
       models[idx] = applyCapabilityOverrides(base, overrides) as OpenclawProviderModelEntry;
-    });
+    },{replacePaths:[`models.providers.${providerKey}.models`]});
     if (ok) {
       // 保存成功同样走两段式退场，抽屉沿来路滑回
       cancelModelEdit(state);
@@ -950,7 +965,7 @@ async function handleAddSave(state: AppViewState) {
   }
 
   const isKimiCode = isKimiCodeAdd();
-  const snap = getCachedConfigSnapshot();
+  const snap = getProviderSnapshot();
   const snapDraft = snap?.config as OpenclawConfigDraft | undefined;
   const existingProv = snapDraft?.models?.providers?.[target.providerKey];
   const hasModel = Array.isArray(existingProv?.models) && existingProv.models.some(m => (typeof m === "string" ? m : m?.id) === modelId);
@@ -1322,7 +1337,7 @@ export function resetProviderTab() { resetProviderState(); }
 // T6 性能：分组/回退/默认模型/总数按 config 快照对象记忆化（实现见 tab-provider.lib.ts）
 export function renderTabProvider(state: AppViewState) {
   if (!s.initialized) init(state);
-  const snap = getCachedConfigSnapshot();
+  const snap = getProviderSnapshot();
   const view = snap ? deriveProviderView(snap) : null;
   const groups = view?.groups ?? [];
   const fallbacks = view?.fallbacks ?? [];
@@ -1375,7 +1390,6 @@ export function renderTabProvider(state: AppViewState) {
 
       <oc-message-box .message=${s.error ?? ""} .type=${"error"} .visible=${!!s.error}></oc-message-box>
       <oc-message-box .message=${s.successMsg ?? ""} .type=${"success"} .visible=${!!s.successMsg}></oc-message-box>
-      ${s.restartHint ? html`<div class="oc-provider-restart-hint">${s.restartHint}</div>` : nothing}
     </div>
     ${renderModelEditDrawer(state, groups)}
   `;
@@ -1648,6 +1662,7 @@ function renderModelCard(prov: GroupedProvider, entry: ProviderModelEntry, state
   const menuOpen = s.assignMenuFor === entry.key;
   return html`
     <div class="oc-provider-card ${isDropBefore ?"drop-before" : ""} ${isDropAfter ? "drop-after" : ""} ${isDragging ? "is-dragging" : ""} ${menuOpen ? "has-menu" : ""}"
+      data-model-key=${entry.key}
       draggable="true"
       @dragstart=${(e: DragEvent) => onDragStart({ kind: "model", providerKey: prov.providerKey, id: entry.id }, e, state)}
       @dragover=${(e: DragEvent) => onCardDragOver("model", entry.id, e, state)}
@@ -1698,10 +1713,10 @@ function renderModelCard(prov: GroupedProvider, entry: ProviderModelEntry, state
             ${icons.trash}
           </button>
         ` : nothing}
-        <button class="oc-provider-list-item__action-btn ${entry.isDefault ?"is-default" : ""}" ?disabled=${entry.isDefault || s.busy}
+        <button class="oc-provider-list-item__action-btn ${entry.isDefault ?"is-default" : ""}" ?disabled=${entry.isDefault || s.busy} aria-busy=${s.pendingDefault===entry.key}
           aria-label=${t("settings.provider.setDefault")} data-tooltip=${t("settings.provider.setDefault")}
           @click=${() => handleSetDefault(entry.key, state)}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="${entry.isDefault ? "currentColor" : "none"}" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+          ${s.pendingDefault===entry.key?icons.loader:html`<svg width="14" height="14" viewBox="0 0 24 24" fill="${entry.isDefault ? "currentColor" : "none"}" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>`}
         </button>
       </div>
       ${menuOpen ? html`
@@ -2255,7 +2270,7 @@ function renderAddPanel(state: AppViewState) {
 function renderFallbacks(state: AppViewState, fallbacks: string[]) {
   const configuredKeys = allConfiguredKeys();
   const nameOf = new Map<string, string>();
-  const snap = getCachedConfigSnapshot();
+  const snap = getProviderSnapshot();
   if (snap) {
     for (const group of groupProvidersFromConfig(snap.config)) {
       for (const prov of group.providers) {
@@ -2320,7 +2335,7 @@ function renderAgentMapping(state: AppViewState) {
   if (configuredKeys.length === 0) return nothing;
   // key → 显示名（与 fallback 区同源），选择器按自定义分组渲染
   const nameOf = new Map<string, string>();
-  const snap = getCachedConfigSnapshot();
+  const snap = getProviderSnapshot();
   if (snap) {
     for (const group of groupProvidersFromConfig(snap.config)) {
       for (const prov of group.providers) {

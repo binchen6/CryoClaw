@@ -1,12 +1,25 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { filterCommands, resolveCommandDescription } from "./commands.ts";
+import { filterCommands, resolveCommandDescription,loadCommands } from "./commands.ts";
+import type {GatewayBrowserClient} from "../gateway.ts";
 import { setLocale } from "../i18n.ts";
 import type { CommandEntry } from "../types.ts";
 
 function cmd(name: string, overrides: Partial<CommandEntry> = {}): CommandEntry {
   return { name, description: `English desc for ${name}`, acceptsArgs: true, ...overrides };
 }
+
+test('command catalog is scoped to its connection and late responses cannot replace the new catalog',async()=>{
+  let finish!:(value:unknown)=>void;
+  const old={request:()=>new Promise(resolve=>finish=resolve)} as unknown as GatewayBrowserClient;
+  const current={request:async(_method:string,params:any)=>{assert.equal(params.scope,'text');return {commands:[cmd('current')]};}} as unknown as GatewayBrowserClient;
+  const pending=loadCommands(old,{force:true});assert.equal((await loadCommands(current))?.[0].name,'current');
+  finish({commands:[cmd('old')]});assert.equal(await pending,null);assert.equal((await loadCommands(current))?.[0].name,'current');
+});
+
+test('command search matches slash aliases and descriptive intent',()=>{
+  setLocale('en');try{const commands=[cmd('custom',{textAliases:['/find'],description:'Search project files'})];assert.equal(filterCommands(commands,'/find').length,1);assert.equal(filterCommands(commands,'project').length,1);}finally{setLocale('zh');}
+});
 
 test("filterCommands：空查询返回前 limit 条", () => {
   const commands = [cmd("goal"), cmd("think"), cmd("fast")];

@@ -29,7 +29,7 @@ const {launch,connect,waitForPageTarget,waitForAppReady,waitForSettle,setViewpor
     await upload('{invalid json');
     assert.equal(await cdp.evaluate(`document.querySelectorAll('.oc-theme-card').length`),6);
     assert.equal(await cdp.evaluate(`document.documentElement.style.getPropertyValue('--bg')`),'#fffaf4');
-    assert.ok(await cdp.evaluate(`!!document.querySelector('.oc-theme-module [role=alert]')`),'invalid imports show an error and preserve the active preview');
+    assert.ok(await cdp.evaluate(`!!document.querySelector('.global-toast--error[role=alert]')`),'invalid imports show a global error and preserve the active preview');
     await upload(JSON.stringify({format:'cryoclaw-theme',version:1,name:'Paired import',appearance:{mode:'dark',palettes:{light:{accent:'#2b6f8a',background:'#fbf8f4',surface:'#f0ece5',text:'#343c43',muted:'#626e78'},dark:{accent:'#9bcde1',background:'#162a3b',surface:'#213c50',text:'#e2edf5',muted:'#a9bfd0'}}}}));
     assert.equal(await cdp.evaluate(`document.documentElement.style.getPropertyValue('--bg')`),'#fbf8f4','paired-only packages infer the light colors');
     await cdp.evaluate(`document.querySelector('.oc-theme-modes [data-mode=dark]').click()`);await waitForSettle(cdp,100);

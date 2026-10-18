@@ -21,6 +21,8 @@
 
 ## 🇨🇳 中文
 
+> 2026.1018.1：OpenClaw 2026.10.4、模型能力保存修复、底部四色通知、黑字白面板，以及命令补全和工作区交互改进。[验证记录](docs/RELEASE-2026.1018.1-VERIFICATION.md)。
+
 ### ✨ 项目简介
 
 CryoClaw 是在 **[OneClaw](https://github.com/oneclaw/oneclaw)**（AGPL-3.0）基础上**二改重构**的 openclaw 桌面 harness：保留了「一分钟装好、开箱即用」的核心体验，对视觉设计、设置架构、执行效率、存储体积与模型管理做了系统性重设计与优化。

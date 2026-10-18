@@ -42,7 +42,7 @@ export function renderOpenAIProxy(host: AppViewState, loginActive: boolean) {
     <div class="btn-row"><button class="btn primary" @click=${() => void run("save")}>${text("保存并重连", "Save and reconnect")}</button>
       ${s.config.mode === "custom" ? html`<button class="btn" @click=${() => void run("test")}>${text("测试代理连接", "Test proxy connection")}</button>` : nothing}</div>
     ${loginActive ? html`<p class="oc-settings__hint">${text("请完成或取消当前登录后再修改代理。", "Finish or cancel sign-in before changing the proxy.")}</p>` : nothing}
-    ${s.error ? html`<p class="oc-text-danger" role="alert">${s.error}</p>` : nothing}
+    <oc-message-box .visible=${!!s.error} .message=${s.error} type="error"></oc-message-box>
     ${s.notice ? html`<p role="status">${s.notice}</p>` : nothing}
   </fieldset></details>`;
 }

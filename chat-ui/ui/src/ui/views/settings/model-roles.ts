@@ -42,7 +42,7 @@ export function renderModelRoles(host:AppViewState, fallbackControls?:TemplateRe
         ${s[role] && s[role]!=="__inherit__" && !models.some(m=>`${m.provider}/${m.id}`===s[role])?html`<option value=${s[role]}>${s[role]}</option>`:nothing}
         ${models.map(model=>html`<option value=${`${model.provider}/${model.id}`} ?disabled=${model.available===false}>${model.name??model.id} · ${model.provider}</option>`)}
       </select></label>`)}
-    ${s.error?html`<p role="alert" class="oc-text-danger">${s.error}</p>`:nothing}${s.saved?html`<p role="status">${text("模型分工已保存", "Model roles saved")}</p>`:nothing}
+    <oc-message-box .visible=${!!s.error} .message=${s.error} type="error"></oc-message-box><oc-message-box .visible=${s.saved} .message=${text("模型分工已保存", "Model roles saved")} type="success"></oc-message-box>
     <div class="btn-row"><button class="btn primary" ?disabled=${!s.dirty || s.busy || !host.connected} @click=${()=>void save()}>${s.busy?text("保存中…", "Saving…"):text("保存模型分工", "Save model roles")}</button></div>
     ${fallbackControls??nothing}</div></details>`;
 }

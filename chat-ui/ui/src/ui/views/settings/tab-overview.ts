@@ -8,6 +8,7 @@ import { html, nothing } from "lit";
 import type { AppViewState } from "../../app-view-state.ts";
 import { t } from "../../i18n.ts";
 import * as ipc from "../../data/ipc-bridge.ts";
+import "../../components/message-box.ts";
 
 type OverviewState = {
   initialized: boolean;
@@ -175,7 +176,7 @@ export function renderTabOverview(state: AppViewState) {
         </button>
       </div>
 
-      ${s.error ? html`<div class="callout danger">${s.error}</div>` : nothing}
+      <oc-message-box .message=${s.error ?? ""} .type=${"error"} .visible=${!!s.error}></oc-message-box>
       ${s.loading && !info ? html`<p class="muted">${t("settings.overview.loading")}</p>` : nothing}
 
       ${info ? html`

@@ -169,14 +169,14 @@
 :root {
   /* 背景：纸白层级（app 白 / 次级浅灰 / 浮层白 / hover 浅灰） */
   --bg: #ffffff;
-  --bg-secondary: #f7f8fc;
+  --bg-secondary: #ffffff;
   --bg-elevated: #ffffff;
-  --bg-hover: #edf0f7;
+  --bg-hover: #edf3fa;
   --bg-input: #f3f5fa;
   --bg-muted: var(--grey-100);
 
   /* 文字：中性灰五级 */
-  --text: #3b455b;
+  --text: #000000;
   --text-strong: #17223a;
   --text-secondary: #566077;
   --text-muted: #687080;

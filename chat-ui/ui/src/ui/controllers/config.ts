@@ -186,6 +186,7 @@ function arrayNeedsReplace(base: unknown[], next: unknown[]): boolean {
   if (next.length < base.length) return true;
   if (base.length > 0 && base.every(hasStringId) && next.every(hasStringId)) {
     const nextIds = new Set(next.map((entry) => entry.id));
+    if(base.some(entry=>!nextIds.has(entry.id)))return true;
     const baseIds = new Set(base.map((entry) => entry.id));
     const baseCommon = base.filter((entry) => nextIds.has(entry.id)).map((entry) => entry.id);
     const nextCommon = next.filter((entry) => baseIds.has(entry.id)).map((entry) => entry.id);
@@ -195,7 +196,25 @@ function arrayNeedsReplace(base: unknown[], next: unknown[]): boolean {
       if (baseCommon[i] !== nextCommon[i]) return true;
     }
   }
+  if(base.every(hasStringId) && next.every(hasStringId))for(const entry of next){const prior=base.find(item=>item.id===entry.id);if(prior && nestedArrayReplacement(prior,entry))return true;}
+  else if(base.some(item=>!next.some(candidate=>deepEqual(item,candidate))))return true;
   return false;
+}
+
+function nestedArrayReplacement(base:unknown,next:unknown):boolean {
+  if(Array.isArray(base))return !Array.isArray(next) || arrayNeedsReplace(base,next);
+  if(isPlainObject(base))return Object.keys(base).some(key=>nestedArrayReplacement(base[key],isPlainObject(next)?next[key]:undefined));
+  return false;
+}
+
+function collectArrayReplacePaths(base:unknown,next:unknown,path:string,paths:Set<string>):void {
+  if(Array.isArray(base)){
+    if(!Array.isArray(next)){paths.add(path);return;}
+    if(arrayNeedsReplace(base,next))paths.add(path);
+    if(base.every(hasStringId) && next.every(hasStringId))for(const entry of base){const target=next.find(item=>item.id===entry.id);if(target)collectArrayReplacePaths(entry,target,`${path}[]`,paths);}
+    return;
+  }
+  if(isPlainObject(base))for(const key of Object.keys(base))collectArrayReplacePaths(base[key],isPlainObject(next)?next[key]:undefined,path?`${path}.${key}`:key,paths);
 }
 
 export interface MergePatch {
@@ -251,6 +270,7 @@ export function buildMergePatch(
   const autoReplacePaths = new Set<string>();
   const changedPaths: string[] = [];
   const result = diffValue(base, next, "", autoReplacePaths, changedPaths);
+  collectArrayReplacePaths(base,next,"",autoReplacePaths);
   const replacePaths = new Set<string>([...autoReplacePaths, ...(options?.replacePaths ?? [])]);
   return {
     patch: result.changed && isPlainObject(result.value) ? result.value : {},
@@ -352,8 +372,10 @@ export async function patchConfig<T extends Record<string, unknown> = Record<str
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err ?? "");
       // baseHash 冲突：失效缓存后重取重放一次
-      if (attempt === 0 && message.includes(BASE_HASH_CONFLICT_HINT)) {
+      const rolledBackIdentityConflict=message.includes("config publication identity changed") && message.includes("The config write was rolled back");
+      if (attempt === 0 && (message.includes(BASE_HASH_CONFLICT_HINT) || rolledBackIdentityConflict)) {
         invalidateConfigSnapshotCache();
+        if(rolledBackIdentityConflict)await new Promise(resolve=>setTimeout(resolve,500));
         continue;
       }
       return { ok: false, noop: false, requiresRestart: false, restartScheduled: false, error: mapConfigPatchError(err) };

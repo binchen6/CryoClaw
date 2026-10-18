@@ -26,7 +26,10 @@ import { t } from "./i18n.ts";
 import type { ChatProps } from "./views/chat.ts";
 
 export function buildChatProps(state: AppViewState): ChatProps {
+  const workspace = state.settings.pinnedWorkspaces.find(item => item.id === state.settings.sessionWorkspaceMap[state.sessionKey]);
   return {
+    workspaceName: workspace?.name,
+    workspacePath: workspace?.path,
     sessionKey: state.sessionKey,
     goal: state.sessionsResult?.sessions?.find((row) => row.key === state.sessionKey)?.goal ?? null,
     onGoalCommand: (text: string) => {

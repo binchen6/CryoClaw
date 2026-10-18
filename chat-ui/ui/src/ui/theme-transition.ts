@@ -14,7 +14,7 @@ export type ThemeTransitionOptions = {
 };
 
 type DocumentWithViewTransition = Document & {
-  startViewTransition?: (callback: () => void) => { finished: Promise<void> };
+  startViewTransition?: (callback: () => void) => { finished: Promise<void>;ready?:Promise<void>;updateCallbackDone?:Promise<void> };
 };
 
 const clamp01 = (value: number) => {
@@ -92,6 +92,8 @@ export const startThemeTransition = ({
       const transition = document_.startViewTransition?.(() => {
         applyTheme();
       });
+      void transition?.ready?.catch(()=>{});
+      void transition?.updateCallbackDone?.catch(()=>{});
       if (transition?.finished) {
         // finished 在过渡被 skip 时以 AbortError reject：用 then 的双回调做清理，
         // finally 会把 rejection 原样抛成 unhandled rejection

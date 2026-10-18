@@ -462,17 +462,32 @@ export async function confirmAndCreateNewSession(state: AppViewState) {
 // ── 固定工作区（UI 侧组织：路径+名称+图标持久化在 UiSettings，会话一对一可选绑定）──
 
 // 在指定工作区中快速新建会话：沿用普通新建流程，落本地后立即绑定工作区
+const workspaceSessionPending = new Set<string>();
 export function createNewSessionInWorkspace(state: AppViewState, workspaceId: string) {
   const ws = state.settings.pinnedWorkspaces.find((w) => w.id === workspaceId);
-  if (!ws) {
+  if (!ws || workspaceSessionPending.has(workspaceId)) {
     return;
   }
+  if (!state.connected || !state.client) { showToast(state, t("config.error.notConnected"), undefined, "warning"); return; }
+  const client = state.client;
   const newKey = resolveNewSessionKey(state);
-  adoptNewSession(state, newKey);
-  state.applySettings({
-    ...state.settings,
-    sessionWorkspaceMap: bindSessionToWorkspace(state.settings.sessionWorkspaceMap, newKey, workspaceId),
-  });
+  workspaceSessionPending.add(workspaceId);
+  showToast(state, t("workspace.creatingSession"));
+  return (async () => {
+    try {
+      await client.request("sessions.create", { key: newKey, agentId: parseAgentSessionKey(newKey)?.agentId ?? "main", cwd: ws.path, displayName: t("chat.newSession") });
+      if (state.client !== client) return;
+      adoptNewSession(state, newKey);
+      state.applySettings({
+        ...state.settings,
+        sessionWorkspaceMap: bindSessionToWorkspace(state.settings.sessionWorkspaceMap, newKey, workspaceId),
+      });
+      void loadSessions(state);
+      showToast(state, t("workspace.sessionCreated"), undefined, "success");
+    } catch (error) {
+      showToast(state, error instanceof Error ? error.message : String(error), undefined, "error");
+    } finally { workspaceSessionPending.delete(workspaceId); state.requestUpdate(); }
+  })();
 }
 
 // 绑定/解绑会话到工作区（workspaceId 为 null 表示解绑）

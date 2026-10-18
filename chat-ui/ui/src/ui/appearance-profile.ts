@@ -1,14 +1,14 @@
 export interface AppearanceProfile {
   mode?:"light"|"dark"|"system";
   font:"studio"|"system";size:number;weight:number;italic:boolean;lineHeight:number;
-  colors:Partial<Record<"accent"|"secondary"|"background"|"surface"|"text"|"muted",string>>;
+  colors:Partial<Record<"accent"|"secondary"|"background"|"surface"|"text"|"muted"|"userBubble"|"assistantBubble"|"userText"|"assistantText"|"composer"|"input"|"icon"|"border",string>>;
   palettes?:Partial<Record<"light"|"dark",AppearanceProfile["colors"]>>;
   paletteMode?:"light"|"dark";
   radius:number;
   components?:Record<string,ComponentAppearance>;
 }
-export interface ComponentAppearance {x:number;y:number;radius:number;background?:string;color?:string;width?:number;height?:number;padding?:number;opacity?:number;borderWidth?:number;borderColor?:string;fontSize?:number;fontWeight?:number;zIndex?:number;fontStyle?:"normal"|"italic";textAlign?:"left"|"center"|"right"}
-export const COMPONENT_SELECTORS={composer:".chat-compose",navigation:"oc-rail",sessions:"oc-session-panel",toolbar:".chat-compose__toolbar",card:".oc-settings__card",input:".oc-settings__input",button:".btn",workspaceTree:".wk-nav",workspacePreview:".wk-main",heading:".oc-settings__section-title,.cryoclaw-titlebar",badge:".cc-tag",rangeControl:"oc-range-control",control:"button,input,select,textarea",panel:".oc-settings__section,.wk-layout",code:"pre"} as const;
+export interface ComponentAppearance {x:number;y:number;radius:number;background?:string;color?:string;width?:number;height?:number;padding?:number;opacity?:number;borderWidth?:number;borderColor?:string;fontSize?:number;fontWeight?:number;zIndex?:number;gap?:number;margin?:number;strokeWidth?:number;iconSize?:number;borderStyle?:"solid"|"dashed"|"none";fontStyle?:"normal"|"italic";textAlign?:"left"|"center"|"right"}
+export const COMPONENT_SELECTORS={composer:".chat-compose",navigation:"oc-rail",sessions:"oc-session-panel",toolbar:".chat-compose__toolbar",card:".oc-settings__card",input:".oc-settings__input",button:".btn",workspaceTree:".wk-nav",workspacePreview:".wk-main",heading:".oc-settings__section-title,.cryoclaw-titlebar",badge:".cc-tag",rangeControl:"oc-range-control",control:"button,input,select,textarea",panel:".oc-settings__section,.wk-layout",code:"pre",userBubble:".chat-group.user .chat-bubble",assistantBubble:".chat-group.assistant .chat-bubble",composerField:".chat-compose__field",messageText:".chat-text",icon:"svg.cryo-icon,.chat-compose svg,.oc-rail__item svg"} as const;
 export const DEFAULT_APPEARANCE:AppearanceProfile={font:"studio",size:14,weight:400,italic:false,lineHeight:1.55,colors:{},radius:12,components:{}};
 const bounded=(value:unknown,fallback:number,min:number,max:number)=>typeof value==="number" && Number.isFinite(value)?Math.min(max,Math.max(min,value)):fallback;
 export function normalizeAppearance(raw:unknown):AppearanceProfile {
@@ -20,13 +20,14 @@ export function normalizeAppearance(raw:unknown):AppearanceProfile {
     if(!match || !Object.hasOwn(COMPONENT_SELECTORS,match[2]) || !rawComponent || typeof rawComponent!=="object")continue;
     const part=rawComponent as Record<string,unknown>;
     components[id]={x:bounded(part.x,0,-600,600),y:bounded(part.y,0,-600,600),radius:bounded(part.radius,12,0,96)};
-    for(const [key,min,max] of [["width",24,3200],["height",20,1600],["padding",0,96],["opacity",0,1],["borderWidth",0,12],["fontSize",10,72],["fontWeight",100,900],["zIndex",0,100]] as const)if(typeof part[key]==="number" && Number.isFinite(part[key]))components[id][key]=bounded(part[key],min,min,max);
+    for(const [key,min,max] of [["width",24,3200],["height",20,1600],["padding",0,96],["opacity",0,1],["borderWidth",0,12],["fontSize",10,72],["fontWeight",100,900],["zIndex",0,100],["gap",0,96],["margin",0,96],["strokeWidth",0,6],["iconSize",8,96]] as const)if(typeof part[key]==="number" && Number.isFinite(part[key]))components[id][key]=bounded(part[key],min,min,max);
+    if(part.borderStyle==="solid" || part.borderStyle==="dashed" || part.borderStyle==="none")components[id].borderStyle=part.borderStyle;
     if(components[id].zIndex!==undefined)components[id].zIndex=Math.round(components[id].zIndex!);
     if(part.fontStyle==="normal" || part.fontStyle==="italic")components[id].fontStyle=part.fontStyle;
     if(part.textAlign==="left" || part.textAlign==="center" || part.textAlign==="right")components[id].textAlign=part.textAlign;
     for(const key of ["background","color","borderColor"] as const)if(typeof part[key]==="string" && /^#[a-f\d]{6}$/i.test(part[key] as string))components[id][key]=part[key] as string;
   }
-  for(const key of ["accent","secondary","background","surface","text","muted"] as const) {
+  for(const key of Object.keys(COLOR_TOKENS) as Array<keyof AppearanceProfile["colors"]>) {
     const color=(value.colors as Record<string,unknown>|undefined)?.[key];
     if(typeof color==="string" && /^#[a-f\d]{6}$/i.test(color))colors[key]=color;
   }
@@ -34,7 +35,7 @@ export function normalizeAppearance(raw:unknown):AppearanceProfile {
   if(value.palettes && typeof value.palettes==="object")for(const mode of ["light","dark"] as const){
     const candidate=(value.palettes as Record<string,unknown>)[mode];
     if(candidate && typeof candidate==="object"){
-      palettes[mode]={};for(const key of ["accent","secondary","background","surface","text","muted"] as const){const color=(candidate as Record<string,unknown>)[key];if(typeof color==="string" && /^#[a-f\d]{6}$/i.test(color))palettes[mode]![key]=color;}
+      palettes[mode]={};for(const key of Object.keys(COLOR_TOKENS) as Array<keyof AppearanceProfile["colors"]>){const color=(candidate as Record<string,unknown>)[key];if(typeof color==="string" && /^#[a-f\d]{6}$/i.test(color))palettes[mode]![key]=color;}
     }
   }
   const paletteMode=value.paletteMode==="dark" || value.paletteMode!=="light" && value.mode==="dark"?"dark":"light";
@@ -45,7 +46,7 @@ export function normalizeAppearance(raw:unknown):AppearanceProfile {
     ...(value.mode==="light" || value.mode==="dark" || value.mode==="system"?{mode:value.mode}:{}),
     italic:value.italic===true,lineHeight:bounded(value.lineHeight,1.55,1.3,2),radius:bounded(value.radius,12,0,48),colors,components};
 }
-const COLOR_TOKENS={accent:"--accent",secondary:"--accent-2",background:"--bg",surface:"--bg-secondary",text:"--text",muted:"--text-muted"} as const;
+export const COLOR_TOKENS={accent:"--accent",secondary:"--accent-2",background:"--bg",surface:"--bg-secondary",text:"--text",muted:"--text-muted",userBubble:"--theme-user-bubble",assistantBubble:"--theme-assistant-bubble",userText:"--theme-user-text",assistantText:"--theme-assistant-text",composer:"--theme-composer",input:"--theme-input",icon:"--theme-icon",border:"--theme-border"} as const;
 export function accentForeground(color:string):string {
   const linear=(hex:string)=>{const channels=[1,3,5].map(offset=>parseInt(hex.slice(offset,offset+2),16)/255).map(value=>value<=.04045?value/12.92:((value+.055)/1.055)**2.4);return channels[0]*.2126+channels[1]*.7152+channels[2]*.0722;};
   const luminance=linear(color),ink="#081524",dark=linear(ink);
@@ -105,7 +106,7 @@ export function applyAppearance(raw:unknown,root:HTMLElement=document.documentEl
   applyComponentAppearance(profile,root);
 }
 
-const componentBindings=new WeakMap<HTMLElement,{profile:AppearanceProfile;observer:MutationObserver;touched:Map<HTMLElement,Record<string,string>>}>();
+const componentBindings=new WeakMap<HTMLElement,{profile:AppearanceProfile;observer:MutationObserver;touched:Map<HTMLElement,Record<string,string>>;frame:number|null}>();
 export function getAppliedAppearance(root:HTMLElement=document.documentElement):AppearanceProfile {
   return normalizeAppearance(componentBindings.get(root)?.profile);
 }
@@ -113,13 +114,17 @@ export function themeElementId(element:HTMLElement):string|null {return element.
 function applyComponentAppearance(profile:AppearanceProfile,root:HTMLElement):void {
   let binding=componentBindings.get(root);
   if(!binding) {
-    binding={profile,observer:new MutationObserver(records=>{if(records.some(record=>!((record.target instanceof Element?record.target:record.target.parentElement)?.closest(".theme-editor,.theme-preview-banner,oc-range-control"))))update();}),touched:new Map()};componentBindings.set(root,binding);
+    binding={profile,frame:null,observer:new MutationObserver(records=>{
+      const current=componentBindings.get(root);if(!current || current.frame!==null)return;
+      const structural=records.some(record=>Array.from(record.addedNodes).concat(Array.from(record.removedNodes)).some(node=>node.nodeType===1) && !((record.target instanceof Element?record.target:record.target.parentElement)?.closest(".theme-editor,.theme-preview-banner,oc-range-control")));
+      if(structural)current.frame=requestAnimationFrame(()=>{current.frame=null;update();});
+    }),touched:new Map()};componentBindings.set(root,binding);
     const shell=root.querySelector("openclaw-app");if(shell)binding.observer.observe(shell,{childList:true,subtree:true});
   }
   binding.profile=profile;
   function update(){
     const current=componentBindings.get(root);if(!current)return;
-    for(const [element,original] of current.touched)for(const [property,value] of Object.entries(original))value?element.style.setProperty(property,value):element.style.removeProperty(property);
+    for(const [element,original] of current.touched)if(!element.isConnected){current.touched.delete(element);}else for(const [property,value] of Object.entries(original))value?element.style.setProperty(property,value):element.style.removeProperty(property);
     current.touched.clear();
     const app=root.querySelector("openclaw-app") as any;
     let view=app?.settings?.cryoclawView??"chat";
@@ -136,6 +141,11 @@ function applyComponentAppearance(profile:AppearanceProfile,root:HTMLElement):vo
       if(part.fontWeight!==undefined)properties["font-variation-settings"]=`"wght" ${part.fontWeight}`;
       if(part.borderColor)properties["border-color"]=part.borderColor;
       if(part.borderWidth)properties["border-style"]="solid";
+      if(part.borderStyle)properties["border-style"]=part.borderStyle;
+      if(part.gap!==undefined)properties.gap=`${part.gap}px`;
+      if(part.margin!==undefined)properties.margin=`${part.margin}px`;
+      if(part.strokeWidth!==undefined)properties["stroke-width"]=String(part.strokeWidth);
+      if(part.iconSize!==undefined){properties.width=`${part.iconSize}px`;properties.height=`${part.iconSize}px`;}
       const original:Record<string,string>={};for(const [property,value] of Object.entries(properties)){original[property]=element.style.getPropertyValue(property);element.style.setProperty(property,value);}current.touched.set(element,original);
     });
   }

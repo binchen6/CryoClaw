@@ -18,8 +18,7 @@ import { icons } from "../icons.ts";
 import { t,getLocale } from "../i18n.ts";
 import { detectTextDirection } from "../text-direction.ts";
 import { resolveContextMeterStats } from "../context-meter.ts";
-import type { CommandEntry } from "../types.ts";
-import { filterCommands, resolveCommandDescription } from "../controllers/commands.ts";
+import { completeCommand, type CommandSuggestion } from "../chat/command-completion.ts";
 import {
   goalStatusKey,
   goalStatusKind,
@@ -164,7 +163,10 @@ export function resetComposeTransient(props: { onRequestUpdate?: () => void }) {
 }
 
 // / 命令补全状态
-let commandSuggestions: CommandEntry[] = [];
+let commandSuggestions: CommandSuggestion[] = [];
+let commandCaret = 0;
+let commandFocused = false;
+let commandComposing = false;
 let commandIndex = 0;
 let commandDraft:string|null=null;
 let commandSource:ChatProps["commands"];
@@ -662,32 +664,31 @@ function renderPlusMenu(props: ChatProps) {
 }
 
 function refreshCommandSuggestions(props: ChatProps, draft: string) {
-  commandDraft=draft;commandSource=props.commands;
-  const m = /^\/(\S*)$/.exec(draft);
-  if (!m || !props.commands?.length) {
-    commandSuggestions = [];
-    commandIndex = 0;
-    return;
-  }
-  commandSuggestions = filterCommands(props.commands, m[1] ?? "");
+  commandDraft = draft; commandSource = props.commands;
+  commandSuggestions = commandFocused && !commandComposing
+    ? completeCommand(draft, commandCaret, props.commands ?? [], props.configuredModels ?? []) : [];
   commandIndex = 0;
 }
 
 // 插入选中命令到 draft（光标在末尾）
-function insertCommand(props: ChatProps, name: string) {
-  // trimStart 避免 '/cmd arg' 拼接出双空格；无参数时保留一个尾随空格便于继续输入
-  const rest = props.draft.replace(/^\/\S*/, "").trimStart();
-  const next = rest ? `/${name} ${rest}` : `/${name} `;
-  props.onDraftChange(next);
+function insertCommand(props: ChatProps, suggestion: CommandSuggestion) {
+  props.onDraftChange(suggestion.value);
+  commandDraft = suggestion.value;
+  commandCaret = suggestion.caret;
   commandSuggestions = [];
   commandIndex = 0;
+  requestAnimationFrame(() => {
+    const field = document.querySelector<HTMLTextAreaElement>(".chat-compose textarea");
+    if (!field || field.value !== suggestion.value) return;
+    field.focus(); field.setSelectionRange(suggestion.caret, suggestion.caret);
+  });
 }
 
 // 渲染 / 命令建议浮层
 function renderCommandSuggestions(props: ChatProps) {
   // 防御校验：发送后清空草稿 / 切会话 / 引用插入等程序化改 draft 的路径不触发
   // input 事件，过期建议不能继续浮在空输入框上（点了会把旧命令插进新草稿）
-  if (!/^\/(\S*)$/.test(props.draft ?? "")) {
+  if (commandDraft !== props.draft) {
     return nothing;
   }
   if (commandSuggestions.length === 0) {
@@ -701,16 +702,17 @@ function renderCommandSuggestions(props: ChatProps) {
           type="button"
           role="option"
           id=${`chat-command-option-${idx}`}
-          ?aria-selected=${idx === commandIndex}
+          aria-selected=${idx === commandIndex ? "true" : "false"}
           @mousedown=${(e: Event) => {
             e.preventDefault();
-            insertCommand(props, cmdEntry.name);
+          }}
+          @click=${() => {
+            insertCommand(props, cmdEntry);
             props.onRequestUpdate?.();
           }}
         >
-          <span class="chat-cmd-suggest__name">/${cmdEntry.name}</span>
-          <span class="chat-cmd-suggest__desc">${resolveCommandDescription(cmdEntry)}</span>
-          ${cmdEntry.acceptsArgs ? html`<span class="chat-cmd-suggest__args">…</span>` : nothing}
+          <span class="chat-cmd-suggest__name">${cmdEntry.label}</span>
+          <span class="chat-cmd-suggest__desc">${cmdEntry.description}</span>
         </button>
       `)}
     </div>
@@ -747,7 +749,7 @@ export function renderCompose(props: ChatProps, ctx: ComposeRenderContext) {
             // 那里管渲染浮层，这里管键盘拦截）。
             if (
               commandSuggestions.length > 0 &&
-              !/^\/(\S*)$/.test(props.draft ?? "")
+              (commandDraft !== props.draft || (e.currentTarget as HTMLTextAreaElement).selectionStart !== commandCaret || (e.currentTarget as HTMLTextAreaElement).selectionStart !== (e.currentTarget as HTMLTextAreaElement).selectionEnd)
             ) {
               commandSuggestions = [];
               commandIndex = 0;
@@ -757,7 +759,7 @@ export function renderCompose(props: ChatProps, ctx: ComposeRenderContext) {
                 e.preventDefault();
                 const pick = commandSuggestions[commandIndex];
                 if (pick) {
-                  insertCommand(props, pick.name);
+                  insertCommand(props, pick);
                   props.onRequestUpdate?.();
                 }
                 return;
@@ -795,9 +797,24 @@ export function renderCompose(props: ChatProps, ctx: ComposeRenderContext) {
           @input=${(e: Event) => {
             const target = e.target as HTMLTextAreaElement;
             adjustTextareaHeight(target);
+            commandCaret = target.selectionStart;
+            commandFocused = true;
             props.onDraftChange(target.value);
             refreshCommandSuggestions(props, target.value);
+            props.onRequestUpdate?.();
           }}
+          @keyup=${(e: KeyboardEvent) => {
+            if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)) return;
+            const field = e.target as HTMLTextAreaElement;
+            commandCaret = field.selectionStart;
+            refreshCommandSuggestions(props, field.selectionStart === field.selectionEnd ? field.value : "");
+            props.onRequestUpdate?.();
+          }}
+          @focus=${(e: FocusEvent) => { commandFocused = true; commandCaret = (e.target as HTMLTextAreaElement).selectionStart; refreshCommandSuggestions(props, props.draft); props.onRequestUpdate?.(); }}
+          @blur=${() => { commandFocused = false; commandSuggestions = []; props.onRequestUpdate?.(); }}
+          @click=${(e: MouseEvent) => { const field = e.target as HTMLTextAreaElement; commandCaret = field.selectionStart; refreshCommandSuggestions(props, field.selectionStart === field.selectionEnd ? field.value : ""); props.onRequestUpdate?.(); }}
+          @compositionstart=${() => { commandComposing = true; commandSuggestions = []; props.onRequestUpdate?.(); }}
+          @compositionend=${(e: CompositionEvent) => { commandComposing = false; const field = e.target as HTMLTextAreaElement; commandCaret = field.selectionStart; refreshCommandSuggestions(props, field.value); props.onRequestUpdate?.(); }}
           @paste=${(e: ClipboardEvent) => handlePaste(e, props)}
           placeholder=${ctx.composePlaceholder}
         ></textarea>

@@ -10,7 +10,8 @@ docs/ 目录导航。改代码前建议先读 gotchas.md 与 OPTIMIZATION-PROGRE
 | `design-guidelines-zh.md` / `design-guidelines-en.md` | UI 设计规范（中英双语）：design token、组件原语、布局规则 |
 | `gotchas.md` | 已验证坑清单（104 条，改代码前先搜一遍） |
 | `releasing.md` | 发布流程：版本 bump、打包、静默安装验证、gh release |
-| `RELEASE-2026.1018.0-VERIFICATION.md` | 当前发布功能证据、代码审查与安装/发布门槛 |
+| `RELEASE-2026.1018.1-VERIFICATION.md` | 10.4 内核、模型保存、通知与交互补丁验证记录 |
+| `RELEASE-2026.1018.0-VERIFICATION.md` | 上一版功能证据与发布验收 |
 | `CODEX-SUBSCRIPTION-INTEGRATION.md` | ChatGPT/Codex 原生账户协议、独立代理、模型与额度联动及验收状态 |
 | `MODEL-QUOTA.md` | 各供应商额度与余额来源、输入框圆条、刷新缓存、未知状态与验收边界 |
 | `VISUAL-SYSTEM.md` | CryoBlue 蓝绿配色、控件/图标标准、深浅主题与弹层交互 |

@@ -34,7 +34,8 @@ import {
 } from "./app-session-actions.ts";
 import { openExtensionsView, renderExtensionsView } from "./app-extensions.ts";
 import { openTasksView, renderTasksView } from "./app-tasks.ts";
-import { getToastAction, getToastMessage, hideToast, isToastLeaving, showToast } from "./app-toast.ts";
+import { getToastAction, getToastMessage, getToastKind, hideToast, isToastLeaving, showToast } from "./app-toast.ts";
+import {ref} from "lit/directives/ref.js";
 import { buildTranscriptFilename, buildTranscriptMarkdown, copyText, downloadMarkdownFile, tryFetchKernelTranscript } from "./chat/transcript-export.ts";
 import type { TranscriptMessage } from "./chat/transcript-export.ts";
 import { setCryoClawView } from "./app-view-switch.ts";
@@ -47,6 +48,7 @@ import { resolveMainSessionKey } from "./session-visibility.ts";
 import "./components/oc-rail.ts";
 import "./components/oc-session-panel.ts";
 import { renderChat } from "./views/chat.ts";
+import { conversationInfoOpen, toggleConversationInfo } from "./views/conversation-info.ts";
 import { renderGatewayUrlConfirmation } from "./views/gateway-url-confirmation.ts";
 import { renderReleaseNotesModal } from "./views/release-notes-modal.ts";
 import { renderUpdateAvailableDialog } from "./views/update-available-dialog.ts";
@@ -314,8 +316,11 @@ function renderContextBar(
               data-tooltip-pos="bottom"
               aria-label=${t("chat.exportTranscript")}
             >
-              ${icons.download}
+                ${icons.download}
             </button>
+              <button class="cc-contextbar__toggle" type="button" aria-controls="conversation-info"
+                aria-expanded=${conversationInfoOpen()} aria-label=${t("chat.conversationInfo") === "chat.conversationInfo" ? "会话信息 / Conversation information" : t("chat.conversationInfo")}
+                @click=${() => toggleConversationInfo(() => state.requestUpdate())}>${icons.info}</button>
           `
         : nothing}
     </div>
@@ -483,8 +488,9 @@ export function renderApp(state: AppViewState) {
       ${renderThemeUi(state)}
       ${renderWebbridgePillModal(state)}
       ${getToastMessage()
-        ? html`<div class="global-toast ${getToastAction() ? "global-toast--action" : ""} ${isToastLeaving() ? "global-toast--leaving" : ""}">
+        ? html`<div popover="manual" role=${getToastKind()==="error"?"alert":"status"} aria-live=${getToastKind()==="error"?"assertive":"polite"} aria-atomic="true" class="global-toast global-toast--${getToastKind()} ${getToastAction() ? "global-toast--action" : ""} ${isToastLeaving() ? "global-toast--leaving" : ""}" ${ref(element=>{if(element)queueMicrotask(()=>{if(element.isConnected && !element.matches(':popover-open'))(element as HTMLElement).showPopover();});})}>
             <span>${getToastMessage()}</span>
+            <button class="icon-btn icon-btn--sm" aria-label=${t("settings.cancel")} @click=${()=>hideToast(state)}>×</button>
             ${getToastAction()
               ? html`<button
                   class="global-toast__action"

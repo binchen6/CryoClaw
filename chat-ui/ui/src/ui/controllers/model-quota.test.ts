@@ -4,12 +4,22 @@ import {loadModelQuota,quotaProvider,quotaRemaining,invalidateModelQuota,quotaWi
 import type {GatewayBrowserClient} from "../gateway.ts";
 
 test("quota uses the current session provider and the tightest known account window",()=>{
+  assert.equal(quotaProvider("deepseek/deepseek-chat","kimi-coding"),"deepseek","selected qualified model wins over stale session metadata");
   assert.equal(quotaProvider("openai/model"),"openai");
   assert.equal(quotaProvider("model","custom-route"),"custom-route");
   assert.equal(quotaProvider("bare"),"");
   assert.equal(quotaRemaining([{label:"5h",usedPercent:52},{label:"Week",usedPercent:24}]),48);
   assert.equal(quotaRemaining([{label:"unknown",usedPercent:null}]),null);
   assert.equal(quotaRemaining([{label:"over",usedPercent:120}]),0);
+});
+
+test("Kimi composer quota reads the same usage/limits shape as model settings without waiting for unrelated accounts",async()=>{
+  const previous=globalThis.window;let nativeCalls=0;
+  try {
+    Object.assign(globalThis,{window:{cryoclaw:{kimiGetUsage:async()=>({success:true,data:{usage:{used:'25',limit:'100'},limits:[{detail:{remaining:'70',limit:'100'}}]}})}}});
+    const client={request:async()=>{nativeCalls++;return new Promise(()=>{});}} as unknown as GatewayBrowserClient;
+    const value=await loadModelQuota(client,'kimi-coding');assert.equal(quotaRemaining(value.windows),70);assert.equal(nativeCalls,0);assert.equal(value.error,undefined);
+  }finally{Object.assign(globalThis,{window:previous});}
 });
 test("quota requests coalesce per connection and provider and share native usage across model changes",async()=>{
   let calls=0;

@@ -2,6 +2,12 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {normalizeAppearance,exportAppearance,importAppearance,DEFAULT_APPEARANCE,withAppearanceMode,appearanceColors,accentForeground} from "./appearance-profile.ts";
 import {BUILTIN_THEMES} from "./theme-library.ts";
+
+test("expanded semantic theme colors and icon/bubble controls survive export/import with bounds",()=>{
+  const profile=normalizeAppearance({colors:{userBubble:'#eeeeff',assistantText:'#123456',composer:'#ffffff',icon:'#218363'},components:{'chat/userBubble/0':{radius:18,gap:8,margin:4},'chat/icon/0':{iconSize:200,strokeWidth:20,borderStyle:'dashed'}}});
+  assert.equal(profile.components?.['chat/icon/0'].iconSize,96);assert.equal(profile.components?.['chat/icon/0'].strokeWidth,6);
+  assert.equal(profile.colors.userBubble,'#eeeeff');assert.deepEqual(importAppearance(exportAppearance(profile)),profile);
+});
 test("appearance input clamps numerical controls and rejects arbitrary CSS",()=>{
   const value=normalizeAppearance({font:"remote",size:999,weight:NaN,radius:-10,lineHeight:0,colors:{accent:"url(https://example.test/secret)",background:"#123456",unknown:"#abcdef"}});
   assert.equal(value.size,22);assert.equal(value.weight,400);assert.equal(value.radius,0);assert.equal(value.lineHeight,1.3);

@@ -58,6 +58,6 @@ export function renderSubscriptionModels(host: AppViewState, signedIn: boolean) 
       <div class="btn-row"><button class="btn primary" @click=${()=>void save()}>${s.busy ? text("正在保存…", "Saving…") : text("保存模型设置", "Save model settings")}</button></div>
     </fieldset>` : nothing}
     ${!signedIn ? html`<p class="oc-settings__hint">${text("账户连接确认后即可保存模型设置。", "Model settings become available once your account connection is confirmed.")}</p>` : nothing}
-    ${s.error ? html`<p class="oc-text-danger" role="alert">${s.error}</p>` : nothing}${s.notice ? html`<p role="status">${s.notice}</p>` : nothing}
+    <oc-message-box .visible=${!!s.error} .message=${s.error} type="error"></oc-message-box><oc-message-box .visible=${!!s.notice} .message=${s.notice} type="success"></oc-message-box>
     </div></details>`;
 }

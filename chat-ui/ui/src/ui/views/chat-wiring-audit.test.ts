@@ -24,15 +24,8 @@ test("渲染接线审计：命令建议键盘拦截前重校验 draft（过期�
   const suggestIdx = src.indexOf("if (commandSuggestions.length > 0)", keydownIdx);
   assert.ok(suggestIdx >= 0, "keydown 内应保留命令建议拦截分支");
   const between = src.slice(keydownIdx, suggestIdx);
-  assert.ok(
-    between.includes("!/^\\/(\\S*)$/.test(props.draft"),
-    "拦截分支须以 /^\\/(\\S*)$/ 重校验 draft 为前提（程序化改 draft 后建议须作废）",
-  );
-  // renderCommandSuggestions 的同款防御须保留（两处缺一不可）
-  assert.ok(
-    src.includes('if (!/^\\/(\\S*)$/.test(props.draft ?? ""))'),
-    "renderCommandSuggestions 的 draft 形状防御须保留",
-  );
+  assert.ok(between.includes("commandDraft !== props.draft"), "stale suggestions must not intercept keys");
+  assert.ok(src.includes("if (commandDraft !== props.draft)"), "render must reject stale suggestions");
 });
 
 test("渲染接线审计：流式组件 aria-live off（逐 token 不进 log live 区域）", () => {

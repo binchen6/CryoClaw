@@ -171,7 +171,7 @@ export function renderSubscriptionAccount(host: AppViewState) {
         ${step.message ? html`<details class="oc-subscription-account__message"><summary>${label("查看原始提示", "Show technical details")}</summary><p>${step.message}</p></details>` : nothing}` : html`<p role="status">${label("正在准备安全登录…", "Preparing secure sign-in…")}</p>`}
       <button class="btn" @click=${() => { answers.delete(auth); void auth.cancel(); }}>${label("取消登录", "Cancel sign-in")}</button>
     </div>` : nothing}
-    ${auth.error ? html`<p class="oc-text-danger" role="alert">${auth.error}</p>` : nothing}
+    <oc-message-box .visible=${!!auth.error} .message=${auth.error} type="error"></oc-message-box>
     ${auth.snapshot ? renderSubscriptionModels(host, signedIn) : nothing}
     ${renderOpenAIProxy(host, !!auth.sessionId || auth.busy)}
   </div></details>`;

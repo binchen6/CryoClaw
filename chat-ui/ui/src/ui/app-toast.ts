@@ -13,6 +13,9 @@ export type ToastAction = {
   label: string;
   onClick: () => void;
 };
+export type ToastKind="info"|"success"|"warning"|"error";
+let toastKind:ToastKind="info";
+export function getToastKind():ToastKind{return toastKind;}
 
 // 退场时长 = components.css global-toast-out 的 var(--duration-normal)（0.2s）
 const TOAST_EXIT_MS = 200;
@@ -66,7 +69,9 @@ export function hideToast(state?: AppViewState) {
   dismissWithExit(state);
 }
 
-export function showToast(state: AppViewState, message: string, action?: ToastAction) {
+export function showToast(state: AppViewState, message: string, action?: ToastAction,kind:ToastKind="info") {
+  if(!message.trim())return;
+  if(toastMessage===message && toastKind===kind && toastAction===(action??null) && !toastLeaving)return;
   if (toastTimer) {
     clearTimeout(toastTimer);
     toastTimer = null;
@@ -75,6 +80,7 @@ export function showToast(state: AppViewState, message: string, action?: ToastAc
   clearRemoveTimer();
   toastLeaving = false;
   toastMessage = message;
+  toastKind=kind;
   toastAction = action ?? null;
   state.requestUpdate();
   // 带 action 的 toast 常驻（如「重启更新」需等用户决策），普通 toast 4s 自动消失
@@ -82,15 +88,15 @@ export function showToast(state: AppViewState, message: string, action?: ToastAc
     toastTimer = setTimeout(() => {
       toastTimer = null;
       dismissWithExit(state);
-    }, 4000);
+    }, kind==="error"?8000:kind==="warning"?6000:4000);
   }
 }
 
 // DOM 层（事件委托等无 state 上下文处）触发 toast 的桥：查找应用根元素并复用 showToast。
-export function showToastGlobal(message: string): void {
+export function showToastGlobal(message: string,kind:ToastKind="info"): void {
   const app = document.querySelector("openclaw-app") as (Element & { requestUpdate?: () => void }) | null;
   if (!app || typeof app.requestUpdate !== "function") {
     return;
   }
-  showToast(app as unknown as AppViewState, message);
+  showToast(app as unknown as AppViewState, message,undefined,kind);
 }

@@ -7,7 +7,7 @@ function pairedTheme(id:string,name:string,description:string,radius:number,ligh
   return {id,name,description,appearance:normalizeAppearance({mode:"light",paletteMode:"light",radius,colors:light,palettes:{light,dark}})};
 }
 export const BUILTIN_THEMES:SavedTheme[]=[
-  {id:"default",name:"默认 · Default",description:"清爽蓝白 · 熟悉而轻盈",appearance:normalizeAppearance({mode:"light",paletteMode:"light",colors:{},palettes:{light:{},dark:{}}})},
+  {id:"default",name:"默认 · Default",description:"纯白蓝绿 · 清晰而耐看",appearance:normalizeAppearance({mode:"light",paletteMode:"light",colors:{},palettes:{light:{},dark:{}}})},
   pairedTheme("glacier","冰川 · Glacier","通透冰蓝 · 开阔与清晰",14,
     {accent:"#1a6fd0",secondary:"#29836e",background:"#f5f9ff",surface:"#eaf2fc",text:"#263e59",muted:"#60758a"},
     {accent:"#8fc9ff",secondary:"#82cbb6",background:"#101c2b",surface:"#1a2c40",text:"#dceaf8",muted:"#a1b5ce"}),

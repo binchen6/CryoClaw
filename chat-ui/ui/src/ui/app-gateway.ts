@@ -637,7 +637,7 @@ export function connectGateway(host: GatewayHost) {
       void loadWorktrees(host as unknown as OpenClawApp);
       // 预取 / 命令目录（供 compose 补全）。force：内核升级换装后 Gateway 重启会重新
       // hello，这里必须强刷——否则 5 分钟 TTL 内持续返回旧内核的命令目录。
-      void loadCommands(host.client!, { force: true });
+      void loadCommands(client, { force: true }).then(()=>{if(host.client===client && host.connected)(host as unknown as OpenClawApp).requestUpdate();});
       // 加载执行权限模式（聊天页三态）
       void (host as unknown as OpenClawApp).loadExecMode();
       // T3：idle 预取已装技能 status——技能视图历史首开才付全量 RPC 延迟

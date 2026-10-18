@@ -10,6 +10,7 @@
 "use strict";
 
 const http = require("http");
+const path = require("path");
 const { spawn, execFileSync } = require("child_process");
 
 /** 解析 --flag value 形式的命令行参数。 */
@@ -62,6 +63,7 @@ function killTree(child) {
  * cleanup 幂等；进程退出 / SIGINT 时自动调用。
  */
 function launch(exe, port) {
+  exe = path.resolve(exe);
   const child = spawn(exe, [`--remote-debugging-port=${port}`], {
     cwd: require("path").dirname(exe),
     windowsHide: true,

@@ -402,6 +402,7 @@ async function pickWorkspaceDirectory(host: OcSessionPanel) {
     const dir = await bridge.selectDirectory();
     if (dir) {
       workspaceDraftPath = dir;
+      if (!workspaceDraftName.trim()) workspaceDraftName = dir.split(/[/\\]/).filter(Boolean).at(-1) || dir;
       host.bump();
     }
   } catch {

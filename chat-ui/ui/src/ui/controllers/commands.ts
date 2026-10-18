@@ -12,6 +12,8 @@ const COMMANDS_RETRY_AFTER_FAILURE_MS = 30_000;
 let cache: { at: number; commands: CommandEntry[] } | null = null;
 let lastFailureAt = 0;
 let inflight: Promise<CommandEntry[] | null> | null = null;
+let cacheClient:GatewayBrowserClient|null=null;
+let epoch=0;
 
 export function getCachedCommands(): CommandEntry[] | null {
   if (cache && Date.now() - cache.at < COMMANDS_CACHE_TTL_MS) {
@@ -24,6 +26,7 @@ export async function loadCommands(
   client: GatewayBrowserClient,
   opts?: { force?: boolean },
 ): Promise<CommandEntry[] | null> {
+  if(cacheClient!==client){cacheClient=client;epoch++;cache=null;inflight=null;lastFailureAt=0;}
   const cached = getCachedCommands();
   if (cached && !opts?.force) {
     return cached;
@@ -34,12 +37,15 @@ export async function loadCommands(
   if (inflight) {
     return inflight;
   }
+  const generation=epoch;
   inflight = (async () => {
     try {
       const res = await client.request<{ commands?: CommandEntry[] }>("commands.list", {
         includeArgs: true,
+        scope: "text",
       });
-      const commands = Array.isArray(res?.commands) ? res.commands : [];
+      if(generation!==epoch || cacheClient!==client)return null;
+      const commands = Array.isArray(res?.commands) ? res.commands.filter(command=>command && typeof command.name==='string' && command.name.trim()) : [];
       if (commands.length > 0) {
         cache = { at: Date.now(), commands };
         return commands;
@@ -47,10 +53,11 @@ export async function loadCommands(
       lastFailureAt = Date.now();
       return getCachedCommands();
     } catch {
+      if(generation!==epoch || cacheClient!==client)return null;
       lastFailureAt = Date.now();
       return getCachedCommands();
     } finally {
-      inflight = null;
+      if(generation===epoch)inflight = null;
     }
   })();
   return inflight;
@@ -62,18 +69,18 @@ export function filterCommands(
   query: string,
   limit = 8,
 ): CommandEntry[] {
-  const q = query.trim().toLowerCase();
+  const q = query.trim().replace(/^[/／]/,'').toLowerCase();
   if (!q) {
     return commands.slice(0, limit);
   }
   const prefix: CommandEntry[] = [];
   const contains: CommandEntry[] = [];
   for (const cmd of commands) {
-    const names = [cmd.name, ...(cmd.textAliases ?? [])];
+    const names = [cmd.name, ...(cmd.textAliases ?? [])].map(name=>name.replace(/^\//,'').toLowerCase());
     const matched = names.some((n) => n.toLowerCase().startsWith(q));
     if (matched) {
       prefix.push(cmd);
-    } else if (names.some((n) => n.toLowerCase().includes(q))) {
+    } else if (names.some((n) => n.toLowerCase().includes(q)) || resolveCommandDescription(cmd).toLowerCase().includes(q)) {
       contains.push(cmd);
     }
   }

@@ -24,6 +24,12 @@ The helper reads the local control port and token privately; never print, paste,
 
 Generate both `palettes.light` and `palettes.dark`. Keep `colors` equal to the palette identified by `paletteMode`. Use `secondary` for restrained accents. A missing counterpart uses the app default, so do not omit it from newly generated themes.
 
+### Conversation and control roles
+
+Each palette also accepts optional six-digit hex `userBubble`, `assistantBubble`, `userText`, `assistantText`, `composer`, `input`, `icon`, and `border`. These roles apply across conversations without depending on message indices. Omit a role to inherit the app's styling. Pair bubble text with its background and check both variants. Keep the default light background pure white (`#ffffff`) unless the user explicitly requests another color.
+
+Inspection exposes `userBubble`, `assistantBubble`, `composerField`, `messageText`, and `icon` component kinds in addition to existing targets. Use semantic palette roles for all messages; use inspected IDs only for the specific visible element requested. Components additionally accept `gap` and `margin` (0–96px), `strokeWidth` (0–6), `iconSize` (8–96px), and `borderStyle` (`solid`, `dashed`, `none`). Icon controls adjust existing artwork; never embed executable SVG, arbitrary markup, external icon URLs, or invented targets. Preserve focus, click areas, quota visibility and message action readability.
+
 `mode` optionally selects `light`, `dark` or `system`. `font` is `studio` (Inter + MiSans VF and JetBrains Mono) or `system`. Font size 12–22, weight 100–900 including fractions, line height 1.3–2, global corners 0–48. Colors are six-digit hex. Packages must fit in 64 KiB.
 
 `components` contains registered IDs returned by inspection, scoped to the page and settings tab. Each entry supports `x`/`y` (-600–600px), `radius` (0–96px), optional `width` (24–3200px), `height` (20–1600px), `padding` (0–96px), `opacity` (0–1), `borderWidth` (0–12px), integer `zIndex` (0–100), `fontSize` (10–72px), `fontWeight` (100–900), `fontStyle` (`normal`/`italic`), `textAlign` (`left`/`center`/`right`), and `background`/`color`/`borderColor` (six-digit hex). Preserve unspecified properties. Verify the normalized preview response; never invent element IDs or claim unsupported attributes were applied.

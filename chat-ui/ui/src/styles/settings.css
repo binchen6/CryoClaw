@@ -1005,6 +1005,9 @@
 .oc-provider-list-item__action-btn.is-default { color: var(--accent); opacity: 1 !important; }
 .oc-provider-list-item__action-btn.is-assigned { color: var(--accent); }
 .oc-provider-list-item__action-btn:disabled { opacity: 0; cursor: default; pointer-events: none; }
+.oc-provider-list-item__action-btn[aria-busy=true]:disabled { opacity: 1; }
+.oc-provider-list-item__action-btn[aria-busy=true] svg { animation: spin .8s linear infinite; }
+@media(prefers-reduced-motion:reduce){.oc-provider-list-item__action-btn[aria-busy=true] svg { animation: none; }}
 
 /* 模型卡片（可拖拽排序行） */
 .oc-provider-cards {

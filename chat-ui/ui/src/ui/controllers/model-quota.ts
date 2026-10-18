@@ -31,7 +31,7 @@ async function loadNativeUsage(client:GatewayBrowserClient,force:boolean):Promis
   finally {entry.pending=undefined;}
 }
 export function quotaProvider(model:string | null | undefined, explicit?:string):string {
-  return explicit || (model?.includes("/") ? model.slice(0,model.indexOf("/")) : "");
+  return model?.includes("/") ? model.slice(0,model.indexOf("/")) : explicit || "";
 }
 export function quotaRemaining(windows:QuotaWindow[]):number | null {
   const used=windows.map(w=>w.usedPercent).filter((n):n is number=>typeof n==="number" && Number.isFinite(n));
@@ -63,20 +63,26 @@ export async function loadModelQuota(client:GatewayBrowserClient,provider:string
   if(hit?.pending)return hit.pending;
   if(!force && hit?.value && Date.now()-hit.at<(hit.value.error?15_000:TTL))return hit.value;
   const pending=(async()=>{
-    const data=await loadNativeUsage(client,force);
+    // These providers have a direct local adapter; unrelated native account refreshes
+    // must not delay their balances or Kimi subscription windows.
+    const direct=["kimi-coding","kimi-code","deepseek","moonshot","siliconflow"].includes(provider);
+    const data=direct?null:await loadNativeUsage(client,force);
     const aliases:Record<string,string>={"openai-codex":"openai","claude-cli":"anthropic","minimax-cn":"minimax","minimax-portal":"minimax","minimax-portal-cn":"minimax","zai-cn":"zai","zai-cn-coding":"zai","zai-global":"zai"};
     const canonical=aliases[provider]??provider;
     const source=Array.isArray(data?.providers)?data.providers.find((p:any)=>p?.provider===provider || p?.provider===canonical):undefined;
     const result:ModelQuota={provider,at:typeof data?.updatedAt==="number"?data.updatedAt:Date.now(),windows:normalizeWindows(source?.windows),plan:source?.plan,error:source?.error,
       stale:typeof data?.updatedAt==="number" && Date.now()-data.updatedAt>=TTL};
     if(result.windows.length)return result;
-    if(!data)result.error="Gateway usage query failed";
+    if(!data && !direct)result.error="Gateway usage query failed";
     try {
       if(provider==="kimi-coding" || provider==="kimi-code") {
-        const usage=await kimiGetUsage();const value=usage.data??usage;
-        for(const [label,w] of [["Week",value.weekUsage],["Rate limit",value.rateLimits]] as const) {
-          if(w && Number.isFinite(w.used) && Number.isFinite(w.limit) && w.limit>0)result.windows.push({label,usedPercent:w.used/w.limit*100});
+        const usage=await kimiGetUsage();const value=(usage.data??usage) as any;
+        const rate=value.limits?.[0]?.detail??value.limits?.[0];
+        for(const [label,w] of [["Week",value.usage??value.weekUsage],["Rate limit",rate??value.rateLimits]] as const) {
+          const limit=Number(w?.limit),used=w?.used!==undefined?Number(w.used):w?.remaining!==undefined?limit-Number(w.remaining):NaN;
+          if(w && Number.isFinite(used) && Number.isFinite(limit) && limit>0)result.windows.push({label,usedPercent:Math.max(0,Math.min(100,used/limit*100)),remaining:limit-used,total:limit,resetAt:typeof w.resetAt==="number"?w.resetAt:typeof w.resetAt==="string"?Date.parse(w.resetAt):undefined});
         }
+        if(result.windows.length){result.at=Date.now();result.error=undefined;result.stale=false;}
         if(usage.authExpired)result.error="Account sign-in expired";
         else if(!usage.success && usage.message)result.error=usage.message;
       } else {

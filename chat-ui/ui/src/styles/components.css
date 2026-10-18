@@ -191,6 +191,11 @@
 
 /* ── 全局 toast（底部居中浮出卡片；双主题经 token 自适应；z-index ≥1000 契约层） ── */
 .global-toast {
+  inset: auto auto var(--spacer-24) 50%;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--spacer-12);
   position: fixed;
   bottom: var(--spacer-24);
   left: 50%;
@@ -205,9 +210,15 @@
   border-radius: var(--radius-12);
   box-shadow: var(--shadow-lg);
   z-index: var(--z-toast);
-  pointer-events: none;
+  pointer-events: auto;
   animation: global-toast-in var(--duration-normal) var(--ease-standard) forwards;
 }
+oc-message-box { display: none; }
+.global-toast > span { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 35vh; overflow-y: auto; }
+.global-toast--info { border-color: var(--accent); background: var(--bg-elevated); }
+.global-toast--success { border-color: var(--ok); color: var(--ok-strong,var(--ok)); background: var(--bg-elevated); }
+.global-toast--warning { border-color: var(--warn); color: color-mix(in srgb,var(--warn) 65%,var(--text) 35%); background: var(--bg-elevated); }
+.global-toast--error { border-color: var(--destructive); color: var(--destructive); background: var(--bg-elevated); }
 
 @keyframes global-toast-in {
   from {
