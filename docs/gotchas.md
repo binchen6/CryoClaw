@@ -436,3 +436,7 @@ Things that are easy to get wrong or forget when working on CryoClaw.
 149. **测试沙箱异步错误也要转换回本上下文 Error。** Node 测试子进程序列化跨 VM realm 的 rejection 时可能只报 Unable to deserialize cloned data，吞掉真实原因。归一化同步和异步错误后仍然抛出，保留原始堆栈，不把失败变为成功。
 
 150. **更新器 Node 检查与 Electron 的代理来源不同。** 安装客户端使用系统代理，独立 NodeHttpExecutor 读取 https_proxy。直连 GitHub 超时只能说明该路由失败；使用既有代理重试并记录真实 SDK 结果。发现检查关闭自动下载，不需要降级安装用户正在使用的版本。
+
+151. **宣传片连续截图按顺序解码。** 一次 `Promise.all(img.decode())` 解码数十张高清界面图时，Chromium 可能抛出 `The source image cannot be decoded`，即使 JPEG 文件有效。`website/promo/promo.js` 改为逐张等待 `decode()` 后完成初始化；保留错误对应的图片路径，避免初始化超时掩盖真正原因。
+
+152. **Windows 的 Vercel 34.3.1 构建成功也可能串 API。** `.vercel/output/functions/api/*.func` 被联接到同一目录时，最后写入的接口覆盖其他接口，公开下载和健康检查会一起返回登录错误。使用干净 Linux/WSL 构建，核对 `.vc-config.json` 的 `name` 与各函数真实路径，并在线检查版本接口和 EXE 字节范围；不能只凭静态页面与构建退出码验收。

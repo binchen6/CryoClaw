@@ -9,7 +9,7 @@ const runtime = process.env.CRYOCLAW_PLAYWRIGHT_PATH ? createRequire(path.join(p
 const { chromium } = runtime('playwright');
 const directory = path.join(root, 'website');
 const output = path.join(root, '.cache/website-rework');
-const mime = { '.html': 'text/html; charset=utf-8', '.css': 'text/css', '.js': 'text/javascript', '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.mp4': 'video/mp4', '.vtt': 'text/vtt' };
+const mime = { '.html': 'text/html; charset=utf-8', '.css': 'text/css', '.js': 'text/javascript', '.json': 'application/json', '.woff2': 'font/woff2', '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.mp4': 'video/mp4', '.vtt': 'text/vtt' };
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, 'http://localhost');
   const file = url.pathname === '/api/cryoclaw-release' ? path.join(directory, 'release.json') : path.resolve(directory, url.pathname.replace(/^\/CryoClaw\/?/, '') || 'index.html');
@@ -31,6 +31,9 @@ const server = http.createServer((req, res) => {
       page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
       await page.goto(base, { waitUntil: 'networkidle' });
       await page.locator('#hero-version').waitFor();
+      await page.evaluate(() => document.fonts.ready);
+      const loadedFonts = await page.evaluate(() => [...document.fonts].filter(font => font.status === 'loaded').map(font => font.family));
+      for (const family of ['CryoMiSans', 'CryoInter', 'CryoMono']) assert.ok(loadedFonts.includes(family), `Missing font: ${family}`);
       const layout = await page.evaluate(() => ({ width: document.documentElement.clientWidth, scroll: document.documentElement.scrollWidth, broken: [...document.images].filter(img => img.getBoundingClientRect().height && img.complete && !img.naturalWidth).map(img => img.src) }));
       assert.ok(layout.scroll <= layout.width + 1, `${width}: horizontal overflow ${JSON.stringify(layout)}`);
       assert.deepEqual(layout.broken, []);
