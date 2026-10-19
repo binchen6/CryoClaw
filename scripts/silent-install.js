@@ -30,42 +30,25 @@ for (const image of ["CryoClaw.exe", "CryoClaw Helper.exe", "CryoClaw-CLI.exe"])
   spawnSync("taskkill", ["/IM", image, "/F"], { stdio: "ignore" });
 }
 
-// 2) 静默安装：spawn 原样传 "/S"；shell:false 确保不经 cmd/MSYS 改写
-const child = spawn(path.resolve(installer), ["/S"], { stdio: "ignore", shell: false });
-const timeout = setTimeout(() => {
-  console.error("[silent-install] 超时（5 分钟）未完成");
-  child.kill();
-  process.exit(1);
-}, 5 * 60_000).unref();
-
-child.on("error", (err) => {
-  clearTimeout(timeout);
-  console.error("[silent-install] 启动失败:", err.message);
-  process.exit(1);
-});
-
-child.on("exit", (code) => {
-  clearTimeout(timeout);
-  if (code !== 0) {
-    console.error("[silent-install] 安装器退出码:", code);
-    process.exit(1);
-  }
-  // 3) 版本校验：读安装位置 app.asar 内的 package.json
-  try {
-    const asar = require("@electron/asar");
-    const target = path.join(
-      process.env.LOCALAPPDATA || "",
-      "Programs", "CryoClaw", "resources", "app.asar",
-    );
-    const pkg = JSON.parse(asar.extractFile(target, "package.json").toString("utf8"));
-    if (expectedVersion && pkg.version !== expectedVersion) {
-      console.error(`[silent-install] 版本不符: installed=${pkg.version} expected=${expectedVersion}`);
-      process.exit(1);
-    }
-    console.log("[silent-install] OK, installed version:", pkg.version);
-    process.exit(0);
-  } catch (err) {
-    console.error("[silent-install] 版本校验失败:", err.message);
-    process.exit(1);
-  }
-});
+// 2) Stage outside a Low-labelled build directory before launching the installer.
+async function main(){
+  const {stageInstaller}=require("./lib/stage-installer");
+  const staged=await stageInstaller(path.resolve(installer));
+  try{
+    console.log("[silent-install] 已暂存安装包，避免继承构建目录的低完整性标签");
+    await new Promise((resolve,reject)=>{
+      const child=spawn(staged.target,["/S"],{stdio:"ignore",shell:false,windowsHide:true,env:{...process.env,TEMP:staged.tempRoot,TMP:staged.tempRoot}});
+      const timer=setTimeout(()=>{child.kill();reject(Error("安装超时（15 分钟）"));},15*60_000);
+      const progress=setInterval(()=>console.log("[silent-install] 安装进行中…"),30_000);
+      const clear=()=>{clearTimeout(timer);clearInterval(progress);};
+      child.on("error",error=>{clear();reject(error);});
+      child.on("exit",code=>{clear();code===0?resolve():reject(Error("安装器退出码: "+code));});
+    });
+    const asar=require("@electron/asar");
+    const target=path.join(process.env.LOCALAPPDATA||"","Programs","CryoClaw","resources","app.asar");
+    const pkg=JSON.parse(asar.extractFile(target,"package.json").toString("utf8"));
+    if(expectedVersion && pkg.version!==expectedVersion)throw Error("版本不符: installed="+pkg.version+" expected="+expectedVersion);
+    console.log("[silent-install] OK, installed version:",pkg.version);
+  }finally{await staged.cleanup().catch(error=>console.warn("[silent-install] 临时安装包清理失败:",error.message));}
+}
+main().catch(error=>{console.error("[silent-install] 失败:",error.message);process.exitCode=1;});

@@ -1,15 +1,18 @@
 # CryoClaw 文档索引
 
-docs/ 目录导航。改代码前建议先读 gotchas.md 与 OPTIMIZATION-PROGRESS.md 的「关键路径地图」。
+先读 [当前交接](OPTIMIZATION-PROGRESS.md) 与 [已验证问题](gotchas.md)，再按范围进入专项文档。当前状态与历史档案分开维护，旧测试数量不代表现行基线。
 
 | 文档 | 用途 |
 |---|---|
-| `OPTIMIZATION-PROGRESS.md` | 优化工程进度追踪（断点续作锚点）：当前状态、关键路径地图、各轮 R 记录、测试基线 |
+| [OPTIMIZATION-PROGRESS.md](OPTIMIZATION-PROGRESS.md) | 当前版本、五轮范围、开发命令与关键路径；历史记录另行归档 |
 | `architecture.md` | 架构分层说明：三进程模型、主进程模块职责、启动链路 |
 | `ipc-api.md` | 主进程 IPC 通道契约清单（preload 暴露的全部方法与事件） |
 | `design-guidelines-zh.md` / `design-guidelines-en.md` | UI 设计规范（中英双语）：design token、组件原语、布局规则 |
-| `gotchas.md` | 已验证坑清单（104 条，改代码前先搜一遍） |
+| [gotchas.md](gotchas.md) | 已验证问题与约束；数量以文件中的编号为准 |
 | `releasing.md` | 发布流程：版本 bump、打包、静默安装验证、gh release |
+| [MAINTENANCE.md](MAINTENANCE.md) | 过期缓存与输出清理、保留规则和路径边界 |
+| [RELEASE-2026.1019.0-VERIFICATION.md](RELEASE-2026.1019.0-VERIFICATION.md) | 本轮五轮优化、磁盘清理、安装与发布验收 |
+| [RELEASE-2026.1018.3-VERIFICATION.md](RELEASE-2026.1018.3-VERIFICATION.md) | 上一版六轮修复及低完整性安装问题的取证 |
 | `RELEASE-2026.1018.1-VERIFICATION.md` | 10.4 内核、模型保存、通知与交互补丁验证记录 |
 | `RELEASE-2026.1018.0-VERIFICATION.md` | 上一版功能证据与发布验收 |
 | `CODEX-SUBSCRIPTION-INTEGRATION.md` | ChatGPT/Codex 原生账户协议、独立代理、模型与额度联动及验收状态 |

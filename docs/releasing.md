@@ -18,6 +18,8 @@
    node scripts/dist-win.js --arch arm64
    ```
 
+   Windows 打包会优先复用项目已安装的 Electron 分发；版本文件必须与解析后的 npm 包版本一致，PE 架构也必须匹配 x64/arm64。缺失或不匹配时回到正常下载流程，不混用不同版本或架构的二进制。
+
    打包结束后脚本会自动断言：
    - PE Certificate Table 是否非空（已签名）。未签名打印 ⚠ 警告但**不 fail**（无 CSC_LINK 证书时用户首装会看到 SmartScreen 警告）。
    - 同批产物是否含 `.exe.blockmap` 与 `latest.yml`（差分更新必需）。
@@ -34,7 +36,7 @@
    # 或 npm run install:silent -- <installer> <version>
    ```
 
-   脚本自动杀残留进程 → Node spawn 原样传参真静默安装（等待退出）→ 读安装位 app.asar 校验版本一致。
+   脚本自动杀残留进程 → 在普通用户 Temp 新建副本并流式复制 → Node spawn 原样传参真静默安装（等待退出）→ 读安装位 app.asar 校验版本一致 → 清理自己的临时副本。每 30 秒报告进度，整体超时 15 分钟。必须从获准的普通用户进程执行，不能通过修改安装目录 ACL 绕过权限错误。
 
    Codex Windows 沙箱生成的输出目录可能继承 `Low Mandatory Level`。即使获准在沙箱外调用该 exe，Windows 也可能按文件标签启动低完整性进程，导致它无法覆盖普通安装目录里的 `uninstallerIcon.ico` 等文件；`/S` 甚至可能返回 0 而版本未变。先用 `icacls <installer.exe>` 核对标签；经授权在普通用户 Temp 目录创建副本，再对副本运行上述安装脚本，并校验源与副本哈希一致。不要修改安装目录权限或忽略写入错误。
 
@@ -68,11 +70,16 @@
    ```
 
    `scripts/release-assert.js` 也可在草稿期用 `--allow-draft` 预检（上传完资产后立即跑），
-   加 `--deep` 会下载 exe 重算 sha512 与 latest.yml 比对（慢，重大版本建议跑一次）。
+   加 `--deep` 会流式下载 exe 重算 SHA-512，受 30 秒空闲超时、10 分钟整体截止、容量与重定向限制保护，不把整包读入内存。
+   也可用 `node scripts/release-assert.js --allow-draft --local-dir out/win32-x64`：逐一对比本地三件套与 GitHub 服务端生成的 SHA-256、大小和上传状态，同时确认安装器符合清单中的 SHA-512。该方式适合本地产物已完成安装验收、但大文件 CDN 缓慢的环境。两种校验方式都不得忽略不匹配。
 
    备选（一步直发，跳过草稿实测，不推荐）：`GH_TOKEN=ghp_xxx npx electron-builder --win --x64 --publish always` 会把 exe / blockmap / latest.yml 一并上传到 GitHub Release（默认草稿）。
 
-6. **草稿实测再转正**（重要）：Release 保持 draft 期间，本地装**上一个正式版本**，启动后等 ~15s 自动检查（或设置 → 关于 → 检查更新），确认能发现新版本并弹窗（v2026.906.0 起为弹窗决策模式，点「更新」才下载）；验证通过后再执行上面的 ③ 转正。
+6. **草稿验收再转正**：草稿期间先完成本地安装版四路 UI、实际消息与远端资产校验，再执行上面的 ③。公开客户端不会发现未发布草稿，不能把「上一版自动更新发现草稿」当作验收条件。转正后复核 latest 指向、公开清单和更新发现行为。
+
+7. **真实消息闭环**：`node scripts/live-chat-cdp-smoke.js --exe <installed-CryoClaw.exe> --live`。显式 `--live` 才调用已配置提供商；脚本创建独立且清晰命名的 QA 会话，要求真实回复进入历史，不改用户原有会话。四路 UI 脚本现在对应用/网关未就绪直接失败，不能把骨架屏当成验收通过。
+
+过期输出清理使用 [维护流程](MAINTENANCE.md)，与全量重建的 `npm run clean` 分开。
 
 ## 注意事项
 
@@ -88,3 +95,5 @@
 - target 为 `dmg`（手动分发）+ `zip`（自动更新；electron-updater 在 macOS 上要求 zip）。
 - `electron-builder.yml` 已配置 `hardenedRuntime: true` + `notarize: true`，签名身份由 `CSC_NAME` 指定（见 `.env`），公证凭据走 `APPLE_*` 环境变量。
 - 产物：`CryoClaw-<version>-<arch>-mac.zip` + `CryoClaw-<version>-<arch>.dmg`（含 blockmap）+ `latest-mac.yml`，同样要求同批进同一个 Release。
+
+发布前可用 `node scripts/update-discovery-smoke.js --from <older-version> --expect <current-public-version>` 验证真实 SDK 的公开发现逻辑，关闭自动下载；发布后用上一正式版与新版本号重复检查。该 Node 工具读取 `https_proxy`，与 Electron 客户端自动使用系统代理的行为不同。Node 24 的独立 release-assert 如需代理，可使用已有代理环境并加 `--use-env-proxy`；网络失败必须保留为失败，不能跳过校验。

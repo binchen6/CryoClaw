@@ -123,6 +123,8 @@ console.log("[dist-win] Step 2/3: package:resources");
 run("npm", ["run", "package:resources", "--", "--platform", "win32", "--arch", arch], commonEnv);
 
 console.log("[dist-win] Step 3/3: electron-builder");
+const localDist=require('./lib/local-electron').localElectronDist(root,require('electron/package.json').version,arch);
+if(localDist)console.log('[dist-win] 复用已安装的同版本、同架构 Electron 分发');
 run("npx", [
   "electron-builder",
   "--win",
@@ -130,6 +132,7 @@ run("npx", [
   `--config.directories.output=out/${target}`,
   "--publish",
   "never",
+  ...(localDist?[`--config.electronDist=${localDist}`]:[]),
 ], commonEnv);
 
 // ── 产物校验（只告警不 fail）──

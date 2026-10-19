@@ -1,7 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const http = require("node:http");
-const { Cdp, httpCheckOk } = require("./lib/cdp-harness");
+const { Cdp, httpCheckOk, navigateChecked, waitForLocale } = require("./lib/cdp-harness");
 
 test("gateway health checks stop waiting when a server never responds", async t => {
   const server = http.createServer(() => {});
@@ -28,4 +28,17 @@ test("CDP stalled commands and synchronous send failures release pending slots",
   ws.send = () => { throw new Error("socket unavailable"); };
   await assert.rejects(cdp.send("Page.enable"), /socket unavailable/);
   assert.equal(cdp.pending.size, 0);
+});
+
+test("failed file navigation rejects even when the previous page is still interactive",async()=>{
+  const ws=new EventTarget();let result={errorText:'net::ERR_FILE_NOT_FOUND'};
+  ws.send=data=>{const {id}=JSON.parse(data);queueMicrotask(()=>ws.dispatchEvent(new MessageEvent('message',{data:JSON.stringify({id,result})})));};
+  const cdp=new Cdp(ws);
+  await assert.rejects(navigateChecked(cdp,'file:///missing/chat'),/ERR_FILE_NOT_FOUND/);
+  result={frameId:'frame'};assert.deepEqual(await navigateChecked(cdp,'file:///app/index.html'),{frameId:'frame'});
+});
+
+test("locale checks wait for the reloaded document instead of accepting the old ready page",async()=>{
+  let checks=0;await waitForLocale({evaluate:async()=>++checks>=2},'en',500);assert.equal(checks,2);
+  await assert.rejects(waitForLocale({evaluate:async()=>false},'en',5),/Locale did not become en/);
 });

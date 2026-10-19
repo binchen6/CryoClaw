@@ -1,0 +1,54 @@
+"use strict";
+const path=require('node:path'),assert=require('node:assert/strict');
+const {arg,launch,waitForPageTarget,connect,waitForAppReady,dismissReleaseNotes,waitForSettle,sleep,waitForLocale,navigateChecked}=require('./lib/cdp-harness');
+(async()=>{
+  const exe=arg(process.argv,'--exe',path.resolve('out/win32-x64/win-unpacked/CryoClaw.exe'));
+  const {cleanup}=launch(exe,9245);let ws;
+  try{
+    const page=await waitForPageTarget(9245);assert.ok(page,'app page');
+    const connection=await connect(page);ws=connection.ws;const cdp=connection.cdp;
+    assert.ok(await waitForAppReady(cdp),'connected app');
+    await dismissReleaseNotes(cdp);
+    const wait=async(expression,timeoutMs=10_000)=>{const deadline=Date.now()+timeoutMs;while(Date.now()<deadline){if(await cdp.evaluate(expression))return;await sleep(100);}throw Error('UI assertion timeout: '+expression);};
+    const key=async(name,code)=>{const base={key:name,code:name,windowsVirtualKeyCode:code,nativeVirtualKeyCode:code};await cdp.send('Input.dispatchKeyEvent',{...base,type:name==='Enter'?'keyDown':'rawKeyDown',...(name==='Enter'?{text:'\r',unmodifiedText:'\r'}:{})});await cdp.send('Input.dispatchKeyEvent',{...base,type:'keyUp'});await waitForSettle(cdp,200);};
+    await cdp.evaluate(`document.querySelector('.oc-rail__nav .oc-rail__item').click()`);
+    await wait(`!!document.querySelector('.oc-panel__session-select')`);
+    const session=await cdp.evaluate(`document.querySelector('openclaw-app').sessionKey`);
+    assert.equal(await cdp.evaluate(`document.querySelectorAll('.oc-panel__session-item[role="button"]').length`),0);
+    await cdp.evaluate(`document.querySelector('.oc-panel__session-action').focus()`);await key('Enter',13);
+    const menuState=await cdp.evaluate(`(()=>{const menu=document.querySelector('.oc-panel__session-menu');return {focused:document.activeElement===menu?.querySelector('button[role="menuitem"]'),active:document.activeElement?.className,menu:!!menu,dialogs:[...document.querySelectorAll('[role="dialog"]')].map(e=>e.className)}})()`);
+    assert.ok(menuState.focused,'menu receives keyboard focus: '+JSON.stringify(menuState));
+    await key('End',35);await key('ArrowDown',40);await key('Escape',27);
+    await wait(`!document.querySelector('.oc-panel__session-menu')`);
+    assert.ok(await cdp.evaluate(`document.activeElement?.classList.contains('oc-panel__session-action')`));
+    assert.equal(await cdp.evaluate(`document.querySelector('openclaw-app').sessionKey`),session,'menu keys must not select another session');
+    console.log('PASS session semantics, native menu keys and focus return');
+    await cdp.evaluate(`document.querySelector('.oc-panel__session-action').focus()`);await key('Enter',13);
+    await cdp.evaluate(`[...document.querySelectorAll('.oc-panel__session-menu button')].find(button=>/重命名|Rename/i.test(button.textContent)).click()`);
+    await wait(`!!document.querySelector('.oc-panel__session-edit')`);
+    assert.ok(await cdp.evaluate(`!!document.querySelector('.oc-panel__session-edit').getAttribute('aria-label')`));
+    await cdp.evaluate(`document.querySelector('.oc-panel__more-wrap > button').focus()`);await waitForSettle(cdp,300);
+    assert.ok(await cdp.evaluate(`document.activeElement===document.querySelector('.oc-panel__more-wrap > button')`),'blur must not steal focus back to the renamed row');
+    console.log('PASS unchanged rename blur keeps the new focus without modifying session data');
+    await cdp.evaluate(`document.querySelector('.oc-panel__more-wrap > button').focus()`);await key('Enter',13);
+    assert.ok(await cdp.evaluate(`document.activeElement?.matches('.oc-panel__more-menu button')`));
+    await key('Escape',27);await wait(`!document.querySelector('.oc-panel__more-menu')`);
+    console.log('PASS more-menu keyboard focus');
+    const openWorkspace=`[...document.querySelectorAll('.oc-rail__nav .oc-rail__item')].find(e=>/工作|workspace/i.test(e.getAttribute('aria-label')??'')).click()`;
+    await cdp.evaluate(openWorkspace);await wait(`!!document.querySelector('.wk-nav__repo')`);
+    await cdp.evaluate(`(()=>{const select=document.querySelector('.wk-nav__repo');select.value='__default__';select.dispatchEvent(new Event('change',{bubbles:true}));})()`);
+    await wait(`document.querySelectorAll('.wk-nav__file-row .wk-nav__item:not(.wk-nav__item--dir)').length>=2`,60_000);
+    for(let i=0;i<2;i++){await cdp.evaluate(`document.querySelectorAll('.wk-nav__file-row .wk-nav__item:not(.wk-nav__item--dir)')[${i}].click()`);await wait(`document.querySelectorAll('.wk-file-tabs button[role="tab"]').length>=${i+1}`);}
+    await cdp.evaluate(`document.querySelectorAll('.wk-file-tabs button[role="tab"]')[1].focus()`);await key('ArrowLeft',37);
+    await wait(`document.querySelector('.wk-file-tabs button[role="tab"]').getAttribute('aria-selected')==='true'`);
+    assert.equal(await cdp.evaluate(`document.querySelectorAll('.wk-file-tabs button[role="tab"][tabindex="0"]').length`),1);
+    console.log('PASS workspace file tabs and single Tab entry');
+    const english=new URL(page.url);english.pathname=english.pathname.replace(/[^/]*$/,'index.html');english.searchParams.set('lang','en');await navigateChecked(cdp,english.href);await waitForLocale(cdp,"en");assert.ok(await waitForAppReady(cdp));
+    assert.equal(await cdp.evaluate('document.documentElement.lang'),'en');
+    await cdp.evaluate(openWorkspace);await wait(`!!document.querySelector('.wk-nav__repo')`);
+    assert.equal(await cdp.evaluate(`document.querySelector('.wk-nav__repo').getAttribute('aria-label')`),'Current workspace or repository');
+    assert.equal(await cdp.evaluate(`document.querySelector('.wk-nav__search input').placeholder`),'Find files or paths');
+    assert.ok(await cdp.evaluate(`document.fonts.load('14px "Cryo Inter"').then(faces=>faces.length>0 && faces.every(face=>face.status==='loaded'))`),'Inter is registered and its bundled font loads');
+    assert.equal(cdp.exceptions.length,0);console.log('PASS English workspace labels; rendererExceptions=0');
+  }finally{ws?.close();cleanup();}
+})().catch(error=>{console.error(error);process.exitCode=1;});

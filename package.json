@@ -1,6 +1,6 @@
 {
   "name": "cryoclaw",
-  "version": "2026.1018.3",
+  "version": "2026.1019.0",
   "private": true,
   "description": "CryoClaw desktop app — cross-platform Electron shell for openclaw",
   "main": "dist/main.js",
@@ -32,7 +32,8 @@
     "dupcheck": "jscpd",
     "clean": "node scripts/clean.js",
     "install:silent": "node scripts/silent-install.js",
-    "release:assert": "node scripts/release-assert.js"
+    "release:assert": "node scripts/release-assert.js",
+    "clean:stale": "node scripts/prune-artifacts.js"
   },
   "dependencies": {
     "electron-updater": "^6.8.9",
@@ -48,6 +49,7 @@
     "js-yaml": "^4.1.1",
     "jscpd": "^5.0.16",
     "typescript": "^5.9.3",
+    "vite": "^7.3.7",
     "vitest": "^4.1.10"
   },
   "engines": {

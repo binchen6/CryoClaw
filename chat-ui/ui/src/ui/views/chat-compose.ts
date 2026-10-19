@@ -446,23 +446,22 @@ function renderSkillPicker(props: ChatProps) {
   if (!skillPickerOpen) {
     return nothing;
   }
-  const text=(cn:string,en:string)=>getLocale().startsWith("zh")?cn:en;
-  const query=skillPickerQuery.trim().toLocaleLowerCase();
+    const query=skillPickerQuery.trim().toLocaleLowerCase();
   const filtered=skillPickerItems.filter(skill=>`${skill.name} ${skill.description??""}`.toLocaleLowerCase().includes(query));
   skillPickerIndex=Math.max(0,Math.min(skillPickerIndex,filtered.length-1));
   return html`
     <div class="chat-plus__skill-picker" @click=${(e: Event) => e.stopPropagation()}
       @keydown=${(event:KeyboardEvent)=>{if(event.key==="Escape"){event.preventDefault();event.stopPropagation();closeSkillPicker(props);}}}>
-      <div class="chat-plus__skill-picker-title">${t("chat.plusSkillPickerTitle")}<button type="button" class="icon-btn icon-btn--sm" aria-label=${text("关闭技能列表", "Close skills")} @click=${()=>closeSkillPicker(props)}>${icons.x}</button></div>
-      <input class="chat-plus__skill-search" type="search" role="combobox" aria-label=${text("搜索技能", "Search skills")} aria-autocomplete="list" aria-expanded="true" aria-controls="chat-skill-options" aria-activedescendant=${filtered.length?`chat-skill-option-${skillPickerIndex}`:nothing} placeholder=${text("搜索名称或用途…", "Search name or purpose…")} .value=${skillPickerQuery}
+      <div class="chat-plus__skill-picker-title">${t("chat.plusSkillPickerTitle")}<button type="button" class="icon-btn icon-btn--sm" aria-label=${t("chat.skillPicker.close")} @click=${()=>closeSkillPicker(props)}>${icons.x}</button></div>
+      <input class="chat-plus__skill-search" type="search" role="combobox" aria-label=${t("chat.skillPicker.search")} aria-autocomplete="list" aria-expanded="true" aria-controls="chat-skill-options" aria-activedescendant=${filtered.length?`chat-skill-option-${skillPickerIndex}`:nothing} placeholder=${t("chat.skillPicker.searchPlaceholder")} .value=${skillPickerQuery}
         @input=${(event:Event)=>{skillPickerQuery=(event.target as HTMLInputElement).value;skillPickerIndex=0;props.onRequestUpdate?.();}}
         @keydown=${(event:KeyboardEvent)=>{if(event.isComposing)return;if((event.key==="ArrowDown" || event.key==="ArrowUp") && filtered.length){event.preventDefault();skillPickerIndex=(skillPickerIndex+(event.key==="ArrowDown"?1:-1)+filtered.length)%filtered.length;props.onRequestUpdate?.();requestAnimationFrame(()=>document.getElementById(`chat-skill-option-${skillPickerIndex}`)?.scrollIntoView({block:"nearest"}));}else if(event.key==="Enter" && filtered.length){event.preventDefault();insertSkillReference(props,filtered[skillPickerIndex].name);}}} />
       <div class="chat-plus__skill-list" role="listbox" id="chat-skill-options" aria-label=${t("chat.plusSkillPickerTitle")} aria-busy=${skillPickerLoading}>
       ${skillPickerLoading
         ? html`<div class="chat-plus__skill-picker-status">${t("chat.loading")}</div>`
-        : skillPickerError?html`<div class="chat-plus__skill-picker-status" role="alert">${text("技能列表暂时无法加载，请重试。", "Skills could not be loaded. Try again.")}<button class="btn btn--sm" @click=${()=>void openSkillPicker(props)}>${text("重试", "Retry")}</button></div>`
+        : skillPickerError?html`<div class="chat-plus__skill-picker-status" role="alert">${t("chat.skillPicker.loadFailed")}<button class="btn btn--sm" @click=${()=>void openSkillPicker(props)}>${t("chat.skillPicker.retry")}</button></div>`
         : filtered.length === 0
-          ? html`<div class="chat-plus__skill-picker-status" role="status">${query?text("没有匹配的技能", "No matching skills"):t("chat.plusSkillEmpty")}</div>`
+          ? html`<div class="chat-plus__skill-picker-status" role="status">${query?t("chat.skillPicker.noMatches"):t("chat.plusSkillEmpty")}</div>`
           : filtered.map((skill,index) => html`
             <button class="chat-plus__skill-item" type="button" role="option" id=${`chat-skill-option-${index}`} aria-selected=${index===skillPickerIndex}
               @click=${() => insertSkillReference(props, skill.name)}>

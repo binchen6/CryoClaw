@@ -219,6 +219,27 @@ async function waitForSettle(cdp, bufferMs = 400) {
   await sleep(bufferMs);
 }
 
+/** Close only the informational release notes, so screenshots inspect the actual view. */
+async function dismissReleaseNotes(cdp) {
+  const dismissed=await cdp.evaluate(`(()=>{const button=document.querySelector('.release-notes-dialog [data-dialog-dismiss]');if(!button)return false;button.click();return true;})()`);
+  if(dismissed)await sleep(400);
+}
+
+async function navigateChecked(cdp,url) {
+  const result=await cdp.send("Page.navigate",{url});
+  if(result.errorText)throw new Error(`Page navigation failed: ${result.errorText}`);
+  return result;
+}
+
+async function waitForLocale(cdp,locale,timeoutMs=20_000) {
+  const deadline=Date.now()+timeoutMs;
+  while(Date.now()<deadline){
+    try{if(await cdp.evaluate(`document.documentElement.lang.toLowerCase().startsWith(${JSON.stringify(locale)})`))return;}catch{}
+    await sleep(Math.max(1,Math.min(100,deadline-Date.now())));
+  }
+  throw new Error(`Locale did not become ${locale}`);
+}
+
 async function setViewport(cdp, width, { height = 900, dsf = 1 } = {}) {
   await cdp.send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: dsf, mobile: false });
 }
@@ -249,6 +270,9 @@ module.exports = {
   connect,
   waitForAppReady,
   waitForSettle,
+  dismissReleaseNotes,
+  navigateChecked,
+  waitForLocale,
   setViewport,
   setTheme,
   uniqueExceptionLines,

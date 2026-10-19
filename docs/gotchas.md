@@ -418,3 +418,21 @@ Things that are easy to get wrong or forget when working on CryoClaw.
 140. **隔离状态目录还不够，内核锁也依赖 home。** OpenClaw 2026.10.4 的 Windows state-owner 锁直接用 os.homedir()/AppData/Local/OpenClaw/locks，覆盖 LOCALAPPDATA 或 OPENCLAW_STATE_DIR 都不能隔离它。ASAR 冒烟需同时设置 HOME、USERPROFILE、LOCALAPPDATA 与 OPENCLAW_STATE_DIR 到专用临时目录；这样测试不触碰用户锁目录，也避开该目录的 EPERM。
 
 141. **低完整性标签跟着构建文件走，提权 shell 并不保证子进程获得中完整性。** Codex 沙箱工作区的输出目录可能继承 Low Mandatory Level；从中启动 NSIS，进程完整性 RID 仍为 4096，无法覆盖普通安装目录里的文件。表现为 uninstallerIcon.ico 写入失败；/S 可返回 0 而安装位仍是旧版本。用 icacls 和进程 token 确认，不要修改用户安装目录 ACL 或忽略报错。经授权在普通用户 Temp 创建安装包副本，校验哈希一致，再对副本运行 silent-install.js 并核对版本。本次 2026.1018.3 实测通过。
+
+142. **放弃草稿也是写操作，必须和自动备份使用同一队列。** 仅在清除前等待旧备份不够：清除 IPC 等待期间，新编辑可能先备份成功，再被迟到的 clear 删除。清除要先占据 per-file 队列，后续备份排在它后面；失败备份不得继续关闭或切换当前编辑。根目录 IPC 会改变主进程状态，旧响应不落 UI 不能代替执行串行化。
+
+143. **行级按钮不能包住管理按钮或编辑输入框。** 会话行与工作区树父行使用 role=button 再嵌套按钮，会把子按钮的 Enter/Space 冒泡成选择动作。改用并列的原生按钮；菜单自己处理方向键和 Escape。重命名只有 Enter/Escape 结束才归还焦点，blur 不能抢回用户刚转移的焦点。
+
+144. **字体声明不能插进尚未结束的选择器列表。** base.css 的 html, 后紧跟 @font-face，导致 Inter 声明被当作非法选择器而丢弃，构建只报 warning。将完整 @font-face 放在 html/body 规则之前；现在对全部样式表执行 esbuild CSS 解析，并在英文桌面验收中实际加载 Cryo Inter，避免只看文件存在。
+
+145. **安装器的执行文件和子进程临时目录都要使用普通用户 Temp。** 仅换安装器路径但保留指向工作区 Low 目录的 TEMP/TMP，旧卸载器和插件仍可能继承低标签。silent-install.js 现在流式新建普通 Temp 副本，并统一子进程 TEMP/TMP；只能在获准的普通用户进程运行，不修改用户安装目录 ACL。发布校验可通过 --local-dir 联合验证 GitHub 服务端 SHA-256、大小、上传状态以及本地安装器的清单 SHA-512；--deep 则使用有界流式下载。
+
+146. **复用本机 Electron 必须同时核对版本与 PE 架构。** 打包器的下载缓存锁或网络等待不应诱导混用运行时。Windows 构建只在 dist/version 与解析的 electron 包版本一致、electron.exe 的 MZ/PE 签名和机器类型符合 x64/arm64 时传入 electronDist；否则走正常下载。实际包内运行时与安装位仍需复核。
+
+147. **通信探针应校验随机回声，不要求模型给未经执行的测试签“通过”。** 模型可能合理拒绝后者，导致真实消息已完成却被测试误报。探针现在使用唯一随机 nonce，要求准确回显并落盘，同时检查终态错误；不能用旧回复或非空错误文本冒充成功。
+
+148. **file:// SPA 切语言先回到真实 index.html，再等新文档语言生效。** 虚拟 /chat 路径不能作为磁盘重载入口；Page.navigate 的 errorText 必须报错。旧页面仍然交互就绪不能证明重载成功，检查 documentElement.lang 后再运行该语言的 UI 断言。
+
+149. **测试沙箱异步错误也要转换回本上下文 Error。** Node 测试子进程序列化跨 VM realm 的 rejection 时可能只报 Unable to deserialize cloned data，吞掉真实原因。归一化同步和异步错误后仍然抛出，保留原始堆栈，不把失败变为成功。
+
+150. **更新器 Node 检查与 Electron 的代理来源不同。** 安装客户端使用系统代理，独立 NodeHttpExecutor 读取 https_proxy。直连 GitHub 超时只能说明该路由失败；使用既有代理重试并记录真实 SDK 结果。发现检查关闭自动下载，不需要降级安装用户正在使用的版本。

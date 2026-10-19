@@ -31,7 +31,7 @@ const path = require("path");
 const { bareI18nScanExpr } = require("./lib/bare-i18n-scan.js");
 const {
   arg, launch, waitForPageTarget, waitForGateway, connect,
-  waitForAppReady, waitForSettle, setViewport, setTheme, uniqueExceptionLines,
+  waitForLocale,navigateChecked, waitForAppReady,dismissReleaseNotes, waitForSettle, setViewport, setTheme, uniqueExceptionLines,
 } = require("./lib/cdp-harness.js");
 
 const root = path.resolve(__dirname, "..");
@@ -64,8 +64,11 @@ async function main() {
   const { ws, cdp } = await connect(page);
   // 就绪轮询（readyState + rail + 字体），替代固定 sleep(8000)
   const appReady = await waitForAppReady(cdp);
+  if(!appReady)throw Error("App readiness timed out");
+  await dismissReleaseNotes(cdp);
   console.log(`[layout-cdp-smoke] 首屏就绪: ${appReady ? "是" : "超时（继续诊断）"}`);
   const gatewayOk = await waitForGateway(undefined, gatewayWaitMs);
+  if(!gatewayOk)throw Error("Gateway readiness timed out");
   console.log(`[layout-cdp-smoke] gateway GET / : ${gatewayOk ? "200 OK" : "未就绪（不阻断布局诊断）"}`);
 
   const runDiagnostics = () =>
@@ -164,8 +167,9 @@ async function main() {
       u.searchParams.set("lang", lang);
       return u.toString();
     });
-    await cdp.send("Page.navigate", { url });
-    await waitForAppReady(cdp, { timeoutMs: 20_000 });
+    await navigateChecked(cdp,url);
+    await waitForLocale(cdp,lang);
+    if(!await waitForAppReady(cdp, { timeoutMs: 20_000 }))throw Error("Reloaded app readiness timed out");
     await setViewport(cdp, 1440);
     await waitForSettle(cdp, 500);
     const report = await runDiagnostics();

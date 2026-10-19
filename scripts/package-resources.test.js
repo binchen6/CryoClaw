@@ -5,6 +5,17 @@ const os = require("node:os");
 const path = require("node:path");
 const vm = require("node:vm");
 
+function nativeSandboxFunction(fn) {
+  const nativeError = error => error instanceof Error ? error : new Error(`package-resources sandbox failed: ${error?.stack ?? error}`);
+  return function(...args) {
+    try {
+      const result=Reflect.apply(fn,this,args);
+      if(result && typeof result.then==='function')return Promise.resolve(result).catch(error=>{throw nativeError(error);});
+      return result;
+    }catch(error){throw nativeError(error);}
+  };
+}
+
 // 加载 package-resources 脚本并跳过 main()，只测试局部函数。
 function loadPackageResourcesSandbox(options = {}) {
   const scriptPath = path.join(__dirname, "package-resources.js");
@@ -44,8 +55,17 @@ function loadPackageResourcesSandbox(options = {}) {
     // "Unable to deserialize cloned data" 并吞掉真实原因——转成本 realm 错误再抛
     throw new Error(`package-resources sandbox failed: ${err && err.stack ? err.stack : err}`);
   }
+  // Async VM rejections need the same realm normalization as startup errors.
+  for(const [name,value] of Object.entries(sandbox)){
+    if(name!=="require" && typeof value==='function')sandbox[name]=nativeSandboxFunction(value);
+  }
   return sandbox;
 }
+
+test("async sandbox failures preserve their cause as native errors for node:test IPC",async()=>{
+  const fail=vm.runInNewContext('(async()=>{throw new Error("original VM failure")})');
+  await assert.rejects(nativeSandboxFunction(fail)(),error=>error instanceof Error && /original VM failure/.test(error.message));
+});
 
 // 写入测试文件时自动补目录，避免样板代码污染用例意图。
 function writeFixture(filePath, content = "") {

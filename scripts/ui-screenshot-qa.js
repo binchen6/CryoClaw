@@ -26,7 +26,7 @@ const { overlapCheckExpr } = require("./lib/overlap-scan.js");
 const { textOverflowScanExpr, contrastScanExpr } = require("./lib/text-quality-scan.js");
 const {
   arg, launch, waitForPageTarget, waitForGateway, connect,
-  waitForAppReady, waitForSettle, setViewport, setTheme, uniqueExceptionLines,
+  waitForLocale,navigateChecked, waitForAppReady,dismissReleaseNotes, waitForSettle, setViewport, setTheme, uniqueExceptionLines,
 } = require("./lib/cdp-harness.js");
 
 const root = path.resolve(__dirname, "..");
@@ -47,8 +47,9 @@ async function main() {
   const page = await waitForPageTarget(port, 90_000);
   if (!page) { console.error("[ui-qa] 页面 target 未出现"); cleanup(); process.exit(1); }
   const { ws, cdp } = await connect(page);
-  await waitForAppReady(cdp);
-  await waitForGateway(undefined, 60_000);
+  if(!await waitForAppReady(cdp))throw Error("App readiness timed out");
+  await dismissReleaseNotes(cdp);
+  if(!await waitForGateway(undefined, 60_000))throw Error("Gateway readiness timed out");
 
   const overlapExpr = overlapCheckExpr();
   const overflowExpr = textOverflowScanExpr();
@@ -119,8 +120,9 @@ async function main() {
   // 场景组 3：英文语言（reload ?lang=en，主视图 + 设置首屏）
   console.log("[ui-qa] 英文语言");
   const url = await cdp.evaluate(`(() => { const u = new URL(location.href); if (!/index\\.html?$/.test(u.pathname)) u.pathname = u.pathname.replace(/[^/]*$/, "index.html"); u.searchParams.set("lang", "en"); return u.toString(); })()`);
-  await cdp.send("Page.navigate", { url });
-  await waitForAppReady(cdp, { timeoutMs: 20_000 });
+  await navigateChecked(cdp,url);
+  await waitForLocale(cdp,"en");
+  if(!await waitForAppReady(cdp, { timeoutMs: 20_000 }))throw Error("Reloaded app readiness timed out");
   await setViewport(cdp, 1440);
   await cdp.evaluate(`document.querySelectorAll('.oc-rail__nav .oc-rail__item')[0]?.click()`);
   await waitForSettle(cdp, 700);

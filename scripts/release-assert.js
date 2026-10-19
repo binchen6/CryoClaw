@@ -8,7 +8,8 @@
  * 用法：
  *   node scripts/release-assert.js [version]     # 默认取 package.json version
  *   node scripts/release-assert.js 2026.1013.0 --allow-draft   # 草稿期核对
- *   node scripts/release-assert.js --deep        # 加验：下载 exe 核对 sha512（慢）
+ *   node scripts/release-assert.js --deep        # 流式下载 exe 核对 sha512（有超时）
+ *   node scripts/release-assert.js --local-dir out/win32-x64 # 对比 GitHub 服务端 SHA-256
  *
  * 检查项：
  *   1. Release 存在；非 draft（除非 --allow-draft）
@@ -22,7 +23,8 @@
  */
 const fs = require("fs");
 const path = require("path");
-const https = require("https");
+const {fetchBytes,hashDownload} = require("./lib/release-network");
+const {verifyLocalAssets} = require("./lib/release-local-assets");
 
 const OWNER = "binchen6";
 const REPO = "CryoClaw";
@@ -71,69 +73,26 @@ function validateManifest(yml, version, assets) {
   return file;
 }
 
-function fetchJson(url) {
-  return new Promise((resolve, reject) => {
-    const headers = requestHeaders(url, "application/vnd.github+json");
-    https
-      .get(url, { headers }, (res) => {
-        if (res.statusCode === 301 || res.statusCode === 302) {
-          res.resume();
-          return fetchJson(new URL(res.headers.location, url).href).then(resolve, reject);
-        }
-        if (res.statusCode !== 200) {
-          res.resume();
-          return reject(new Error(`HTTP ${res.statusCode} — ${url}`));
-        }
-        const chunks = [];
-        res.on("data", (c) => chunks.push(c));
-        res.on("end", () => {
-          try {
-            resolve(JSON.parse(Buffer.concat(chunks).toString("utf-8")));
-          } catch (e) {
-            reject(e);
-          }
-        });
-        res.on("error", reject);
-      })
-      .on("error", reject);
-  });
+async function fetchJson(url) {
+  const data=await fetchBytes(url,{headers:u=>requestHeaders(u,"application/vnd.github+json"),totalMs:60_000,maxBytes:8*1024*1024});
+  return JSON.parse(data.toString("utf8"));
 }
-
-function fetchBuffer(url, maxBytes) {
-  return new Promise((resolve, reject) => {
-    const headers = requestHeaders(url, "application/octet-stream");
-    https
-      .get(url, { headers }, (res) => {
-        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-          res.resume();
-          return fetchBuffer(new URL(res.headers.location, url).href, maxBytes).then(resolve, reject);
-        }
-        if (res.statusCode !== 200) {
-          res.resume();
-          return reject(new Error(`HTTP ${res.statusCode} — ${url}`));
-        }
-        const chunks = [];
-        let size = 0;
-        res.on("data", (c) => {
-          size += c.length;
-          if (maxBytes && size > maxBytes) {
-            res.destroy();
-            return reject(new Error(`下载超过上限 ${maxBytes}B`));
-          }
-          chunks.push(c);
-        });
-        res.on("end", () => resolve(Buffer.concat(chunks)));
-        res.on("error", reject);
-      })
-      .on("error", reject);
-  });
+function fetchBuffer(url,maxBytes) {
+  return fetchBytes(url,{headers:u=>requestHeaders(u,"application/octet-stream"),maxBytes,totalMs:60_000});
 }
 
 async function main() {
   const args = process.argv.slice(2);
   const allowDraft = args.includes("--allow-draft");
   const deep = args.includes("--deep");
-  const versionArg = args.find((a) => !a.startsWith("--"));
+  let versionArg,localDir;
+  for(let i=0;i<args.length;i++){
+    const arg=args[i];
+    if(arg==="--local-dir"){if(!args[i+1] || args[i+1].startsWith("--"))throw Error("--local-dir requires a directory");localDir=args[++i];}
+    else if(arg==="--deep" || arg==="--allow-draft")continue;
+    else if(arg.startsWith("--") || versionArg)throw Error("Unknown release argument: "+arg);
+    else versionArg=arg;
+  }
 
   const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "package.json"), "utf-8"));
   const version = versionArg ?? pkg.version;
@@ -152,7 +111,7 @@ async function main() {
   ok(`Release 存在（draft=${rel.draft}）`);
 
   // 2. 三件套资产
-  const assetNames = (rel.assets ?? []).map((a) => a.name);
+  const assetNames = (rel.assets ?? []).filter(a=>a.state==="uploaded").map((a) => a.name);
   const exeName = `CryoClaw-Setup-${version}-x64.exe`;
   const required = [exeName, `${exeName}.blockmap`, "latest.yml"];
   const missing = required.filter((n) => !assetNames.includes(n));
@@ -189,17 +148,17 @@ async function main() {
   if (deep) {
     const exeAsset = rel.assets.find((a) => a.name === exeName);
     console.log(`下载 ${exeName}（${(exeAsset.size / 1048576).toFixed(0)}MB）校验 sha512…`);
-    const exeBuf = await fetchBuffer(assetDownloadUrl(rel, exeAsset), 0).catch((e) =>
-      die(`exe 下载失败: ${e.message}`),
-    );
-    const crypto = require("crypto");
-    const sha512 = crypto.createHash("sha512").update(exeBuf).digest("base64");
-    if (sha512 !== file0.sha512) {
-      die(`exe sha512 不匹配 latest.yml`);
-    }
+    const result=await hashDownload(assetDownloadUrl(rel,exeAsset),{
+      headers:u=>requestHeaders(u,"application/octet-stream"),maxBytes:exeAsset.size,
+    });
+    if(result.size!==exeAsset.size || result.sha512!==file0.sha512)die("exe sha512 或大小不匹配 latest.yml");
     ok(`exe sha512 与 latest.yml 一致`);
   }
 
+  if(localDir){
+    await verifyLocalAssets(rel.assets,localDir,required,{[file0.url]:file0.sha512});
+    ok("本地三件套与 GitHub 服务端 SHA-256 及大小一致");
+  }
   console.log(`\n✓ ${tag} 资产断言全部通过`);
 }
 

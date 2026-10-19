@@ -9,6 +9,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
+import { transformSync } from "esbuild";
 
 // 与 layout-qa.test.ts 同目录同解析方式：编译产物在 .test-dist/ui/src/ui/ 下，
 // 四级回到 chat-ui/ui 根再进 src/styles（见该文件 css() 助手）。
@@ -23,6 +24,13 @@ function listCssFiles(): Array<{ name: string; raw: string }> {
   }
   return files;
 }
+
+test("all stylesheets parse without syntax warnings, including font declarations",()=>{
+  for(const {name,raw} of listCssFiles()){
+    const result=transformSync(raw,{loader:"css",logLevel:"silent"});
+    assert.deepEqual(result.warnings.filter(warning=>warning.id==="css-syntax-error").map(warning=>warning.text),[],name);
+  }
+});
 
 test("CSS 注释定界符配对且选择器位置无游离斜杠", () => {
   for (const { name, raw } of listCssFiles()) {

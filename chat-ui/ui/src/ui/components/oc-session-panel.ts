@@ -2,7 +2,7 @@ import { LitElement, html, nothing } from "lit";
 import { repeat } from "lit/directives/repeat.js";
 import { customElement } from "lit/decorators.js";
 import { t } from "../i18n.ts";
-import { activateOnKeydown } from "../a11y.ts";
+import { menuKeydown } from "../a11y.ts";
 import { icons } from "../icons.ts";
 import { groupSidebarSessions } from "../sidebar-grouping.ts";
 import { splitSessionsByWorkspace } from "../workspace-pinning.ts";
@@ -203,33 +203,37 @@ function startInlineRename(
   input.type = "text";
   input.className = "oc-panel__session-edit";
   input.value = currentLabel;
+  input.setAttribute("aria-label",t("sidebar.rename"));
   let saved = false;
-  const finish = () => {
+  const finish = (returnFocus=false) => {
     input.replaceWith(span);
     // 模板实例仍持有 span 引用，恢复 DOM 后触发根组件重渲染，避免后续更新写入已脱离节点
     requestUpdate();
+    if(returnFocus)requestAnimationFrame(()=>span.querySelector<HTMLButtonElement>(".oc-panel__session-select")?.focus());
   };
-  const save = () => {
+  const save = (returnFocus=false) => {
     if (saved) return;
     saved = true;
     const val = input.value.trim();
     if (val && val !== currentLabel) {
       onRename(sessionKey, val);
     }
-    finish();
+    finish(returnFocus);
   };
   input.addEventListener("click", (ev: MouseEvent) => ev.stopPropagation());
   input.addEventListener("keydown", (ev: KeyboardEvent) => {
     if (ev.key === "Enter") {
+      ev.stopPropagation();
       ev.preventDefault();
-      save();
+      save(true);
     } else if (ev.key === "Escape") {
+      ev.stopPropagation();
       ev.preventDefault();
       saved = true;
-      finish();
+      finish(true);
     }
   });
-  input.addEventListener("blur", save);
+  input.addEventListener("blur", () => save());
   span.replaceWith(input);
   input.focus();
   input.select();
@@ -244,9 +248,11 @@ let sessionMenuEpoch = 0;
 let sessionMenuOutsideCloser: ((ev: MouseEvent) => void) | null = null;
 // 菜单二级模式：root = 常规操作项；workspace = 「指定工作区」选择列表
 let sessionMenuMode: "root" | "workspace" = "root";
+let sessionMenuTrigger:HTMLElement|null=null;
 
 function closeSessionMenu(requestUpdate: () => void) {
   const closingKey = sessionMenuKey;
+  sessionMenuTrigger=null;
   sessionMenuEpoch++;
   if (sessionMenuOutsideCloser) {
     document.removeEventListener("click", sessionMenuOutsideCloser);
@@ -269,7 +275,8 @@ function closeSessionMenu(requestUpdate: () => void) {
   });
 }
 
-function openSessionMenu(key: string, requestUpdate: () => void) {
+function openSessionMenu(key: string, requestUpdate: () => void, trigger:HTMLElement, keyboard=false) {
+  sessionMenuTrigger=trigger;
   // 对称互斥：打开会话菜单先关「更多」菜单（两菜单同时开会互相屏蔽 outsideCloser）
   closeMoreMenu(requestUpdate);
   sessionMenuEpoch++;
@@ -301,6 +308,7 @@ function openSessionMenu(key: string, requestUpdate: () => void) {
     if (rect.bottom > window.innerHeight - 8) {
       menu.classList.add("oc-panel__session-menu--up");
     }
+    if(keyboard)menu.querySelector<HTMLButtonElement>('button[role="menuitem"]:not(:disabled)')?.focus();
   });
 }
 
@@ -329,7 +337,7 @@ function closeMoreMenu(requestUpdate: () => void) {
   });
 }
 
-function toggleMoreMenu(host: OcSessionPanel) {
+function toggleMoreMenu(host: OcSessionPanel, keyboard=false) {
   if (moreMenuOpen) {
     closeMoreMenu(host.bump);
     return;
@@ -350,10 +358,12 @@ function toggleMoreMenu(host: OcSessionPanel) {
     document.addEventListener("click", moreMenuOutsideCloser);
   });
   host.bump();
+  if(keyboard)requestAnimationFrame(()=>document.querySelector<HTMLButtonElement>('.oc-panel__more-menu button[role="menuitem"]')?.focus());
 }
 
 // 组件卸载清掉菜单模块态与 document 级监听
 function resetMenuState() {
+  sessionMenuTrigger=null;
   sessionMenuKey = null;
   sessionMenuMode = "root";
   moreMenuOpen = false;
@@ -371,6 +381,7 @@ function resetMenuState() {
 
 // ── 新建工作区对话框本地状态（草稿为纯 UI 态，提交才回调 props.onCreateWorkspace）──
 let workspaceDialogOpen = false;
+let workspaceDialogEpoch = 0;
 let workspaceDraftName = "";
 let workspaceDraftIcon = "";
 let workspaceDraftPath = "";
@@ -379,6 +390,7 @@ let workspaceDraftPath = "";
 let workspaceDialogReturnFocus: HTMLElement | null = null;
 
 function openWorkspaceDialog(host: OcSessionPanel) {
+  workspaceDialogEpoch++;
   workspaceDialogOpen = true;
   workspaceDraftName = "";
   workspaceDraftIcon = "";
@@ -396,10 +408,13 @@ function openWorkspaceDialog(host: OcSessionPanel) {
 }
 
 function closeWorkspaceDialogState() {
+  workspaceDialogEpoch++;
   workspaceDialogOpen = false;
+  workspaceDialogReturnFocus=null;
 }
 
 function closeWorkspaceDialog(host: OcSessionPanel) {
+  workspaceDialogEpoch++;
   workspaceDialogOpen = false;
   host.bump();
   const target = workspaceDialogReturnFocus;
@@ -415,8 +430,9 @@ async function pickWorkspaceDirectory(host: OcSessionPanel) {
     return;
   }
   try {
+    const epoch=workspaceDialogEpoch;
     const dir = await bridge.selectDirectory();
-    if (dir) {
+    if (dir && workspaceDialogOpen && epoch===workspaceDialogEpoch) {
       workspaceDraftPath = dir;
       if (!workspaceDraftName.trim()) workspaceDraftName = dir.split(/[/\\]/).filter(Boolean).at(-1) || dir;
       host.bump();
@@ -441,16 +457,12 @@ function renderSessionItem(
   return html`
     <div
       class="oc-panel__session-item ${isActive ?"active" : ""} ${menuOpen ? "menu-open" : ""} ${s.archived ? "is-archived" : ""} ${s.depth ? "is-subsession" : ""}"
-      role="button"
-      tabindex="0"
-      aria-current=${isActive ? "true" : nothing}
-      @click=${() => props.onSelectSession(s.key)}
-      @keydown=${activateOnKeydown(() => props.onSelectSession(s.key))}
+      @click=${(event:Event)=>{if(event.target===event.currentTarget)props.onSelectSession(s.key);}}
     >
       <span
         class="oc-panel__session-name"
         title=${s.label}
-      >${s.depth ? html`<span class="oc-panel__subsession-marker" aria-hidden="true">↳</span>` : nothing}${s.unread ? html`<span class="oc-panel__unread-dot" role="img" aria-label=${t("sidebar.unread")}></span>` : nothing}<span class="oc-panel__session-label">${s.label}</span>${s.pinned ? html`<span class="oc-panel__session-pin" role="img" aria-label=${t("sidebar.pinned")}>${icons.pin}</span>` : nothing}${s.worktreeBranch ? html`<span class="oc-panel__session-worktree" title=${s.worktreeBranch}>${icons.gitBranch}${s.worktreeBranch}</span>` : nothing}</span>
+      ><button class="oc-panel__session-select" type="button" aria-current=${isActive?"true":nothing} @click=${()=>props.onSelectSession(s.key)}>${s.depth ? html`<span class="oc-panel__subsession-marker" aria-hidden="true">↳</span>` : nothing}${s.unread ? html`<span class="oc-panel__unread-dot" role="img" aria-label=${t("sidebar.unread")}></span>` : nothing}<span class="oc-panel__session-label">${s.label}</span>${s.pinned ? html`<span class="oc-panel__session-pin" role="img" aria-label=${t("sidebar.pinned")}>${icons.pin}</span>` : nothing}${s.worktreeBranch ? html`<span class="oc-panel__session-worktree" title=${s.worktreeBranch}>${icons.gitBranch}${s.worktreeBranch}</span>` : nothing}</button></span>
       <span class="oc-panel__session-menu-wrap">
         <button
           class="oc-panel__session-action ${menuOpen ?"is-open" : ""} ${deleting ? "is-loading" : ""}"
@@ -465,17 +477,18 @@ function renderSessionItem(
             if (menuOpen) {
               closeSessionMenu(host.bump);
             } else {
-              openSessionMenu(s.key, host.bump);
+              openSessionMenu(s.key, host.bump,e.currentTarget as HTMLElement,(e as MouseEvent).detail===0);
             }
           }}
           data-tooltip=${t("sidebar.sessionActions")}
-          aria-label=${t("sidebar.sessionActions")}
+          aria-label=${`${t("sidebar.sessionActions")}: ${s.label}`}
         >
           ${deleting ? icons.loader : icons.moreHorizontal}
         </button>
         ${menuOpen
           ? html`
-            <div class="oc-panel__session-menu" role="menu" @click=${(e: Event) => e.stopPropagation()}>
+            <div class="oc-panel__session-menu" role="menu" @click=${(e: Event) => e.stopPropagation()}
+              @keydown=${(event:KeyboardEvent)=>menuKeydown(event,()=>{const trigger=sessionMenuTrigger;closeSessionMenu(host.bump);trigger?.focus();})}>
               ${sessionMenuMode === "workspace"
                 ? renderWorkspacePicker(host, props, s)
                 : html`
@@ -706,11 +719,12 @@ function renderPanelInner(host: OcSessionPanel, props: SessionPanelProps) {
               data-tooltip-pos="bottom"
               @click=${(e: Event) => {
                 e.stopPropagation();
-                toggleMoreMenu(host);
+                toggleMoreMenu(host,(e as MouseEvent).detail===0);
               }}
             >${icons.moreHorizontal}</button>
             ${moreMenuOpen
-              ? html`<div class="oc-panel__more-menu" role="menu" @click=${(e: Event) => e.stopPropagation()}>
+              ? html`<div class="oc-panel__more-menu" role="menu" @click=${(e: Event) => e.stopPropagation()}
+                  @keydown=${(event:KeyboardEvent)=>menuKeydown(event,()=>{closeMoreMenu(host.bump);document.querySelector<HTMLButtonElement>(".oc-panel__more-wrap > button")?.focus();})}>
                   <button class="oc-panel__more-item" type="button" role="menuitem"
                     data-tooltip=${t("workspace.createHint")}
                     data-tooltip-wide="true"

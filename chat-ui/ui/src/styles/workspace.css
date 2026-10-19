@@ -201,6 +201,21 @@
   opacity: 0;
   transition: opacity var(--duration-fast) var(--ease-standard);
 }
+
+.wk-nav__open {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  gap: var(--spacer-8);
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
 .wk-nav__node:hover .wk-nav__node-actions,
 .wk-nav__node:focus-within .wk-nav__node-actions {
   opacity: 1;

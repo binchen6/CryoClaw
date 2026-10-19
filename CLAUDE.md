@@ -16,17 +16,17 @@ Electron Main Process
   └── BrowserWindow          (loads Lit Chat UI via file://, connects to gateway via WebSocket)
 ```
 
-The main process spawns a gateway subprocess, waits for its health check, then opens a BrowserWindow that loads a local Lit-based Chat UI (via `file://`). The Chat UI connects to the gateway over WebSocket for chat and HTTP for API calls. A system tray icon keeps the app alive when all windows are closed.
+The main process opens the local Lit Chat UI early (via `file://`) while it starts and checks the gateway subprocess. The UI displays connection progress, then connects over WebSocket for chat and HTTP for API calls. A system tray icon keeps the app alive when all windows are closed.
 
 ## Tech Stack
 
 | Layer | Choice |
 |---|---|
-| Shell | Electron ^43.4.0 (embedded Node 24, required by openclaw ≥2026.7 engines) |
-| Language | TypeScript → CommonJS (no ESM) |
+| Shell | Electron with Node 24; resolved version is locked in package-lock.json |
+| Language | TypeScript → CommonJS in main; Vite ESM in the Chat UI |
 | Chat UI | Lit 3 + Vite (file:// loaded SPA) |
-| Packager | electron-builder 26.7.0 |
-| Updater | electron-updater (generic provider, GitHub Releases) |
+| Packager | electron-builder, resolved version locked in package-lock.json |
+| Updater | electron-updater (GitHub Releases provider) |
 | Targets | macOS DMG + ZIP (arm64/x64), Windows NSIS (x64/arm64) |
 | Version scheme | Calendar-based: `YYYY.MMDD.N` (e.g. `2026.904.0`), manually bumped in `package.json` (see docs/releasing.md) |
 
@@ -34,7 +34,7 @@ The main process spawns a gateway subprocess, waits for its health check, then o
 
 ```
 cryoclaw/
-├── src/                    # 88 TypeScript modules + 45 test files (vitest + node:test)
+├── src/                    # Main-process TypeScript modules and regression tests
 │   ├── main.ts             # App entry, lifecycle, IPC, Dock toggle, config recovery
 │   ├── constants.ts        # Path resolution (dev vs packaged vs ASAR), health check params
 │   ├── gateway-process.ts  # Child process state machine + diagnostics
@@ -42,7 +42,7 @@ cryoclaw/
 │   ├── window.ts           # BrowserWindow lifecycle, token injection, retry
 │   ├── window-close-policy.ts  # Close behavior: hide vs destroy
 │   ├── tray.ts             # System tray icon + i18n context menu
-│   ├── preload.ts          # contextBridge IPC whitelist (120 methods + 6 listeners)
+│   ├── preload.ts          # contextBridge IPC whitelist (source of truth for methods/events)
 │   ├── provider-config.ts  # Provider presets, verification, config R/W
 │   ├── setup-ipc.ts        # Setup validation + config write + CLI install
 │   ├── setup-completion.ts # Setup wizard completion detection
@@ -66,7 +66,7 @@ cryoclaw/
 │   ├── analytics.ts        # Telemetry (PostHog-style, retry + fallback URL)
 │   ├── analytics-events.ts # Event classification + property sanitization
 │   └── logger.ts           # Dual-write logger (file + console)
-├── chat-ui/                # Lit-based Chat UI SPA (file:// loaded, ~35K LOC)
+├── chat-ui/                # Lit-based Chat UI SPA (file:// loaded)
 │   └── ui/                 # Vite project: Lit 3 components, sidebar, settings view, model selector
 ├── setup/                  # Static setup assets
 │   └── webbridge-enable-guide.html  # WebBridge enable guide
@@ -159,14 +159,14 @@ npm run build           # both at once
 
 ### Tests
 
-`npm test` runs the full suite (`test:unit` + `test:scripts`). Tests are excluded from the production `tsc` build (see `tsconfig.json`; the test compile uses `tsconfig.test.json`). Four runners cover ~131 test files (45 in `src/`, 76 in `chat-ui/`, 10 in `scripts/`):
+`npm test` runs the full suite (`test:unit` + `test:scripts`). Tests are excluded from the production `tsc` build (see `tsconfig.json`; the test compile uses `tsconfig.test.json`). Current verified totals live in docs/OPTIMIZATION-PROGRESS.md and its latest release record; avoid copying historical counts into instructions. Four runners cover the layers below:
 
 | Runner | Script | What it runs |
 |---|---|---|
-| Vitest | `npm run test:unit:vitest` | The 12 `src/*.test.ts` files that need `vi.mock`/`vi.stubEnv` (listed in `vitest.config.ts`) |
+| Vitest | `npm run test:unit:vitest` | Mock-dependent tests listed in `vitest.config.ts` |
 | node:test | `npm run test:unit:node` | The remaining `src/*.test.ts`, compiled to `.test-dist/` then run via `node --test` (`scripts/run-node-tests.js`) |
 | Chat UI | `npm run test:chat` | chat-ui typecheck + `chat-ui/**/*.test.ts` (`scripts/run-chat-ui-tests.js`) |
-| Scripts | `npm run test:scripts` | `scripts/*.test.js` via `node --test` |
+| Scripts | `npm run test:scripts` | `scripts/*.test.js` and `scripts/*.test.mjs` via `node --test` |
 
 Run everything with `npm test`, or a single layer (e.g. `npm run test:scripts`).
 
@@ -210,7 +210,7 @@ CI: `.github/workflows/tests.yml` runs the full regression on every push/PR
 - **Config backup** — Rolling 10 backups + last-known-good snapshot + factory reset.
 - **Multi-model management** — IPC handlers for listing, deleting, setting default, and aliasing models across providers.
 - **Gateway ASAR packaging** — Optional `gateway.asar` archive (enabled by `CRYOCLAW_GATEWAY_ASAR=1`) reduces 5000+ files to a single archive for faster Windows installs. Patched openclaw boundary check for ASAR paths (`patchAsarBoundaryCheck` in scripts/package-resources.js: asar fast-paths injected into `@openclaw/fs-safe` chunks — `openRootFileSync`/`openRootFile`, `verifyStableReadTarget`, `openPinnedFileSync`, `sameFileIdentity`; required because Electron asar stats use synthetic dev=1/per-call-counter ino). Extensions unpacked to `gateway.asar.unpacked/`. Official openclaw channel/provider plugins (feishu, qqbot, moonshot/kimi/zai/qwen/deepseek providers) are vendored into `dist/extensions/` at pack time since openclaw ≥2026.6 no longer ships them in the npm tarball.
-- **Preload security** — 111 IPC methods + 6 event listeners (117 exposed members) via `contextBridge` (sandbox mode).
+- **Preload security** — Explicit methods and event listeners via `contextBridge` (sandbox mode); `src/preload.ts` is the authoritative whitelist.
 
 ## Runtime Paths (on user's machine)
 
@@ -264,6 +264,6 @@ Release notes, code comments, commit messages, and docs are read by busy people.
 
 ## Common Gotchas
 
-See [docs/gotchas.md](docs/gotchas.md) for the full list (118 items covering packaging, signing, config, tooltip, design tokens, etc. — the numbered list in gotchas.md is the source of truth).
+See [docs/gotchas.md](docs/gotchas.md) for verified packaging, signing, configuration and UI constraints. Its numbered entries are the source of truth.
 
 When you encounter a non-trivial problem and find a working solution, add it to `docs/gotchas.md` so future developers don't repeat the same investigation.

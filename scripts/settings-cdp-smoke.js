@@ -20,7 +20,7 @@ const { bareI18nScanExpr } = require("./lib/bare-i18n-scan.js");
 const { overlapCheckExpr } = require("./lib/overlap-scan.js");
 const {
   arg, launch, waitForPageTarget, waitForGateway, connect,
-  waitForAppReady, waitForSettle, uniqueExceptionLines,
+  waitForAppReady,dismissReleaseNotes, waitForSettle, uniqueExceptionLines,
 } = require("./lib/cdp-harness.js");
 
 const root = path.resolve(__dirname, "..");
@@ -38,8 +38,9 @@ async function main() {
   const page = await waitForPageTarget(port, 90_000);
   if (!page) { console.error("[settings-smoke] 90s 内未发现页面 target"); cleanup(); process.exit(1); }
   const { ws, cdp } = await connect(page);
-  await waitForAppReady(cdp);
-  await waitForGateway(undefined, 40_000);
+  if(!await waitForAppReady(cdp))throw Error("App readiness timed out");
+  await dismissReleaseNotes(cdp);
+  if(!await waitForGateway(undefined, 40_000))throw Error("Gateway readiness timed out");
 
   // 设置入口：footer 直接子 button 的最后一个（有可用更新时设置项 aria-label 变成
   // 「有可用更新」，按 settings|设置 文案匹配会失效；webbridge/conn 状态项不是

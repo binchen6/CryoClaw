@@ -13,7 +13,7 @@ const fs = require("fs");
 const path = require("path");
 const {
   arg, sleep, launch, waitForPageTarget, waitForGateway, connect,
-  waitForAppReady, waitForSettle, setViewport, uniqueExceptionLines,
+  waitForAppReady,dismissReleaseNotes, waitForSettle, setViewport, uniqueExceptionLines,
 } = require("./lib/cdp-harness.js");
 
 const root = path.resolve(__dirname, "..");
@@ -29,10 +29,11 @@ if (!fs.existsSync(exe)) {
   const page = await waitForPageTarget(debugPort, 90_000);
   if (!page) { console.error("no page target"); cleanup(); process.exit(1); }
   const { ws, cdp } = await connect(page);
-  await waitForAppReady(cdp);
+  if(!await waitForAppReady(cdp))throw Error("App readiness timed out");
+  await dismissReleaseNotes(cdp);
   // 等网关就绪（冷启动约 12s），否则「连接失败」弹窗会挡住审查
   const gatewayOk0 = await waitForGateway(undefined, 60_000, 3000);
-  if (!gatewayOk0) console.log("WARN  网关 60s 未就绪，后续步骤可能受连接弹窗干扰");
+  if (!gatewayOk0) throw Error("Gateway readiness timed out");
   await setViewport(cdp, 1440);
   await waitForSettle(cdp, 600);
 

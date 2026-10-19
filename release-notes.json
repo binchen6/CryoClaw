@@ -1,5 +1,12 @@
 [
   {
+    "version": "2026.1019.0",
+    "notes": {
+      "zh": "工作区草稿备份失败时保留当前编辑，备份期间的新输入继续保存；快速切换根目录保持前后端一致，失败后可重试。会话选择与管理按钮分离，菜单支持方向键和 Escape，文件标签支持键盘切换。工作区与技能选择文案统一进入中英字典。安装验收自动暂存安装器，发布下载增加超时、容量与重定向限制，流式核对安装包摘要；新增服务端资产摘要校验和默认只预览的过期产物清理工具，整理当前交接与历史文档。 修复 Inter 字体注册，并更新 Electron 与可兼容升级的依赖。",
+      "en": "Keep workspace edits when draft backup fails and persist edits made while a backup is pending. Root changes remain ordered across the UI and main process, with retryable failures. Session selection and action buttons are separate native controls; menus and file tabs support keyboard navigation. Workspace and skill-picker text now uses the bilingual dictionaries. Installer verification stages a fresh executable; release downloads have time, size and redirect limits with streaming hashes. Added server-digest verification, preview-first stale artifact cleanup, and a concise handoff with archived history. Restores Inter font registration and updates Electron and compatible dependencies."
+    }
+  },
+  {
     "version": "2026.1018.3",
     "notes": {
       "zh": "修复工作区快速切换文件及放弃草稿时的异步竞争，避免旧操作覆盖新选择。Worktrees 列表仅接受最新请求与当前连接的结果。更新暂缓在写盘失败时仍在本次会话生效，清除暂缓后立即恢复自动检查。完善发布资产的大小、校验和与多架构一致性校验，并为验收工具补齐断线与超时处理。",
