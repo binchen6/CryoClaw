@@ -1,81 +1,109 @@
-/* Release metadata is optional: downloads and content also work without JS. */
+/* Content and pinned downloads work before JavaScript or release metadata loads. */
 (() => {
   'use strict';
-  const official = 'https://github.com/binchen6/CryoClaw/releases/latest';
-  const set = (id, value) => { const el = document.getElementById(id); if (el) el.textContent = value; };
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 6000);
-  fetch('/api/cryoclaw-release', { signal: controller.signal }).then(r => {
-    if (!r.ok) throw new Error('Release unavailable');
-    return r.json();
-  }).then(data => {
-    if (!/^v?\d+(\.\d+){2}$/.test(data.tag_name)) return;
-    const version = data.tag_name.replace(/^v/, '');
-    set('hero-version', 'v' + version);
-    set('download-version', '最新版本 v' + version);
-    ['download-hero', 'download-cta'].forEach(id => {
-      const el = document.getElementById(id);
-      if (el) el.href = '/api/cryoclaw-dl?v=' + encodeURIComponent(version);
-    });
-    const asset = (data.assets || []).find(a => /^CryoClaw-Setup-.*-x64\.exe$/i.test(a.name));
-    if (asset && asset.browser_download_url.startsWith('https://github.com/binchen6/CryoClaw/releases/download/')) {
-      const el = document.getElementById('download-official');
-      if (el) el.href = asset.browser_download_url;
-      set('download-size', 'Windows x64 · ' + Math.round(asset.size / 1048576) + ' MB');
-    }
-    if (data.published_at && !isNaN(Date.parse(data.published_at))) set('download-date', new Date(data.published_at).toLocaleDateString('zh-CN') + ' 发布');
-    const box = document.getElementById('whatsnew');
-    if (box) { const a = document.createElement('a'); a.href = official; a.textContent = '查看 v' + version + ' 完整更新 →'; box.replaceChildren(a); box.classList.add('is-on'); }
-  }).catch(() => {}).finally(() => clearTimeout(timer));
-})();
+  const root = document.documentElement;
+  const systemTheme = matchMedia('(prefers-color-scheme: dark)');
+  const themeButton = document.querySelector('.theme-toggle');
+  const setThemeLabel = () => {
+    const dark = root.dataset.theme ? root.dataset.theme === 'dark' : systemTheme.matches;
+    themeButton.setAttribute('aria-label', dark ? '切换到浅色主题' : '切换到深色主题');
+    themeButton.setAttribute('aria-pressed', String(dark));
+  };
+  try { const saved = localStorage.getItem('cryoclaw-site-theme'); if (['light', 'dark'].includes(saved)) root.dataset.theme = saved; } catch { /* Private browsing can deny storage. */ }
+  themeButton.hidden = false;
+  setThemeLabel();
+  systemTheme.addEventListener('change', setThemeLabel);
+  themeButton.addEventListener('click', () => {
+    root.dataset.theme = (root.dataset.theme ? root.dataset.theme === 'dark' : systemTheme.matches) ? 'light' : 'dark';
+    try { localStorage.setItem('cryoclaw-site-theme', root.dataset.theme); } catch { /* Theme still works without persistence. */ }
+    setThemeLabel();
+  });
 
-/* One frame per input: no idle animation loop or particle dependencies. */
-(() => {
-  const reduced = matchMedia('(prefers-reduced-motion: reduce)');
-  const fine = matchMedia('(hover: hover) and (pointer: fine)');
-  const title = document.querySelector('.hero__title');
-  let enabled = !reduced.matches;
-  if (title) {
-    title.setAttribute('data-mask-text', Array.from(title.querySelectorAll('.hero__line')).map(line => line.textContent.trim()).join('\n'));
-    title.addEventListener('pointermove', event => {
-      if (!enabled || !fine.matches) return;
-      const r = title.getBoundingClientRect();
-      title.style.setProperty('--light-x', event.clientX - r.left + 'px');
-      title.style.setProperty('--light-y', event.clientY - r.top + 'px');
-      title.classList.add('is-tracking');
-    }, { passive: true });
-    title.addEventListener('pointerleave', () => {
-      title.classList.remove('is-tracking');
+  const menuButton = document.querySelector('.menu-toggle');
+  const mobileMenu = document.getElementById('mobile-nav');
+  const closeMenu = () => { mobileMenu.hidden = true; menuButton.setAttribute('aria-expanded', 'false'); menuButton.setAttribute('aria-label', '展开导航'); };
+  menuButton.hidden = false;
+  menuButton.addEventListener('click', () => {
+    const open = menuButton.getAttribute('aria-expanded') !== 'true';
+    menuButton.setAttribute('aria-expanded', String(open));
+    menuButton.setAttribute('aria-label', open ? '收起导航' : '展开导航');
+    mobileMenu.hidden = !open;
+  });
+  document.addEventListener('keydown', event => { if (event.key === 'Escape' && !mobileMenu.hidden) { closeMenu(); menuButton.focus(); } });
+  matchMedia('(min-width: 801px)').addEventListener('change', event => { if (event.matches) closeMenu(); });
+  document.querySelectorAll('a[href^="#"]').forEach(link => link.addEventListener('click', event => {
+    const hash = link.getAttribute('href');
+    const target = document.getElementById(hash.slice(1));
+    if (!target) return;
+    event.preventDefault(); closeMenu();
+    history.pushState(null, '', hash);
+    target.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth' });
+    if (link.classList.contains('skip-link')) { target.tabIndex = -1; target.focus({ preventScroll: true }); }
+  }));
+
+  const tabs = [...document.querySelectorAll('[role="tab"]')];
+  const selectTab = tab => {
+    tabs.forEach(item => {
+      const active = item === tab;
+      item.setAttribute('aria-selected', String(active)); item.tabIndex = active ? 0 : -1;
+      document.getElementById(item.getAttribute('aria-controls')).hidden = !active;
+    });
+  };
+  tabs.forEach((tab, index) => {
+    tab.addEventListener('click', () => selectTab(tab));
+    tab.addEventListener('keydown', event => {
+      let next;
+      if (event.key === 'ArrowRight') next = (index + 1) % tabs.length;
+      if (event.key === 'ArrowLeft') next = (index - 1 + tabs.length) % tabs.length;
+      if (event.key === 'Home') next = 0;
+      if (event.key === 'End') next = tabs.length - 1;
+      if (next === undefined) return;
+      event.preventDefault(); selectTab(tabs[next]); tabs[next].focus();
+    });
+  });
+  if ('IntersectionObserver' in window) {
+    const links = [...document.querySelectorAll('.desktop-nav a')];
+    const observer = new IntersectionObserver(entries => entries.forEach(entry => {
+      if (!entry.isIntersecting) return;
+      links.forEach(link => { if (link.hash === '#' + entry.target.id) link.setAttribute('aria-current', 'location'); else link.removeAttribute('aria-current'); });
+    }), { rootMargin: '-20% 0px -55% 0px' });
+    links.forEach(link => observer.observe(document.getElementById(link.hash.slice(1))));
+  }
+
+  const copy = document.querySelector('.copy-button');
+  if (navigator.clipboard) {
+    copy.hidden = false;
+    copy.addEventListener('click', async () => {
+      try { await navigator.clipboard.writeText(document.getElementById('checksum-value').textContent); copy.textContent = '已复制'; }
+      catch { copy.textContent = '请手动复制'; }
+      setTimeout(() => { copy.textContent = '复制'; }, 2200);
     });
   }
-  const canvas = document.createElement('canvas');
-  canvas.className = 'ambient-particles'; canvas.setAttribute('aria-hidden', 'true');
-  document.body.prepend(canvas);
-  const ctx = canvas.getContext('2d');
-  if (!ctx) { canvas.remove(); return; }
-  let frame = 0;
-  function draw() {
-    frame = 0;
-    const width = innerWidth, height = innerHeight, dpr = Math.min(devicePixelRatio || 1, 2);
-    if (canvas.width !== Math.round(width * dpr) || canvas.height !== Math.round(height * dpr)) {
-      canvas.width = Math.round(width * dpr); canvas.height = Math.round(height * dpr);
-    }
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, width, height);
-    if (!enabled) return;
-    const style = getComputedStyle(document.documentElement);
-    const colors = [style.getPropertyValue('--accent').trim(), style.getPropertyValue('--accent-2').trim()];
-    const count = Math.min(42, Math.floor(width / 24));
-    for (let i = 0; i < count; i++) {
-      const speed = .035 + (i % 5) * .012;
-      const x = ((i * 137.508 + Math.sin(scrollY * .001 + i) * 16) % width + width) % width;
-      const y = ((i * 193.71 - scrollY * speed) % height + height) % height;
-      ctx.globalAlpha = .12 + (i % 3) * .045;
-      ctx.fillStyle = colors[i % 2]; ctx.beginPath(); ctx.arc(x, y, 1 + (i % 3) * .5, 0, Math.PI * 2); ctx.fill();
-    }
-  }
-  const schedule = () => { if (!frame) frame = requestAnimationFrame(draw); };
-  addEventListener('scroll', schedule, { passive: true }); addEventListener('resize', schedule, { passive: true });
-  reduced.addEventListener('change', () => { enabled = !reduced.matches; if (!enabled && title) { title.classList.remove('is-tracking'); title.style.setProperty('--title-x', '0px'); title.style.setProperty('--title-y', '0px'); } schedule(); });
-  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', schedule);
-  schedule();
+
+  const set = (id, value) => { document.getElementById(id).textContent = value; };
+  const applyRelease = data => {
+    if (!/^v\d+(\.\d+){2}$/.test(data.tag_name)) throw new Error('Invalid release');
+    const version = data.tag_name.slice(1);
+    const name = 'CryoClaw-Setup-' + version + '-x64.exe';
+    const official = 'https://github.com/binchen6/CryoClaw/releases/download/' + data.tag_name + '/' + name;
+    const asset = (data.assets || []).find(a => a.name === name && a.browser_download_url === official && Number.isSafeInteger(a.size) && a.size > 0);
+    if (!asset) throw new Error('Installer not published');
+    set('hero-version', data.tag_name); set('download-version', data.tag_name);
+    set('download-size', (asset.size / 1048576).toFixed(1) + ' MB');
+    if (data.published_at && !isNaN(Date.parse(data.published_at))) set('download-date', new Date(data.published_at).toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' }) + ' 发布');
+    ['download-hero', 'download-cta'].forEach(id => { document.getElementById(id).href = '/api/cryoclaw-dl?v=' + encodeURIComponent(version); });
+    document.getElementById('download-official').href = official;
+    document.getElementById('download-mirror').href = 'https://gh-proxy.com/' + official;
+    document.getElementById('release-notes').href = 'https://github.com/binchen6/CryoClaw/releases/tag/' + data.tag_name;
+    const checksum = document.querySelector('.checksum');
+    const digest = /^sha256:[a-f0-9]{64}$/i.test(asset.digest || '') ? asset.digest.slice(7) : '';
+    checksum.hidden = !digest;
+    if (digest) { set('checksum-value', digest); set('checksum-command', 'Get-FileHash .\\' + name + ' -Algorithm SHA256'); }
+    set('release-status', data.stale ? '当前显示已验证的稳定版本' : '已同步 GitHub 发布信息');
+  };
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10000);
+  fetch('/api/cryoclaw-release', { signal: controller.signal }).then(response => {
+    if (!response.ok) throw new Error('Metadata unavailable'); return response.json();
+  }).then(applyRelease).catch(() => { set('release-status', '版本信息暂未刷新，仍可下载当前稳定版'); }).finally(() => clearTimeout(timeout));
 })();
