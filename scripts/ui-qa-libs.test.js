@@ -45,6 +45,15 @@ test("textOverflowScan 不申报 ellipsis（有意截断）", () => {
   assert.ok(expr.includes("pageHOverflow"), "应输出 body 横向滚动条判定");
 });
 
+test("textOverflowScan 跳过无可见文本元素（骨架/装饰件的变换子层不算文本裁切）", () => {
+  const expr = textOverflowScanExpr();
+  // 空文本守卫必须位于横向判定之前，否则守卫生效顺序错误
+  const guardAt = expr.indexOf(`(el.textContent || "").trim()`);
+  const hCheckAt = expr.indexOf("scrollWidth > el.clientWidth");
+  assert.ok(guardAt > 0, "应包含空文本守卫");
+  assert.ok(hCheckAt > guardAt, "空文本守卫应先于横向裁切判定执行");
+});
+
 test("cdp-harness arg 解析", () => {
   const argv = ["node", "x.js", "--port", "9223", "--exe", "C:\\app.exe", "--strict-layout"];
   assert.equal(arg(argv, "--port", "1"), "9223");

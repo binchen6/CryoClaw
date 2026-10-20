@@ -89,6 +89,8 @@
 }
 
 .oc-settings-content {
+  container: settings-pane / inline-size;
+  min-width: 0;
   view-transition-name: settings-content;
   flex: 1;
   display: flex;
@@ -1504,6 +1506,7 @@
   color: var(--text-muted);
 }
 .oc-provider-usage-value {
+  overflow-wrap: anywhere;
   font-size: var(--heading-xl);
   font-weight: var(--weight-bold);
   color: var(--text-strong);
@@ -2529,6 +2532,7 @@
   background: var(--bg-input);
 }
 .oc-memory-stat__value {
+  overflow-wrap: anywhere;
   font-family: var(--font-meta);
   /* R91 审查修复：全库唯一裸字号改走 token（--heading-lg = 20px） */
   font-size: var(--heading-lg);
@@ -2560,11 +2564,12 @@
 
 /* 召回测试 */
 .oc-memory-recall-controls {
+  flex-wrap: wrap;
   display: flex;
   gap: var(--spacer-8);
   align-items: center;
 }
-.oc-memory-recall-controls .oc-settings__input { flex: 1; }
+.oc-memory-recall-controls .oc-settings__input { flex: 1 1 180px; min-width: 0; }
 .oc-memory-chips {
   display: flex;
   flex-wrap: wrap;
@@ -3006,6 +3011,7 @@ oc-range-control { display: block; min-width: 0; }
 .oc-theme-save { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--spacer-12); }
 .oc-theme-save label { flex: 1; min-width: 160px; display: grid; gap: var(--spacer-6); }
 .theme-editor__close { flex-shrink: 0; font-size: var(--text-lg); }
+.theme-editor:focus,.theme-preview-banner:focus { outline: none; }
 
 /* Theme recovery controls keep a readable, stable skin while the page is previewed. */
 .theme-editor,.theme-preview-banner {
@@ -3141,4 +3147,15 @@ oc-range-control { display: block; min-width: 0; }
   .oc-theme-refs { gap: var(--spacer-6); }
   .oc-theme-package__shadow { grid-template-columns: minmax(0,1fr); gap: var(--spacer-6); }
   .oc-theme-drop-hint { inset: var(--spacer-4); font-size: var(--text-xs); }
+}
+
+/* Settings navigation consumes space even in a wide desktop window. */
+@container settings-pane (max-width: 480px) {
+  .oc-memory-stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .oc-mcp__mapping-grid { grid-template-columns: minmax(0, 1fr); }
+  .oc-theme-agent__body > .oc-theme-agent__mode,
+  .oc-theme-package__shadow,
+  .oc-theme-brief { grid-template-columns: minmax(0, 1fr); gap: var(--spacer-8); }
+  .oc-settings__input,
+  .oc-settings__select { min-width: 0; }
 }

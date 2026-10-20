@@ -29,7 +29,7 @@ import "../../components/provider-segment.ts";
 import {
   PROVIDERS, CUSTOM_PRESETS, KIMI_CODE_FIXED_MODEL,
   CUSTOM_MODEL_SENTINEL, PROVIDER_DISPLAY_ORDER, getProviderLabels,
-  isValidHttpBaseUrl,
+  isValidHttpBaseUrl, KIMI_PRICING_URL,
 } from "../setup/setup-constants.ts";
 import {
   getCachedGatewayModels, getCachedGatewayModelEntries, loadGatewayModels, catalogModelSupportsImage,
@@ -1418,7 +1418,7 @@ function renderOrgManager(state: AppViewState) {
       <div class="oc-provider-org__add">
         <input class="oc-settings__input" .value=${s.orgGroupDraft} placeholder=${t("settings.provider.customGroups.placeholder")}
           @input=${(e: Event) => { s.orgGroupDraft = (e.target as HTMLInputElement).value; state.requestUpdate(); }}
-          @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter") handleOrgAdd(state); }} />
+          @keydown=${(e: KeyboardEvent) => { if (e.isComposing || e.keyCode === 229) return; if (e.key === "Enter") handleOrgAdd(state); }} />
         <button class="btn" ?disabled=${!s.orgGroupDraft.trim()}
           @click=${() => handleOrgAdd(state)}>${t("settings.provider.customGroups.add")}</button>
       </div>
@@ -1443,6 +1443,7 @@ function renderOrgManager(state: AppViewState) {
                   <input class="oc-settings__input oc-provider-org__rename" .value=${s.orgRenameDraft}
                     @input=${(e: Event) => { s.orgRenameDraft = (e.target as HTMLInputElement).value; state.requestUpdate(); }}
                     @keydown=${(e: KeyboardEvent) => {
+                      if (e.isComposing || e.keyCode === 229) return;
                       if (e.key === "Enter") handleOrgRenameSave(state);
                       if (e.key === "Escape") { s.orgRenaming = null; state.requestUpdate(); }
                     }} />
@@ -1674,7 +1675,7 @@ function renderModelCard(prov: GroupedProvider, entry: ProviderModelEntry, state
           <div class="oc-provider-card__alias-edit">
             <input class="oc-settings__input" .value=${s.aliasDraft} placeholder=${t("settings.provider.modelAliasPlaceholder")}
               @input=${(e: Event) => { s.aliasDraft = (e.target as HTMLInputElement).value; state.requestUpdate(); }}
-              @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter") handleAliasSave(prov, entry, state); if (e.key === "Escape") { s.aliasEditing = null; state.requestUpdate(); } }} />
+              @keydown=${(e: KeyboardEvent) => { if (e.isComposing || e.keyCode === 229) return; if (e.key === "Enter") handleAliasSave(prov, entry, state); if (e.key === "Escape") { s.aliasEditing = null; state.requestUpdate(); } }} />
             <button class="btn primary" @click=${() => handleAliasSave(prov, entry, state)}>${t("settings.save")}</button>
           </div>
         ` : html`
@@ -2226,7 +2227,7 @@ function renderAddPanel(state: AppViewState) {
             @input=${(e: CustomEvent) => { s.addApiKey = e.detail.value; state.requestUpdate(); }}
           ></oc-password-input>
           ${target?.platformUrl ? html`
-            <a class="oc-provider-link" @click=${(e: Event) => { e.preventDefault(); ipc.openExternal(target.platformUrl); }}>
+            <a class="oc-provider-link" href=${target.platformUrl} @click=${(e: Event) => { e.preventDefault(); ipc.openExternal(target.platformUrl); }}>
               ${t("setup.provider.getKey")}
             </a>
           ` : nothing}
@@ -2247,7 +2248,7 @@ function renderAddPanel(state: AppViewState) {
       ${s.oauthNoMembership ? html`
         <div class="cc-alert cc-alert--error">
           <span>${t("setup.provider.oauth.noMembership")}</span>
-          <a class="oc-provider-link" @click=${(e: Event) => { e.preventDefault(); ipc.openExternal("https://kimi.com/pricing?utm_source=oneclaw"); }}>
+          <a class="oc-provider-link" href=${KIMI_PRICING_URL} @click=${(e: Event) => { e.preventDefault(); ipc.openExternal(KIMI_PRICING_URL); }}>
             ${t("setup.provider.oauth.subscribeLink")}
           </a>
         </div>

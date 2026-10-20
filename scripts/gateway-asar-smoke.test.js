@@ -18,7 +18,7 @@ const childProcess = require("node:child_process");
 const { spawn } = childProcess;
 // 树终止与捕获式执行（避开 exec* 标识符形状的安全启发式误报；参数均为 argv 数组）
 const runTreeKill = childProcess.execFileSync;
-const execCaptured = childProcess.execSync;
+const {probeProcess}=require("./lib/test-process");
 
 const TARGET_BASE = path.join(__dirname, "..", "resources", "targets", "win32-x64");
 const ASAR_PATH = path.join(TARGET_BASE, "gateway.asar");
@@ -57,16 +57,12 @@ function killTree(child) {
 
 // Windows 上子进程（及其派生进程）退出后目录句柄释放有明显延迟，
 // rm 需长窗口重试；清理失败降级为警告（系统 temp 清理兜底），不判测试失败。
-function cleanupDir(dir) {
-  for (let i = 0; i < 20; i++) {
-    try {
-      fs.rmSync(dir, { recursive: true, force: true });
-      return;
-    } catch {
-      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1000);
-    }
+async function cleanupDir(dir) {
+  for (let i=0;i<20;i++) {
+    try {fs.rmSync(dir,{recursive:true,force:true});return;}
+    catch {await new Promise(resolve=>setTimeout(resolve,100));}
   }
-  console.warn(`[asar-smoke] 状态目录清理残留（系统 temp 兜底）: ${dir}`);
+  throw Error('Test state directory remained locked after process cleanup: '+dir);
 }
 
 function freePort() {
@@ -83,7 +79,7 @@ function freePort() {
 maybe("asar 冒烟：openclaw --version 在 asar 形态可执行", { timeout: 60_000 }, async (t) => {
   const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), "cryoclaw-asar-smoke-ver-"));
   t.after(() => cleanupDir(stateDir));
-  const out = execCaptured(`"${NODE_BIN}" "${ENTRY}" --version`, {
+  const out = childProcess.execFileSync(NODE_BIN, [ENTRY,"--version"], {
     cwd: stateDir,
     env: { ...NODE_ENV, HOME: stateDir, USERPROFILE: stateDir, LOCALAPPDATA: stateDir, OPENCLAW_STATE_DIR: stateDir },
     encoding: "utf-8",
@@ -126,36 +122,12 @@ maybe(
       )
     );
 
-    const runOnce = () =>
-      new Promise((resolve) => {
-        const child = spawn(NODE_BIN, [ENTRY, "gateway", "run", "--port", String(port)], {
-          cwd: stateDir,
-          // 内核忽略 child cwd，默认用 ~/.openclaw；必须显式隔离状态目录，
-          // 否则测试会读写用户真实配置
-          // 内核 10.4 按 os.homedir() 写 Windows 进程锁，必须连同配置一起隔离。
-          env: { ...NODE_ENV, HOME: stateDir, USERPROFILE: stateDir, LOCALAPPDATA: stateDir, OPENCLAW_DEBUG: "1", OPENCLAW_STATE_DIR: stateDir },
-          windowsHide: true,
-        });
-        t.after(() => killTree(child));
-        let stdout = "";
-        let stderr = "";
-        // OPENCLAW_DEBUG=1 时内核对管道输出也带 ANSI 颜色码（ready 行实际是
-        // `[gateway]\x1b[39m \x1b[32mready`），必须剥码后再匹配裸文本。
-        const stripAnsi = (s) => s.replace(/\x1b\[[0-9;]*m/g, "");
-        child.stdout.on("data", (c) => {
-          stdout += c.toString("utf-8");
-          if (stripAnsi(stdout).includes("[gateway] ready")) resolve({ kind: "ready", stdout, stderr });
-        });
-        child.stderr.on("data", (c) => (stderr += c.toString("utf-8")));
-        const timer = setTimeout(() => {
-          killTree(child);
-          resolve({ kind: "timeout", stdout, stderr });
-        }, 110_000);
-        child.on("close", (code) => {
-          clearTimeout(timer);
-          resolve({ kind: `exit:${code}`, stdout, stderr });
-        });
-      });
+    const stripAnsi=s=>s.replace(/\x1b\[[0-9;]*m/g,"");
+    const runOnce=()=>probeProcess(NODE_BIN,[ENTRY,"gateway","run","--port",String(port)],{
+      cwd:stateDir,
+      env:{...NODE_ENV,HOME:stateDir,USERPROFILE:stateDir,LOCALAPPDATA:stateDir,OPENCLAW_DEBUG:"1",OPENCLAW_STATE_DIR:stateDir},
+      timeoutMs:110000,isReady:({stdout})=>stripAnsi(stdout).includes("[gateway] ready"),
+    });
 
     // 全新 state 目录首轮启动：内核会做 startup 配置收敛迁移并以
     // "migration inputs changed … refusing to report ready" 退出要求重启（上游既有行为），
@@ -169,6 +141,7 @@ maybe(
         `asar 形态 gateway 启动崩溃（rootRealPath undefined 回归）\nstderr 尾部: ${last.stderr.slice(-4000)}`
       );
       ready = last.kind === "ready";
+      if (!ready && !/migration inputs changed|refusing to report ready/i.test(last.stdout+last.stderr)) break;
     }
 
     assert.ok(

@@ -12,16 +12,19 @@ import {
   addCronJob,
   updateCronJob,
   normalizeScheduleKindChange,
+  cronJobToForm,
 } from "./controllers/cron.ts";
 import { DEFAULT_CRON_FORM } from "./app-defaults.ts";
 import { handleSessionChange } from "./app-session-actions.ts";
 import { showConfirm } from "./views/confirm-dialog.ts";
+import { showToast } from "./app-toast.ts";
 import { t } from "./i18n.ts";
 import type { AppViewState } from "./app-view-state.ts";
 
 // ── Cron 视图模块状态 ──
 let cronExpandedJobId: string | null = null;
 let cronRunsLoading = false;
+let cronRunsLoadToken = 0;
 let cronShowForm = false;
 let cronEditingJobId: string | null = null;
 
@@ -40,20 +43,27 @@ export function renderCronView(state: AppViewState, opts?: { onOpenRunsTab?: () 
     channelMeta: state.channelsSnapshot?.channelMeta ?? [],
     models: state.configuredModels,
     onToggleExpand: (jobId: string) => {
+      if (state.cronBusy) return;
+      const token = ++cronRunsLoadToken;
       // 重复点击同一任务：收起，不重新拉取；同时清掉已加载的 runs，
       // 防止下次展开时在拉取完成前闪现旧数据
       if (cronExpandedJobId === jobId) {
         cronExpandedJobId = null;
+        cronRunsLoading = false;
         state.cronRunsJobId = null;
         state.cronRuns = [];
         state.requestUpdate();
         return;
       }
       cronExpandedJobId = jobId;
+      state.cronRunsJobId = null;
+      state.cronRuns = [];
+      state.cronError = null;
       cronShowForm = false;
       cronRunsLoading = true;
       state.requestUpdate();
-      void loadCronRuns(state, jobId, () => cronExpandedJobId === jobId).finally(() => {
+      void loadCronRuns(state, jobId, () => cronExpandedJobId === jobId && token === cronRunsLoadToken).finally(() => {
+        if (token !== cronRunsLoadToken) return;
         cronRunsLoading = false;
         state.requestUpdate();
       });
@@ -77,6 +87,7 @@ export function renderCronView(state: AppViewState, opts?: { onOpenRunsTab?: () 
       const job = state.cronJobs.find((j) => j.id === jobId);
       if (job) {
         void toggleCronJob(state, job, enabled).then(() => state.requestUpdate());
+        state.requestUpdate();
       }
     },
     onRun: (jobId: string) => {
@@ -87,8 +98,13 @@ export function renderCronView(state: AppViewState, opts?: { onOpenRunsTab?: () 
         void runCronJob(state, job, () => cronExpandedJobId === null || cronExpandedJobId === jobId)
           .then(() => state.requestUpdate());
       }
+      state.requestUpdate();
     },
     onToggleForm: () => {
+      if (state.cronBusy) return;
+      ++cronRunsLoadToken;
+      cronRunsLoading = false;
+      state.cronError = null;
       cronShowForm = !cronShowForm;
       cronEditingJobId = null;
       if (cronShowForm) {
@@ -98,77 +114,45 @@ export function renderCronView(state: AppViewState, opts?: { onOpenRunsTab?: () 
       state.requestUpdate();
     },
     onFormChange: (patch) => {
+      if (state.cronBusy) return;
       // 切换调度类型时归一化 cronExpr 语义（daily="HH:MM" ↔ cron 表达式）；
       // 见 controllers/cron.ts normalizeScheduleKindChange 的说明与用例。
       state.cronForm = normalizeScheduleKindChange(state.cronForm, patch);
       state.requestUpdate();
     },
     onAddJob: () => {
+      if (state.cronBusy) return;
       if (cronEditingJobId) {
-        void updateCronJob(state, cronEditingJobId).then(() => {
-          if (!state.cronError) {
+        void updateCronJob(state, cronEditingJobId).then((saved) => {
+          if (saved && !state.cronError) {
+            showToast(state, t("settings.saved"), undefined, "success");
             cronShowForm = false;
             cronEditingJobId = null;
           }
           state.requestUpdate();
         });
       } else {
-        void addCronJob(state).then(() => {
-          if (!state.cronError) {
+        void addCronJob(state).then((saved) => {
+          if (saved && !state.cronError) {
+            showToast(state, t("settings.saved"), undefined, "success");
             cronShowForm = false;
           }
           state.requestUpdate();
         });
       }
+      state.requestUpdate();
     },
     onEdit: (jobId: string) => {
+      if (state.cronBusy) return;
+      ++cronRunsLoadToken;
+      cronRunsLoading = false;
       const job = state.cronJobs.find((j) => j.id === jobId);
       if (!job) return;
+      state.cronError = null;
       cronEditingJobId = jobId;
       cronShowForm = true;
       cronExpandedJobId = null;
-      // Detect daily pattern: "M H * * *" → convert to daily mode
-      let editKind: string = job.schedule.kind;
-      let editCronExpr = job.schedule.expr ?? "0 7 * * *";
-      if (job.schedule.kind === "cron" && job.schedule.expr) {
-        const dm = job.schedule.expr.match(/^(\d{1,2})\s+(\d{1,2})\s+\*\s+\*\s+\*$/);
-        if (dm) {
-          editKind = "daily";
-          editCronExpr = `${dm[2].padStart(2, "0")}:${dm[1].padStart(2, "0")}`;
-        }
-      }
-      // 间隔按量级换算单位：能整除天→days、小时→hours，否则 minutes（至少 1）
-      const everyMs = job.schedule.everyMs ?? 0;
-      let editEveryAmount = "30";
-      let editEveryUnit = "minutes";
-      if (everyMs > 0) {
-        if (everyMs % 86400000 === 0) {
-          editEveryUnit = "days";
-          editEveryAmount = String(everyMs / 86400000);
-        } else if (everyMs % 3600000 === 0) {
-          editEveryUnit = "hours";
-          editEveryAmount = String(everyMs / 3600000);
-        } else {
-          editEveryAmount = String(Math.max(1, Math.round(everyMs / 60000)));
-        }
-      }
-      state.cronForm = {
-        ...DEFAULT_CRON_FORM,
-        name: job.name ?? "",
-        scheduleKind: editKind as typeof state.cronForm.scheduleKind,
-        scheduleAt: job.schedule.at ?? "",
-        everyAmount: editEveryAmount,
-        everyUnit: editEveryUnit,
-        cronExpr: editCronExpr,
-        cronTz: job.schedule.tz ?? "",
-        payloadKind: job.payload.kind,
-        payloadText: job.payload.message ?? job.payload.text ?? "",
-        payloadModel: typeof job.payload.model === "string" ? job.payload.model : "",
-        sessionTarget: typeof job.sessionTarget === "string" ? job.sessionTarget : "isolated",
-        deliveryMode: job.delivery?.mode ?? "announce",
-        deliveryChannel: job.delivery?.channel ?? "last",
-        deliveryTo: job.delivery?.to ?? "",
-      };
+      state.cronForm = cronJobToForm(job, DEFAULT_CRON_FORM);
       state.requestUpdate();
     },
   });

@@ -74,6 +74,18 @@ test("cron-manage：详情「最近运行」链回运行记录 tab", () => {
   assert.match(s, /"cron\.viewRuns"/, "缺少「在运行记录中查看」文案");
 });
 
+// 键盘可达性（R69 同一契约）：可点击 div 行必须 role="button" + tabindex="0" +
+// activateOnKeydown（Enter/Space 激活，helper 的 e.target!==e.currentTarget 守卫
+// 保证内层编辑/删除按钮的 Enter/Space 不重复触发行选中）
+test("cron-manage：任务列表项键盘可达（role/tabindex/activateOnKeydown）", () => {
+  const s = stripComments(src("views/cron-manage.ts"));
+  assert.match(s, /import \{ activateOnKeydown \} from "\.\.\/a11y\.ts"/, "应引入 activateOnKeydown");
+  const fn = s.slice(s.indexOf("function renderListItem"), s.indexOf("renderDetail"));
+  assert.match(fn, /role="button"/, "列表项应有 role=button");
+  assert.match(fn, /tabindex="0"/, "列表项应有 tabindex=0");
+  assert.match(fn, /@keydown=\$\{activateOnKeydown\(\(\) => props\.onToggleExpand\(job\.id\)\)\}/, "Enter/Space 应触发选中");
+});
+
 test("i18n：新 key 双区齐全", () => {
   const zh = src("i18n/zh.ts");
   const en = src("i18n/en.ts");

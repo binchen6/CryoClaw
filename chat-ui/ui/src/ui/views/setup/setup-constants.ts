@@ -170,6 +170,9 @@ export const SUB_PLATFORM_URLS: Record<string, string> = {
   "kimi-code": "https://kimi.com/code?utm_source=oneclaw",
 };
 
+/** Kimi 订阅定价页：OAuth 无会员提示的订阅入口，setup 与 settings 两处共用。 */
+export const KIMI_PRICING_URL = "https://kimi.com/pricing?utm_source=oneclaw";
+
 export const PROVIDER_DISPLAY_ORDER = ["moonshot", "anthropic", "openai", "google", "custom"] as const;
 
 /** Returns i18n-driven display labels for the provider segment selector. */

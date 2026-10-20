@@ -1,11 +1,18 @@
 import type {GatewayBrowserClient} from "../gateway.ts";
 import type {AppViewState} from "../app-view-state.ts";
 import {t} from "../i18n.ts";
+import {ResourceCache} from "../utils/resource-cache.ts";
 import {showConfirm} from "../views/confirm-dialog.ts";
 
 export type WorkspaceGatewayState={client:GatewayBrowserClient|null;connected:boolean};
+const nativeRoots=new WeakMap<object,ResourceCache<string|null>>();
 const rootCache=new WeakMap<GatewayBrowserClient,Map<string,{at:number;value?:string|null;pending?:Promise<string|null>}>>();
 export async function resolveAgentWorkspacePath(state:WorkspaceGatewayState,agentId:string,force=false):Promise<string|null>{
+  const context=typeof window!=="undefined"?window.cryoclaw?.workspaceGetContext:undefined;
+  if(agentId==="main" && context){
+    let cache=nativeRoots.get(context);if(!cache){cache=new ResourceCache(30000);nativeRoots.set(context,cache);}
+    try{return await cache.read("main",async()=>{const result=await context();if(!result?.success || !result.data?.defaultRoot)throw Error("Workspace context unavailable");return result.data.defaultRoot;},force);}catch{}
+  }
   if(!state.client || !state.connected)return null;
   let cache=rootCache.get(state.client);if(!cache){cache=new Map();rootCache.set(state.client,cache);}
   const previous=cache.get(agentId);if(previous?.pending)return previous.pending;
@@ -43,7 +50,16 @@ let searchTimer:ReturnType<typeof setTimeout>|null=null,draftTimer:ReturnType<ty
 let preferenceTimer:ReturnType<typeof setTimeout>|null=null;
 const drafts=new Map<string,FileDraft>(),draftWrites=new Map<string,Promise<boolean>>();
 let rootWrites:Promise<void>=Promise.resolve();
-const directoryCache=new Map<string,{at:number;items:WorkspaceFileItem[];truncated:boolean}>();
+type DirectorySnapshot={items:WorkspaceFileItem[];truncated:boolean};
+const directoryCaches=new WeakMap<object,ResourceCache<DirectorySnapshot>>();
+const localScope={};
+function directoryCacheFor(state:WorkspaceGatewayState){const scope=state.client??localScope;let cache=directoryCaches.get(scope);if(!cache){cache=new ResourceCache<DirectorySnapshot>(30000,30);directoryCaches.set(scope,cache);}return cache;}
+function readDirectorySnapshot(state:WorkspaceGatewayState,dir:string,showHidden:boolean,force=false){return directoryCacheFor(state).read(dir+":"+showHidden,async()=>{const result=await window.cryoclaw?.workspaceListDir?.(dir,{showHidden});if(!result?.success || !result.data)throw Error(result?.message??t("workspace.error"));return {items:Array.isArray(result.data.items)?result.data.items:[],truncated:result.data.truncated===true};},force);}
+export async function preloadWorkspaceDirectory(state:AppViewState){
+  if(!window.cryoclaw?.workspaceListDir)return;
+  const root=ws.root??(preferences.customRoot===true && typeof preferences.root==="string"?preferences.root:null)??await resolveAgentWorkspacePath(state,"main");
+  if(root)await readDirectorySnapshot(state,ws.root===root && ws.currentPath?ws.currentPath:root,ws.showHidden);
+}
 export function persistWorkspacePreferences():void{
   if(preferenceTimer)clearTimeout(preferenceTimer);
   preferenceTimer=setTimeout(()=>{try{localStorage.setItem("cryoclaw.workspace.browser.v1",JSON.stringify({root:ws.root,currentPath:ws.currentPath,customRoot:ws.customRoot,showHidden:ws.showHidden,navRatio:ws.navRatio}));}catch{}},200);
@@ -76,20 +92,18 @@ export function updateWorkspaceDraft(state:AppViewState,value:string){ws.draft=v
 export function selectWorkspaceMode(mode:"files"|"git"){ws.mode=mode;}
 export async function loadWorkspaceDirectory(state:AppViewState,dirPath:string,force=false,record=true){
   if(!window.cryoclaw?.workspaceListDir || ws.fileSaving)return;
-  const seq=++dirLoadSeq,key=dirPath+":"+ws.showHidden,cached=directoryCache.get(key);
-  ws.loading=true;ws.error=null;if(ws.currentPath!==dirPath){ws.items=[];ws.visibleLimit=200;}ws.currentPath=dirPath;state.requestUpdate();
+  const seq=++dirLoadSeq,cache=directoryCacheFor(state),cached=!force?cache.peek(dirPath+":"+ws.showHidden):undefined;
+  ws.loading=!cached;ws.error=null;if(ws.currentPath!==dirPath){ws.items=[];ws.visibleLimit=200;}ws.currentPath=dirPath;state.requestUpdate();
   try {
-    const result=!force && cached && Date.now()-cached.at<5000?{success:true,data:cached}:await window.cryoclaw.workspaceListDir(dirPath,{showHidden:ws.showHidden});
+    const result=cached??await readDirectorySnapshot(state,dirPath,ws.showHidden,force);
     if(seq!==dirLoadSeq)return;
-    if(!result?.success || !result.data)throw new Error(result?.message??t("workspace.error"));
-    ws.items=result.data.items??[];ws.truncated=result.data.truncated===true;
-    directoryCache.set(key,{at:Date.now(),items:ws.items,truncated:ws.truncated});if(directoryCache.size>30)directoryCache.delete(directoryCache.keys().next().value!);
+    ws.items=result.items;ws.truncated=result.truncated;
     if(record && ws.history[ws.historyIndex]!==dirPath){ws.history=ws.history.slice(0,ws.historyIndex+1);ws.history.push(dirPath);ws.historyIndex=ws.history.length-1;}
     persistWorkspacePreferences();
   }catch(error){if(seq===dirLoadSeq)ws.error=error instanceof Error?error.message:String(error);}
   finally{if(seq===dirLoadSeq){ws.loading=false;state.requestUpdate();}}
 }
-export async function setWorkspaceRoot(state:AppViewState,root:string,custom=true):Promise<boolean>{
+export async function setWorkspaceRoot(state:AppViewState,root:string,custom=true,force=false):Promise<boolean>{
   if(ws.fileSaving)return false;const generation=++initSeq;if(!await flushDraft(state)){if(generation===initSeq){ws.loading=false;state.requestUpdate();}return false;}if(generation!==initSeq)return false;
   let result:{success:boolean;message?:string}|undefined;
   // Root selection mutates main-process state, so ignoring a stale response alone is insufficient.
@@ -99,7 +113,7 @@ export async function setWorkspaceRoot(state:AppViewState,root:string,custom=tru
   if(generation!==initSeq)return false;
   if(!result?.success){ws.error=result?.message??t("workspace.error");ws.loading=false;state.requestUpdate();return false;}
   if(ws.root!==root){++fileLoadSeq;++dirLoadSeq;++searchSeq;if(searchTimer)clearTimeout(searchTimer);ws.root=root;ws.currentPath=root;ws.items=[];ws.history=[];ws.historyIndex=-1;ws.selectedFile=null;ws.fileContent=null;ws.imagePreview=null;ws.recentFiles=[];ws.editing=false;ws.fileLoading=false;ws.fileError=null;ws.search="";ws.searchResults=[];ws.searchLoading=false;}
-  ws.customRoot=custom;await loadWorkspaceDirectory(state,ws.currentPath??root,true);return true;
+  ws.customRoot=custom;await loadWorkspaceDirectory(state,ws.currentPath??root,force);return true;
 }
 export async function initWorkspace(state:AppViewState,force=false){
   if(ws.customRoot && ws.root){await loadWorkspaceDirectory(state,ws.currentPath??ws.root,force);return;}
@@ -109,7 +123,7 @@ export async function initWorkspace(state:AppViewState,force=false){
     if(root)ws.agentRoot=root;
     const remembered=!ws.root && preferences.customRoot===true && typeof preferences.root==="string"?preferences.root:null;
     const chosen=remembered??root??ws.root;if(!chosen)throw new Error(t("workspace.error"));
-    if(await setWorkspaceRoot(state,chosen,!!remembered)){
+    if(await setWorkspaceRoot(state,chosen,!!remembered,force)){
       if(remembered && typeof preferences.currentPath==="string" && workspaceRelativePath(chosen,preferences.currentPath)!==preferences.currentPath)await loadWorkspaceDirectory(state,preferences.currentPath,false);
     }
   }catch(error){if(seq===initSeq)ws.error=error instanceof Error?error.message:String(error);}
@@ -136,15 +150,30 @@ export async function loadWorkspaceFile(state:AppViewState,filePath:string,fileN
 }
 export async function openWorkspaceDirectory(state:AppViewState,item:WorkspaceFileItem){if(ws.fileSaving)return;if(item.isDir){const seq=++fileLoadSeq;if(!await flushDraft(state) || seq!==fileLoadSeq)return;ws.selectedFile=null;ws.fileContent=null;ws.imagePreview=null;ws.editing=false;ws.fileLoading=false;await loadWorkspaceDirectory(state,item.path);}else await loadWorkspaceFile(state,item.path,item.name);}
 export function navigateWorkspaceUp(state:AppViewState){if(!ws.currentPath || !ws.root || ws.currentPath===ws.root)return;const parent=ws.currentPath.replace(/[/\\][^/\\]+[/\\]?$/,"");void loadWorkspaceDirectory(state,parent.length>=ws.root.length?parent:ws.root);}
-export function navigateWorkspaceHistory(state:AppViewState,direction:number){const next=ws.historyIndex+direction;if(next<0 || next>=ws.history.length)return;ws.historyIndex=next;void loadWorkspaceDirectory(state,ws.history[next],false,false);}
-export function setWorkspaceSearch(state:AppViewState,query:string){ws.search=query;++searchSeq;if(searchTimer)clearTimeout(searchTimer);if(!query.trim()){ws.searchResults=[];ws.searchLoading=false;state.requestUpdate();return;}const generation=searchSeq;searchTimer=setTimeout(async()=>{
-  if(!ws.root || generation!==searchSeq)return;ws.searchLoading=true;state.requestUpdate();try{const result=await window.cryoclaw?.workspaceFindFiles?.({root:ws.root,query:query.trim(),showHidden:ws.showHidden});if(generation!==searchSeq)return;if(!result?.success)throw new Error(result?.message);ws.searchResults=result.data?.items??[];ws.searchTruncated=result.data?.truncated===true;}catch(error){if(generation===searchSeq)ws.error=String(error);}finally{if(generation===searchSeq){ws.searchLoading=false;state.requestUpdate();}}
-},200);state.requestUpdate();}
+export function navigateWorkspaceHistory(state:AppViewState,direction:number){if(ws.fileSaving)return;const next=ws.historyIndex+direction;if(next<0 || next>=ws.history.length)return;ws.historyIndex=next;void loadWorkspaceDirectory(state,ws.history[next],false,false);}
+export function setWorkspaceSearch(state:AppViewState,query:string){
+  ws.search=query;const generation=++searchSeq;
+  if(searchTimer)clearTimeout(searchTimer);searchTimer=null;
+  ws.searchResults=[];ws.searchTruncated=false;ws.error=null;ws.searchLoading=!!query.trim();
+  if(!query.trim()){state.requestUpdate();return;}
+  searchTimer=setTimeout(async()=>{
+    searchTimer=null;
+    if(generation!==searchSeq)return;
+    if(!ws.root){ws.searchLoading=false;state.requestUpdate();return;}
+    try{
+      const result=await window.cryoclaw?.workspaceFindFiles?.({root:ws.root,query:query.trim(),showHidden:ws.showHidden});
+      if(generation!==searchSeq)return;
+      if(!result?.success)throw new Error(result?.message??t("workspace.error"));
+      ws.searchResults=result.data?.items??[];ws.searchTruncated=result.data?.truncated===true;ws.error=null;
+    }catch(error){if(generation===searchSeq)ws.error=String(error);}
+    finally{if(generation===searchSeq){ws.searchLoading=false;state.requestUpdate();}}
+  },200);state.requestUpdate();
+}
 export async function saveWorkspaceFile(state:AppViewState){
   if(!ws.selectedFile || !workspaceDirty() || ws.fileSaving || !ws.baseHash)return;ws.fileSaving=true;ws.fileError=null;state.requestUpdate();
   const path=ws.selectedFile,content=ws.draft,baseHash=ws.baseHash;
   try{await flushDraft(state);const result=await window.cryoclaw?.workspaceWriteFile?.({path,content,baseHash});if(!result?.success)throw new Error(result?.message??t("workspace.draft.saveFailed"));
-    if(ws.selectedFile===path){ws.fileContent=content;ws.baseHash=result.data.hash;ws.fileHash=result.data.hash;ws.fileSize=result.data.size;ws.draftStatus=t("workspace.draft.saved");drafts.delete(path);}
+    if(ws.selectedFile===path){ws.fileContent=content;ws.baseHash=result.data.hash;ws.fileHash=result.data.hash;ws.fileSize=result.data.size;ws.draftStatus=t("workspace.draft.saved");drafts.delete(path);directoryCacheFor(state).clear();}
   }catch(error){ws.fileError=error instanceof Error?error.message:String(error);}finally{ws.fileSaving=false;state.requestUpdate();}
 }
 export async function discardWorkspaceDraft(state:AppViewState){

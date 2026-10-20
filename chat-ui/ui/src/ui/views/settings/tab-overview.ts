@@ -7,6 +7,7 @@
 import { html, nothing } from "lit";
 import type { AppViewState } from "../../app-view-state.ts";
 import { t } from "../../i18n.ts";
+import { showToast } from "../../app-toast.ts";
 import * as ipc from "../../data/ipc-bridge.ts";
 import "../../components/message-box.ts";
 
@@ -90,7 +91,9 @@ async function copyPath(key: string, value: string, state: AppViewState) {
       state.requestUpdate();
     }, 1500);
     state.requestUpdate();
-  } catch {}
+  } catch {
+    showToast(state, t("settings.overview.copyFailed"), undefined, "error");
+  }
 }
 
 /* ── 小组件 ── */

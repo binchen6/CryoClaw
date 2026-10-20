@@ -18,10 +18,12 @@ export class PasswordInput extends LitElement {
   @property({ type: String }) value = "";
   @property({ type: String }) placeholder = "";
   @property({ type: Boolean }) disabled = false;
+  @property({ type: String }) label = "";
 
   private visible = false;
 
   private toggleVisibility() {
+    if(this.disabled)return;
     this.visible = !this.visible;
     this.requestUpdate();
   }
@@ -42,10 +44,13 @@ export class PasswordInput extends LitElement {
           .type=${this.visible ? "text" : "password"}
           .value=${this.value}
           .placeholder=${this.placeholder}
+          aria-label=${this.label || this.getAttribute("aria-label") || this.placeholder}
+          autocomplete="off"
           ?disabled=${this.disabled}
           @input=${this.handleInput}
         />
         <button class="oc-password__toggle" type="button"
+          ?disabled=${this.disabled}
           aria-label=${this.visible ? t("settings.hidePassword") : t("settings.showPassword")}
           aria-pressed=${this.visible ? "true" : "false"}
           @click=${this.toggleVisibility}>

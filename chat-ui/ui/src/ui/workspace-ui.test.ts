@@ -106,6 +106,18 @@ test("file-changes 面板「在 git 中查看」链接接线（app-chat-props / 
   assert.match(grouped, /class="chat-git-view-link"/, "file-changes 缺少「在 git 中查看」链接");
   assert.match(grouped, /t\("chat\.viewInGit"\)/, "缺少链接文案");
   assert.match(grouped, /gitAvailable === true/, "链接应仅在 git 可用时渲染");
+  // 键盘可达（R23）：无 href 的 <a> 须带 tabindex/role，线程 keydown 委托须有对应分支
+  // （与 .chat-path-link 同一交互范式；click 用 closest(，keydown 用 closest?.(）
+  assert.match(
+    grouped,
+    /class="chat-git-view-link" tabindex="0" role="button"/,
+    "git 链接缺少 tabindex/role（键盘不可达）",
+  );
+  assert.match(
+    chat,
+    /closest\?\.\("\.chat-git-view-link"\)/,
+    "线程 keydown 委托缺少 git 链接分支（Enter/Space 不可激活）",
+  );
 });
 
 test("views/git.ts：分组/stage/commit/diff 渲染的关键结构", () => {
@@ -298,4 +310,23 @@ test("i18n：git 面板 key 双区齐全（抽样钉住，键集合一致性由 
   // R42 第二期 T5：sidebar.git 键随视图删除作废
   assert.ok(!zh.includes('"sidebar.git"'), "zh.ts 应删除死键 sidebar.git");
   assert.ok(!en.includes('"sidebar.git"'), "en.ts 应删除死键 sidebar.git");
+});
+
+test("worktrees：分支 chip 单行省略（窄侧栏斜杠分支名不再折行断词）", () => {
+  const view = src("views/worktrees.ts");
+  // compact 与标准卡片两个变体都应给分支名独立 span + title 兜底
+  const chipOccurrences = view.split("chip wt-card__branch-chip").length - 1;
+  assert.equal(chipOccurrences, 2, "compact/标准两个变体都应使用分支 chip 结构");
+  const branchSpans = view.split('class="wt-card__branch" title=${w.branch}').length - 1;
+  assert.equal(branchSpans, 2, "分支名应带 title 兜底完整值");
+
+  // CSS 钉定（编译产物上 4 级到 chat-ui/ui 根再进 src/styles；CRLF 折叠空白后断言）
+  const css = readFileSync(
+    new URL("../../../../src/styles/tasks-misc.css", import.meta.url),
+    "utf8",
+  ).replace(/\s+/g, " ");
+  assert.match(css, /\.wt-card__branch-chip \{[^}]*max-width: 100%/, "分支 chip 应限宽 100%");
+  assert.match(css, /\.wt-card__branch-chip \{[^}]*min-width: 0/, "分支 chip 应可收缩");
+  assert.match(css, /\.wt-card__branch \{[^}]*white-space: nowrap/, "分支名应单行");
+  assert.match(css, /\.wt-card__branch \{[^}]*text-overflow: ellipsis/, "分支名超出应省略");
 });

@@ -21,6 +21,9 @@ export type CronState = {
 
 // 能力门控：内核未注册对应 cron.* 方法时静默跳过（对齐 capabilities.ts 的保守放行
 // 语义——hello 未声明 features 的旧内核 supportsMethod 返回 true，不误伤）
+const cronStatusRequests = new WeakMap<CronState, object>();
+const cronRunsRequests = new WeakMap<CronState, object>();
+
 export async function loadCronStatus(state: CronState) {
   if (!state.client || !state.connected) {
     return;
@@ -28,11 +31,15 @@ export async function loadCronStatus(state: CronState) {
   if (!supportsMethod(state.hello, "cron.status")) {
     return;
   }
+  const client = state.client;
+  const token = {};
+  cronStatusRequests.set(state, token);
+  const current = () => state.client === client && state.connected && cronStatusRequests.get(state) === token;
   try {
-    const res = await state.client.request<CronStatus>("cron.status", {});
-    state.cronStatus = res;
+    const res = await client.request<CronStatus>("cron.status", {});
+    if (current()) state.cronStatus = res;
   } catch (err) {
-    state.cronError = String(err);
+    if (current()) state.cronError = String(err);
   }
 }
 
@@ -96,6 +103,47 @@ export function normalizeScheduleKindChange(
   return next;
 }
 
+function checkedTimezone(value: string): string | undefined {
+  const tz = value.trim();
+  if (!tz) return undefined;
+  try { new Intl.DateTimeFormat("en", { timeZone: tz }); }
+  catch { throw new Error(t("cron.error.timezone")); }
+  return tz;
+}
+
+/** Editing a name must not change the schedule or silently restore defaults. */
+export function cronJobToForm(job: CronJob, defaults: CronFormState): CronFormState {
+  let scheduleKind: CronFormState["scheduleKind"] = job.schedule.kind;
+  let cronExpr = job.schedule.expr ?? defaults.cronExpr;
+  const daily = job.schedule.kind === "cron" && cronExpr.match(/^(\d{1,2})\s+(\d{1,2})\s+\*\s+\*\s+\*$/);
+  if (daily && Number(daily[1]) < 60 && Number(daily[2]) < 24) {
+    scheduleKind = "daily";
+    cronExpr = `${daily[2].padStart(2,"0")}:${daily[1].padStart(2,"0")}`;
+  }
+  let scheduleAt = job.schedule.at ?? "";
+  const date = new Date(scheduleAt);
+  if (scheduleAt && Number.isFinite(date.getTime())) {
+    scheduleAt = new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0,-1);
+  }
+  const ms = job.schedule.everyMs ?? 0;
+  const units = [["days",86_400_000],["hours",3_600_000],["minutes",60_000],["seconds",1000],["milliseconds",1]] as const;
+  const unit = units.find(([,size]) => ms > 0 && ms % size === 0);
+  return {
+    ...defaults, name:job.name ?? "", enabled:job.enabled !== false,
+    description:typeof job.description === "string" ? job.description : "",
+    agentId:typeof job.agentId === "string" ? job.agentId : "",
+    wakeMode:typeof job.wakeMode === "string" ? job.wakeMode : defaults.wakeMode,
+    scheduleKind, cronExpr, scheduleAt, cronTz:job.schedule.tz ?? "",
+    everyUnit:unit?.[0] ?? defaults.everyUnit,
+    everyAmount:unit ? String(ms / unit[1]) : defaults.everyAmount,
+    payloadKind:job.payload.kind, payloadText:job.payload.message ?? job.payload.text ?? "",
+    payloadModel:typeof job.payload.model === "string" ? job.payload.model : "",
+    timeoutSeconds:typeof job.payload.timeoutSeconds === "number" ? String(job.payload.timeoutSeconds) : "",
+    sessionTarget:typeof job.sessionTarget === "string" ? job.sessionTarget : defaults.sessionTarget,
+    deliveryMode:job.delivery?.mode ?? "none", deliveryChannel:job.delivery?.channel ?? "last", deliveryTo:job.delivery?.to ?? "",
+  };
+}
+
 export function buildCronSchedule(form: CronFormState) {
   // "daily" is a UI-only kind → convert HH:MM to cron expr
   if (form.scheduleKind === "daily") {
@@ -105,7 +153,8 @@ export function buildCronSchedule(form: CronFormState) {
     }
     const hour = parseInt(match[1], 10);
     const minute = parseInt(match[2], 10);
-    const tz = form.cronTz.trim() || Intl.DateTimeFormat().resolvedOptions().timeZone;
+    if (hour > 23 || minute > 59) throw new Error(t("cron.error.dailyTime"));
+    const tz = checkedTimezone(form.cronTz) || Intl.DateTimeFormat().resolvedOptions().timeZone;
     return { kind: "cron" as const, expr: `${minute} ${hour} * * *`, tz };
   }
   if (form.scheduleKind === "at") {
@@ -120,15 +169,16 @@ export function buildCronSchedule(form: CronFormState) {
     if (amount <= 0) {
       throw new Error(t("cron.error.intervalAmount"));
     }
-    const unit = form.everyUnit;
-    const mult = unit === "minutes" ? 60_000 : unit === "hours" ? 3_600_000 : 86_400_000;
-    return { kind: "every" as const, everyMs: amount * mult };
+    const mult = form.everyUnit === "milliseconds" ? 1 : form.everyUnit === "seconds" ? 1000 : form.everyUnit === "minutes" ? 60_000 : form.everyUnit === "hours" ? 3_600_000 : form.everyUnit === "days" ? 86_400_000 : 0;
+    const everyMs = amount * mult;
+    if (!Number.isSafeInteger(everyMs) || everyMs <= 0) throw new Error(t("cron.error.intervalAmount"));
+    return { kind: "every" as const, everyMs };
   }
   const expr = form.cronExpr.trim();
   if (!expr) {
     throw new Error(t("cron.error.exprRequired"));
   }
-  return { kind: "cron" as const, expr, tz: form.cronTz.trim() || undefined };
+  return { kind: "cron" as const, expr, tz: checkedTimezone(form.cronTz) };
 }
 
 export function buildCronPayload(form: CronFormState) {
@@ -175,11 +225,13 @@ function buildCronDelivery(form: CronFormState) {
 
 export async function addCronJob(state: CronState) {
   if (!state.client || !state.connected || state.cronBusy) {
-    return;
+    return false;
   }
   if (!supportsMethod(state.hello, "cron.add")) {
-    return;
+    return false;
   }
+  const client = state.client;
+  const current = () => state.client === client && state.connected;
   state.cronBusy = true;
   state.cronError = null;
   try {
@@ -201,7 +253,8 @@ export async function addCronJob(state: CronState) {
     if (!job.name) {
       throw new Error(t("cron.error.nameRequired"));
     }
-    await state.client.request("cron.add", job);
+    await client.request("cron.add", job);
+    if (!current()) return false;
     state.cronForm = {
       ...state.cronForm,
       name: "",
@@ -209,9 +262,11 @@ export async function addCronJob(state: CronState) {
       payloadText: "",
     };
     await loadCronJobs(state);
-    await loadCronStatus(state);
+    if (current()) await loadCronStatus(state);
+    return current() && !state.cronError;
   } catch (err) {
-    state.cronError = String(err);
+    if (current()) state.cronError = String(err);
+    return false;
   } finally {
     state.cronBusy = false;
   }
@@ -219,11 +274,13 @@ export async function addCronJob(state: CronState) {
 
 export async function updateCronJob(state: CronState, jobId: string) {
   if (!state.client || !state.connected || state.cronBusy) {
-    return;
+    return false;
   }
   if (!supportsMethod(state.hello, "cron.update")) {
-    return;
+    return false;
   }
+  const client = state.client;
+  const current = () => state.client === client && state.connected;
   state.cronBusy = true;
   state.cronError = null;
   try {
@@ -246,11 +303,14 @@ export async function updateCronJob(state: CronState, jobId: string) {
       payload,
       delivery,
     };
-    await state.client.request("cron.update", { id: jobId, patch });
+    await client.request("cron.update", { id: jobId, patch });
+    if (!current()) return false;
     await loadCronJobs(state);
-    await loadCronStatus(state);
+    if (current()) await loadCronStatus(state);
+    return current() && !state.cronError;
   } catch (err) {
-    state.cronError = String(err);
+    if (current()) state.cronError = String(err);
+    return false;
   } finally {
     state.cronBusy = false;
   }
@@ -263,14 +323,18 @@ export async function toggleCronJob(state: CronState, job: CronJob, enabled: boo
   if (!supportsMethod(state.hello, "cron.update")) {
     return;
   }
+  const client = state.client;
+  const current = () => state.client === client && state.connected;
   state.cronBusy = true;
   state.cronError = null;
   try {
-    await state.client.request("cron.update", { id: job.id, patch: { enabled } });
+    await client.request("cron.update", { id: job.id, patch: { enabled } });
+    if (!current()) return false;
     await loadCronJobs(state);
-    await loadCronStatus(state);
+    if (current()) await loadCronStatus(state);
+    return current() && !state.cronError;
   } catch (err) {
-    state.cronError = String(err);
+    if (current()) state.cronError = String(err);
   } finally {
     state.cronBusy = false;
   }
@@ -283,16 +347,19 @@ export async function runCronJob(state: CronState, job: CronJob, isCurrent?: () 
   if (!supportsMethod(state.hello, "cron.run")) {
     return;
   }
+  const client = state.client;
+  const current = () => state.client === client && state.connected;
   state.cronBusy = true;
   state.cronError = null;
   try {
     // cron.run mode:"force" 可等待数秒：运行日志刷新复用 loadCronRuns 的 stale
     // 守卫（isCurrent），否则在途期间展开另一任务时，本任务的迟到日志会渲染到
     // 别人的展开详情下
-    await state.client.request("cron.run", { id: job.id, mode: "force" });
+    await client.request("cron.run", { id: job.id, mode: "force" });
+    if (!current()) return false;
     await loadCronRuns(state, job.id, isCurrent);
   } catch (err) {
-    state.cronError = String(err);
+    if (current()) state.cronError = String(err);
   } finally {
     state.cronBusy = false;
   }
@@ -305,18 +372,22 @@ export async function removeCronJob(state: CronState, job: CronJob) {
   if (!supportsMethod(state.hello, "cron.remove")) {
     return;
   }
+  const client = state.client;
+  const current = () => state.client === client && state.connected;
   state.cronBusy = true;
   state.cronError = null;
   try {
-    await state.client.request("cron.remove", { id: job.id });
+    await client.request("cron.remove", { id: job.id });
+    if (!current()) return false;
     if (state.cronRunsJobId === job.id) {
       state.cronRunsJobId = null;
       state.cronRuns = [];
     }
     await loadCronJobs(state);
-    await loadCronStatus(state);
+    if (current()) await loadCronStatus(state);
+    return current() && !state.cronError;
   } catch (err) {
-    state.cronError = String(err);
+    if (current()) state.cronError = String(err);
   } finally {
     state.cronBusy = false;
   }
@@ -332,18 +403,22 @@ export async function loadCronRuns(state: CronState, jobId: string, isCurrent?: 
   if (!supportsMethod(state.hello, "cron.runs")) {
     return;
   }
+  const client = state.client;
+  const token = {};
+  cronRunsRequests.set(state, token);
+  const current = () => state.client === client && state.connected && cronRunsRequests.get(state) === token && (!isCurrent || isCurrent());
   try {
-    const res = await state.client.request<{ entries?: Array<CronRunLogEntry> }>("cron.runs", {
+    const res = await client.request<{ entries?: Array<CronRunLogEntry> }>("cron.runs", {
       id: jobId,
       limit: 50,
     });
-    if (isCurrent && !isCurrent()) {
+    if (!current()) {
       return;
     }
     state.cronRunsJobId = jobId;
     state.cronRuns = Array.isArray(res.entries) ? res.entries : [];
   } catch (err) {
-    if (isCurrent && !isCurrent()) {
+    if (!current()) {
       return;
     }
     state.cronError = String(err);

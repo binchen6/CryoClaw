@@ -4,7 +4,7 @@
 //   - extractJsonPayload：`plugins inspect --json` 混警告行时的 JSON 提取
 //   - mergeMarketResults：market-browse 多路搜索结果的去重合并与分类标注
 //   - isValidPluginName / validateSkillSlug：handler 咽喉点的参数校验
-// handler 的 IPC 接线（assertTrustedIpcSender）由 ipc-sender-guard.test.ts 覆盖，
+// handler 的 IPC 接线（assertTrustedIpcSender）由 ipc-guard-coverage.test.ts 全量钉住，
 // 这里只钉纯逻辑，保证 node --test 下可无 Electron 运行时运行。
 import test from "node:test";
 import { parseSlugMatches } from "./skill-store";

@@ -100,13 +100,14 @@
   /* R91：列表升级为响应式网格——内容列已放宽到 min(94%, 2400px)，
      卡片按 minmax 自适应多列铺满（窄窗自动回落单列） */
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr));
   gap: var(--spacer-12);
 }
 
 /* 技能卡片：hairline + radius-12，hover 微浮起（--shadow-md + 1px 上移）。
    入场：rise + stagger-N 延迟（base.css stagger 类，前 6 张渐次出现）。 */
 .skill-store__card {
+  min-width: 0;
   border: var(--hairline);
   border-radius: var(--radius-12);
   padding: var(--spacer-16);
@@ -186,6 +187,7 @@
 }
 
 .skill-store__card-desc {
+  overflow-wrap: anywhere;
   margin-top: var(--spacer-8);
   font-size: var(--text-sm);
   color: var(--text-secondary);
@@ -324,6 +326,7 @@
 
 /* 技能页子标签栏（下划线指示器，与 .ext-tabs 同语言） */
 .skills-tab-bar {
+  flex-wrap: wrap; row-gap: var(--spacer-8);
   display: flex;
   gap: 0;
   align-items: center;
@@ -332,6 +335,7 @@
 }
 
 .skills-tab-bar__actions {
+  flex-wrap: wrap;
   margin-left: auto;
   display: flex;
   gap: var(--spacer-8);
@@ -820,11 +824,12 @@
 
 .skill-store__recommend-row {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr));
   gap: var(--spacer-8);
 }
 
 .skill-store__recommend-card {
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: var(--spacer-10);
@@ -877,6 +882,7 @@
 }
 
 .skill-store__card-name-btn {
+  min-width: 0;
   border: none;
   padding: 0;
   background: transparent;
@@ -912,6 +918,7 @@
 }
 
 .ext-market__section-title {
+  flex-wrap: wrap;
   display: flex;
   align-items: baseline;
   gap: var(--spacer-8);
@@ -929,15 +936,16 @@
 
 .ext-market__grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
   gap: var(--spacer-12);
 }
 
 .ext-market__grid--list {
-  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr));
 }
 
 .ext-market__card {
+  min-width: 0; overflow-wrap: anywhere;
   display: flex;
   flex-direction: column;
   gap: var(--spacer-6);

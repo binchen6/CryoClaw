@@ -159,7 +159,7 @@ npm run build           # both at once
 
 ### Tests
 
-`npm test` runs the full suite (`test:unit` + `test:scripts`). Tests are excluded from the production `tsc` build (see `tsconfig.json`; the test compile uses `tsconfig.test.json`). Current verified totals live in docs/OPTIMIZATION-PROGRESS.md and its latest release record; avoid copying historical counts into instructions. Four runners cover the layers below:
+`npm test` runs all four layers with at most two concurrent suites and writes per-layer logs and a JSON summary to `.cache/test-results/`. Chat UI test compilation includes all sources, so it also performs the full type check. Tests are excluded from the production `tsc` build (see `tsconfig.json`; the test compile uses `tsconfig.test.json`). Current verified totals live in docs/OPTIMIZATION-PROGRESS.md and its latest release record; avoid copying historical counts into instructions. Four runners cover the layers below:
 
 | Runner | Script | What it runs |
 |---|---|---|
@@ -183,8 +183,7 @@ Open-sourced at `binchen6/CryoClaw` (AGPL-3.0-only); push is allowed (`origin` =
    (must run outside the IDE sandbox — sandbox denies it), confirm
    `%LOCALAPPDATA%\Programs\CryoClaw\CryoClaw.exe` timestamp updated.
 4. Launch the app, verify gateway `GET http://127.0.0.1:18789/` returns 200.
-5. CDP smoke for the stage's feature: launch with `--remote-debugging-port=<p>`, drive the UI,
-   assert DOM facts + 0 bare i18n keys + 0 renderer exceptions (scripts live in gitignored `.cache/`).
+5. Run the single UI release gate: `node scripts/release-ui-smoke.js --exe <installed-CryoClaw.exe>`. It shares one app launch, deduplicates the scene matrix and batches scans with critical interaction assertions. Use `--full` for shell/theme rewrites; legacy scripts are for targeted diagnosis. See docs/releasing.md.
 6. `git push origin main`; `gh release create v<version>` with the installer attached;
    sync README / docs/OPTIMIZATION-PROGRESS.md (baseline counts, R-stage record).
 

@@ -21,7 +21,7 @@ const {launch,waitForPageTarget,connect,waitForAppReady,dismissReleaseNotes,slee
     ws.addEventListener('message',event=>{
       try{const message=JSON.parse(event.data);if(message.method!=='Network.webSocketFrameReceived')return;const frame=JSON.parse(message.params.response.payloadData);if(frame.event==='chat' && frame.payload?.sessionKey===key && frame.payload.state==='error')terminalError=frame.payload.errorMessage??'Gateway reported a terminal chat error';}catch{}
     });
-    await cdp.evaluate(`(async()=>{const client=document.querySelector('openclaw-app').client;await client.request('sessions.create',{key:${JSON.stringify(key)},agentId:'main',displayName:${JSON.stringify('Release verification '+version)}});await client.request('chat.send',{sessionKey:${JSON.stringify(key)},message:${JSON.stringify(prompt)},deliver:false,idempotencyKey:crypto.randomUUID()});return true;})()`);
+    await cdp.evaluate(`(async()=>{const client=document.querySelector('openclaw-app').client;await client.request('sessions.create',{key:${JSON.stringify(key)},agentId:'main',displayName:${JSON.stringify('Release verification '+version)}});await client.request('chat.send',{sessionKey:${JSON.stringify(key)},message:${JSON.stringify(prompt)},deliver:false,idempotencyKey:crypto.randomUUID()});return true;})()`,{timeoutMs:65000});
     let reply=false;
     const deadline=Date.now()+120_000;
     while(Date.now()<deadline){

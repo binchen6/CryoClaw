@@ -8,6 +8,7 @@ import type { AppViewState } from "../../app-view-state.ts";
 import {
   applyTtsAction,
   loadVoiceStatus,
+  voiceStatusFresh,
   type TalkSection,
   type TtsStatus,
 } from "../../controllers/voice.ts";
@@ -117,7 +118,7 @@ function renderTtsControls(state: AppViewState) {
   return html`
     <div class="oc-settings__form-group">
       <oc-toggle-switch .label=${t("settings.voice.ttsEnable")} .checked=${ts.enabled ?? false}
-        .disabled=${s.actionPending}
+        .disabled=${s.actionPending || !state.connected}
         @change=${(e: CustomEvent) => applyTtsAction(s, state, e.detail.checked ? "tts.enable" : "tts.disable", {}, update)}
       ></oc-toggle-switch>
     </div>
@@ -159,14 +160,15 @@ export function renderTabVoice(state: AppViewState) {
     s.wakeLoaded = false;
   }
   s.wasConnected = state.connected;
-  if (!s.ttsLoaded && !s.ttsLoading && state.connected && state.client) {
+  if ((!s.ttsLoaded || !voiceStatusFresh(state.client,s)) && state.connected && state.client) {
     loadVoiceStatus(s, state, () => state.requestUpdate());
   }
 
   return html`
-    <div class="oc-settings__section">
+    <div class="oc-settings__section" aria-busy=${s.ttsLoading && !s.ttsLoaded ? "true" : nothing}>
       <h2 class="oc-settings__section-title">${t("settings.voice.title")}</h2>
       <p class="oc-settings__hint">${t("settings.voice.desc")}</p>
+      <div class="btn-row"><button class="btn btn--sm" ?disabled=${s.ttsLoading || s.actionPending || !state.connected} @click=${()=>void loadVoiceStatus(s,state,()=>state.requestUpdate(),true)}>${s.ttsLoading?t("settings.voice.statusLoading"):t("settings.voice.refresh")}</button></div>
 
       ${renderTtsControls(state)}
 

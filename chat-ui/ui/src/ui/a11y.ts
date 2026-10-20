@@ -10,7 +10,7 @@
 /** 返回一个 keydown 处理器：Enter / Space 时触发 activate（其余按键不拦截）。 */
 export function activateOnKeydown(activate: () => void): (e: KeyboardEvent) => void {
   return (e: KeyboardEvent) => {
-    if (e.repeat || e.defaultPrevented || e.isComposing || e.target !== e.currentTarget) return;
+    if (e.repeat || e.defaultPrevented || e.isComposing || e.keyCode === 229 || e.target !== e.currentTarget) return;
     if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();
       activate();
@@ -20,7 +20,7 @@ export function activateOnKeydown(activate: () => void): (e: KeyboardEvent) => v
 
 /** Keyboard navigation for menus; leave Enter/Space to the native buttons. */
 export function menuKeydown(event:KeyboardEvent,onClose:()=>void):void {
-  if(event.isComposing || event.defaultPrevented)return;
+  if(event.isComposing || event.keyCode === 229 || event.defaultPrevented)return;
   if(event.key==="Escape"){
     event.preventDefault();event.stopPropagation();onClose();return;
   }
@@ -34,7 +34,7 @@ export function menuKeydown(event:KeyboardEvent,onClose:()=>void):void {
 }
 
 export function tabListKeydown(event:KeyboardEvent):void {
-  if(event.isComposing || event.defaultPrevented || !["ArrowLeft","ArrowRight","Home","End"].includes(event.key))return;
+  if(event.isComposing || event.keyCode === 229 || event.defaultPrevented || !["ArrowLeft","ArrowRight","Home","End"].includes(event.key))return;
   const current=(event.target as HTMLElement).closest<HTMLButtonElement>('button[role="tab"]');
   if(!current)return;
   const items=[...(event.currentTarget as HTMLElement).querySelectorAll<HTMLButtonElement>('button[role="tab"]:not(:disabled)')];

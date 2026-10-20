@@ -20,6 +20,7 @@ import {
   filterRunsByQuery,
   runGroupOfStatus,
   runMatchesStatusFilter,
+  runSummaryPreview,
   runTimestampMs,
   type CronRunStatusFilter,
   type RunGroupKey,
@@ -236,7 +237,9 @@ function renderRunDetail(
     return nothing;
   }
   if (run.status !== "error") {
-    return html`<div class="ts-row__detail">${detail}</div>`;
+    // 成功行摘要常是模型收尾消息（带 markdown 语法）——剥记号成纯文本预览；
+    // 失败行保持原文（诊断内容逐字展示，「展开详情」语义是完整内容）
+    return html`<div class="ts-row__detail">${runSummaryPreview(detail)}</div>`;
   }
   const key = runKey(run);
   const expanded = runsExpandedErrorKeys.has(key);

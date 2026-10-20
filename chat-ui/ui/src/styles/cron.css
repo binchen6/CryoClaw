@@ -13,20 +13,23 @@
 /* 两栏布局 */
 .cm-layout {
   display: grid;
-  grid-template-columns: 272px minmax(0, 1fr);
+  grid-template-columns: clamp(180px, 28%, 272px) minmax(0, 1fr);
   gap: 0;
   height: 100%;
   overflow: hidden;
 }
 
 .cm-layout__detail {
+  container-type: inline-size;
+  flex-direction: column;
+  align-items: center;
   border-left: var(--hairline);
   overflow-y: auto;
   /* cron 视图嵌套在任务视图 .ts-layout.panel 滚动容器内（壳层标题栏已统一占位 44px），
      此处无需再让位标题栏 */
   padding: var(--spacer-16) var(--spacer-24) var(--spacer-24);
   display: flex;
-  justify-content: center;
+  justify-content: flex-start;
   min-width: 0; /* grid 子项防长内容（prompt/cron 表达式）撑爆轨道 */
 }
 
@@ -112,6 +115,9 @@
 }
 
 .cm-list__item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: var(--spacer-6);
   position: relative;
   padding: var(--spacer-8) var(--spacer-10);
   border-radius: var(--radius-8);
@@ -137,6 +143,7 @@
 }
 
 .cm-list__item-top {
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: var(--spacer-8);
@@ -153,6 +160,7 @@
 }
 
 .cm-list__item-schedule {
+  grid-column: 1;
   font-size: var(--text-xs);
   color: var(--text-muted);
   margin-top: var(--spacer-2);
@@ -163,17 +171,17 @@
 
 /* 列表项 hover 操作按钮（编辑/删除） */
 .cm-list__item-actions {
-  display: none;
-  position: absolute;
-  right: var(--spacer-8);
-  top: var(--spacer-8);
+  display: flex;
+  grid-column: 2;
+  grid-row: 1 / 3;
+  visibility: hidden;
   gap: var(--spacer-2);
   align-items: center;
 }
 
 .cm-list__item:hover .cm-list__item-actions,
 .cm-list__item:focus-within .cm-list__item-actions {
-  display: flex;
+  visibility: visible;
 }
 
 .cm-list__item-action {
@@ -231,6 +239,8 @@
 
 /* 详情错误条：cc-alert--error 语言 */
 .cm-detail__error {
+  box-sizing: border-box;
+  overflow-wrap: anywhere;
   width: 100%;
   max-width: 640px;
   padding: var(--spacer-10) var(--spacer-12);
@@ -407,6 +417,7 @@
 }
 
 .cm-detail__run {
+  flex-wrap: wrap;
   display: flex;
   align-items: center;
   gap: var(--spacer-8);
@@ -529,6 +540,8 @@
 /* ── 新建/编辑任务表单：cc-card 语言 ── */
 
 .cron-form {
+  min-inline-size: 0;
+  margin-inline: 0;
   border: var(--hairline);
   border-radius: var(--radius-12);
   background: var(--card);
@@ -547,6 +560,7 @@
 }
 
 .cron-form__field {
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: var(--spacer-6);
@@ -566,6 +580,9 @@
 .cron-form__input,
 .cron-form__select,
 .cron-form__textarea {
+  min-width: 0;
+  box-sizing: border-box;
+  width: 100%;
   border: 1px solid var(--border);
   border-radius: var(--radius-8);
   background: var(--bg-input);
@@ -598,6 +615,7 @@
 }
 
 .cron-form__footer {
+  flex-wrap: wrap;
   display: flex;
   justify-content: flex-end;
   gap: var(--spacer-8);
@@ -605,3 +623,11 @@
 }
 
 /* R84 按钮收敛：cron-form__btn* 迁移到全局 .btn 体系（primitives.css） */
+
+/* The detail width excludes the task list and shell navigation. */
+@container (max-width: 440px) {
+  .cron-form__row { grid-template-columns: minmax(0, 1fr); }
+  .cron-form { padding: var(--spacer-12); }
+  .cm-detail__meta-row { flex-direction: column; gap: var(--spacer-4); }
+  .cm-detail__meta-value { min-width: 0; overflow-wrap: anywhere; }
+}

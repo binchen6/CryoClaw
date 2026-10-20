@@ -214,6 +214,7 @@ contextBridge.exposeInMainWorld("cryoclaw", {
   // 工作空间文件操作
   workspaceSetRoot: (root: string) =>
     ipcRenderer.invoke("workspace:set-root", root),
+  workspaceGetContext: () => ipcRenderer.invoke("workspace:get-context"),
   workspaceOpenFolder: (filePath: string) =>
     ipcRenderer.invoke("workspace:open-folder", filePath),
     workspaceListDir: (dirPath: string,options?:{showHidden?:boolean}) =>

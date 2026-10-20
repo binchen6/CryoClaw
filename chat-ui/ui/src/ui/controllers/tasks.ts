@@ -111,6 +111,62 @@ export function filterRunsByQuery(runs: CronRunLogEntry[], query: string): CronR
   });
 }
 
+/**
+ * 运行摘要的纯文本预览：summary 是模型收尾消息，常带 markdown 语法（标题 #、
+ * 加粗 **、行内代码、链接、列表记号等），列表行按纯文本直渲会把语法记号原样
+ * 露出。剥掉常见块级/行内记号并把多行折叠为单行，供运行记录列表的 2 行 clamp
+ * 预览使用。失败行的错误详情不走这里——诊断内容逐字展示更有价值，且「展开详情」
+ * 语义是完整原文。剥完为空时回退到折叠空白后的原文（纯记号摘要不留空行）。
+ */
+export function runSummaryPreview(summary: string): string {
+  const kept: string[] = [];
+  let inFence = false;
+  for (const line of summary.split("\n")) {
+    const trimmed = line.trim();
+    // 代码围栏标记行剔除，围栏内容原样保留（不做行首记号剥离）
+    if (/^(`{3,}|~{3,})/.test(trimmed)) {
+      inFence = !inFence;
+      continue;
+    }
+    if (inFence) {
+      if (trimmed) {
+        kept.push(trimmed);
+      }
+      continue;
+    }
+    // 分割线整行剔除；标题/引用/无序与有序列表只剥行首记号
+    if (/^([-*_])(\s*\1){2,}$/.test(trimmed)) {
+      continue;
+    }
+    const stripped = trimmed
+      .replace(/^#{1,6}\s+/, "")
+      .replace(/^>\s?/, "")
+      .replace(/^[-*+]\s+/, "")
+      .replace(/^\d+[.)]\s+/, "");
+    if (stripped) {
+      kept.push(stripped);
+    }
+  }
+  const preview = kept
+    .join(" ")
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/\[([^\]]*)\]\[[^\]]*\]/g, "$1")
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/<(https?:\/\/[^>\s]+)>/g, "$1")
+    .replace(/\*\*\*([^*]+)\*\*\*/g, "$1")
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/__([^_]+)__/g, "$1")
+    // 强调记号要求紧贴内容（`a * b * c` 不是斜体）；下划线额外排除词内
+    // （snake_case 标识符不是强调，对齐 CommonMark 的词边界规则）
+    .replace(/\*([^*\s](?:[^*]*[^*\s])?)\*/g, "$1")
+    .replace(/(?<![A-Za-z0-9_])_([^_\s](?:[^_]*[^_\s])?)_(?![A-Za-z0-9_])/g, "$1")
+    .replace(/~~([^~]+)~~/g, "$1")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/\s+/g, " ")
+    .trim();
+  return preview || summary.replace(/\s+/g, " ").trim();
+}
+
 /** 状态过滤匹配：单状态 select 优先，其次统计 chip 分组（other 覆盖未知状态） */
 export function runMatchesStatusFilter(
   run: CronRunLogEntry,

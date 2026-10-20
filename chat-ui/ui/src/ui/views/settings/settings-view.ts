@@ -2,6 +2,7 @@
  * Settings View — top-level container with tab navigation.
  * Replaces the old iframe-based settings page.
  */
+import {preloadSettingsTab} from "../../page-preload.ts";
 import { html, nothing } from "lit";
 import { keyed } from "lit/directives/keyed.js";
 import { transitionView } from "../../utils/view-transition.ts";
@@ -172,6 +173,8 @@ export function renderSettingsView(state: AppViewState) {
           return html`${groupLabel}
             <button
               class="oc-settings-nav-item ${s.activeTab === tab.id ? 'oc-settings-nav-item--active' : ''}"
+              @pointerenter=${()=>preloadSettingsTab(state,tab.id)}
+              @focus=${()=>preloadSettingsTab(state,tab.id)}
               @click=${() => { if (s.activeTab !== tab.id) transitionView(() => { cleanupTab(s.activeTab); s.activeTab = tab.id; s.notice = null; state.requestUpdate(); }); }}
             >${getTabIcon(tab.id)}${t(tab.labelKey)}</button>
           `;

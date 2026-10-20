@@ -40,20 +40,19 @@
 
    Codex Windows 沙箱生成的输出目录可能继承 `Low Mandatory Level`。即使获准在沙箱外调用该 exe，Windows 也可能按文件标签启动低完整性进程，导致它无法覆盖普通安装目录里的 `uninstallerIcon.ico` 等文件；`/S` 甚至可能返回 0 而版本未变。先用 `icacls <installer.exe>` 核对标签；经授权在普通用户 Temp 目录创建副本，再对副本运行上述安装脚本，并校验源与副本哈希一致。不要修改安装目录权限或忽略写入错误。
 
-   3.6. **CDP 冒烟 + UI 截图 QA（发版固定四步）**：
+   3.6. **统一 UI 冒烟（一次启动）**：
    ```bash
-   node scripts/layout-cdp-smoke.js --port 9227       # 主视图 rail 巡览 × 宽度/主题/DPI/动效/语言
-   node scripts/settings-cdp-smoke.js --port 9229     # 设置页全 tab 巡览 + MCP 表单展开（跨组件重叠/异常/裸 key）
-   node scripts/interaction-cdp-smoke.js --port 9231  # 交互级：逐视图/tab 实际操作 + 危险确认框 Escape 取消（异常追踪）
-   node scripts/ui-screenshot-qa.js --port 9230       # 全页面系统化截图 + report.json（out/ui-qa/）供视觉审查
+   node scripts/release-ui-smoke.js --exe <installed-CryoClaw.exe>
    ```
-   四个脚本共用 `scripts/lib/cdp-harness.js`（启动/连接/就绪轮询/清理），首屏等待为轮询而非固定 sleep。
-   四者任一非零退出码都不得发版（重叠/异常/裸 key/body 横向滚动条是硬门槛）；
-   ui-screenshot-qa 另在截图目录写 `report.json`（重叠/文本裁切/低对比度明细），截图与报告按需人工/AI 复核。
-   交互冒烟与前三者的区别：前三者是"看"（几何/截图/文本），它是"动"——真实点击控件并验证键盘语义
-   （R70 新增，正是它发现了「重置配置并重启」确认框无法用 Escape 取消）。
-   注意：跑冒烟前确保没有其他 CryoClaw 实例在运行（单实例锁会让被测进程直接退出，
-   表现为"90s 内未发现 file:// 页面 target"）。
+
+   修改首装路径时另运行 `node scripts/setup-ui-smoke.js`，以隔离 profile 和合成 IPC 验证完整向导，不在真实账户上重新走安装。
+
+   正式发版只运行此入口，不再依次运行旧四套脚本。每次操作至少等待600ms，字体、DOM提交和连续三次布局稳定检查有明确截止；等待有限动画结束和页面数据就绪；45秒内仍在加载直接失败。一次启动共享网关就绪、页面遍历和批量扫描，按宽屏浅色/窄屏暗色边界覆盖全部主视图，逐个检查所有设置 tab，再覆盖英文、125%/150% DPI 与减少动态效果。MCP 展开、危险确认 Escape 取消、任务 loading 归属、编辑往返和保存中禁用为硬断言。
+
+   默认只保存 5 张基准、关键交互和失败截图；每个场景的重叠、裸键、溢出、对比度、布局诊断与耗时写入 `out/ui-release/<timestamp>/report.json`。renderer 异常、裸键、跨组件重叠、页面横向溢出或缺少关键控件均失败，不能静默跳过。文字裁切和对比度保持诊断项，需复核关键截图。
+
+   壳层/主题重写加 `--full` 恢复全部宽度×主题组合；需要全场景截图加 `--screenshots-all`。旧入口仅用于定向诊断。脚本异常时也保存报告，并在 finally 清理自己的应用进程；冒烟期间不能同时运行其他应用实例。
+
 5. **发布（gh CLI 草稿流，现行标准做法）**：
 
    ```bash
@@ -75,9 +74,9 @@
 
    备选（一步直发，跳过草稿实测，不推荐）：`GH_TOKEN=ghp_xxx npx electron-builder --win --x64 --publish always` 会把 exe / blockmap / latest.yml 一并上传到 GitHub Release（默认草稿）。
 
-6. **草稿验收再转正**：草稿期间先完成本地安装版四路 UI、实际消息与远端资产校验，再执行上面的 ③。公开客户端不会发现未发布草稿，不能把「上一版自动更新发现草稿」当作验收条件。转正后复核 latest 指向、公开清单和更新发现行为。
+6. **草稿验收再转正**：草稿期间先完成本地安装版统一 UI、实际消息与远端资产校验，再执行上面的 ③。公开客户端不会发现未发布草稿，不能把「上一版自动更新发现草稿」当作验收条件。转正后复核 latest 指向、公开清单和更新发现行为。
 
-7. **真实消息闭环**：`node scripts/live-chat-cdp-smoke.js --exe <installed-CryoClaw.exe> --live`。显式 `--live` 才调用已配置提供商；脚本创建独立且清晰命名的 QA 会话，要求真实回复进入历史，不改用户原有会话。四路 UI 脚本现在对应用/网关未就绪直接失败，不能把骨架屏当成验收通过。
+7. **真实消息闭环**：`node scripts/live-chat-cdp-smoke.js --exe <installed-CryoClaw.exe> --live`。显式 `--live` 才调用已配置提供商；脚本创建独立且清晰命名的 QA 会话，要求真实回复进入历史，不改用户原有会话。统一 UI 门禁现在对应用/网关未就绪直接失败，不能把骨架屏当成验收通过。
 
 过期输出清理使用 [维护流程](MAINTENANCE.md)，与全量重建的 `npm run clean` 分开。
 

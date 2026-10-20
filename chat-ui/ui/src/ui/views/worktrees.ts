@@ -84,7 +84,7 @@ function renderWorktreeCard(props: WorktreesProps, w: WorktreeRecord, compact: b
         <div class="wt-card__main">
           <div class="wt-card__title">${w.name}</div>
           <div class="chip-row">
-            <span class="chip">${icons.gitBranch} ${w.branch}</span>
+            <span class="chip wt-card__branch-chip">${icons.gitBranch}<span class="wt-card__branch" title=${w.branch}>${w.branch}</span></span>
             <span class="chip">${ownerLabel(w.ownerKind)}</span>
             ${live
               ? html`<span class="chip chip-ok">${t("worktrees.statusLive")}</span>`
@@ -150,7 +150,7 @@ function renderWorktreeCard(props: WorktreesProps, w: WorktreeRecord, compact: b
       <div class="wt-card__main">
         <div class="wt-card__title">${w.name}</div>
         <div class="chip-row">
-          <span class="chip">${icons.gitBranch} ${w.branch}</span>
+          <span class="chip wt-card__branch-chip">${icons.gitBranch}<span class="wt-card__branch" title=${w.branch}>${w.branch}</span></span>
           <span class="chip">${ownerLabel(w.ownerKind)}</span>
           ${live
             ? html`<span class="chip chip-ok">${t("worktrees.statusLive")}</span>`

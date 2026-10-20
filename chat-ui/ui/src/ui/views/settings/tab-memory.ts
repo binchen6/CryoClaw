@@ -752,7 +752,7 @@ function renderOverviewTab(state: AppViewState) {
         <input class="oc-settings__input" .value=${s.recallQuery}
           placeholder=${t("settings.memory.overview.recallPlaceholder")}
           @input=${(e: Event) => { s.recallQuery = (e.target as HTMLInputElement).value; state.requestUpdate(); }}
-          @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter") handleRecallTest(state); }} />
+          @keydown=${(e: KeyboardEvent) => { if (e.isComposing || e.keyCode === 229) return; if (e.key === "Enter") handleRecallTest(state); }} />
         <button type="button" class="btn primary btn--sm" ?disabled=${s.recallRunning || !s.recallQuery.trim()}
           @click=${() => handleRecallTest(state)}>${t("settings.memory.overview.recallRun")}</button>
       </div>

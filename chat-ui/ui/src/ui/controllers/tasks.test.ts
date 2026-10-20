@@ -7,6 +7,7 @@ import {
   loadRunHistory,
   runGroupOfStatus,
   runMatchesStatusFilter,
+  runSummaryPreview,
   runTimestampMs,
   sortRunsByTimestamp,
   toRunTimestampMs,
@@ -254,4 +255,47 @@ test("loadRunHistory：响应缺 entries 字段时防御为空数组", async () 
   await loadRunHistory(state);
   assert.deepEqual(state.runHistory, []);
   assert.equal(state.runsError, null);
+});
+
+// ── runSummaryPreview：运行摘要 markdown → 纯文本预览 ──
+
+test("runSummaryPreview：标题/列表/加粗记号剥离，多行折叠为单行", () => {
+  // 任务页真实回归形态（截图：摘要原样露出 ## 与 **）
+  const summary =
+    "审查完成。9 个技能全部保留。\n\n## 技能处置\n- **context-doc-tuning** — 保留。负责每轮。\n- **jar-version-forensics** — 保留。";
+  assert.equal(
+    runSummaryPreview(summary),
+    "审查完成。9 个技能全部保留。 技能处置 context-doc-tuning — 保留。负责每轮。 jar-version-forensics — 保留。",
+  );
+});
+
+test("runSummaryPreview：行内代码/链接/图片/引用/分割线各归纯文本", () => {
+  assert.equal(
+    runSummaryPreview("`npm test` 全部通过，详见 [报告](https://example.invalid)。"),
+    "npm test 全部通过，详见 报告。",
+  );
+  assert.equal(runSummaryPreview("![截图](https://example.invalid/a.png) 已上传"), "截图 已上传");
+  assert.equal(runSummaryPreview("> 引用行\n\n---\n\n完成"), "引用行 完成");
+  assert.equal(runSummaryPreview("自动链接 <https://example.invalid/x> 就绪"), "自动链接 https://example.invalid/x 就绪");
+});
+
+test("runSummaryPreview：代码围栏标记行剔除、围栏内容保留", () => {
+  assert.equal(runSummaryPreview('```json\n{"a": 1}\n```\n完成'), '{"a": 1} 完成');
+});
+
+test("runSummaryPreview：纯文本原样返回；空白折叠；空剥回退原文", () => {
+  assert.equal(runSummaryPreview("heartbeat completed"), "heartbeat completed");
+  assert.equal(runSummaryPreview("a\n\nb   c"), "a b c");
+  assert.equal(runSummaryPreview("---"), "---", "纯记号摘要剥完为空时回退原文，不留空行");
+});
+
+test("runSummaryPreview：紧贴规则保护非强调星号与词内下划线", () => {
+  assert.equal(runSummaryPreview("a * b * c"), "a * b * c", "两侧带空格的星号不是斜体");
+  assert.equal(runSummaryPreview("这是 *重点* 内容"), "这是 重点 内容");
+  assert.equal(
+    runSummaryPreview("jar_version_forensics 保留"),
+    "jar_version_forensics 保留",
+    "snake_case 标识符的词内下划线不是强调",
+  );
+  assert.equal(runSummaryPreview("_整段强调_ 与 x_y_z"), "整段强调 与 x_y_z");
 });

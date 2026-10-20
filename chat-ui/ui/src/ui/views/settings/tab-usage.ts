@@ -5,6 +5,7 @@
  */
 import { html, nothing } from "lit";
 import type { AppViewState } from "../../app-view-state.ts";
+import {loadUsageSnapshot,peekUsageSnapshot,type UsageSnapshot} from "../../controllers/usage-cache.ts";
 import { t } from "../../i18n.ts";
 import "../../components/message-box.ts";
 import { formatCost, formatTokens } from "../usage-metrics.ts";
@@ -39,46 +40,23 @@ const s = {
   error: null as string | null,
   loadSeq: 0,
   wasConnected: false,
+  client:null as AppViewState["client"],
+  dataRange:null as UsageRangeId|null,
 };
 
-async function load(state: AppViewState) {
-  if (!state.client || !state.connected) return;
-  const seq = ++s.loadSeq;
-  const { startDate, endDate } = resolveUsageRange(s.range);
-  s.loadingState = "loading";
-  state.requestUpdate();
-  try {
-    const rangeParams = { startDate, endDate };
-    // usage.cost / usage.status 为增强数据源：内核 <2026.9 或 scope 缺失时静默降级
-    const [cost, sessions, status] = await Promise.all([
-      state.client.request<unknown>("usage.cost", rangeParams).catch(() => null),
-      state.client.request<unknown>("sessions.usage", { ...rangeParams, limit: 1000, groupBy: "instance" }),
-      state.client.request<unknown>("usage.status", {}).catch(() => null),
-    ]);
-    if (seq !== s.loadSeq) return; // 范围已切换/重新加载：丢弃过期响应
-    if (cost) s.cost = mapUsageCost(cost);
-    s.sessions = mapSessionsUsage(sessions);
-    if (status) s.providerStatus = mapUsageStatus(status);
-    s.loadingState = "ready";
-    s.error = null;
-  } catch (err) {
-    if (seq !== s.loadSeq) return;
-    s.loadingState = "error";
-    s.error = String(err);
-  }
+function applySnapshot(snapshot:UsageSnapshot){s.cost=snapshot.cost;s.sessions=snapshot.sessions;s.providerStatus=snapshot.providerStatus;s.loadingState="ready";s.error=null;s.dataRange=s.range;}
+async function load(state:AppViewState,force=false){
+  if(!state.client || !state.connected)return;
+  const seq=++s.loadSeq,client=state.client,range=s.range;s.client=client;
+  const cached=!force?peekUsageSnapshot(state,range):undefined;
+  if(cached){applySnapshot(cached);state.requestUpdate();return;}
+  if(s.dataRange!==range){s.cost={totals:null,daily:[]};s.sessions={rows:[],totals:null,aggregates:null};s.providerStatus=[];}
+  s.loadingState="loading";s.error=null;state.requestUpdate();
+  try{const snapshot=await loadUsageSnapshot(state,range,force);if(seq!==s.loadSeq || state.client!==client || !state.connected)return;applySnapshot(snapshot);}
+  catch(error){if(seq!==s.loadSeq || state.client!==client || !state.connected)return;s.loadingState="error";s.error=String(error);}
   state.requestUpdate();
 }
-
-export function resetUsageTab() {
-  s.range = "30d";
-  s.cost = { totals: null, daily: [] };
-  s.sessions = { rows: [], totals: null, aggregates: null };
-  s.providerStatus = [];
-  s.loadingState = "idle";
-  s.error = null;
-  s.loadSeq = 0;
-  s.wasConnected = false;
-}
+export function resetUsageTab(){++s.loadSeq;s.loadingState="idle";s.error=null;s.wasConnected=false;}
 
 function formatDateTime(ms: number): string {
   return ms ? new Date(ms).toLocaleString() : "";
@@ -107,7 +85,7 @@ function renderRangeSwitch(state: AppViewState) {
         class="oc-usage__range oc-usage__range--refresh"
         type="button"
         ?disabled=${s.loadingState === "loading"}
-        @click=${() => void load(state)}
+        @click=${() => void load(state,true)}
       >${t("settings.usage.refresh")}</button>
     </div>
   `;
@@ -255,7 +233,8 @@ function renderSessionRow(row: UsageSessionRow) {
 
 export function renderTabUsage(state: AppViewState) {
   // 断连重置：Gateway 回连后重新拉取，避免残留「加载失败」
-  if (s.wasConnected && !state.connected) s.loadingState = "idle";
+  if(s.client!==state.client){s.cost={totals:null,daily:[]};s.sessions={rows:[],totals:null,aggregates:null};s.providerStatus=[];s.dataRange=null;}
+  if (s.wasConnected && !state.connected || s.client!==state.client) {++s.loadSeq;s.loadingState="idle";s.client=state.client;}
   s.wasConnected = state.connected;
   if (s.loadingState === "idle" && state.connected && state.client) void load(state);
 

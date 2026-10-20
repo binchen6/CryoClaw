@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import * as path from "path";
-import { isInsideAnyRoot } from "./workspace-ipc.ts";
+import { isInsideAnyRoot, configuredWorkspacePath } from "./workspace-ipc.ts";
 
 // P3：workspace-ipc 守卫放宽为双白名单根（workspace 根 + ~/.openclaw/worktrees/）。
 // 这里钉住纯 containment 谓词的行为；handler 接线由 chat-ui 侧源码审计覆盖。
@@ -9,6 +9,14 @@ import { isInsideAnyRoot } from "./workspace-ipc.ts";
 const workspaceRoot = path.join(path.sep, "home", "u", ".openclaw", "workspace");
 const worktreesRoot = path.join(path.sep, "home", "u", ".openclaw", "worktrees");
 const roots = [workspaceRoot, worktreesRoot];
+
+test("workspace context resolves main-agent/default roots without a gateway RPC",()=>{
+  const home=path.resolve("test-home"),state=path.join(home,".openclaw");
+  assert.equal(configuredWorkspacePath({},home,state,{}),path.join(state,"workspace"));
+  assert.equal(configuredWorkspacePath({agents:{defaults:{workspace:"~/default"}}},home,state,{}),path.join(home,"default"));
+  assert.equal(configuredWorkspacePath({agents:{defaults:{workspace:"relative"},list:[{id:"main",workspace:"${ROOT}/chosen"}]}},home,state,{ROOT:home}),path.join(home,"chosen"));
+  assert.equal(configuredWorkspacePath({agents:{defaults:{workspace:"relative"}}},home,state,{}),path.join(state,"workspace"));
+});
 test("filesystem roots authorize their children without duplicating a trailing separator",()=>{
   const root=path.parse(process.cwd()).root;
   assert.equal(isInsideAnyRoot(path.join(root,"child","file.txt"),[root]),true);

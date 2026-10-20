@@ -1,6 +1,7 @@
 /**
  * Setup Step 2: Provider configuration — API key, model, OAuth.
  */
+import {verifySetupSelection} from "./setup-verification.ts";
 import { html, nothing } from "lit";
 import type { AppViewState } from "../../app-view-state.ts";
 import { t } from "../../i18n.ts";
@@ -14,7 +15,7 @@ import "../../components/toggle-switch.ts";
 import {
   PROVIDERS, CUSTOM_PRESETS, KIMI_CODE_FIXED_MODEL, SUB_PLATFORM_URLS,
   CUSTOM_MODEL_SENTINEL, PROVIDER_DISPLAY_ORDER, getProviderLabels, isValidHttpBaseUrl,
-  staticModelsFor,
+  staticModelsFor, KIMI_PRICING_URL,
 } from "./setup-constants.ts";
 import { getCachedGatewayModels, loadGatewayModels, catalogModelSupportsImage } from "../../controllers/models.ts";
 import {
@@ -33,6 +34,7 @@ const s = {
   imageSupport: true,
   showCustomModelInput: false,
   verifying: false,
+  verificationStage:null as "verify"|"save"|null,
   oauthLoading: false,
   oauthSuccess: false,
   oauthNoMembership: false,
@@ -47,6 +49,10 @@ const qs = {
   errors: {} as Record<string, string>,
 };
 
+function setupSaving(){return s.verificationStage==="save";}
+function setupBusy(){return s.verifying || s.oauthLoading || !!qs.adoptingEnvVar;}
+let oauthAttempt=0;
+
 // 进入 step2 时检测一次本机环境变量中的 provider key（失败静默，不影响手动配置）
 function maybeLoadEnvKeys(state: AppViewState) {
   if (qs.loaded) return;
@@ -58,7 +64,7 @@ function maybeLoadEnvKeys(state: AppViewState) {
 }
 
 async function handleAdoptEnvKey(candidate: EnvKeyCandidate, state: AppViewState, goToStep: (step: number) => void) {
-  if (qs.adoptingEnvVar) return;
+  if (setupBusy()) return;
   qs.adoptingEnvVar = candidate.envVar;
   delete qs.errors[candidate.envVar];
   state.requestUpdate();
@@ -110,7 +116,7 @@ function renderQuickstart(state: AppViewState, goToStep: (step: number) => void)
               <span class="oc-setup-quickstart__env">${c.envVar}</span>
               <span class="oc-setup-quickstart__key">${c.maskedKey}</span>
             </div>
-            <button class="btn primary" ?disabled=${!!qs.adoptingEnvVar}
+            <button class="btn primary" ?disabled=${setupBusy()}
               @click=${() => handleAdoptEnvKey(c, state, goToStep)}>
               ${adopting
                 ? html`<span class="oc-setup-spinner"></span>${t("setup.quickstart.verifying")}`
@@ -223,14 +229,14 @@ function buildParams(apiKey: string): Record<string, unknown> | null {
  * setup:save-config 只负责落盘 + baseline 默认值 + kimi-code 联动。
  * kimi-code：真实 key 先写 sidecar（settings:write-kimi-api-key），config 只写 proxy-managed 占位。
  */
-async function saveProviderFragment(apiKey: string, modelID: string, supportsImage: boolean | undefined): Promise<void> {
-  const isKimiCode = s.currentProvider === "moonshot" && s.subPlatform === "kimi-code";
+async function saveProviderFragment(apiKey: string, modelID: string, supportsImage: boolean | undefined,selection:typeof s=s): Promise<void> {
+  const isKimiCode = selection.currentProvider === "moonshot" && selection.subPlatform === "kimi-code";
   const target = resolveAddTarget({
-    provider: s.currentProvider,
-    subPlatform: s.subPlatform,
-    customPreset: s.customPreset,
-    baseUrl: s.baseUrl,
-    apiType: s.apiType,
+    provider: selection.currentProvider,
+    subPlatform: selection.subPlatform,
+    customPreset: selection.customPreset,
+    baseUrl: selection.baseUrl,
+    apiType: selection.apiType,
   });
   if (!target) throw new Error(t("setup.error.verifyFailed"));
   const image = supportsImage
@@ -257,16 +263,16 @@ async function saveProviderFragment(apiKey: string, modelID: string, supportsIma
     primaryModel: `${target.providerKey}/${modelID}`,
     kimiCode: isKimiCode,
     // 以下字段仅供主进程埋点（buildSetupCompletedProps）使用
-    provider: s.currentProvider,
+    provider: selection.currentProvider,
     modelID,
-    baseURL: s.baseUrl.trim() || undefined,
-    subPlatform: s.currentProvider === "moonshot" ? s.subPlatform : undefined,
-    customPreset: s.customPreset || undefined,
+    baseURL: selection.baseUrl.trim() || undefined,
+    subPlatform: selection.currentProvider === "moonshot" ? selection.subPlatform : undefined,
+    customPreset: selection.customPreset || undefined,
   });
 }
 
 async function handleVerify(state: AppViewState, goToStep: (step: number) => void) {
-  if (s.verifying) return;
+  if (setupBusy()) return;
   const apiKey = s.apiKey.trim();
   if (!apiKey) { s.error = t("setup.error.noKey"); state.requestUpdate(); return; }
 
@@ -274,29 +280,34 @@ async function handleVerify(state: AppViewState, goToStep: (step: number) => voi
   if (!params) { state.requestUpdate(); return; }
 
   s.verifying = true;
+  s.verificationStage="verify";
   s.error = null;
   state.requestUpdate();
 
   try {
-    const result = await ipc.verifyKey(params);
+    const result = await verifySetupSelection({...s},()=>ipc.verifyKey(params),(selection,result)=>saveProviderFragment(apiKey,params.modelID as string,result.supportsImage,selection),()=>{s.verificationStage="save";state.requestUpdate();});
     if (!result.success) {
       s.error = result.message ?? t("setup.error.verifyFailed");
       s.verifying = false;
+    s.verificationStage=null;
       state.requestUpdate();
       return;
     }
-    await saveProviderFragment(apiKey, params.modelID as string, result.supportsImage);
+
     s.verifying = false;
     goToStep(3);
   } catch (e: any) {
-    s.error = t("setup.error.connection") + (e?.message ?? "");
+    s.error = (setupSaving()?t("setup.error.saveFailed"):t("setup.error.connection")) + (e?.message ?? "");
     s.verifying = false;
     state.requestUpdate();
   }
 }
 
 async function handleOAuthLogin(state: AppViewState, goToStep: (step: number) => void) {
-  await runKimiOAuthLogin(state, s, async (token) => {
+  if(setupBusy())return;
+  const attempt=++oauthAttempt,selection={...s};
+  await runKimiOAuthLogin(state, s, async (token,isCurrent) => {
+    s.verificationStage="verify";
     const modelID = s.showCustomModelInput
       ? (s.customModelId.trim() || KIMI_CODE_FIXED_MODEL)
       : (s.modelId || KIMI_CODE_FIXED_MODEL);
@@ -308,6 +319,7 @@ async function handleOAuthLogin(state: AppViewState, goToStep: (step: number) =>
       subPlatform: "kimi-code",
     });
 
+    if(!isCurrent())return;
     if (!verifyResult.success) {
       try { await ipc.kimiOAuthLogout(); } catch {}
       s.oauthNoMembership = true;
@@ -316,22 +328,27 @@ async function handleOAuthLogin(state: AppViewState, goToStep: (step: number) =>
       return;
     }
 
-    await saveProviderFragment(token!, modelID, verifyResult.supportsImage);
+    s.verificationStage="save";state.requestUpdate();
+    await saveProviderFragment(token!, modelID, verifyResult.supportsImage,selection);
+    if(!isCurrent())return;
 
     s.oauthLoading = false;
     s.oauthSuccess = true;
     state.requestUpdate();
-    setTimeout(() => goToStep(3), 600);
+    goToStep(3);
   });
 }
 
 async function handleOAuthCancel(state: AppViewState) {
+  if(s.verificationStage==="save")return;
+  ++oauthAttempt;
   try { await ipc.kimiOAuthCancel(); } catch {}
   s.oauthLoading = false;
   state.requestUpdate();
 }
 
 function onProviderChange(provider: string, state: AppViewState) {
+  if(setupBusy())return;
   s.currentProvider = provider;
   s.customPreset = "";
   s.apiKey = "";
@@ -351,6 +368,7 @@ function onProviderChange(provider: string, state: AppViewState) {
 }
 
 function onModelSelectChange(value: string, state: AppViewState) {
+  if(setupBusy())return;
   if (value === CUSTOM_MODEL_SENTINEL) {
     s.showCustomModelInput = true;
     s.modelId = value;
@@ -363,6 +381,7 @@ function onModelSelectChange(value: string, state: AppViewState) {
 }
 
 function onSubPlatformChange(sp: string, state: AppViewState) {
+  if(setupBusy())return;
   s.subPlatform = sp;
   s.apiKey = "";
   s.error = null;
@@ -375,6 +394,7 @@ function onSubPlatformChange(sp: string, state: AppViewState) {
 }
 
 function onPresetChange(value: string, state: AppViewState) {
+  if(setupBusy())return;
   s.customPreset = value;
   s.apiKey = "";
   s.error = null;
@@ -398,14 +418,17 @@ export function renderStep2(state: AppViewState, goToStep: (step: number) => voi
   if (!s.modelId && models.length) s.modelId = models[0];
 
   return html`
-    <div class="oc-setup-step">
+    <div class="oc-setup-step" @keydown=${(e:KeyboardEvent)=>{if(e.isComposing || e.keyCode===229 || e.repeat || e.defaultPrevented)return;if(e.key==="Enter" && (e.target as Element).matches("input:not([type=radio])")){e.preventDefault();void handleVerify(state,goToStep);}}}>
       <div class="oc-setup-step-body">
       <h2 class="oc-setup-title">${t("setup.provider.title")}</h2>
+      <p class="oc-setup-hint">${t("setup.provider.connectHint")}</p>
+      ${s.verifying?html`<p role="status" aria-live="polite">${t(s.verificationStage==="save"?"setup.provider.saving":"setup.provider.verifying")}</p>`:nothing}
 
       ${renderQuickstart(state, goToStep)}
 
       <oc-provider-segment
         .providers=${PROVIDER_DISPLAY_ORDER.map(p => p)}
+        .locked=${setupBusy()?PROVIDER_DISPLAY_ORDER:[]}
         .selected=${s.currentProvider}
         .labels=${getProviderLabels()}
         @select=${(e: CustomEvent) => onProviderChange(e.detail.provider, state)}
@@ -416,7 +439,7 @@ export function renderStep2(state: AppViewState, goToStep: (step: number) => voi
           <label class="oc-setup-label">${t("setup.provider.platform")}</label>
           <div class="oc-setup-radio-group">
             <label class="oc-setup-radio">
-              <input type="radio" name="subPlatform" value="kimi-code" .checked=${s.subPlatform === "kimi-code"}
+              <input type="radio" ?disabled=${setupBusy()} name="subPlatform" value="kimi-code" .checked=${s.subPlatform === "kimi-code"}
                 @change=${() => onSubPlatformChange("kimi-code", state)} />
               ${t("setup.provider.subPlatform.kimiCode")}<span class="oc-settings__badge">${t("setup.provider.subPlatform.searchBadge")}</span>
             </label>
@@ -431,8 +454,8 @@ export function renderStep2(state: AppViewState, goToStep: (step: number) => voi
 
       ${platformUrl ? html`
         <div class="oc-flex oc-gap-16 oc-mb-16">
-          <a class="oc-setup-link" @click=${(e: Event) => { e.preventDefault(); ipc.openExternal(platformUrl); }}>${getPlatformLinkText()}</a>
-          <a class="oc-setup-link" @click=${(e: Event) => { e.preventDefault(); ipc.openExternal("https://oneclaw.cn/docs?utm_source=oneclaw"); }}>${t("setup.provider.docsLink")}</a>
+          <a class="oc-setup-link" href=${platformUrl} @click=${(e: Event) => { e.preventDefault(); ipc.openExternal(platformUrl); }}>${getPlatformLinkText()}</a>
+          <a class="oc-setup-link" href="https://oneclaw.cn/docs?utm_source=oneclaw" @click=${(e: Event) => { e.preventDefault(); ipc.openExternal("https://oneclaw.cn/docs?utm_source=oneclaw"); }}>${t("setup.provider.docsLink")}</a>
         </div>
       ` : nothing}
 
@@ -441,7 +464,7 @@ export function renderStep2(state: AppViewState, goToStep: (step: number) => voi
       ${isCustom ? html`
         <div class="oc-setup-form-group">
           <label class="oc-setup-label">${t("setup.provider.preset")}</label>
-          <select class="oc-setup-select" .value=${s.customPreset}
+          <select class="oc-setup-select" ?disabled=${setupBusy()} .value=${s.customPreset}
             @change=${(e: Event) => onPresetChange((e.target as HTMLSelectElement).value, state)}>
             <option value="__placeholder__" disabled ?selected=${!s.customPreset}>${t("setup.provider.presetPlaceholder")}</option>
             ${Object.entries(CUSTOM_PRESETS).map(([k, v]) => html`
@@ -455,7 +478,7 @@ export function renderStep2(state: AppViewState, goToStep: (step: number) => voi
       ${isManualCustom ? html`
         <div class="oc-setup-form-group">
           <label class="oc-setup-label">${t("setup.provider.baseUrl")}</label>
-          <input class="oc-setup-input" .value=${s.baseUrl}
+          <input class="oc-setup-input" ?disabled=${setupBusy()} .value=${s.baseUrl}
             @input=${(e: Event) => { s.baseUrl = (e.target as HTMLInputElement).value; state.requestUpdate(); }} />
         </div>
         <div class="oc-setup-form-group">
@@ -480,7 +503,7 @@ export function renderStep2(state: AppViewState, goToStep: (step: number) => voi
       ${(!isOAuth || (isOAuth && !s.oauthSuccess)) ? html`
         <div class="oc-setup-form-group${isOAuth ? " oc-hidden" : ""}">
           <label class="oc-setup-label">${t("setup.provider.apiKey")}</label>
-          <oc-password-input .value=${s.apiKey} .placeholder=${getPlaceholder()}
+          <oc-password-input .label=${t("setup.provider.apiKey")} .disabled=${setupBusy()} .value=${s.apiKey} .placeholder=${getPlaceholder()}
             @input=${(e: CustomEvent) => { s.apiKey = e.detail.value; state.requestUpdate(); }}
           ></oc-password-input>
         </div>
@@ -509,12 +532,12 @@ export function renderStep2(state: AppViewState, goToStep: (step: number) => voi
         <div class="oc-setup-form-group"></div>
       ` : nothing}
 
-      <oc-message-box .message=${s.error ?? ""} .type=${"error"} .visible=${!!s.error}></oc-message-box>
+      ${s.error?html`<div class="cc-alert cc-alert--error oc-setup-inline-error" role="alert">${s.error}</div>`:nothing}
 
       ${s.oauthNoMembership ? html`
         <div class="oc-setup-oauth-no-membership">
           <span>${t("setup.provider.oauth.noMembership")}</span>
-          <a class="oc-setup-link" @click=${(e: Event) => { e.preventDefault(); ipc.openExternal("https://kimi.com/pricing?utm_source=oneclaw"); }}>
+          <a class="oc-setup-link" href=${KIMI_PRICING_URL} @click=${(e: Event) => { e.preventDefault(); ipc.openExternal(KIMI_PRICING_URL); }}>
             ${t("setup.provider.oauth.subscribeLink")}
           </a>
         </div>
@@ -522,13 +545,13 @@ export function renderStep2(state: AppViewState, goToStep: (step: number) => voi
       </div>
 
       <div class="btn-row">
-        <button class="btn" ?disabled=${s.verifying || !!qs.adoptingEnvVar} @click=${() => goToStep(1)}>
+        <button class="btn" ?disabled=${setupBusy()} @click=${() => goToStep(1)}>
           ${t("setup.provider.back")}
         </button>
         ${!isOAuth ? html`
-          <button class="btn primary" ?disabled=${s.verifying}
+          <button class="btn primary" ?disabled=${setupBusy()}
             @click=${() => handleVerify(state, goToStep)}>
-            ${s.verifying ? "..." : t("setup.provider.verify")}
+            ${s.verifying?t(s.verificationStage==="save"?"setup.provider.saving":"setup.provider.verifying"):t("setup.provider.verify")}
           </button>
         ` : nothing}
       </div>
@@ -543,7 +566,7 @@ function renderOAuthSection(state: AppViewState, goToStep: (step: number) => voi
         <div class="oc-setup-oauth-status">
           <span class="oc-setup-spinner"></span>
           <span>${t("setup.provider.oauth.waiting")}</span>
-          <button class="btn btn--text" @click=${() => handleOAuthCancel(state)}>
+          <button class="btn btn--text" ?disabled=${s.verificationStage==="save"} @click=${() => handleOAuthCancel(state)}>
             ${t("setup.provider.oauth.cancel")}
           </button>
         </div>
@@ -554,7 +577,7 @@ function renderOAuthSection(state: AppViewState, goToStep: (step: number) => voi
         </div>
       ` : html`
         <div class="oc-mt-24 oc-mb-24 oc-text-center">
-          <button class="btn primary" @click=${() => handleOAuthLogin(state, goToStep)}>
+          <button class="btn primary" ?disabled=${setupBusy()} @click=${() => handleOAuthLogin(state, goToStep)}>
             ${t("setup.provider.oauth.login")}
           </button>
         </div>

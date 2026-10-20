@@ -9,15 +9,19 @@ export interface KimiOAuthFlowState {
   oauthNoMembership: boolean;
   error: string | null;
 }
+const attempts=new WeakMap<KimiOAuthFlowState,object>();
 
 // Kimi OAuth 登录公共流程：重置状态 → 调登录 → 失败写错误；成功走回调。
 // 连接异常统一归为 setup.error.connection；oauthLoading 保证复位。
 export async function runKimiOAuthLogin(
   state: AppViewState,
   st: KimiOAuthFlowState,
-  onLoggedIn: (accessToken: string | null) => Promise<void> | void,
+  onLoggedIn: (accessToken: string | null,isCurrent:()=>boolean) => Promise<void> | void,
 ): Promise<void> {
   if (st.oauthLoading) return;
+  const attempt={};attempts.set(st,attempt);
+  const owns=()=>attempts.get(st)===attempt;
+  const current=()=>owns() && st.oauthLoading;
   st.oauthLoading = true;
   st.oauthSuccess = false;
   st.oauthNoMembership = false;
@@ -28,6 +32,7 @@ export async function runKimiOAuthLogin(
   let accessToken: string | null = null;
   try {
     const result = await ipc.kimiOAuthLogin();
+    if(!current())return;
     if (!result.success) {
       st.error = result.message ?? t("setup.error.verifyFailed");
       st.oauthLoading = false;
@@ -36,10 +41,13 @@ export async function runKimiOAuthLogin(
     }
     accessToken = result.accessToken ?? null;
   } catch (e: any) {
+    if(!current())return;
     st.error = t("setup.error.connection") + (e?.message ?? "");
     st.oauthLoading = false;
     state.requestUpdate();
     return;
   }
-  await onLoggedIn(accessToken);
+  try {if(current())await onLoggedIn(accessToken,current);}
+  catch(error:any){if(current())st.error=error?.message??t("setup.error.verifyFailed");}
+  finally{if(owns()){st.oauthLoading=false;state.requestUpdate();}}
 }

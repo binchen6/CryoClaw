@@ -9,6 +9,20 @@ import "../components/oc-resizable-divider.ts";
 import "../components/toggle-switch.ts";
 export type WorkspaceViewOptions={gitSlot:TemplateResult;worktreesSlot:TemplateResult;onSelectGitNode:()=>void;onOpenFiles:()=>void;onRepoChange:(path:string)=>void;onRefreshFiles:()=>void;onOpenRootFolder:()=>void;onOpenItemFolder:(path:string)=>void;onChooseRoot:()=>void;onDefaultRoot:()=>void;onAttachFile:(path:string,name:string)=>void;onPinRoot:()=>void};
 const ws=workspaceViewState;
+function workspaceKeydown(event:KeyboardEvent,state:AppViewState){
+  if(event.isComposing || event.keyCode===229 || event.defaultPrevented || ws.mode!=="files")return;
+  const pane=event.currentTarget as HTMLElement;
+  if((event.ctrlKey || event.metaKey) && !event.altKey && ws.fileContent!==null){
+    const key=event.key.toLowerCase();
+    if(key==="s"){
+      event.preventDefault();
+      if(!event.repeat && !ws.fileSaving && ws.fileHash)void saveWorkspaceFile(state);
+    }else if(key==="f"){
+      const input=pane.querySelector<HTMLInputElement>(".wk-file-search");
+      if(input){event.preventDefault();input.focus();input.select();}
+    }
+  }
+}
 function handleNavResize(event:Event){const ratio=(event as CustomEvent).detail?.splitRatio;if(typeof ratio!=="number" || !Number.isFinite(ratio))return;ws.navRatio=Math.max(.16,Math.min(.45,ratio));(event.currentTarget as HTMLElement).closest<HTMLElement>(".wk-layout")?.style.setProperty("--wk-nav-ratio",String(ws.navRatio));persistWorkspacePreferences();}
 function renderBreadcrumb(state:AppViewState){
   if(!ws.root)return nothing;const path=ws.selectedFile??ws.currentPath??ws.root,relative=workspaceRelativePath(ws.root,path),segments=relative.split(/[/\\]/).filter(Boolean);
@@ -32,11 +46,7 @@ export function renderWorkspaceView(state:AppViewState,opts:WorkspaceViewOptions
   const locations=[...state.gitRepoOptions.map(repo=>({path:repo.path,name:repo.kind==="workspace"?t("git.repoWorkspace"):`${t("git.repoWorktree")} · ${repo.branch||repo.path}`})),...state.settings.pinnedWorkspaces.map(root=>({path:root.path,name:`${root.icon} ${root.name}`}))];
   if(ws.root && !locations.some(root=>root.path===ws.root))locations.unshift({path:ws.root,name:ws.root.split(/[/\\]/).at(-1)??ws.root});
   const copy=async(value:string)=>{try{const result=await copyText(value);ws.draftStatus=result?t("workspace.browser.copied"):t("workspace.browser.copyFailed");}catch{ws.draftStatus=t("workspace.browser.copyFailed");}state.requestUpdate();};
-  return html`<div class="wk-layout" style=${`--wk-nav-ratio:${ws.navRatio}`} @keydown=${(event:KeyboardEvent)=>{
-    if(event.isComposing || event.defaultPrevented)return;
-    if((event.ctrlKey||event.metaKey) && event.key.toLowerCase()==="s" && ws.mode==="files" && (ws.editing||workspaceDirty())){event.preventDefault();void saveWorkspaceFile(state);}
-    if((event.ctrlKey||event.metaKey) && event.key.toLowerCase()==="f" && ws.mode==="files"){event.preventDefault();document.querySelector<HTMLInputElement>(".wk-file-search")?.focus();}
-  }}><aside class="wk-nav">
+  return html`<div class="wk-layout" style=${`--wk-nav-ratio:${ws.navRatio}`} @keydown=${(event:KeyboardEvent)=>workspaceKeydown(event,state)}><aside class="wk-nav">
     <div class="wk-nav__location"><select class="wk-nav__repo" aria-label=${t("workspace.browser.rootLabel")} .value=${ws.root??""} ?disabled=${ws.fileSaving} @change=${(event:Event)=>{const value=(event.target as HTMLSelectElement).value;if(value==="__choose__")opts.onChooseRoot();else if(value==="__default__")opts.onDefaultRoot();else opts.onRepoChange(value);}}>
       ${locations.filter((root,index,array)=>array.findIndex(other=>other.path===root.path)===index).map(root=>html`<option value=${root.path}>${root.name}</option>`)}<option value="__default__">${t("workspace.browser.defaultRoot")}</option><option value="__choose__">${t("workspace.browser.chooseRoot")}</option></select></div>
     <div class="wk-nav__search"><input type="search" aria-label=${t("workspace.browser.searchLabel")} placeholder=${t("workspace.browser.searchPlaceholder")} .value=${ws.search} @input=${(event:Event)=>setWorkspaceSearch(state,(event.target as HTMLInputElement).value)} @keydown=${(event:KeyboardEvent)=>{if(event.key==="Escape")setWorkspaceSearch(state,"");}} /></div>
@@ -58,11 +68,17 @@ export function renderWorkspaceView(state:AppViewState,opts:WorkspaceViewOptions
   </aside><oc-resizable-divider .splitRatio=${ws.navRatio} .minRatio=${.16} .maxRatio=${.45} @resize=${handleNavResize}></oc-resizable-divider>
   <section class="wk-main">${ws.mode==="git"?opts.gitSlot:html`
     <div class="wk-browser-toolbar"><div class="wk-browser-history"><button class="btn btn--sm" aria-label=${t("workspace.browser.back")} ?disabled=${ws.historyIndex<=0} @click=${()=>navigateWorkspaceHistory(state,-1)}>${icons.arrowLeft}</button><button class="btn btn--sm" aria-label=${t("workspace.browser.forward")} ?disabled=${ws.historyIndex>=ws.history.length-1} @click=${()=>navigateWorkspaceHistory(state,1)}>${icons.arrowRight}</button></div>${renderBreadcrumb(state)}<button class="btn btn--sm" ?disabled=${!ws.root || state.settings.pinnedWorkspaces.some(root=>root.path===ws.root)} @click=${opts.onPinRoot}>${t("workspace.browser.pinRoot")}</button></div>
-    ${ws.recentFiles.length?html`<nav class="wk-file-tabs" @keydown=${tabListKeydown} role="tablist" aria-label=${t("workspace.browser.openFiles")}>${ws.recentFiles.map((file,index)=>html`<div class="wk-file-tab ${file.path===ws.selectedFile?"active":""}"><button role="tab" tabindex=${index===activeTab?0:-1} id=${`workspace-tab-${index}`} aria-controls="workspace-preview-panel" aria-selected=${file.path===ws.selectedFile} ?disabled=${ws.fileSaving} @click=${()=>void loadWorkspaceFile(state,file.path,file.name)}>${file.name}${file.path===ws.selectedFile && workspaceDirty()?" •":""}</button><button aria-label=${t("workspace.browser.closeTab")} ?disabled=${ws.fileSaving} @click=${()=>closeWorkspaceFile(state,file.path)}>${icons.x}</button></div>`)}</nav>`:nothing}
+    ${ws.recentFiles.length?html`<nav class="wk-file-tabs" @keydown=${tabListKeydown} role="tablist" aria-label=${t("workspace.browser.openFiles")}>${ws.recentFiles.map((file,index)=>html`<div class="wk-file-tab ${file.path===ws.selectedFile?"active":""}"><button role="tab" title=${file.path} tabindex=${index===activeTab?0:-1} id=${`workspace-tab-${index}`} aria-controls="workspace-preview-panel" aria-selected=${file.path===ws.selectedFile} ?disabled=${ws.fileSaving} @click=${()=>void loadWorkspaceFile(state,file.path,file.name)}>${file.name}${file.path===ws.selectedFile && workspaceDirty()?" •":""}</button><button aria-label=${`${t("workspace.browser.closeTab")}: ${file.name}`} ?disabled=${ws.fileSaving} @click=${()=>void closeWorkspaceFile(state,file.path).then(()=>requestAnimationFrame(()=>{
+      (document.querySelector<HTMLElement>(".wk-file-tab.active [role=tab]")??document.querySelector<HTMLElement>(".wk-preview__breadcrumbs button"))?.focus();
+    }))}>${icons.x}</button></div>`)}</nav>`:nothing}
     <div class="wk-preview" id="workspace-preview-panel" role="tabpanel" aria-labelledby=${ws.selectedFile?`workspace-tab-${activeTab}`:nothing}>${ws.selectedFile?html`
       <div class="wk-file-toolbar"><div class="wk-file-toolbar__actions"><button class="btn btn--sm" @click=${()=>opts.onAttachFile(ws.selectedFile!,ws.selectedFileName??"")}>${t("workspace.browser.useInChat")}</button><button class="btn btn--sm" @click=${()=>opts.onOpenItemFolder(ws.selectedFile!)}>${t("workspace.browser.showInFolder")}</button>
         ${ws.fileContent!==null?html`<button class="btn btn--sm" @click=${()=>void copy(ws.draft)}>${t("workspace.browser.copyContent")}</button><button class="btn btn--sm" aria-pressed=${ws.wrap} @click=${()=>{ws.wrap=!ws.wrap;state.requestUpdate();}}>${t("workspace.browser.wrap")}</button><button class="btn btn--sm" ?disabled=${!ws.fileHash||ws.fileSaving} @click=${()=>{ws.editing=!ws.editing;state.requestUpdate();}}>${ws.editing?t("workspace.browser.viewFile"):t("workspace.browser.editFile")}</button>${ws.editing || workspaceDirty()?html`<button class="btn btn--sm primary" ?disabled=${!workspaceDirty()||ws.fileSaving} @click=${()=>void saveWorkspaceFile(state)}>${ws.fileSaving?t("workspace.browser.saving"):t("workspace.browser.saveFile")}</button><button class="btn btn--sm" ?disabled=${ws.fileSaving} @click=${()=>void discardWorkspaceDraft(state)}>${t("workspace.browser.discardReload")}</button>`:nothing}`:nothing}
-      </div>${canPreview?html`<input class="wk-file-search" type="search" placeholder=${t("workspace.browser.findHint")} aria-label=${t("workspace.browser.findLabel")} .value=${ws.fileQuery} @input=${(event:Event)=>{ws.fileQuery=(event.target as HTMLInputElement).value;state.requestUpdate();}} />`:nothing}</div>
+      </div>${canPreview?html`<input class="wk-file-search" type="search" @keydown=${(event:KeyboardEvent)=>{
+          if(event.isComposing || event.keyCode===229 || event.key!=="Escape")return;
+          event.preventDefault();event.stopPropagation();ws.fileQuery="";state.requestUpdate();
+          document.querySelector<HTMLTextAreaElement>(".wk-editor")?.focus();
+        }} placeholder=${t("workspace.browser.findHint")} aria-label=${t("workspace.browser.findLabel")} .value=${ws.fileQuery} @input=${(event:Event)=>{ws.fileQuery=(event.target as HTMLInputElement).value;state.requestUpdate();}} />`:nothing}</div>
       ${ws.fileError?html`<div class="wk-file-error" role="alert">${ws.fileError}</div>`:nothing}
       <div class="wk-preview__content">${ws.fileLoading?html`<div class="wk-preview__placeholder" role="status">${t("workspace.loading")}</div>`:ws.fileContent!==null?ws.editing?html`<textarea class="wk-editor" aria-label=${t("workspace.browser.editor")} spellcheck="false" wrap=${ws.wrap?"soft":"off"} ?disabled=${ws.fileSaving} .value=${ws.draft} @input=${(event:Event)=>updateWorkspaceDraft(state,(event.target as HTMLTextAreaElement).value)}></textarea>`:html`<pre class="wk-preview__text ${ws.wrap?"wk-preview__text--wrap":""}">${highlighted(ws.draft,ws.fileQuery)}</pre>`:ws.imagePreview?html`<div class="wk-image-preview"><img src=${ws.imagePreview} alt=${ws.selectedFileName??""} /></div>`:html`<div class="wk-preview__placeholder">${t("workspace.noPreview")}</div>`}</div>
       <footer class="wk-file-status"><span>${ws.fileContent!==null?`${lineCount(ws.draft)} ${t("workspace.browser.lines")} · ${(ws.fileSize/1024).toFixed(1)} KiB`:ws.selectedFileName}</span><span role="status">${ws.draftStatus}</span></footer>

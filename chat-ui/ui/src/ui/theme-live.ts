@@ -9,16 +9,18 @@ import {saveGeneratedTheme} from "./theme-library.ts";
 import {showToast} from "./app-toast.ts";
 import {runExitAnimation} from "./utils/exit-anim.ts";
 
-type Preview={name:string;description?:string;editorVisible:boolean;source:"manual"|"agent"|"imported";profile:AppearanceProfile;original:AppearanceProfile;savedKey:string;picking:boolean;target:string|null;timer:ReturnType<typeof setTimeout>|null;tab:"layout"|"style"|"text";history:AppearanceProfile[];future:AppearanceProfile[];baseline:AppearanceProfile|null;geometry:{width:number;height:number};leaving:boolean};
+type Preview={name:string;description?:string;editorVisible:boolean;source:"manual"|"agent"|"imported";profile:AppearanceProfile;original:AppearanceProfile;savedKey:string;picking:boolean;target:string|null;timer:ReturnType<typeof setTimeout>|null;tab:"layout"|"style"|"text";history:AppearanceProfile[];future:AppearanceProfile[];baseline:AppearanceProfile|null;geometry:{width:number;height:number};previousFocus:HTMLElement|null;leaving:boolean};
 const copy=(profile:AppearanceProfile)=>normalizeAppearance(JSON.parse(JSON.stringify(profile)));
 function beginChange(preview:Preview){preview.baseline??=copy(preview.profile);}
 function commitChange(preview:Preview){if(preview.baseline && JSON.stringify(preview.baseline)!==JSON.stringify(preview.profile)){preview.history.push(preview.baseline);if(preview.history.length>30)preview.history.shift();preview.future=[];}preview.baseline=null;}
 const previews=new WeakMap<AppViewState,Preview>();
 const detachments=new WeakMap<AppViewState,()=>void>();
+/** 用户开始手动调整后，不再用 Agent 预览的 60s 自动恢复丢弃这些编辑。 */
+function pauseAutoRestore(preview:Preview):void{if(preview.timer){clearTimeout(preview.timer);preview.timer=null;}}
 export function hasThemePreview(host:AppViewState):boolean{return !!previews.get(host) && !previews.get(host)?.leaving;}
 export function updateActiveThemePreview(host:AppViewState,profile:AppearanceProfile,preserveComponents=true):boolean {
   const preview=previews.get(host);if(!preview || preview.leaving)return false;
-  preview.profile=normalizeAppearance({...profile,...(preserveComponents?{components:preview.profile.components}:{})});applyAppearance(preview.profile);return true;
+  preview.profile=normalizeAppearance({...profile,...(preserveComponents?{components:preview.profile.components}:{})});applyAppearance(preview.profile);pauseAutoRestore(preview);return true;
 }
 const text=(cn:string,en:string)=>getLocale().startsWith("zh")?cn:en;
 function selectedNode(id:string|null):HTMLElement|undefined{return id?Array.from(document.querySelectorAll<HTMLElement>("[data-theme-node]")).find(node=>node.dataset.themeNode===id):undefined;}
@@ -34,7 +36,7 @@ export function endThemePreview(host:AppViewState,save=false,animate=true):void 
   }
   else applyAppearance(preview.savedKey===JSON.stringify({appearance:host.settings.appearance,theme:host.settings.theme})?preview.original:{...normalizeAppearance(host.settings.appearance),mode:host.settings.theme});
   document.querySelectorAll("[data-theme-selected]").forEach(node=>node.removeAttribute("data-theme-selected"));
-  const finish=()=>{if(previews.get(host)===preview){previews.delete(host);host.requestUpdate();}};
+  const finish=()=>{if(previews.get(host)===preview){previews.delete(host);host.requestUpdate();const focus=preview.previousFocus;if(focus?.isConnected)requestAnimationFrame(()=>focus.focus());}};
   preview.leaving=true;host.requestUpdate();
   if(animate)runExitAnimation([document.querySelector(".theme-editor"),document.querySelector(".theme-preview-banner")],finish);else finish();
 }
@@ -43,9 +45,10 @@ export function startThemeEditor(host:AppViewState,profile:unknown=host.settings
   document.querySelectorAll(".theme-editor.cc-leaving,.theme-preview-banner.cc-leaving").forEach(element=>element.classList.remove("cc-leaving"));
   const current=getAppliedAppearance();
   const original={...current,mode:current.mode??host.settings.theme};
-  const preview:Preview={name,description:description||undefined,editorVisible,source,profile:normalizeAppearance(profile),original,savedKey:JSON.stringify({appearance:host.settings.appearance,theme:host.settings.theme}),picking:false,target:null,timer:null,tab:"layout",history:[],future:[],baseline:null,geometry:{width:200,height:40},leaving:false};
+  const preview:Preview={name,description:description||undefined,editorVisible,source,profile:normalizeAppearance(profile),original,savedKey:JSON.stringify({appearance:host.settings.appearance,theme:host.settings.theme}),picking:false,target:null,timer:null,tab:"layout",history:[],future:[],baseline:null,geometry:{width:200,height:40},previousFocus:document.activeElement instanceof HTMLElement?document.activeElement:null,leaving:false};
   if(expires)preview.timer=setTimeout(()=>endThemePreview(host),60000);
   previews.set(host,preview);applyAppearance(preview.profile);host.requestUpdate();
+  requestAnimationFrame(()=>{if(previews.get(host)!==preview || preview.leaving)return;const panel=document.querySelector<HTMLElement>(preview.editorVisible?".theme-editor":".theme-preview-banner");if(panel?.isConnected)panel.focus();});
 }
 export function previewImportedTheme(host:AppViewState,profile:AppearanceProfile,name:string,description=""):void {startThemeEditor(host,profile,name,true,false,"imported",description);}
 export function attachThemeUi(host:AppViewState):void {
@@ -74,6 +77,7 @@ export function attachThemeUi(host:AppViewState):void {
     pickExpires=Date.now()+500;
     document.querySelectorAll("[data-theme-selected]").forEach(node=>node.removeAttribute("data-theme-selected"));
     preview.target=target.dataset.themeNode!;preview.picking=false;target.dataset.themeSelected="true";
+    pauseAutoRestore(preview);
     const rect=target.getBoundingClientRect();preview.geometry={width:rect.width,height:rect.height};
     const radius=parseFloat(getComputedStyle(target).borderRadius)||12;
     (preview.profile.components??={})[preview.target]??={x:0,y:0,radius};host.requestUpdate();
@@ -87,7 +91,7 @@ export function detachThemeUi(host:AppViewState):void {detachments.get(host)?.()
 export function renderThemeUi(host:AppViewState){
   const preview=previews.get(host);if(!preview)return nothing;
   const part=preview.target?preview.profile.components?.[preview.target]:undefined;
-  const update=(inFrame=false)=>{const apply=()=>{applyAppearance(preview.profile);host.requestUpdate();};if(inFrame){cancelAppearancePreview(host);apply();}else scheduleAppearancePreview(host,apply);};
+  const update=(inFrame=false)=>{pauseAutoRestore(preview);const apply=()=>{applyAppearance(preview.profile);host.requestUpdate();};if(inFrame){cancelAppearancePreview(host);apply();}else scheduleAppearancePreview(host,apply);};
   const undo=(redo=false)=>{commitChange(preview);const from=redo?preview.future:preview.history,to=redo?preview.history:preview.future;const value=from.pop();if(!value)return;to.push(copy(preview.profile));preview.profile=value;update();};
   const drag=(event:PointerEvent,resize=false)=>{
     if(!part)return;event.preventDefault();beginChange(preview);const handle=event.currentTarget as HTMLElement;
@@ -96,8 +100,8 @@ export function renderThemeUi(host:AppViewState){
     const stop=()=>{commitChange(preview);update();handle.removeEventListener("pointermove",move);handle.removeEventListener("pointerup",stop);handle.removeEventListener("pointercancel",stop);};
     handle.addEventListener("pointermove",move);handle.addEventListener("pointerup",stop);handle.addEventListener("pointercancel",stop);
   };
-  return html`<section class="theme-preview-banner" role="region" aria-label=${text("主题预览", "Theme preview")}><span><strong title=${preview.name}>${Array.from(preview.name).length>40?Array.from(preview.name).slice(0,40).join("")+"…":preview.name}</strong> · ${preview.timer?text("预览中；60 秒后自动恢复", "Preview; restores after 60 seconds"):text("预览中；按 Esc 撤销", "Preview; Escape reverts changes")}</span><button class="btn primary" @click=${()=>endThemePreview(host,true)}>${text("保留主题", "Keep theme")}</button><button class="btn" @click=${()=>endThemePreview(host)}>${text("撤销", "Revert")}</button></section>
-  ${preview.editorVisible?html`<aside class="theme-editor" aria-label=${text("可视化主题编辑", "Visual theme editor")}><div class="theme-editor__heading"><span><small>${text("Theme Studio · 实时编辑", "Theme Studio · Live")}</small><h3>${text("让界面适合你", "Make the interface yours")}</h3></span><span class="theme-editor__history"><button class="btn btn--sm" ?disabled=${!preview.history.length} @click=${()=>undo()}>${text("撤销", "Undo")}</button><button class="btn btn--sm" ?disabled=${!preview.future.length} @click=${()=>undo(true)}>${text("重做", "Redo")}</button><button class="icon-btn theme-editor__close" aria-label=${text("关闭编辑器并撤销预览", "Close editor and revert preview")} title=${text("关闭并撤销预览（Esc）", "Close and revert (Escape)")} @click=${()=>endThemePreview(host)}>${icons.x}</button></span></div><details class="theme-editor__help"><summary>${text("操作与快捷键", "Controls and shortcuts")}</summary><p>${text("拖动移动，Shift 对齐 8px 网格，Alt 精调。方向键微调滑块，Shift 精细、Alt 加速；直接输入数值可精确定位。Esc 撤销预览，Ctrl+Alt+0 恢复默认外观。", "Drag to move; Shift snaps to an 8px grid, Alt adjusts finely. Arrow keys adjust sliders, Shift is finer, Alt faster. Enter exact values directly. Escape reverts; Ctrl+Alt+0 restores defaults.")}</p></details>
+  return html`<section class="theme-preview-banner" role="region" tabindex="-1" aria-label=${text("主题预览", "Theme preview")}><span><strong title=${preview.name}>${Array.from(preview.name).length>40?Array.from(preview.name).slice(0,40).join("")+"…":preview.name}</strong> · ${preview.timer?text("预览中；60 秒后自动恢复", "Preview; restores after 60 seconds"):text("预览中；按 Esc 撤销", "Preview; Escape reverts changes")}</span><button class="btn primary" @click=${()=>endThemePreview(host,true)}>${text("保留主题", "Keep theme")}</button><button class="btn" @click=${()=>endThemePreview(host)}>${text("撤销", "Revert")}</button></section>
+  ${preview.editorVisible?html`<aside class="theme-editor" tabindex="-1" aria-label=${text("可视化主题编辑", "Visual theme editor")}><div class="theme-editor__heading"><span><small>${text("Theme Studio · 实时编辑", "Theme Studio · Live")}</small><h3>${text("让界面适合你", "Make the interface yours")}</h3></span><span class="theme-editor__history"><button class="btn btn--sm" ?disabled=${!preview.history.length} @click=${()=>undo()}>${text("撤销", "Undo")}</button><button class="btn btn--sm" ?disabled=${!preview.future.length} @click=${()=>undo(true)}>${text("重做", "Redo")}</button><button class="icon-btn theme-editor__close" aria-label=${text("关闭编辑器并撤销预览", "Close editor and revert preview")} title=${text("关闭并撤销预览（Esc）", "Close and revert (Escape)")} @click=${()=>endThemePreview(host)}>${icons.x}</button></span></div><details class="theme-editor__help"><summary>${text("操作与快捷键", "Controls and shortcuts")}</summary><p>${text("拖动移动，Shift 对齐 8px 网格，Alt 精调。方向键微调滑块，Shift 精细、Alt 加速；直接输入数值可精确定位。Esc 撤销预览，Ctrl+Alt+0 恢复默认外观。", "Drag to move; Shift snaps to an 8px grid, Alt adjusts finely. Arrow keys adjust sliders, Shift is finer, Alt faster. Enter exact values directly. Escape reverts; Ctrl+Alt+0 restores defaults.")}</p></details>
   <button class="btn" @click=${()=>{preview.picking=!preview.picking;host.requestUpdate();}}>${preview.picking?text("现在点击需要调整的元素…", "Click the element to adjust…"):text("选择界面元素", "Pick an element")}</button>
   ${part?html`<div class="theme-editor__selection"><strong>${selectedNode(preview.target)?.getAttribute("aria-label") || selectedNode(preview.target)?.getAttribute("placeholder") || selectedNode(preview.target)?.textContent?.trim().slice(0,40) || text("所选控件", "Selected control")}</strong><details><summary>${text("元素标识", "Element identifier")}</summary><code>${preview.target}</code></details></div><div class="theme-editor__handles"><button class="btn theme-editor__drag" @pointerdown=${(event:PointerEvent)=>drag(event)}>${icons.move}${text("拖动移动", "Move")}</button><button class="btn theme-editor__drag" @pointerdown=${(event:PointerEvent)=>drag(event,true)}>${icons.resize}${text("拖动缩放", "Resize")}</button></div>
     <div class="theme-editor__tabs">${(["layout","style","text"] as const).map(tab=>html`<button class="btn btn--sm" aria-pressed=${preview.tab===tab} @click=${()=>{preview.tab=tab;host.requestUpdate();}}>${tab==="layout"?text("布局", "Layout"):tab==="style"?text("外观", "Style"):text("文字", "Type")}</button>`)}</div>

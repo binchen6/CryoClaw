@@ -4,12 +4,66 @@ import test, {type TestContext} from "node:test";
 import assert from "node:assert/strict";
 import { selectWorkspaceMode, workspaceViewState, loadWorkspaceFile, discardWorkspaceDraft, openWorkspaceDirectory, closeWorkspaceFile, setWorkspaceRoot, updateWorkspaceDraft, leaveWorkspace } from "./workspace.ts";
 import type { AppViewState } from "../app-view-state.ts";
+import {setWorkspaceSearch,navigateWorkspaceHistory} from "./workspace.ts";
+import {resolveAgentWorkspacePath,preloadWorkspaceDirectory,loadWorkspaceDirectory} from "./workspace.ts";
 
 test("selectWorkspaceMode 切换右主区模式", () => {
   selectWorkspaceMode("git");
   assert.strictEqual(workspaceViewState.mode, "git");
   selectWorkspaceMode("files");
   assert.strictEqual(workspaceViewState.mode, "files");
+});
+
+test("native workspace context resolves offline and coalesces repeated path reads",async ctx=>{
+  let calls=0;bridge(ctx,{workspaceGetContext:async()=>{calls++;return {success:true,data:{defaultRoot:"/local",activeRoot:null}};}});
+  const state={client:null,connected:false};
+  assert.deepEqual(await Promise.all([resolveAgentWorkspacePath(state,"main"),resolveAgentWorkspacePath(state,"main")]),["/local","/local"]);assert.equal(calls,1);
+  await resolveAgentWorkspacePath(state,"main",true);assert.equal(calls,2);
+});
+
+test("directory preloading is read-only and is reused by foreground navigation",async ctx=>{
+  let calls=0;bridge(ctx,{workspaceListDir:async()=>{calls++;return {success:true,data:{items:[{name:"a.txt",path:"/warm/a.txt",isDir:false}]}};}});
+  const state={...host,client:{},connected:true} as unknown as AppViewState;
+  Object.assign(workspaceViewState,{root:"/warm",currentPath:"/warm",selectedFile:"/draft.txt",draft:"keep",fileSaving:false,items:[]});
+  await Promise.all([preloadWorkspaceDirectory(state),preloadWorkspaceDirectory(state)]);
+  assert.equal(calls,1);assert.equal(workspaceViewState.selectedFile,"/draft.txt");assert.equal(workspaceViewState.draft,"keep");assert.equal(workspaceViewState.items.length,0);
+  await loadWorkspaceDirectory(state,"/warm");assert.equal(calls,1);assert.equal(workspaceViewState.items[0].name,"a.txt");
+  await loadWorkspaceDirectory(state,"/warm",true);assert.equal(calls,2);
+  state.client={} as AppViewState["client"];await loadWorkspaceDirectory(state,"/warm");assert.equal(calls,3);
+});
+
+test("search clears old hits before debounce and ignores a late result after cancellation",async ctx=>{
+  ctx.mock.timers.enable({apis:["setTimeout"]});
+  let finish!:(value:unknown)=>void;
+  bridge(ctx,{workspaceFindFiles:()=>new Promise(resolve=>{finish=resolve;})});
+  Object.assign(workspaceViewState,{root:"/root",searchResults:[{name:"old.txt",path:"/root/old.txt",isDir:false}],error:"old failure",searchTruncated:true});
+  setWorkspaceSearch(host,"new");
+  assert.deepEqual(workspaceViewState.searchResults,[]);assert.equal(workspaceViewState.searchLoading,true);
+  assert.equal(workspaceViewState.error,null);assert.equal(workspaceViewState.searchTruncated,false);
+  ctx.mock.timers.tick(200);setWorkspaceSearch(host,"");
+  finish({success:true,data:{items:[{name:"late"}],truncated:true}});
+  await Promise.resolve();await Promise.resolve();
+  assert.deepEqual(workspaceViewState.searchResults,[]);assert.equal(workspaceViewState.searchLoading,false);assert.equal(workspaceViewState.searchTruncated,false);
+});
+
+test("a successful search retry clears the failure and a rootless search ends loading",async ctx=>{
+  ctx.mock.timers.enable({apis:["setTimeout"]});let fails=true;
+  bridge(ctx,{workspaceFindFiles:async()=>fails?{success:false,message:"offline"}:{success:true,data:{items:[]}}});
+  Object.assign(workspaceViewState,{root:"/root"});
+  setWorkspaceSearch(host,"a");ctx.mock.timers.tick(200);await Promise.resolve();await Promise.resolve();
+  assert.match(workspaceViewState.error??"",/offline/);
+  fails=false;setWorkspaceSearch(host,"b");ctx.mock.timers.tick(200);await Promise.resolve();await Promise.resolve();
+  assert.equal(workspaceViewState.error,null);assert.equal(workspaceViewState.searchLoading,false);
+  workspaceViewState.root=null;setWorkspaceSearch(host,"c");ctx.mock.timers.tick(200);
+  assert.equal(workspaceViewState.searchLoading,false);
+});
+
+test("history navigation cannot drift while a file save blocks directory loads",ctx=>{
+  let calls=0;bridge(ctx,{workspaceListDir:async()=>{calls++;return {success:true,data:{items:[]}};}});
+  Object.assign(workspaceViewState,{fileSaving:true,history:["/a","/b"],historyIndex:1,currentPath:"/b"});
+  navigateWorkspaceHistory(host,-1);
+  assert.equal(workspaceViewState.historyIndex,1);assert.equal(workspaceViewState.currentPath,"/b");assert.equal(calls,0);
+  workspaceViewState.fileSaving=false;
 });
 
 test("file navigation requested during draft backup keeps the latest selection", async (ctx) => {

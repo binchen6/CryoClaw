@@ -33,6 +33,7 @@ export class ProviderSegment extends LitElement {
           return html`
             <button class="oc-provider-seg__pill ${isActive ?"oc-provider-seg__pill--active" : ""} ${isLocked ? "oc-provider-seg__pill--locked" : ""}"
               ?disabled=${isLocked}
+              aria-pressed=${isActive?"true":"false"}
               @click=${() => this.handleClick(p)}>
               ${this.labels[p] ?? p}
             </button>

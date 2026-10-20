@@ -9,6 +9,7 @@ import { formatRelativeTimestamp, formatMs } from "../format.ts";
 import { formatCronSchedule, isExpiredOneShot } from "../presenter.ts";
 import { icons } from "../icons.ts";
 import { t } from "../i18n.ts";
+import { activateOnKeydown } from "../a11y.ts";
 import { renderConfiguredModelOptions } from "../model-options.ts";
 import "../components/toggle-switch.ts";
 import { loadModelOrg } from "./settings/model-org.lib.ts";
@@ -63,7 +64,10 @@ function renderListItem(job: CronJob, selected: boolean, props: CronManageProps)
   return html`
     <div
       class="cm-list__item ${selected ?"cm-list__item--selected" : ""} ${expired ? "cm-list__item--expired" : ""}"
+      role="button"
+      tabindex="0"
       @click=${() => props.onToggleExpand(job.id)}
+      @keydown=${activateOnKeydown(() => props.onToggleExpand(job.id))}
     >
       <div class="cm-list__item-top">
         <span class="cm-list__item-name">${name}</span>
@@ -73,12 +77,12 @@ function renderListItem(job: CronJob, selected: boolean, props: CronManageProps)
       </div>
       <div class="cm-list__item-schedule">${schedule}</div>
       <div class="cm-list__item-actions">
-        <button class="cm-list__item-action" type="button"
+        <button class="cm-list__item-action" type="button" ?disabled=${props.busy}
           data-tooltip=${t("cron.form.edit")} aria-label=${t("cron.form.edit")}
           @click=${(e: Event) => { e.stopPropagation(); props.onEdit(job.id); }}>
           ${icons.edit}
         </button>
-        <button class="cm-list__item-action cm-list__item-action--danger" type="button"
+        <button class="cm-list__item-action cm-list__item-action--danger" type="button" ?disabled=${props.busy}
           data-tooltip=${t("cron.remove")} aria-label=${t("cron.remove")}
           @click=${(e: Event) => { e.stopPropagation(); props.onRemove(job.id); }}>
           ${icons.trash}
@@ -108,7 +112,7 @@ function renderDetail(job: CronJob, props: CronManageProps) {
             ? nothing
             : html`
               <button class="cm-detail__action-btn" type="button" ?disabled=${props.busy}
-                data-tooltip=${t("cron.run")} data-tooltip-pos="bottom"
+                aria-label=${t("cron.run")} data-tooltip=${t("cron.run")} data-tooltip-pos="bottom"
                 @click=${() => props.onRun(job.id)}>
                 ${icons.play}
               </button>
@@ -196,7 +200,7 @@ function renderScheduleFields(props: CronManageProps) {
     return html`
       <label class="cron-form__field">
         <span class="cron-form__label">${t("cron.form.runAt")}</span>
-        <input class="cron-form__input" type="datetime-local" .value=${form.scheduleAt}
+        <input class="cron-form__input" type="datetime-local" step="any" .value=${form.scheduleAt}
           @input=${(e: Event) => props.onFormChange({ scheduleAt: (e.target as HTMLInputElement).value })} />
       </label>`;
   }
@@ -205,13 +209,15 @@ function renderScheduleFields(props: CronManageProps) {
       <div class="cron-form__row">
         <label class="cron-form__field cron-form__field--grow">
           <span class="cron-form__label">${t("cron.form.every")}</span>
-          <input class="cron-form__input" type="number" min="1" .value=${form.everyAmount}
+          <input class="cron-form__input" type="number" min="1" step="any" .value=${form.everyAmount}
             @input=${(e: Event) => props.onFormChange({ everyAmount: (e.target as HTMLInputElement).value })} />
         </label>
         <label class="cron-form__field cron-form__field--grow">
           <span class="cron-form__label">${t("cron.form.unit")}</span>
           <select class="cron-form__select" .value=${form.everyUnit}
             @change=${(e: Event) => props.onFormChange({ everyUnit: (e.target as HTMLSelectElement).value })}>
+            <option value="milliseconds">${t("cron.form.milliseconds")}</option>
+            <option value="seconds">${t("cron.form.seconds")}</option>
             <option value="minutes">${t("cron.form.minutes")}</option>
             <option value="hours">${t("cron.form.hours")}</option>
             <option value="days">${t("cron.form.days")}</option>
@@ -240,7 +246,7 @@ function renderForm(props: CronManageProps) {
   return html`
     <div class="cm-detail">
       <h3 class="cm-detail__form-title">${isEdit ? t("cron.form.editTitle") : t("cron.form.newTitle")}</h3>
-      <div class="cron-form">
+      <fieldset class="cron-form" ?disabled=${props.busy}>
         <label class="cron-form__field">
           <span class="cron-form__label">${t("cron.form.name")}</span>
           <input class="cron-form__input" .value=${form.name} placeholder=${t("cron.form.namePlaceholder")}
@@ -314,7 +320,7 @@ function renderForm(props: CronManageProps) {
             ?disabled=${props.busy || !form.name.trim() || !form.payloadText.trim()}
             @click=${props.onAddJob}>${props.busy ? t("cron.form.saving") : isEdit ? t("cron.form.save") : t("cron.form.create")}</button>
         </div>
-      </div>
+      </fieldset>
     </div>
   `;
 }
@@ -365,7 +371,7 @@ export function renderCronManage(props: CronManageProps) {
           <h2 class="cm-list__title panel__title">${t("cron.title")}</h2>
         </div>
         <div class="cm-list__new-wrap">
-          <button class="cm-list__new-btn" type="button" @click=${props.onToggleForm}>
+          <button class="cm-list__new-btn" type="button" ?disabled=${props.busy} @click=${props.onToggleForm}>
             ${icons.plus}
             ${t("cron.form.new")}
           </button>
@@ -379,7 +385,7 @@ export function renderCronManage(props: CronManageProps) {
 
       <!-- 右侧详情 -->
       <div class="cm-layout__detail">
-        ${props.error ? html`<div class="cm-detail__error">${props.error}</div>` : nothing}
+        ${props.error ? html`<div class="cm-detail__error" role="alert">${props.error}</div>` : nothing}
         ${props.showForm
           ? renderForm(props)
           : selectedJob

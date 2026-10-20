@@ -675,6 +675,23 @@
   vertical-align: -2px;
 }
 
+/* 分支 chip：分支名常带斜杠与连字符（openclaw/mild-barnacle），窄侧栏里
+   默认在连字符处折行成两行、撑破胶囊形。改单行省略，完整名走 title。 */
+.wt-card__branch-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacer-4);
+  min-width: 0;
+  max-width: 100%;
+}
+
+.wt-card__branch {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 @media (max-width: 900px) {
   .wt-card {
     flex-direction: column;

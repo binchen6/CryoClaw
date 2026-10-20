@@ -559,6 +559,11 @@ test("chat.css：输出区与围栏代码块宽度受限、块内横向滚动", 
   assert.ok(output, "缺 .chat-tool-card__output 规则");
   assert.match(output, /min-width:\s*0/);
   assert.match(output, /max-width:\s*100%/);
+  // 限高内滚：长输出（上限 8000 字符）不得把展开的折叠组撑成数千像素，
+  // 「共 N 行 / 查看完整输出」元信息行须常驻卡内可视；滚轮到底不外泄到线程
+  assert.match(output, /max-height:\s*400px/, "输出区应限高 400px（同 .chat-json-content）");
+  assert.match(output, /overflow-y:\s*auto/, "输出区应内部纵向滚动");
+  assert.match(output, /overscroll-behavior:\s*contain/, "输出区应阻断滚动链穿透");
 
   const pre = cssRule(css, ".chat-tool-card__output pre");
   assert.ok(pre, "缺 .chat-tool-card__output pre 规则");

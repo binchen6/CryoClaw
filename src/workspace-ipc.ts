@@ -70,6 +70,14 @@ export function authorizeWorkspaceRoot(root:string):void {
 }
 export function resetWorkspaceAccessForImport():void {workspaceRoot=null;const config=readCryoclawConfig();if(config?.approvedWorkspaceRoots){delete config.approvedWorkspaceRoots;writeCryoclawConfig(config);}}
 
+export function configuredWorkspacePath(config:any,home=os.homedir(),stateDir=resolveUserStateDir(),env:NodeJS.ProcessEnv=process.env):string {
+  const agent=Array.isArray(config?.agents?.list)?config.agents.list.find((item:any)=>item.id==="main"):null;
+  const value=agent?.workspace??config?.agents?.defaults?.workspace;
+  if(typeof value!=="string" || !value.trim())return path.join(stateDir,"workspace");
+  const expanded=value.replace(/^~(?=[\\/]|$)/,home).replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g,(match,key)=>env[key]??match);
+  return path.isAbsolute(expanded)?path.resolve(expanded):path.join(stateDir,"workspace");
+}
+
 // 公共守卫：检查路径合法性（workspace 根或 worktrees 根之内）
 function guardPath(filePath: string): { ok: true } | { ok: false; error: { success: false; message: string } } {
   if (typeof filePath!=="string" || !filePath || !isInsideAnyRoot(filePath, allowedRoots())) {
@@ -126,6 +134,11 @@ export async function resolveAllowedDir(dirPath: string): Promise<string | null>
 }
 
 export function registerWorkspaceIpc(): void {
+  ipcMain.handle("workspace:get-context",event=>{
+    if(!assertTrustedIpcSender(event,"workspace:get-context"))throw Error("IPC sender not trusted");
+    try{return {success:true,data:{defaultRoot:configuredWorkspacePath(readUserConfig()),activeRoot:workspaceRoot}};}
+    catch(error:any){return {success:false,message:error?.message??String(error)};}
+  });
   // 设置 workspace 根路径（渲染进程从 gateway 获取后传入）
   // Only configured workspaces, worktrees and folders granted by the native picker.
   ipcMain.handle("workspace:set-root", (event, root: string) => {

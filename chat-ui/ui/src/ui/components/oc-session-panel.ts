@@ -222,6 +222,7 @@ function startInlineRename(
   };
   input.addEventListener("click", (ev: MouseEvent) => ev.stopPropagation());
   input.addEventListener("keydown", (ev: KeyboardEvent) => {
+    if (ev.isComposing || ev.keyCode === 229) return;
     if (ev.key === "Enter") {
       ev.stopPropagation();
       ev.preventDefault();
@@ -622,9 +623,11 @@ function renderWorkspaceDialog(host: OcSessionPanel, props: SessionPanelProps) {
         class="oc-panel__ws-dialog"
         role="dialog"
         aria-modal="true"
+        tabindex="-1"
         aria-label=${t("workspace.createTitle")}
         @click=${(e: Event) => e.stopPropagation()}
         @keydown=${(e: KeyboardEvent) => {
+          if (e.isComposing || e.keyCode === 229) return;
           if (e.key === "Escape") {
             e.stopPropagation();
             closeWorkspaceDialog(host);
@@ -671,7 +674,7 @@ function renderWorkspaceDialog(host: OcSessionPanel, props: SessionPanelProps) {
           </span>
         </label>
         <div class="oc-panel__ws-dialog-actions">
-          <button type="button" class="btn btn--sm" @click=${() => closeWorkspaceDialog(host)}>
+          <button type="button" class="btn btn--sm" data-dialog-dismiss @click=${() => closeWorkspaceDialog(host)}>
             ${t("workspace.cancel")}
           </button>
           <button

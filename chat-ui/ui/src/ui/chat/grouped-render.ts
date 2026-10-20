@@ -540,7 +540,7 @@ function renderFileChanges(changes: FileChange[], gitAvailable?: boolean | null)
         )}
         ${gitAvailable === true
           ? html`<div class="chat-file-changes__footer">
-              <a class="chat-git-view-link">${icons.diff} ${t("chat.viewInGit")}</a>
+              <a class="chat-git-view-link" tabindex="0" role="button">${icons.diff} ${t("chat.viewInGit")}</a>
             </div>`
           : nothing}
       </div>

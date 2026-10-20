@@ -55,12 +55,39 @@ export class OcTurnFiles extends LitElement {
   createRenderRoot() { return this; }
   shouldUpdate(changed: Map<PropertyKey, unknown>) { return [...changed.keys()].some(key => key !== "onOpenGit" && key !== "onOpenFile"); }
 
+  connectedCallback() {
+    super.connectedCallback();
+    document.addEventListener("pointerdown", this.onDocumentPointerDown, true);
+    document.addEventListener("keydown", this.onDocumentKeyDown);
+  }
+
   disconnectedCallback() {
+    document.removeEventListener("pointerdown", this.onDocumentPointerDown, true);
+    document.removeEventListener("keydown", this.onDocumentKeyDown);
     this.cancelStatsTimer();
     // 组件销毁后在途响应不再落位（seq 前进即让旧响应过期）
     this.statsSeq += 1;
     super.disconnectedCallback();
   }
+
+  private turnFilesDetails(): HTMLDetailsElement | null {
+    return this.querySelector<HTMLDetailsElement>(".chat-turn-files");
+  }
+
+  private onDocumentPointerDown = (event: PointerEvent) => {
+    const details = this.turnFilesDetails();
+    if (!details?.open) return;
+    if (event.target instanceof Node && details.contains(event.target)) return;
+    details.open = false;
+  };
+
+  private onDocumentKeyDown = (event: KeyboardEvent) => {
+    if (event.key !== "Escape") return;
+    const details = this.turnFilesDetails();
+    if (!details?.open) return;
+    details.open = false;
+    details.querySelector<HTMLElement>("summary")?.focus();
+  };
 
   // 触发拉取的条件：当前轮的改动列表或工作区/git 可用性变化，
   // visibleHistoryCount 变化说明本轮又有新消息（同一批文件可能被再次编辑，行数要刷新）。

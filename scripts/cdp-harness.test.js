@@ -30,6 +30,14 @@ test("CDP stalled commands and synchronous send failures release pending slots",
   assert.equal(cdp.pending.size, 0);
 });
 
+test("long evaluations can opt into a bounded deadline without changing other commands",async()=>{
+  const ws=new EventTarget();ws.send=data=>{const {id}=JSON.parse(data);setTimeout(()=>ws.dispatchEvent(new MessageEvent('message',{data:JSON.stringify({id,result:{result:{value:'ok'}}})})),35);};
+  const cdp=new Cdp(ws,10);
+  assert.equal(await cdp.evaluate('slow()', {timeoutMs:100}),'ok');
+  await assert.rejects(cdp.send('Page.enable'),/timed out/);assert.equal(cdp.pending.size,0);
+  await assert.rejects(cdp.send('Page.enable',{}, {timeoutMs:0}),/Invalid CDP deadline/);
+});
+
 test("failed file navigation rejects even when the previous page is still interactive",async()=>{
   const ws=new EventTarget();let result={errorText:'net::ERR_FILE_NOT_FOUND'};
   ws.send=data=>{const {id}=JSON.parse(data);queueMicrotask(()=>ws.dispatchEvent(new MessageEvent('message',{data:JSON.stringify({id,result})})));};

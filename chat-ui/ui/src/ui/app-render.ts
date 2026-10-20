@@ -89,6 +89,7 @@ declare global {
       pluginStoreMarketBrowse?: (params?: Record<string, unknown>) => Promise<any>;
       pluginStoreMarketDetail?: (params?: Record<string, unknown>) => Promise<any>;
       workspaceSetRoot?: (root: string) => Promise<any>;
+      workspaceGetContext?: () => Promise<{success:boolean;data?:{defaultRoot:string;activeRoot:string|null}}>;
       selectDirectory?: () => Promise<string|null>;
       workspaceOpenFolder?: (filePath: string) => Promise<any>;
       workspaceListDir?: (dirPath: string,options?:{showHidden?:boolean}) => Promise<any>;

@@ -157,6 +157,23 @@
 | `settingsEnsureKimiProxy()` | `settings:ensure-kimi-proxy` | invoke |
 | `settingsGetAboutInfo()` | `settings:get-about-info` | invoke |
 
+## Settings — Memory
+
+> Memory 工作区数据 + memory CLI 桥（`src/settings/memory.ts`）：记忆/梦境分页 +
+> 召回测试 / 索引重建 / 插件修复。全部通道 `assertTrustedIpcSender` 校验。
+
+| 方法 | IPC 通道 | 方向 |
+|---|---|---|
+| `memoryListWorkspace()` | `memory:list` | invoke（记忆条目分页列表） |
+| `memoryReadEntry(params)` | `memory:read` | invoke |
+| `memoryAppendEntry(params)` | `memory:append` | invoke |
+| `memoryListDreams()` | `memory:list-dreams` | invoke（梦境分页） |
+| `memoryReadDream(params)` | `memory:read-dream` | invoke |
+| `memoryDeleteDream(params)` | `memory:delete-dream` | invoke |
+| `memoryRecallTest(params)` | `memory:recall-test` | invoke（召回测试） |
+| `memoryReindex()` | `memory:reindex` | invoke（索引重建） |
+| `memoryRepairPlugin()` | `memory:repair-plugin` | invoke（修复 memory 插件） |
+
 ## Settings — Advanced / CLI
 
 | 方法 | IPC 通道 | 方向 |
@@ -171,6 +188,9 @@
 | `settingsWebbridgeVersionStatus()` | `settings:webbridge-version-status` | invoke（版本状态：安装版本/来源/daemon 运行态/更新信号，R79） |
 | `settingsWebbridgeUpdateCheck(params?)` | `settings:webbridge-update-check` | invoke（检查更新；`params.autoUpdate` 传 boolean 时只写自动更新开关，R79） |
 | `settingsWebbridgeUpdateApply()` | `settings:webbridge-update-apply` | invoke（下载新二进制 → 钉定校验 → 换装 → 按需重启 daemon，R79） |
+| `settingsWebbridgeRefreshPins()` | `settings:webbridge-refresh-pins` | invoke（绕过 24h 缓存强制拉取远端 WebBridge 钉定清单） |
+| `settingsWebbridgeExtensionCheck()` | `settings:webbridge-extension-check` | invoke（浏览器扩展检查更新，清单 extension 块驱动） |
+| `settingsWebbridgeExtensionUpdate()` | `settings:webbridge-extension-update` | invoke（浏览器扩展立即更新） |
 | `settingsExportDiagnostics()` | `settings:export-diagnostics` | invoke（脱敏诊断包导出） |
 | `settingsSaveAdvanced(params)` | `settings:save-advanced` | invoke |
 | `settingsGetCliStatus()` | `settings:get-cli-status` | invoke |
@@ -211,6 +231,8 @@
 | `skillStoreInstall(params?)` | `skill-store:install` | invoke |
 | `skillStoreUninstall(params?)` | `skill-store:uninstall` | invoke |
 | `skillStoreListInstalled()` | `skill-store:list-installed` | invoke |
+| `skillStoreCheckUpdates()` | `skill-store:check-updates` | invoke（已安装技能的 registry 新版本检查） |
+| `skillStoreUpdate(params?)` | `skill-store:update` | invoke（升级；slugs 缺省 = 全部可更新项） |
 | `skillStoreDetail(params?)` | `skill-store:detail` | invoke |
 
 ## 插件管理页（extensions 视图）
@@ -221,10 +243,12 @@
 | `pluginStoreSearch(params?)` | `plugin-store:search` | invoke |
 | `pluginStoreInstall(params?)` | `plugin-store:install` | invoke |
 | `pluginStoreUninstall(params?)` | `plugin-store:uninstall` | invoke |
+| `pluginStoreSetEnabled(params?)` | `plugin-store:set-enabled` | invoke（启用/禁用统一写入：entries.enabled + plugins.allow 同步，主进程原子写） |
 | `pluginStoreCheckUpdates()` | `plugin-store:check-updates` | invoke（R93：内核 exit 1 / Failed 行在 stderr 时经 Electron 侧 HTTP 回退；`data.failed` 为回退后仍查不到的插件 id 清单） |
 | `pluginStoreUpdate(params?)` | `plugin-store:update` | invoke |
 | `pluginStoreDetail(params?)` | `plugin-store:detail` | invoke |
 | `pluginStoreMarketBrowse(params?)` | `plugin-store:market-browse` | invoke |
+| `pluginStoreMarketDetail(params?)` | `plugin-store:market-detail` | invoke（市场条目详情） |
 
 ## Chat UI
 
@@ -248,17 +272,23 @@
 | 方法 | IPC 通道 | 方向 |
 |---|---|---|
 | `selectFiles(options?)` | `dialog:select-files` | invoke |
+| `selectDirectory()` | `dialog:select-directory` | invoke（目录选择；取消返回 null） |
 | `readFileBase64(path)` | `file:read-base64` | invoke |
 | `readClipboardFilePaths()` | `clipboard:read-file-paths` | invoke（剪贴板文件路径） |
+| `fileThumbnail(path)` | `file:thumbnail` | invoke（图片附件缩略图：png/jpg/webp/gif/bmp，≤192px data URL；非法输入或失败返回 null 不抛错） |
 
 ## 工作空间（workspace 视图）
 
 | 方法 | IPC 通道 | 方向 |
 |---|---|---|
 | `setWorkspaceRoot(root)` | `workspace:set-root` | invoke |
+| `workspaceGetContext()` | `workspace:get-context` | invoke（只读默认/当前根路径，sender 校验，不返回配置或凭据） |
 | `openWorkspaceFolder(filePath)` | `workspace:open-folder` | invoke |
 | `listWorkspaceDir(dirPath)` | `workspace:list-dir` | invoke |
 | `readWorkspaceFile(filePath)` | `workspace:read-file` | invoke |
+| `workspaceWriteFile(params)` | `workspace:write-file` | invoke（`{path, content, baseHash}`：版本 hash 校验 + 原子替换） |
+| `workspaceSaveDraft(params)` | `workspace:save-draft` | invoke（`{path, draft, baseHash}`：草稿暂存，`draft=null` 清除） |
+| `workspaceFindFiles(params)` | `workspace:find-files` | invoke（`{root, query, showHidden?}`：根内文件名搜索） |
 
 > 全部通道 `assertTrustedIpcSender` 校验；路径必须落在 workspace 根内
 > （`workspace-ipc.ts` 的根内包含校验 + realpath 复核防 symlink 逃逸）。
@@ -336,6 +366,9 @@
 | `onGatewayReady(cb)` | `gateway:ready` | 网关就绪推送（token/gatewayUrl；返回 unsubscribe 函数） |
 | `onGatewayProgress(cb)` | `gateway:progress` | 网关启动进度推送（`GatewayProgressInfo {step, attempt, elapsedMs?}`，step: cleanup/database/port/spawn/health/ready；返回 unsubscribe 函数） |
 | `onWebbridgeStateChanged(cb)` | `webbridge:state-changed` | webbridge 状态变化（setup 装完扩展/修复完成；返回 unsubscribe 函数） |
+| `onThemeRequest(cb)` | `theme:request` | 主题预览桥请求（主进程 → 渲染层；返回 unsubscribe 函数） |
+| `themeResult(response)` | `theme:result` | 主题预览桥回包（渲染层 → 主进程 send，配对 `theme:request`） |
+| `onArchiveProgress(cb)` | `settings:archive-progress` | 备份/恢复归档进度推送（返回 unsubscribe 函数） |
 
 > `kernel:update-progress` 载荷为 `{step, pct, msg, source?}`；v2026.907.0 起新增
 > `source: "auto" | "manual"` 字段，区分手动升级与「内核低于 minSupported 的兜底自动

@@ -3,7 +3,7 @@
 "use strict";
 
 const { readdirSync, readFileSync } = require("fs");
-const { basename, join, resolve } = require("path");
+const { join, resolve, relative } = require("path");
 const { spawnSync } = require("child_process");
 const rmRecursive = require("./lib/rm-rec")();
 
@@ -12,7 +12,7 @@ const rmRecursive = require("./lib/rm-rec")();
 function loadVitestFiles() {
   const configPath = join(resolve(__dirname, ".."), "vitest.config.ts");
   const src = readFileSync(configPath, "utf8");
-  const names = [...src.matchAll(/src\/([\w/-]+)\.test\.ts/g)].map((m) => basename(m[1]));
+  const names = [...src.matchAll(/src\/([\w/-]+)\.test\.ts/g)].map((m) => m[1]+".test.js");
   if (names.length === 0) {
     console.error("[run-node-tests] 无法从 vitest.config.ts 解析 include 清单（格式变了？）");
     process.exit(1);
@@ -48,7 +48,7 @@ function collect(dir, acc = []) {
 const files = collect(dir)
   // VITEST_FILES 只按文件名匹配（不含目录）；当前 .test-dist 子目录
   // （settings/、test-support/）无 *.test.js 产物，无同名冲突
-  .filter((f) => !VITEST_FILES.has(basename(f).replace(/\.test\.js$/, "")));
+  .filter((f) => !VITEST_FILES.has(relative(dir,f).split(require("path").sep).join("/")));
 
 if (files.length === 0) {
   console.error("[run-node-tests] .test-dist/ 下没有测试文件，请检查 tsconfig.test.json");

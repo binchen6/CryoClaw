@@ -325,6 +325,7 @@
 
 /* ── 右主区 ── */
 .wk-main {
+  container: workspace-pane / inline-size;
   flex: 1;
   min-width: 0;
   min-height: 0;
@@ -336,6 +337,7 @@
 
 /* 文件预览：面包屑头 + 内容区 */
 .wk-preview {
+  flex: 1;
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -526,6 +528,9 @@
 .wk-preview__breadcrumbs button { border: 0; padding: var(--spacer-4); background: transparent; color: var(--text-muted); cursor: pointer; font: inherit; }
 .wk-file-tabs { display: flex; overflow-x: auto; min-height: 36px; flex-shrink: 0; border-bottom: var(--hairline); }
 .wk-file-tab { display: flex; align-items: center; border-right: var(--hairline); }
+.wk-file-tab { flex: 0 0 auto; max-width: 240px; min-width: 0; }
+.wk-file-tab [role="tab"] { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.wk-file-tab > button:last-child { flex-shrink: 0; }
 .wk-file-tab button { background: transparent; color: var(--text-muted); border: 0; font: inherit; font-size: var(--text-sm); padding: var(--spacer-8); cursor: pointer; white-space: nowrap; }
 .wk-file-tab.active { background: var(--accent-subtle); box-shadow: inset 0 -2px var(--accent); }
 .wk-file-tab.active button { color: var(--accent); }
@@ -541,6 +546,16 @@
 .wk-image-preview { display: flex; min-height: 100%; align-items: center; justify-content: center; padding: var(--spacer-24); box-sizing: border-box; }
 .wk-image-preview img { max-width: 100%; max-height: 70vh; object-fit: contain; border-radius: var(--radius-8); }
 .wk-preview .empty-state { flex: 1; }
+.wk-file-error,
+.wk-file-status > span { min-width: 0; overflow-wrap: anywhere; }
+
+@container workspace-pane (max-width: 480px) {
+  .wk-browser-toolbar { flex-wrap: wrap; }
+  .wk-preview__breadcrumbs { flex-basis: 100%; order: 1; }
+  .wk-browser-history { margin-right: auto; }
+  .wk-file-toolbar__actions { min-width: 0; }
+  .wk-file-search { min-width: 0; flex-basis: 100%; max-width: none; }
+}
 /* 窄窗：左栏收窄下限、防横向溢出；工具行换行而不是隐藏功能入口
    （旧规则 .wk-browser-toolbar > .btn { display:none } 会在 800px 最小窗口
    静默去掉「固定工作区」——用户无从操作，属功能丢失而非降级） */

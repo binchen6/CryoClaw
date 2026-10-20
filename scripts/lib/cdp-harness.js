@@ -141,14 +141,16 @@ class Cdp {
     });
   }
 
-  send(method, params = {}) {
+  send(method, params = {}, options = {}) {
     if (this.closed) return Promise.reject(new Error("CDP connection closed"));
+    const timeoutMs=options.timeoutMs??this.timeoutMs;
+    if(!Number.isFinite(timeoutMs) || timeoutMs<1)return Promise.reject(new Error("Invalid CDP deadline"));
     const id = this.nextId++;
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);
         reject(new Error(`CDP request timed out: ${method}`));
-      }, this.timeoutMs);
+      }, timeoutMs);
       const settle = fn => value => { clearTimeout(timer); fn(value); };
       this.pending.set(id, { resolve: settle(resolve), reject: settle(reject) });
       try {
@@ -160,8 +162,8 @@ class Cdp {
     });
   }
 
-  async evaluate(expression) {
-    const res = await this.send("Runtime.evaluate", { expression, returnByValue: true, awaitPromise: true });
+  async evaluate(expression, options = {}) {
+    const res = await this.send("Runtime.evaluate", { expression, returnByValue: true, awaitPromise: true },options);
     if (res.exceptionDetails) {
       throw new Error("evaluate failed: " + JSON.stringify(res.exceptionDetails.exception?.description || res.exceptionDetails.text));
     }

@@ -42,6 +42,10 @@ function textOverflowScanExpr() {
       if (r.width < 4 || r.height < 4) continue;
       const cs = getComputedStyle(el);
       if (cs.display === "none" || cs.visibility === "hidden") continue;
+      // 无可见文本的元素（骨架屏/装饰件）不存在「文本被裁切」语义——扫光 ::after 等
+      // 变换子层会虚增 scrollWidth（变换计入可滚动溢出区），产生纯假阳性。
+      // 与 contrastScan 的空文本跳过同一理由；图标+文字的按钮 textContent 非空，不受影响。
+      if (!(el.textContent || "").trim()) continue;
       // 横向裁切：省略号属有意设计不报；白空格 pre 的不适用 clientWidth 判定
       if (el.scrollWidth > el.clientWidth + 2 && cs.textOverflow !== "ellipsis" && !/pre/.test(cs.whiteSpace)) {
         clipped.push("H:" + describe(el) + " (" + el.scrollWidth + ">" + el.clientWidth + ")");

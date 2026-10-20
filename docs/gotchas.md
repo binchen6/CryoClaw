@@ -440,3 +440,11 @@ Things that are easy to get wrong or forget when working on CryoClaw.
 151. **宣传片连续截图按顺序解码。** 一次 `Promise.all(img.decode())` 解码数十张高清界面图时，Chromium 可能抛出 `The source image cannot be decoded`，即使 JPEG 文件有效。`website/promo/promo.js` 改为逐张等待 `decode()` 后完成初始化；保留错误对应的图片路径，避免初始化超时掩盖真正原因。
 
 152. **Windows 的 Vercel 34.3.1 构建成功也可能串 API。** `.vercel/output/functions/api/*.func` 被联接到同一目录时，最后写入的接口覆盖其他接口，公开下载和健康检查会一起返回登录错误。使用干净 Linux/WSL 构建，核对 `.vc-config.json` 的 `name` 与各函数真实路径，并在线检查版本接口和 EXE 字节范围；不能只凭静态页面与构建退出码验收。
+
+153. **定时任务编辑要验证往返保真。** enabled、description、agentId、wakeMode、timeout 与 delivery 不可被默认表单覆盖。UTC 一次性时间必须转成 datetime-local 接受的本地值，并保留秒/毫秒；非整分钟周期按可精确表达的单位回填。
+
+154. **异步归属必须同时检查连接与请求代次。** status/runs 的旧成功和旧失败都应丢弃；mutation 的续体也不能清除新连接的表单。保存入口应明确返回是否执行成功，不能把断连、能力缺失或 busy 的无操作当作成功关闭编辑器。
+
+155. **首装关键反馈应检查可见 DOM。** oc-message-box 仅转发全局 toast，textContent 为空。首装错误和长时启动状态采用持久内联提示，测试读取实际 alert/status 节点；不要因为组件存在就判定用户看到了反馈。
+
+156. **隔离 Electron GUI 也受 Windows 文件完整性标签影响。** 仓库 electron.exe 可继承 Low Mandatory Level，获准进程仍可能无法启动 GUI。隔离验收采用流式复制到普通用户 Temp 的私有运行时，不改 ACL；退出后只清理自己创建的目录。

@@ -1374,6 +1374,13 @@ img.chat-avatar {
   font-size: var(--text-sm);
   min-width: 0;
   max-width: 100%;
+  /* 限高内滚（同 .chat-json-content 的 400px / .chat-tool-card__args-body 的
+     overscroll contain）：8000 字符上限的输出可达数百行，不限高会把展开的
+     折叠组撑成数千像素、把「共 N 行 / 查看完整输出」出口压到输出末尾。
+     内滚后元信息行常驻卡内可视，滚轮到底不外泄到消息线程。 */
+  max-height: 400px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 /* 围栏代码块内的长单行 JSON/文本：块内横向滚动，不把整卡撑宽。

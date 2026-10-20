@@ -4,6 +4,7 @@ import * as http from "http";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
+import {EventEmitter} from "node:events";
 import {
   createGatewayControlRequestHandler,
   ensureGatewayControlToken,
@@ -24,7 +25,7 @@ interface TestResponse {
 
 function request(
   port: number,
-  opts: { method?: string; path?: string; token?: string;body?:unknown } = {},
+  opts: { method?: string; path?: string; token?: string;body?:unknown;timeoutMs?:number } = {},
 ): Promise<TestResponse> {
   return new Promise((resolve, reject) => {
     const req = http.request(
@@ -52,6 +53,7 @@ function request(
       },
     );
     req.on("error", reject);
+    req.setTimeout(opts.timeoutMs??3000,()=>req.destroy(new Error("Test HTTP request timed out")));
     req.end(opts.body===undefined?undefined:JSON.stringify(opts.body));
   });
 }
@@ -81,7 +83,7 @@ async function startTestServer(
   const port = (server.address() as { port: number }).port;
   return {
     port,
-    close: () => new Promise<void>((resolve) => server.close(() => resolve())),
+    close: () => new Promise<void>((resolve) => {server.closeAllConnections();server.close(() => resolve());}),
   };
 }
 
@@ -276,19 +278,28 @@ async function occupyRandomPort(): Promise<{ blocker: http.Server; port: number 
 }
 
 test("端口被占用时递增重试到下一个端口", async () => {
-  // 先占住一个随机端口作为 basePort
-  const { blocker, port: basePort } = await occupyRandomPort();
+  // OS-assigned ports do not guarantee that the adjacent port is available on Windows.
+  const server=new EventEmitter() as EventEmitter & {listen:(port:number)=>void;address:()=>{port:number}};
+  const calls:number[]=[];let port=0;
+  server.listen=next=>{calls.push(next);port=next;queueMicrotask(()=>calls.length<3?server.emit("error",Object.assign(new Error("occupied"),{code:"EADDRINUSE"})):server.emit("listening"));};
+  server.address=()=>({port});
+  assert.equal(await listenWithPortRetry(server as unknown as http.Server,22000,10),22002);
+  assert.deepEqual(calls,[22000,22001,22002]);
+  assert.equal(server.listenerCount("error"),0);assert.equal(server.listenerCount("listening"),0);
+});
 
-  const server = http.createServer(createGatewayControlRequestHandler(makeDeps(), TEST_TOKEN));
-  try {
-    const port = await listenWithPortRetry(server, basePort, 10);
-    assert.equal(port, basePort + 1, "应跳过被占用端口绑定到下一个");
-    const res = await request(port, { token: TEST_TOKEN });
-    assert.equal(res.statusCode, 200);
-  } finally {
-    await new Promise<void>((resolve) => server.close(() => resolve()));
-    await new Promise<void>((resolve) => blocker.close(() => resolve()));
-  }
+test("权限失败不会被端口重试掩盖，监听器始终清理",async()=>{
+  const server=new EventEmitter() as EventEmitter & {listen:()=>void};let calls=0;
+  server.listen=()=>{calls++;queueMicrotask(()=>server.emit("error",Object.assign(new Error("denied"),{code:"EACCES"})));};
+  await assert.rejects(listenWithPortRetry(server as unknown as http.Server,22000,10),{code:"EACCES"});
+  assert.equal(calls,1);assert.equal(server.listenerCount("error"),0);assert.equal(server.listenerCount("listening"),0);
+});
+
+test("无响应的测试 HTTP 请求有明确截止时间",async()=>{
+  const server=http.createServer(()=>{});
+  await new Promise<void>(resolve=>server.listen(0,"127.0.0.1",resolve));
+  try{await assert.rejects(request((server.address() as {port:number}).port,{timeoutMs:50}),/timed out/);}
+  finally{server.closeAllConnections();await new Promise<void>(resolve=>server.close(()=>resolve()));}
 });
 
 test("全部候选端口被占用时 listen 失败", async () => {

@@ -120,7 +120,7 @@ test("R91 skills.css：市场网格 + 详情对话框样式落地（全 token）
   assert.match(css, /\.ext-market__grid\s*\{/, "缺少市场网格样式");
   assert.match(css, /\.ext-detail__dialog\s*\{/, "缺少详情对话框样式");
   assert.match(css, /\.skill-store__recommend-card\s*\{/, "缺少技能推荐卡样式");
-  assert.match(css, /repeat\(auto-fill, minmax\(340px, 1fr\)\)/, "技能列表未网格化");
+  assert.match(css, /repeat\(auto-fill, minmax\(min\(100%, 340px\), 1fr\)\)/, "技能列表未网格化");
 });
 
 // ── R92：市场排版修复 + 详情/翻译/镜像接线 ──

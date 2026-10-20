@@ -337,9 +337,15 @@ export function renderChat(props: ChatProps) {
       aria-live="polite"
       @scroll=${props.onChatScroll}
       @keydown=${(e: KeyboardEvent) => {
-        // 路径链接/子会话引用键盘可达：无 href 的 <a tabindex="0"> 不响应 Enter/Space，
-        // 线程级委托补齐（与 media-enhance 文件卡片的键盘处理同语义）。
+        // 路径链接/git 链接/子会话引用键盘可达：无 href 的 <a tabindex="0"> 不响应
+        // Enter/Space，线程级委托补齐（与 media-enhance 文件卡片的键盘处理同语义）。
         if (e.key !== "Enter" && e.key !== " ") {
+          return;
+        }
+        const gitLink = (e.target as HTMLElement | null)?.closest?.(".chat-git-view-link");
+        if (gitLink) {
+          e.preventDefault();
+          props.onOpenGitView?.();
           return;
         }
         const subsession = (e.target as HTMLElement | null)?.closest?.(".chat-subsession-link");

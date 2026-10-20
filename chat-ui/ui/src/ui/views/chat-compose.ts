@@ -526,6 +526,7 @@ export function renderGoalForm(props: ChatProps) {
         placeholder=${t("goal.placeholder")}
         @input=${(e: Event) => { goalDraft = (e.target as HTMLInputElement).value; }}
         @keydown=${(e: KeyboardEvent) => {
+          if (e.isComposing || e.keyCode === 229) return;
           if (e.key === "Enter" && goalDraft.trim()) {
             props.onGoalCommand?.(`/goal ${goalDraft.trim()}`);
             goalFormOpen = false;

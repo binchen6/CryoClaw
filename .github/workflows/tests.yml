@@ -34,17 +34,6 @@ jobs:
       - name: Install chat-ui dependencies
         run: npm --prefix chat-ui/ui ci
 
-      # 全量回归：vitest（主进程）+ node:test（编译产物）+ chat-ui typecheck 与单测
-      - name: Unit tests
-        run: npm run test:unit
-
-      # 打包/升级链路脚本用例（不需要内核下载，纯逻辑验证）；
-      # package-resources.test.js 会在 vm 里真实执行打包逻辑，与其它用例并行会争抢
-      # 临时文件（Unable to deserialize cloned data），故拆分单独串行运行。
-      # 除该文件外的清单由 glob 动态生成——写死清单曾在删除测试文件后静默漏跑/引用
-      # 不存在的文件（R66 修复）。*.test.mjs（kernel-update 换装/锁用例）同样由 glob 收进来。
-      - name: Script tests
-        shell: bash
-        run: |
-          node --test $(ls scripts/*.test.js scripts/*.test.mjs | grep -v '/package-resources\.test\.js$')
-          node --test scripts/package-resources.test.js
+      # Same bounded and isolated four-layer runner locally and in CI.
+      - name: All tests
+        run: npm test

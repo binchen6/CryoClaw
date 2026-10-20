@@ -18,7 +18,7 @@
   /* 顶部 padding 为 fixed 定位的 progress 条与 hero 留白让位；底部留呼吸空间。
      真正的滚动委托给内部 .oc-setup-step-body，因此这里 overflow:hidden
      保证按钮条（sibling of step-body）永远停在视口底部、不会被内容推下去。 */
-  padding: var(--spacer-48) var(--spacer-32) 0;
+  padding: var(--spacer-24) var(--spacer-32) 0;
   box-sizing: border-box;
   flex: 1 1 0%;
   min-height: 0;
@@ -29,26 +29,28 @@
 }
 .oc-setup-container--step2 {
   /* 壳层标题栏已统一占位 44px（2026.9 提案 A），这里只留 progress 条的视觉间距 */
-  padding-top: var(--spacer-12);
+  padding-top: var(--spacer-24);
 }
 
 /* 步骤进度：fixed 顶部分段条（让开 44px 壳层标题栏 drag 区，位置契约不动）。
    现代化为圆角分段胶囊：已完成/当前 = accent，未到 = 中性 hairline 色 */
 .oc-setup-progress {
-  position: fixed;
-  top: var(--titlebar-h);
-  left: 0;
+  flex-shrink: 0;
   width: 100%;
   background: transparent;
   z-index: 100;
-  display: flex;
-  gap: var(--spacer-6);
-  padding: var(--spacer-8) var(--spacer-24) 0;
+  display: grid;
+  grid-template-columns: repeat(4,minmax(0,1fr));
+  gap: var(--spacer-12);
+  padding: 0;
   box-sizing: border-box;
-  margin: 0;
+  margin: 0 0 var(--spacer-24);
+  list-style: none;
   max-width: none;
 }
 .oc-setup-progress-dot {
+  display: block;
+  width: 100%;
   flex: 1;
   height: var(--spacer-4);
   border-radius: var(--radius-pill);
@@ -475,4 +477,22 @@
 .oc-setup-spinner--lg {
   width: var(--spacer-24);
   height: var(--spacer-24);
+}
+
+.oc-setup-progress-item { display: grid; gap: var(--spacer-8); min-width: 0; font-size: var(--text-xs); color: var(--text-muted); }
+.oc-setup-progress-item[aria-current="step"] { color: var(--accent); font-weight: var(--weight-semibold); }
+.oc-setup-ready { padding: var(--spacer-16); margin-bottom: var(--spacer-24); border: var(--hairline); border-radius: var(--radius-12); background: var(--bg-secondary); }
+.oc-setup-ready h3 { margin: 0 0 var(--spacer-8); font-size: var(--heading-xs); }
+.oc-setup-ready p { margin: 0; color: var(--text-secondary); font-size: var(--text-sm); line-height: var(--leading-body); }
+.oc-setup-ready ol { margin: var(--spacer-12) 0 0; padding-left: var(--spacer-20); display: grid; gap: var(--spacer-6); font-size: var(--text-sm); }
+.oc-setup-detect { padding: var(--spacer-24) 0; line-height: var(--leading-body); }
+.oc-setup-detect [role="alert"] { color: var(--destructive); }
+.oc-setup-title:focus { outline: none; box-shadow: none; }
+.oc-setup-step > .btn-row { display:flex; justify-content:flex-end; flex-shrink:0; gap:var(--spacer-8); padding:var(--spacer-16) 0; margin:0; border-top:var(--hairline); }
+.oc-setup-inline-error { margin:var(--spacer-12) 0; overflow-wrap:anywhere; }
+.oc-setup-status { margin:var(--spacer-12) 0; color:var(--text-secondary); font-size:var(--text-sm); line-height:var(--leading-body); }
+@media (max-height: 700px) {
+  .oc-setup-container, .oc-setup-container--step2 { padding-top: var(--spacer-16); }
+  .oc-setup-title { margin-bottom: var(--spacer-16); }
+  .oc-setup-subtitle { margin-bottom: var(--spacer-20); }
 }

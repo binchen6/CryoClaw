@@ -1,6 +1,8 @@
 /**
  * 全局 toast（轻量通知条）—— 从 skillStoreState 解耦出来的独立模块状态。
- * 显示 4 秒后自动消失；同一时间只保留一条。
+ * 同一时间只保留一条；普通 toast 自动消失（error 8s / warning 6s / 其余 4s），
+ * 展示期间同一条（同文案/类型/action）再次出现时重置自动消失计时，避免连续
+ * 报错被旧时限过早收起。
  * 带 action 按钮的 toast（如「重启更新」）不自动消失，等用户点击或被下一条覆盖。
  * 消失走「退场动画 → 延迟移除」两段式：先置 leaving 挂 .global-toast--leaving
  * 播退场动画，TOAST_EXIT_MS 后才清消息移除 DOM（时长须与 components.css 的
@@ -69,9 +71,29 @@ export function hideToast(state?: AppViewState) {
   dismissWithExit(state);
 }
 
+// 普通 toast 的自动消失时长：error 8s、warning 6s、其余 4s
+function autoDismissDelay(kind: ToastKind): number {
+  return kind==="error"?8000:kind==="warning"?6000:4000;
+}
+
+function scheduleAutoDismiss(state: AppViewState, kind: ToastKind) {
+  toastTimer = setTimeout(() => {
+    toastTimer = null;
+    dismissWithExit(state);
+  }, autoDismissDelay(kind));
+}
+
 export function showToast(state: AppViewState, message: string, action?: ToastAction,kind:ToastKind="info") {
   if(!message.trim())return;
-  if(toastMessage===message && toastKind===kind && toastAction===(action??null) && !toastLeaving)return;
+  if(toastMessage===message && toastKind===kind && toastAction===(action??null) && !toastLeaving){
+    // 同一条提示在展示期间再次出现：普通 toast 重置自动消失计时，避免连续报错被旧时限过早收起；
+    // 带 action 的常驻 toast 没有计时器，直接复用
+    if(!action){
+      if(toastTimer)clearTimeout(toastTimer);
+      scheduleAutoDismiss(state,kind);
+    }
+    return;
+  }
   if (toastTimer) {
     clearTimeout(toastTimer);
     toastTimer = null;
@@ -83,12 +105,9 @@ export function showToast(state: AppViewState, message: string, action?: ToastAc
   toastKind=kind;
   toastAction = action ?? null;
   state.requestUpdate();
-  // 带 action 的 toast 常驻（如「重启更新」需等用户决策），普通 toast 4s 自动消失
+  // 带 action 的 toast 常驻（如「重启更新」需等用户决策），普通 toast 自动消失
   if (!action) {
-    toastTimer = setTimeout(() => {
-      toastTimer = null;
-      dismissWithExit(state);
-    }, kind==="error"?8000:kind==="warning"?6000:4000);
+    scheduleAutoDismiss(state,kind);
   }
 }
 

@@ -5,6 +5,7 @@
 
 import { html, nothing } from "lit";
 import { t } from "./i18n.ts";
+import { activateOnKeydown } from "./a11y.ts";
 import { icons } from "./icons.ts";
 import { renderSkillStoreView, skillAvatarColor, type SkillStoreState, type SkillItem } from "./skill-store-view.ts";
 import { selectVisibleInstalledSkills } from "./skill-visibility.ts";
@@ -145,7 +146,9 @@ function renderSkillRecommendations(state: AppViewState): typeof nothing | Retur
           const installing = skillStoreState.installingSlugs.has(skill.slug);
           const letter = (skill.name || skill.slug || "?").charAt(0).toUpperCase();
           return html`
-            <div class="skill-store__recommend-card" @click=${() => openSkillDetail(state, skill)}>
+            <div class="skill-store__recommend-card" role="button" tabindex="0"
+              @keydown=${activateOnKeydown(() => openSkillDetail(state, skill))}
+              @click=${() => openSkillDetail(state, skill)}>
               <span class="skill-store__card-icon" style="background: ${skillAvatarColor(skill.slug)}; color: var(--text-on-accent);">
                 <span class="skill-store__card-letter">${letter}</span>
               </span>
@@ -479,6 +482,12 @@ function renderInstalledSkillsView(state: AppViewState) {
                       <input
                         class="skill-store__search-input"
                         type="password"
+                        aria-label=${`${skill.name}: ${t("skills.saveKey")}`}
+                        autocomplete="off"
+                        @keydown=${(e: KeyboardEvent) => {
+                          if (e.isComposing || e.keyCode === 229 || e.repeat || isBusy) return;
+                          if (e.key === "Enter") { e.preventDefault(); void saveSkillApiKey(state, key); }
+                        }}
                         placeholder="API key (${skill.primaryEnv})"
                         .value=${state.skillEdits[key] ?? ""}
                         @input=${(e: Event) => updateSkillEdit(state, key, (e.target as HTMLInputElement).value)}
@@ -521,6 +530,7 @@ export function renderSkillsView(state: AppViewState) {
         <div class="skills-tab-bar">
           <button
             class="skills-tab-btn ${skillsSubTab === "installed" ? "active" : ""}"
+            aria-pressed=${skillsSubTab === "installed"}
             type="button"
             @click=${() => {
               skillsSubTab = "installed";
@@ -531,6 +541,7 @@ export function renderSkillsView(state: AppViewState) {
           >${t("skills.tabInstalled")}</button>
           <button
             class="skills-tab-btn ${skillsSubTab === "store" ? "active" : ""}"
+            aria-pressed=${skillsSubTab === "store"}
             type="button"
             @click=${() => {
               skillsSubTab = "store";
@@ -571,6 +582,7 @@ export function renderSkillsView(state: AppViewState) {
                   ${(["trending", "downloads", "updated"] as const).map((key) => html`
                     <button
                       class="skill-store__sort-btn ${storeMode === key ? "active" : ""}"
+                      aria-pressed=${storeMode === key}
                       type="button"
                       @click=${() => {
                         storeMode = key;
@@ -587,6 +599,7 @@ export function renderSkillsView(state: AppViewState) {
                   `)}
                   <button
                     class="skill-store__sort-btn ${storeMode === "search" ? "active" : ""}"
+                    aria-pressed=${storeMode === "search"}
                     type="button"
                     @click=${() => {
                       storeMode = "search";
@@ -615,6 +628,7 @@ export function renderSkillsView(state: AppViewState) {
                   class="skill-store__search-input"
                   type="text"
                   placeholder=${t(skillsSubTab === "installed" ? "skills.search" : "skillStore.search")}
+                  aria-label=${t(skillsSubTab === "installed" ? "skills.search" : "skillStore.search")}
                   .value=${skillsSubTab === "installed" ? (state.skillsFilter ?? "") : skillStoreState.searchQuery}
                   @input=${(e: Event) => {
                     const val = (e.target as HTMLInputElement).value;
@@ -627,6 +641,7 @@ export function renderSkillsView(state: AppViewState) {
                     }
                   }}
                   @keydown=${(e: KeyboardEvent) => {
+                    if (e.isComposing || e.keyCode === 229) return;
                     if (e.key === "Enter" && skillsSubTab === "store") {
                       void searchSkillStore(state);
                     }

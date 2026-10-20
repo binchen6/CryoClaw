@@ -36,6 +36,15 @@ test("nested controls and IME events never activate the parent row",()=>{
   assert.equal(hits,0);
 });
 
+test("legacy IME confirmation never activates rows, closes menus or changes tabs",()=>{
+  let hits=0;
+  const event={...key("Enter"),keyCode:229} as KeyboardEvent;
+  activateOnKeydown(()=>hits++)(event);
+  menuKeydown({...event,key:"Escape"} as KeyboardEvent,()=>hits++);
+  tabListKeydown({...event,key:"ArrowRight"} as KeyboardEvent);
+  assert.equal(hits,0);assert.equal((event as any).prevented,undefined);
+});
+
 test("menu arrows wrap, Home/End target boundaries, and Escape returns control",()=>{
   const focused:number[]=[];let closed=false;
   const items=[0,1,2].map(index=>({focus:()=>focused.push(index),closest(){return this;}}));

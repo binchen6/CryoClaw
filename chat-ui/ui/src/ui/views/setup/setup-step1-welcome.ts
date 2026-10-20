@@ -11,6 +11,11 @@ export function renderStep1(_state: AppViewState, goToStep: (step: number) => vo
       <div class="oc-setup-step-body">
         <h2 class="oc-setup-title oc-setup-title--hero">${t("setup.welcome.title")}</h2>
         <p class="oc-setup-subtitle">${t("setup.welcome.subtitle")}</p>
+        <div class="oc-setup-ready">
+          <h3>${t("setup.welcome.prepare")}</h3>
+          <p>${t("setup.welcome.prepareHint")}</p>
+          <ol><li>${t("setup.welcome.routeAccount")}</li><li>${t("setup.welcome.routeVerify")}</li><li>${t("setup.welcome.routeStart")}</li></ol>
+        </div>
 
         <div class="oc-setup-features">
           <div class="oc-setup-feature-item">

@@ -1,4 +1,5 @@
 import type { GatewayBrowserClient } from "../gateway.ts";
+import {ResourceCache} from "../utils/resource-cache.ts";
 import { t, tWithDetail } from "../i18n.ts";
 
 // tts.status 返回结构（内核 2026.7.1-2，字段防御性取值）：
@@ -48,69 +49,42 @@ export type VoiceStatusState = {
   wakeLoaded: boolean;
 };
 
-// 拉取语音相关状态；单个 RPC 失败只降级对应区块，互不阻塞。
-export async function loadVoiceStatus(
-  state: VoiceStatusState,
-  gateway: VoiceGatewayState,
-  requestUpdate: () => void,
-) {
-  const client = gateway.client;
-  if (state.ttsLoading || state.ttsLoaded || !client || !gateway.connected) {
-    return;
-  }
-  state.ttsLoading = true;
-  requestUpdate();
-  try {
-    const [ttsRes, talkRes, wakeRes] = await Promise.allSettled([
-      client.request("tts.status", {}),
-      client.request("talk.config", {}),
-      client.request("voicewake.get", {}),
-    ]);
-    if (ttsRes.status === "fulfilled") {
-      state.ttsStatus = ttsRes.value as TtsStatus;
-      state.ttsFailed = false;
-    } else {
-      state.ttsStatus = null;
-      state.ttsFailed = true;
-    }
-    state.ttsLoaded = true;
-    state.talkConfig =
-      talkRes.status === "fulfilled" ? (talkRes.value as TalkConfigResult)?.config?.talk ?? null : null;
-    state.talkLoaded = true;
-    const wake = wakeRes.status === "fulfilled" ? (wakeRes.value as { triggers?: string[] })?.triggers : null;
-    state.wakeTriggers = Array.isArray(wake) ? wake : null;
-    state.wakeLoaded = true;
-  } finally {
-    state.ttsLoading = false;
-    requestUpdate();
-  }
+type VoiceSnapshot={ttsStatus:TtsStatus|null;ttsFailed:boolean;talkConfig:TalkSection|null;wakeTriggers:string[]|null};
+const caches=new WeakMap<GatewayBrowserClient,ResourceCache<VoiceSnapshot>>();
+const failures=new WeakMap<GatewayBrowserClient,{at:number;error:unknown}>();
+const owners=new WeakMap<VoiceStatusState,GatewayBrowserClient>();
+const requests=new WeakMap<VoiceStatusState,object>();
+function cacheFor(client:GatewayBrowserClient){let cache=caches.get(client);if(!cache){cache=new ResourceCache<VoiceSnapshot>(30000,1);caches.set(client,cache);}return cache;}
+export function voiceStatusFresh(client:GatewayBrowserClient|null,view?:VoiceStatusState):boolean{return !!client && (!view || owners.get(view)===client) && (!!cacheFor(client).peek("voice") || Date.now()-(failures.get(client)?.at??0)<5000);}
+export function invalidateVoiceStatus(client:GatewayBrowserClient){cacheFor(client).clear();failures.delete(client);}
+async function snapshot(client:GatewayBrowserClient,force=false):Promise<VoiceSnapshot>{
+  if(force)invalidateVoiceStatus(client);
+  const failure=failures.get(client);if(!force && failure && Date.now()-failure.at<5000)throw failure.error;
+  try{return await cacheFor(client).read("voice",async()=>{
+    const [tts,talk,wake]=await Promise.allSettled([client.request("tts.status",{}),client.request("talk.config",{}),client.request("voicewake.get",{})]);
+    if(tts.status==="rejected" && talk.status==="rejected" && wake.status==="rejected")throw tts.reason;
+    return {ttsStatus:tts.status==="fulfilled"?tts.value as TtsStatus:null,ttsFailed:tts.status==="rejected",talkConfig:talk.status==="fulfilled"?(talk.value as TalkConfigResult)?.config?.talk??null:null,wakeTriggers:wake.status==="fulfilled" && Array.isArray((wake.value as any)?.triggers)?(wake.value as any).triggers:null};
+  });}catch(error){failures.set(client,{at:Date.now(),error});throw error;}
 }
-
-// TTS 开关 / Provider / Persona 变更走内核 RPC（写入 TTS prefs，不改 openclaw.json，不重启 gateway）。
-export async function applyTtsAction(
-  state: VoiceStatusState,
-  gateway: VoiceGatewayState,
-  method: string,
-  params: Record<string, unknown>,
-  requestUpdate: () => void,
-) {
-  if (state.actionPending) {
-    return;
-  }
-  state.actionPending = true;
-  state.error = null;
-  state.successMsg = null;
-  requestUpdate();
-  try {
-    await gateway.client?.request(method, params);
-    state.successMsg = t("settings.saved");
-    // 重新拉取状态，展示最新生效值。
-    state.ttsLoaded = false;
-    void loadVoiceStatus(state, gateway, requestUpdate);
-  } catch (e: any) {
-    state.error = tWithDetail("settings.error.saveFailed", e?.message);
-  } finally {
-    state.actionPending = false;
-    requestUpdate();
-  }
+export function preloadVoiceStatus(gateway:VoiceGatewayState){if(gateway.client && gateway.connected)return snapshot(gateway.client);}
+function applySnapshot(state:VoiceStatusState,value:VoiceSnapshot){Object.assign(state,value,{ttsLoaded:true,talkLoaded:true,wakeLoaded:true});}
+export async function loadVoiceStatus(state:VoiceStatusState,gateway:VoiceGatewayState,requestUpdate:()=>void,force=false){
+  const client=gateway.client;if(!client || !gateway.connected)return;
+  if(!force && owners.get(state)===client && (state.ttsLoading || state.ttsLoaded && voiceStatusFresh(client)))return;
+  const token={};requests.set(state,token);owners.set(state,client);
+  const owns=()=>requests.get(state)===token,current=()=>owns() && gateway.client===client && gateway.connected;
+  const cached=!force?cacheFor(client).peek("voice"):undefined;
+  if(cached){applySnapshot(state,cached);state.ttsLoading=false;requestUpdate();return;}
+  state.ttsLoading=true;requestUpdate();
+  try{const value=await snapshot(client,force);if(current())applySnapshot(state,value);}
+  catch{if(current())applySnapshot(state,{ttsStatus:null,ttsFailed:true,talkConfig:null,wakeTriggers:null});}
+  finally{if(owns()){state.ttsLoading=false;requestUpdate();}}
+}
+export async function applyTtsAction(state:VoiceStatusState,gateway:VoiceGatewayState,method:string,params:Record<string,unknown>,requestUpdate:()=>void){
+  const client=gateway.client;if(state.actionPending || !client || !gateway.connected)return;
+  state.actionPending=true;state.error=null;state.successMsg=null;requestUpdate();
+  const current=()=>gateway.client===client && gateway.connected;
+  try{await client.request(method,params);invalidateVoiceStatus(client);if(!current())return;state.successMsg=t("settings.saved");state.ttsLoaded=false;await loadVoiceStatus(state,gateway,requestUpdate,true);}
+  catch(error:any){if(current())state.error=tWithDetail("settings.error.saveFailed",error?.message);}
+  finally{state.actionPending=false;requestUpdate();}
 }
