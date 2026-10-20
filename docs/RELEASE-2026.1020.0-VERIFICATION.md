@@ -38,6 +38,9 @@ UI-3b 更新防溢出的布局契约后重做通过。没有保留失败轮次�
 | 合计 | 2028 pass / 0 fail / 4 skip |
 | 生产构建 | 通过 |
 | `git diff --check` | 通过 |
+| GitHub Actions（Windows，Node 24.21.0） | 四层通过，24.2秒 |
+
+远端验证：[tests #39428582265](https://github.com/binchen6/CryoClaw/actions/runs/39428582265)，对应提交 `a7ec58fcf315b2f718a952cebf39e414da9ff624`。CI未准备完整gateway ASAR资源，真实ASAR启动覆盖在本地全量中已执行。
 
 无独立 lint 配置。Chat UI 类型检查与生产 TypeScript 编译共同把关。
 新增行为测试覆盖调度边界、编辑往返、异步请求乱序/断连、搜索重试/取消、保存中导航和 IME。
@@ -53,7 +56,9 @@ UI-3b 更新防溢出的布局契约后重做通过。没有保留失败轮次�
 目标版本：`2026.1020.0`，Windows x64。
 首次打包在用户 npm 缓存写入时遇到 EPERM，停止后改用工作区专用缓存重跑。
 打包日志位于 `.cache/optimization-20261020/`，未把缓存或本地凭据提交入库。
-本地发布门禁全部通过，正在执行GitHub草稿三件套校验与正式发布。
+已于2026-10-20 21:22:44 CST正式发布：[CryoClaw 2026.1020.0](https://github.com/binchen6/CryoClaw/releases/tag/v2026.1020.0)，`draft=false`、`prerelease=false`，GitHub latest指向本版。源码提交`a7ec58fcf315b2f718a952cebf39e414da9ff624`已push到main。
+
+草稿与公开状态的资产断言均通过，三件套均为uploaded，服务端SHA-256、大小、本地SHA-512和清单一致。真实electron-updater 6.8.9从2026.1019.0发现2026.1020.0通过，验证期间不下载、不安装。
 
 - 包内145个编译文件与当前构建逐字节一致。
 - 安装位app.asar SHA-256：`c2cb819bddde9c7cd2aafccd1493b3632bfbbfc2b3e814c8d5017789a88d3778`。
@@ -73,3 +78,5 @@ UI-3b 更新防溢出的布局契约后重做通过。没有保留失败轮次�
 最终全量耗时40.7秒（与安装版UI同时运行），此前独立运行34.6秒。旧脚本层约40秒，修复进程/清理顺序后约20–24秒，真实ASAR覆盖保留。
 
 最后一轮TEST-SETTLE补充了有界内容提交等待、连续布局稳定采样和失败阶段记录，并验证不结束的转场、不断变化的布局与操作节奏；不再依赖无期限的transition.finished。
+
+发布证据：`.cache/optimization-20261020/release-draft-assert.log`、`release-public-assert.log`、`update-discovery-final.log`。全部必需工作已完成；徽标对比度诊断保留为下一版候选。
