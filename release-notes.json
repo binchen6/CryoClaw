@@ -1,5 +1,12 @@
 [
   {
+    "version": "2026.1021.1",
+    "notes": {
+      "zh": "修复 Gateway 反复启动后先失败再自愈：健康检查超时后不再立刻杀掉仍在加载的慢热子进程，改为一次性宽限续等，冷启动首次即可成功；旧实例停止改为并行解析端口进程、超时即强杀，系统守护进程清理按版本只执行一次，启动更快。修复设置页记忆/配对操作与开发模式下启动时一闪而过的命令行窗口，并新增静态守卫防止回归。修复主题页拖放冲突：悬停参考图区时不再同时亮起「导入主题包」，拖入非图片不再卡死高亮或误导入，图片拖到参考区外不再误报。本轮改动胶囊悬停详情精简为文件名与逐文件增删行数；流式回复完成后在消息底部展示「已编辑 N 个文件」卡片，支持撤销与查看变更。",
+      "en": "Fix Gateway repeatedly failing first and self-healing on retry: a slow-but-alive child is no longer killed at the health-check timeout but granted a one-time grace period, so cold starts succeed on the first attempt. Stopping a stale instance now resolves the port owner in parallel and force-kills sooner, legacy daemon cleanup runs once per app version, and startup is faster. Fix the flashing console window from settings memory/pairing fallbacks and dev-mode startup, with a static guard against regressions. Fix theme-page drag conflicts: hovering the reference-image area no longer keeps the theme-package overlay lit, dropping non-images no longer sticks the highlight or imports by mistake, and images dropped elsewhere no longer raise an error. The turn-changes pill hover detail now shows just file names with per-file added/deleted lines; when a reply finishes, an Edited-files card with Undo and View changes appears at the bottom of the message."
+    }
+  },
+  {
     "version": "2026.1021.0",
     "notes": {
       "zh": "技能与插件支持本地目录导入和本地文档详情；本地项目不参与更新检查。插件更新检查直接查询市场或 npm，支持逐项检查、更新和详情；技能更新使用正确的 update 命令。修复 ASAR 内核跳过 OpenClaw SDK 链接导致 tavily、企业微信更新失败的问题。市场请求合并在途读取，国内镜像延迟竞速，下载沿用可达来源；软件更新直接读取发布清单，并支持 HTTPS 镜像目录。外观页增加双模式文字对比度检查，修复预览保存的明暗模式和主题库损坏保护，统一折叠与主题切换动效，精简 Agent 主题设计流程。 重做 Agent 主题设计入口：主描述、配色方向卡、可折叠精细设置、参考图侧栏及确认流程；离开页面后保留设计草稿。修复启动时搜索凭据元数据误加载完整插件运行时造成的长时间等待。 修复工具调用合并后多出的空白 Tool 卡片、缺名事件覆盖工具名及历史结果配对问题。",
