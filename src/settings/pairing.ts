@@ -477,7 +477,7 @@ async function runGatewayCli(args: string[]): Promise<CliRunResult> {
       // 结果，让 close 事件自然触发 resolve
       if (child.pid != null) {
         if (process.platform === "win32") {
-          try { execFileSync("taskkill", ["/PID", String(child.pid), "/T", "/F"], { stdio: "ignore" }); } catch { /* 已退出 */ }
+          try { execFileSync("taskkill", ["/PID", String(child.pid), "/T", "/F"], { stdio: "ignore", windowsHide: true }); } catch { /* 已退出 */ }
         } else {
           try { child.kill("SIGKILL"); } catch { /* 已退出 */ }
         }

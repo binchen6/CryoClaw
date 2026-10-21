@@ -23,6 +23,7 @@ import type { SessionBranch } from "../controllers/session-branches.ts";
 import { isFailedSubagentStatus, selectSubagentCards, type SubagentCard } from "../chat/subagent-status.ts";
 import { isStreamTextDuplicatedInHistory } from "../chat/stream-bubble-guard.ts";
 import { selectPendingQuestions, type QuestionPrompt } from "../chat/question-cards.ts";
+import type { FileChange } from "../chat/file-changes.ts";
 import { renderQuestionCards } from "./question-card.ts";
 import { renderConversationInfo } from "./conversation-info.ts";
 import type { PlanStreamState } from "../plan-stream.ts";
@@ -170,6 +171,8 @@ export type ChatProps = {
   // file-changes 面板「在 git 中查看」链接（P4 git 面板入口；gitAvailable===true 时才渲染）
   gitAvailable?: boolean | null;
   onOpenGitView?: () => void;
+  // 终态改动卡片「撤销」：危险确认后丢弃这些文件的工作区改动（app 层实现）
+  onUndoFileChanges?: (files: FileChange[]) => void;
   // Scroll control
   showNewMessages?: boolean;
   newMessagesLeaving?: boolean;
@@ -443,12 +446,15 @@ export function renderChat(props: ChatProps) {
           .assistantName=${props.assistantName}
           .assistantAvatar=${assistantIdentity.avatar}
           .gitAvailable=${props.gitAvailable}
+          .workspacePath=${props.workspacePath ?? ""}
+          .runActive=${isBusy}
           .locale=${getLocale()}
           .onOpenSidebar=${props.onOpenSidebar}
           .onQuoteMessage=${(text: string) => handleQuoteMessage(props, text)}
           .onResendError=${props.onResendError}
           .onRewindToMessage=${props.onRewindToMessage}
           .onForkFromMessage=${props.onForkFromMessage}
+          .onDiscard=${(files: FileChange[]) => void props.onUndoFileChanges?.(files)}
         ></oc-chat-history>`
       }
       ${
@@ -575,8 +581,8 @@ export function renderChat(props: ChatProps) {
 
       <oc-turn-files .messages=${props.messages} .toolMessages=${props.toolMessages}
         .visibleHistoryCount=${props.visibleHistoryCount} .locale=${getLocale()}
-        .workspacePath=${props.workspacePath ?? ""}
-        .gitAvailable=${props.gitAvailable === true} .onOpenGit=${props.onOpenGitView}
+        .workspacePath=${props.workspacePath ?? ""} .runActive=${isBusy}
+        .gitAvailable=${props.gitAvailable === true}
         .onOpenFile=${(path: string) => openChatPath(path, props)}></oc-turn-files>
       ${renderProgressCard(props.progressCard ?? null, {
         sessionKey: props.sessionKey,

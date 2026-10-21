@@ -173,6 +173,12 @@ export function collectGroupFileChanges(
   return changes;
 }
 
+/** 展示用文件名（basename）：胶囊浮层/终态卡片只显示文件名，完整路径放 title */
+export function fileChangeBaseName(path: string): string {
+  const segments = path.split(/[\\/]/).filter((segment) => segment.length > 0);
+  return segments.at(-1) ?? path;
+}
+
 /**
  * 按时间序遍历所有消息组，返回 groupKey → 本轮改动列表（仅含有改动的组）。
  */

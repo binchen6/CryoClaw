@@ -5,11 +5,17 @@ import * as http from "http";
 import * as path from "path";
 import * as fs from "fs";
 import { app } from "electron";
-import { resolveCryoclawConfigPath } from "./cryoclaw-config";
+import {
+  readCryoclawConfig,
+  resolveCryoclawConfigPath,
+  writeCryoclawConfig,
+} from "./cryoclaw-config";
 import {
   DEFAULT_PORT,
   HEALTH_TIMEOUT_MS,
+  HEALTH_GRACE_MS,
   HEALTH_POLL_INTERVAL_MS,
+  HEALTH_FAST_POLL_WINDOW_MS,
   CRASH_COOLDOWN_MS,
   IS_WIN,
   resolveGatewayLogPath,
@@ -30,6 +36,8 @@ import {
   shouldAbortStartAfterPrestart,
   shouldForceResetHalfDead,
   shouldFireCrashOnStartingExit,
+  shouldExtendHealthGrace,
+  shouldSkipGatewayDaemonCleanup,
   isPlausiblyOwnGatewayFromTasklist,
   portWaitDelayMs,
 } from "./gateway-lifecycle";
@@ -306,17 +314,34 @@ export class GatewayProcess {
       // 只记日志，网关照常尝试启动（若内核仍拒绝，走既有失败弹窗路径）。
       //
       // 卸载 OpenClaw 系统守护进程 + 清理 tmpdir 锁文件，防止杀进程后被自动重启。
-      // 每应用会话只执行一次（R91 性能审查）：Windows 上串行跑 2 次 schtasks、
+      // 跳过判定两道：会话级内存标记（快路径）+ cryoclaw.config.json 的
+      // gatewayDaemonCleanedForVersion 按版本持久化（跨会话生效，应用升级后版本号
+      // 变化自动重新清理一次）。R91 性能审查：Windows 上串行跑 2 次 schtasks、
       // macOS 上 2 次 launchctl bootout，任务不存在时也要付 0.3-1.2s 的 spawn
-      // 成本——该清理只针对历史安装残留，会话内重复执行无额外收益。
+      // 成本——该清理只针对历史安装残留，无额外收益时不重复执行。
       // 两者无相互依赖，并行执行以缩短启动关键路径；端口探测/停止旧实例仍在
       // 它们落定后串行进行（必须在 spawn 前完成）。
       this.emitProgress("database");
       const prestartParallel: Promise<unknown>[] = [ensureAgentDbSchemaReady()];
-      if (!gatewayDaemonCleanupDone) {
+      if (
+        !shouldSkipGatewayDaemonCleanup(
+          gatewayDaemonCleanupDone,
+          readCryoclawConfig()?.gatewayDaemonCleanedForVersion,
+          app.getVersion(),
+        )
+      ) {
         prestartParallel.push(
           uninstallGatewayDaemon().then(() => {
             gatewayDaemonCleanupDone = true;
+            // 持久化按版本标记：写失败仅记日志——清理本身已成功，下次启动顶多
+            // 再付一次卸载成本，不值得因此让预启动失败
+            try {
+              const config = readCryoclawConfig() ?? {};
+              config.gatewayDaemonCleanedForVersion = app.getVersion();
+              writeCryoclawConfig(config);
+            } catch (err) {
+              diagLog(`WARN: 持久化 gatewayDaemonCleanedForVersion 失败: ${err instanceof Error ? err.message : String(err)}`);
+            }
           }),
         );
       }
@@ -485,32 +510,19 @@ export class GatewayProcess {
     });
 
     // 轮询健康检查
-    const healthy = await this.waitForHealth(HEALTH_TIMEOUT_MS, childPid);
+    let healthy = await this.waitForHealth(HEALTH_TIMEOUT_MS, childPid);
+    // 主超时但子进程仍存活 → 宽限续等一轮（Windows 冷启动慢热长尾，超时即杀会
+    // 留下「首次启动失败、重试自愈」的假象，见 constants.ts HEALTH_GRACE_MS）；
+    // 子进程已死则维持立即失败，不掩盖真正的启动故障
+    let graceUsed = false;
+    if (!healthy && shouldExtendHealthGrace(this.isChildAlive(childPid), graceUsed)) {
+      graceUsed = true;
+      diagLog(`WARN: health check timeout，子进程仍存活，进入宽限续等（+${HEALTH_GRACE_MS}ms）`);
+      healthy = await this.waitForHealth(HEALTH_GRACE_MS, childPid);
+      diagLog(`宽限续等结束: ${healthy ? "已就绪，转入正常启动路径" : "仍未就绪"}`);
+    }
     if (healthy) {
-      // 健康探测通过后短暂等待确认子进程没有立刻退出（排除旧进程误判）。
-      // R77：300→100ms——世代计数器 + isChildAlive 已是主防线，这里的等待只兜底
-      // 「起即死」，缩短可直接提前 gateway:ready 推送（渲染层可提前重连）。
-      await sleep(100);
-      // 状态复查：sleep(100) 窗口内 stop() 可能已把状态拨到 stopping/stopped
-      // （调用方已认为 gateway 停妥并继续后续清理），此时再 setState("running")
-      // 会把用户主动停止覆盖回运行中，随后的 exit 被误判为运行中崩溃并自动重启。
-      // 与预启动处 shouldAbortStartAfterPrestart 对称。经 getState() 读取而非
-      // this.state：TS 控制流分析在方法调用后不重置属性窄化，此处 this.state
-      // 被窄化为 stopped/stopping，直接比较会报 TS2367
-      if (this.getState() !== "starting") {
-        this.proc = null;
-        return;
-      }
-      if (this.isChildAlive(childPid)) {
-        diagLog("health check passed, child alive");
-        this.setState("running");
-        // 成功跑起来后，此前的崩溃记录不再影响后续启动的冷却判定
-        this.lastExitWasCrash = false;
-        this.emitProgress("ready");
-      } else {
-        diagLog("WARN: health check passed 但子进程已退出（端口可能被旧 gateway 占用）");
-        this.setState("stopped");
-      }
+      await this.settleHealthyStart(childPid);
     } else {
       diagLog("FATAL: health check timeout");
       await this.stop();
@@ -524,6 +536,33 @@ export class GatewayProcess {
       if (shouldFireCrashOnStartingExit("starting", this.supervisedStartActive)) {
         this.onCrash?.({ code: null, signal: "HEALTH_TIMEOUT" });
       }
+    }
+  }
+
+  // 健康探测通过后的落定：主超时与宽限续等两条路径共用。
+  // 短暂等待确认子进程没有立刻退出（排除旧进程误判），再复查状态——
+  // sleep(100) 窗口内 stop() 可能已把状态拨到 stopping/stopped（调用方已认为
+  // gateway 停妥并继续后续清理），此时再 setState("running") 会把用户主动停止
+  // 覆盖回运行中，随后的 exit 被误判为运行中崩溃并自动重启
+  private async settleHealthyStart(childPid: number): Promise<void> {
+    // R77：300→100ms——世代计数器 + isChildAlive 已是主防线，这里的等待只兜底
+    // 「起即死」，缩短可直接提前 gateway:ready 推送（渲染层可提前重连）
+    await sleep(100);
+    // 经 getState() 读取而非 this.state：TS 控制流分析在方法调用后不重置属性
+    // 窄化，此处 this.state 被窄化为 stopped/stopping，直接比较会报 TS2367
+    if (this.getState() !== "starting") {
+      this.proc = null;
+      return;
+    }
+    if (this.isChildAlive(childPid)) {
+      diagLog("health check passed, child alive");
+      this.setState("running");
+      // 成功跑起来后，此前的崩溃记录不再影响后续启动的冷却判定
+      this.lastExitWasCrash = false;
+      this.emitProgress("ready");
+    } else {
+      diagLog("WARN: health check passed 但子进程已退出（端口可能被旧 gateway 占用）");
+      this.setState("stopped");
     }
   }
 
@@ -629,11 +668,19 @@ export class GatewayProcess {
 
   // 停止已存在的旧 gateway（端口冲突时自动调用）
   private async stopExistingGateway(nodeBin: string, entry: string, cwd: string): Promise<void> {
+    // PID 解析与优雅停止并行发起：两者互不依赖，串行时 netstat/tasklist 的
+    // 数百毫秒是纯等待；解析失败只记日志，不阻塞优雅停止
+    const pidPromise = getPortPid(this.port).catch((err: unknown) => {
+      diagLog(`WARN: getPortPid 失败: ${err instanceof Error ? err.message : String(err)}`);
+      return 0;
+    });
     try {
       diagLog("exec: gateway stop");
+      // 超时 10s→6s：本地 CLI 的 stop 正常亚秒完成，6s 仍失败说明旧实例
+      // 已卡死，交给下方按 PID 强杀兜底
       await execFileAsync(nodeBin, [entry, "gateway", "stop"], {
         cwd,
-        timeout: 10_000,
+        timeout: 6_000,
         windowsHide: true,
         env: {
           ...process.env,
@@ -657,7 +704,7 @@ export class GatewayProcess {
     }
     // 优雅停止超时，按 PID 强杀占用端口的进程
     diagLog("WARN: 等待端口释放超时，尝试强杀占用进程");
-    const pid = await getPortPid(this.port);
+    const pid = await pidPromise;
     if (pid > 0 && (await isPlausiblyOwnGateway(pid))) {
       await killProcess(pid);
       for (let i = 0; i < 10; i++) {
@@ -703,9 +750,11 @@ export class GatewayProcess {
     if (childPid <= 0) return false;
 
     const deadline = Date.now() + timeoutMs;
-    // R91 性能审查：前 5s 用 150ms 快轮询（探测是 2s 超时的本地 http.get，
-    // CPU 成本可忽略），就绪推送平均提前 ~175ms；之后退回 500ms 常规节奏
-    const fastDeadline = Date.now() + 5_000;
+    // R91 性能审查：快轮询窗口内用 150ms 间隔（探测是 2s 超时的本地 http.get，
+    // CPU 成本可忽略），就绪推送平均提前 ~175ms。窗口 5s→30s（HEALTH_FAST_
+    // POLL_WINDOW_MS）：冷启动加载长尾（30-80s，见 HEALTH_GRACE_MS 背景）期间
+    // 保持快轮询，就绪感知更快、宽限轮询消耗更省；之后退回 500ms 常规节奏
+    const fastDeadline = Date.now() + HEALTH_FAST_POLL_WINDOW_MS;
     const healthStart = Date.now();
     this.emitProgress("health", 0);
     let lastHealthProgressAt = healthStart;

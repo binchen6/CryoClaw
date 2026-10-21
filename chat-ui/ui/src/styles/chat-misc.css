@@ -23,7 +23,6 @@
 .chat-tool-msg-collapse,
 .chat-tools-collapse,
 .chat-tool-card__args,
-.chat-file-changes,
 .chat-json-collapse,
 .chat-tool-subgroup {
   /* 与 .chat-thinking-collapse 相同：允许 height 在 0 与 auto 关键字间插值，
@@ -35,7 +34,6 @@
 .chat-tool-msg-collapse::details-content,
 .chat-tools-collapse::details-content,
 .chat-tool-card__args::details-content,
-.chat-file-changes::details-content,
 .chat-json-collapse::details-content,
 .chat-tool-subgroup::details-content {
   height: 0;
@@ -47,7 +45,6 @@
 .chat-tool-msg-collapse[open]::details-content,
 .chat-tools-collapse[open]::details-content,
 .chat-tool-card__args[open]::details-content,
-.chat-file-changes[open]::details-content,
 .chat-json-collapse[open]::details-content,
 .chat-tool-subgroup[open]::details-content {
   height: auto;
@@ -148,7 +145,6 @@
   .chat-tool-msg-collapse,
   .chat-tools-collapse,
   .chat-tool-card__args,
-  .chat-file-changes,
   .chat-json-collapse,
   .chat-tool-subgroup {
     interpolate-size: auto;
@@ -158,7 +154,6 @@
   .chat-tool-msg-collapse::details-content,
   .chat-tools-collapse::details-content,
   .chat-tool-card__args::details-content,
-  .chat-file-changes::details-content,
   .chat-json-collapse::details-content,
   .chat-tool-subgroup::details-content {
     transition: none;

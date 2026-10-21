@@ -32,8 +32,9 @@ import { chatTextEnhanceRef } from "./code-block-enhance.ts";
 import { extractToolCards, renderToolCardSidebar } from "./tool-cards.ts";
 import { summarizeToolCards, groupConsecutiveToolCards } from "./tool-summary.ts";
 import { formatToolDetail, resolveToolDisplay } from "../tool-display.ts";
-import { t } from "../i18n.ts";
+import { t, getLocale } from "../i18n.ts";
 import "../components/managed-image.ts";
+import "../components/oc-turn-diff-card.ts";
 
 // JSON 自动检测最大字符数，防止大 JSON 导致渲染卡顿
 const MAX_JSON_AUTOPARSE_CHARS = 20_000;
@@ -308,8 +309,14 @@ type MessageGroupRenderOpts = {
   assistantName?: string;
   assistantAvatar?: string | null;
   isHydrating?: boolean;
+  // 本组改动的文件列表（由装配层按组派生）；非空且未抑制时组底部渲染终态改动卡片
   fileChanges?: FileChange[];
-  // git 可用时 file-changes 面板尾部带「在 git 中查看」链接（点击由线程级委托处理）
+  // run 进行中最后一组仍在生长：由悬浮胶囊接力，抑制卡片避免同一轮改动双份展示
+  suppressDiffCard?: boolean;
+  // 行数统计/撤销所需：工作区根（git IPC 的 cwd）与「撤销」回调（危险确认 + 丢弃改动）
+  workspacePath?: string;
+  onDiscard?: (files: FileChange[]) => void | Promise<void>;
+  // git 可用时卡片头部带「撤销」「查看变更」操作（查看变更点击由线程级委托处理）
   gitAvailable?: boolean | null;
   onQuoteMessage?: (text: string) => void;
   onResendError?: (text: string, attachments?: ChatAttachment[]) => void;
@@ -425,7 +432,7 @@ export function renderMessageGroup(
       })}
       <div class="chat-group-messages">
         ${renderGroupMessagesCoalesced(group, opts)}
-        ${opts.fileChanges?.length ? renderFileChanges(opts.fileChanges, opts.gitAvailable) : nothing}
+        ${opts.fileChanges?.length && !opts.suppressDiffCard ? renderTurnDiffCard(opts) : nothing}
         <div class="chat-group-footer">
           <span class="chat-sender-name">${who}</span>
           ${assistantModel ? html`<span class="chat-group-model">${assistantModel}</span>` : nothing}
@@ -496,56 +503,18 @@ function renderMessageImages(images: ImageBlock[]) {
   `;
 }
 
-// 本轮改动文件列表（默认折叠）：badge 区分 增/删/改，路径点击经线程级处理器走 cryoclaw.openPath
-// git 可用时尾部带「在 git 中查看」链接（class 由 views/chat.ts 线程级点击委托处理）
-function renderFileChanges(changes: FileChange[], gitAvailable?: boolean | null) {
-  const countOf = (kind: FileChange["kind"]) => changes.filter((c) => c.kind === kind).length;
-  const added = countOf("added");
-  const modified = countOf("modified");
-  const deleted = countOf("deleted");
-  return html`
-    <details class="chat-file-changes">
-      <summary>
-        <span class="chat-file-changes__icon">${icons.folder}</span>
-        <span>${t("chat.fileChanges").replace("{n}", String(changes.length))}</span>
-        <span class="chat-file-changes__stats">
-          ${added > 0
-            ? html`<span class="chat-file-changes__stat chat-file-changes__stat--added">+${added}</span>`
-            : nothing}
-          ${modified > 0
-            ? html`<span class="chat-file-changes__stat chat-file-changes__stat--modified">~${modified}</span>`
-            : nothing}
-          ${deleted > 0
-            ? html`<span class="chat-file-changes__stat chat-file-changes__stat--deleted">−${deleted}</span>`
-            : nothing}
-        </span>
-      </summary>
-      <div class="chat-file-changes__list">
-        ${changes.map(
-          (change) => html`
-            <div class="chat-file-change">
-              <span class="chat-file-change__badge chat-file-change__badge--${change.kind}"
-                >${t(`chat.fileChange.${change.kind}`)}</span
-              >
-              <a
-                class="chat-path-link"
-                data-path=${change.path}
-                title=${change.path}
-                tabindex="0"
-                role="button"
-                >${change.path}</a
-              >
-            </div>
-          `,
-        )}
-        ${gitAvailable === true
-          ? html`<div class="chat-file-changes__footer">
-              <a class="chat-git-view-link" tabindex="0" role="button">${icons.diff} ${t("chat.viewInGit")}</a>
-            </div>`
-          : nothing}
-      </div>
-    </details>
-  `;
+// 终态「本轮改动」卡片（组底部，替代旧 file-changes 折叠面板）：行数统计由卡片
+// 自取（防抖/缓存/过期丢弃见组件内）；文件路径点击经线程级 .chat-path-link 委托
+// 走 cryoclaw.openPath，「查看变更」复用 .chat-git-view-link 委托（均无需此处传回调），
+// 「撤销」须携带本组 files，走 opts.onDiscard。
+function renderTurnDiffCard(opts: MessageGroupRenderOpts) {
+  return html`<oc-turn-diff-card
+    .files=${opts.fileChanges}
+    .workspacePath=${opts.workspacePath ?? ""}
+    .gitAvailable=${opts.gitAvailable === true}
+    .locale=${getLocale()}
+    .onDiscard=${opts.onDiscard}
+  ></oc-turn-diff-card>`;
 }
 
 // ── 已发送附件卡片（user 消息顶层 MediaPaths/MediaTypes，乐观气泡与 history 同构）──

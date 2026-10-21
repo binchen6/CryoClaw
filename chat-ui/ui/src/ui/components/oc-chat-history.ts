@@ -40,6 +40,10 @@ export class OcChatHistory extends LitElement {
     assistantName: { attribute: false },
     assistantAvatar: { attribute: false },
     gitAvailable: { attribute: false },
+    // 终态改动卡片所需：会话工作区根（卡片行数统计的 git IPC cwd）与
+    // run 活跃标记（进行中最后一组由悬浮胶囊接力，抑制卡片避免双份展示）
+    workspacePath: { attribute: false },
+    runActive: { attribute: false },
     // 语言标记：i18n 切换后由装配层传入新 locale 触发重渲染（divider/分组
     // 文案按当前语言重新求值；buildChatItemsMemoized 的 locale 比较键随之命中）
     locale: { attribute: false },
@@ -48,6 +52,7 @@ export class OcChatHistory extends LitElement {
     onResendError: { attribute: false },
     onRewindToMessage: { attribute: false },
     onForkFromMessage: { attribute: false },
+    onDiscard: { attribute: false },
   };
 
   messages: unknown[] = [];
@@ -59,12 +64,15 @@ export class OcChatHistory extends LitElement {
   // 外层传入解析后的身份头像（assistantAvatar ?? assistantAvatarUrl）
   assistantAvatar: string | null = null;
   gitAvailable: boolean | null = null;
+  workspacePath = "";
+  runActive = false;
   locale = "";
   onOpenSidebar?: (content: string) => void;
   onQuoteMessage?: (text: string) => void;
   onResendError?: (text: string, attachments?: ChatAttachment[]) => void;
   onRewindToMessage?: (entryId: string) => void;
   onForkFromMessage?: (entryId: string) => void;
+  onDiscard?: (files: FileChange[]) => void | Promise<void>;
 
   // 无 shadow DOM：复用全局样式与线程级既有事件委托；自定义元素默认 display 为
   // inline，不影响内部块级 .chat-group/.chat-divider 布局（与 oc-chat-stream 同理）。
@@ -81,6 +89,8 @@ export class OcChatHistory extends LitElement {
     "assistantName",
     "assistantAvatar",
     "gitAvailable",
+    "workspacePath",
+    "runActive",
     "locale",
   ] as const;
 
@@ -94,7 +104,11 @@ export class OcChatHistory extends LitElement {
       toolMessages: this.toolMessages,
       visibleHistoryCount: this.visibleHistoryCount,
     });
-    // 本轮改动文件列表：按组扫描 tool cards 派生（详见 chat/file-changes.ts 头注）
+    // 本轮改动文件列表：按组扫描 tool cards 派生（详见 chat/file-changes.ts 头注）。
+    // run 进行中最后一组仍在生长，卡片由悬浮胶囊接力（suppressDiffCard），
+    // 终态后胶囊消失、卡片接管，避免同一轮改动双份展示。
+    const fileChangesByGroup = computeSessionFileChangesMemoized(chatItems);
+    const lastGroupKey = [...chatItems].reverse().find((item) => item.kind === "group")?.key;
     const totalHistory = Array.isArray(this.messages) ? this.messages.length : 0;
     const isHydrating = this.visibleHistoryCount > 0 && this.visibleHistoryCount < totalHistory;
     return html`${repeat(
@@ -118,6 +132,10 @@ export class OcChatHistory extends LitElement {
             assistantName: this.assistantName,
             assistantAvatar: this.assistantAvatar,
             isHydrating,
+            fileChanges: fileChangesByGroup.get(item.key),
+            suppressDiffCard: this.runActive && item.key === lastGroupKey,
+            workspacePath: this.workspacePath,
+            onDiscard: this.onDiscard,
             gitAvailable: this.gitAvailable,
             onQuoteMessage: this.onQuoteMessage,
             onResendError: this.onResendError,

@@ -2793,77 +2793,8 @@ img.chat-avatar {
   padding: var(--spacer-10) var(--spacer-16);
 }
 
-/* ── 本轮改动文件列表（默认折叠，增/删/改 badge + mono 路径） ── */
-.chat-file-changes {
-  margin: var(--spacer-6) 0 var(--spacer-2);
-}
-
-.chat-file-changes > summary {
-  display: flex;
-  align-items: center;
-  gap: var(--spacer-8);
-  cursor: pointer;
-  list-style: none;
-  user-select: none;
-  font-family: var(--font-meta);
-  font-size: var(--font-size-meta);
-  color: var(--text-muted);
-  transition: color var(--duration-fast) var(--ease-out);
-}
-
-.chat-file-changes > summary::-webkit-details-marker {
-  display: none;
-}
-
-.chat-file-changes > summary:hover {
-  color: var(--text-strong);
-}
-
-.chat-file-changes__icon {
-  display: inline-flex;
-  width: 13px;
-  height: 13px;
-  color: var(--text-faint);
-  flex-shrink: 0;
-}
-
-.chat-file-changes__icon svg {
-  width: 100%;
-  height: 100%;
-}
-
-.chat-file-changes__stats {
-  display: inline-flex;
-  gap: var(--spacer-6);
-  font-family: var(--font-meta);
-  font-size: var(--font-size-meta);
-}
-
-.chat-file-changes__stat--added {
-  color: var(--ok);
-}
-
-.chat-file-changes__stat--modified {
-  color: var(--text-faint);
-}
-
-.chat-file-changes__stat--deleted {
-  color: var(--destructive);
-}
-
-.chat-file-changes__list {
-  margin-top: var(--spacer-6);
-  padding-left: var(--spacer-20); /* 原 21px 贴阶梯 */
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacer-3);
-}
-
-/* file-changes 面板「在 git 中查看」链接（P4 git 面板入口） */
-.chat-file-changes__footer {
-  padding-top: var(--spacer-4);
-}
-
+/* 「在 git 中查看」链接（P4 git 面板入口；现仅终态改动卡片的「查看变更」使用，
+   点击由 views/chat.ts 线程级委托处理） */
 .chat-git-view-link {
   display: inline-flex;
   align-items: center;
@@ -2881,50 +2812,6 @@ img.chat-avatar {
 .chat-git-view-link svg {
   width: 12px;
   height: 12px;
-}
-
-.chat-file-change {
-  display: flex;
-  align-items: center;
-  gap: var(--spacer-8);
-  min-width: 0;
-}
-
-.chat-file-change__badge {
-  font-family: var(--font-meta);
-  font-size: var(--text-2xs);
-  line-height: 1.4;
-  padding: 0 var(--spacer-4); /* 原 5px 贴阶梯 */
-  border-radius: var(--radius-6);
-  border: 1px solid transparent;
-  flex-shrink: 0;
-}
-
-.chat-file-change__badge--added {
-  color: var(--ok);
-  background: var(--ok-subtle);
-  border-color: color-mix(in srgb, var(--ok) 25%, transparent);
-}
-
-.chat-file-change__badge--modified {
-  color: var(--text-muted);
-  background: var(--glass-sm);
-  border-color: var(--glass-border);
-}
-
-.chat-file-change__badge--deleted {
-  color: var(--destructive);
-  background: color-mix(in srgb, var(--destructive) 12%, transparent);
-  border-color: color-mix(in srgb, var(--destructive) 25%, transparent);
-}
-
-.chat-file-change .chat-path-link {
-  font-family: var(--font-meta);
-  font-size: var(--font-size-meta);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  min-width: 0;
 }
 
 /* ── 窄窗适配（≤768px）：列宽约束在窄窗天然失效，收敛内边距保持节奏 ── */
@@ -3489,3 +3376,21 @@ oc-turn-files { display:block; width:100%; max-width:var(--chat-column); margin:
 
 button.chat-turn-files__path { border:0; padding:0; color:var(--text); background:transparent; cursor:pointer; text-align:start; font:inherit; }
 button.chat-turn-files__path:hover { color:var(--accent); text-decoration:underline; }
+
+/* ── 终态「本轮改动」卡片（组底部，对齐 Kimi CLI 样式）────────────────────
+   头部：图标 + 「已编辑 N 个文件」+ 总 +x −y，右侧「撤销」「查看变更」；
+   列表每行 basename（完整路径 title，点击走 .chat-path-link 线程委托）+
+   该文件 +/−（复用胶囊的 __row-stat/__stat 配色类）。仅 run 终态渲染。 */
+.chat-turn-diff-card { margin:var(--spacer-8) 0; padding:var(--spacer-10) var(--spacer-12); background:var(--bg-elevated); border:var(--hairline); border-radius:var(--radius-12); box-shadow:var(--shadow-xs); font-size:var(--text-sm); }
+.chat-turn-diff-card__head { display:flex; align-items:center; gap:var(--spacer-8); min-width:0; }
+.chat-turn-diff-card__icon { display:inline-flex; width:14px; height:14px; color:var(--text-muted); flex-shrink:0; }
+.chat-turn-diff-card__icon svg { width:100%; height:100%; }
+.chat-turn-diff-card__title { font-weight:var(--weight-medium); color:var(--text-secondary); white-space:nowrap; }
+.chat-turn-diff-card__stats { display:inline-flex; gap:var(--spacer-6); }
+.chat-turn-diff-card__actions { display:inline-flex; align-items:center; gap:var(--spacer-8); margin-left:auto; flex-shrink:0; }
+.chat-turn-diff-card__undo:disabled { opacity:.5; cursor:not-allowed; }
+.chat-turn-diff-card__list { display:flex; flex-direction:column; margin-top:var(--spacer-4); }
+.chat-turn-diff-card__row { display:flex; align-items:center; gap:var(--spacer-10); padding:var(--spacer-4) 0; min-width:0; }
+.chat-turn-diff-card__path { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; font-family:var(--font-meta); font-size:var(--font-size-meta); }
+.chat-turn-diff-card__more { margin-top:var(--spacer-4); border:0; padding:0; background:transparent; cursor:pointer; color:var(--accent); font:inherit; font-size:var(--text-xs); }
+.chat-turn-diff-card__more:hover { text-decoration:underline; }

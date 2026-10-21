@@ -38,6 +38,17 @@ export function resolveGatewayPort(): number {
 export const HEALTH_TIMEOUT_MS = process.platform === "win32" ? 180_000 : 90_000;
 export const HEALTH_POLL_INTERVAL_MS = 500;
 
+// 健康主超时后的宽限续等时长：仅当子进程仍存活时生效（doStart 内判定）。
+// Windows 冷启动偶发顶穿 180s 主超时（Defender 扫描叠加 jiti 转译，实测 30-80s
+// 的模块加载长尾），此前超时即杀进程重来——重试时 V8/Defender 缓存已热才成功，
+// 用户侧表现为「首次启动失败、随后自愈」。宽限只救「还活着的慢热子进程」，
+// 子进程已死仍立即失败，不掩盖真正的启动故障。
+export const HEALTH_GRACE_MS = process.platform === "win32" ? 60_000 : 30_000;
+
+// 健康快轮询窗口（waitForHealth 前 30s 用 150ms 间隔、之后退回 500ms）：
+// 冷启动加载长尾期保持快轮询，就绪感知更快，宽限轮询的消耗也更省。
+export const HEALTH_FAST_POLL_WINDOW_MS = 30_000;
+
 // ── 崩溃冷却 ──
 
 export const CRASH_COOLDOWN_MS = 5_000;
@@ -414,6 +425,7 @@ export function resolveDevBranchTag(): string {
       cwd: app.getAppPath(),
       timeout: 3000,
       encoding: "utf-8",
+      windowsHide: true,
     }).trim();
     return branch ? ` [${branch}]` : "";
   } catch {

@@ -45,11 +45,13 @@ test("oc-chat-history：静态属性声明 + shouldUpdate 只按视觉属性放�
     "assistantName",
     "assistantAvatar",
     "gitAvailable",
+    "workspacePath",
+    "runActive",
   ]) {
     assert.ok(visualList.includes(`"${name}"`), `视觉属性清单缺 ${name}`);
   }
   // 回调每帧新闭包（buildChatProps），进视觉清单会导致每次外层渲染都重求值历史子树
-  for (const name of ["onOpenSidebar", "onQuoteMessage", "onResendError"]) {
+  for (const name of ["onOpenSidebar", "onQuoteMessage", "onResendError", "onDiscard"]) {
     assert.ok(
       !visualList.includes(name),
       `回调属性 ${name} 不得进视觉清单（每帧新闭包会让优化失效）`,
@@ -70,6 +72,21 @@ test("oc-chat-history：memo 调用点在组件内，复用 renderMessageGroup +
   );
   assert.match(componentSrc, /renderMessageGroup\(/, "分组渲染应复用 renderMessageGroup");
   assert.match(componentSrc, /repeat\(/, "历史列表应继续用 lit repeat（keyed 复用）");
+});
+
+test("oc-chat-history：组 opts 携带按组 fileChanges + 胶囊接力抑制（终态卡片接线）", () => {
+  assert.match(
+    componentSrc,
+    /fileChanges: fileChangesByGroup\.get\(item\.key\)/,
+    "每组应传入自己的改动列表（组底部渲染终态卡片）",
+  );
+  assert.match(
+    componentSrc,
+    /suppressDiffCard: this\.runActive && item\.key === lastGroupKey/,
+    "run 进行中最后一组应由悬浮胶囊接力，抑制卡片避免双份展示",
+  );
+  assert.match(componentSrc, /workspacePath: this\.workspacePath/, "组 opts 缺少 workspacePath");
+  assert.match(componentSrc, /onDiscard: this\.onDiscard/, "组 opts 缺少 onDiscard（撤销回调）");
 });
 
 // 语言切换刷新：divider/分组文案经 i18n 渲染，切语言后必须由装配层传入新

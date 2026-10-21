@@ -19,6 +19,7 @@ import { getCachedCommands } from "./controllers/commands.ts";
 import { loadSessionBranches } from "./controllers/session-branches.ts";
 import { listEligibleSkills } from "./controllers/skills.ts";
 import { openWorkspaceView } from "./app-workspace.ts";
+import { confirmAndUndoTurnChanges } from "./app-chat-undo.ts";
 import { handleReconnect } from "./app-session-actions.ts";
 import { dismissPlan } from "./plan-stream.ts";
 import { dismissProgressCard } from "./controllers/progress-card.ts";
@@ -139,6 +140,8 @@ export function buildChatProps(state: AppViewState): ChatProps {
     // file-changes 面板「在 git 中查看」→ git 面板视图（P4）
     gitAvailable: state.gitAvailable,
     onOpenGitView: () => openWorkspaceView(state, "git"),
+    // 终态改动卡片「撤销」：危险确认后丢弃工作区改动（tracked → discard，未跟踪 → clean）
+    onUndoFileChanges: (files) => void confirmAndUndoTurnChanges(state, workspace?.path ?? "", files),
     // 会话分支（rewind/fork/switch，内核 2026.9.7 branch tree）
     sessionBranches: state.sessionBranches,
     sessionBranchesKey: state.sessionBranchesKey ?? null,

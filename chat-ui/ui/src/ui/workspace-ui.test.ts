@@ -89,35 +89,53 @@ test("app.ts：git 面板响应式状态字段", () => {
   }
 });
 
-test("file-changes 面板「在 git 中查看」链接接线（app-chat-props / chat.ts / oc-chat-history / grouped-render）", () => {
+test("终态改动卡片接线（app-chat-props / chat.ts / oc-chat-history / grouped-render / oc-turn-diff-card）", () => {
   const chatProps = src("app-chat-props.ts");
   assert.match(chatProps, /gitAvailable: state\.gitAvailable/, "缺少 gitAvailable prop");
   assert.match(chatProps, /onOpenGitView: \(\) => openWorkspaceView\(state, "git"\)/, "缺少 onOpenGitView prop");
+  // 「撤销」：危险确认后丢弃工作区改动（app 层 handler 走 preload 桥）
+  assert.match(chatProps, /confirmAndUndoTurnChanges/, "缺少撤销 handler 接线");
+  assert.match(chatProps, /onUndoFileChanges: \(files\) => void confirmAndUndoTurnChanges\(state, workspace\?\.path \?\? "", files\)/, "缺少 onUndoFileChanges prop");
 
   const chat = src("views/chat.ts");
   assert.match(chat, /closest\("\.chat-git-view-link"\)/, "线程点击委托缺少 git 链接分支");
   assert.match(chat, /props\.onOpenGitView\?\.\(\)/, "git 链接点击应调 onOpenGitView");
-  // R41 Task 11：历史列表迁入 <oc-chat-history>，外层改为向组件透传 gitAvailable 属性
+  // R41 Task 11：历史列表迁入 <oc-chat-history>，外层改为向组件透传属性
   assert.match(chat, /\.gitAvailable=\$\{props\.gitAvailable\}/, "历史组件装配缺少 gitAvailable 透传");
-  const history = src("components/oc-chat-history.ts");
-  assert.match(history, /gitAvailable: this\.gitAvailable/, "group opts 缺少 gitAvailable（oc-chat-history）");
-
-  const grouped = src("chat/grouped-render.ts");
-  assert.match(grouped, /class="chat-git-view-link"/, "file-changes 缺少「在 git 中查看」链接");
-  assert.match(grouped, /t\("chat\.viewInGit"\)/, "缺少链接文案");
-  assert.match(grouped, /gitAvailable === true/, "链接应仅在 git 可用时渲染");
+  assert.match(chat, /\.workspacePath=\$\{props\.workspacePath \?\? ""\}/, "历史组件装配缺少 workspacePath 透传");
+  assert.match(chat, /\.runActive=\$\{isBusy\}/, "历史组件装配缺少 runActive 透传（胶囊接力门控）");
+  assert.match(chat, /\.onDiscard=\$\{/, "历史组件装配缺少 onDiscard 透传");
+  // 悬浮胶囊：终态后消失（runActive 门控），浮层不再带「在 git 中查看」按钮
+  assert.match(chat, /<oc-turn-files/, "缺少悬浮胶囊装配");
+  assert.match(chat, /\.runActive=\$\{isBusy\}[\s\S]{0,200}<\/oc-turn-files>/, "胶囊装配缺少 runActive 透传");
+  assert.doesNotMatch(chat, /onOpenGit=/, "胶囊浮层 git 按钮已移除，不应再传 onOpenGit");
   // 键盘可达（R23）：无 href 的 <a> 须带 tabindex/role，线程 keydown 委托须有对应分支
   // （与 .chat-path-link 同一交互范式；click 用 closest(，keydown 用 closest?.(）
-  assert.match(
-    grouped,
-    /class="chat-git-view-link" tabindex="0" role="button"/,
-    "git 链接缺少 tabindex/role（键盘不可达）",
-  );
   assert.match(
     chat,
     /closest\?\.\("\.chat-git-view-link"\)/,
     "线程 keydown 委托缺少 git 链接分支（Enter/Space 不可激活）",
   );
+
+  const history = src("components/oc-chat-history.ts");
+  assert.match(history, /gitAvailable: this\.gitAvailable/, "group opts 缺少 gitAvailable（oc-chat-history）");
+  assert.match(history, /fileChanges: fileChangesByGroup\.get\(item\.key\)/, "group opts 缺少按组 fileChanges");
+  assert.match(history, /suppressDiffCard: this\.runActive && item\.key === lastGroupKey/, "缺少胶囊接力抑制门控");
+  assert.match(history, /workspacePath: this\.workspacePath/, "group opts 缺少 workspacePath");
+  assert.match(history, /onDiscard: this\.onDiscard/, "group opts 缺少 onDiscard");
+
+  const grouped = src("chat/grouped-render.ts");
+  assert.match(grouped, /<oc-turn-diff-card/, "组底部应渲染终态改动卡片");
+  assert.match(grouped, /\.files=\$\{opts\.fileChanges\}/, "卡片缺少 files 属性");
+  assert.match(grouped, /\.workspacePath=\$\{opts\.workspacePath \?\? ""\}/, "卡片缺少 workspacePath 属性");
+  assert.doesNotMatch(stripComments(grouped), /renderFileChanges/, "死代码 renderFileChanges 应已删除");
+  // 「查看变更」链接移到卡片组件内（键盘可达结构不变）
+  const card = src("components/oc-turn-diff-card.ts");
+  assert.match(card, /class="chat-git-view-link" tabindex="0" role="button"/, "卡片缺少「查看变更」链接（键盘不可达）");
+  assert.match(card, /t\("chat\.viewChanges"\)/, "缺少「查看变更」文案");
+  assert.match(card, /this\.gitAvailable[\s\S]{0,400}chat\.undoChanges/, "撤销/查看变更应仅在 git 可用时渲染");
+  assert.match(card, /t\("chat\.editedFiles"\)/, "缺少「已编辑 N 个文件」文案");
+  assert.match(card, /t\("chat\.showMoreFiles"\)/, "缺少「再显示 N 个文件」文案");
 });
 
 test("views/git.ts：分组/stage/commit/diff 渲染的关键结构", () => {

@@ -177,9 +177,17 @@ test("组件：胶囊无左右图标、含绿色 +N / 红色 −M 统计节点",
   // 去掉左右两个图标：summary 内不得再出现 icons.*
   assert.doesNotMatch(summary, /\$\{icons\./);
   assert.doesNotMatch(src, /chevronDown/);
-  // 浮层每行保留变更徽标 + 路径 + 行内 +/−（二进制不显示数字）
+  // 浮层每行保留 文件名(basename) + 行内 +/−（二进制不显示数字）；badge 已移除
   assert.match(src, /chat-turn-files__row-stat/);
+  assert.match(src, /fileChangeBaseName\(file\.path\)/);
   assert.match(src, /chat\.fileChange\.linesUnavailable/);
+  assert.doesNotMatch(src, /chat-file-change__badge/, "浮层 badge 应已移除");
+});
+
+test("组件：runActive 门控（终态后胶囊消失，由组底部卡片接力）", () => {
+  const src = source("../../../../../src/ui/components/oc-turn-files.ts");
+  assert.match(src, /runActive: \{ attribute: false \}/, "应声明 runActive 属性");
+  assert.match(src, /if \(!this\.runActive\) return nothing;/, "runActive=false 应渲染 nothing");
 });
 
 test("组件：按 workspacePath + 消息变化防抖拉取，过期响应丢弃", () => {
@@ -191,9 +199,11 @@ test("组件：按 workspacePath + 消息变化防抖拉取，过期响应丢弃
   assert.doesNotMatch(src, /#(?:[0-9a-fA-F]{3}){1,2}\b/, "渲染层不得硬编码 hex");
 });
 
-test("接线：views/chat.ts 向 oc-turn-files 透传 workspacePath", () => {
+test("接线：views/chat.ts 向 oc-turn-files 透传 workspacePath，向 oc-chat-history 透传卡片链路", () => {
   const src = source("../../../../../src/ui/views/chat.ts");
   assert.match(src, /\.workspacePath=\$\{props\.workspacePath \?\? ""\}/);
+  assert.match(src, /\.runActive=\$\{isBusy\}/, "胶囊与历史卡片都应以 isBusy 做执行中门控");
+  assert.match(src, /\.onDiscard=\$\{/, "历史组件缺少 onDiscard（卡片撤销回调）");
 });
 
 // ── 与任务进度卡的堆叠顺序 / 层级 ─────────────────────────────────

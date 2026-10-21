@@ -68,7 +68,7 @@ function runMemoryCli(args: string[], timeoutMs: number): Promise<CliOutcome> {
     const killTree = () => {
       if (child.pid == null) return;
       if (process.platform === "win32") {
-        try { execFileSync("taskkill", ["/PID", String(child.pid), "/T", "/F"], { stdio: "ignore" }); } catch {}
+        try { execFileSync("taskkill", ["/PID", String(child.pid), "/T", "/F"], { stdio: "ignore", windowsHide: true }); } catch {}
       } else {
         try { child.kill("SIGKILL"); } catch {}
       }

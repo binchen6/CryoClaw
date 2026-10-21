@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { collectGroupFileChanges, computeSessionFileChanges } from "./file-changes.ts";
+import { collectGroupFileChanges, computeSessionFileChanges, fileChangeBaseName } from "./file-changes.ts";
 import type { MessageGroup } from "../types/chat-types.ts";
 
 function toolCall(name: string, args: unknown): unknown {
@@ -166,4 +166,15 @@ test("file changes：无改动的组不进 Map", () => {
   const groups = [group("g1", [toolCall("exec", { command: "ls" })])];
   const byGroup = computeSessionFileChanges(groups);
   assert.equal(byGroup.size, 0);
+});
+
+// ── fileChangeBaseName ──
+
+test("fileChangeBaseName：正斜杠/反斜杠/混合分隔符都取末段文件名", () => {
+  assert.equal(fileChangeBaseName("src/deep/a.ts"), "a.ts");
+  assert.equal(fileChangeBaseName("C:\\ws\\src\\a.ts"), "a.ts");
+  assert.equal(fileChangeBaseName("src\\deep/a.ts"), "a.ts");
+  assert.equal(fileChangeBaseName("a.ts"), "a.ts");
+  // 无文件名可取的退化：原样返回，避免显示空串
+  assert.equal(fileChangeBaseName(""), "");
 });

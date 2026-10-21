@@ -2,7 +2,7 @@ import { LitElement, html, nothing, type TemplateResult } from "lit";
 import { customElement } from "lit/decorators.js";
 import { buildChatItemsMemoized, computeSessionFileChangesMemoized } from "./oc-chat-history.ts";
 import type { FileChange } from "../chat/file-changes.ts";
-import { icons } from "../icons.ts";
+import { fileChangeBaseName } from "../chat/file-changes.ts";
 import { t } from "../i18n.ts";
 import {
   fetchTurnFileStats,
@@ -36,14 +36,14 @@ export class OcTurnFiles extends LitElement {
   static properties = {
     messages: { attribute: false }, toolMessages: { attribute: false },
     visibleHistoryCount: { attribute: false }, gitAvailable: { attribute: false },
-    workspacePath: { attribute: false },
-    onOpenGit: { attribute: false }, onOpenFile: { attribute: false }, locale: { attribute: false },
+    workspacePath: { attribute: false }, runActive: { attribute: false },
+    onOpenFile: { attribute: false }, locale: { attribute: false },
     // 行数统计到达后递增：内部 lookup 不是响应式字段，靠它触发一次重渲染
     statsRevision: { attribute: false },
   };
   messages: unknown[] = []; toolMessages: unknown[] = []; visibleHistoryCount = 0;
-  gitAvailable = false; locale = ""; workspacePath = "";
-  onOpenGit?: () => void; onOpenFile?: (path: string) => void;
+  gitAvailable = false; locale = ""; workspacePath = ""; runActive = false;
+  onOpenFile?: (path: string) => void;
   statsRevision = 0;
 
   private statsLookup: TurnStatsLookup = EMPTY_LOOKUP;
@@ -53,7 +53,7 @@ export class OcTurnFiles extends LitElement {
   private statsCache = new Map<string, TurnStatsLookup>();
 
   createRenderRoot() { return this; }
-  shouldUpdate(changed: Map<PropertyKey, unknown>) { return [...changed.keys()].some(key => key !== "onOpenGit" && key !== "onOpenFile"); }
+  shouldUpdate(changed: Map<PropertyKey, unknown>) { return [...changed.keys()].some(key => key !== "onOpenFile"); }
 
   connectedCallback() {
     super.connectedCallback();
@@ -90,9 +90,10 @@ export class OcTurnFiles extends LitElement {
   };
 
   // 触发拉取的条件：当前轮的改动列表或工作区/git 可用性变化，
-  // visibleHistoryCount 变化说明本轮又有新消息（同一批文件可能被再次编辑，行数要刷新）。
+  // visibleHistoryCount 变化说明本轮又有新消息（同一批文件可能被再次编辑，行数要刷新）；
+  // runActive 翻转也要刷新——隐藏期间不拉取（enabled 门），重新显示时需按最新签名补拉。
   protected willUpdate(changed: Map<PropertyKey, unknown>) {
-    const triggers = ["messages", "toolMessages", "visibleHistoryCount", "workspacePath", "gitAvailable"];
+    const triggers = ["messages", "toolMessages", "visibleHistoryCount", "workspacePath", "gitAvailable", "runActive"];
     if (!triggers.some(key => changed.has(key))) return;
     this.refreshStats(this.currentTurn());
   }
@@ -116,7 +117,8 @@ export class OcTurnFiles extends LitElement {
   /** 签名变化时重置结果并在 250ms 安静后拉取；缓存命中直接复用 */
   private refreshStats(turn: { files: FileChange[]; key: string }): void {
     const paths = turn.files.map(file => file.path);
-    const enabled = this.gitAvailable && Boolean(this.workspacePath) && paths.length > 0;
+    // runActive=false（终态）时胶囊隐藏，行数由组底部卡片展示——不打无意义 git 调用
+    const enabled = this.runActive && this.gitAvailable && Boolean(this.workspacePath) && paths.length > 0;
     // 组键 + visibleHistoryCount 一起进签名：同一批文件在后续消息里被再次编辑时重新统计
     const signature = enabled
       ? `${turnStatsSignature(this.workspacePath, paths)}\u0002${turn.key}\u0002${this.visibleHistoryCount}`
@@ -177,6 +179,9 @@ export class OcTurnFiles extends LitElement {
   }
 
   render() {
+    // 终态后胶囊消失：run 期间由胶囊跟进本轮改动，结束后由组底部的
+    // <oc-turn-diff-card> 卡片接力（避免同一轮改动双份展示）。
+    if (!this.runActive) return nothing;
     const files = this.currentTurn().files;
     if (!files.length) return nothing;
     const summary = summarizeTurnStats(files, this.statsLookup);
@@ -203,11 +208,9 @@ export class OcTurnFiles extends LitElement {
       </summary>
       <div class="chat-turn-files__popover">
         <div class="chat-turn-files__list">${files.map(file => html`<div class="chat-turn-files__row">
-          <span class="chat-file-change__badge chat-file-change__badge--${file.kind}">${t(`chat.fileChange.${file.kind}`)}</span>
-          <button type="button" class="chat-turn-files__path" title=${file.path} @click=${() => this.onOpenFile?.(file.path)}>${file.path}</button>
+          <button type="button" class="chat-turn-files__path" title=${file.path} @click=${() => this.onOpenFile?.(file.path)}>${fileChangeBaseName(file.path)}</button>
           ${this.renderRowStat(file)}
         </div>`)}</div>
-        ${this.gitAvailable ? html`<button type="button" class="btn btn--sm" @click=${() => this.onOpenGit?.()}>${icons.diff}${t("chat.viewInGit")}</button>` : nothing}
       </div>
     </details>`;
   }

@@ -82,3 +82,28 @@ export function isPlausibleGatewayImage(image: string): boolean {
 export function isPlausiblyOwnGatewayFromTasklist(stdout: string): boolean {
   return isPlausibleGatewayImage(parseTasklistImageName(stdout));
 }
+
+/**
+ * 健康主超时后是否进入宽限续等：仅当子进程仍存活（慢热而非已死）且本轮启动
+ * 尚未用过宽限时。子进程已死说明启动已实质失败，续等只会拖长失败显现时间；
+ * graceUsed 防重复进入（doStart 至多宽限一轮）。背景见 constants.ts 的
+ * HEALTH_GRACE_MS 注释：Windows 冷启动加载长尾偶发顶穿主超时，误杀慢热子进程
+ * 会造成「首次启动失败、重试自愈」的假象。
+ */
+export function shouldExtendHealthGrace(childAlive: boolean, graceUsed: boolean): boolean {
+  return childAlive && !graceUsed;
+}
+
+/**
+ * gateway 系统守护进程卸载是否需要跳过：会话级标记（内存快路径）与按版本
+ * 持久化的清理记录（cryoclaw.config.json 的 gatewayDaemonCleanedForVersion）
+ * 任一命中即跳过。版本号变化（应用升级）后 persisted 标记自然失效，下个启动
+ * 会话会重新执行一次卸载，兜住旧版本安装的系统守护进程残留。
+ */
+export function shouldSkipGatewayDaemonCleanup(
+  sessionDone: boolean,
+  cleanedForVersion: string | undefined,
+  currentVersion: string,
+): boolean {
+  return sessionDone || cleanedForVersion === currentVersion;
+}

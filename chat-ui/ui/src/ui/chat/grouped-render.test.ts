@@ -605,3 +605,59 @@ test("分支入口：无 entryId 或未提供回调时不渲染", () => {
   );
   assert.ok(!serialize(assistant).includes("chat-branch-btns"), "助手气泡不渲染分支按钮");
 });
+
+// ── 终态「本轮改动」卡片（组底部，替代旧 file-changes 折叠面板）──
+
+test("fileChanges 非空时组底部渲染 oc-turn-diff-card，空列表/抑制时不渲染", () => {
+  const group = {
+    kind: "group" as const,
+    key: "group:assistant:diff",
+    role: "assistant",
+    messages: [
+      {
+        key: "msg:1",
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: "已完成" }],
+          timestamp: 1,
+        },
+      },
+    ],
+    timestamp: 1,
+    isStreaming: false,
+  };
+  const opts = {
+    showReasoning: false,
+    fileChanges: [{ path: "src/a.ts", kind: "added" as const }],
+    workspacePath: "/ws",
+    gitAvailable: true,
+    onDiscard: () => {},
+  };
+  const rendered = collect(renderMessageGroup(group, opts));
+  assert.ok(
+    serialize(rendered).includes("oc-turn-diff-card"),
+    "有改动的组应在底部渲染终态改动卡片",
+  );
+  // 执行中最后一组由悬浮胶囊接力：抑制卡片避免同一轮改动双份展示
+  const suppressed = collect(renderMessageGroup(group, { ...opts, suppressDiffCard: true }));
+  assert.ok(
+    !serialize(suppressed).includes("oc-turn-diff-card"),
+    "suppressDiffCard（胶囊接力中）不应渲染卡片",
+  );
+  const noChanges = collect(renderMessageGroup(group, { showReasoning: false }));
+  assert.ok(
+    !serialize(noChanges).includes("oc-turn-diff-card"),
+    "无改动的组不应渲染卡片",
+  );
+});
+
+test("渲染接线审计：死代码 renderFileChanges 与 chat-file-changes 结构已移除", () => {
+  const fromSource = new URL("./grouped-render.ts", import.meta.url);
+  const fromDist = new URL("../../../../../src/ui/chat/grouped-render.ts", import.meta.url);
+  const srcUrl = existsSync(fromSource) ? fromSource : fromDist;
+  const src = readFileSync(srcUrl, "utf8");
+  assert.ok(!src.includes("renderFileChanges"), "死代码 renderFileChanges 应已删除");
+  assert.ok(!src.includes("chat-file-changes"), "旧折叠面板结构应已移除");
+  assert.ok(src.includes("<oc-turn-diff-card"), "组底部应渲染终态改动卡片");
+  assert.ok(src.includes(".onDiscard=${opts.onDiscard}"), "撤销回调应透传给卡片");
+});

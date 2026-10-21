@@ -32,6 +32,10 @@ export interface CryoclawConfig {
   // R93 一次性门控：历史版本误禁的 npm-可解析插件条目只在首个 R93 版本启动时
   // 恢复一次，之后用户的显式 enabled:false 不再被迁移翻动。
   mistakenPluginDisableRepairDone?: boolean;
+  // gateway 系统守护进程卸载的按版本持久化标记：等于当前 app 版本时跳过
+  // uninstallGatewayDaemon（gateway-process doStart 读取；应用升级后版本号变化
+  // 会重新执行一次清理，防旧版本残留的系统守护进程复活）
+  gatewayDaemonCleanedForVersion?: string;
 }
 
 // 四种归属状态

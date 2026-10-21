@@ -15,6 +15,7 @@ const devInfo = (() => {
       cwd: app.getAppPath(),
       encoding: "utf-8",
       timeout: 3000,
+      windowsHide: true,
     }).trim();
   } catch {}
   return { branch, startedAt };

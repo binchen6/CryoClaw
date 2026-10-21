@@ -20,12 +20,16 @@ const h = vi.hoisted(() => ({
   latestChild: null as any,
 }));
 
-vi.mock("electron", () => ({ app: { isPackaged: false, getAppPath: () => process.cwd() } }));
+vi.mock("electron", () => ({
+  app: { isPackaged: false, getAppPath: () => process.cwd(), getVersion: () => "9.9.9-test" },
+}));
 
 vi.mock("./constants", () => ({
   DEFAULT_PORT: 18789,
   HEALTH_TIMEOUT_MS: 1000,
+  HEALTH_GRACE_MS: 500,
   HEALTH_POLL_INTERVAL_MS: 50,
+  HEALTH_FAST_POLL_WINDOW_MS: 300,
   CRASH_COOLDOWN_MS: 300,
   IS_WIN: true,
   resolveGatewayLogPath: () => path.join(h.stateDir, "logs", "gateway.log"),
@@ -163,6 +167,40 @@ describe("预启动步骤并行化", () => {
     await startPromise;
     expect(gw.getState()).toBe("running");
     await gw.stop();
+  });
+});
+
+describe("daemon 卸载按版本持久化跳过", () => {
+  test("cryoclaw.config.json 已记录当前版本 → 跳过 uninstallGatewayDaemon", async () => {
+    const { uninstallGatewayDaemon } = await import("./install-detector");
+    const configPath = path.join(h.stateDir, "cryoclaw.config.json");
+    fs.writeFileSync(configPath, JSON.stringify({ gatewayDaemonCleanedForVersion: "9.9.9-test" }));
+    try {
+      const { GatewayProcess } = await freshModule();
+      const gw = new GatewayProcess({ token: "t" });
+      await gw.start();
+      expect(gw.getState()).toBe("running");
+      expect(vi.mocked(uninstallGatewayDaemon)).not.toHaveBeenCalled();
+      await gw.stop();
+    } finally {
+      // 状态目录跨用例共享，清掉持久化标记避免影响后续用例的清理语义
+      fs.rmSync(configPath, { force: true });
+    }
+  });
+
+  test("卸载成功后持久化当前版本标记（跨会话下次启动跳过）", async () => {
+    const configPath = path.join(h.stateDir, "cryoclaw.config.json");
+    try {
+      const { GatewayProcess } = await freshModule();
+      const gw = new GatewayProcess({ token: "t" });
+      await gw.start();
+      expect(gw.getState()).toBe("running");
+      await gw.stop();
+      const persisted = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+      expect(persisted.gatewayDaemonCleanedForVersion).toBe("9.9.9-test");
+    } finally {
+      fs.rmSync(configPath, { force: true });
+    }
   });
 });
 

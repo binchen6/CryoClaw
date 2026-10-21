@@ -313,7 +313,7 @@
 | `gitPull(cwd)` | `git:pull` | invoke（R58） |
 | `gitDiscard(cwd, paths)` | `git:discard` | invoke（R58，destructive） |
 | `gitClean(cwd, paths)` | `git:clean` | invoke（R58，destructive） |
-| `gitChangeStats(cwd, paths)` | `git:change-stats` | invoke（只读；本轮改动胶囊行数统计） |
+| `gitChangeStats(cwd, paths)` | `git:change-stats` | invoke（只读；本轮改动胶囊与消息底部「已编辑」卡片的行数统计） |
 
 > 全部通道 `assertTrustedIpcSender` 校验 + `cwd` 必须 ∈ workspace 白名单根
 > （`workspace-ipc.ts resolveAllowedDir`：path 校验 + realpath 复核防 symlink）。

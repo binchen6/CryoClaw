@@ -22,6 +22,7 @@ export default defineConfig({
       "src/openclaw-state-import-lifecycle.test.ts",
       "src/gateway-lifecycle.test.ts",
       "src/gateway-process.test.ts",
+      "src/windows-hide.test.ts",
       "src/agent-db-migration.test.ts",
       "src/analytics.test.ts",
       "src/memory-workspace.test.ts",

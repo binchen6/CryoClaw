@@ -765,20 +765,26 @@ function patchPluginNativeAsarHost(gatewayDir) {
     const file = path.join(directory, name);
     let source = fs.readFileSync(file, "utf8");
     if (source.includes("/* cryoclaw-native-asar-host */")) { patched++; continue; }
-    const marker = "if (fs.existsSync(candidate)) return fs.realpathSync(candidate);";
-    if (!source.includes("function resolveNativeHost(filename) {") || !source.includes(marker)) throw new Error("Native plugin host resolver changed; review ASAR compatibility");
-    source = source.replace(marker, "const resolved = cryoclawResolveNativeHostPath(candidate);\n\t\tif (resolved) return resolved;");
-    source = source.replaceAll("fs.realpathSync(link)", "cryoclawResolveNativeHostPath(link)");
+    // 双形态兼容：patchWindowsPluginCanonicalPaths 先跑时会把所有 fs.realpathSync(
+    // 重写为 cryoclawPluginRealpath(（新形态）；该补丁未命中（无 withPluginSourceFile）
+    // 时保持原始 fs.realpathSync（旧形态）。helper 的普通路径 realpath 委托对应形态，
+    // junction→asar 穿透兜底两种形态都需要。
+    const markerNew = "if (fs.existsSync(candidate)) return cryoclawPluginRealpath(candidate);";
+    const markerOld = "if (fs.existsSync(candidate)) return fs.realpathSync(candidate);";
+    const realpathFn = source.includes(markerNew) ? "cryoclawPluginRealpath" : source.includes(markerOld) ? "fs.realpathSync" : null;
+    if (!source.includes("function resolveNativeHost(filename) {") || !realpathFn) throw new Error("Native plugin host resolver changed; review ASAR compatibility");
+    source = source.replace(realpathFn === "cryoclawPluginRealpath" ? markerNew : markerOld, "const resolved = cryoclawResolveNativeHostPath(candidate);\n\t\tif (resolved) return resolved;");
+    source = source.replaceAll(`${realpathFn}(link)`, "cryoclawResolveNativeHostPath(link)");
     source += `
 /* cryoclaw-native-asar-host */
 function cryoclawResolveNativeHostPath(candidate) {
-  try { return fs.realpathSync(candidate); } catch {}
+  try { return ${realpathFn}(candidate); } catch {}
   try {
     if (!fs.lstatSync(candidate).isSymbolicLink()) return;
     const target = path.resolve(path.dirname(candidate), fs.readlinkSync(candidate));
     if (!/\\.asar[\\\\/]node_modules[\\\\/]openclaw$/i.test(target)) return;
     if (!fs.statSync(target).isDirectory()) return;
-    return fs.realpathSync(target);
+    return ${realpathFn}(target);
   } catch { return; }
 }
 

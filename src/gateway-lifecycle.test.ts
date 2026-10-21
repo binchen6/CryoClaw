@@ -1,11 +1,14 @@
 // gateway-lifecycle.test.ts — GatewayProcess 生命周期状态转移判定
-// （P0-1 doStart 预启动与 stop() 竞态、P0-2 崩溃重启双链、L2 tasklist fail-closed）
+// （P0-1 doStart 预启动与 stop() 竞态、P0-2 崩溃重启双链、L2 tasklist fail-closed、
+// 健康超时宽限续等、daemon 卸载按版本持久化跳过）
 // 纯函数抽出（对齐 gateway-crash-restart.ts 模式），不依赖实例状态。
 import { describe, expect, test } from "vitest";
 import {
   shouldAbortStartAfterPrestart,
   shouldForceResetHalfDead,
   shouldFireCrashOnStartingExit,
+  shouldExtendHealthGrace,
+  shouldSkipGatewayDaemonCleanup,
   parseTasklistImageName,
   isPlausibleGatewayImage,
   isPlausiblyOwnGatewayFromTasklist,
@@ -120,5 +123,35 @@ describe("portWaitDelayMs（T4 端口等待退避）", () => {
   });
   test("负 attempt 不产生非法间隔", () => {
     expect(portWaitDelayMs(-1)).toBe(100);
+  });
+});
+
+describe("shouldExtendHealthGrace（健康主超时后是否宽限续等）", () => {
+  test("子进程仍存活且未用过宽限 → 续等（慢热子进程，误杀会留下首启失败假象）", () => {
+    expect(shouldExtendHealthGrace(true, false)).toBe(true);
+  });
+
+  test("子进程已死 → 不续等（启动已实质失败，续等只会拖长失败显现）", () => {
+    expect(shouldExtendHealthGrace(false, false)).toBe(false);
+    expect(shouldExtendHealthGrace(false, true)).toBe(false);
+  });
+
+  test("已用过宽限 → 不重复进入（doStart 至多宽限一轮）", () => {
+    expect(shouldExtendHealthGrace(true, true)).toBe(false);
+  });
+});
+
+describe("shouldSkipGatewayDaemonCleanup（daemon 卸载跳过判定）", () => {
+  test("会话级标记已完成 → 跳过（内存快路径）", () => {
+    expect(shouldSkipGatewayDaemonCleanup(true, undefined, "1.2.3")).toBe(true);
+  });
+
+  test("持久化标记的版本等于当前版本 → 跳过（跨会话生效）", () => {
+    expect(shouldSkipGatewayDaemonCleanup(false, "1.2.3", "1.2.3")).toBe(true);
+  });
+
+  test("版本不匹配或缺失 → 执行卸载（应用升级后重新清理旧版本残留）", () => {
+    expect(shouldSkipGatewayDaemonCleanup(false, "1.2.2", "1.2.3")).toBe(false);
+    expect(shouldSkipGatewayDaemonCleanup(false, undefined, "1.2.3")).toBe(false);
   });
 });

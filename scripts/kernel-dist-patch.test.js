@@ -94,6 +94,31 @@ test("native companion host resolution preserves exact host checks across ASAR j
   symlink=false;assert.equal(context.cryoclawResolveNativeHostPath(candidate),undefined);
 });
 
+test("native companion host patch also accepts the canonical-paths rewritten form (cryoclawPluginRealpath)",t=>{
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),"cryo-native-host-new-"));
+  t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+  const dist=path.join(root,"node_modules/openclaw/dist");fs.mkdirSync(dist,{recursive:true});
+  const file=path.join(dist,"plugin-generation-artifact-test.mjs");
+  // 新形态：patchWindowsPluginCanonicalPaths 已把 fs.realpathSync( 全部重写为 cryoclawPluginRealpath(
+  fs.writeFileSync(file,'function resolveNativeHost(filename) {\nfor(const candidate of []) { if (fs.existsSync(candidate)) return cryoclawPluginRealpath(candidate); }\n}\nfunction check(link,hostRoot) { if (cryoclawPluginRealpath(link) !== hostRoot) throw new Error("host mismatch"); }');
+  assert.equal(kdp.patchPluginNativeAsarHost(root),1);
+  const patched=fs.readFileSync(file,"utf8");assert.equal(kdp.patchPluginNativeAsarHost(root),1);assert.equal(fs.readFileSync(file,"utf8"),patched);
+  assert.ok(patched.includes("const resolved = cryoclawResolveNativeHostPath(candidate);"));
+  assert.ok(patched.includes("cryoclawResolveNativeHostPath(link)"));
+  // helper 普通路径必须委托 cryoclawPluginRealpath 而非裸 fs.realpathSync
+  const helper=patched.slice(patched.indexOf("/* cryoclaw-native-asar-host */"));
+  assert.ok(!helper.includes("fs.realpathSync("));
+  const vm=require("node:vm");let link=path.join(root,"gateway.asar","node_modules","openclaw"),symlink=true,nativeCalls=0;
+  const pluginRealpath=(p)=>{nativeCalls++;if(p===link)return link;throw Error("unresolved junction");};
+  const io={lstatSync(){return {isSymbolicLink:()=>symlink};},readlinkSync(){return link;},statSync(){return {isDirectory:()=>true};}};
+  const context=vm.createContext({fs:io,path,cryoclawPluginRealpath:pluginRealpath});vm.runInContext(helper,context);
+  const candidate=path.join(root,"capture/node_modules/openclaw");
+  assert.equal(context.cryoclawResolveNativeHostPath(candidate),link);
+  assert.ok(nativeCalls>=1,"junction 回退终点也应走 cryoclawPluginRealpath");
+  link=path.join(root,"unrelated");assert.equal(context.cryoclawResolveNativeHostPath(candidate),undefined);
+  symlink=false;assert.equal(context.cryoclawResolveNativeHostPath(candidate),undefined);
+});
+
 test("plugin artifact hashes observe unpacked identities without changing ordinary roots",async()=>{
   const root=fs.mkdtempSync(path.join(os.tmpdir(),"cryoclaw-identity-"));
   try {
