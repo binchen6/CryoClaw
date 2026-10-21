@@ -75,7 +75,8 @@ async function main(argv=process.argv) {
     const page=await waitForPageTarget(port);assert.ok(page,'App page target');
     ({ws,cdp}=await connect(page));
     await cdp.send('Page.bringToFront');report.phase='app-ready';
-    assert.ok(await waitForAppReady(cdp),'App ready');await dismissReleaseNotes(cdp);
+    // Match the production gateway deadline and allow its WebSocket reconnect to finish.
+    assert.ok(await waitForAppReady(cdp,{timeoutMs:process.platform==='win32'?210000:120000}),'App ready');await dismissReleaseNotes(cdp);
     report.phase='gateway-ready';
     assert.ok(await waitForGateway(undefined,60000),'Gateway ready');
     originalAppearance=await cdp.evaluate(`({theme:document.documentElement.dataset.theme,colorScheme:document.documentElement.style.colorScheme})`);
@@ -131,10 +132,12 @@ async function interactions(cdp,capture){
   await cdp.pressEscape();await settle(cdp,true);
   await capture('behavior-confirm-cancel',false,{closed:await cdp.evaluate(`!document.querySelector('[data-confirm-dialog]')`)});
   await taskChecks(cdp,capture);
+  await toolCardsChecks(cdp,capture);
 }
 
 async function taskChecks(cdp,capture){
-  await cdp.evaluate(`(()=>{const a=document.querySelector('openclaw-app');window.__releaseSmoke={a,client:a.client,jobs:a.cronJobs,form:a.cronForm,error:a.cronError,busy:a.cronBusy,settings:a.settings,pending:{}};const s=window.__releaseSmoke;s.jobsFixture=['qa-a','qa-b'].map(id=>({id,name:'任务与长路径 '+id,enabled:false,schedule:{kind:'every',everyMs:90000},payload:{kind:'agentTurn',message:'review '+('long-path/'.repeat(20)),timeoutSeconds:123},delivery:{mode:'none'}}));a.client={request:(m,p)=>m==='cron.list'?Promise.resolve({jobs:s.jobsFixture}):m==='cron.runs'?new Promise(r=>s.pending[p.id]=r):m==='cron.status'?Promise.resolve({enabled:true}):s.client.request(m,p)};a.cronJobs=s.jobsFixture;})()`);
+  await cdp.evaluate(`(()=>{const a=document.querySelector('openclaw-app');window.__releaseSmoke={a,client:a.client,jobs:a.cronJobs,form:a.cronForm,error:a.cronError,busy:a.cronBusy,loading:a.cronLoading,runs:a.cronRuns,runsJobId:a.cronRunsJobId,settings:a.settings,pending:{}};const s=window.__releaseSmoke;s.jobsFixture=['qa-a','qa-b'].map(id=>({id,name:'任务与长路径 '+id,enabled:false,schedule:{kind:'every',everyMs:90000},payload:{kind:'agentTurn',message:'review '+('long-path/'.repeat(20)),timeoutSeconds:123},delivery:{mode:'none'}}));a.client=new Proxy(s.client,{get:(target,key)=>key==='request'?((m,p)=>m==='cron.list'?Promise.resolve({jobs:s.jobsFixture}):m==='cron.runs'?(p.scope==='all'?Promise.resolve({entries:[]}):new Promise(r=>s.pending[p.id]=r)):m==='cron.status'?Promise.resolve({enabled:true}):target.request(m,p)):typeof target[key]==='function'?target[key].bind(target):target[key]});a.cronJobs=s.jobsFixture;a.cronLoading=false;a.cronBusy=false;a.cronError=null;a.cronRuns=[];a.cronRunsJobId=null;a.requestUpdate();})()`);
+  await settle(cdp);
   try{
     await click(cdp,`document.querySelectorAll('.oc-rail__nav .oc-rail__item')[1]`);
     await click(cdp,`document.querySelectorAll('.ts-tabs [role=tab]')[1]`);
@@ -151,7 +154,21 @@ async function taskChecks(cdp,capture){
       await capture(`behavior-cron-form-${width}`,true,{...checks,roundTrip});
     }
   }finally{
-    await cdp.evaluate(`(()=>{const s=window.__releaseSmoke;if(!s)return;Object.assign(s.a,{client:s.client,cronJobs:s.jobs,cronForm:s.form,cronError:s.error,cronBusy:s.busy,settings:s.settings});s.a.requestUpdate();delete window.__releaseSmoke;})()`);
+    await cdp.evaluate(`(()=>{const s=window.__releaseSmoke;if(!s)return;Object.assign(s.a,{client:s.client,cronJobs:s.jobs,cronForm:s.form,cronError:s.error,cronBusy:s.busy,cronLoading:s.loading,cronRuns:s.runs,cronRunsJobId:s.runsJobId,settings:s.settings});s.a.requestUpdate();delete window.__releaseSmoke;})()`);
+  }
+}
+
+
+async function toolCardsChecks(cdp,capture){
+  await click(cdp,`document.querySelectorAll('.oc-rail__nav .oc-rail__item')[0]`);
+  await cdp.evaluate(`(()=>{const a=document.querySelector('openclaw-app');window.__toolCardsSmoke={a,messages:a.chatMessages,tools:a.chatToolMessages};a.chatMessages=[{role:'assistant',content:[{type:'toolCall',id:'qa-tool',name:'read',arguments:{path:'qa.txt'}}],timestamp:1},{role:'tool_result',tool_call_id:'qa-tool',content:[{type:'text',text:'fixture contents'}],timestamp:2},{role:'toolResult',content:[{type:'toolCall',name:'exec',arguments:{command:'pwd'},text:''}],timestamp:3}];a.chatToolMessages=[];a.requestUpdate();})()`);
+  try{
+    await settle(cdp);
+    await cdp.evaluate(`document.querySelectorAll('.chat-tools-collapse').forEach(el=>el.open=true)`);await settle(cdp);
+    const checks=await cdp.evaluate(`(()=>{const cards=[...document.querySelectorAll('.chat-tool-card')];return {oneCardPerInvocation:cards.length===2,noSyntheticTool:cards.every(el=>el.querySelector('.chat-tool-card__label')?.textContent.trim()!=='Tool'),resultPreserved:cards.some(el=>el.textContent.includes('fixture contents'))};})()`);
+    await capture('behavior-tool-cards',true,checks);
+  }finally{
+    await cdp.evaluate(`(()=>{const s=window.__toolCardsSmoke;if(!s)return;s.a.chatMessages=s.messages;s.a.chatToolMessages=s.tools;s.a.requestUpdate();delete window.__toolCardsSmoke;})()`);
   }
 }
 

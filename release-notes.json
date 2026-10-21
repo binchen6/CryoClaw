@@ -1,5 +1,12 @@
 [
   {
+    "version": "2026.1021.0",
+    "notes": {
+      "zh": "技能与插件支持本地目录导入和本地文档详情；本地项目不参与更新检查。插件更新检查直接查询市场或 npm，支持逐项检查、更新和详情；技能更新使用正确的 update 命令。修复 ASAR 内核跳过 OpenClaw SDK 链接导致 tavily、企业微信更新失败的问题。市场请求合并在途读取，国内镜像延迟竞速，下载沿用可达来源；软件更新直接读取发布清单，并支持 HTTPS 镜像目录。外观页增加双模式文字对比度检查，修复预览保存的明暗模式和主题库损坏保护，统一折叠与主题切换动效，精简 Agent 主题设计流程。 重做 Agent 主题设计入口：主描述、配色方向卡、可折叠精细设置、参考图侧栏及确认流程；离开页面后保留设计草稿。修复启动时搜索凭据元数据误加载完整插件运行时造成的长时间等待。 修复工具调用合并后多出的空白 Tool 卡片、缺名事件覆盖工具名及历史结果配对问题。",
+      "en": "Import local skill and plugin folders and read their documentation locally; local items stay outside update checks. Plugin checks query the marketplace or npm directly, with per-item checks, updates and details. Skill upgrades use the update command. Fix ASAR OpenClaw SDK links required by Tavily and WeCom plugin updates. Marketplace reads share in-flight requests and race the existing China mirror after a short delay; skill downloads reuse the reachable source. App updates read release manifests directly and support HTTPS mirror directories. Appearance adds paired-palette contrast checks, correct preview mode persistence and corrupt-library protection, smoother disclosures and theme transitions, and a shorter Agent theme workflow. Redesign the Agent theme brief with a focused prompt, palette direction cards, optional fine controls, reference sidebar and clear preview handoff. Preserve the brief across navigation. Read trusted search metadata through its public contract to avoid unrelated runtime loading at startup. Fix empty duplicate Tool cards, preserve names on incremental tool events and correctly pair historical tool results."
+    }
+  },
+  {
     "version": "2026.1020.0",
     "notes": {
       "zh": "优化工作空间、用量和语音的首次打开：增加空闲预加载、连接隔离缓存、在途请求合并与写后刷新；工作空间直接读取本地路径上下文。重做首次使用引导：具名进度、安装检查重试、模型验证与保存分阶段反馈、在途表单保护、可恢复的登录和启动流程、持续错误提示及窄窗操作栏。完善任务编辑的启用状态、描述、超时、投递、时区和精确间隔保留，修复旧请求覆盖和无操作保存。完成四轮布局、三轮交互及多轮功能调试。四层全量测试统一编排、有限并发和独立日志；UI发版门禁合并为一次启动，保留操作等待、真实数据就绪和关键失败场景验收。",

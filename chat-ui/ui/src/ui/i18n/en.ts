@@ -155,6 +155,8 @@ export const enDict: Record<string, string> = {
 
   // Extensions · Plugin updates (R91)
   "ext.plugins.checkUpdates": "Check for updates",
+  "ext.importLocal": "Import local folder",
+  "ext.updateNotes": "What changed",
   "ext.plugins.checking": "Checking…",
   "ext.plugins.upToDate": "All trackable plugins are up to date",
   "ext.plugins.noTrackable": "No market-tracked plugins installed",

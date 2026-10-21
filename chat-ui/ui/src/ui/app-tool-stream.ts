@@ -736,7 +736,10 @@ export function handleAgentEvent(host: ToolStreamHost, payload?: AgentEventPaylo
   if (!toolCallId) {
     return;
   }
-  const name = typeof data.name === "string" ? data.name : "tool";
+  // Incremental/result events may omit the name; keep the identity from start.
+  const name = asNonEmptyString(data.name)?.trim()
+    ?? host.toolStreamById.get(toolCallId)?.name
+    ?? "tool";
   const phase = typeof data.phase === "string" ? data.phase : "";
 
   // update_plan 除走常规 tool card 外，额外同步到独立的计划面板状态

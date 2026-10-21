@@ -74,7 +74,9 @@ declare global {
       skillStoreInstall?: (params?: Record<string, unknown>) => Promise<any>;
       skillStoreUninstall?: (params?: Record<string, unknown>) => Promise<any>;
       skillStoreListInstalled?: () => Promise<any>;
-      skillStoreCheckUpdates?: () => Promise<any>;
+      skillStoreCheckUpdates?: (params?: Record<string, unknown>) => Promise<any>;
+      skillStoreImportLocal?: () => Promise<any>;
+      pluginStoreImportLocal?: () => Promise<any>;
       skillStoreUpdate?: (params?: Record<string, unknown>) => Promise<any>;
       skillStoreDetail?: (params?: Record<string, unknown>) => Promise<any>;
       pluginStoreList?: () => Promise<any>;
@@ -83,7 +85,7 @@ declare global {
       pluginStoreUninstall?: (params?: Record<string, unknown>) => Promise<any>;
       pluginStoreSetEnabled?: (params?: Record<string, unknown>) => Promise<any>;
       // 插件更新/详情/市场浏览（R91）
-      pluginStoreCheckUpdates?: () => Promise<any>;
+      pluginStoreCheckUpdates?: (params?: Record<string, unknown>) => Promise<any>;
       pluginStoreUpdate?: (params?: Record<string, unknown>) => Promise<any>;
       pluginStoreDetail?: (params?: Record<string, unknown>) => Promise<any>;
       pluginStoreMarketBrowse?: (params?: Record<string, unknown>) => Promise<any>;

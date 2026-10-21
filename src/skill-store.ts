@@ -1,10 +1,12 @@
-import { app, ipcMain } from "electron";
+import { app, ipcMain, dialog } from "electron";
+import {importLocalSkill,isLocalSkill} from "./local-extension-import";
 import {
   resolveUserStateDir,
   resolveUserBinDir,
   resolveNodeBin,
   resolveNodeExtraEnv,
   resolveClawhubEntry,
+  resolveGatewayPackageDir,
   IS_WIN,
 } from "./constants";
 import { execFile } from "child_process";
@@ -55,6 +57,7 @@ export type SkillSummary = {
 };
 
 export type SkillDetail = SkillSummary & {
+  changelog?: string;
   readme: string;
   author: string;
   tags: string[];
@@ -168,13 +171,57 @@ const JSON_GET_MAX_BYTES = 8 * 1024 * 1024;
 // 超时 / 8MB 上限 / 状态码守卫实现，避免安全约束在两个文件里各自演化。
 // R92：非 2xx 时错误对象附带 statusCode/bodyText——409 AMBIGUOUS_SKILL_SLUG 的
 // 歧义清单就在 body 里，调用方需要读到它做自动消歧。
+const jsonRequests = new Map<string, Promise<unknown>>();
+/** Some mirror endpoints return an API error inside HTTP 200. Never let that win a race. */
+export function assertRegistryPayload(value:unknown):void {
+  const payload=value as {ResponseMetadata?:{Error?:{Message?:string}}}|null;
+  if(payload?.ResponseMetadata?.Error)throw new Error(payload.ResponseMetadata.Error.Message || "Registry API error");
+}
+let preferredPublicRegistry: {url:string;at:number} | undefined;
+/** Share concurrent reads; public ClawHub requests try the existing CN mirror after 1s. */
 export function jsonGet<T>(url: string): Promise<T> {
+  const pending = jsonRequests.get(url);
+  if (pending) return pending as Promise<T>;
+  const request = (async () => {
+    const primary = jsonGetDirect<T>(url);
+    const parsed = new URL(url);
+    if (parsed.origin !== "https://clawhub.ai") return primary;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const mirror = new Promise<T>((resolve, reject) => {
+      timer = setTimeout(() => {
+        void jsonGetDirect<T>(`${CN_CLAWHUB_MIRROR}${parsed.pathname}${parsed.search}`).then(resolve, reject);
+      }, 1000);
+    });
+    try {
+      const winner = await Promise.any([primary.then(data=>({data,registry:parsed.origin})), mirror.then(data=>({data,registry:CN_CLAWHUB_MIRROR}))]);
+      preferredPublicRegistry={url:winner.registry,at:Date.now()};
+      return winner.data;
+    }
+    catch { return await primary; }
+    finally { clearTimeout(timer); }
+  })();
+  jsonRequests.set(url, request);
+  void request.finally(() => jsonRequests.delete(url)).catch(() => {});
+  return request;
+}
+
+function jsonGetDirect<T>(url: string, redirects=0, expires=Date.now()+FETCH_TIMEOUT_MS): Promise<T> {
   debugLog(`GET ${url}`);
   const startMs = Date.now();
   return new Promise((resolve, reject) => {
     const parsed = new URL(url);
+    if(Date.now()>=expires){reject(new Error("request timeout"));return;}
     const mod = parsed.protocol === "https:" ? https : http;
     const req = mod.get(url, { timeout: FETCH_TIMEOUT_MS }, (res) => {
+      if(res.statusCode && [301,302,303,307,308].includes(res.statusCode) && res.headers.location){
+        res.resume();
+        try{
+          const next=new URL(res.headers.location,url);
+          if(redirects>=4 || next.username || next.password || (next.protocol!=="https:" && !(next.protocol==="http:" && ["127.0.0.1","localhost","[::1]"].includes(next.hostname))))throw Error("Invalid registry redirect");
+          void jsonGetDirect<T>(next.href,redirects+1,expires).then(resolve,reject);
+        }catch(error){reject(error);}
+        return;
+      }
       if (res.statusCode && (res.statusCode < 200 || res.statusCode >= 300)) {
         debugLog(`GET ${url} → ${res.statusCode} (${Date.now() - startMs}ms)`);
         // 非 2xx 也读回 body（限 64KB）再 reject：409 等业务错误的信息在 body
@@ -212,7 +259,8 @@ export function jsonGet<T>(url: string): Promise<T> {
       // 超 8MB 后 req.destroy()，在途的 socket error 事件（如 ECONNRESET）在
       // reject 已发生后再无监听器会走 uncaughtException——补一个空监听即可
       // （promise 已 settle，重入 reject 幂等无副作用）
-      res.on("error", () => {});
+      res.on("error", reject);
+      res.on("aborted", () => reject(new Error("response truncated")));
       res.on("data", (chunk: Buffer) => {
         totalBytes += chunk.length;
         if (totalBytes > JSON_GET_MAX_BYTES) {
@@ -226,13 +274,17 @@ export function jsonGet<T>(url: string): Promise<T> {
         const body = Buffer.concat(chunks).toString("utf-8");
         debugLog(`GET ${url} → ${res.statusCode} ${body.length}B (${Date.now() - startMs}ms)\n${body}`);
         try {
-          resolve(JSON.parse(body) as T);
+          const data=JSON.parse(body) as T;
+          assertRegistryPayload(data);
+          resolve(data);
         } catch (err) {
           debugLog(`GET ${url} → JSON parse error: ${err}`);
           reject(err);
         }
       });
     });
+    const deadline = setTimeout(() => req.destroy(new Error("request timeout")), Math.max(1,expires-Date.now()));
+    req.once("close", () => clearTimeout(deadline));
     req.on("error", (err) => {
       debugLog(`GET ${url} → error: ${err.message} (${Date.now() - startMs}ms)`);
       reject(err);
@@ -370,6 +422,7 @@ export function normalizeSkillDetail(raw: any): SkillDetail {
   return {
     ...mapItem({ ...s, owner: ownerHandle }),
     readme: s.readme ?? (typeof raw?.metadata?.setup === "string" ? raw.metadata.setup : ""),
+    ...(typeof raw?.latestVersion?.changelog==="string"?{changelog:raw.latestVersion.changelog}:typeof s.changelog==="string"?{changelog:s.changelog}:{}),
     author: ownerHandle,
     tags: Array.isArray(s.tags) ? s.tags.filter((t: unknown): t is string => typeof t === "string") : [],
   };
@@ -475,10 +528,21 @@ function skillsBaseDir(): string {
 }
 
 // 执行 clawhub CLI 命令，返回 stdout
+export function createAnonymousClawhubConfig(stateDir:string,registry:string):{configPath:string;cleanup:()=>void} {
+  const tmp=path.join(stateDir,"tmp");fs.mkdirSync(tmp,{recursive:true});
+  const base=fs.realpathSync(tmp),directory=fs.mkdtempSync(path.join(base,"clawhub-public-"));
+  const configPath=path.join(directory,"config.json");
+  fs.writeFileSync(configPath,JSON.stringify({registry}),{mode:0o600});
+  return {configPath,cleanup:()=>{const relative=path.relative(base,path.resolve(directory));if(!relative || relative.startsWith("..") || path.isAbsolute(relative))throw Error("Invalid temporary registry configuration path");fs.rmSync(directory,{recursive:true,force:true});}};
+}
+
 function execClawhub(args: string[]): Promise<{ stdout: string; stderr: string }> {
   const nodeBin = resolveNodeBin();
   const clawhubEntry = resolveClawhubEntry();
-  const registry = registryUrl();
+  const configured = registryUrl();
+  const registry = configured === "https://clawhub.ai" && preferredPublicRegistry && Date.now()-preferredPublicRegistry.at < 10*60_000 ? preferredPublicRegistry.url : configured;
+  // The CLI otherwise forwards its saved token to any --registry target.
+  const anonymous=registry!==configured?createAnonymousClawhubConfig(resolveUserStateDir(),registry):undefined;
   const workdir = workspaceDir();
 
   // 构建完整参数：node clawhub-entry --workdir <workdir> --registry <registry> --no-input <args>
@@ -499,6 +563,7 @@ function execClawhub(args: string[]): Promise<{ stdout: string; stderr: string }
       env: {
         ...process.env,
         ...resolveNodeExtraEnv(),
+        ...(anonymous?{CLAWHUB_CONFIG_PATH:anonymous.configPath}:{}),
         // 显式对齐 gateway spawn 的状态目录（R91 审查修复）：HOME 歧义时
         // clawhub 会解析到另一个 ~/.openclaw，安装/卸载落错目录
         OPENCLAW_STATE_DIR: resolveUserStateDir(),
@@ -506,6 +571,7 @@ function execClawhub(args: string[]): Promise<{ stdout: string; stderr: string }
       },
       windowsHide: true,
     }, (err, stdout, stderr) => {
+      try{anonymous?.cleanup();}catch{log.warn("[skill-store] Temporary public registry configuration cleanup failed");}
       const out = typeof stdout === "string" ? stdout : "";
       const errOut = typeof stderr === "string" ? stderr : "";
       debugLog(`exec result: exit=${err ? (err as any).code ?? "error" : 0} stdout=${out.length}B stderr=${errOut.length}B`);
@@ -574,6 +640,14 @@ async function uninstallSkill(slug: string): Promise<{ success: boolean; message
     // 该名字未经白名单校验——复核一次，防止 "--flag" 形态目录注入 clawhub 参数
     const resolvedCheck = validateSkillSlug(resolved);
     if (!resolvedCheck.ok) return { success: false, message: resolvedCheck.error };
+    if(isLocalSkill(skillsBaseDir(),resolved)){
+      const base=fs.realpathSync(skillsBaseDir());
+      const target=fs.realpathSync(path.join(base,resolved));
+      const relative=path.relative(base,target);
+      if(relative.startsWith("..") || path.isAbsolute(relative) || !relative)throw Error("Invalid local skill directory");
+      fs.rmSync(target,{recursive:true});
+      return {success:true};
+    }
     debugLog(`uninstall: "${slug}" → resolved="${resolved}"`);
     await execClawhub(["uninstall", "--yes", resolved]);
     return { success: true };
@@ -601,6 +675,23 @@ function listInstalledSkills(): string[] {
 
 // ── 技能更新（检查 + 升级）──
 
+/** Local details never depend on marketplace availability. Reject directory escapes. */
+export function readLocalSkillDetail(slug: string, roots = [skillsBaseDir(), path.join(resolveUserStateDir(), "skills"), path.join(app.getAppPath(), "builtin-skills"), path.join(resolveGatewayPackageDir(), "skills")]): SkillDetail | null {
+  if (!validateSkillSlug(slug).ok) return null;
+  for (const root of roots) {
+    try {
+      const base = fs.realpathSync(root);
+      const file = fs.realpathSync(path.join(base, slug, "SKILL.md"));
+      const relative = path.relative(base, file);
+      if (relative.startsWith("..") || path.isAbsolute(relative) || fs.statSync(file).size > 512 * 1024) continue;
+      const readme = fs.readFileSync(file, "utf8");
+      const field = (key: string) => readme.match(new RegExp(`^${key}:\\s*["']?(.+?)["']?\\s*$`, "m"))?.[1]?.trim() ?? "";
+      return { slug, name: field("name") || slug, description: field("description"), version: readInstalledSkillVersions(root)[slug] ?? "", downloads: 0, highlighted: false, updatedAt: fs.statSync(file).mtime.toISOString(), author: "", tags: [], readme };
+    } catch { /* Try the next local skill root. */ }
+  }
+  return null;
+}
+
 // 数字段版本比较（1.10.0 > 1.9.9）：a<b → -1，相等 → 0，a>b → 1
 function compareSkillVersions(a: string, b: string): number {
   const pa = a.split(".").map((s) => parseInt(s, 10) || 0);
@@ -618,7 +709,8 @@ export function readInstalledSkillVersions(base?: string): Record<string, string
   const root = base ?? skillsBaseDir();
   const out: Record<string, string> = {};
   try {
-    const lock = JSON.parse(fs.readFileSync(path.join(root, ".clawhub", "lock.json"), "utf-8"));
+    const localLock=path.join(root,".clawhub","lock.json");
+    const lock = JSON.parse(fs.readFileSync(fs.existsSync(localLock)?localLock:path.join(path.dirname(root),".clawhub","lock.json"), "utf-8"));
     const skills = lock?.skills;
     if (skills && typeof skills === "object") {
       for (const [slug, entry] of Object.entries(skills as Record<string, unknown>)) {
@@ -651,10 +743,9 @@ export interface SkillUpdateEntry {
   latest: string;
 }
 
-// 检查更新：已安装技能逐个查 registry 最新版（并发 4；单条目失败跳过不炸整批）。
-// 版本未知（lockfile/_meta 都没有）的条目按「可能过旧」纳入——current=null 让 UI 提示。
-export async function checkSkillUpdates(): Promise<SkillUpdateEntry[]> {
-  const installed = listInstalledSkills();
+// 只检查市场追踪且版本已知的技能；并发 4，逐条记录检查失败。
+export async function checkSkillUpdates(onlySlug?: string, failures: string[] = []): Promise<SkillUpdateEntry[]> {
+  const installed = listInstalledSkills().filter(slug => (!onlySlug || slug === onlySlug) && !isLocalSkill(skillsBaseDir(),slug));
   if (installed.length === 0) return [];
   const versions = readInstalledSkillVersions();
   const updates: SkillUpdateEntry[] = [];
@@ -663,14 +754,17 @@ export async function checkSkillUpdates(): Promise<SkillUpdateEntry[]> {
     const batch = installed.slice(i, i + CONCURRENCY);
     const results = await Promise.all(
       batch.map(async (slug) => {
+        if (!versions[slug]) return null;
         try {
           const detail = await getSkillDetail(slug);
           const latest = detail.version?.trim() ?? "";
           if (!latest) return null;
           const current = versions[slug] ?? null;
-          if (current && compareSkillVersions(latest, current) <= 0) return null;
+          // A manually copied skill with no version is not evidence of an update.
+          if (!current || compareSkillVersions(latest, current) <= 0) return null;
           return { slug, current, latest } satisfies SkillUpdateEntry;
         } catch {
+          failures.push(slug);
           return null; // 单条查询失败（下架/网络抖动）跳过
         }
       }),
@@ -686,20 +780,24 @@ export interface SkillUpdateResult {
   failed: { slug: string; message: string }[];
 }
 
-// 升级技能：clawhub install <slug> 即拉最新版。串行执行（clawhub 对 skills 目录
+// 升级技能：clawhub update <slug>。串行执行（clawhub 对 skills 目录
 // 有锁语义，并发 install 会相互踩踏）；单个失败不中断后续。
 async function updateSkills(slugs: string[]): Promise<SkillUpdateResult> {
   const updated: string[] = [];
   const failed: { slug: string; message: string }[] = [];
   for (const slug of slugs) {
+    if(isLocalSkill(skillsBaseDir(),slug)){failed.push({slug,message:"本地技能不支持更新 / Local skills do not support updates"});continue;}
     const check = validateSkillSlug(slug);
     if (!check.ok) {
       failed.push({ slug, message: check.error });
       continue;
     }
-    const r = await installSkill(slug);
-    if (r.success) updated.push(slug);
-    else failed.push({ slug, message: r.message ?? "install failed" });
+    try {
+      await execClawhub(["update", slug]);
+      updated.push(slug);
+    } catch (err) {
+      failed.push({ slug, message: err instanceof Error ? err.message : String(err) });
+    }
   }
   return { success: failed.length === 0, updated, failed };
 }
@@ -729,6 +827,15 @@ export async function warmSkillListCache(): Promise<void> {
 
 // 注册技能商店相关 IPC handler
 export function registerSkillStoreIpc(): void {
+  ipcMain.handle("skill-store:import-local", async event => {
+    if(!assertTrustedIpcSender(event,"skill-store:import-local"))throw Error("IPC sender not trusted");
+    try{
+      const picked=await dialog.showOpenDialog({title:"导入本地技能 / Import local skill",properties:["openDirectory"]});
+      if(picked.canceled || !picked.filePaths[0])return {success:true,canceled:true};
+      const slug=importLocalSkill(picked.filePaths[0],skillsBaseDir());
+      skillListCache.clear();return {success:true,data:{slug}};
+    }catch(error){return {success:false,message:error instanceof Error?error.message:String(error)};}
+  });
   ipcMain.handle("skill-store:list", async (_event, params) => {
     if (!assertTrustedIpcSender(_event, "skill-store:list")) throw new Error("IPC sender not trusted");
     debugLog(`ipc list sort=${params?.sort} limit=${params?.limit} cursor=${params?.cursor ?? "none"}`);
@@ -790,16 +897,19 @@ export function registerSkillStoreIpc(): void {
     if (!assertTrustedIpcSender(event, "skill-store:list-installed")) throw new Error("IPC sender not trusted");
     const installed = listInstalledSkills();
     debugLog(`ipc list-installed → [${installed.join(", ")}]`);
-    return { success: true, data: installed };
+    return { success: true, data: installed, local: installed.filter(slug=>isLocalSkill(skillsBaseDir(),slug)) };
   });
 
   // 检查已安装技能的更新（registry 最新版 vs 本地 lockfile/_meta 版本）
-  ipcMain.handle("skill-store:check-updates", async (event) => {
+  ipcMain.handle("skill-store:check-updates", async (event, params) => {
     if (!assertTrustedIpcSender(event, "skill-store:check-updates")) throw new Error("IPC sender not trusted");
     try {
-      const updates = await checkSkillUpdates();
+      const slug = typeof params?.slug === "string" ? params.slug : undefined;
+      if (slug && !validateSkillSlug(slug).ok) return { success: false, message: "invalid skill slug" };
+      const failed: string[] = [];
+      const updates = await checkSkillUpdates(slug, failed);
       debugLog(`ipc check-updates → ${updates.length} 项可更新`);
-      return { success: true, data: { updates, checkedAt: new Date().toISOString() } };
+      return { success: failed.length === 0, message: failed.length ? `检查失败 / Check failed: ${failed.join(", ")}` : undefined, data: { updates, failed, checkedAt: new Date().toISOString() } };
     } catch (err: any) {
       debugLog(`ipc check-updates → error: ${err?.message}`);
       return { success: false, message: err?.message ?? String(err) };
@@ -840,6 +950,11 @@ export function registerSkillStoreIpc(): void {
     const owner = typeof params?.owner === "string" && params.owner.trim() ? params.owner.trim() : undefined;
     debugLog(`ipc detail slug=${slug} owner=${owner ?? "none"}`);
     try {
+      if (params?.local) {
+        const local = readLocalSkillDetail(slug);
+        if (!local) return { success: false, message: "未找到本地 SKILL.md / Local SKILL.md not found" };
+        return { success: true, data: local };
+      }
       const detail = await getSkillDetail(slug, owner);
       return { success: true, data: detail };
     } catch (err: any) {

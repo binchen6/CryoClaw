@@ -231,7 +231,9 @@
 | `skillStoreInstall(params?)` | `skill-store:install` | invoke |
 | `skillStoreUninstall(params?)` | `skill-store:uninstall` | invoke |
 | `skillStoreListInstalled()` | `skill-store:list-installed` | invoke |
-| `skillStoreCheckUpdates()` | `skill-store:check-updates` | invoke（已安装技能的 registry 新版本检查） |
+| `skillStoreCheckUpdates({slug?})` | `skill-store:check-updates` | invoke（支持单技能检查；排除本地目录） |
+| `skillStoreImportLocal()` | `skill-store:import-local` | invoke（系统目录选择；校验并复制 SKILL.md 目录，不覆盖已安装技能） |
+| `pluginStoreImportLocal()` | `plugin-store:import-local` | invoke（系统目录选择；校验插件清单和目录内入口，再交内核安装） |
 | `skillStoreUpdate(params?)` | `skill-store:update` | invoke（升级；slugs 缺省 = 全部可更新项） |
 | `skillStoreDetail(params?)` | `skill-store:detail` | invoke |
 
@@ -244,7 +246,7 @@
 | `pluginStoreInstall(params?)` | `plugin-store:install` | invoke |
 | `pluginStoreUninstall(params?)` | `plugin-store:uninstall` | invoke |
 | `pluginStoreSetEnabled(params?)` | `plugin-store:set-enabled` | invoke（启用/禁用统一写入：entries.enabled + plugins.allow 同步，主进程原子写） |
-| `pluginStoreCheckUpdates()` | `plugin-store:check-updates` | invoke（R93：内核 exit 1 / Failed 行在 stderr 时经 Electron 侧 HTTP 回退；`data.failed` 为回退后仍查不到的插件 id 清单） |
+| `pluginStoreCheckUpdates({id?})` | `plugin-store:check-updates` | invoke（直接检查 ClawHub / npm 元数据；排除本地和内置项，`data.failed` 为检查失败的 id 清单） |
 | `pluginStoreUpdate(params?)` | `plugin-store:update` | invoke |
 | `pluginStoreDetail(params?)` | `plugin-store:detail` | invoke |
 | `pluginStoreMarketBrowse(params?)` | `plugin-store:market-browse` | invoke |

@@ -104,7 +104,9 @@ function extractToolCardsUncached(message: unknown): ToolCard[] {
     });
   }
 
-  if (isToolResultMessage(message) && !cards.some((card) => card.kind === "result")) {
+  // A merged call already contains its result. A toolResult envelope must not
+  // manufacture a second, nameless "Tool / completed" card for the same payload.
+  if (isToolResultMessage(message) && cards.length === 0) {
     const name =
       (typeof m.toolName === "string" && m.toolName) ||
       (typeof m.tool_name === "string" && m.tool_name) ||

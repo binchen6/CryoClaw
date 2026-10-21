@@ -82,6 +82,22 @@ test("spawn ref：非 sessions_spawn 工具 / 非 JSON / 缺 childSessionKey 均
 
 // ── extractToolCards：三态（pending / error）归并 ──
 
+test("merged calls in toolResult envelopes do not acquire a synthetic empty Tool card", () => {
+  for (const role of ["toolResult", "tool_result"]) {
+    const cards = extractToolCards({ role, content: [{ type: "toolCall", name: "read", arguments: { path: "a.ts" }, text: "contents" }] });
+    assert.equal(cards.length, 1);
+    assert.equal(cards[0].name, "read");
+    assert.equal(cards[0].text, "contents");
+  }
+});
+
+test("unnamed orphan results retain real output and failures", () => {
+  const cards = extractToolCards({ role: "toolResult", isError: true, content: [{ type: "text", text: "real failure" }] });
+  assert.equal(cards.length, 1);
+  assert.equal(cards[0].text, "real failure");
+  assert.equal(cards[0].error, "real failure");
+});
+
 test("tool cards：流式 call 消息带 pending → call 卡标记进行中", () => {
   // 与 app-tool-stream.ts::buildToolCallMessage 同构
   const msg = {

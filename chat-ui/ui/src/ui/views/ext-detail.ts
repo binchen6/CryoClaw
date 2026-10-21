@@ -23,6 +23,7 @@ type InspectEntry = { name?: unknown; events?: unknown; names?: unknown; optiona
 type CompatibilityNotice = { code?: unknown; severity?: unknown; message?: unknown };
 
 export type PluginInspectReport = {
+  readme?: unknown;
   plugin?: {
     id?: unknown;
     name?: unknown;
@@ -33,6 +34,7 @@ export type PluginInspectReport = {
     source?: unknown;
     enabled?: unknown;
     status?: unknown;
+    local?: boolean;
     error?: unknown;
     channelIds?: unknown;
     providerIds?: unknown;
@@ -62,6 +64,7 @@ export type PluginInspectReport = {
 };
 
 export type SkillDetailData = {
+  changelog?: unknown;
   slug?: unknown;
   name?: unknown;
   description?: unknown;
@@ -86,6 +89,7 @@ export type MarketPackageDetail = {
     isOfficial?: unknown;
     verificationTier?: unknown;
     readme?: unknown;
+    changelog?: unknown;
     stats?: { downloads?: unknown };
     updatedAt?: unknown;
   };
@@ -175,7 +179,7 @@ export function openPluginDetail(state: AppViewState, plugin: { id: string; name
 }
 
 /** 打开市场包详情（ClawHub package API，R92） */
-export function openMarketPackageDetail(state: AppViewState, pkg: { name: string; displayName?: string }) {
+export function openMarketPackageDetail(state: AppViewState, pkg: { name: string; displayName?: string; installedId?: string }) {
   if (!window.cryoclaw?.pluginStoreMarketDetail) return;
   const token = ++detailToken;
   reviveExtDetailOverlay();
@@ -188,7 +192,7 @@ export function openMarketPackageDetail(state: AppViewState, pkg: { name: string
   state.requestUpdate();
   void (async () => {
     try {
-      const result = await window.cryoclaw!.pluginStoreMarketDetail!({ name: pkg.name });
+      const result = await window.cryoclaw!.pluginStoreMarketDetail!({ name: pkg.name, installedId:pkg.installedId });
       if (token !== detailToken) return;
       if (result?.success && result.data && typeof result.data === "object") {
         marketDetail = result.data as MarketPackageDetail;
@@ -210,6 +214,7 @@ export function openMarketPackageDetail(state: AppViewState, pkg: { name: string
 /** 打开技能详情（ClawHub detail，含 readme；owner 用于多作者 slug 消歧） */
 export function openSkillDetail(state: AppViewState, skill: {
   slug: string;
+  local?: boolean;
   name: string;
   version?: string;
   downloads?: number;
@@ -236,7 +241,7 @@ export function openSkillDetail(state: AppViewState, skill: {
   state.requestUpdate();
   void (async () => {
     try {
-      const result = await window.cryoclaw!.skillStoreDetail!({ slug: skill.slug, owner: skill.author });
+      const result = await window.cryoclaw!.skillStoreDetail!({ slug: skill.slug, owner: skill.author, local: skill.local });
       if (token !== detailToken) return;
       if (result?.success && result.data && typeof result.data === "object") {
         skillDetail = result.data as SkillDetailData;
@@ -359,8 +364,9 @@ function renderPluginDetail(report: PluginInspectReport): TemplateResult {
   return html`
     <div class="ext-detail__grid">
       ${kvRow("ext.detail.version", str(p.version))}
+      ${str(report.readme) ? html`<div class="ext-detail__readme markdown-body">${unsafeHTML(toSanitizedMarkdownHtml(str(report.readme)!))}</div>` : nothing}
       ${kvRow("ext.detail.origin", originLabel(p.origin))}
-      ${kvRow("ext.detail.status", str(p.status) ? html`<span class="oc-tag ${p.status === "error" ? "oc-tag--danger" : "oc-tag--muted"}">${str(p.status)}</span>` : null)}
+      ${!p.local ? kvRow("ext.detail.status", str(p.status) ? html`<span class="oc-tag ${p.status === "error" ? "oc-tag--danger" : "oc-tag--muted"}">${str(p.status)}</span>` : null) : nothing}
       ${kvRow("ext.detail.description", str(p.description))}
       ${capabilities.length > 0
         ? html`<div class="ext-detail__row">
@@ -415,6 +421,7 @@ function renderMarketPackageDetail(meta: { kind: "market-package"; key: string; 
     <div class="ext-detail__grid">
       ${kvRow("ext.detail.package", html`<code class="ext-detail__code">${meta.key}</code>`)}
       ${kvRow("ext.detail.version", str(p.latestVersion))}
+      ${str(p.changelog)?html`<section class="ext-detail__readme-block"><h3>${t("ext.updateNotes")}</h3><div class="markdown-body">${unsafeHTML(toSanitizedMarkdownHtml(str(p.changelog)!))}</div></section>`:nothing}
       ${kvRow("skillStore.author", ownerHandle)}
       ${downloads != null ? kvRow("ext.detail.downloads", formatDownloads(downloads)) : nothing}
       ${!isNaN(updatedMs)
@@ -442,6 +449,7 @@ function renderSkillDetail(meta: ExtDetail & { kind: "skill" }, data: SkillDetai
   return html`
     <div class="ext-detail__grid">
       ${kvRow("skillStore.version", str(data?.version) ?? meta.version ?? null)}
+      ${str(data?.changelog)?html`<section class="ext-detail__readme-block"><h3>${t("ext.updateNotes")}</h3><div class="markdown-body">${unsafeHTML(toSanitizedMarkdownHtml(str(data?.changelog)!))}</div></section>`:nothing}
       ${kvRow("skillStore.author", str(data?.author) ?? meta.author ?? null)}
       ${(typeof data?.downloads === "number" && data.downloads > 0) || (meta.downloads ?? 0) > 0
         ? kvRow("skillStore.downloads", formatDownloads(typeof data?.downloads === "number" ? data.downloads : (meta.downloads ?? 0)))

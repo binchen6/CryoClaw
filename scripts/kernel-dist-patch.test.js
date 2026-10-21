@@ -8,6 +8,74 @@ const os = require("node:os");
 const path = require("node:path");
 
 const kdp = require("./lib/kernel-dist-patch");
+test("Windows native canonical paths retain admission parameters, ASAR routing and failure fallback",t=>{
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),"cryo-canonical-"));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));const dist=path.join(root,"node_modules/openclaw/dist");fs.mkdirSync(dist,{recursive:true});
+  const file=path.join(dist,"plugin-generation-artifact-test.mjs");fs.writeFileSync(file,"function withPluginSourceFile(source, boundary, read) {return admit({rootPath: boundary, rejectHardlinks:false});} function resolve(value){return fs.realpathSync(value);}");
+  assert.equal(kdp.patchWindowsPluginCanonicalPaths(root),1);const source=fs.readFileSync(file,"utf8");assert.equal(kdp.patchWindowsPluginCanonicalPaths(root),1);assert.equal(fs.readFileSync(file,"utf8"),source);
+  const vm=require("node:vm"),platform={platform:"win32"};let nativeCalls=0,ordinaryCalls=0,fail=false;
+  const realpath=()=>{ordinaryCalls++;return "ordinary";};realpath.native=()=>{nativeCalls++;if(fail)throw Error("unresolved");return "native";};const context=vm.createContext({process:platform,fs:{realpathSync:realpath},admit:x=>x});vm.runInContext(source,context);
+  const admitted=context.withPluginSourceFile("file","C:\\plugin");assert.equal(admitted.rootPath,"C:\\plugin");assert.equal(admitted.rootRealPath,"native");assert.equal(admitted.rejectHardlinks,false);
+  assert.equal(context.resolve("C:\\plugin\\file.js"),"native");assert.equal(context.resolve("C:\\gateway.asar\\file.js"),"ordinary");
+  fail=true;assert.equal(context.resolve("C:\\junction\\file.js"),"ordinary");assert.equal(context.cryoclawPluginCanonicalRoot("C:\\junction"),undefined);
+  const before=nativeCalls;platform.platform="linux";assert.equal(context.resolve("/plugin/file.js"),"ordinary");assert.equal(nativeCalls,before);assert.ok(ordinaryCalls>=3);
+});
+test("configured trusted search metadata uses the guarded public loader without activating unrelated plugins",t=>{
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),"cryo-web-metadata-"));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));const dist=path.join(root,"node_modules/openclaw/dist");fs.mkdirSync(dist,{recursive:true});
+  fs.writeFileSync(path.join(dist,"public-artifact-factories-test.mjs"),"");const file=path.join(dist,"runtime-web-tools-test.mjs");fs.writeFileSync(file,"async function resolveBundledWebSearchProviders(params) { return 'fallback'; }");
+  assert.equal(kdp.patchConfiguredWebSearchMetadata(root),1);const source=fs.readFileSync(file,"utf8");assert.equal(kdp.patchConfiguredWebSearchMetadata(root),1);assert.equal(fs.readFileSync(file,"utf8"),source);
+  let calls=0,fail=false;const vm=require("node:vm"),provider={id:"search",label:"Search",hint:"",placeholder:"",signupUrl:"",credentialPath:"config.key",envVars:[],getCredentialValue(){},setCredentialValue(){},createTool(){}};
+  const context=vm.createContext({cryoclawPublicEntries:params=>{calls++;assert.equal(params.owner.rootDir,"/plugin");assert.ok(params.isArtifact(provider));if(fail)throw Error("Invalid artifact");return [provider];}});vm.runInContext(source.slice(source.indexOf("/* cryoclaw-configured-web-metadata */")),context);
+  const params={sourceConfig:{tools:{web:{search:{provider:"search"}}},plugins:{entries:{search:{enabled:true}}}},context:{manifestRegistry:{plugins:[{id:"search",origin:"global",trustedOfficialInstall:true,rootDir:"/plugin"}]}}};
+  assert.equal(context.cryoclawConfiguredWebSearchMetadata(params)[0],provider);assert.equal(calls,1);
+  for(const plugins of [{enabled:false,entries:{search:{enabled:true}}},{entries:{search:{enabled:false}}},{entries:{search:{enabled:true}},allow:["other"]},{entries:{search:{enabled:true}},deny:["search"]}])assert.equal(context.cryoclawConfiguredWebSearchMetadata({...params,sourceConfig:{...params.sourceConfig,plugins}}),null);
+  assert.equal(calls,1);assert.equal(context.cryoclawConfiguredWebSearchMetadata({...params,context:{manifestRegistry:{plugins:[{...params.context.manifestRegistry.plugins[0],trustedOfficialInstall:false}]}}}),null);
+  fail=true;assert.equal(context.cryoclawConfiguredWebSearchMetadata(params),null);
+});
+test("peer-only migration completion requires a repaired link and valid unchanged configuration",t=>{
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),"cryo-peer-migration-"));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+  const dist=path.join(root,"node_modules/openclaw/dist");fs.mkdirSync(dist,{recursive:true});
+  fs.writeFileSync(path.join(dist,"plugin-peer-link-test.mjs"),"");fs.writeFileSync(path.join(dist,"loader-shared-test.mjs"),"");
+  const file=path.join(dist,"plugin-update-config-migration-test.mjs");fs.writeFileSync(file,"function migrate() { const uninspected = selectedPending.filter(() => true); }");
+  assert.equal(kdp.patchRepairedPeerMigration(root),1);const source=fs.readFileSync(file,"utf8");assert.equal(kdp.patchRepairedPeerMigration(root),1);assert.equal(fs.readFileSync(file,"utf8"),source);
+  let peer=null,valid=true;const vm=require("node:vm"),context=vm.createContext({structuredClone,cryoclawAuditPeer:()=>peer,cryoclawValidatePluginConfig:({value})=>{value.changed=true;return {ok:valid};}});
+  vm.runInContext(source.slice(source.indexOf("/* cryoclaw-repaired-peer-migration */")),context);
+  const entry={pluginId:"sample",reason:'Plugin declares peerDependency "openclaw" but peer link audit failed: missing link',command:"openclaw update repair",configPaths:[["plugins","entries","sample","config"]]},plugin={rootDir:"/plugin",configSchema:{type:"object"}},config={plugins:{entries:{sample:{config:{key:"retained"}}}}};
+  const before=JSON.stringify(config);assert.equal(context.cryoclawRepairedPeerMigration(entry,plugin,config),true);assert.equal(JSON.stringify(config),before);
+  for(const change of [{requiresStateMigration:true},{requiresDoctorInspection:true},{reason:"another failure"},{validationExcludedPaths:[["channels"]]},{configPaths:[["channels","other"]]}])assert.equal(context.cryoclawRepairedPeerMigration({...entry,...change},plugin,config),false);
+  assert.equal(context.cryoclawRepairedPeerMigration(entry,{...plugin,doctorContract:{configRepair:true}},config),false);
+  peer={reason:"broken"};assert.equal(context.cryoclawRepairedPeerMigration(entry,plugin,config),false);peer=null;valid=false;assert.equal(context.cryoclawRepairedPeerMigration(entry,plugin,config),false);
+});
+test("dependency boundary scan accepts only a verified ASAR host peer junction",async t=>{
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),"cryo-boundary-"));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+  const dist=path.join(root,"node_modules/openclaw/dist");fs.mkdirSync(dist,{recursive:true});const file=path.join(dist,"install-security-scan.runtime-test.mjs");
+  fs.writeFileSync(file,'async function inspect(params) { let resolvedTargetPath; resolvedTargetPath = await fs.realpath(params.symlinkPath); return resolvedTargetPath; }');
+  assert.equal(kdp.patchPluginAsarBoundaryScan(root),1);const source=fs.readFileSync(file,"utf8");assert.equal(kdp.patchPluginAsarBoundaryScan(root),1);assert.equal(fs.readFileSync(file,"utf8"),source);
+  const vm=require("node:vm"),host=path.join(root,"gateway.asar/node_modules/openclaw");let target=host,trusted=true;
+  const context=vm.createContext({path,fs:{realpath:async()=>{throw Error("unresolved junction");},readlink:async()=>target,stat:async()=>({isDirectory:()=>true})},isTrustedOpenClawPeerSymlink:()=>trusted});vm.runInContext(source,context);
+  const params={trustedHostOpenClawRootRealPath:host,symlinkPath:path.join(root,"plugin/node_modules/openclaw"),symlinkRelativePath:"node_modules/openclaw"};
+  assert.equal(await context.inspect(params),host);
+  target=path.join(root,"other.asar/node_modules/openclaw");await assert.rejects(context.inspect(params),/unresolved/);
+  target=host;trusted=false;await assert.rejects(context.inspect(params),/unresolved/);
+});
+test("ASAR peer links are created and audited against the exact selected host",t=>{
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),"cryo-peer-link-"));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+  const dist=path.join(root,"node_modules/openclaw/dist");fs.mkdirSync(dist,{recursive:true});
+  const file=path.join(dist,"plugin-peer-link-test.mjs");
+  fs.writeFileSync(file,`function auditOpenClawPeerDependency(params) { const linkPath='link'; return safeRealpathSync(linkPath); }
+async function linkOpenClawPeerDependency(params) {
+  /* asar-bypass */ if (params.hostRoot && params.hostRoot.includes('.asar')) return "unchanged";
+  symlinkSync(params.hostRoot, 'link', 'junction');
+}`);
+  assert.equal(kdp.patchPluginPeerAsarLink(root),1);
+  const patched=fs.readFileSync(file,"utf8");assert.ok(!patched.includes('return "unchanged"'));assert.ok(patched.includes("symlinkSync(params.hostRoot"));
+  assert.equal(kdp.patchPluginPeerAsarLink(root),1);assert.equal(fs.readFileSync(file,"utf8"),patched);
+  const vm=require("node:vm"),host=path.join(root,"gateway.asar/node_modules/openclaw");let target=host;
+  const context=vm.createContext({path,cryoclawReadlink:()=>target,cryoclawStat:()=>({isDirectory:()=>true}),safeRealpathSync:()=>null});
+  vm.runInContext(patched.slice(patched.indexOf("/* cryoclaw-peer-asar-link */")),context);
+  assert.equal(context.cryoclawPeerAsarTarget(path.join(root,"plugin/node_modules/openclaw"),host),host);
+  target=path.join(root,"other.asar/node_modules/openclaw");assert.equal(context.cryoclawPeerAsarTarget("link",host),null);
+  assert.equal(context.cryoclawPeerAsarTarget("link",path.join(root,"ordinary-host")),null);
+});
 test("native companion host resolution preserves exact host checks across ASAR junctions",t=>{
   const root=fs.mkdtempSync(path.join(os.tmpdir(),"cryo-native-host-"));
   t.after(()=>fs.rmSync(root,{recursive:true,force:true}));

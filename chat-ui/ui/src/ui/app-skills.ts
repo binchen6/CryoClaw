@@ -4,7 +4,8 @@
  */
 
 import { html, nothing } from "lit";
-import { t } from "./i18n.ts";
+import { t, getLocale } from "./i18n.ts";
+const tr=(zh:string,en:string)=>getLocale().startsWith("zh")?zh:en;
 import { activateOnKeydown } from "./a11y.ts";
 import { icons } from "./icons.ts";
 import { renderSkillStoreView, skillAvatarColor, type SkillStoreState, type SkillItem } from "./skill-store-view.ts";
@@ -45,6 +46,9 @@ const skillStoreState: SkillStoreState = {
 };
 
 let skillStoreDataLoaded = false;
+let localSkillSlugs = new Set<string>();
+let localInventoryStarted = false;
+let localImportBusy = false;
 
 // 商店请求代次守卫：排序/搜索快速切换时旧响应晚到会整体覆写当前列表与
 // nextCursor（展示错误排序/旧结果，分页游标错配）。发起前自增，写回前比对。
@@ -55,26 +59,33 @@ let skillUpdates: Array<{ slug: string; current: string | null; latest: string }
 let skillUpdatesChecking = false;
 let skillUpdatesApplying = false;
 
-async function checkSkillStoreUpdates(state: AppViewState, opts: { force?: boolean } = {}) {
+async function checkSkillStoreUpdates(state: AppViewState, opts: { force?: boolean; slug?: string } = {}) {
   if (!window.cryoclaw?.skillStoreCheckUpdates) return;
   if (skillUpdatesChecking) return;
-  if (skillUpdates !== null && !opts.force) return;
+  if (skillUpdates !== null && !opts.force && !opts.slug) return;
   skillUpdatesChecking = true;
   state.requestUpdate();
   try {
-    const result = await window.cryoclaw.skillStoreCheckUpdates();
-    skillUpdates = result?.success && Array.isArray(result.data?.updates) ? result.data.updates : [];
+    const result = await window.cryoclaw.skillStoreCheckUpdates(opts.slug ? {slug:opts.slug} : undefined);
+    if (result?.success && Array.isArray(result.data?.updates)) {
+      skillUpdates = [...(opts.slug ? (skillUpdates ?? []).filter(u => u.slug !== opts.slug) : []), ...result.data.updates];
+      if (opts.force || opts.slug) showToast(state, result.data.updates.length ? tr("发现可用更新，点击详情查看。", "Updates available. Open details to review.") : tr("未发现更新；无版本信息的本地技能无法比较。", "No updates found; unversioned local skills cannot be compared."));
+    } else {
+      showToast(state, result?.message || t("ext.plugins.checkFailed"), undefined, "error");
+      skillUpdates ??= [];
+    }
   } catch {
-    skillUpdates = []; // 检查失败静默——不打扰浏览
+    skillUpdates ??= [];
+    if (opts.force || opts.slug) showToast(state,t("ext.plugins.checkFailed"),undefined,"error");
   } finally {
     skillUpdatesChecking = false;
     state.requestUpdate();
   }
 }
 
-async function updateAllSkills(state: AppViewState) {
+async function updateAllSkills(state: AppViewState, slug?: string) {
   if (!window.cryoclaw?.skillStoreUpdate || skillUpdatesApplying) return;
-  const slugs = (skillUpdates ?? []).map((u) => u.slug);
+  const slugs = slug ? [slug] : (skillUpdates ?? []).map((u) => u.slug);
   if (slugs.length === 0) return;
   skillUpdatesApplying = true;
   state.requestUpdate();
@@ -255,6 +266,7 @@ async function refreshInstalledSlugs() {
     const result = await window.cryoclaw.skillStoreListInstalled();
     if (result?.success && Array.isArray(result.data)) {
       skillStoreState.installedSlugs = new Set(result.data);
+      localSkillSlugs = new Set(Array.isArray(result.local)?result.local:[]);
     }
   } catch { /* ignore */ }
 }
@@ -427,6 +439,9 @@ function renderInstalledSkillsView(state: AppViewState) {
         <div class="skill-store__list">
           ${group.skills.map((skill: SkillStatusEntry) => {
             const key = skill.skillKey ?? "";
+            const slug = typeof skill.filePath === "string" ? skill.filePath.split(/[\\/]/).slice(-2,-1)[0] || String(skill.name || key) : String(skill.name || key);
+            const local = localSkillSlugs.has(slug) || !skillStoreState.installedSlugs.has(slug);
+            const update = !local && skillUpdates?.find(u => u.slug === slug || u.slug === key);
             const isBusy = busy === key;
             const msg = messages[key] ?? null;
             const letter = (skill.emoji || (skill.name ?? "?").charAt(0)).toUpperCase();
@@ -444,12 +459,14 @@ function renderInstalledSkillsView(state: AppViewState) {
                     <span class="skill-store__card-letter">${letter}</span>
                   </div>
                   <div class="skill-store__card-info">
-                    <div class="skill-store__card-name">${skill.name ?? key}</div>
+                    <button class="oc-plugins__name-btn" type="button" @click=${() => openSkillDetail(state,{slug,name:skill.name ?? key,local:true})}>${skill.name ?? key}</button>
+                    ${update ? html`<div class="skill-store__card-meta"><button class="btn btn--sm" type="button" @click=${() => openSkillDetail(state,{slug,name:skill.name ?? key})}>${update.current} → ${update.latest} · ${t("skillStore.detail")}</button><button class="btn btn--sm" type="button" ?disabled=${skillUpdatesApplying} @click=${() => void updateAllSkills(state,slug)}>${t("ext.plugins.update")}</button></div>` : nothing}
                     <div class="skill-store__card-meta">
                       <span class="skills-badge">${skill.source}</span>
                     </div>
                   </div>
                   <div class="skill-store__card-action">
+                    ${!local ? html`<button class="btn btn--sm" type="button" ?disabled=${skillUpdatesChecking || skillUpdatesApplying} @click=${() => void checkSkillStoreUpdates(state,{slug,force:true})}>${t("ext.plugins.checkUpdates")}</button>` : nothing}
                     ${skill.source !== "openclaw-bundled"
                       ? html`
                         <button
@@ -512,6 +529,7 @@ function renderInstalledSkillsView(state: AppViewState) {
 
 // 技能视图根渲染（app-extensions 的扩展视图 skills tab 调用）
 export function renderSkillsView(state: AppViewState) {
+  if(!localInventoryStarted){localInventoryStarted=true;void refreshInstalledSlugs().then(()=>state.requestUpdate());}
   // 已安装 tab 首开自动后台检查更新（会话内一次；检查后 skillUpdates !== null 不再重复）
   if (skillsSubTab === "installed" && skillUpdates === null && !skillUpdatesChecking) {
     void checkSkillStoreUpdates(state);
@@ -552,6 +570,12 @@ export function renderSkillsView(state: AppViewState) {
             }}
           >${t("skills.tabStore")}</button>
           <div class="skills-tab-bar__actions panel__actions">
+            <button class="btn btn--sm" type="button" ?disabled=${localImportBusy || skillUpdatesApplying} @click=${async()=>{
+              if(!window.cryoclaw?.skillStoreImportLocal)return;
+              localImportBusy=true;state.requestUpdate();
+              try{const result=await window.cryoclaw.skillStoreImportLocal();if(!result?.success)showToast(state,result?.message??t("skillStore.error"),undefined,"error");else if(!result.canceled){await refreshInstalledSlugs();await loadSkills(state);}}
+              catch(error){showToast(state,String(error),undefined,"error");}finally{localImportBusy=false;state.requestUpdate();}
+            }}>${t("ext.importLocal")}</button>
             ${skillsSubTab === "installed"
               ? html`
                   <span class="skills-count">${t("skills.shown").replace("{n}", String(selectVisibleInstalledSkills(state).length))}</span>

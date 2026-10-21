@@ -236,7 +236,12 @@ function buildChatItems(input: ChatHistoryInput): Array<ChatItem | MessageGroup>
 // 匹配的 toolCall block 上（消息浅拷贝，不改动 gateway 缓存里的原对象），并从时间线
 // 移除该 toolResult 消息。匹配优先 block.id === toolCallId，兜底按工具名就近匹配；
 // 无匹配的孤儿 result 保留原样（走既有独立渲染路径）。
-type OpenCallSlot = { outIdx: number; blockIdx: number; name: string };
+type OpenCallSlot = { outIdx: number; blockIdx: number; name: string; id?: string };
+
+function resultCallId(message: Record<string, unknown>): string | undefined {
+  const id = message.toolCallId ?? message.tool_call_id;
+  return typeof id === "string" && id ? id : undefined;
+}
 
 function isCallBlock(value: unknown): value is Record<string, unknown> {
   if (!value || typeof value !== "object") {
@@ -255,7 +260,7 @@ function mergeToolResultHistory(items: ChatItem[]): ChatItem[] {
       return false;
     }
     const m = item.message as Record<string, unknown>;
-    return isToolResultMessage(m) || typeof m.toolCallId === "string";
+    return isToolResultMessage(m) || resultCallId(m) !== undefined;
   });
   if (!hasAnyToolResult) {
     return items;
@@ -280,9 +285,10 @@ function mergeToolResultHistory(items: ChatItem[]): ChatItem[] {
         continue;
       }
       const name = typeof block.name === "string" ? block.name : "tool";
-      const slot: OpenCallSlot = { outIdx, blockIdx, name };
-      if (typeof block.id === "string" && block.id) {
-        openById.set(block.id, slot);
+      const id = typeof block.id === "string" && block.id ? block.id : undefined;
+      const slot: OpenCallSlot = { outIdx, blockIdx, name, id };
+      if (id) {
+        openById.set(id, slot);
       }
       const byName = openByName.get(name);
       if (byName) {
@@ -299,12 +305,15 @@ function mergeToolResultHistory(items: ChatItem[]): ChatItem[] {
       continue;
     }
     const m = item.message as Record<string, unknown>;
-    const isToolResultMsg = isToolResultMessage(m) || typeof m.toolCallId === "string";
+    const id = resultCallId(m);
+    const isToolResultMsg = isToolResultMessage(m) || id !== undefined;
     if (isToolResultMsg) {
+      const name = m.toolName ?? m.tool_name;
+      // An explicit ID must never consume another call merely sharing its name.
       const slot =
-        (typeof m.toolCallId === "string" && openById.get(m.toolCallId)) ||
-        (typeof m.toolName === "string" ? openByName.get(m.toolName)?.shift() : undefined) ||
-        openByName.get("tool")?.shift();
+        id ? openById.get(id) :
+        (typeof name === "string" ? openByName.get(name)?.[0] : undefined) ||
+        openByName.get("tool")?.[0];
       if (!slot) {
         // 孤儿 result（无对应 call）：保留原消息走既有渲染路径
         out.push(item);
@@ -340,9 +349,7 @@ function mergeToolResultHistory(items: ChatItem[]): ChatItem[] {
       };
       // 两个索引都要摘除：slot 同时注册在 openById 与 openByName，只清单侧时
       // 孤儿 result 可二次命中已合并的 slot，覆盖已写入的输出文本。
-      if (typeof m.toolCallId === "string") {
-        openById.delete(m.toolCallId);
-      }
+      if (slot.id) openById.delete(slot.id);
       const byName = openByName.get(slot.name);
       if (byName) {
         const slotIdx = byName.indexOf(slot);

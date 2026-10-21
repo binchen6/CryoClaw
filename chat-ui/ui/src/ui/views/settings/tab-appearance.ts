@@ -20,6 +20,7 @@ import {scheduleAppearancePreview,cancelAppearancePreview} from "../../appearanc
 import "../../components/toggle-switch.ts";
 import "../../components/message-box.ts";
 import type {ChatAttachment} from "../../ui-types.ts";
+import {appearanceContrastIssues} from "../../appearance-contrast.ts";
 
 const MAX_THEME_PACKAGE_BYTES=65536;
 const MAX_THEME_REFERENCES=4;
@@ -64,9 +65,11 @@ function createAppearanceState() {
 }
 
 const s = createAppearanceState();
+const agentDrafts=new WeakMap<AppViewState,{fields:ThemeDesignFields;mode:typeof s.agentMode;preserveLayout:boolean;images:ThemeReferenceImage[]}>();
 
 // 离开 Settings 时把 Appearance 页恢复到未初始化状态。
 function resetAppearanceState() {
+  if(s.owner)agentDrafts.set(s.owner,{fields:{...s.agentFields},mode:s.agentMode,preserveLayout:s.agentPreserveLayout,images:[...s.agentImages]});
   if(s.owner)cancelAppearancePreview(s.owner);
   if(s.owner && !hasThemePreview(s.owner))applyAppearance({...normalizeAppearance(s.owner.settings.appearance),mode:s.owner.settings.theme});
   Object.assign(s, createAppearanceState());
@@ -76,19 +79,25 @@ function init(state: AppViewState) {
   if (s.initialized) return;
   s.initialized = true;
   s.owner=state;s.profile=normalizeAppearance({...state.settings.appearance,mode:state.settings.theme});
+  const draft=agentDrafts.get(state);
+  if(draft){s.agentFields={...draft.fields};s.agentMode=draft.mode;s.agentPreserveLayout=draft.preserveLayout;s.agentImages=[...draft.images];}
   s.committed=state.settings.appearance;
   s.theme = (state.settings?.theme as any) ?? "light";
   s.showThinking = state.settings?.chatShowThinking ?? false;
 }
 
 function handleSave(state: AppViewState) {
+  cancelAppearancePreview(state);
+  if(hasThemePreview(state)){
+    updateActiveThemePreview(state,s.profile,false);
+    endThemePreview(state,true);
+  }
   state.applySettings({
     ...state.settings,
     theme: s.theme,
     chatShowThinking: s.showThinking,
     appearance:normalizeAppearance(s.profile),
   });
-  if(hasThemePreview(state))endThemePreview(state);
   s.successMsg = t("settings.saved");
   state.requestUpdate();
 }
@@ -106,6 +115,7 @@ function readImageFile(file:File):Promise<string> {
 }
 
 async function addThemeReferences(state:AppViewState,files:File[]) {
+  if(s.agentBusy)return;
   for(const file of files){
     if(s.agentImages.length>=MAX_THEME_REFERENCES){s.agentError=t("settings.appearance.themeAgent.referenceLimit").replace("{count}",String(MAX_THEME_REFERENCES));break;}
     if(!file.type.startsWith("image/")){s.agentError=t("settings.appearance.themeAgent.referenceType");continue;}
@@ -165,7 +175,7 @@ async function generateTheme(state:AppViewState){
     transitionView(()=>setCryoClawView(state,"chat"));
     // messageOverride keeps the existing chat draft and attachments; reference images ride along only when present.
     await state.handleSendChat(prompt,attachments.length?{attachments}:{});
-  }catch(error){if(s.owner===state)s.agentError=error instanceof Error?error.message:String(error);}
+  }catch(error){const message=error instanceof Error?error.message:String(error);if(s.owner===state)s.agentError=message;else showToast(state,message,undefined,"error");}
   finally{if(s.owner===state){s.agentBusy=false;state.requestUpdate();}}
 }
 
@@ -182,6 +192,7 @@ export function renderTabAppearance(state: AppViewState) {
   const themeKey=(profile:typeof s.profile)=>JSON.stringify([themeVariantColors(profile,"light"),themeVariantColors(profile,"dark"),profile.radius,profile.density??1,profile.shadow??"default",profile.borderWidth??1]);
   const selectedThemeId=themes.find(theme=>theme.id===s.activeThemeId && themeKey(theme.appearance)===themeKey(s.profile))?.id??themes.find(theme=>themeKey(theme.appearance)===themeKey(s.profile))?.id;
   const maxReferences=MAX_THEME_REFERENCES;
+  const contrastIssues=appearanceContrastIssues(s.profile);
 
   const preview=(inFrame=false,preserveComponents=true)=>{s.successMsg=null;s.previewPending=true;const apply=()=>{if(!updateActiveThemePreview(state,s.profile,preserveComponents))applyAppearance(s.profile);s.previewPending=false;state.requestUpdate();};if(inFrame){cancelAppearancePreview(state);apply();}else scheduleAppearancePreview(state,apply);};
   const briefFields=cleanThemeFields(s.agentFields);
@@ -193,6 +204,7 @@ export function renderTabAppearance(state: AppViewState) {
     <div class="oc-settings__section">
       <h2 class="oc-settings__section-title">${t("settings.appearance.title")}</h2>
       <p class="oc-settings__page-desc">${t("settings.appearance.desc")}</p>
+      ${contrastIssues.length?html`<p class="oc-theme-contrast" role="status">${text("文字对比度偏低，建议达到 4.5:1：","Text contrast is low; aim for 4.5:1:")} ${contrastIssues.map(issue=>`${issue.mode} · ${issue.role} ${issue.ratio.toFixed(2)}:1`).join(" · ")}</p>`:""}
 
       <section class="oc-appearance-editor oc-theme-module ${s.themeDropActive?"oc-theme-module--drop":""}" @dragover=${(event:DragEvent)=>{const transfer=event.dataTransfer;if(!transfer || !Array.from(transfer.types??[]).includes("Files"))return;event.preventDefault();transfer.dropEffect="copy";if(!s.themeDropActive){s.themeDropActive=true;state.requestUpdate();}}} @dragleave=${(event:DragEvent)=>{const current=event.currentTarget as HTMLElement;if(event.relatedTarget instanceof Node && current.contains(event.relatedTarget))return;s.themeDropActive=false;state.requestUpdate();}} @drop=${(event:DragEvent)=>{event.preventDefault();s.themeDropActive=false;const file=event.dataTransfer?.files?.[0];if(file)void importThemeFile(state,file);state.requestUpdate();}}><h3>${text("主题", "Theme")}</h3>
         ${s.themeDropActive?html`<div class="oc-theme-drop-hint" role="status">${text("松手导入 .json 主题包", "Drop to import a .json theme package")}</div>`:""}
@@ -205,35 +217,44 @@ export function renderTabAppearance(state: AppViewState) {
           <span class="oc-theme-pair" aria-hidden="true">${(["light","dark"] as const).map(mode=>{const colors=themeVariantColors(scheme.appearance,mode);return html`<span class="oc-theme-card__preview" data-mode=${mode} style=${`background:${colors.background??(mode==="dark"?"#15191f":"#ffffff")};--preview-surface:${colors.surface??(mode==="dark"?"#191e29":"#f7f8fc")};--preview-accent:${colors.accent??"#1a6fd0"};--preview-secondary:${colors.secondary??(mode==="dark"?"#71c6a3":"#218363")};--preview-text:${colors.text??(mode==="dark"?"#e5eaf0":"#323b49")}`}><i></i><span><b></b><b></b><b></b></span></span>`;})}</span><strong dir="auto">${scheme.name}</strong>${scheme.description?html`<small class="oc-theme-card__description">${scheme.id==="glacier"||scheme.id==="graphite"||scheme.id==="tundra"?text(scheme.description,scheme.id==="glacier"?"Airy blue · open and clear":scheme.id==="graphite"?"Soft graphite · quiet focus":"Botanical green · calm space"):scheme.description}</small>`:""}${scheme.source?html`<small class="oc-theme-card__imported">${scheme.source==="agent"?text("Agent 设计", "Agent design"):text("已导入", "Imported")}</small>${themeVariantModes(scheme.appearance).length<2?html`<small class="oc-theme-card__fallback">${themeVariantModes(scheme.appearance).length===0?text("使用默认深浅配色", "Default light and dark colors"):themeVariantModes(scheme.appearance)[0]==="light"?text("深色使用默认配色", "Dark uses default colors"):text("浅色使用默认配色", "Light uses default colors")}</small>`:""}`:""}</button>
           ${!BUILTIN_THEMES.some(builtin=>builtin.id===scheme.id)?html`<button class="btn btn--sm" @click=${async()=>{if(!(await showConfirm(state,t("settings.appearance.deleteThemeConfirm").replace("{name}",scheme.name),{danger:true})))return;deleteSavedTheme(scheme.id);if(s.activeThemeId===scheme.id)s.activeThemeId=null;showToast(state,t("settings.appearance.themeDeleted").replace("{name}",scheme.name),undefined,"success");state.requestUpdate();}}>${t("settings.appearance.deleteTheme")}</button>`:""}</div>`)}</div>
         <details class="oc-theme-agent">
-          <summary><span class="oc-theme-agent__icon">${icons.palette}</span><span><strong>${text("让 Agent 设计主题", "Let your agent design a theme")}</strong><small>${text("填写设计 brief → 对话生成 → 软件中预览", "Fill in a design brief → generate in chat → preview in the app")}</small></span>${icons.chevronDown}</summary>
+          <summary><span class="oc-theme-agent__icon">${icons.palette}</span><span><strong>${text("让 Agent 设计主题", "Let your agent design a theme")}</strong><small>${text("描述你想要的感觉，生成可撤销的实时预览", "Describe the feeling. Try a reversible live preview.")}</small></span>${icons.chevronDown}</summary>
           <div class="oc-theme-agent__body">
-            <p class="oc-settings__hint">${text("由当前对话中的 Agent 使用内置主题技能完成。填空越具体，结果越接近你的预期；最多可附 4 张参考图。生成后会出现可撤销预览条，满意后点击“保留主题”。现有对话草稿与附件会保留。", "The agent in your current conversation uses the built-in theme skill. The more specific the brief, the closer the result; attach up to 4 reference images. A reversible preview appears in the app — choose Keep theme when satisfied. Existing chat drafts and attachments are preserved.")}</p>
-            <div class="oc-theme-brief">
-              <label class="oc-theme-brief__wide"><span class="oc-theme-field__label"><span>${text("风格意象", "Visual direction")}</span><i class="oc-theme-field__required" aria-hidden="true">*</i></span><textarea data-theme-field="style" class="oc-settings__input oc-theme-brief__textarea" rows="2" maxlength="300" aria-required="true" ?disabled=${s.agentBusy} .value=${s.agentFields.style} placeholder=${text("例如：清爽蓝白，少量叶绿点缀，通透面板与清晰层次。", "For example: airy blue and white, subtle leafy green, clear surface hierarchy.")} @input=${(event:Event)=>{s.agentFields.style=(event.target as HTMLTextAreaElement).value;state.requestUpdate();}}></textarea></label>
+            <div class="oc-theme-agent__intro"><div><h3>${text("让每天使用的界面，更合你意", "Make your everyday workspace feel right")}</h3><p>${text("用自己的话描述，或从一个方向开始。当前对话的 Agent 会设计浅色与深色两版；现有对话草稿与附件会保留。", "Describe it in your own words or choose a starting point. Your current agent creates light and dark variants while preserving your chat draft and attachments.")}</p></div><span class="oc-tag oc-tag--muted">${text("可撤销预览", "Reversible preview")}</span></div>
+            <div class="oc-theme-agent__workspace">
+              <section class="oc-theme-agent__canvas"><div class="oc-theme-brief oc-theme-brief--main"><label class="oc-theme-brief__wide"><span class="oc-theme-field__label"><span>${text("风格意象", "Visual direction")}</span><i class="oc-theme-field__required" aria-hidden="true">*</i></span><textarea data-theme-field="style" class="oc-settings__input oc-theme-brief__textarea" rows="4" maxlength="300" aria-required="true" ?disabled=${s.agentBusy} .value=${s.agentFields.style} placeholder=${text("例如：清爽蓝白，少量叶绿点缀，通透面板与清晰层次。", "For example: airy blue and white, subtle leafy green, clear surface hierarchy.")} @input=${(event:Event)=>{s.agentFields.style=(event.target as HTMLTextAreaElement).value;state.requestUpdate();}}></textarea></label></div>
+                            <div class="oc-theme-agent__presets">${THEME_PRESETS.map(preset=>html`<button class="oc-theme-direction" type="button" ?disabled=${s.agentBusy} aria-pressed=${s.agentFields.style===preset.fields.style} @click=${()=>applyPreset(preset)}><span class="oc-theme-direction__swatch" aria-hidden="true" style=${`--brief-primary:${preset.fields.primary};--brief-secondary:${preset.fields.secondary}`}><i></i><i></i><i></i></span><span><strong>${text(preset.nameCn,preset.nameEn)}</strong><small>${text(preset.mode?"深色为主，柔和耐看":preset.nameEn.startsWith("Airy")?"明亮、轻盈、清晰":"低彩度，适合专注",preset.mode?"Soft depth, dark first":preset.nameEn.startsWith("Airy")?"Light, airy and clear":"Quiet tones for focus")}</small></span></button>`)}</div>
+
+                <details class="oc-theme-agent__advanced"><summary>${text("精细设置", "Fine-tune the brief")}<span>${text("配色、排版与保留项 · 可选", "Colors, typography and constraints · optional")}</span>${icons.chevronDown}</summary><p class="oc-settings__hint">${text("留空的项目沿用当前设置。要调整排版，请关闭“保留现有字体与布局”。", "Blank fields keep your current settings. To change typography, turn off Preserve existing typography and layout.")}</p><div class="oc-theme-brief">
               <label>${text("主色", "Primary color")}<input data-theme-field="primary" class="oc-settings__input" maxlength="120" ?disabled=${s.agentBusy} .value=${s.agentFields.primary} placeholder=${text("#1a6fd0 或 雾蓝", "#1a6fd0 or misty blue")} @input=${(event:Event)=>{s.agentFields.primary=(event.target as HTMLInputElement).value;state.requestUpdate();}} /></label>
               <label>${text("辅色", "Secondary color")}<input data-theme-field="secondary" class="oc-settings__input" maxlength="120" ?disabled=${s.agentBusy} .value=${s.agentFields.secondary} placeholder=${text("#33745c 或 叶绿", "#33745c or leaf green")} @input=${(event:Event)=>{s.agentFields.secondary=(event.target as HTMLInputElement).value;state.requestUpdate();}} /></label>
               <label>${text("明暗偏好", "Light/dark preference")}<select data-theme-field="appearance" class="oc-settings__select" ?disabled=${s.agentBusy} .value=${s.agentFields.appearance} @change=${(event:Event)=>{s.agentFields.appearance=(event.target as HTMLSelectElement).value;state.requestUpdate();}}><option value="">${text("未指定", "Not specified")}</option><option value="浅色为主，深色协调">${text("浅色为主", "Mainly light")}</option><option value="深色为主，浅色协调">${text("深色为主", "Mainly dark")}</option><option value="跟随系统，两版同等重要">${text("跟随系统", "Follow system")}</option></select></label>
               <label>${text("圆角倾向", "Corner tendency")}<select data-theme-field="corners" class="oc-settings__select" ?disabled=${s.agentBusy} .value=${s.agentFields.corners} @change=${(event:Event)=>{s.agentFields.corners=(event.target as HTMLSelectElement).value;state.requestUpdate();}}><option value="">${text("未指定", "Not specified")}</option><option value="直角或很小的圆角">${text("直角 / 小圆角", "Square / small")}</option><option value="适中圆角">${text("适中", "Medium")}</option><option value="明显的大圆角">${text("大圆角", "Large")}</option></select></label>
-              <label class="oc-theme-brief__wide">${text("排版偏好", "Typography preference")}<input data-theme-field="typography" class="oc-settings__input" maxlength="200" ?disabled=${s.agentBusy} .value=${s.agentFields.typography} placeholder=${text("例如：保留现有字体，正文行高更宽松。", "For example: keep the current fonts, looser body line-height.")} @input=${(event:Event)=>{s.agentFields.typography=(event.target as HTMLInputElement).value;state.requestUpdate();}} /></label>
+              <label class="oc-theme-brief__wide">${text("排版偏好", "Typography preference")}<input data-theme-field="typography" class="oc-settings__input" maxlength="200" ?disabled=${s.agentBusy || s.agentPreserveLayout} .value=${s.agentFields.typography} placeholder=${text("例如：保留现有字体，正文行高更宽松。", "For example: keep the current fonts, looser body line-height.")} @input=${(event:Event)=>{s.agentFields.typography=(event.target as HTMLInputElement).value;state.requestUpdate();}} /></label>
               <label class="oc-theme-brief__wide">${text("必须保留", "Must keep")}<input data-theme-field="keep" class="oc-settings__input" maxlength="200" ?disabled=${s.agentBusy} .value=${s.agentFields.keep} placeholder=${text("例如：保留现有字体与布局、输入框可见。", "For example: keep the current fonts and layout, visible composer.")} @input=${(event:Event)=>{s.agentFields.keep=(event.target as HTMLInputElement).value;state.requestUpdate();}} /></label>
               <label class="oc-theme-brief__wide">${text("希望避免", "Avoid")}<input data-theme-field="avoid" class="oc-settings__input" maxlength="200" ?disabled=${s.agentBusy} .value=${s.agentFields.avoid} placeholder=${text("例如：避免高饱和撞色与大面积渐变。", "For example: avoid saturated clashes and large gradients.")} @input=${(event:Event)=>{s.agentFields.avoid=(event.target as HTMLInputElement).value;state.requestUpdate();}} /></label>
               <label class="oc-theme-brief__wide">${text("补充要求", "Extra requirements")}<textarea data-theme-field="extra" class="oc-settings__input oc-theme-brief__textarea" rows="2" maxlength="400" ?disabled=${s.agentBusy} .value=${s.agentFields.extra} placeholder=${text("还有其他想强调的细节。", "Anything else to emphasise.")} @input=${(event:Event)=>{s.agentFields.extra=(event.target as HTMLTextAreaElement).value;state.requestUpdate();}}></textarea></label>
-            </div>
-            <div class="oc-theme-agent__presets">${THEME_PRESETS.map(preset=>html`<button class="btn btn--sm" type="button" ?disabled=${s.agentBusy} @click=${()=>applyPreset(preset)}>${text(preset.nameCn,preset.nameEn)}</button>`)}</div>
-            <div class="oc-theme-refs-block">
+            </div></details>
+              </section>
+              <aside class="oc-theme-agent__guide">
+                            <div class="oc-theme-refs-block">
               <span class="oc-theme-refs-label">${text("参考图（可选，最多 4 张，每张 ≤4 MB）", "Reference images (optional, up to 4, ≤4 MB each)")}</span>
               <div class="oc-theme-refs ${s.agentImageDrag?"oc-theme-refs--drop":""}" @dragover=${(event:DragEvent)=>{const transfer=event.dataTransfer;if(!transfer || !Array.from(transfer.types??[]).includes("Files"))return;event.preventDefault();event.stopPropagation();transfer.dropEffect="copy";if(!s.agentImageDrag){s.agentImageDrag=true;state.requestUpdate();}}} @dragleave=${(event:DragEvent)=>{const current=event.currentTarget as HTMLElement;if(event.relatedTarget instanceof Node && current.contains(event.relatedTarget))return;s.agentImageDrag=false;state.requestUpdate();}} @drop=${(event:DragEvent)=>{const files=Array.from(event.dataTransfer?.files??[]).filter(file=>file.type.startsWith("image/"));if(files.length===0)return;event.preventDefault();event.stopPropagation();s.agentImageDrag=false;void addThemeReferences(state,files);state.requestUpdate();}}>
-                ${s.agentImages.map(image=>html`<span class="oc-theme-ref"><img src=${image.dataUrl} alt=${image.name??text("参考图","Reference image")} title=${image.name??""} /><button class="icon-btn oc-theme-ref__remove" type="button" aria-label=${text("移除参考图","Remove reference image")} title=${text("移除参考图","Remove reference image")} @click=${()=>{s.agentImages=s.agentImages.filter(item=>item.id!==image.id);state.requestUpdate();}}>${icons.x}</button></span>`)}
-                ${s.agentImages.length<maxReferences?html`<label class="oc-theme-ref-add" title=${text("点击选择图片，或把图片拖到这里","Choose images or drop them here")}><input type="file" accept="image/*" multiple hidden ?disabled=${s.agentBusy} @change=${(event:Event)=>{const input=event.target as HTMLInputElement;const files=Array.from(input.files??[]);input.value="";if(files.length)void addThemeReferences(state,files);}} />${icons.image}<span>${text("点击或拖入图片","Choose or drop images")}</span></label>`:""}
+                ${s.agentImages.map(image=>html`<span class="oc-theme-ref"><img src=${image.dataUrl} alt=${image.name??text("参考图","Reference image")} title=${image.name??""} /><button class="icon-btn oc-theme-ref__remove" type="button" ?disabled=${s.agentBusy} aria-label=${text("移除参考图","Remove reference image")} title=${text("移除参考图","Remove reference image")} @click=${()=>{s.agentImages=s.agentImages.filter(item=>item.id!==image.id);state.requestUpdate();}}>${icons.x}</button></span>`)}
+                ${s.agentImages.length<maxReferences?html`<label class="oc-theme-ref-add" role="button" tabindex=${s.agentBusy?-1:0} aria-disabled=${s.agentBusy} @keydown=${(event:KeyboardEvent)=>{if(!s.agentBusy && (event.key==="Enter" || event.key===" ")){event.preventDefault();(event.currentTarget as HTMLElement).querySelector<HTMLInputElement>("input")?.click();}}} title=${text("点击选择图片，或把图片拖到这里","Choose images or drop them here")}><input type="file" accept="image/*" multiple hidden ?disabled=${s.agentBusy} @change=${(event:Event)=>{const input=event.target as HTMLInputElement;const files=Array.from(input.files??[]);input.value="";if(files.length)void addThemeReferences(state,files);}} />${icons.image}<span>${text("点击或拖入图片","Choose or drop images")}</span></label>`:""}
               </div>
               <p class="oc-settings__hint">${text("参考图只用于提取配色、明暗层次与质感，不复制其中的文字、品牌或布局；随消息发送，不写入主题包。", "Reference images only guide palette, depth and texture — never copied text, branding or layout. They are sent with the message and never stored in the theme package.")}</p>
             </div>
             <label class="oc-theme-agent__mode"><span>${text("预览方式", "Preview mode")}</span><select class="oc-settings__select" .value=${s.agentMode} ?disabled=${s.agentBusy} @change=${(event:Event)=>{s.agentMode=(event.target as HTMLSelectElement).value as typeof s.agentMode;state.requestUpdate();}}><option value="current">${text("沿用当前外观", "Keep current appearance mode")}</option>${(["light","dark","system"] as const).map(mode=>html`<option value=${mode}>${t(`theme.${mode}`)}</option>`)}</select></label>
             <oc-toggle-switch .checked=${s.agentPreserveLayout} .disabled=${s.agentBusy} .label=${text("保留现有字体与布局", "Preserve existing typography and layout")} @change=${(event:CustomEvent)=>{s.agentPreserveLayout=!!event.detail.checked;state.requestUpdate();}}></oc-toggle-switch>
-            ${briefStarted && briefError?html`<p class="oc-settings__hint oc-theme-brief__error" role="status">${briefError}</p>`:""}
+
+                <ol class="oc-theme-agent__steps"><li><strong>${text("描述与参考", "Brief & references")}</strong><span>${text("文字为主，图片帮助表达配色与质感。", "Words set the direction; images guide palette and texture.")}</span></li><li><strong>${text("交给当前 Agent", "Design in your conversation")}</strong><span>${text("自动检查主题技能，保留当前对话内容。", "Checks the theme skill and keeps your conversation intact.")}</span></li><li><strong>${text("预览后决定", "Preview, then decide")}</strong><span>${text("60 秒后自动恢复，也可点击保留或撤销。", "Restores after 60 seconds. Keep it or revert at any time.")}</span></li></ol>
+              </aside>
+            </div>
+                        ${briefStarted && briefError?html`<p class="oc-settings__hint oc-theme-brief__error" role="status">${briefError}</p>`:""}
             ${!state.connected?html`<p class="oc-settings__hint" role="status">${text("连接网关后即可生成主题。", "Connect to the gateway to generate a theme.")}</p>`:state.chatSending || state.chatRunId?html`<p class="oc-settings__hint">${text("当前对话正在执行任务，主题设计请求会加入队列。", "Your current conversation is busy; the theme request will be queued.")}</p>`:""}
-            <oc-message-box .visible=${!!s.agentError} .message=${s.agentError} type="error"></oc-message-box>
-            <div class="btn-row"><button class="btn primary oc-theme-agent__generate" type="button" aria-busy=${s.agentBusy} ?disabled=${s.agentBusy || !state.connected || !state.client || !!briefError} @click=${()=>void generateTheme(state)}>${s.agentBusy?s.agentProgress||text("正在准备…", "Preparing…"):s.agentError?text("重试并生成", "Retry and generate"):text("让 Agent 生成并预览", "Generate and preview with agent")}</button></div>
+            ${s.agentError?html`<p class="oc-theme-agent__error" role="alert">${s.agentError}</p>`:""}
+            <div class="oc-theme-agent__actions"><button class="btn btn--sm" type="button" ?disabled=${s.agentBusy} @click=${()=>{s.agentFields={...EMPTY_THEME_FIELDS};s.agentImages=[];s.agentError="";state.requestUpdate();}}>${text("清空设计要求", "Clear brief")}</button><span class="oc-theme-agent__status" role="status" aria-live="polite">${s.agentBusy?s.agentProgress:text("仅调整外观 · 预览后由你确认", "Appearance only · Review the preview before keeping")}</span><button class="btn primary oc-theme-agent__generate" type="button" aria-busy=${s.agentBusy} ?disabled=${s.agentBusy || !state.connected || !state.client || !!briefError} @click=${()=>void generateTheme(state)}>${s.agentBusy?s.agentProgress||text("正在准备…", "Preparing…"):s.agentError?text("重试并生成", "Retry and generate"):text("让 Agent 生成并预览", "Generate and preview with agent")}</button></div>
+
           </div>
         </details>
         <details class="oc-theme-customize"><summary>${text("微调当前主题", "Customize this theme")} · ${s.theme==="system"?t(window.matchMedia("(prefers-color-scheme: dark)").matches?"theme.dark":"theme.light")+" · "+t("theme.system"):t(`theme.${s.theme}`)}</summary>

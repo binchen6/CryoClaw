@@ -206,9 +206,12 @@ export function themeElementId(element:HTMLElement):string|null {return element.
 function applyComponentAppearance(profile:AppearanceProfile,root:HTMLElement):void {
   let binding=componentBindings.get(root);
   if(!binding) {
+    const selectors=Object.values(COMPONENT_SELECTORS).join(",");
     binding={profile,frame:null,observer:new MutationObserver(records=>{
       const current=componentBindings.get(root);if(!current || current.frame!==null)return;
-      const structural=records.some(record=>Array.from(record.addedNodes).concat(Array.from(record.removedNodes)).some(node=>node.nodeType===1) && !((record.target instanceof Element?record.target:record.target.parentElement)?.closest(".theme-editor,.theme-preview-banner,oc-range-control")));
+      // Streamed Markdown fragments rarely add theme controls. Scan only changed subtrees
+      // before scheduling the full registration pass used by the visual editor.
+      const structural=records.some(record=>!((record.target instanceof Element?record.target:record.target.parentElement)?.closest(".theme-editor,.theme-preview-banner,oc-range-control")) && Array.from(record.addedNodes).concat(Array.from(record.removedNodes)).some(node=>node instanceof Element && (node.matches(selectors) || node.querySelector(selectors))));
       if(structural)current.frame=requestAnimationFrame(()=>{current.frame=null;update();});
     }),touched:new Map()};componentBindings.set(root,binding);
     const shell=root.querySelector("openclaw-app");if(shell)binding.observer.observe(shell,{childList:true,subtree:true});
@@ -224,7 +227,7 @@ function applyComponentAppearance(profile:AppearanceProfile,root:HTMLElement):vo
     const assigned=new Set<HTMLElement>();
     for(const [kind,selector] of Object.entries(COMPONENT_SELECTORS))Array.from(root.querySelectorAll<HTMLElement>(selector)).filter(element=>!element.closest(".theme-editor,.theme-preview-banner") && (kind==="rangeControl" || !element.closest("oc-range-control"))).slice(0,100).forEach((element,index)=>{
       if(assigned.has(element))return;assigned.add(element);
-      const id=`${view}/${kind}/${index}`;element.dataset.themeNode=id;
+      const id=`${view}/${kind}/${index}`;if(element.dataset.themeNode!==id)element.dataset.themeNode=id;
       const part=current.profile.components?.[id];if(!part)return;
       const properties:Record<string,string>={translate:`${part.x}px ${part.y}px`,"border-radius":`${part.radius}px`,...(part.background?{"background-color":part.background}:{}),...(part.color?{color:part.color}:{})};
       for(const [key,css,unit] of [["width","width","px"],["height","height","px"],["padding","padding","px"],["opacity","opacity",""],["borderWidth","border-width","px"],["fontSize","font-size","px"],["fontWeight","font-weight",""],["zIndex","z-index",""]] as const)if(part[key]!==undefined)properties[css]=`${part[key]}${unit}`;

@@ -34,7 +34,7 @@ export function saveThemeToLibrary(name:string,appearance:unknown,description=""
   const value:SavedTheme={id:prior?.id??crypto.randomUUID(),name:cleanName,...(cleanDescription?{description:cleanDescription}:{}),...(prior?.source?{source:prior.source}:{}),appearance:normalizeAppearance(appearance)};
   localStorage.setItem(KEY,JSON.stringify([...themes.filter(theme=>theme.id!==value.id),value]));return value;
 }
-export function deleteSavedTheme(id:string):void {localStorage.setItem(KEY,JSON.stringify(readThemeLibrary().filter(theme=>theme.id!==id)));}
+export function deleteSavedTheme(id:string):void {localStorage.setItem(KEY,JSON.stringify(readThemeLibrary(true).filter(theme=>theme.id!==id)));}
 function appendTheme(name:string,appearance:AppearanceProfile,source:"imported"|"agent",description=""):SavedTheme {
   const themes=readThemeLibrary(true);requireLibrarySpace(themes);
   const base=cleanThemeName(name)||"My theme",names=new Set([...BUILTIN_THEMES,...themes].map(theme=>theme.name.toLowerCase()));

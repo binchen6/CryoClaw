@@ -42,6 +42,7 @@ const cleanupThemeTransition = (root: HTMLElement) => {
   root.style.removeProperty("--theme-switch-x");
   root.style.removeProperty("--theme-switch-y");
 };
+let themeTransitionGeneration=0;
 
 export const startThemeTransition = ({
   nextTheme,
@@ -60,6 +61,8 @@ export const startThemeTransition = ({
   }
 
   const root = documentReference.documentElement;
+  const generation=++themeTransitionGeneration;
+  const cleanup=()=>{if(generation===themeTransitionGeneration)cleanupThemeTransition(root);};
   const document_ = documentReference as DocumentWithViewTransition;
   const prefersReducedMotion = hasReducedMotionPreference();
 
@@ -98,19 +101,19 @@ export const startThemeTransition = ({
         // finished 在过渡被 skip 时以 AbortError reject：用 then 的双回调做清理，
         // finally 会把 rejection 原样抛成 unhandled rejection
         transition.finished.then(
-          () => cleanupThemeTransition(root),
-          () => cleanupThemeTransition(root),
+          cleanup,
+          cleanup,
         );
       } else {
-        cleanupThemeTransition(root);
+        cleanup();
       }
     } catch {
-      cleanupThemeTransition(root);
+      cleanup();
       applyTheme();
     }
     return;
   }
 
   applyTheme();
-  cleanupThemeTransition(root);
+  cleanup();
 };

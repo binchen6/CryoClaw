@@ -170,6 +170,7 @@ contextBridge.exposeInMainWorld("cryoclaw", {
   // 技能商店
   skillStoreList: (params?: Record<string, unknown>) =>
     ipcRenderer.invoke("skill-store:list", params),
+  skillStoreImportLocal: () => ipcRenderer.invoke("skill-store:import-local"),
   skillStoreSearch: (params?: Record<string, unknown>) =>
     ipcRenderer.invoke("skill-store:search", params),
   skillStoreInstall: (params?: Record<string, unknown>) =>
@@ -179,8 +180,8 @@ contextBridge.exposeInMainWorld("cryoclaw", {
   skillStoreListInstalled: () =>
     ipcRenderer.invoke("skill-store:list-installed"),
   // 技能更新：检查已安装技能的 registry 新版本 / 升级（slugs 缺省 = 全部可更新项）
-  skillStoreCheckUpdates: () =>
-    ipcRenderer.invoke("skill-store:check-updates"),
+  skillStoreCheckUpdates: (params?: Record<string, unknown>) =>
+    ipcRenderer.invoke("skill-store:check-updates", params),
   skillStoreUpdate: (params?: Record<string, unknown>) =>
     ipcRenderer.invoke("skill-store:update", params),
   // R91：技能详情（readme/tags 等全量字段）
@@ -190,6 +191,7 @@ contextBridge.exposeInMainWorld("cryoclaw", {
   // 插件管理页（R8）
   pluginStoreList: () =>
     ipcRenderer.invoke("plugin-store:list"),
+  pluginStoreImportLocal: () => ipcRenderer.invoke("plugin-store:import-local"),
   pluginStoreSearch: (params?: Record<string, unknown>) =>
     ipcRenderer.invoke("plugin-store:search", params),
   pluginStoreInstall: (params?: Record<string, unknown>) =>
@@ -200,8 +202,8 @@ contextBridge.exposeInMainWorld("cryoclaw", {
   pluginStoreSetEnabled: (params?: Record<string, unknown>) =>
     ipcRenderer.invoke("plugin-store:set-enabled", params),
   // R91：检查更新（dry-run）/ 执行更新 / 插件详情 / 市场分类浏览
-  pluginStoreCheckUpdates: () =>
-    ipcRenderer.invoke("plugin-store:check-updates"),
+  pluginStoreCheckUpdates: (params?: Record<string, unknown>) =>
+    ipcRenderer.invoke("plugin-store:check-updates", params),
   pluginStoreUpdate: (params?: Record<string, unknown>) =>
     ipcRenderer.invoke("plugin-store:update", params),
   pluginStoreDetail: (params?: Record<string, unknown>) =>

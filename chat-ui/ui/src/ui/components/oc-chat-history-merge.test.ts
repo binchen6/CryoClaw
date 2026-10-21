@@ -70,6 +70,32 @@ test("历史合并：toolResult 按 toolCallId 并入对应 call 块", () => {
   assert.equal(block.isError, undefined);
 });
 
+test("历史合并：snake case result identifiers merge without an orphan Tool card", () => {
+  const items = runBuild([
+    callMessage("tc-snake", "read", { path: "a.ts" }),
+    { role: "tool_result", tool_call_id: "tc-snake", tool_name: "read", content: [{ type: "text", text: "contents" }], timestamp: 2 },
+  ]);
+  const group = items[0] as { messages: Array<{ message: Record<string, unknown> }> };
+  assert.equal(group.messages.length, 1);
+  const block = (group.messages[0].message.content as Record<string, unknown>[])[0];
+  assert.equal(block.name, "read");
+  assert.equal(block.text, "contents");
+});
+
+test("历史合并：a name-only match removes the ID slot; explicit unrelated IDs cannot steal output", () => {
+  const items = runBuild([
+    callMessage("tc1", "read", { path: "a.ts" }),
+    resultMessage("different", "unrelated", { toolName: "read" }),
+    { role: "toolResult", toolName: "read", content: "correct", timestamp: 3 },
+    resultMessage("tc1", "late duplicate", {}, 4),
+  ]);
+  const messages = (items[0] as { messages: Array<{ message: Record<string, unknown> }> }).messages;
+  assert.equal(messages.length, 3);
+  assert.equal((messages[0].message.content as Record<string, unknown>[])[0].text, "correct");
+  assert.equal(messages[1].message.toolCallId, "different");
+  assert.equal(messages[2].message.toolCallId, "tc1");
+});
+
 test("历史合并：失败 result 的 isError/toolErrorSummary/exitCode 一并并入", () => {
   const input = [
     callMessage("tc1", "exec", { command: "npm test" }),

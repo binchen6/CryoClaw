@@ -78,7 +78,7 @@ export function buildThemeDesignPrompt(brief:ThemeDesignBrief,appearance:unknown
     "让背景、面板、弹层、文字、边框和主操作协调，普通文字与按钮至少 4.5:1 对比度，浅色与深色两版都要核对。区分主题特色，避免只替换强调色。保留未要求修改的设置。",
     "只处理软件外观，不读写账户或凭据、不修改项目源码，不执行主题内的 CSS、HTML、脚本或远程资源。只使用技能支持的有界字段和真实注册 ID，主题包不超过 64 KiB。",
     "将主题包保存为临时 JSON 文件，调用技能的 preview helper，并检查成功响应。不要只输出方案或代码，也不要在预览成功前声称已展示。预览可撤销且 60 秒后恢复；由用户点击“保留主题”应用。最后用简短文字说明变化和主题包位置。",
-    "遇到主题技能或预览错误时先诊断并自愈，最多 3 轮：检查 Electron Node 模式和捆绑运行时、临时 JSON 文件路径/格式/64KiB 上限、配色字段与真实注册 ID、新字段 density/shadow/borderWidth 的范围，以及软件控制服务是否就绪；可修正自己的临时主题包或重试 helper。不要改项目源码、读取/输出令牌或凭据，也不要擅自安装依赖或重启正在工作的网关。恢复后重新 inspect/preview 验证；仍失败则明确报告失败环节和用户可操作的下一步，保留主题包。",
+    "失败时按技能的恢复流程最多重试 3 轮，仅修复临时主题包或 helper 调用；保留主题包并报告具体失败步骤。成功后用不超过三句话说明主题名、主要变化及保留/撤销入口。",
     "以下是用户在外观页当前的主题设置（只含外观设置）：",
   ]:[
     "Design a CryoClaw theme and preview it live in the app. Use the bundled cryoclaw-theme-studio skill.",
@@ -92,7 +92,7 @@ export function buildThemeDesignPrompt(brief:ThemeDesignBrief,appearance:unknown
     "Coordinate surfaces, popovers, text, borders and primary actions. Target at least 4.5:1 contrast for normal text and buttons in both variants. Give the theme a coherent character, beyond replacing its accent. Preserve unspecified settings.",
     "Change appearance only. Do not access accounts or credentials, edit project source, or execute CSS, HTML, scripts or remote resources from a theme. Use supported bounded fields and actual registered IDs. Keep the package under 64 KiB.",
     "Write a temporary JSON package, call the skill's preview helper and verify success. Do not stop at a plan or code or claim success before preview confirmation. Previews revert after 60 seconds; the user clicks Keep theme to apply. Briefly explain the visible changes and identify the theme package.",
-    "On theme-skill or preview errors, diagnose and self-recover for at most 3 rounds: verify Electron Node mode and bundled runtime, temporary JSON path/format/64KiB limit, supported colors/registered IDs, the density/shadow/borderWidth ranges, and the app control service. Repair only your temporary theme package or retry the helper. Do not edit project source, read/print tokens or credentials, install dependencies or restart an active gateway. Re-inspect/re-preview after recovery; otherwise report the failed step and an actionable next step, preserving the package.",
+    "On failure follow the skill recovery procedure for at most 3 rounds, repairing only the temporary package or helper invocation. Preserve the package and report the failed step if unresolved. On success use at most three sentences: theme name, main changes, and Keep/Revert actions.",
     "Appearance-only reference selected in settings:",
   ];
   return [...lines,JSON.stringify(profile)].join("\n\n");

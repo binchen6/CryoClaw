@@ -752,6 +752,11 @@ function patchWorkerInputCloneSanitize(gatewayDir) {
 // NTFS junctions cannot traverse an ASAR file. Resolve only a direct junction
 // to a verified virtual OpenClaw root; callers still compare the selected host.
 function patchPluginNativeAsarHost(gatewayDir) {
+  patchPluginPeerAsarLink(gatewayDir);
+  patchPluginAsarBoundaryScan(gatewayDir);
+  patchRepairedPeerMigration(gatewayDir);
+  patchConfiguredWebSearchMetadata(gatewayDir);
+  patchWindowsPluginCanonicalPaths(gatewayDir);
   const directory = path.join(gatewayDir, "node_modules", "openclaw", "dist");
   if (!fs.existsSync(directory)) return 0;
   let patched = 0;
@@ -776,13 +781,162 @@ function cryoclawResolveNativeHostPath(candidate) {
     return fs.realpathSync(target);
   } catch { return; }
 }
+
 `;
     fs.writeFileSync(file, source, "utf8");patched++;
   }
   return patched;
 }
 
+// Create the link even for ASAR hosts. New kernels audit it synchronously after npm updates.
+// Only the exact selected host may be accepted when Windows cannot realpath through ASAR.
+function patchPluginPeerAsarLink(gatewayDir) {
+  const directory = path.join(gatewayDir, "node_modules", "openclaw", "dist");
+  if (!fs.existsSync(directory)) return 0;
+  let patched = 0;
+  for (const name of fs.readdirSync(directory)) {
+    if (!/^plugin-peer-link-.*\.(?:m?js)$/.test(name)) continue;
+    const file = path.join(directory, name);
+    let source = fs.readFileSync(file, "utf8");
+    if (source.includes("/* cryoclaw-peer-asar-link */")) { patched++; continue; }
+    if (!source.includes("function linkOpenClawPeerDependency(params) {") || !source.includes("safeRealpathSync(linkPath)")) throw new Error("Plugin peer link contract changed; review ASAR compatibility");
+    source = source.replace(/\s*\/\* asar-bypass \*\/ if \(params.hostRoot && params.hostRoot.includes\('\.asar'\)\) return (?:null|"unchanged");/g, "");
+    source = source.replaceAll("safeRealpathSync(linkPath)", "(safeRealpathSync(linkPath) ?? cryoclawPeerAsarTarget(linkPath, params.hostRoot))");
+    source = 'import { readlinkSync as cryoclawReadlink, statSync as cryoclawStat } from "node:fs";\n' + source;
+    source += `
+/* cryoclaw-peer-asar-link */
+function cryoclawPeerAsarTarget(linkPath, hostRoot) {
+  try {
+    if (!/\\.asar[\\\\/]node_modules[\\\\/]openclaw$/i.test(hostRoot)) return null;
+    const target = path.resolve(path.dirname(linkPath), cryoclawReadlink(linkPath));
+    if (target !== path.resolve(hostRoot) || !cryoclawStat(hostRoot).isDirectory()) return null;
+    return safeRealpathSync(hostRoot) ?? hostRoot;
+  } catch { return null; }
+}
+`;
+    fs.writeFileSync(file, source, "utf8"); patched++;
+  }
+  return patched;
+}
+function patchPluginAsarBoundaryScan(gatewayDir) {
+  const directory=path.join(gatewayDir,"node_modules","openclaw","dist");
+  if(!fs.existsSync(directory))return 0;
+  let patched=0;
+  for(const name of fs.readdirSync(directory)){
+    if(!/^install-security-scan\.runtime-.*\.(?:m?js)$/.test(name))continue;
+    const file=path.join(directory,name);let source=fs.readFileSync(file,"utf8");
+    if(source.includes("/* cryoclaw-asar-boundary-link */")){patched++;continue;}
+    const marker="resolvedTargetPath = await fs.realpath(params.symlinkPath);";
+    if(!source.includes(marker))throw Error("Plugin dependency boundary scanner changed; review ASAR compatibility");
+    source=source.replace(marker,`/* cryoclaw-asar-boundary-link */
+    resolvedTargetPath = await fs.realpath(params.symlinkPath).catch(async error => {
+      const host = params.trustedHostOpenClawRootRealPath;
+      if (!host || !/\\.asar[\\\\/]node_modules[\\\\/]openclaw$/i.test(host) || !isTrustedOpenClawPeerSymlink({relativePath:params.symlinkRelativePath,allowManagedNpmRootPackagePeerSymlinks:params.allowManagedNpmRootPackagePeerSymlinks})) throw error;
+      const target = path.resolve(path.dirname(params.symlinkPath), await fs.readlink(params.symlinkPath));
+      if (target !== path.resolve(host) || !(await fs.stat(host)).isDirectory()) throw error;
+      return path.resolve(host);
+    });`);
+    fs.writeFileSync(file,source,"utf8");patched++;
+  }
+  return patched;
+}
+
+function patchRepairedPeerMigration(gatewayDir) {
+  const directory=path.join(gatewayDir,"node_modules","openclaw","dist");
+  if(!fs.existsSync(directory))return 0;
+  const files=fs.readdirSync(directory),peer=files.find(n=>/^plugin-peer-link-.*\.mjs$/.test(n)),loader=files.find(n=>/^loader-shared-.*\.mjs$/.test(n));
+  let patched=0;
+  for(const name of files){
+    if(!/^plugin-update-config-migration-.*\.mjs$/.test(name))continue;
+    const file=path.join(directory,name);let source=fs.readFileSync(file,"utf8");
+    if(source.includes("/* cryoclaw-repaired-peer-migration */")){patched++;continue;}
+    const marker="const uninspected = selectedPending.filter(";
+    if(!peer || !loader || !source.includes(marker))throw Error("Plugin migration contract changed; review repaired peer migration compatibility");
+    source=`import { i as cryoclawAuditPeer } from "./${peer}";\nimport { l as cryoclawValidatePluginConfig } from "./${loader}";\n`+source;
+    source=source.replace(marker,"for (const entry of selectedPending) if (cryoclawRepairedPeerMigration(entry, known.get(entry.pluginId), activationConfig)) inspected.set(entry.pluginId, false);\n\t\t\t\t\t\t"+marker);
+    source+=`
+/* cryoclaw-repaired-peer-migration */
+function cryoclawRepairedPeerMigration(entry, plugin, config) {
+  if (!plugin || plugin.doctorContract || !plugin.configSchema || entry.requiresStateMigration || entry.requiresDoctorInspection || entry.validationExcludedPaths?.length || entry.command !== "openclaw update repair" || !/^Plugin declares peerDependency "openclaw" but peer link audit failed:/.test(entry.reason ?? "")) return false;
+  if ((entry.configPaths ?? []).some(parts => parts.length !== 4 || parts[0] !== "plugins" || parts[1] !== "entries" || parts[2] !== entry.pluginId || parts[3] !== "config")) return false;
+  try {
+    if (cryoclawAuditPeer({packageDir:plugin.rootDir}) !== null) return false;
+    const value = structuredClone(config.plugins?.entries?.[entry.pluginId]?.config ?? {});
+    return cryoclawValidatePluginConfig({origin:plugin.origin,schema:plugin.configSchema,cacheKey:plugin.schemaCacheKey,value,sourceValue:value}).ok === true;
+  } catch { return false; }
+}
+`;
+    fs.writeFileSync(file,source,"utf8");patched++;
+  }
+  return patched;
+}
+
+function patchConfiguredWebSearchMetadata(gatewayDir) {
+  const directory=path.join(gatewayDir,"node_modules","openclaw","dist");
+  if(!fs.existsSync(directory))return 0;
+  const files=fs.readdirSync(directory),factories=files.find(n=>/^public-artifact-factories-.*\.mjs$/.test(n));let patched=0;
+  for(const name of files){
+    if(!/^runtime-web-tools-.*\.mjs$/.test(name))continue;
+    const file=path.join(directory,name);let source=fs.readFileSync(file,"utf8");
+    if(source.includes("/* cryoclaw-configured-web-metadata */")){patched++;continue;}
+    if(!source.includes("async function resolveBundledWebSearchProviders(params)"))continue;
+    const marker="async function resolveBundledWebSearchProviders(params) {";
+    if(!factories || !source.includes(marker))throw Error("Web provider metadata contract changed; review scoped public artifact loading");
+    source=`import { t as cryoclawPublicEntries } from "./${factories}";\n`+source;
+    source=source.replace(marker,marker+"\n\tconst configured = cryoclawConfiguredWebSearchMetadata(params);\n\tif (configured) return configured;");
+    source+=`
+/* cryoclaw-configured-web-metadata */
+function cryoclawConfiguredWebSearchMetadata(params) {
+  const config=params.sourceConfig,id=config.tools?.web?.search?.provider,allow=config.plugins?.allow;
+  if(typeof id!=="string" || config.plugins?.enabled===false || config.plugins?.entries?.[id]?.enabled!==true || config.plugins?.deny?.includes(id) || Array.isArray(allow) && allow.length>0 && !allow.includes(id))return null;
+  const owner=params.context.manifestRegistry?.plugins.find(p=>p.id===id && p.trustedOfficialInstall===true && p.origin==="global");
+  if(!owner)return null;
+  try {
+    const entries=cryoclawPublicEntries({owner,dirName:id,pluginId:id,env:params.context.env,artifactCandidates:["web-search-contract-api.js"],suffix:"WebSearchProvider",isArtifact:p=>p?.id===id && ["label","hint","placeholder","signupUrl","credentialPath"].every(k=>typeof p[k]==="string") && Array.isArray(p.envVars) && p.envVars.every(v=>typeof v==="string") && ["getCredentialValue","setCredentialValue","createTool"].every(k=>typeof p[k]==="function")});
+    return entries?.length ? entries : null;
+  } catch { return null; }
+}
+`;
+    fs.writeFileSync(file,source,"utf8");patched++;
+  }
+  return patched;
+}
+
+// Preserve fs-safe admission; only avoid Node's repeated JS ancestor lstat walk on Windows.
+function patchWindowsPluginCanonicalPaths(gatewayDir) {
+  const directory=path.join(gatewayDir,"node_modules","openclaw","dist");if(!fs.existsSync(directory))return 0;let patched=0;
+  for(const name of fs.readdirSync(directory)){
+    if(!/^plugin-generation-artifact-.*\.mjs$/.test(name))continue;
+    const file=path.join(directory,name);let source=fs.readFileSync(file,"utf8");
+    if(source.includes("/* cryoclaw-plugin-canonical-path */")){patched++;continue;}
+    const marker="function withPluginSourceFile(source, boundary, read) {";
+    if(!source.includes(marker))continue;
+    const at=source.indexOf(marker),end=source.indexOf("rootPath: boundary,",at);
+    if(end<0)throw Error("Plugin source admission changed; review canonical-root optimization");
+    source=source.slice(0,end)+source.slice(end).replace("rootPath: boundary,","rootPath: boundary, rootRealPath: cryoclawPluginCanonicalRoot(boundary),");
+    source=source.replaceAll("fs.realpathSync(","cryoclawPluginRealpath(");
+    source+=`
+/* cryoclaw-plugin-canonical-path */
+function cryoclawPluginCanonicalRoot(value) {
+  if(process.platform!=="win32" || typeof value!=="string" || /\\.asar[\\\\/]/i.test(value))return undefined;
+  try{return fs.realpathSync.native(value);}catch{return undefined;}
+}
+function cryoclawPluginRealpath(value,...options) {
+  if(process.platform!=="win32" || typeof value!=="string" || /\\.asar[\\\\/]/i.test(value))return fs.realpathSync(value,...options);
+  try{return fs.realpathSync.native(value,...options);}catch{return fs.realpathSync(value,...options);}
+}
+`;
+    fs.writeFileSync(file,source,"utf8");patched++;
+  }
+  return patched;
+}
+
 module.exports = {
+  patchWindowsPluginCanonicalPaths,
+  patchConfiguredWebSearchMetadata,
+  patchRepairedPeerMigration,
+  patchPluginAsarBoundaryScan,
+  patchPluginPeerAsarLink,
   patchWindowsOpenclawArtifacts,
   patchWindowsHideGlobal,
   injectWindowsHideAll,

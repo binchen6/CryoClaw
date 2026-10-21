@@ -155,6 +155,8 @@ export const zhDict: Record<string, string> = {
 
   // 扩展 · 插件更新（R91）
   "ext.plugins.checkUpdates": "检查更新",
+  "ext.importLocal": "导入本地目录",
+  "ext.updateNotes": "更新内容",
   "ext.plugins.checking": "检查中…",
   "ext.plugins.upToDate": "所有可跟踪的插件均为最新",
   "ext.plugins.noTrackable": "暂无通过市场安装的可跟踪插件",

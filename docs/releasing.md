@@ -96,3 +96,9 @@
 - 产物：`CryoClaw-<version>-<arch>-mac.zip` + `CryoClaw-<version>-<arch>.dmg`（含 blockmap）+ `latest-mac.yml`，同样要求同批进同一个 Release。
 
 发布前可用 `node scripts/update-discovery-smoke.js --from <older-version> --expect <current-public-version>` 验证真实 SDK 的公开发现逻辑，关闭自动下载；发布后用上一正式版与新版本号重复检查。该 Node 工具读取 `https_proxy`，与 Electron 客户端自动使用系统代理的行为不同。Node 24 的独立 release-assert 如需代理，可使用已有代理环境并加 `--use-env-proxy`；网络失败必须保留为失败，不能跳过校验。
+
+## 更新与本地扩展（2026.1021.0）
+
+稳定版客户端直接读取官方 Release 的 latest.yml，减少 GitHub API 往返与限流。受管部署可在客户端运行环境设置 CRYOCLAW_APP_UPDATE_URL 为可信 HTTPS 目录；目录须保留清单、安装器和 blockmap 三件套，下载仍由 electron-updater 核验 SHA-512。此环境变量不是构建期注入配置。
+
+技能与插件页支持选择本地目录导入。技能目录必须含 SKILL.md，拒绝符号链接、超过 2000 个条目或 32 MiB 的内容，同名目录不覆盖；插件目录须有 package.json、openclaw.plugin.json 和目录内可读入口。插件安装沿用内核的安装审计。本地项只读本地详情，不参与更新检查。

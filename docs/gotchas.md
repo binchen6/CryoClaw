@@ -448,3 +448,17 @@ Things that are easy to get wrong or forget when working on CryoClaw.
 155. **首装关键反馈应检查可见 DOM。** oc-message-box 仅转发全局 toast，textContent 为空。首装错误和长时启动状态采用持久内联提示，测试读取实际 alert/status 节点；不要因为组件存在就判定用户看到了反馈。
 
 156. **隔离 Electron GUI 也受 Windows 文件完整性标签影响。** 仓库 electron.exe 可继承 Low Mandatory Level，获准进程仍可能无法启动 GUI。隔离验收采用流式复制到普通用户 Temp 的私有运行时，不改 ACL；退出后只清理自己创建的目录。
+
+157. **ASAR peer-link 创建与审计必须同时适配。** 新内核的 auditOpenClawPeerDependency 改为同步函数，旧补丁只匹配 async，且链接创建返回 unchanged，导致 npm 插件更新后被拒绝。打包与内核升级共用 patchPluginPeerAsarLink：创建真实 junction；Windows 无法 realpath 穿透 ASAR 时，只接受 readlink 指向当前选定内核且目标可读的链接，不能直接跳过审计。
+
+158. **镜像 HTTP 200 不代表 API 成功。** 国内镜像未实现的 packages 接口可能返回 ResponseMetadata.Error 和 Result:null。JSON 读取在竞速前拒绝这类错误信封，不能让它抢先覆盖官方插件元数据。
+
+159. **插件安装来源不应只依赖 openclaw.json。** 新内核的安装账本可由独立状态存储维护，配置里的 plugins.installs 可能为空。受管 npm 项目的包名可从 CLI 返回的 rootDir/package.json 读取；CryoClaw 本地导入使用自己的 localPluginIds 标记排除更新。
+
+160. **SDK 链接的依赖边界扫描也需识别 ASAR。** 创建 junction 和同步 peer 审计通过后，install-security-scan 仍可能因 realpath 无法穿透归档而回滚。只对内核原有的可信 SDK 链接形态、readlink 精确指向当前 hostRoot 且目标可读的情况回退，继续运行原有外部边界校验；其他链接仍拒绝。
+
+161. **旧 peer-link 故障义务不能冒充 Doctor 合约缺失。** tavily 新包无 Doctor 合约，但旧链接失败曾把其 config 路径留在迁移账本里，后续更新会因未 inspected 回滚。仅当原因为该 peer-link 故障、没有数据迁移/Doctor 强制要求/验证排除路径、当前 SDK 链接审计通过且现有配置通过目标插件 schema 时，标记这次检查已完成；仍交内核原事务提交并清理义务，不直接删数据库记录。
+
+162. **重打 ASAR 的 staging 路径不能放在点目录。** unpack 的 glob 默认不匹配绝对路径里的 .cache 段，会把原生 .node/.dll/.exe 重新塞入归档。使用 resources/targets 下非点目录；对比新旧 header 的 unpacked 标记，4679 个解包文件及 115061653 字节应保持一致。正式 package-resources 原路径不受影响。
+
+163. **搜索凭据初始化不应激活整个插件注册表。** 全局安装的可信 tavily 会落入运行时 provider 回退，启动 secrets-activate 实测约 129 秒。只对明确配置且显式启用、允许列表放行的可信全局插件，用原 public-artifact loader 读取 web-search-contract-api.js；禁用、非可信、缺契约或加载失败时保留原路径。实际快照准备约 5.9 秒。

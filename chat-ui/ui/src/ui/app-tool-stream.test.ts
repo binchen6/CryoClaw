@@ -152,6 +152,24 @@ function toolEvent(data: Record<string, unknown>, overrides?: Partial<AgentEvent
   };
 }
 
+test("tool identity survives unnamed updates and results without producing a Tool placeholder", () => {
+  const host = makeHost();
+  handleAgentEvent(host, toolEvent({ phase: "start", toolCallId: "tc-name", name: "exec", args: { command: "pwd" } }));
+  for (const name of [undefined, "", "  "]) {
+    handleAgentEvent(host, toolEvent({ phase: "update", toolCallId: "tc-name", name, partialResult: "progress" }));
+    assert.equal(host.toolStreamById.get("tc-name")?.name, "exec");
+  }
+  handleAgentEvent(host, toolEvent({ phase: "result", toolCallId: "tc-name", result: { text: "done" } }));
+  const entry = host.toolStreamById.get("tc-name")!;
+  assert.equal(entry.name, "exec");
+  assert.deepEqual(entry.args, { command: "pwd" });
+  assert.equal(host.chatToolMessages.length, 1);
+  const block = (host.chatToolMessages[0].content as Record<string, unknown>[])[0];
+  assert.equal(block.name, "exec");
+  assert.equal(block.text, "done");
+  assert.equal(host.chatToolMessages[0].pending, undefined);
+});
+
 test("tool input_delta：实时 diff 写入 entry 并随 callMessage 内容块上屏", () => {
   const host = makeHost();
   handleAgentEvent(

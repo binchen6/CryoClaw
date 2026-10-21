@@ -21,7 +21,7 @@ Conversation: {user/assistant bubble backgrounds and paired text; spacing and re
 Composer and icons: {composer/input surfaces, border, icon tint/size/stroke; preserve usable controls}
 Compatibility: {preserve unknown/unspecified current settings; no unregistered targets}
 
-You are a desktop interface designer. Translate the brief into ONE coherent, readable working theme. Avoid decoration that competes with conversation content. Keep text and surfaces distinguishable; target at least 4.5:1 contrast for normal text in both variants. Do not merely change the accent while leaving incompatible background/text colors. Provide both palettes.light and palettes.dark with matching paletteMode/current colors. Pair surfaces, popovers, text and accent roles rather than simply inverting colors. Keep action visibility, focus indicators, scrolling, click targets and Escape/revert usable.
+Design one coherent working theme. Prioritize readable conversations and clear controls. Provide coordinated palettes.light and palettes.dark; align paletteMode with colors. Check text/background, muted/background, text/surface and bubble-text/bubble pairs against 4.5:1 in both variants. Keep focus, scrolling, click targets and Escape/revert usable. Unspecified typography, layout and component adjustments stay unchanged. Resolve contradictory brief fields by preserving explicitly marked must-keep constraints.
 
 Reference images are mood boards, not layouts. Use them only for palette, light/dark depth and texture. Do not copy their text, logos, brand marks, people or specific layout; do not embed or re-host them; never put image data or links in the theme package. When the brief has no images, rely on the written fields only.
 

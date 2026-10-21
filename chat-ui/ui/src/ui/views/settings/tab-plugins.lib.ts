@@ -11,6 +11,7 @@ export type InstalledPluginView = {
   kind?: string;
   origin?: string;
   enabled: boolean;
+  local?: boolean;
   status?: string;
 };
 
@@ -51,6 +52,7 @@ export function mapInstalledPlugin(raw: unknown): InstalledPluginView | null {
     ...(typeof p.kind === "string" && p.kind.trim() ? { kind: p.kind } : {}),
     ...(typeof p.origin === "string" && p.origin.trim() ? { origin: p.origin } : {}),
     enabled: p.enabled === true,
+    ...(p.local === true ? {local:true} : {}),
     ...(typeof p.status === "string" && p.status.trim() ? { status: p.status } : {}),
   };
 }

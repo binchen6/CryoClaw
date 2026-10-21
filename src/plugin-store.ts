@@ -30,12 +30,15 @@
  *   - `plugins inspect <id> --json`（R91）：单插件详情 JSON；stdout 可能混有非 JSON
  *     警告行，解析时取第一个 `{` 到最后一个 `}` 的子串。
  */
-import { ipcMain } from "electron";
+import { ipcMain, dialog } from "electron";
+import {validateLocalPlugin} from "./local-extension-import";
 import { execFile, type ChildProcess } from "child_process";
 import * as path from "path";
+import * as fs from "fs";
 import * as log from "./logger";
 import { assertTrustedIpcSender } from "./ipc-sender-guard";
-import { resolveGatewayEntry, resolveNodeBin, resolveNodeExtraEnv, resolveUserBinDir, resolveUserStateDir } from "./constants";
+import { resolveGatewayEntry, resolveGatewayPackageDir, resolveNodeBin, resolveNodeExtraEnv, resolveUserBinDir, resolveUserStateDir } from "./constants";
+import {isPluginHostCompatible,selectCompatiblePluginVersion} from "./plugin-update-compat";
 import { CN_CLAWHUB_MIRROR, isNetworkFailure, jsonGet, readSkillStoreRegistry } from "./skill-store";
 import { readBuildConfigClawhubRegistry } from "./build-config";
 import { readCryoclawConfig, writeCryoclawConfig } from "./cryoclaw-config";
@@ -53,8 +56,11 @@ const MAX_BUFFER = 8 * 1024 * 1024;
 // 不影响正确性，重进扩展页不再重付冷启成本。
 const LIST_CACHE_TTL_MS = 10 * 60_000;
 let listCache: { at: number; plugins: InstalledPlugin[] } | null = null;
+let listEpoch=0;
+let listRequest:{epoch:number;promise:Promise<InstalledPlugin[]>}|null=null;
 
 function invalidatePluginListCache() {
+  listEpoch++;
   listCache = null;
   // 市场浏览缓存同点失效：安装/卸载/更新会改变 installed 集合与推荐排除集
   marketBrowseCache = null;
@@ -82,6 +88,9 @@ export type InstalledPlugin = {
   format?: string;
   kind?: string;
   source?: string;
+  rootDir?: string;
+  local?: boolean;
+  npmName?: string;
   origin?: string;
   enabled: boolean;
   status?: string;
@@ -149,7 +158,7 @@ function execKernelCli(args: string[], timeoutMs: number = EXEC_TIMEOUT_MS): Pro
         // OPENCLAW_STATE_DIR 显式对齐 gateway spawn（R91 审查修复）：Windows 上
         // HOME/USERPROFILE 可能指向不同路径（Git Bash 会设 POSIX 形态 HOME），
         // 缺省时内核 CLI 会解析到另一个 ~/.openclaw，插件操作落错状态目录
-        env: { ...process.env, ...resolveNodeExtraEnv(), OPENCLAW_STATE_DIR: resolveUserStateDir(), PATH: envPath },
+        env: { ...process.env, ...resolveNodeExtraEnv(), OPENCLAW_STATE_DIR: resolveUserStateDir(), PATH: envPath, npm_config_registry: process.env.npm_config_registry || process.env.CRYOCLAW_NPM_REGISTRY || "https://registry.npmmirror.com" },
         windowsHide: true,
       },
       (err, stdout, stderr) => {
@@ -659,25 +668,46 @@ async function listInstalledPlugins(): Promise<InstalledPlugin[]> {
   if (listCache && Date.now() - listCache.at < LIST_CACHE_TTL_MS) {
     return listCache.plugins;
   }
+  if(listRequest?.epoch===listEpoch)return listRequest.promise;
+  const epoch=listEpoch;
+  const promise=readInstalledPlugins().then(plugins=>{if(epoch===listEpoch)listCache={at:Date.now(),plugins};return plugins;});
+  listRequest={epoch,promise};
+  try{return await promise;}finally{if(listRequest?.promise===promise)listRequest=null;}
+}
+
+async function readInstalledPlugins():Promise<InstalledPlugin[]> {
   const out = await execKernelCli(["plugins", "list", "--json"]);
   const parsed = JSON.parse(out) as { plugins?: unknown };
   if (!Array.isArray(parsed.plugins)) return [];
+  let installs:Record<string,any>={};
+  const localIds=readCryoclawConfig()?.localPluginIds??[];
+  try{installs=JSON.parse(fs.readFileSync(path.join(resolveUserStateDir(),"openclaw.json"),"utf8"))?.plugins?.installs??{};}catch{}
   const plugins = parsed.plugins.map((raw) => {
     const p = raw as Record<string, unknown>;
+    let npmName:string|undefined;
+    if(typeof p.rootDir==="string"){
+      const relative=path.relative(path.join(resolveUserStateDir(),"npm","projects"),p.rootDir);
+      if(relative && !relative.startsWith("..") && !path.isAbsolute(relative))try{
+        const name=JSON.parse(fs.readFileSync(path.join(p.rootDir,"package.json"),"utf8"))?.name;
+        if(typeof name==="string" && isValidPluginName(name))npmName=name;
+      }catch{}
+    }
     return {
       id: typeof p.id === "string" ? p.id : "",
+      local: localIds.includes(String(p.id)) || ["path","archive"].includes(installs[String(p.id)]?.source) || p.origin === "workspace",
+      ...(npmName?{npmName}:{}),
       name: typeof p.name === "string" ? p.name : (typeof p.id === "string" ? p.id : ""),
       ...(typeof p.version === "string" ? { version: p.version } : {}),
       ...(typeof p.description === "string" ? { description: p.description } : {}),
       ...(typeof p.format === "string" ? { format: p.format } : {}),
       ...(typeof p.kind === "string" ? { kind: p.kind } : {}),
       ...(typeof p.source === "string" ? { source: p.source } : {}),
+      ...(typeof p.rootDir === "string" ? { rootDir: p.rootDir } : {}),
       ...(typeof p.origin === "string" ? { origin: p.origin } : {}),
       enabled: p.enabled === true,
       ...(typeof p.status === "string" ? { status: p.status } : {}),
     };
   }).filter((p) => p.id);
-  listCache = { at: Date.now(), plugins };
   return plugins;
 }
 
@@ -758,12 +788,30 @@ async function checkUpdatesViaHttp(
     }
     versionById = new Map(installed.filter((p) => p.version).map((p) => [p.id, p.version as string]));
   }
+  let installRecords: Record<string, any> = {};
+  let hostVersion="";
+  try{hostVersion=JSON.parse(fs.readFileSync(path.join(resolveGatewayPackageDir(),"package.json"),"utf8")).version;}catch{}
+  try { installRecords = JSON.parse(fs.readFileSync(path.join(resolveUserStateDir(), "openclaw.json"), "utf8"))?.plugins?.installs ?? {}; } catch { /* No tracked npm installs. */ }
   const settled = await Promise.allSettled(
     ids.map(async (id): Promise<PluginUpdateEntry | { id: string; reason: string }> => {
       const currentVersion = versionById.get(id);
       if (!currentVersion) return { id, reason: "本地版本未知（plugins list 无该条目）" };
-      const raw = await jsonGet<unknown>(`${marketApiBase()}/api/v1/packages/${encodeURIComponent(id)}`);
-      const latest = extractLatestVersion(raw);
+      const record = installRecords[id];
+      const npmName = typeof record?.resolvedName === "string" ? record.resolvedName : typeof record?.spec === "string" ? record.spec.replace(/(@[^/]+)$/,"").trim() : listCache?.plugins.find(p=>p.id===id)?.npmName??"";
+      let latest: string | null;
+      if ((record?.source === "npm" || !record) && npmName && isValidPluginName(npmName)) {
+        const endpoint = `${encodeURIComponent(npmName)}/latest`;
+        const raw = await jsonGet<{version?: string}>(`https://registry.npmmirror.com/${endpoint}`).catch(() => jsonGet<{version?: string}>(`https://registry.npmjs.org/${endpoint}`));
+        latest = typeof raw.version === "string" ? raw.version : null;
+        if(latest && hostVersion && !isPluginHostCompatible(raw,hostVersion)){
+          const packument=await jsonGet<unknown>(`https://registry.npmmirror.com/${encodeURIComponent(npmName)}`).catch(()=>jsonGet<unknown>(`https://registry.npmjs.org/${encodeURIComponent(npmName)}`));
+          latest=selectCompatiblePluginVersion(packument,hostVersion);
+          if(!latest)return {id,reason:"__up_to_date__"};
+        }
+      } else {
+        const raw = await jsonGet<unknown>(`${marketApiBase()}/api/v1/packages/${encodeURIComponent(id)}`);
+        latest = extractLatestVersion(raw);
+      }
       if (!latest) return { id, reason: "registry 返回无 latestVersion" };
       const cmp = comparePluginVersions(latest, currentVersion);
       if (cmp === 0) return { id, reason: "__up_to_date__" };
@@ -906,6 +954,19 @@ async function restoreStashedPluginConfig(marketName: string): Promise<string[] 
 
 // 注册插件管理页 IPC handler
 export function registerPluginStoreIpc(): void {
+  ipcMain.handle("plugin-store:import-local",async event=>{
+    if(!assertTrustedIpcSender(event,"plugin-store:import-local"))throw Error("IPC sender not trusted");
+    try{
+      const picked=await dialog.showOpenDialog({title:"导入本地插件 / Import local plugin",properties:["openDirectory"]});
+      if(picked.canceled || !picked.filePaths[0])return {success:true,canceled:true};
+      const root=validateLocalPlugin(picked.filePaths[0]);
+      const id=JSON.parse(fs.readFileSync(path.join(root,"openclaw.plugin.json"),"utf8")).id as string;
+      await execKernelCliWithAckFallback(["plugins","install",root,INSTALL_POLICY_ACK_FLAG],UPDATE_CHECK_TIMEOUT_MS);
+      const config=readCryoclawConfig();
+      if(config){config.localPluginIds=[...new Set([...(config.localPluginIds??[]),id])];writeCryoclawConfig(config);}
+      invalidatePluginListCache();return {success:true};
+    }catch(error){return {success:false,message:error instanceof Error?error.message:String(error)};}
+  });
   ipcMain.handle("plugin-store:list", async (event) => {
     if (!assertTrustedIpcSender(event, "plugin-store:list")) throw new Error("IPC sender not trusted");
     try {
@@ -972,6 +1033,8 @@ export function registerPluginStoreIpc(): void {
     if (!isValidPluginName(id)) return { success: false, message: "invalid plugin id" };
     try {
       await execKernelCli(["plugins", "uninstall", id, "--force"]);
+      const config=readCryoclawConfig();
+      if(config?.localPluginIds?.includes(id)){config.localPluginIds=config.localPluginIds.filter(local=>local!==id);writeCryoclawConfig(config);}
       invalidatePluginListCache();
       return { success: true };
     } catch (err: any) {
@@ -1003,117 +1066,17 @@ export function registerPluginStoreIpc(): void {
     }
   });
 
-  // R91：检查插件更新（dry-run，不落盘）。stdout 为人类可读文本，靠
-  // parseUpdateOutcomes 解析；无可识别行且非 "No tracked" 视为解析失败而不是
-  // 空结果（否则内核报错会被静默当成"全部最新"误导用户）。
-  // R93：内核在 ClawHub 不可达时逐插件打 `Failed to check <id>: …` 且整体
-  // exit 1（Failed 行在 stderr）——exec 拒绝时解析附件里的 Failed 行，交由
-  // Electron 侧 HTTP（marketApiBase，用户可配镜像）回退重查；回退后仍失败才
-  // 报错，报错文案带网络/镜像配置指引而非裸 undici 超时串。
-  // R95：整体超时（killed/ETIMEDOUT，UPDATE_CHECK_TIMEOUT_MS=180s 预算被热重启
-  // 冷载 + 逐插件网络检查吃满）且 list 缓存还热时，自动对缓存 id 走
-  // checkUpdatesViaHttp 并直接返回（结果标注来自直连 HTTP 检查）；回退也不可用
-  // 才报超时错。
-  ipcMain.handle("plugin-store:check-updates", async (event) => {
+  // Query metadata directly; local and bundled plugins do not have marketplace updates.
+  ipcMain.handle("plugin-store:check-updates", async (event, params) => {
     if (!assertTrustedIpcSender(event, "plugin-store:check-updates")) throw new Error("IPC sender not trusted");
-    let stdout = "";
-    let execFailure: (Error & { stdout?: string; stderr?: string; code?: number | string; killed?: boolean }) | null = null;
+    const id = typeof params?.id === "string" ? params.id.trim() : "";
+    if (id && !isValidPluginName(id)) return {success:false,message:"invalid plugin id"};
     try {
-      // T2：dry-run 同样要带 install-policy ack——非 TTY 下内核 ack 模块返回 {}，
-      // 缺参时内核直接 exit 1 且 stderr 无结果行（历史裸漏 Command failed 的成因之一）
-      stdout = await execKernelCliWithAckFallback(
-        ["plugins", "update", "--dry-run", "--all", INSTALL_POLICY_ACK_FLAG],
-        UPDATE_CHECK_TIMEOUT_MS,
-      );
-    } catch (err) {
-      execFailure = err as Error & { stdout?: string; stderr?: string; code?: number | string; killed?: boolean };
-      // R95：超时且 list 缓存还热 → 直连 HTTP 回退直接出结果
-      if (isExecTimeoutFailure(execFailure)) {
-        const fallback = await runUpdateCheckTimeoutHttpFallback(listCache?.plugins);
-        if (fallback) {
-          log.info(`[plugin-store] check-updates timed out; returning http fallback results (${fallback.updatable.length} updatable, ${fallback.failed.length} failed)`);
-          return {
-            success: true,
-            data: {
-              updatable: fallback.updatable,
-              checkedAt: Date.now(),
-              ...(fallback.failed.length > 0 ? { failed: fallback.failed } : {}),
-              source: "http-fallback",
-              message: "内核 CLI 检查超时，以下结果来自直连 ClawHub HTTP 检查。",
-            },
-          };
-        }
-      }
-    }
-    try {
-      // 内核 exit 1 时结果行在 stderr（console.error），stdout 里可能有进度文本
-      const combined = execFailure
-        ? `${stdout}\n${execFailure.stderr ?? ""}\n${execFailure.stdout ?? ""}`
-        : stdout;
-      const parsed = parseUpdateOutcomes(combined);
-      let updatable = parsed.updatable;
-      let failed = parsed.failed;
-      if (failed.length > 0) {
-        log.info(`[plugin-store] check-updates kernel-side failures: ${failed.map((f) => f.id).join(",")} — trying http fallback`);
-        const http = await checkUpdatesViaHttp(failed.map((f) => f.id));
-        updatable = updatable.concat(http.updatable);
-        failed = http.stillFailed;
-        // 回退判为 up-to-date 的也算"检查成功"信号（否则全失败场景会被误报成
-        // 输出不可解析）
-        parsed.upToDateIds.push(...http.upToDateIds);
-      } else if (execFailure && NETWORK_FAILURE_MARK_RE.test(stripAnsiCodes(combined))) {
-        // T2：内核「无信号死亡」（超时 kill / 网络错误但无逐插件 Failed 行）时，
-        // 历史不走回退直接裸漏 Command failed；改为对全量已装 id 走 HTTP 回退。
-        // 审查修复：仅用已热列表缓存——CLI 刚失败，再起一次 plugins list（冷启 ~15s、
-        // 超时 90s）会叠加等待，且无本地版本时回退只会逐 id 记「本地版本未知」
-        const ids = listCache ? listCache.plugins.map((p) => p.id) : [];
-        if (ids.length > 0) {
-          log.info(`[plugin-store] check-updates exec failed with network markers — trying http fallback for ${ids.length} ids`);
-          const http = await checkUpdatesViaHttp(ids);
-          updatable = updatable.concat(http.updatable);
-          failed = http.stillFailed;
-          parsed.upToDateIds.push(...http.upToDateIds);
-        }
-      }
-      const sawAnySignal = parsed.sawNoTracked || updatable.length > 0 || parsed.upToDateIds.length > 0;
-      if (!sawAnySignal && failed.length === 0) {
-        if (execFailure) {
-          const exitCode = (execFailure as { code?: number | string }).code ?? null;
-          const timedOut = isExecTimeoutFailure(execFailure);
-          return {
-            success: false,
-            message: classifyUpdateFailure({
-              combined,
-              exitCode,
-              timedOut,
-              timeoutSeconds: Math.round(UPDATE_CHECK_TIMEOUT_MS / 1000),
-            }),
-          };
-        }
-        const snippet = stripAnsiCodes(stdout).trim().slice(0, 200);
-        return { success: false, message: `无法解析 plugins update --dry-run 输出：${snippet || "(empty)"}` };
-      }
-      if (failed.length > 0) {
-        const failedIds = failed.map((f) => f.id).join(", ");
-        if (!sawAnySignal) {
-          // 全部失败：官方源（或用户配置源）不可达——给出可行动指引
-          return {
-            success: false,
-            message:
-              `无法连接 ClawHub 检查插件更新（${failedIds}）。` +
-              "请检查网络或代理后重试；也可在 设置 → 高级 配置可达的 ClawHub Registry 地址。",
-          };
-        }
-        // 部分失败：已拿到的结果照常返回，失败清单附带透出
-        log.info(`[plugin-store] check-updates partial failures after http fallback: ${failed.map((f) => `${f.id}(${f.reason})`).join(",")}`);
-        return { success: true, data: { updatable, checkedAt: Date.now(), failed: failed.map((f) => f.id) } };
-      }
-      // 只返回有更新的条目；"No tracked" / 全部 up to date 都落成空数组
-      return { success: true, data: { updatable, checkedAt: Date.now() } };
-    } catch (err: any) {
-      log.info(`[plugin-store] check-updates failed: ${err?.message ?? err}`);
-      return { success: false, message: err?.message ?? String(err) };
-    }
+      const installed = await listInstalledPlugins();
+      const plugins = installed.filter(p => (!id || p.id === id) && p.origin !== "bundled" && !p.local);
+      const http = await checkUpdatesViaHttp(plugins.map(p=>p.id),new Map(plugins.filter(p=>p.version).map(p=>[p.id,p.version!])));
+      return {success:http.stillFailed.length < plugins.length || plugins.length === 0,message:http.stillFailed.map(p=>p.id+": "+p.reason).join("; "),data:{updatable:http.updatable.filter(p=>p.action==="update"),failed:http.stillFailed.map(p=>p.id),checkedAt:Date.now()}};
+    } catch(error) {return {success:false,message:error instanceof Error?error.message:String(error)};}
   });
 
   // R91：执行更新。id 省略/为空 → --all；否则单插件更新。成功后失效 listCache
@@ -1132,7 +1095,8 @@ export function registerPluginStoreIpc(): void {
       invalidatePluginListCache();
       const parsed = parseUpdateOutcomes(stdout);
       return {
-        success: true,
+        success: parsed.failed.length === 0,
+        message: parsed.failed.map(p => `${p.id}: ${p.reason}`).join("; "),
         data: {
           needsRestart: parsed.sawRestartHint,
           message: parsed.appliedLines.join("；"),
@@ -1151,6 +1115,14 @@ export function registerPluginStoreIpc(): void {
     const id = typeof params?.id === "string" ? params.id.trim() : "";
     if (!isValidPluginName(id)) return { success: false, message: "invalid plugin id" };
     try {
+      const local = listCache?.plugins.find(p => p.id === id);
+      if (local?.rootDir) {
+        const root = fs.realpathSync(local.rootDir);
+        const readme = ["README.md", "readme.md"].map(name => path.join(root, name)).find(file => {
+          try { const relative = path.relative(root, fs.realpathSync(file)); return !relative.startsWith("..") && !path.isAbsolute(relative) && fs.statSync(file).size < 512 * 1024; } catch { return false; }
+        });
+        return { success: true, data: { plugin: local, readme: readme ? fs.readFileSync(readme, "utf8") : "" } };
+      }
       const stdout = await execKernelCli(["plugins", "inspect", id, "--json"]);
       return { success: true, data: extractJsonPayload(stdout) };
     } catch (err: any) {
@@ -1192,6 +1164,19 @@ export function registerPluginStoreIpc(): void {
     if (!isValidPluginName(name)) return { success: false, message: "invalid package name" };
     const detailPath = `/api/v1/packages/${encodeURIComponent(name)}`;
     try {
+      const installedId=typeof params?.installedId==="string"?params.installedId:"";
+      if(installedId && isValidPluginName(installedId)){
+        let record:any;
+        try{record=JSON.parse(fs.readFileSync(path.join(resolveUserStateDir(),"openclaw.json"),"utf8"))?.plugins?.installs?.[installedId];}catch{}
+        const npmName=typeof record?.resolvedName==="string"?record.resolvedName:typeof record?.spec==="string"?record.spec.replace(/(@[^/]+)$/,""):listCache?.plugins.find(p=>p.id===installedId)?.npmName??"";
+        if((record?.source==="npm" || !record) && npmName && isValidPluginName(npmName)){
+          const endpoint=encodeURIComponent(npmName);
+          const metadata=await jsonGet<any>(`https://registry.npmmirror.com/${endpoint}`).catch(()=>jsonGet<any>(`https://registry.npmjs.org/${endpoint}`));
+          const latest=metadata?.["dist-tags"]?.latest;
+          const version=metadata?.versions?.[latest];
+          return {success:true,data:{package:{name:npmName,latestVersion:latest,summary:metadata.description,readme:metadata.readme,changelog:version?.changelog,updatedAt:metadata.time?.[latest]}}};
+        }
+      }
       let raw: unknown;
       try {
         raw = await jsonGet<unknown>(`${marketApiBase()}${detailPath}`);

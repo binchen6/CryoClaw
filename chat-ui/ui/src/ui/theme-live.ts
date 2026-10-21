@@ -30,7 +30,7 @@ export function endThemePreview(host:AppViewState,save=false,animate=true):void 
   cancelAppearancePreview(host);
   if(preview.timer)clearTimeout(preview.timer);
   if(save){
-    host.applySettings({...host.settings,appearance:normalizeAppearance(preview.profile)});
+    host.applySettings({...host.settings,theme:preview.profile.mode??host.settings.theme,appearance:normalizeAppearance(preview.profile)});
     if(preview.source==="agent")try{saveGeneratedTheme(preview.name,preview.profile,preview.description??"");showToast(host,text("主题已应用并加入主题库", "Theme applied and added to your library"));}
     catch{showToast(host,text("主题已应用；主题库暂未保存，可在外观设置导出备份。", "Theme applied. The library could not be saved; export a copy in Appearance settings."));}
   }

@@ -31,6 +31,7 @@ import {
 import { clearSnooze, isSnoozeActive, readSnooze, writeSnooze, SnoozeUntil } from "./update-snooze";
 import { fetchReleaseNotesFromGitHub } from "./app-update-release-notes";
 import { AppFlags, BUNDLED_DEFAULT_FLAGS, loadAppFlags } from "./app-flags";
+import {appUpdateSource} from "./app-update-source";
 
 export type { AppUpdateState } from "./app-updater-state";
 
@@ -110,6 +111,7 @@ export function checkAppUpdate(): void {
     log.info(`[app-updater] 当前状态为 ${state.status}，忽略并发检查请求`);
     return;
   }
+  if(state.status === "checking")return;
   void autoUpdater.checkForUpdates().catch((err) => {
     log.warn(`[app-updater] 检查更新失败: ${formatUpdaterError(err)}`);
     // checkForUpdates 直接 reject 时 error 事件可能未触发，兜底推进状态机保证可重试
@@ -310,6 +312,10 @@ export function initAppUpdater(deps: Deps): void {
   }
 
   autoUpdater.autoDownload = false;
+  // Stable release manifests avoid the GitHub API round trip and rate limits.
+  // Custom mirrors are opt-in and must carry the complete release asset triplet.
+  try{autoUpdater.setFeedURL({provider:"generic",url:appUpdateSource(process.env.CRYOCLAW_APP_UPDATE_URL),useMultipleRangeRequest:false});}
+  catch(error){log.warn(`[app-updater] 更新源配置无效，使用 GitHub: ${String(error)}`);}
   autoUpdater.autoInstallOnAppQuit = false;
   // 不使用 web installer（静默 NSIS 换装），消除 electron-updater 启动警告
   autoUpdater.disableWebInstaller = true;

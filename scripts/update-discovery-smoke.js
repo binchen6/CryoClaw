@@ -12,7 +12,7 @@ const deadline=setTimeout(()=>{console.error('Update discovery deadline exceeded
   const adapter={version:current,name:'cryoclaw',isPackaged:true,appUpdateConfigPath:config,userDataPath:root,baseCachePath:root,whenReady:async()=>{},relaunch:()=>{throw Error('Discovery must not relaunch');},quit:()=>{throw Error('Discovery must not install');},onQuit(){}};
   const updater=new NsisUpdater(null,adapter);updater.httpExecutor=new NodeHttpExecutor();
   updater.logger={info(){},debug(){},warn(){},error(){}};updater.autoDownload=false;updater.autoInstallOnAppQuit=false;updater.disableWebInstaller=true;
-  updater.setFeedURL({provider:'github',owner:'binchen6',repo:'CryoClaw',private:false});
+  updater.setFeedURL(process.argv.includes('--manifest')?{provider:'generic',url:require('../dist/app-update-source').OFFICIAL_UPDATE_BASE,useMultipleRangeRequest:false}:{provider:'github',owner:'binchen6',repo:'CryoClaw',private:false});
   let available=null;updater.on('update-available',info=>{available=info.version;});updater.on('error',()=>{});
   const result=await updater.checkForUpdates();assert.equal(result?.updateInfo.version,expected);assert.equal(available,expected);assert.ok(!result.downloadPromise);
   console.log(JSON.stringify({currentVersion:current,discoveredVersion:expected,updateAvailable:true,autoDownload:false,executor:'NodeHttpExecutor',sdk:require('electron-updater/package.json').version}));

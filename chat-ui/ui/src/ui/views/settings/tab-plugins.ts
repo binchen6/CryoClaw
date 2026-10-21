@@ -304,21 +304,21 @@ async function loadMarketBrowse(state: AppViewState) {
 
 // ── 插件更新（R91） ──
 
-async function checkUpdates(state: AppViewState) {
+async function checkUpdates(state: AppViewState, id?: string) {
   if (!window.cryoclaw?.pluginStoreCheckUpdates || s.checkingUpdates) return;
   s.checkingUpdates = true;
   s.error = null;
   s.checkNotice = null;
   state.requestUpdate();
   try {
-    const result = await window.cryoclaw.pluginStoreCheckUpdates();
+    const result = await window.cryoclaw.pluginStoreCheckUpdates(id ? { id } : undefined);
     if (result?.success && result.data && Array.isArray(result.data.updatable)) {
-      s.updatable = result.data.updatable.filter(
+      s.updatable = [...(id ? s.updatable.filter(u => u.id !== id) : []), ...result.data.updatable.filter(
         (u: unknown): u is PluginUpdateView => {
           const e = u as Record<string, unknown>;
           return typeof e.id === "string" && typeof e.currentVersion === "string" && typeof e.nextVersion === "string";
         },
-      );
+      )];
       // R93：部分插件在内核 + HTTP 回退后仍查不到（多为网络不可达）——非阻塞提示
       const failed = result.data.failed;
       if (Array.isArray(failed) && failed.length > 0) {
@@ -431,7 +431,7 @@ function kindLabel(kind?: string): string {
 function renderInstalledRow(state: AppViewState, plugin: InstalledPluginView) {
   const busy = s.busyName === plugin.id;
   const toggling = s.togglingId === plugin.id;
-  const update = s.updatable.find((u) => u.id === plugin.id || u.id === plugin.name);
+  const update = plugin.local ? undefined : s.updatable.find((u) => u.id === plugin.id || u.id === plugin.name);
   const updating = s.updatingId === (update?.id ?? null);
   return html`
     <div class="oc-plugins__row">
@@ -455,11 +455,13 @@ function renderInstalledRow(state: AppViewState, plugin: InstalledPluginView) {
                 @click=${() => void runUpdate(state, update.id)}
               >${t("ext.plugins.update")} v${update.currentVersion} → v${update.nextVersion}${updating ? "…" : ""}</button>`
             : nothing}
-          ${plugin.status === "error" ? html`<span class="oc-tag oc-tag--danger">${t("settings.plugins.statusError")}</span>` : nothing}
+          ${!plugin.local && plugin.status === "error" ? html`<span class="oc-tag oc-tag--danger">${t("settings.plugins.statusError")}</span>` : nothing}
         </div>
         ${plugin.description ? html`<div class="oc-plugins__desc" title=${plugin.description}>${plugin.description}</div>` : nothing}
       </div>
       <div class="oc-plugins__row-side">
+        ${!plugin.local ? html`<button class="btn btn--sm" type="button" ?disabled=${s.checkingUpdates || !!s.updatingId || s.updatingAll} @click=${() => void checkUpdates(state, plugin.id)}>${s.checkingUpdates ? t("ext.plugins.checking") : t("ext.plugins.checkUpdates")}</button>` : nothing}
+        ${update ? html`<button class="btn btn--sm" type="button" @click=${() => openMarketPackageDetail(state, {name: plugin.id, displayName: plugin.name,installedId:plugin.id})}>${t("skillStore.detail")}</button>` : nothing}
         <oc-toggle-switch
           .checked=${plugin.enabled}
           .disabled=${toggling}
@@ -726,6 +728,12 @@ export function renderPluginsView(state: AppViewState) {
 
       ${s.subtab === "installed"
         ? html`<div class="oc-plugins__toolbar">
+            <button class="btn btn--sm" type="button" ?disabled=${!!s.busyName || !!s.updatingId || s.updatingAll} @click=${async()=>{
+              if(!window.cryoclaw?.pluginStoreImportLocal)return;
+              s.busyName="import-local";state.requestUpdate();
+              try{const result=await window.cryoclaw.pluginStoreImportLocal();if(!result?.success)s.error=result?.message??t("settings.plugins.loadFailed");else if(!result.canceled)await loadInstalled(state);}
+              catch(error){s.error=String(error);}finally{s.busyName=null;state.requestUpdate();}
+            }}>${t("ext.importLocal")}</button>
             <button
               class="btn btn--sm"
               type="button"
