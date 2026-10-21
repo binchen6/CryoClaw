@@ -39,4 +39,10 @@ Windows 首次启动和插件列表冷载仍受上游插件载入与连接重试
 
 最终门禁通过：82 场景，1 次启动，9 张截图，382.3 秒，renderer 异常 0。覆盖全部主视图与 13 个设置页的四种宽度/主题组合、中英文、125%/150% DPI、减少动态效果、MCP 展开、确认取消、任务乱序与表单保护，以及工具卡去重和输出保留。报告：`out/ui-release/2026-10-21T03-59-12-730Z/report.json`。控制台另记录了 7 次网关就绪前的本地 WebSocket 连接重试；连接就绪后页面与行为检查全部通过。
 
-发布目标：[v2026.1021.0](https://github.com/binchen6/CryoClaw/releases/tag/v2026.1021.0)。按源码推送、草稿三件套校验、正式发布与自动更新发现的顺序执行。
+已正式发布并设为 latest：[v2026.1021.0](https://github.com/binchen6/CryoClaw/releases/tag/v2026.1021.0)，draft=false，prerelease=false。源码与标签提交 `cfda335041e99267c41b1a5a845152071f7fdbcc` 已推送。
+
+[Windows CI #39542243281](https://github.com/binchen6/CryoClaw/actions/runs/39542243281) 全部通过。草稿期和公开发布后三件套版本、大小、清单 SHA-512 与 GitHub 服务端 SHA-256 均核对一致。安装器 SHA-256：`cb5a41d575fd6e1e7324bf30755d8255dd104565b9eb496ca6c662cbe1faecfa`。
+
+真实 electron-updater 6.8.9 已分别验证旧 GitHub provider 和新 generic 清单 provider：从 2026.1020.0 发现 2026.1021.0，触发 update-available 且 autoDownload=false；无安装或退出动作。远端 latest 与版本标签归属均已核对。
+
+本轮发布必需工作已完成。用户原有 README 宣传内容与未跟踪的宣传文件保持原状。

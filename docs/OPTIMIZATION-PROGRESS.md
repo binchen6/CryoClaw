@@ -2,7 +2,7 @@
 
 ## 2026.1021.0 · 扩展更新与外观
 
-[本版验收记录](RELEASE-2026.1021.0-VERIFICATION.md)
+[本版验收记录](RELEASE-2026.1021.0-VERIFICATION.md)。已推送并正式发布为 latest；源码 CI、公开资产哈希和新旧两种自动更新发现均通过。
 
 - 本地技能/插件目录导入、离线详情和本地项更新隔离；兼容编译后的 runtimeExtensions 入口。
 - 插件元数据直接读取，受管 npm 项目从实际 package.json 识别包名；逐项检查与更新详情、技能正确调用 update。
