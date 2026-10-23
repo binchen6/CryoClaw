@@ -10,8 +10,10 @@
  *   - usage.status  {} → 服务商配额窗口（60s TTL，可无返回）
  */
 import { isRecord } from "../../types/guards.ts";
+import { readCacheUsage, type CacheUsage } from "../../usage-cache-metrics.ts";
 
 export interface UsageTokenTotals {
+  cacheMetrics?: CacheUsage;
   input: number;
   output: number;
   cacheRead: number;
@@ -124,12 +126,14 @@ function asNumberOrNull(v: unknown): number | null {
 
 function mapTotals(usage: unknown): UsageTokenTotals | null {
   if (!isRecord(usage)) return null;
+  const cacheMetrics=readCacheUsage(usage);
   return {
+    cacheMetrics,
     input: asNumber(usage.input),
     output: asNumber(usage.output),
     cacheRead: asNumber(usage.cacheRead),
     cacheWrite: asNumberOrNull(usage.cacheWrite),
-    totalTokens: asNumberOrNull(usage.totalTokens),
+    totalTokens: cacheMetrics.totalTokens,
     totalCost: asNumberOrNull(usage.totalCost),
   };
 }

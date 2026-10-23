@@ -9,6 +9,7 @@ import {preloadWorkspaceDirectory} from "./controllers/workspace.ts";
 
 type Scope={client:AppViewState["client"];loaded:Map<string,number>;pending:Set<string>;queue:Promise<void>;timers:Array<ReturnType<typeof setTimeout>>};
 const scopes=new WeakMap<AppViewState,Scope>();
+function initialReadsPending(host:AppViewState){return host.chatLoading || host.sessionsLoading || host.progressCard?.loading;}
 function scopeFor(host:AppViewState):Scope {
   let scope=scopes.get(host);
   if(!scope || scope.client!==host.client){
@@ -19,7 +20,7 @@ function scopeFor(host:AppViewState):Scope {
 }
 /** Intent + idle prefetch, one job at a time and no background polling. */
 function enqueuePreload(host:AppViewState,view:string,job:()=>Promise<unknown>):Promise<void>|undefined {
-  if(!host.connected || !host.client || document.hidden || host.chatRunId)return;
+  if(!host.connected || !host.client || document.hidden || host.chatRunId || initialReadsPending(host))return;
   const scope=scopeFor(host);
   if(scope.pending.has(view))return scope.queue;
   if(Date.now()-(scope.loaded.get(view)??0)<60_000)return;
@@ -46,10 +47,18 @@ export function preloadSettingsTab(host:AppViewState,tab:string){
 export function schedulePagePreloads(host:AppViewState):void {
   const scope=scopeFor(host);
   scope.timers.forEach(clearTimeout);scope.timers=[];
+  const deadline=Date.now()+60000;
+  const arm=()=>{
+  if(scopes.get(host)!==scope || host.client!==scope.client || !host.connected || document.hidden)return;
+  // Idle in the renderer does not mean the gateway database is idle. Finish
+  // visible chat reads before issuing scans for pages the user has not opened.
+  if(initialReadsPending(host) || host.chatRunId){
+    if(Date.now()<deadline)scope.timers.push(setTimeout(arm,200));return;
+  }
   scope.timers.push(setTimeout(()=>{
     if(scopes.get(host)!==scope || host.client!==scope.client || !host.connected)return;
     void import("./views/settings/tab-memory.ts").then(module=>{
-      if(scopes.get(host)===scope && host.client===scope.client && host.connected)return module.refreshMemoryAfterGatewayReady(host);
+      if(scopes.get(host)===scope && host.client===scope.client && host.connected && !host.chatRunId && !document.hidden && !initialReadsPending(host))return module.refreshMemoryAfterGatewayReady(host);
     }).catch(()=>{});
   },5000));
   scope.timers.push(setTimeout(()=>preloadSettingsTab(host,"usage"),8500));
@@ -57,6 +66,8 @@ export function schedulePagePreloads(host:AppViewState):void {
   for(const [index,view] of (["workspace","settings","tasks","extensions"] as const).entries()) {
     scope.timers.push(setTimeout(()=>preloadPage(host,view),2000+index*1500));
   }
+  };
+  arm();
 }
 export function stopPagePreloads(host:AppViewState):void {
   const scope=scopes.get(host);scope?.timers.forEach(clearTimeout);scopes.delete(host);

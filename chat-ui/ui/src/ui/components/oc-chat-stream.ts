@@ -1,5 +1,6 @@
 import { LitElement, html, nothing } from "lit";
 import { customElement } from "lit/decorators.js";
+import { publishedFilesForMessages } from "../chat/deliverables.ts";
 import type { AssistantIdentity } from "../assistant-identity.ts";
 import { renderLiveThinkingGroup, renderReadingIndicatorGroup, renderStreamingGroup } from "../chat/grouped-render.ts";
 
@@ -21,6 +22,7 @@ const PIN_BOTTOM_THRESHOLD_PX = 24;
 @customElement("oc-chat-stream")
 export class OcChatStream extends LitElement {
   static properties = {
+    toolMessages: {attribute:false},
     stream: { type: String },
     thinkingStream: { type: String },
     narrationText: { type: String },
@@ -45,6 +47,7 @@ export class OcChatStream extends LitElement {
   // 主 run 等待子代理时思考指示改显示等待文案（与原 reading-indicator 条目语义一致）
   subagentWaiting = false;
   onOpenSidebar?: (content: string) => void;
+  toolMessages:unknown[]=[];
 
   // 无 shadow DOM：复用全局样式（styles/chat.css 的 .chat-group 等）与
   // 线程级既有事件委托；自定义元素默认 display 不影响内部块级 .chat-group 布局。
@@ -54,6 +57,7 @@ export class OcChatStream extends LitElement {
 
   // 视觉属性之外的变化（主要是每帧新闭包的回调）不触发重渲染。
   private static readonly VISUAL_PROPS = [
+    "toolMessages",
     "stream",
     "thinkingStream",
     "narrationText",
@@ -105,7 +109,7 @@ export class OcChatStream extends LitElement {
         this.streamStartedAt ?? Date.now(),
         this.onOpenSidebar,
         identity,
-        { thinkingStream: this.thinkingStream, narrationText: this.narrationText },
+        { thinkingStream: this.thinkingStream, narrationText: this.narrationText,preferredFiles:publishedFilesForMessages(this.toolMessages).paths },
       );
     }
     // R88：正文未到但思考/解说已在流式——实时思考区替代纯打点指示

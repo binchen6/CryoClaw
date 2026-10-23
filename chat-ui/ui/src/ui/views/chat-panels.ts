@@ -13,8 +13,7 @@ import { html, nothing } from "lit";
 import { icons } from "../icons.ts";
 import { t } from "../i18n.ts";
 import type { ChatProps } from "./chat.ts";
-import type { BoardState } from "../controllers/board.ts";
-import { BOARD_WIDGET_SANDBOX } from "../controllers/board.ts";
+import "../components/oc-board-panel.ts";
 import type { FallbackNotice } from "../app-tool-stream.ts";
 import {
   GATEWAY_PROGRESS_STEPS,
@@ -151,31 +150,7 @@ export function renderBoardPanel(props: ChatProps) {
   if (!board || board.sessionKey !== props.sessionKey || board.widgets.length === 0) {
     return nothing;
   }
-  // ticket 20 分钟 TTL（内核 BOARD_VIEW_TICKET_TICKET_TTL）：面板以 <details> 常折，
-  // 展开才挂 iframe（src 由重拉换新 ticket 时刷新），最大化降低 ticket 过期面。
-  return html`
-    <details class="chat-board">
-      <summary class="chat-board__summary">
-        <svg class="chat-board__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>
-        <span>${t("chat.board.title")}</span>
-        <span class="chat-board__count">${board.widgets.length}</span>
-      </summary>
-      <div class="chat-board__body">
-        ${board.widgets.map((widget) => html`
-          <div class="chat-board__widget">
-            <div class="chat-board__widget-name">${widget.kindLabel ?? widget.name}</div>
-            <iframe
-              class="chat-board__frame"
-              src=${widget.src}
-              title=${widget.name}
-              sandbox=${BOARD_WIDGET_SANDBOX}
-              loading="lazy"
-            ></iframe>
-          </div>
-        `)}
-      </div>
-    </details>
-  `;
+  return html`<oc-board-panel .board=${board} .onRefresh=${props.onRefreshBoard}></oc-board-panel>`;
 }
 
 // ── 待审批队列（compose 上方；执行权限三档已整合进加号菜单） ──

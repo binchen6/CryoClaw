@@ -12,7 +12,8 @@
       - style-src 'self' 'unsafe-inline'：Lit 组件经 Shadow DOM 注入 <style>，需 unsafe-inline。
       - img-src：base64 头像/截图、blob: URL、同源、https 链接（部分 chat avatar 远程图）。
       - connect-src：仅允许本机 gateway（ws/wss/http/https on 127.0.0.1）。外部 API 全走 IPC（已校验协议）。
-      - object/frame-src：禁止嵌入他人（frame-ancestors 经 <meta> 交付会被浏览器忽略并告警，
+      - object-src 禁止插件对象；frame-src 仅允许本机 gateway 的 board 文档，组件另加 opaque sandbox。
+        （frame-ancestors 经 <meta> 交付会被浏览器忽略并告警，
         R64 移除；Electron 壳不嵌入远程内容，被他人嵌入不可达）。
       - form-action 'self'：表单只回发到同源（gateway 端点）。
     -->
@@ -24,7 +25,7 @@
       font-src 'self' data:;
       connect-src 'self' ws://127.0.0.1:* wss://127.0.0.1:* http://127.0.0.1:* https://127.0.0.1:*;
       object-src 'none';
-      frame-src 'none';
+      frame-src http://127.0.0.1:*/__openclaw__/board/ https://127.0.0.1:*/__openclaw__/board/ http://127.0.0.1:*/__cryoclaw__/dashboards/ https://127.0.0.1:*/__cryoclaw__/dashboards/;
       base-uri 'none';
       form-action 'self';
     ">

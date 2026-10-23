@@ -2,6 +2,9 @@ import * as fs from "fs";
 import * as path from "path";
 import { app, clipboard, dialog, ipcMain, shell, Menu, BrowserWindow } from "electron";
 import { installGatewayOriginRewrite } from "./gateway-origin";
+import { assertLocalFilePath, readFileCardInfo, resolveLocalRegularFile } from "./file-card";
+import { ensureBundledDeliverablesEnabled } from "./bundled-deliverables";
+import {registerDashboardPin} from './dashboard-pin';
 // CryoClaw 面向中文用户：强制 Chromium locale 为 zh-CN，
 // 使渲染层 navigator.language 返回 zh，chat-ui i18n 默认显示中文。
 // 必须在 app ready 之前调用。
@@ -59,7 +62,7 @@ import { uninstallGatewayDaemon, cleanGatewayLockFiles } from "./install-detecto
 import { runQuitCleanup } from "./quit-cleanup";
 import { detectOwnership, migrateFromLegacy, readCryoclawConfig, writeCryoclawConfig, appendChannelUtm } from "./cryoclaw-config";
 import { startTokenRefresh, stopTokenRefresh, loadOAuthToken } from "./kimi-oauth";
-import { initKernelUpdater, getKernelUpdateState, checkKernelUpdate, runKernelUpdate, runKernelRollback, isKernelBelowMinSupported, terminateKernelUpdaterForQuit } from "./kernel-updater";
+import { initKernelUpdater, getKernelUpdateState, checkKernelUpdate, runKernelUpdate, runKernelRollback, isKernelBelowMinSupported, terminateKernelUpdaterForQuit, recoverKernelBeforeStartup } from "./kernel-updater";
 import { isAutoKernelUpgradeBackoffActive, recordAutoKernelUpgradeFailure, clearAutoKernelUpgradeBackoff } from "./auto-kernel-upgrade-backoff";
 import { initAppUpdater, quitAndInstallAppUpdate } from "./app-updater";
 import { maybeAutoCheckWebbridgeUpdate, ensureWebbridgeDaemonRunning, broadcastWebbridgeStateChanged } from "./webbridge-update";
@@ -291,15 +294,17 @@ function promptConfigRecovery(opts: {
 function reportGatewayStartFailure(source: string): RecoveryAction {
   const logPath = resolveGatewayLogPath();
   const title = "CryoClaw Gateway 启动失败";
-  const detail =
-    `来源: ${source}\n` +
-    `建议先前往设置 → 备份与恢复，回退到最近可用配置。\n` +
-    `诊断日志:\n${logPath}`;
+  const detail = [
+    '来源: ' + source,
+    '原因: ' + (gateway.getStartupFailure()?.message ?? '网关未在限定时间内就绪，请查看诊断日志。'),
+    '请按日志中的具体原因修复后重试；配置问题可前往设置 → 备份与恢复。',
+    '诊断日志: ' + logPath,
+  ].join('\n');
   log.error(`${title} (${source})`);
   log.error(`诊断日志: ${logPath}`);
   return promptConfigRecovery({
     title,
-    message: "Gateway 未能成功启动，可能是配置错误导致。",
+    message: "Gateway 未能成功启动。",
     detail,
   });
 }
@@ -419,6 +424,7 @@ function syncKimiSearchEnv(): void {
 
 // 启动 Gateway（最多尝试 3 次，覆盖 Windows 冷启动慢导致的前两次超时）
 async function ensureGatewayRunning(source: string): Promise<boolean> {
+  try { ensureBundledDeliverablesEnabled(); } catch(error) { log.warn(`[deliverables] Plugin setup failed: ${String(error)}`); }
   migrateLegacyFeishuConfigForGatewayStart();
   await syncGatewayRuntimeConfigFromDisk();
 
@@ -436,6 +442,7 @@ async function ensureGatewayRunning(source: string): Promise<boolean> {
       }
     } catch (err) {
       log.error(`Gateway 启动异常（第 ${attempt} 次尝试, ${source}）: ${err}`);
+      if((err as {retryable?:boolean})?.retryable===false)break;
       continue;
     }
 
@@ -445,6 +452,7 @@ async function ensureGatewayRunning(source: string): Promise<boolean> {
       log.info(`Gateway 启动成功（第 ${attempt} 次尝试）: ${source}`);
       return true;
     }
+    if(gateway.getStartupFailure()?.retryable===false)break;
   }
 
   return false;
@@ -940,6 +948,7 @@ ipcMain.on("app:quit", (event) => {
   if (!assertTrustedIpcSender(event, "app:quit")) return;
   app.quit();
 });
+registerDashboardPin(()=>gateway.getPort());
 ipcMain.handle("app:open-external", (event, url: string) => {
   if (!assertTrustedIpcSender(event, "app:open-external")) return Promise.reject(new Error("IPC sender not trusted"));
   // 安全面：仅允许 http/https 协议，阻止 file://、smb://、ms-msdt: 等危险协议
@@ -959,15 +968,17 @@ ipcMain.handle("app:open-external", (event, url: string) => {
 });
 ipcMain.handle("app:open-path", async (event, filePath: string) => {
   if (!assertTrustedIpcSender(event, "app:open-path")) return Promise.reject(new Error("IPC sender not trusted"));
+  assertLocalFilePath(filePath);
+  const realFile=await resolveLocalRegularFile(filePath);
   // 安全面：白名单见 safe-open.ts；workspace 内文件由 workspace:read-file 单独处理（有 path traversal 守卫）。
-  const ext = path.extname(filePath).slice(1).toLowerCase();
+  const ext = path.extname(realFile).slice(1).toLowerCase();
   if (!isSafeOpenExt(ext)) {
     log.warn(`[security] app:open-path 拒绝非白名单扩展名: .${ext || "(无)"} ${filePath.slice(0, 100)}`);
     return Promise.reject(new Error("不支持的文件类型"));
   }
   // shell.openPath 失败时 resolve 出错误串而非 reject（Electron 契约）——此前原样
   // 返回，渲染层 catch 永不触发，卡片点击零反馈（v2026.913.3 修复）。转为 reject。
-  const result = await shell.openPath(filePath);
+  const result = await shell.openPath(realFile);
   if (result) {
     log.warn(`app:open-path 打开失败: ${filePath.slice(0, 100)} → ${result}`);
     return Promise.reject(new Error(result));
@@ -977,11 +988,31 @@ ipcMain.handle("app:open-path", async (event, filePath: string) => {
 // 在文件管理器中定位文件（不执行文件，无白名单限制；聊天文件卡片「在文件夹中显示」用）
 ipcMain.handle("app:reveal-path", (event, filePath: string) => {
   if (!assertTrustedIpcSender(event, "app:reveal-path")) return Promise.reject(new Error("IPC sender not trusted"));
+  assertLocalFilePath(filePath);
   if (typeof filePath !== "string" || !filePath.trim()) {
     return Promise.reject(new Error("非法路径"));
   }
   shell.showItemInFolder(filePath);
   return Promise.resolve();
+});
+
+ipcMain.handle("app:file-card-info", async (event, filePath: string) => {
+  if (!assertTrustedIpcSender(event, "app:file-card-info")) throw new Error("IPC sender not trusted");
+  return readFileCardInfo(filePath);
+});
+ipcMain.handle("app:save-file-copy", async (event, filePath: string) => {
+  if (!assertTrustedIpcSender(event, "app:save-file-copy")) throw new Error("IPC sender not trusted");
+  assertLocalFilePath(filePath);
+  const source = await fs.promises.realpath(filePath);assertLocalFilePath(source);
+  if (!(await fs.promises.stat(source)).isFile()) throw new Error("File is unavailable");
+  const owner = BrowserWindow.fromWebContents(event.sender);
+  const options = {defaultPath:path.basename(source)};
+  const selected = owner ? await dialog.showSaveDialog(owner,options) : await dialog.showSaveDialog(options);
+  if (selected.canceled || !selected.filePath) return {canceled:true};
+  assertLocalFilePath(selected.filePath);
+  if (path.resolve(selected.filePath) === source) return {canceled:false};
+  await fs.promises.copyFile(source,selected.filePath);
+  return {canceled:false};
 });
 
 // 文件选择对话框 — 返回文件绝对路径数组
@@ -1424,6 +1455,7 @@ app.whenReady().then(async () => {
   kernelStartupCheckTimer.unref?.();
 
   // 内核升级后的配置适配（如移除已废弃字段），须在配置健康检查与 gateway 启动前完成。
+  await recoverKernelBeforeStartup();
   migrateOpenclawConfigForKernelUpgrade();
 
   // Gateway 本地控制服务：CLI wrapper 把 `openclaw gateway restart/status` 转发到这里，

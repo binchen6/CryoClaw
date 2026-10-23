@@ -84,6 +84,7 @@ export type RailProps = {
   settingsBadge: boolean;
   settingsUpdateBadge: boolean;
   onOpenChat: () => void;
+  onOpenDashboard?: () => void;
   onOpenTasks: () => void;
   onOpenWorkspace: () => void;
   onOpenExtensions: () => void;
@@ -153,6 +154,7 @@ function railItem(
     <button
       class="oc-rail__item ${active ?"active" : ""} ${opts.extraClass ?? ""}"
       type="button"
+      data-view=${opts.view ?? nothing}
       @click=${opts.onClick}
       @pointerenter=${()=>{if(opts.view && !active)props.onPreload?.(opts.view);}}
       @focus=${()=>{if(opts.view && !active)props.onPreload?.(opts.view);}}
@@ -267,6 +269,12 @@ function renderRailInner(props: RailProps) {
           label: t("rail.chat"),
           icon: icons.messagePlus,
           onClick: () => props.onOpenChat(),
+        })}
+        ${railItem(props, {
+          view: "dashboard",
+          label: t("chat.board.title"),
+          icon: icons.layout,
+          onClick: () => props.onOpenDashboard?.(),
         })}
         ${railItem(props, {
           view: "tasks",

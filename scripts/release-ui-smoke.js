@@ -9,7 +9,7 @@ const {waitForVisualReady}=require('./lib/ui-readiness');
 const {overlapCheckExpr}=require('./lib/overlap-scan');
 const {bareI18nScanExpr}=require('./lib/bare-i18n-scan');
 const {textOverflowScanExpr,contrastScanExpr}=require('./lib/text-quality-scan');
-const {arg,launch,waitForPageTarget,connect,waitForAppReady,waitForGateway,dismissReleaseNotes,setViewport,setTheme,navigateChecked,waitForLocale}=require('./lib/cdp-harness');
+const {arg,launch,quitLaunchedApp,waitForPageTarget,connect,waitForAppReady,waitForGateway,dismissReleaseNotes,setViewport,setTheme,navigateChecked,waitForLocale}=require('./lib/cdp-harness');
 const settingsButton="[...document.querySelectorAll('.oc-rail__footer > button.oc-rail__item')].pop()";
 
 async function observeTransitions(cdp) {
@@ -49,11 +49,12 @@ async function waitForData(cdp,{timeoutMs=45000}={}) {
 
 async function main(argv=process.argv) {
   const exe=arg(argv,'--exe',path.resolve('out/win32-x64/win-unpacked/CryoClaw.exe'));
-  const port=Number(arg(argv,'--port','9230'));
+  const attached=argv.includes('--attach-port');
+  const port=Number(arg(argv,attached?'--attach-port':'--port','9230'));
   const out=arg(argv,'--out',path.resolve('out/ui-release',new Date().toISOString().replace(/[:.]/g,'-')));
   fs.mkdirSync(out,{recursive:true});
   const report={exe:path.basename(exe),startedAt:new Date().toISOString(),actionPaceMs:600,phase:'startup',launches:0,scenarios:[],screenshots:0,full:argv.includes('--full')};
-  const started=Date.now();let cleanup=()=>{},ws,cdp,originalAppearance;
+  const started=Date.now();let running,ws,cdp,originalAppearance;
   const scan=`(()=>JSON.stringify({overlaps:JSON.parse(${overlapCheckExpr({viewportOnly:false})}),bare:JSON.parse(${bareI18nScanExpr()}),text:JSON.parse(${textOverflowScanExpr()}),contrast:JSON.parse(${contrastScanExpr()}),diagnostics:window.__ocLayoutDiagnostics?.run?.()??null}))()`;
   async function capture(name,baseline=false,checks={}) {
     report.phase=`capture:${name}`;
@@ -62,7 +63,7 @@ async function main(argv=process.argv) {
     const errors=hardFailures({...result,rendererExceptions:cdp.exceptions.length});
     if(Object.values(checks).some(value=>value!==true))errors.push('behavior assertion');
     if(baseline || errors.length || argv.includes('--screenshots-all')){
-      const png=await cdp.send('Page.captureScreenshot',{format:'png'});
+      const png=await cdp.send('Page.captureScreenshot',{format:'png',fromSurface:false,captureBeyondViewport:false});
       fs.writeFileSync(path.join(out,`${name}.png`),Buffer.from(png.data,'base64'));report.screenshots++;
     }
     report.scenarios.push({name,elapsedMs:Date.now()-at,...result,checks,errors});
@@ -71,7 +72,7 @@ async function main(argv=process.argv) {
   }
   try{
     assert.ok(fs.existsSync(exe),'Installer executable must exist');
-    ({cleanup}=launch(exe,port));report.launches++;
+    if(!attached){running=launch(exe,port);report.launches++;}else report.sharedLaunch=true;
     const page=await waitForPageTarget(port);assert.ok(page,'App page target');
     ({ws,cdp}=await connect(page));
     await cdp.send('Page.bringToFront');report.phase='app-ready';
@@ -111,7 +112,7 @@ async function main(argv=process.argv) {
       report.rendererExceptions=cdp.exceptions;report.consoleErrors=cdp.consoleErrors;
       try{await cdp.send('Emulation.clearDeviceMetricsOverride');await cdp.send('Emulation.setEmulatedMedia',{features:[]});if(originalAppearance)await cdp.evaluate(`(()=>{const a=${JSON.stringify(originalAppearance)};if(a.theme)document.documentElement.dataset.theme=a.theme;else delete document.documentElement.dataset.theme;document.documentElement.style.colorScheme=a.colorScheme;})()`);}catch{}
     }
-    ws?.close();cleanup();report.elapsedMs=Date.now()-started;
+    if(running)await quitLaunchedApp(running,cdp);ws?.close();report.elapsedMs=Date.now()-started;
     fs.writeFileSync(path.join(out,'report.json'),JSON.stringify(report,null,2));
     console.log(JSON.stringify({ok:report.ok,launches:report.launches,scenarios:report.scenarios.length,screenshots:report.screenshots,elapsedMs:report.elapsedMs,out}));
   }
@@ -131,6 +132,14 @@ async function interactions(cdp,capture){
   assert.equal(await cdp.evaluate(`!!document.querySelector('[data-confirm-dialog]')`),true,'Danger confirmation must open');
   await cdp.pressEscape();await settle(cdp,true);
   await capture('behavior-confirm-cancel',false,{closed:await cdp.evaluate(`!document.querySelector('[data-confirm-dialog]')`)});
+  await click(cdp,`[...document.querySelectorAll('.oc-settings-nav-item')].find(x=>/用量|usage/i.test(x.textContent))`);
+  await click(cdp,`document.querySelector('oc-context-report summary')`);
+  const contextDeadline=Date.now()+30000;
+  while(!await cdp.evaluate(`document.querySelectorAll('oc-context-report tbody tr').length>=5`)){
+    assert.ok(Date.now()<contextDeadline,'context report must show real bundled skills');await new Promise(resolve=>setTimeout(resolve,150));
+  }
+  await capture('behavior-context-report-expanded',true,{fingerprint:await cdp.evaluate(`document.querySelector('oc-context-report code')?.textContent.length===16`)});
+  await click(cdp,`document.querySelector('oc-context-report summary')`);
   await taskChecks(cdp,capture);
   await toolCardsChecks(cdp,capture);
 }
@@ -139,7 +148,7 @@ async function taskChecks(cdp,capture){
   await cdp.evaluate(`(()=>{const a=document.querySelector('openclaw-app');window.__releaseSmoke={a,client:a.client,jobs:a.cronJobs,form:a.cronForm,error:a.cronError,busy:a.cronBusy,loading:a.cronLoading,runs:a.cronRuns,runsJobId:a.cronRunsJobId,settings:a.settings,pending:{}};const s=window.__releaseSmoke;s.jobsFixture=['qa-a','qa-b'].map(id=>({id,name:'任务与长路径 '+id,enabled:false,schedule:{kind:'every',everyMs:90000},payload:{kind:'agentTurn',message:'review '+('long-path/'.repeat(20)),timeoutSeconds:123},delivery:{mode:'none'}}));a.client=new Proxy(s.client,{get:(target,key)=>key==='request'?((m,p)=>m==='cron.list'?Promise.resolve({jobs:s.jobsFixture}):m==='cron.runs'?(p.scope==='all'?Promise.resolve({entries:[]}):new Promise(r=>s.pending[p.id]=r)):m==='cron.status'?Promise.resolve({enabled:true}):target.request(m,p)):typeof target[key]==='function'?target[key].bind(target):target[key]});a.cronJobs=s.jobsFixture;a.cronLoading=false;a.cronBusy=false;a.cronError=null;a.cronRuns=[];a.cronRunsJobId=null;a.requestUpdate();})()`);
   await settle(cdp);
   try{
-    await click(cdp,`document.querySelectorAll('.oc-rail__nav .oc-rail__item')[1]`);
+    await click(cdp,`document.querySelector('.oc-rail__nav [data-view="tasks"]')`);
     await click(cdp,`document.querySelectorAll('.ts-tabs [role=tab]')[1]`);
     await click(cdp,`document.querySelectorAll('.cm-list__item')[0]`);
     await click(cdp,`document.querySelectorAll('.cm-list__item')[1]`);

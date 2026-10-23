@@ -23,9 +23,11 @@ import { decodeHtmlEntities } from "./path-linker.ts";
 // 打开必失败），是「点击文件卡片无反应」的主因之一。
 import { isSafeOpenExt } from "../../../../src/safe-open.js";
 import { ref } from "lit/directives/ref.js";
+import { fileCardPathKey } from "./deliverables.ts";
 
 // MEDIA 标记：支持带引号路径与裸路径；大小写不敏感，兼容全角冒号（MEDIA：）
-export const MEDIA_RE = /MEDIA[:：]\s*(?:"([^"\n]+)"|([^\s"'<>|]+))/gi;
+import {MEDIA_RE} from "./media-protocol.ts";
+export {MEDIA_RE} from "./media-protocol.ts";
 
 const IMG_EXT_RE = /\.(png|jpe?g|gif|webp|bmp|svg|ico)$/i;
 
@@ -201,23 +203,29 @@ function fileNameOf(path: string): string {
 
 // 文件卡片（字符串层产物）：点击卡片主体打开文件，右侧按钮在文件夹中显示。
 // 根元素用 <span>：替换点位于 marked 生成的 <p> 内，<div> 会触发隐式闭合段落（phrasing content 合法性）。
-export function buildFileCardHtml(path: string, fullMatch: string): string {
+export function buildFileCardHtml(path: string, fullMatch: string, title?:string): string {
   const ext = fileExtOf(path);
   const icon = SVG_OPEN + (ICON_BY_CATEGORY[fileCategoryOf(ext)] ?? ICON_BY_CATEGORY.generic) + "</svg>";
   const revealIcon = SVG_OPEN + FOLDER_OPEN_ICON + "</svg>";
   return (
-    `<span class="chat-file-card" role="button" tabindex="0" ` +
-    `aria-label="${escapeAttr(t("chat.fileCard.openLabel"))}: ${escapeAttr(fileNameOf(path))}" ` +
+    `<span class="chat-file-card" role="group" ` +
+    `aria-label="${escapeAttr(fileNameOf(path))}" ` +
     `data-file-path="${escapeAttr(path)}" data-file-ext="${escapeAttr(ext)}" ` +
     `data-media-text="${escapeAttr(fullMatch)}" title="${escapeAttr(path)}">` +
+    `<button class="chat-file-card__open" type="button" data-file-open="1" aria-label="${escapeAttr(t("chat.fileCard.openLabel"))}: ${escapeAttr(fileNameOf(path))}">` +
     `<span class="chat-file-card__icon" aria-hidden="true">${icon}</span>` +
     `<span class="chat-file-card__info">` +
-    `<span class="chat-file-card__name">${escapeAttr(fileNameOf(path))}</span>` +
+    `<span class="chat-file-card__name">${escapeAttr(title || fileNameOf(path))}</span>` +
     `<span class="chat-file-card__meta">${escapeAttr(ext.toUpperCase() || "FILE")}</span>` +
+    `<span class="chat-file-card__path">${escapeAttr(path.replace(/[\\/][^\\/]+$/, ""))}</span>` +
     `</span>` +
+    `</button>` +
+    `<span class="chat-file-card__actions">` +
+    `<button class="chat-file-card__reveal" data-file-copy="1" type="button" title="${escapeAttr(t("chat.fileCard.copyPath"))}" aria-label="${escapeAttr(t("chat.fileCard.copyPath"))}">⧉</button>` +
+    `<button class="chat-file-card__reveal" data-file-save="1" type="button" title="${escapeAttr(t("chat.fileCard.saveCopy"))}" aria-label="${escapeAttr(t("chat.fileCard.saveCopy"))}">↓</button>` +
     `<button class="chat-file-card__reveal" data-file-reveal="1" type="button" ` +
     `title="${escapeAttr(t("chat.fileCard.reveal"))}" aria-label="${escapeAttr(t("chat.fileCard.reveal"))}">${revealIcon}</button>` +
-    `</span>`
+    `</span></span>`
   );
 }
 
@@ -225,7 +233,7 @@ export function buildFileCardHtml(path: string, fullMatch: string): string {
  * 字符串层：把 sanitized HTML 中的 MEDIA 标记替换为 <img>（图片）或文件卡片（其他文件）。
  * 必须在 linkifyPaths 之前调用（否则路径已被拆进 <a>）。
  */
-export function renderMediaMarkers(html: string): string {
+export function renderMediaMarkers(html: string, preferredFiles?:ReadonlySet<string>): string {
   // 快速路径：任何形态（大小写不敏感、全半角冒号）的 MEDIA 标记都不存在则跳过
   if (!/media[:：]/i.test(html)) {
     return html;
@@ -241,6 +249,7 @@ export function renderMediaMarkers(html: string): string {
     // sanitize 后 HTML 中文本 & 已转义为 &amp;：先解码回真实路径再进属性，
     // 否则 data-file-path/alt/src 携带字面 &amp; 导致打开损坏路径（同 path-linker）
     const path = decodeHtmlEntities(parsed.path);
+    if(preferredFiles?.has(fileCardPathKey(path)))return "";
     const full = decodeHtmlEntities(parsed.full);
     if (!isImageExt(path)) {
       // 非已知图片扩展名（含已知文件后缀、无扩展名、未知扩展名）统一走文件卡片：
@@ -300,11 +309,19 @@ function ensureClickDelegate() {
     // 文件卡片：定位按钮优先，其次整卡打开
     const card = target.closest(".chat-file-card") as HTMLElement | null;
     if (card) {
+      e.preventDefault();e.stopPropagation();
       const path = card.dataset.filePath ?? "";
       if (!path) {
         return;
       }
-      if (target.closest("[data-file-reveal]")) {
+      if (target.closest("[data-file-copy]")) {
+        void Promise.resolve().then(()=>navigator.clipboard.writeText(path)).then(()=>showToastGlobal(t("chat.fileCard.pathCopied")),()=>showToastGlobal(t("chat.fileCard.copyFailed")));
+      } else if (target.closest("[data-file-save]")) {
+        const button=target.closest("button") as HTMLButtonElement;
+        if(button.disabled)return;button.disabled=true;
+        void ipc.saveFileCopy(path).then(result=>{if(!result.canceled)showToastGlobal(t("chat.fileCard.saved"));})
+          .catch(()=>showToastGlobal(t("chat.fileCard.saveFailed"))).finally(()=>{if(button.isConnected)button.disabled=false;});
+      } else if (target.closest("[data-file-reveal]")) {
         void revealFileCardPath(path, card);
       } else {
         void openFileCardPath(path, card);
@@ -365,11 +382,33 @@ async function revealFileCardPath(path: string, card: HTMLElement) {
   }
 }
 
-export function enhanceMedia(container: Element | undefined) {
+export function enhanceMedia(container: Element | undefined, committed=false) {
   if (!container) {
     return;
   }
+  if(!committed){
+    if(!pendingEnhancements.has(container)){
+      pendingEnhancements.add(container);
+      queueMicrotask(()=>{pendingEnhancements.delete(container);if(container.isConnected)enhanceMedia(container,true);});
+    }
+    // Lit calls refs before inserting the fragment. Observing it here lets the
+    // next ref's disconnected-node cleanup remove it before the first delivery.
+    return;
+  }
   ensureClickDelegate();
+  for (const card of container.querySelectorAll<HTMLElement>(".chat-file-card")) {
+    if (card.dataset.fileInfoBound) continue;
+    card.dataset.fileInfoBound="1";
+    if (typeof IntersectionObserver === "function") {
+      fileCardObserver ??= new IntersectionObserver(entries=>{
+        for(const entry of entries)if(entry.isIntersecting){fileCardObserver!.unobserve(entry.target);observedFileCards.delete(entry.target);void hydrateFileCard(entry.target as HTMLElement);}
+      },{rootMargin:"200px"});
+      for(const observed of observedFileCards)if(!observed.isConnected){fileCardObserver.unobserve(observed);observedFileCards.delete(observed);}
+      if(observedFileCards.size>=200){const oldest=observedFileCards.values().next().value!;fileCardObserver.unobserve(oldest);observedFileCards.delete(oldest);}
+      observedFileCards.add(card);
+      fileCardObserver.observe(card);
+    } else void hydrateFileCard(card);
+  }
   // error 事件不冒泡，只能逐元素绑定（幂等）
   for (const img of Array.from(container.querySelectorAll<HTMLImageElement>("img.chat-local-media"))) {
     if (img.dataset.mediaErrBound === "1") {
@@ -387,6 +426,32 @@ export function enhanceMedia(container: Element | undefined) {
       img.replaceWith(fallback);
     });
   }
+}
+
+let fileCardObserver:IntersectionObserver|null=null;
+const pendingEnhancements=new WeakSet<Element>();
+const observedFileCards=new Set<Element>();
+const fileInfoReads=new Map<string,{at:number;value:ReturnType<typeof ipc.fileCardInfo>}>();
+export function formatFileCardSize(size:number):string {
+  if(!Number.isFinite(size)||size<0)return "";
+  const units=["B","KB","MB","GB"];let n=size,index=0;
+  while(n>=1024&&index<units.length-1){n/=1024;index++;}
+  return `${index===0?n:Math.round(n*10)/10} ${units[index]}`;
+}
+async function hydrateFileCard(card:HTMLElement){
+  const path=card.dataset.filePath;if(!path)return;
+  let read=fileInfoReads.get(path);
+  if(!read || Date.now()-read.at>10_000){
+    if(fileInfoReads.size>=200)fileInfoReads.delete(fileInfoReads.keys().next().value!);
+    read={at:Date.now(),value:ipc.fileCardInfo(path)};fileInfoReads.set(path,read);
+  }
+  try{
+    const info=await read.value;if(!card.isConnected)return;
+    const meta=card.querySelector(".chat-file-card__meta");
+    if(meta)meta.textContent=info.exists ? [card.dataset.fileExt?.toUpperCase()||"FILE",formatFileCardSize(info.size??0)].join(" · ") : t("chat.fileCard.unavailable");
+    card.classList.toggle("chat-file-card--missing",!info.exists);
+    for(const button of card.querySelectorAll<HTMLButtonElement>("[data-file-open],[data-file-save]"))button.disabled=!info.exists;
+  }catch{/* Browser previews and older shells still support the existing file actions. */}
 }
 
 // 已发送附件容器 ref（grouped-render.ts MediaPaths 附件区）：附件卡片渲染在

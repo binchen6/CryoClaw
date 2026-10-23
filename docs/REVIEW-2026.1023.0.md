@@ -1,0 +1,78 @@
+# 2026.1023.0 · OpenClaw 10.6 适配与补丁退役审查
+
+本次发布合并此前尚未发布的独立看板、交付插件、启动与上下文优化，并将内核目标推进到 2026.10.6。10.5 阶段的故障复现、设计与实测保留在 [前阶段审查](REVIEW-2026.1022.0.md)，其启动数字不代表本版结果。
+
+## 版本与运行时
+
+- OpenClaw、飞书、Moonshot、Kimi、Zai、Qwen、DeepSeek 官方插件固定为 **2026.10.6**。QQ 插件继续使用已验证的 2026.7.1，不虚构不存在的同版本兼容性。
+- Node 固定为 **24.22.1**；Electron 固定为 **43.8.3**。CI 同步使用 Node 24.22.1。
+- 官方 npm 包完整性与 [10.6 官方发布说明](https://github.com/openclaw/openclaw/releases/tag/v2026.10.6) 中的 SHA-512 一致。解包后实际检查源码、发布接口和运行时门槛。
+- 10.6 要求 Node 24.22.1+ 或 26.12.1+。现有 Electron 内嵌 Node 24.22.0，不满足要求；仅修改下载用 Node pin 无法解决，因为旧 afterPack 会删掉该二进制，仍用 Electron 执行网关。
+- 本版保留独立 Node，并使用物理 `gateway/` 目录。显式 runtime policy 约束两者配套，旧环境变量或 `--asar` 参数不能重新组合出不兼容产物。主进程、CLI、插件/技能管理和内核更新共用该运行时。缺失或损坏的显式运行时不静默退回旧 Electron。
+- 应用壳仍使用 app.asar；网关不再使用 gateway.asar。原生模块在真实安装树中验收，不以改写 Node 版本号、跳过 SQLite 探针或放宽 TLS 版本门槛解决启动。
+- `openclaw.mjs`、`node-version.mjs`、`node-sqlite.mjs` 与原始 10.6 包逐字节一致；agent 数据库要求仍为 schema 25，兼容元数据从实际 admission gate 生成。
+
+## 过期补丁清理
+
+先对照实际 10.6 实现，再区分删除、停止应用和保留。不能把补丁计数为零当作升级成功。
+
+| 原补丁 | 本版处理 | 依据及影响 |
+|---|---|---|
+| 全局 worker 输入 Proxy 递归清理 | **删除实现、导出、调用及旧测试** | 10.6 检查 IPC 生产端直接对 env 做普通对象快照；无需在所有 worker task 前递归复制输入。保留上游结构和权限语义 |
+| 配置搜索提供商的旧快捷加载实现 | **删除旧函数，按 10.6 接口重写必要部分** | 原函数形态已消失，但新快捷路径仅覆盖 bundled，不能据此认定全局 Tavily 已被覆盖。新分支只处理明确配置、启用、allow/deny 允许且原生标记 trustedOfficialInstall 的 global owner，复用原生公开构件和失败回退 |
+| 已修复 peer-link 的迁移警告收敛 | **删除实现、导出、调用及旧测试** | 10.6 重做管理插件与 Doctor 元数据修复；本版的物理 host 也不再制造 ASAR peer 审计异常，取消对原迁移判定的插入 |
+| fs-safe root / regular / pinned / identity ASAR 快通道 | **不再应用于本版网关** | Node 使用真实文件身份，保留上游打开、大小与路径边界校验 |
+| ASAR → unpacked 身份、目录遍历与 artifact hash 映射 | **不再应用** | 本版不存在虚拟网关路径，无须改变 stat/realpath 或哈希读取 |
+| Native host junction 穿越、peer 审计和依赖扫描补偿 | **不再应用** | 物理 host 按原生规则解析，取消 ASAR 专用例外 |
+| ASAR bundled skill watcher 过滤 | **不再应用** | 无 ASAR 路径和 Electron 观察器异常；保持原生监听策略 |
+| 合成 image-generation-core 空清单 | **不进入物理打包路径** | 不为掩盖告警构造并非上游提供的插件身份 |
+| 手动编译缓存 exit/timer 与弃用告警静音 | **独立 Node 不再应用；旧 Electron 分支保留** | 实测 Node 24.22.1 在显式 process.exit(0) 时无需手动钩子也会写出缓存；物理网关不存在旧 Electron ASAR 的 fs.Stats 弃用问题，不应继续全局静音 |
+
+仍保留的 ASAR 辅助函数只服务明确的旧打包/恢复兼容分支，不会进入本版物理网关的补丁调用链。没有把历史兼容代码全部删除后仍声称旧归档恢复可用。新回归明确断言物理适配不改 worker 派发及 fs-safe 边界文件。
+
+产物扫描确认 worker、ASAR boundary、native-host、artifact-identity、peer-link、boundary-link、peer-migration、immutable-skills 八类旧 marker 均不存在于实际内核模块。原始运行时 admission 文件的哈希保持一致。
+
+## 仍有必要的产品适配
+
+| 适配 | 10.6 实际复核 | 保留理由 |
+|---|---|---|
+| 交付历史回执 | core/canvas 两处投影均命中 | 原生公开历史仍会过滤任意 details；仅为精确工具名保留有界文件回执，其他工具继续原过滤 |
+| 启动 publication superseded 恢复 | 原生 publishAgent 调用仍存在，错误类导出已核对 | 只在当前 authority 有效时对明确 superseded 重试两次；普通错误及写请求不重放 |
+| Windows canonical path | artifact/source-lookup 两个模块均复核 | 使用 native realpath 减少祖先逐级观测；原 admission 参数、异常回退和路径边界保留 |
+| fs-safe Windows canonicalizer | 仅物理 Windows 字符串路径改用 native realpath | 失败回退、非 Windows 与 ASAR 路径保持原分支；大小、nofollow、目录/文件身份、最终 admission 均未跳过。真实 Unicode、大小、根外路径、junction 越界及硬链接验证通过 |
+| Codex discovery 选择性快照 | 仅全局、已信任且声明了精确 dist/provider-discovery.js 的 Codex | 使用原生入口及依赖捕获模式，不再为小 metadata 入口整包复制。其他提供商、未信任或禁用者保留原模式；实例、代次和退役仍由内核负责 |
+| Kimi 自定义 reasoning 档位 | 10.6 provider-policy 接口复核 | 保留 compat.supportedReasoningEfforts 模型能力声明，不限制为预置模型 ID |
+| windowsHide | 只补缺失的 spawn options | 上游已声明处不重复修改；避免设置与工具调用闪出控制台 |
+| schema 兼容元数据 | 实际要求为 25 | 这是与核心版本绑定的生成元数据，不是改写数据库 schema 或迁移过程 |
+
+## 更新、回退与安装
+
+- 物理内核更新复用原 npm staging、裁剪、插件/技能搬运、配置快照和版本验证，按实际目录模式选择路径。
+- 通过真实 Node 执行原生 SQLite capability / Node version admission。`--version` 是上游允许的诊断豁免，不能单独当成未来新内核的运行时兼容证明。
+- 新树先在同卷临时目录完整复制并校验版本，再写入落盘的 swap journal，随后整目录 rename 发布；不会把半复制文件树暴露为正式内核。
+- 备份在完成整树复制后才写 complete marker；未完成的备份不能成为回退候选。
+- 进位失败保留原版并恢复；崩溃在旧目录移出后恢复旧树，崩溃在完整新树进位后完成清理。异常 journal 或身份不一致保留证据，不从日志里接受任意文件路径。
+- 对 Defender/索引器短暂占用，仅有界重试当前 rename，不重跑 npm、模型调用或整个事务。
+- 启动前先恢复未完成换装，再读取内核配置/schema；普通启动没有额外更新子进程。
+- Windows 安装器只匹配本安装目录的完整 Node 路径并重核 PID，不能按 node.exe 名称终止其他应用。GUI 的私有 IPC 断开后，网关进入原生停机流程。
+- 安装包会增加独立 Node，物理目录的安装文件数也多于旧 ASAR。这是满足 10.6 安全运行时要求、减少虚拟路径改写的明确取舍，不用旧运行时冒充兼容。
+
+## 看板、交付与上下文功能
+
+本版保留前阶段全部实现：左侧独立入口、全局标签/+、蓝白黑 17 卡示例、拖拽/缩放、固定设计画布等比缩放、放大保留运行文档、桌面置顶状态共享、归档恢复、本地状态和模块动效。数据查询工具可在普通任务独立调用；原生 cron 以稳定 card ID 原位更新并保留布局，不额外引入定时器。
+
+交付工具与 MEDIA 文字协议并存，同助手轮同文件优先插件；保留用户附件和不确定镜像。支持文件大小、可用性、复制、另存、定位与实际路径扩展名校验。协议覆盖普通工具、Code Mode、流式及公开历史。
+
+已确认的 A–E 上下文方案继续生效。六个技能入口共 10,925 B / 762 描述字符，完整指导按需展开；不改用户 AGENTS/SOUL/MEMORY，不增加付费缓存保温调用。缓存命中率按真实 usage 统计，单次样本不是所有提供商的保证。详见 [方案](CONTEXT-CACHE-OPTIMIZATION-PLAN.md) 和 [前阶段审查](REVIEW-2026.1022.0.md)。
+
+## 验证与发布
+
+### 启动回退的定位与修正
+
+第一批 10.6 原生安装版虽然完整 UI、真实模型与三次正常退出都通过，但完整就绪为 204.4 / 174.7 / 155.8 秒，因此没有直接发布。110 秒采样中 lstat 约 31.8 秒、realpath 约 12.6 秒、模块 stat 约 13.9 秒；调用栈指向 registry 路径观测和提供商 setup 的整包快照。不能只增加超时或把 listener ready 当成可聊天。
+
+两项窄范围路径/公开构件修正后为 140.7 / 142.2 秒；再对经过审查的 Codex discovery 使用内核选择性捕获后为 115.4 / 113.6 秒，均首轮成功、正常退出。相较同内核前两次暖启动样本 174.7 / 155.8 秒的均值，观察到约 31% 缩短；这是有限顺序样本，不是跨机器保证，也不把全部差异归因于单个补丁。
+
+原生快照夹具验证动态导入仍能运行、无关文件未复制、源变更会被拒绝且已捕获字节稳定。另以实际官方 Codex discovery 验证其延迟认证模块能加载，未调用认证探测或发送模型请求。没有修改用户插件启用状态、认证内容或私人提示词来换取数字。
+
+最终安装版启动、完整 UI、真实模型/定时闭环、资产哈希及远端发布结果将在对应验收完成后记录于此。

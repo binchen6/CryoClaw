@@ -86,6 +86,10 @@ describe("tasklist 镜像名解析与身份判定（L2：fail-closed）", () => 
   test("无关服务镜像名拒绝（防误杀占用 18789 端口的其他服务）", () => {
     expect(isPlausibleGatewayImage("svchost.exe")).toBe(false);
     expect(isPlausibleGatewayImage("nginx.exe")).toBe(false);
+    expect(isPlausibleGatewayImage("nodepad.exe")).toBe(false);
+    expect(isPlausibleGatewayImage("my-electron-service.exe")).toBe(false);
+    expect(isPlausibleGatewayImage("cryoclaw helper.exe")).toBe(true);
+    expect(isPlausibleGatewayImage("cryoclaw-cli.exe")).toBe(true);
     expect(isPlausibleGatewayImage("")).toBe(false);
   });
 

@@ -42,7 +42,7 @@ test("Windows afterPack wrapper 应优先调用 Helper.exe 并回退主 exe", ()
   fs.rmSync(tmpRoot, { recursive: true, force: true });
 });
 
-test("Windows afterPack 应保留展开的 gateway node_modules 而不是生成 tar", async () => {
+for (const native of [false, true]) test(`Windows afterPack preserves a complete loose gateway (${native ? "native Node" : "legacy Electron"})`, async () => {
   const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "cryoclaw-afterpack-flow-"));
   const scriptDir = path.join(tmpRoot, "scripts");
   const resourcesDir = path.join(tmpRoot, "resources", "targets", "win32-x64");
@@ -53,6 +53,7 @@ test("Windows afterPack 应保留展开的 gateway node_modules 而不是生成 
 
   fs.mkdirSync(scriptDir, { recursive: true });
   fs.copyFileSync(path.join(__dirname, "afterPack.js"), scriptPath);
+  fs.copyFileSync(path.join(__dirname, "stop-bundled-runtime.ps1"), path.join(scriptDir, "stop-bundled-runtime.ps1"));
   fs.mkdirSync(path.join(tmpRoot, "shared"), { recursive: true });
   for (const name of ["openai-proxy.cjs", "openai-proxy-bootstrap.cjs"]) {
     fs.copyFileSync(path.join(__dirname, "..", "shared", name), path.join(tmpRoot, "shared", name));
@@ -60,6 +61,7 @@ test("Windows afterPack 应保留展开的 gateway node_modules 而不是生成 
 
   fs.mkdirSync(path.join(runtimeDir, "node_modules", "npm", "bin"), { recursive: true });
   fs.writeFileSync(path.join(runtimeDir, "node.exe"), "node");
+  if (native) fs.writeFileSync(path.join(runtimeDir, "cryoclaw-runtime.json"), JSON.stringify({kind:"node",gatewayMode:"loose",nodeVersion:"24.22.1"}));
   fs.writeFileSync(path.join(runtimeDir, "npm.cmd"), "@echo off\r\n");
   fs.writeFileSync(path.join(runtimeDir, "npx.cmd"), "@echo off\r\n");
   fs.writeFileSync(path.join(runtimeDir, "node_modules", "npm", "bin", "npm-cli.js"), "console.log('npm');\n");
@@ -96,6 +98,8 @@ test("Windows afterPack 应保留展开的 gateway node_modules 而不是生成 
   const packagedGatewayDir = path.join(appOutDir, "resources", "resources", "gateway");
   assert.equal(fs.existsSync(path.join(packagedGatewayDir, "node_modules")), true);
   assert.equal(fs.existsSync(path.join(packagedGatewayDir, "node_modules.tar")), false);
+  assert.equal(fs.existsSync(path.join(appOutDir, "resources/resources/runtime/node.exe")), native);
+  assert.equal(fs.existsSync(path.join(appOutDir, "resources/create-cli-binary.ps1")), !native);
   assert.equal(fs.existsSync(path.join(appOutDir, "resources", "resources", "openai-proxy-bootstrap.cjs")), true);
 
   fs.rmSync(tmpRoot, { recursive: true, force: true });

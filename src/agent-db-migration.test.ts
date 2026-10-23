@@ -44,6 +44,12 @@ function makeStateDir() {
 }
 
 describe("readSqliteUserVersion", () => {
+  test("读取未 checkpoint 的 WAL schema，而非陈旧文件头", async () => {
+    const {DatabaseSync}=await import("node:sqlite");
+    const dir=makeStateDir(),file=path.join(dir,"wal.sqlite");const db=new DatabaseSync(file);
+    try {db.exec("PRAGMA journal_mode=WAL; PRAGMA user_version=24; PRAGMA wal_checkpoint(TRUNCATE); PRAGMA user_version=25;");expect(readSqliteUserVersion(file)).toBe(25);}
+    finally{db.close();}
+  });
   test("读取偏移 60 的大端 uint32", () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "agent-db-uv-"));
     afterAll(() => fs.rmSync(dir, { recursive: true, force: true }));
@@ -62,11 +68,17 @@ describe("readSqliteUserVersion", () => {
 });
 
 describe("findAgentDatabasesNeedingMigration", () => {
+  test("10.5 启动前迁移旧 v24 数据库，v25 不重复迁移",()=>{
+    const dir=makeStateDir();writeFakeSqlite(path.join(dir,"agents","old","agent"),"openclaw-agent.sqlite",24);
+    writeFakeSqlite(path.join(dir,"agents","new","agent"),"openclaw-agent.sqlite",25);
+    expect(findAgentDatabasesNeedingMigration(dir)).toHaveLength(1);
+    expect(findAgentDatabasesNeedingMigration(dir,24)).toHaveLength(0);
+  });
   test("只报 0 < userVersion < 24 的库", () => {
     const stateDir = makeStateDir();
-    // main：v19 → 需要迁移；helper：v24 → 不需要；fresh：v0（新库）→ 不需要；空文件：跳过
+    // 10.5 requires v25. Fresh databases are initialized by the kernel.
     writeFakeSqlite(path.join(stateDir, "agents", "main", "agent"), "openclaw-agent.sqlite", 19);
-    writeFakeSqlite(path.join(stateDir, "agents", "helper", "agent"), "openclaw-agent.sqlite", 24);
+    writeFakeSqlite(path.join(stateDir, "agents", "helper", "agent"), "openclaw-agent.sqlite", 25);
     writeFakeSqlite(path.join(stateDir, "agents", "fresh", "agent"), "openclaw-agent.sqlite", 0);
     fs.mkdirSync(path.join(stateDir, "agents", "empty", "agent"), { recursive: true });
     fs.writeFileSync(path.join(stateDir, "agents", "empty", "agent", "openclaw-agent.sqlite"), Buffer.alloc(0));

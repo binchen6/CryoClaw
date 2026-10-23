@@ -1,11 +1,47 @@
 {
-  "kernelVersion": "2026.10.4",
+  "kernelVersion": "2026.10.6",
   "generatedBy": "scripts/kernel-method-audit.mjs --write-baseline",
-  "methods": {},
+  "methods": {
+    "cryoclaw.context.inspect": {
+      "status": "fallback",
+      "note": "CryoClaw 内置交付插件注册的 operator.read 只读方法；UI 仅在展开诊断时请求，旧内核或禁用插件时明确显示不可用，不阻断用量页。",
+      "files": [
+        "chat-ui/ui/src/ui/components/oc-context-report.ts"
+      ]
+    },
+    "cryoclaw.dashboards.list": {
+      "status": "fallback",
+      "note": "由 cryoclaw-dashboards 内置插件注册；全局独立看板。禁用插件或旧内核时显示明确错误，保留刷新入口，不阻断聊天。read/write scopes 和 iframe 限定已由插件及安装版门禁验证。",
+      "files": [
+        "chat-ui/ui/src/ui/components/oc-dashboard.ts"
+      ]
+    },
+    "cryoclaw.dashboards.mutate": {
+      "status": "fallback",
+      "note": "由 cryoclaw-dashboards 内置插件注册；全局独立看板。禁用插件或旧内核时显示明确错误，保留刷新入口，不阻断聊天。read/write scopes 和 iframe 限定已由插件及安装版门禁验证。",
+      "files": [
+        "chat-ui/ui/src/ui/components/oc-dashboard.ts"
+      ]
+    },
+    "cryoclaw.dashboards.pin": {
+      "status": "fallback",
+      "note": "由 cryoclaw-dashboards 内置插件注册；全局独立看板。禁用插件或旧内核时显示明确错误，保留刷新入口，不阻断聊天。read/write scopes 和 iframe 限定已由插件及安装版门禁验证。",
+      "files": [
+        "chat-ui/ui/src/ui/components/oc-dashboard.ts"
+      ]
+    },
+    "cryoclaw.dashboards.system": {
+      "status": "fallback",
+      "note": "由 cryoclaw-dashboards 内置插件注册；全局独立看板。禁用插件或旧内核时显示明确错误，保留刷新入口，不阻断聊天。read/write scopes 和 iframe 限定已由插件及安装版门禁验证。",
+      "files": [
+        "chat-ui/ui/src/ui/components/oc-dashboard.ts"
+      ]
+    }
+  },
   "events": {
     "board.changed": {
       "status": "fallback",
-      "note": "R89 board 仪表盘广播；2026.9.7 GATEWAY_EVENTS 不再包含（监听死但无害），board.get 已有静默探测 controllers/board.ts:17",
+      "note": "2026.10.5 board server-methods 仍定向广播 board.changed，但 GATEWAY_EVENTS 清单未列出；实际创建与更新事件需由安装版冒烟验证，board.get 保留手动刷新回退。",
       "files": [
         "chat-ui/ui/src/ui/app-gateway.ts"
       ]

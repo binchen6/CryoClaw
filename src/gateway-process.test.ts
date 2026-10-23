@@ -18,6 +18,7 @@ const h = vi.hoisted(() => ({
   spawnServesHealth: true,
   spawnTimes: [] as number[],
   latestChild: null as any,
+  nativeRuntime: false,
 }));
 
 vi.mock("electron", () => ({
@@ -34,7 +35,7 @@ vi.mock("./constants", () => ({
   IS_WIN: true,
   resolveGatewayLogPath: () => path.join(h.stateDir, "logs", "gateway.log"),
   resolveNodeBin: () => h.nodeBin,
-  resolveNodeExtraEnv: () => ({ ELECTRON_RUN_AS_NODE: "1" }),
+  resolveNodeExtraEnv: () => ({ ELECTRON_RUN_AS_NODE: h.nativeRuntime ? "" : "1" }),
   resolveNpmBin: () => "npm",
   resolveGatewayEntry: () => h.entry,
   resolveGatewayCwd: () => h.stateDir,
@@ -116,11 +117,13 @@ beforeAll(() => {
 });
 
 beforeEach(async () => {
+  h.nativeRuntime = false;
   vi.resetModules();
   h.healthServing = false;
   h.spawnServesHealth = true;
   h.spawnTimes = [];
   h.latestChild = null;
+  fs.rmSync(path.join(h.stateDir, "cryoclaw.config.json"), {force:true});
   // mock 实现跨测试残留（工厂不会随 resetModules 重建），逐个恢复默认行为
   const { ensureAgentDbSchemaReady } = await import("./agent-db-migration");
   const { uninstallGatewayDaemon } = await import("./install-detector");
@@ -138,6 +141,45 @@ afterAll(() => {
 });
 
 describe("预启动步骤并行化", () => {
+  test("native Node no longer inherits the Electron ASAR deprecation workaround",async()=>{
+    h.nativeRuntime=true;const {GatewayProcess}=await freshModule();const gateway=new GatewayProcess({token:"t"});await gateway.start();
+    const {spawn}=await import("child_process");expect(vi.mocked(spawn).mock.calls.at(-1)?.[1]).not.toContain("--no-deprecation");await gateway.stop();
+  });
+  test("Windows 正常退出通过父进程 IPC 进入原生清理，不直接强杀",async()=>{
+    const {GatewayProcess}=await freshModule();const gateway=new GatewayProcess({token:"t"});await gateway.start();
+    const child=h.latestChild;child.connected=true;
+    child.send=vi.fn((_message:unknown,callback:(error:null)=>void)=>{callback(null);child.exitCode=0;h.healthServing=false;setImmediate(()=>child.emit("exit",0,null));return true;});
+    await gateway.stop();expect(child.send).toHaveBeenCalledTimes(1);expect(child.send.mock.calls[0][0]).toEqual({type:"cryoclaw:shutdown"});expect(gateway.getState()).toBe("stopped");
+  });
+  test("未完成数据库迁移时不 spawn 且标记无需盲目重试", async()=>{
+    const {ensureAgentDbSchemaReady}=await import("./agent-db-migration");
+    vi.mocked(ensureAgentDbSchemaReady).mockResolvedValue({attempted:true,pendingBefore:1,pendingAfter:1,purgedLeases:0});
+    const {GatewayProcess}=await freshModule();const gateway=new GatewayProcess({token:"t"});
+    await expect(gateway.start()).rejects.toMatchObject({retryable:false});
+    expect(h.spawnTimes).toHaveLength(0);expect(gateway.getState()).toBe("stopped");expect(gateway.getStartupFailure()?.retryable).toBe(false);
+  });
+  test("健康检查期间主动停止不触发崩溃自重启", async () => {
+    h.spawnServesHealth=false;
+    const {GatewayProcess}=await freshModule();const onCrash=vi.fn();
+    const gateway=new GatewayProcess({token:"t",onCrash});
+    const start=gateway.start();
+    await vi.waitFor(()=>expect(h.latestChild).not.toBeNull());
+    await gateway.stop();await start;
+    expect(gateway.getState()).toBe("stopped");expect(onCrash).not.toHaveBeenCalled();
+  });
+  test("并发 start 共享就绪承诺，端口拒绝小数", async () => {
+    const { GatewayProcess } = await freshModule();
+    const gateway = new GatewayProcess({token:"t"});
+    gateway.setPort(18789.5);
+    expect(gateway.getPort()).toBe(18789);
+    const first=gateway.start();
+    const second=gateway.start();
+    expect(second).toBe(first);
+    await second;
+    expect(gateway.getState()).toBe("running");
+    expect(h.spawnTimes).toHaveLength(1);
+    await gateway.stop();
+  });
   test("ensureAgentDbSchemaReady 与 uninstallGatewayDaemon 并发执行（无相互等待）", async () => {
     const { ensureAgentDbSchemaReady } = await import("./agent-db-migration");
     const { uninstallGatewayDaemon } = await import("./install-detector");

@@ -5,6 +5,9 @@
 | 文档 | 用途 |
 |---|---|
 | [OPTIMIZATION-PROGRESS.md](OPTIMIZATION-PROGRESS.md) | 当前版本、五轮范围、开发命令与关键路径；历史记录另行归档 |
+| [REVIEW-2026.1022.0.md](REVIEW-2026.1022.0.md) | 10.5 内核、网关启动、独立仪表盘、交付插件与缓存方案的审查及实测 |
+| [REVIEW-2026.1023.0.md](REVIEW-2026.1023.0.md) | 10.6、独立 Node、过期补丁清理及物理内核更新/回退审查 |
+| [CONTEXT-CACHE-OPTIMIZATION-PLAN.md](CONTEXT-CACHE-OPTIMIZATION-PLAN.md) | 已确认的上下文与模型缓存优化范围、边界和验收方法 |
 | `architecture.md` | 架构分层说明：三进程模型、主进程模块职责、启动链路 |
 | `ipc-api.md` | 主进程 IPC 通道契约清单（preload 暴露的全部方法与事件） |
 | `design-guidelines-zh.md` / `design-guidelines-en.md` | UI 设计规范（中英双语）：design token、组件原语、布局规则 |

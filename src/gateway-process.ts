@@ -1,4 +1,5 @@
 import { ChildProcess, spawn, execFile } from "child_process";
+import { gatewayCompileCacheDirectory } from "./gateway-compile-cache";
 import { promisify } from "util";
 import { endStreamWithTimeout } from "./logger";
 import * as http from "http";
@@ -32,6 +33,7 @@ import {
 } from "./constants";
 import { uninstallGatewayDaemon, getPortPid } from "./install-detector";
 import { ensureAgentDbSchemaReady } from "./agent-db-migration";
+import { GatewayStartError } from "./gateway-start-error";
 import {
   shouldAbortStartAfterPrestart,
   shouldForceResetHalfDead,
@@ -149,6 +151,7 @@ export class GatewayProcess {
   private onCrash?: (info: { code: number | null; signal: string | null }) => void;
   private onProgress?: (info: GatewayProgressInfo) => void;
   private startedAt: number | null = null;
+  private lastFailure: {message:string;retryable:boolean}|null=null;
 
   // 世代计数器：每次 spawn 递增，exit handler 只处理同代进程的退出
   private generation = 0;
@@ -177,6 +180,7 @@ export class GatewayProcess {
   getPort(): number {
     return this.port;
   }
+  getStartupFailure(){return this.lastFailure;}
 
   getStartedAt(): number | null {
     return this.startedAt;
@@ -194,7 +198,7 @@ export class GatewayProcess {
 
   // 更新端口（在 start 前调用，用于冲突解决场景）
   setPort(port: number): void {
-    if (port > 0 && port <= 65535) {
+    if (Number.isInteger(port) && port > 0 && port <= 65535) {
       this.port = port;
     }
   }
@@ -231,7 +235,6 @@ export class GatewayProcess {
   private supervisedStartActive = false;
 
   start(opts: { supervised?: boolean; attempt?: number } = {}): Promise<void> {
-    if (this.state === "running" || this.state === "starting") return Promise.resolve();
     if (this.inflightStart) {
       // state 已是 stopped 但旧启动 promise 尚未落定 = 旧启动正在收尾
       //（restart() 先 stop 杀子进程 → exit handler 复位 stopped，而 doStart 的
@@ -241,6 +244,7 @@ export class GatewayProcess {
       if (this.state !== "stopped") return this.inflightStart;
       return this.inflightStart.then(() => this.start(opts));
     }
+    if (this.state === "running" || this.state === "starting") return Promise.resolve();
     this.inflightStart = this.doStart(opts).finally(() => {
       this.inflightStart = null;
       this.supervisedStartActive = false;
@@ -274,6 +278,7 @@ export class GatewayProcess {
     }
 
     this.setState("starting");
+    this.lastFailure=null;
 
     const nodeBin = resolveNodeBin();
     const entry = resolveGatewayEntry();
@@ -290,11 +295,13 @@ export class GatewayProcess {
 
     // 检查关键文件
     if (!fs.existsSync(nodeBin)) {
+      this.lastFailure={message:"内嵌运行时缺失，请重新安装应用。",retryable:false};
       diagLog(`FATAL: node 二进制不存在`);
       this.setState("stopped");
       return;
     }
     if (!fs.existsSync(entry)) {
+      this.lastFailure={message:"内核入口缺失，请重新安装或修复内核。",retryable:false};
       diagLog(`FATAL: gateway 入口不存在`);
       this.setState("stopped");
       return;
@@ -308,10 +315,10 @@ export class GatewayProcess {
       this.emitProgress("cleanup");
       await this.cleanStaleLockfile();
 
-      // agent DB schema 就绪检查（内核 2026.9.4+ 要求 userVersion ≥ 24）：需要迁移时
+      // agent DB schema 就绪检查（从内核 compatibility 元数据读取，10.5 为 25）：需要迁移时
       // 自动清失效租约并跑 doctor --fix --non-interactive。会话级单次（attempted
-      // 闸门，崩溃自重启不重跑），无需迁移时零开销（目录扫描 + 4 字节头读）；失败
-      // 只记日志，网关照常尝试启动（若内核仍拒绝，走既有失败弹窗路径）。
+      // 闸门，崩溃自重启不重跑），无需迁移时只做版本扫描。仍有待迁移库时明确
+      // 终止本次启动，避免反复启动无法通过内核准入的网关。
       //
       // 卸载 OpenClaw 系统守护进程 + 清理 tmpdir 锁文件，防止杀进程后被自动重启。
       // 跳过判定两道：会话级内存标记（快路径）+ cryoclaw.config.json 的
@@ -322,7 +329,9 @@ export class GatewayProcess {
       // 两者无相互依赖，并行执行以缩短启动关键路径；端口探测/停止旧实例仍在
       // 它们落定后串行进行（必须在 spawn 前完成）。
       this.emitProgress("database");
-      const prestartParallel: Promise<unknown>[] = [ensureAgentDbSchemaReady()];
+      const prestartParallel: Promise<unknown>[] = [ensureAgentDbSchemaReady().then(result=>{
+        if(result?.pendingAfter && result.pendingAfter>0)throw new GatewayStartError("会话数据库迁移未完成，请查看日志中的 doctor 检查结果；回退配置不能修复数据库版本。");
+      })];
       if (
         !shouldSkipGatewayDaemonCleanup(
           gatewayDaemonCleanupDone,
@@ -345,7 +354,11 @@ export class GatewayProcess {
           }),
         );
       }
-      await Promise.all(prestartParallel);
+      const preparationStarted=Date.now();
+      const preparationPulse=setInterval(()=>{
+        if(this.getState()==="starting")this.emitProgress("database",Date.now()-preparationStarted);
+      },1000);
+      try { await Promise.all(prestartParallel); } finally { clearInterval(preparationPulse); }
 
       // 启动前探测端口，若有旧 gateway 则自动停止
       this.emitProgress("port");
@@ -359,6 +372,7 @@ export class GatewayProcess {
       ensureClawhubWrapper(nodeBin);
     } catch (err) {
       diagLog(`FATAL: 预启动步骤失败: ${err instanceof Error ? err.message : String(err)}`);
+      this.lastFailure={message:err instanceof GatewayStartError?err.message:"启动准备失败，请查看诊断日志。",retryable:!(err instanceof GatewayStartError)};
       this.proc = null;
       this.setState("stopped");
       throw err;
@@ -389,7 +403,8 @@ export class GatewayProcess {
     const proxyBootstrap = app.isPackaged
       ? path.join(resolveResourcesPath(), "openai-proxy-bootstrap.cjs")
       : path.join(app.getAppPath(), "shared", "openai-proxy-bootstrap.cjs");
-    const args = ["--no-deprecation", "--require", proxyBootstrap, entry, "gateway", "run"];
+    const nodeExtraEnv = resolveNodeExtraEnv();
+    const args = [...(nodeExtraEnv.ELECTRON_RUN_AS_NODE === "1" ? ["--no-deprecation"] : []), "--require", proxyBootstrap, entry, "gateway", "run"];
     diagLog(`spawn: ${nodeBin} ${args.join(" ")} (gen=${gen})`);
     this.emitProgress("spawn");
 
@@ -399,7 +414,7 @@ export class GatewayProcess {
         ...process.env,
         CRYOCLAW_NODE_BIN: resolveNodeBin(),
         OPENCLAW_BUNDLED_SKILLS_DIR: (()=>{const root=path.join(resolveGatewayPackageDir(),"skills");const physical=root.replace(/\.asar(?=[\\/])/i,".asar.unpacked");return fs.existsSync(physical)?physical:root;})(),
-        ...resolveNodeExtraEnv(),
+        ...nodeExtraEnv,
         NODE_ENV: "production",
         // 禁止 openclaw 入口在子进程内二次 respawn，避免 Windows 闪烁控制台窗口
         OPENCLAW_NO_RESPAWN: "1",
@@ -411,7 +426,7 @@ export class GatewayProcess {
         CRYOCLAW_OPENAI_PROXY_CONFIG: resolveCryoclawConfigPath(),
         CRYOCLAW_OPENAI_GATEWAY_ROOT: resolveGatewayPackageDir(),
         // V8 编译缓存（R20）：加速 gateway 热启动；内核换装后由 updater 清空
-        NODE_COMPILE_CACHE: path.join(resolveUserStateDir(), "cache", "v8-compile"),
+        NODE_COMPILE_CACHE: gatewayCompileCacheDirectory(resolveGatewayPackageDir(), path.join(resolveUserStateDir(), "cache", "v8-compile")),
         // 告诉 openclaw 安装根目录，使 extensions 路径解析不依赖 __dirname（asar 内会失败）
         OPENCLAW_INSTALL_ROOT: resolveResourcesPath(),
         OPENCLAW_GATEWAY_TOKEN: this.token,
@@ -419,7 +434,7 @@ export class GatewayProcess {
         PATH: envPath,
         ...this.extraEnv,
       },
-      stdio: ["ignore", "pipe", "pipe"],
+      stdio: ["ignore", "pipe", "pipe", "ipc"],
       windowsHide: true,
     });
     const childPid = this.proc.pid ?? -1;
@@ -463,6 +478,7 @@ export class GatewayProcess {
     });
     this.proc.stderr?.on("data", (d: Buffer) => {
       const s = d.toString();
+      if(/uses schema version.*doctor --fix/.test(s))this.lastFailure={message:"会话数据库尚未迁移到当前内核要求的版本，请完成 doctor 检查后重试。",retryable:false};
       try { process.stderr.write(`[gateway] ${s}`); } catch {}
       diagLog(`stderr: ${s.trimEnd()}`);
     });
@@ -511,6 +527,7 @@ export class GatewayProcess {
 
     // 轮询健康检查
     let healthy = await this.waitForHealth(HEALTH_TIMEOUT_MS, childPid);
+    if (this.getState() !== "starting") return;
     // 主超时但子进程仍存活 → 宽限续等一轮（Windows 冷启动慢热长尾，超时即杀会
     // 留下「首次启动失败、重试自愈」的假象，见 constants.ts HEALTH_GRACE_MS）；
     // 子进程已死则维持立即失败，不掩盖真正的启动故障
@@ -521,6 +538,7 @@ export class GatewayProcess {
       healthy = await this.waitForHealth(HEALTH_GRACE_MS, childPid);
       diagLog(`宽限续等结束: ${healthy ? "已就绪，转入正常启动路径" : "仍未就绪"}`);
     }
+    if (this.getState() !== "starting") return;
     if (healthy) {
       await this.settleHealthyStart(childPid);
     } else {
@@ -623,18 +641,28 @@ export class GatewayProcess {
 
     const pid = this.proc.pid ?? 0;
     this.setState("stopping");
+    let graceful=false;
+    if(IS_WIN && this.proc.connected && typeof this.proc.send === "function"){
+      const proc=this.proc;
+      graceful=await new Promise<boolean>(resolve=>{
+        const timer=setTimeout(()=>resolve(false),500);
+        try{proc.send!({type:"cryoclaw:shutdown"},error=>{clearTimeout(timer);resolve(!error);});}
+        catch{clearTimeout(timer);resolve(false);}
+      });
+      if(graceful)diagLog("gateway graceful shutdown requested through parent IPC");
+    }
 
-    // 第一步：发送终止信号（Windows 杀整棵进程树，POSIX 先 SIGTERM）。
+    // 第一步：Windows 优先父子 IPC 优雅停止，失败时杀整棵树；POSIX 发 SIGTERM。
     // P0-3：Windows 分支必须 await——此前未 await 且 killProcess 内部吞错，
     // 5s 超时兜底又被直接跳过，进程实际还活着就已置 stopped（退出路径留孤儿）
-    if (IS_WIN && pid > 0) {
+    if (IS_WIN && pid > 0 && !graceful && this.proc?.pid === pid) {
       await killProcess(pid);
-    } else {
-      this.proc.kill("SIGTERM");
+    } else if(!IS_WIN) {
+      this.proc?.kill("SIGTERM");
     }
 
     // 第二步：等 exit 事件将状态推到 stopped（exit handler 负责状态转移）
-    const deadline = Date.now() + 5000;
+    const deadline = Date.now() + (graceful ? 60000 : 5000);
     while (this.getState() === "stopping" && Date.now() < deadline) {
       await sleep(100);
     }
@@ -730,10 +758,10 @@ export class GatewayProcess {
     await this.start(opts);
   }
 
-  // HTTP 探测根路径（Control UI）
-  private probeHealth(): Promise<boolean> {
+  // Liveness is independent of Control UI assets; startup waits for readiness.
+  private probeHealth(pathname = "/healthz"): Promise<boolean> {
     return new Promise((resolve) => {
-      const req = http.get(`http://127.0.0.1:${this.port}/`, (res) => {
+      const req = http.get(`http://127.0.0.1:${this.port}${pathname}`, (res) => {
         resolve(res.statusCode === 200);
         res.resume();
       });
@@ -763,7 +791,7 @@ export class GatewayProcess {
         diagLog(`health check aborted: child exited pid=${childPid}`);
         return false;
       }
-      if (await this.probeHealth()) return true;
+      if (await this.probeHealth("/readyz")) return true;
       // 约每 1s 上报一次等待耗时，UI 据此展示活性（进度条/耗时文案）
       const now = Date.now();
       if (now - lastHealthProgressAt >= 1000) {
@@ -815,8 +843,11 @@ export class GatewayProcess {
       return;
     }
     // 进程活着但不响应 HTTP（半死状态）→ 强杀后删 lockfile
+    if (!await isPlausiblyOwnGateway(stalePid)) {
+      throw new Error(`Gateway lock owner ${stalePid} could not be verified; refusing to terminate it`);
+    }
     diagLog(`WARN: lockfile 指向 pid=${stalePid}，进程存活但 HTTP 无响应，强制终止`);
-    await killProcess(stalePid);
+    if (!await killProcess(stalePid)) throw new Error(`Could not stop gateway lock owner ${stalePid}`);
     // 等待进程退出
     for (let i = 0; i < 20; i++) {
       await sleep(250);
@@ -825,6 +856,7 @@ export class GatewayProcess {
         break;
       }
     }
+    if (isProcessAlive(stalePid)) throw new Error(`Gateway lock owner ${stalePid} is still running`);
     try { fs.unlinkSync(lockPath); } catch {}
   }
 

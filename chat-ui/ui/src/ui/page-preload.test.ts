@@ -1,7 +1,20 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import type {AppViewState} from "./app-view-state.ts";
-import {preloadPage,stopPagePreloads} from "./page-preload.ts";
+import {preloadPage,stopPagePreloads,schedulePagePreloads} from "./page-preload.ts";
+
+test("background page reads wait for visible startup data and are revoked on disconnect",async t=>{
+  const previous=globalThis.document,calls:string[]=[];
+  const host={connected:true,chatLoading:true,sessionsLoading:true,progressCard:{loading:false},client:{request:async(method:string)=>{calls.push(method);return {};}}} as unknown as AppViewState;
+  Object.assign(globalThis,{document:{hidden:false}});t.mock.timers.enable({apis:["setTimeout"]});
+  try{
+    schedulePagePreloads(host);await preloadPage(host,"settings");t.mock.timers.tick(15000);
+    for(let n=0;n<10;n++)await Promise.resolve();assert.equal(calls.length,0,"no scans compete with initial chat reads");
+    stopPagePreloads(host);host.chatLoading=false;host.sessionsLoading=false;t.mock.timers.tick(30000);
+    for(let n=0;n<10;n++)await Promise.resolve();assert.equal(calls.length,0,"retired connection never arms its delayed preloads");
+    await preloadPage(host,"settings");assert.ok(calls.includes("config.get") && calls.includes("models.list"),"intent preloads resume after initial data is ready");
+  }finally{stopPagePreloads(host);t.mock.timers.reset();Object.assign(globalThis,{document:previous});}
+});
 
 test("preload skips hidden, offline and actively generating views",async()=>{
   const previous=globalThis.document;

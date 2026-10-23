@@ -24,7 +24,7 @@ export type GatewayResponseFrame = {
   id: string;
   ok: boolean;
   payload?: unknown;
-  error?: { code: string; message: string; details?: unknown };
+  error?: { code: string; message: string; details?: unknown; retryable?: boolean; retryAfterMs?: number };
 };
 
 export type GatewayHelloOk = {
@@ -66,6 +66,32 @@ export type GatewayBrowserClientOptions = {
 const CONNECT_FAILED_CLOSE_CODE = 4008;
 const REQUEST_TIMEOUT_MS = 30_000;
 
+export class GatewayRequestError extends Error {
+  readonly code: string;
+  readonly details: unknown;
+  constructor(error: NonNullable<GatewayResponseFrame["error"]>) {
+    super(error.message);
+    this.name = "GatewayRequestError";
+    this.code = error.code;
+    this.details = error.details;
+  }
+}
+
+// Only replay reads rejected before agent admission. Never replay a mutation or
+// an arbitrary UNAVAILABLE error: it could already have changed persistent state.
+const STARTUP_READS = new Set([
+  "chat.history", "chat.startup", "sessions.list", "agent.identity.get", "agents.list",
+  "models.list", "progressCard.get", "board.get", "cron.list", "cron.status", "cron.runs",
+  "skills.status", "channels.status", "worktrees.list", "commands.list",
+]);
+
+export function isAgentStartupReadError(method: string, error: unknown): boolean {
+  return STARTUP_READS.has(method) && error instanceof GatewayRequestError &&
+    error.code === "UNAVAILABLE" &&
+    ((error.details as {code?:unknown}|undefined)?.code === "agent-database-inspection-pending" ||
+      /has not completed startup inspection and preparation|agent database.*(?:not ready|prepar)/i.test(error.message));
+}
+
 export class GatewayBrowserClient {
   private ws: WebSocket | null = null;
   private pending = new Map<string, Pending>();
@@ -78,6 +104,7 @@ export class GatewayBrowserClient {
   private helloReceived = false;
   private socketGeneration = 0;
   private backoffMs = 800;
+  private retryWaiters = new Map<number, () => void>();
 
   constructor(private opts: GatewayBrowserClientOptions) {}
 
@@ -197,6 +224,11 @@ export class GatewayBrowserClient {
   }
 
   private flushPending(err: Error) {
+    for (const [timer, cancel] of this.retryWaiters) {
+      window.clearTimeout(timer);
+      cancel();
+    }
+    this.retryWaiters.clear();
     for (const [, p] of this.pending) {
       if (p.timeoutId !== null) {
         window.clearTimeout(p.timeoutId);
@@ -428,7 +460,7 @@ export class GatewayBrowserClient {
       if (res.ok) {
         pending.resolve(res.payload);
       } else {
-        pending.reject(new Error(res.error?.message ?? "request failed"));
+        pending.reject(res.error ? new GatewayRequestError(res.error) : new Error("request failed"));
       }
       return;
     }
@@ -448,9 +480,32 @@ export class GatewayBrowserClient {
       console.error("[gateway] request before hello", method);
       return Promise.reject(new Error("gateway handshake not complete"));
     }
-    return this.requestOnSocket<T>(this.ws, this.socketGeneration, method, params, {
-      timeoutMs: options?.timeoutMs,
-    });
+    return this.requestReadOnSocket<T>(this.ws, this.socketGeneration, method, params, options);
+  }
+
+  private async requestReadOnSocket<T>(ws: WebSocket, generation: number, method: string,
+    params?: unknown, options?: { timeoutMs?: number }): Promise<T> {
+    const deadline = Date.now() + (options?.timeoutMs ?? 120_000);
+    let startupPending=false;
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await this.requestOnSocket<T>(ws, generation, method, params, {
+          timeoutMs: Math.max(1, Math.min(options?.timeoutMs ?? REQUEST_TIMEOUT_MS, deadline - Date.now())),
+        });
+      } catch (error) {
+        const pending=isAgentStartupReadError(method,error);
+        const preparingTimeout=startupPending && STARTUP_READS.has(method) && error instanceof Error && error.message===`gateway request timeout: ${method}`;
+        if(pending)startupPending=true;
+        const delay = Math.min(3000, 500 * 2 ** attempt);
+        if (!(pending || preparingTimeout) || attempt >= 22 ||
+          Date.now() + delay >= deadline || !this.isActiveSocket(ws, generation) || !this.connected) throw error;
+        await new Promise<void>((resolve) => {
+          const timer = window.setTimeout(() => { this.retryWaiters.delete(timer); resolve(); }, delay);
+          this.retryWaiters.set(timer, resolve);
+        });
+        if (!this.isActiveSocket(ws, generation) || !this.connected) throw new Error("gateway connection changed during startup read");
+      }
+    }
   }
 
   private requestOnSocket<T = unknown>(

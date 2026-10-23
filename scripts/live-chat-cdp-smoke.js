@@ -2,16 +2,16 @@
 const path=require('node:path');
 const assert=require('node:assert/strict');
 const {randomUUID}=require('node:crypto');
-const {launch,waitForPageTarget,connect,waitForAppReady,dismissReleaseNotes,sleep,arg}=require('./lib/cdp-harness');
+const {launch,quitLaunchedApp,waitForPageTarget,connect,waitForAppReady,dismissReleaseNotes,sleep,arg}=require('./lib/cdp-harness');
 (async()=>{
   if(!process.argv.includes('--live'))throw Error('Add --live to authorize a real provider request in a dedicated QA session');
   const version=require('../package.json').version;
   const exe=arg(process.argv,'--exe',path.resolve('out/win32-x64/win-unpacked/CryoClaw.exe'));
   const attached=process.argv.includes('--attach-port'),port=Number(arg(process.argv,'--attach-port','9243'));
-  const {cleanup}=attached?{cleanup:()=>{}}:launch(exe,port);let ws;
+  const running=attached?null:launch(exe,port);let ws,cdp;
   try{
     const page=await waitForPageTarget(port);assert.ok(page,'installed app page');
-    const conn=await connect(page);ws=conn.ws;const cdp=conn.cdp;
+    const conn=await connect(page);ws=conn.ws;cdp=conn.cdp;
     assert.ok(await waitForAppReady(cdp,{timeoutMs:210000}),'gateway connection');
     await dismissReleaseNotes(cdp);
     const key='agent:main:release-smoke-'+Date.now();
@@ -35,5 +35,5 @@ const {launch,waitForPageTarget,connect,waitForAppReady,dismissReleaseNotes,slee
     assert.ok(reply,'real provider reply persisted in chat history');
     assert.equal(cdp.exceptions.length,0);
     console.log(JSON.stringify({targetVersion:version,realMessageReply:true,uniqueNonceEchoPersisted:true,rendererExceptions:0}));
-  }finally{ws?.close();cleanup();}
+  }finally{if(running)await quitLaunchedApp(running,cdp);ws?.close();}
 })().catch(error=>{console.error(error);process.exitCode=1;});

@@ -8,6 +8,7 @@ import type { AppViewState } from "../../app-view-state.ts";
 import {loadUsageSnapshot,peekUsageSnapshot,type UsageSnapshot} from "../../controllers/usage-cache.ts";
 import { t } from "../../i18n.ts";
 import "../../components/message-box.ts";
+import "../../components/oc-context-report.ts";
 import { formatCost, formatTokens } from "../usage-metrics.ts";
 import {
   mapSessionsUsage,
@@ -103,11 +104,15 @@ function renderStatCard(label: string, value: string, sub?: string) {
 
 function renderMetrics(totals: UsageTokenTotals | null, aggregates: UsageAggregates | null, sessionCount: number) {
   const effective = totals ?? emptyTotals();
+  const cache=effective.cacheMetrics;
   const inOut = `${t("settings.usage.tokenIn")} ${formatTokens(effective.input)} · ${t("settings.usage.tokenOut")} ${formatTokens(effective.output)}`;
   const msgs = aggregates?.messages;
   return html`
     <div class="oc-usage__stats">
-      ${renderStatCard(t("settings.usage.statTokens"), formatTokens(effective.totalTokens ?? effective.input + effective.output + effective.cacheRead), inOut)}
+      ${renderStatCard(t("settings.usage.statTokens"), formatTokens(effective.totalTokens ?? effective.input + effective.output + effective.cacheRead+(effective.cacheWrite??0)), inOut)}
+      ${renderStatCard(t("settings.usage.cacheRead"),cache?.cacheRead!=null?formatTokens(cache.cacheRead):"—",cache?.readRatio!=null?`${(cache.readRatio*100).toFixed(1)}% ${t("settings.usage.inputShare")}`:t("settings.usage.cacheUnknown"))}
+      ${renderStatCard(t("settings.usage.cacheWrite"),cache?.cacheWrite!=null?formatTokens(cache.cacheWrite):"—")}
+      ${renderStatCard(t("settings.usage.uncachedInput"),cache?.uncachedInput!=null?formatTokens(cache.uncachedInput):"—")}
       ${renderStatCard(t("settings.usage.statCost"), effective.totalCost != null ? formatCost(effective.totalCost) : "—")}
       ${renderStatCard(t("settings.usage.statSessions"), String(aggregates?.sessionCount ?? sessionCount))}
       ${renderStatCard(
@@ -247,6 +252,7 @@ export function renderTabUsage(state: AppViewState) {
       <p class="oc-settings__hint">${t("settings.usage.pageDesc")}</p>
 
       ${renderRangeSwitch(state)}
+      <oc-context-report .client=${state.client} .connected=${state.connected}></oc-context-report>
 
       ${showSkeleton
         ? html`

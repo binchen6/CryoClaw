@@ -180,6 +180,7 @@ export function progressCardChangedNeedsReload(
 // 否则晚到的旧响应会覆盖更新状态（同 loadRunHistory 的 runsRefreshPending 模式）。
 const progressCardRefreshPending = new WeakMap<ProgressCardHost, string>();
 const progressCardDismissToken = new WeakMap<ProgressCardHost, symbol>();
+const progressCardReadToken = new WeakMap<ProgressCardHost, { client: GatewayBrowserClient; key: string }>();
 
 export async function loadProgressCard(host: ProgressCardHost): Promise<void> {
   if (!host.client || !host.connected) {
@@ -189,17 +190,22 @@ export async function loadProgressCard(host: ProgressCardHost): Promise<void> {
   if (!key.trim()) {
     return;
   }
-  if (host.progressCard.loading) {
+  const client = host.client;
+  const active = progressCardReadToken.get(host);
+  if (host.progressCard.loading && active?.client === client && active.key === key) {
     progressCardRefreshPending.set(host, key);
     return;
   }
   host.progressCard = { ...host.progressCard, sessionKey: key, loading: true, error: null };
+  const token = { client, key };
+  progressCardReadToken.set(host, token);
+  const isCurrent = () => host.client === client && host.connected && host.sessionKey === key && progressCardReadToken.get(host) === token;
   let stale = false;
   try {
-    const res = await host.client.request<{ card?: unknown }>("progressCard.get", {
+    const res = await client.request<{ card?: unknown }>("progressCard.get", {
       sessionKey: key,
     });
-    if (host.sessionKey !== key) {
+    if (!isCurrent()) {
       stale = true; // 会话已切换：丢弃晚到响应，防止跨会话串卡
       return;
     }
@@ -210,12 +216,14 @@ export async function loadProgressCard(host: ProgressCardHost): Promise<void> {
       error: null,
     };
   } catch (err) {
-    if (host.sessionKey !== key) {
+    if (!isCurrent()) {
       stale = true;
       return;
     }
     host.progressCard = { ...host.progressCard, loading: false, error: "refresh_failed" };
   } finally {
+    if (progressCardReadToken.get(host) !== token) return;
+    progressCardReadToken.delete(host);
     // stale 拉取不消费脏标记：新会话的重拉已由 resetProgressCardForSession 负责，
     // 这里再补跑只会叠加冗余请求。
     const pendingSessionKey = progressCardRefreshPending.get(host);
@@ -247,6 +255,7 @@ export function handleProgressCardChanged(
  */
 export function resetProgressCardForSession(host: ProgressCardHost, sessionKey: string): void {
   progressCardRefreshPending.delete(host);
+  progressCardReadToken.delete(host);
   progressCardDismissToken.delete(host);
   host.progressCard = emptyProgressCardState(sessionKey);
   if (host.client && host.connected) {
@@ -272,13 +281,14 @@ export async function dismissProgressCard(host: ProgressCardHost): Promise<boole
   // Lock before a possible get: otherwise two quick clicks without a cached card can race
   // through the fetch and issue duplicate optimistic clears.
   const token = Symbol("progress-card-dismiss");
+  const client = host.client;
   progressCardDismissToken.set(host, token);
   host.progressCard = { ...host.progressCard, dismissing: true, error: null };
   try {
     let card = host.progressCard.card;
     if (!card) {
       await loadProgressCard(host);
-      if (host.sessionKey !== sessionKey || progressCardDismissToken.get(host) !== token) {
+      if (host.client !== client || !host.connected || host.sessionKey !== sessionKey || progressCardDismissToken.get(host) !== token) {
         return false;
       }
       card = host.progressCard.card;
@@ -287,18 +297,18 @@ export async function dismissProgressCard(host: ProgressCardHost): Promise<boole
       return false;
     }
 
-    const res = await host.client.request<{ card?: unknown }>("progressCard.put", {
+    const res = await client.request<{ card?: unknown }>("progressCard.put", {
       sessionKey,
       expectedRevision: card.revision,
     });
-    if (host.sessionKey !== sessionKey || progressCardDismissToken.get(host) !== token) {
+    if (host.client !== client || !host.connected || host.sessionKey !== sessionKey || progressCardDismissToken.get(host) !== token) {
       return false; // Session changed: never write a result into the new session state.
     }
     const next = normalizeProgressCard(res?.card);
     host.progressCard = { ...host.progressCard, card: next, dismissing: false, error: null };
     return next === null;
   } catch {
-    if (host.sessionKey === sessionKey && progressCardDismissToken.get(host) === token) {
+    if (host.client === client && host.connected && host.sessionKey === sessionKey && progressCardDismissToken.get(host) === token) {
       host.progressCard = { ...host.progressCard, dismissing: false, error: "dismiss_failed" };
     }
     return false;

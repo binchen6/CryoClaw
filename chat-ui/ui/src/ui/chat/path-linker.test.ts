@@ -3,6 +3,13 @@ import assert from "node:assert/strict";
 
 import { decodeHtmlEntities, linkifyPaths } from "./path-linker.ts";
 
+test("file cards and buttons keep plain path labels while ordinary paths remain links",()=>{
+  const html='<span class="chat-file-card"><button><span>C:\\reports\\a.pdf</span></button><span><span>C:\\reports</span></span></span><p>C:\\outside\\b.pdf</p>';
+  const linked=linkifyPaths(html);
+  assert.equal((linked.match(/class="chat-path-link"/g)??[]).length,1);
+  assert.ok(linked.indexOf('class="chat-path-link"')>linked.indexOf('</span><p>'));
+});
+
 // ── decodeHtmlEntities ──
 
 test("decodeHtmlEntities：反转义 DOMPurify 标准命名实体", () => {

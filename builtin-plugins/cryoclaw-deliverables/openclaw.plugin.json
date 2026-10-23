@@ -1,0 +1,8 @@
+{
+  "id": "cryoclaw-deliverables", "name": "CryoClaw Deliverables",
+  "description": "Display completed local files as actionable desktop cards.", "enabledByDefault": true,
+  "configSchema": { "type": "object", "additionalProperties": false, "properties": {} },
+  "activation": { "onStartup": true },
+  "contracts": { "tools": ["cryoclaw_deliver_files"] },
+  "toolMetadata": { "cryoclaw_deliver_files": { "profiles": ["minimal", "coding", "messaging", "full"], "replaySafe": true } }
+}

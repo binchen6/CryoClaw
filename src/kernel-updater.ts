@@ -75,6 +75,12 @@ export function isKernelUpdaterAvailable(): boolean {
   return fs.existsSync(resolveUpdaterScript());
 }
 
+/** Recover a torn whole-directory swap before config/schema discovery reads it. */
+export async function recoverKernelBeforeStartup(): Promise<void> {
+  if (!fs.existsSync(path.join(resolveResourcesPath(), "gateway.swap.json"))) return;
+  await runUpdater(["--recover"], () => {});
+}
+
 // 最低支持内核版本：与根目录 kernel-channel.json 的 minSupported 字段保持一致
 // （运行时暂不远程读取该文件，策展方推进 minSupported 时需同步修改此处）。
 const MIN_SUPPORTED_KERNEL_VERSION = { year: 2026, month: 7 };

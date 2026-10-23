@@ -16,7 +16,8 @@ const require = createRequire(import.meta.url);
 const asar = require("@electron/asar");
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-export const DEFAULT_ASAR_PATH = path.join(REPO_ROOT, "resources", "targets", "win32-x64", "gateway.asar");
+const target = path.join(REPO_ROOT, "resources", "targets", "win32-x64");
+export const DEFAULT_ASAR_PATH = fs.existsSync(path.join(target,"runtime/cryoclaw-runtime.json")) ? path.join(target,"gateway") : path.join(target,"gateway.asar");
 export const BASELINE_PATH = path.join(REPO_ROOT, "docs", "kernel-recon", "rpc-baseline.json");
 
 const SCAN_DIRS = [
@@ -56,17 +57,20 @@ function findDistFile(header, prefix) {
 
 /** 解析内核注册面：methods（RPC 方法表首元素）+ events（GATEWAY_EVENTS）。 */
 export function collectKernelSurface(asarPath = DEFAULT_ASAR_PATH) {
-  const { header } = asar.getRawHeader(asarPath);
-  const read = (key) => asar.extractFile(asarPath, path.join("node_modules", "openclaw", "dist", key)).toString("utf8");
+  const loose = fs.statSync(asarPath).isDirectory();
+  const dist = path.join(asarPath,"node_modules/openclaw/dist");
+  const header = loose ? null : asar.getRawHeader(asarPath).header;
+  const find = prefix => loose ? fs.readdirSync(dist).find(name=>name.startsWith(prefix)) : findDistFile(header,prefix);
+  const read = key => loose ? fs.readFileSync(path.join(dist,key),"utf8") : asar.extractFile(asarPath,path.join("node_modules/openclaw/dist",key)).toString("utf8");
 
-  const policy = read(findDistFile(header, "core-method-policy"));
+  const policy = read(find("core-method-policy"));
   const methods = new Set();
   for (const m of policy.matchAll(/^\t\[\n\t\t"([a-zA-Z0-9_.]+)",/gm)) methods.add(m[1]);
   if (methods.size < MIN_METHOD_COUNT) {
     throw new Error(`kernel-method-audit: 方法表仅解析到 ${methods.size} 项（<${MIN_METHOD_COUNT}），内核产物格式可能已变，拒绝静默通过`);
   }
 
-  const listSrc = read(findDistFile(header, "server-methods-list"));
+  const listSrc = read(find("server-methods-list"));
   const start = listSrc.indexOf("GATEWAY_EVENTS = [");
   if (start < 0) throw new Error("kernel-method-audit: 未找到 GATEWAY_EVENTS 定义");
   const end = listSrc.indexOf("];", start);
@@ -76,7 +80,7 @@ export function collectKernelSurface(asarPath = DEFAULT_ASAR_PATH) {
 
   const version = (() => {
     try {
-      const pkg = JSON.parse(asar.extractFile(asarPath, path.join("node_modules", "openclaw", "package.json")).toString("utf8"));
+      const pkg = JSON.parse(loose ? fs.readFileSync(path.join(asarPath,"node_modules/openclaw/package.json"),"utf8") : asar.extractFile(asarPath, path.join("node_modules", "openclaw", "package.json")).toString("utf8"));
       return pkg.version;
     } catch {
       return "unknown";

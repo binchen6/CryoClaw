@@ -13,6 +13,7 @@
 
 export const CRYOCLAW_VIEW_IDS = [
   "chat",
+  "dashboard",
   "setup",
   "settings",
   "workspace",
@@ -35,6 +36,7 @@ export type CryoClawViewMeta = {
 
 export const CRYOCLAW_VIEW_META: Record<CryoClawViewId, CryoClawViewMeta> = {
   chat: { id: "chat", fullpage: false, titleKey: "sidebar.agent" },
+  dashboard: { id: "dashboard", fullpage: false, titleKey: "chat.board.title" },
   setup: { id: "setup", fullpage: true, titleKey: "setup.welcome.title" },
   settings: { id: "settings", fullpage: false, titleKey: "sidebar.settings" },
   workspace: { id: "workspace", fullpage: false, titleKey: "sidebar.workspace" },

@@ -139,6 +139,11 @@
     Sleep 2000
   ${endif}
 
+  IfFileExists "$INSTDIR\resources\stop-bundled-runtime.ps1" 0 cryoclaw_runtime_stopped
+  nsExec::ExecToLog 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$INSTDIR\resources\stop-bundled-runtime.ps1"'
+  Pop $1
+  cryoclaw_runtime_stopped:
+
   ; ── R94 自愈：更新换装中断残留 ────────────────────────────────────────
   ; 场景（实测）：上次换装把旧版卸载了但新版未落地 → 安装目录已无主 exe，而
   ; Windows 卸载注册表项仍在（UninstallString 指向已不存在的卸载器）。此后每次
@@ -189,12 +194,14 @@
   ; -File 直跑（R64 审查 P3）：脚本自定位安装目录（$PSScriptRoot 上级），
   ; 旧版把 $INSTDIR 内插进 -Command 双引号串，自选安装目录含 $、反引号等
   ; PS 元字符时会被展开/转义导致 CLI 生成失败。
+  IfFileExists "$INSTDIR\resources\create-cli-binary.ps1" 0 cryoclaw_cli_done
   nsExec::ExecToLog 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$INSTDIR\resources\create-cli-binary.ps1"'
   ; 检查退出码：CLI 二进制生成失败不阻断安装，但写醒目日志便于排查
   Pop $0
   ${if} $0 != 0
     DetailPrint "WARNING: create-cli-binary.ps1 failed (exit=$0) - openclaw CLI binary was not created. Reinstall or run resources\create-cli-binary.ps1 manually to restore it."
   ${endif}
+  cryoclaw_cli_done:
 !macroend
 
 ; ============================================================
@@ -276,6 +283,10 @@
   ${endif}
   ${if} $0 == 1
     Sleep 2000
+  ${endif}
+  ${if} ${FileExists} "$INSTDIR\resources\stop-bundled-runtime.ps1"
+    nsExec::ExecToLog 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$INSTDIR\resources\stop-bundled-runtime.ps1"'
+    Pop $1
   ${endif}
 !macroend
 

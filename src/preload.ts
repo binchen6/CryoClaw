@@ -261,6 +261,9 @@ contextBridge.exposeInMainWorld("cryoclaw", {
   openPath: (path: string) => ipcRenderer.invoke("app:open-path", path),
   // 在文件管理器中定位文件（不执行）
   revealPath: (path: string) => ipcRenderer.invoke("app:reveal-path", path),
+  fileCardInfo: (path: string) => ipcRenderer.invoke("app:file-card-info", path),
+  pinDashboardCard: (params: unknown) => ipcRenderer.invoke('app:pin-dashboard-card',params),
+  saveFileCopy: (path: string) => ipcRenderer.invoke("app:save-file-copy", path),
 
   // 文件选择
   selectFiles: (options?: { filters?: Array<{ name: string; extensions: string[] }> }) =>

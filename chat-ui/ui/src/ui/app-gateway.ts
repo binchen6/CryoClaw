@@ -45,7 +45,6 @@ import { loadSessions } from "./controllers/sessions.ts";
 import { applySessionsChangedPatch } from "./controllers/sessions-patch.ts";
 import { loadWorktrees } from "./controllers/worktrees.ts";
 import { loadRunHistory } from "./controllers/tasks.ts";
-import { loadSkills } from "./controllers/skills.ts";
 import {
   handleProgressCardChanged,
   loadProgressCard,
@@ -559,6 +558,7 @@ export function connectGateway(host: GatewayHost) {
     httpOrigin: wsUrlToHttpOrigin(host.settings.gatewayUrl),
     sharedToken: host.settings.token.trim() ? host.settings.token : undefined,
   });
+  let helloEpoch=0;
   const client = new GatewayBrowserClient({
     url: host.settings.gatewayUrl,
     token: host.settings.token.trim() ? host.settings.token : undefined,
@@ -574,6 +574,12 @@ export function connectGateway(host: GatewayHost) {
       if (host.client !== client) {
         return;
       }
+      const epoch=++helloEpoch;
+      // A WebSocket hello precedes deferred agent admission. Gate the initial
+      // read burst so model catalogs, idle preloads and tickers cannot compete
+      // with preparation or manufacture operation-failed banners.
+      void client.request("agent.identity.get",{sessionKey:host.sessionKey}).then(()=>{
+      if(host.client!==client || !client.connected || helloEpoch!==epoch)return;
       host.connected = true;
       host.lastError = null;
       // 连接成功：三态复位 + 启动进度结束（启动进度只在未连接窗口展示）
@@ -640,16 +646,14 @@ export function connectGateway(host: GatewayHost) {
       void loadCommands(client, { force: true }).then(()=>{if(host.client===client && host.connected)(host as unknown as OpenClawApp).requestUpdate();});
       // 加载执行权限模式（聊天页三态）
       void (host as unknown as OpenClawApp).loadExecMode();
-      // T3：idle 预取已装技能 status——技能视图历史首开才付全量 RPC 延迟
-      const ric = (window as unknown as { requestIdleCallback?: (cb: () => void) => number }).requestIdleCallback;
-      if (typeof ric === "function") {
-        ric(() => {
-          void loadSkills(host as unknown as Parameters<typeof loadSkills>[0]);
-        });
-      }
+      // Skill prefetch is owned by schedulePagePreloads after visible chat reads.
       void refreshActiveTab(host as unknown as Parameters<typeof refreshActiveTab>[0]);
       // 注册定时轮询并启动客户端定时器（"cron" 是 tick handler 标识，非视图 id，勿当死接线删）
-      registerTickHandler("cron", () => loadCronJobs(host as unknown as Parameters<typeof loadCronJobs>[0]));
+      registerTickHandler("cron", () => {
+        const app=host as unknown as OpenClawApp;
+        if(app.chatLoading || app.sessionsLoading || !app.sessionsResult)return;
+        return loadCronJobs(host as unknown as Parameters<typeof loadCronJobs>[0]);
+      });
       registerTickHandler("sessions", () => loadSessionsAndReconcile(host));
       // 2026.9.7：tasks.* 已移除，不再注册 tasks 轮询——运行记录由任务视图内
       // 30s ticker（app-tasks.ts）与 cron 广播事件分支承担刷新
@@ -666,8 +670,13 @@ export function connectGateway(host: GatewayHost) {
       startTicker();
       schedulePagePreloads(host as unknown as import("./app-view-state.ts").AppViewState);
       initTickerVisibilityHook();
+      }).catch(error=>{
+        if(host.client!==client || helloEpoch!==epoch)return;
+        host.lastError=String(error);setGatewayPhase(host,"failed");clearSustainedFailureTimer();
+      });
     },
     onClose: ({ code, reason }) => {
+      helloEpoch++;
       console.warn(`[gateway] onClose code=${code} reason=${reason}`);
       if (host.client !== client) {
         return;
@@ -944,6 +953,7 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
   // 按当前会话过滤后失效重拉（重拉会换新 ticket，iframe src 随之刷新）
   if (evt.event === "board.changed") {
     const app = host as unknown as OpenClawApp;
+    app.boardChange = { ...(evt.payload as Record<string, unknown>) };
     handleBoardChanged(app as unknown as BoardHost, evt.payload as BoardChangedPayload | undefined);
     app.requestUpdate?.();
     return;

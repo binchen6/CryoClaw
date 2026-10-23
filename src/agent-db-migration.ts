@@ -26,12 +26,23 @@ import fs from "node:fs";
 import path from "node:path";
 import { execFile } from "node:child_process";
 import { DatabaseSync } from "node:sqlite";
-import { resolveGatewayEntry, resolveNodeBin, resolveNodeExtraEnv, resolveUserStateDir } from "./constants";
+import { gatewayCompileCacheDirectory } from "./gateway-compile-cache";
+import { resolveGatewayEntry, resolveGatewayPackageDir, resolveNodeBin, resolveNodeExtraEnv, resolveUserStateDir } from "./constants";
 import * as log from "./logger";
 
 // openclaw 2026.9.4+ 的 agent DB schema 门（2026.9.3 为 19；17 以下另有 media 迁移，
 // 一并由 doctor --fix 处理）
-const REQUIRED_AGENT_DB_USER_VERSION = 24;
+const REQUIRED_AGENT_DB_USER_VERSION = 25;
+
+export function requiredAgentDbUserVersion():number {
+  try {
+    const root=resolveGatewayPackageDir();
+    const compatibility=JSON.parse(fs.readFileSync(path.join(root,"cryoclaw-kernel-compat.json"),"utf8"));
+    const pkg=JSON.parse(fs.readFileSync(path.join(root,"package.json"),"utf8"));
+    if(compatibility.version===pkg.version && Number.isSafeInteger(compatibility.agentDbUserVersion) && compatibility.agentDbUserVersion>0)return compatibility.agentDbUserVersion;
+  }catch{}
+  return REQUIRED_AGENT_DB_USER_VERSION;
+}
 const DOCTOR_TIMEOUT_MS = 10 * 60_000; // 200MB 级 DB 的会话身份迁移可能较慢
 
 // 会话级单次闸门：无论成败，一个 App 会话只尝试一轮（迁移是幂等的，重试交给
@@ -40,6 +51,13 @@ let attempted = false;
 
 /** 读 sqlite 文件头 user_version（偏移 60，大端 uint32）——无需打开数据库。 */
 export function readSqliteUserVersion(filePath: string): number | null {
+  // WAL may contain a completed schema migration that is not in the file header
+  // yet. Observe the live read-only snapshot rather than repeatedly running doctor.
+  if(fs.existsSync(filePath+"-wal")) {
+    let db:DatabaseSync|undefined;
+    try {db=new DatabaseSync(filePath,{readOnly:true});const row=db.prepare("PRAGMA user_version").get() as {user_version:number};return row.user_version;}
+    catch {return null;}finally{db?.close();}
+  }
   let fd: number | null = null;
   try {
     fd = fs.openSync(filePath, "r");
@@ -58,8 +76,8 @@ export function readSqliteUserVersion(filePath: string): number | null {
   }
 }
 
-/** 扫描需要迁移的 agent 数据库（0 < userVersion < 24；0 = 新库，内核自行初始化）。 */
-export function findAgentDatabasesNeedingMigration(stateDir: string): string[] {
+/** 扫描低于当前内核门槛的 agent 数据库；0 为新库，由内核初始化。 */
+export function findAgentDatabasesNeedingMigration(stateDir: string, requiredVersion=requiredAgentDbUserVersion()): string[] {
   const agentsDir = path.join(stateDir, "agents");
   const needed: string[] = [];
   let entries: string[];
@@ -78,7 +96,7 @@ export function findAgentDatabasesNeedingMigration(stateDir: string): string[] {
     }
     if (!stat.isFile() || stat.size === 0) continue;
     const version = readSqliteUserVersion(dbPath);
-    if (version !== null && version > 0 && version < REQUIRED_AGENT_DB_USER_VERSION) {
+    if (version !== null && version > 0 && version < requiredVersion) {
       needed.push(dbPath);
     }
   }
@@ -165,6 +183,8 @@ function execDoctorFix(stateDir: string): Promise<{ stdout: string; stderr: stri
           ...process.env,
           ...resolveNodeExtraEnv(),
           OPENCLAW_STATE_DIR: stateDir,
+          OPENCLAW_NO_RESPAWN: "1",
+          NODE_COMPILE_CACHE:gatewayCompileCacheDirectory(resolveGatewayPackageDir(),path.join(stateDir,"cache","v8-compile")),
         },
         windowsHide: true,
       },
@@ -205,13 +225,16 @@ export type AgentDbMigrationResult = {
  * 让既有的失败路径（弹窗/回退提示）兜底。
  */
 export async function ensureAgentDbSchemaReady(): Promise<AgentDbMigrationResult | null> {
-  if (attempted) return null;
+  if (attempted) {
+    const pending=findAgentDatabasesNeedingMigration(resolveUserStateDir()).length;
+    return pending>0 ? {attempted:false,pendingBefore:pending,pendingAfter:pending,purgedLeases:0} : null;
+  }
   attempted = true;
   const stateDir = resolveUserStateDir();
   const pendingBefore = findAgentDatabasesNeedingMigration(stateDir).length;
   if (pendingBefore === 0) return null;
 
-  log.info(`[agent-db-migration] 检测到 ${pendingBefore} 个 agent 数据库需要 schema 迁移（内核要求 userVersion ≥ ${REQUIRED_AGENT_DB_USER_VERSION}）`);
+  log.info(`[agent-db-migration] 检测到 ${pendingBefore} 个 agent 数据库需要 schema 迁移（内核要求 userVersion ≥ ${requiredAgentDbUserVersion()}）`);
   const purgedLeases = purgeStaleAgentDbLeases(stateDir);
   if (purgedLeases > 0) {
     log.info(`[agent-db-migration] 已清理 ${purgedLeases} 条失效租约（防 doctor 租约准入误判）`);

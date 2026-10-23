@@ -26,6 +26,7 @@ for (const name of [
   "rm-rec.js",
   "kernel-prune.js",
   "kernel-config-snapshot.js",
+  "kernel-directory-swap.js",
 ]) {
   const src = fs.existsSync(path.join(HERE, "updater", name))
     ? path.join(HERE, "updater", name)

@@ -20,6 +20,7 @@ import type { GatewayBrowserClient } from "../gateway.ts";
 
 export type BoardWidget = {
   name: string;
+  title?: string;
   kindLabel: string | null;
   /** 完整 iframe src（gateway HTTP origin + 内核 frameUrl 相对路径） */
   src: string;
@@ -95,10 +96,20 @@ export function normalizeBoardSnapshot(
     if (!name || !frameUrl) {
       continue;
     }
+    // Tickets only authorize gateway-hosted documents. Do not turn arbitrary
+    // plugin URLs or protocol-relative paths into iframe navigation.
+    if (!frameUrl.startsWith("/") || frameUrl.startsWith("//") || frameUrl.includes("\\")) continue;
+    let src: string;
+    try {
+      const url = new URL(frameUrl, frameOrigin);
+      if (url.origin !== frameOrigin) continue;
+      src = url.href;
+    } catch { continue; }
     widgets.push({
       name,
+      ...(typeof widget.title === "string" && widget.title.trim() ? {title:widget.title.trim()} : {}),
       kindLabel: typeof widget.kindLabel === "string" && widget.kindLabel.trim() ? widget.kindLabel : null,
-      src: `${frameOrigin}${frameUrl}`,
+      src,
     });
   }
   return { revision, widgets };
@@ -122,6 +133,7 @@ export function boardChangedNeedsReload(
 
 // 在途拉取期间再次请求（changed/会话切换）时置脏，完成后补跑一轮（对齐 progress-card）
 const boardRefreshPending = new WeakMap<BoardHost, string>();
+const boardReadToken = new WeakMap<BoardHost, { client: GatewayBrowserClient; key: string }>();
 
 export async function loadBoard(host: BoardHost): Promise<void> {
   if (!host.client || !host.connected) {
@@ -131,15 +143,20 @@ export async function loadBoard(host: BoardHost): Promise<void> {
   if (!key.trim()) {
     return;
   }
-  if (host.board.loading) {
+  const client = host.client;
+  const active = boardReadToken.get(host);
+  if (host.board.loading && active?.client === client && active.key === key) {
     boardRefreshPending.set(host, key);
     return;
   }
-  host.board = { ...host.board, sessionKey: key, loading: true };
+  host.board = { ...host.board, sessionKey: key, loading: true, error: null };
+  const token = { client, key };
+  boardReadToken.set(host, token);
+  const isCurrent = () => host.client === client && host.connected && host.sessionKey === key && boardReadToken.get(host) === token;
   let stale = false;
   try {
-    const res = await host.client.request<unknown>("board.get", { sessionKey: key });
-    if (host.sessionKey !== key) {
+    const res = await client.request<unknown>("board.get", { sessionKey: key });
+    if (!isCurrent()) {
       stale = true;
       return;
     }
@@ -153,12 +170,14 @@ export async function loadBoard(host: BoardHost): Promise<void> {
     };
   } catch {
     // board 不可用（旧内核 / canvas 宿主关闭 / 无 board）：等价「无仪表盘」，不报错
-    if (host.sessionKey !== key) {
+    if (!isCurrent()) {
       stale = true;
       return;
     }
-    host.board = { sessionKey: key, revision: null, widgets: [], loading: false, error: null };
+    host.board = { ...host.board, loading: false, error: host.board.widgets.length ? "refresh_failed" : null };
   } finally {
+    if (boardReadToken.get(host) !== token) return;
+    boardReadToken.delete(host);
     const pendingSessionKey = boardRefreshPending.get(host);
     const refreshPending = !stale && pendingSessionKey === key;
     if (pendingSessionKey === key) {
@@ -181,6 +200,7 @@ export function handleBoardChanged(host: BoardHost, payload: BoardChangedPayload
 /** 会话切换入口：清空上一会话 board 并拉取新会话 */
 export function resetBoardForSession(host: BoardHost, sessionKey: string): void {
   boardRefreshPending.delete(host);
+  boardReadToken.delete(host);
   host.board = emptyBoardState(sessionKey);
   if (host.client && host.connected) {
     void loadBoard(host);

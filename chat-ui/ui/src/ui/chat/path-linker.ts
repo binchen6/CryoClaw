@@ -80,7 +80,19 @@ export function decodeHtmlEntities(text: string): string {
  * 在 sanitized HTML 中识别文件路径，替换为可点击超链接
  */
 export function linkifyPaths(html: string): string {
+  const protectedRanges:Array<[number,number]>=[];
+  if(/chat-file-card|<button\b/i.test(html)){
+    let start=-1,depth=0;
+    for(const tag of html.matchAll(/<\/?(span|button)\b[^>]*>/gi)){
+      const closing=tag[0].startsWith("</");
+      if(start<0){if(!closing&&(tag[1].toLowerCase()==="button"||/\bclass=["'][^"']*\bchat-file-card\b/.test(tag[0]))){start=tag.index!;depth=1;}}
+      else if(closing){if(--depth===0){protectedRanges.push([start,tag.index!+tag[0].length]);start=-1;}}
+      else if(!tag[0].endsWith("/>"))depth++;
+    }
+    if(start>=0)protectedRanges.push([start,html.length]);
+  }
   return html.replace(PATH_RE, (match, offset) => {
+    if(protectedRanges.some(([start,end])=>offset>=start&&offset<end))return match;
     // 跳过 HTML 标签属性内的路径
     if (isInsideHtmlTag(html, offset)) return match;
     // 跳过已在 <a> 标签内的路径

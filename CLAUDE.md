@@ -12,11 +12,11 @@ CryoClaw is a cross-platform desktop app that wraps the [openclaw](https://githu
 
 ```
 Electron Main Process
-  ├── Gateway child process  (Node.js 24 → openclaw entry.js, port configurable, default 18789)
+  ├── Gateway child process  (bundled Node.js 24.22.1 → physical openclaw tree, default port 18789)
   └── BrowserWindow          (loads Lit Chat UI via file://, connects to gateway via WebSocket)
 ```
 
-The main process opens the local Lit Chat UI early (via `file://`) while it starts and checks the gateway subprocess. The UI displays connection progress, then connects over WebSocket for chat and HTTP for API calls. A system tray icon keeps the app alive when all windows are closed.
+The main process opens the local Lit Chat UI early (via `file://`) while it starts and checks the gateway subprocess. The UI displays connection progress, then connects over WebSocket for chat and HTTP for API calls. A system tray icon keeps the app alive when all windows are closed. OpenClaw 2026.10.6 requires a newer Node patch than Electron embeds: the current product keeps standalone Node and a physical gateway directory. `runtime/cryoclaw-runtime.json` selects this pair; old ASAR helpers are compatibility code, not the current release path. See docs/REVIEW-2026.1023.0.md before changing runtime or patch policy.
 
 ## Tech Stack
 
@@ -208,7 +208,7 @@ CI: `.github/workflows/tests.yml` runs the full regression on every push/PR
 - **Skill store** — clawhub CLI integration, skills at `~/.openclaw/workspace/skills/`, registry config in `~/.openclaw/skill-store.json`.
 - **Config backup** — Rolling 10 backups + last-known-good snapshot + factory reset.
 - **Multi-model management** — IPC handlers for listing, deleting, setting default, and aliasing models across providers.
-- **Gateway ASAR packaging** — Optional `gateway.asar` archive (enabled by `CRYOCLAW_GATEWAY_ASAR=1`) reduces 5000+ files to a single archive for faster Windows installs. Patched openclaw boundary check for ASAR paths (`patchAsarBoundaryCheck` in scripts/package-resources.js: asar fast-paths injected into `@openclaw/fs-safe` chunks — `openRootFileSync`/`openRootFile`, `verifyStableReadTarget`, `openPinnedFileSync`, `sameFileIdentity`; required because Electron asar stats use synthetic dev=1/per-call-counter ino). Extensions unpacked to `gateway.asar.unpacked/`. Official openclaw channel/provider plugins (feishu, qqbot, moonshot/kimi/zai/qwen/deepseek providers) are vendored into `dist/extensions/` at pack time since openclaw ≥2026.6 no longer ships them in the npm tarball.
+- **Gateway packaging** — Current releases keep standalone Node 24.22.1 and a physical gateway directory. `cryoclaw.gatewayRuntime=node` overrides stale ASAR flags; native addons target that Node ABI. Product patches are separated from legacy ASAR adapters, and whole-directory updates use complete-backup markers and crash recovery before startup. The old ASAR branch remains for explicit compatibility work; do not re-enable its identity/junction exceptions in the current physical tree. Official channel/provider packages are vendored into `dist/extensions/` because they are no longer included in the core npm tarball.
 - **Preload security** — Explicit methods and event listeners via `contextBridge` (sandbox mode); `src/preload.ts` is the authoritative whitelist.
 
 ## Runtime Paths (on user's machine)

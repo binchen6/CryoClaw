@@ -8,6 +8,8 @@ import {
   boardFrameOrigin,
   emptyBoardState,
   normalizeBoardSnapshot,
+  loadBoard,
+  type BoardHost,
 } from "./board.ts";
 
 // F9：widget iframe 的 sandbox 组合安全钉点。allow-scripts + allow-same-origin 是
@@ -22,7 +24,7 @@ test("BOARD_WIDGET_SANDBOX：不含 allow-same-origin（防沙箱失效组合）
 
 test("views/chat-panels.ts：board iframe 引用 BOARD_WIDGET_SANDBOX 常量（非内联字符串）", () => {
   // R2b 拆分：会话仪表盘面板迁至 views/chat-panels.ts
-  const src = readFileSync(new URL("../../../../../src/ui/views/chat-panels.ts", import.meta.url), "utf8");
+  const src = readFileSync(new URL("../../../../../src/ui/components/oc-board-panel.ts", import.meta.url), "utf8");
   assert.match(
     src,
     /sandbox=\$\{BOARD_WIDGET_SANDBOX\}/,
@@ -76,6 +78,27 @@ test("normalizeBoardSnapshot：空 board / 无 origin 归一为无 widget", () =
   assert.deepEqual(normalizeBoardSnapshot(null, "k", "http://x"), { revision: null, widgets: [] });
   const noOrigin = normalizeBoardSnapshot({ revision: 1, widgets: [{ name: "w", frameUrl: "/x" }] }, "k", null);
   assert.equal(noOrigin.widgets.length, 0);
+});
+
+test("board snapshots reject foreign frame origins and preserve generated titles", () => {
+  const result=normalizeBoardSnapshot({revision:1,widgets:[
+    {name:"ok",title:"模型生成的面板",frameUrl:"/__openclaw__/board/test/index.html?bt=t"},
+    ...["//evil.test/x","https://evil.test/x","/\\evil.test/x","javascript:alert(1)"].map((frameUrl,i)=>({name:`bad-${i}`,frameUrl})),
+  ]},"s1","http://localhost:18789");
+  assert.equal(result.widgets.length,1);assert.equal(result.widgets[0].title,"模型生成的面板");
+});
+
+test("board refresh preserves content on failure and ignores an old connection", async () => {
+  let resolveOld:(value:unknown)=>void=()=>{};
+  const oldClient={request:()=>new Promise(resolve=>{resolveOld=resolve;})};
+  const host:BoardHost={client:oldClient as unknown as BoardHost["client"],connected:true,sessionKey:"s1",settings:{gatewayUrl:"ws://localhost:18789"},board:emptyBoardState("s1")};
+  const old=loadBoard(host);
+  host.client={request:async()=>({revision:9,widgets:[{name:"current",frameUrl:"/board/current"}]})} as unknown as BoardHost["client"];
+  await loadBoard(host);resolveOld({revision:1,widgets:[]});await old;
+  assert.equal(host.board.revision,9);
+  host.client={request:async()=>{throw Error("offline");}} as unknown as BoardHost["client"];
+  await loadBoard(host);assert.equal(host.board.revision,9);assert.equal(host.board.error,"refresh_failed");
+  assert.equal(host.board.widgets[0].name,"current");
 });
 
 test("boardChangedNeedsReload：会话过滤 + revision 回声跳过", () => {

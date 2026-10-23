@@ -3,13 +3,32 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const { createRequire } = require("node:module");
-// Windows stops the gateway process tree forcibly. Node normally persists its
-// compile cache at exit, so keep startup work before that exit can be skipped.
+// Windows can stop the process tree forcibly. Persist on graceful shutdown and
+// once after startup; synchronous cache writes must not interrupt admission.
 const nodeModule = require("node:module");
-if (process.env.NODE_COMPILE_CACHE && process.env.NODE_DISABLE_COMPILE_CACHE === undefined
+if (typeof process.send === "function") {
+  let stopping = false;
+  process.on("message", message => {
+    if (stopping || message?.type !== "cryoclaw:shutdown" || process.listenerCount("SIGTERM") === 0) return;
+    stopping = true;
+    // Windows kill(SIGTERM) terminates the process without running JS handlers.
+    // The private parent IPC channel enters the native graceful shutdown path.
+    process.emit("SIGTERM");
+  });
+  process.once("disconnect", () => {
+    if (stopping) return;
+    stopping = true;
+    if (process.listenerCount("SIGTERM") > 0) process.emit("SIGTERM");
+    else process.exit(0);
+  });
+}
+// Standalone Node persists this cache itself, including explicit process.exit().
+// Keep the old hook only for Electron, avoiding a redundant native exit listener.
+if (process.versions?.electron && process.env.NODE_COMPILE_CACHE && process.env.NODE_DISABLE_COMPILE_CACHE === undefined
   && typeof nodeModule.flushCompileCache === "function") {
   const flush = () => { try { nodeModule.flushCompileCache(); } catch { /* cache is optional */ } };
-  for (const delay of [15_000, 60_000, 120_000]) setTimeout(flush, delay).unref();
+  process.once("exit", flush);
+  setTimeout(flush, 180_000).unref();
 }
 const { normalizeProxyConfig, isOpenAIOrigin } = require("./openai-proxy.cjs");
 const configPath = process.env.CRYOCLAW_OPENAI_PROXY_CONFIG;

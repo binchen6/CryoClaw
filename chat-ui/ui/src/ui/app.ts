@@ -212,6 +212,7 @@ export class OpenClawApp extends LitElement {
     planState: { state: true },
     progressCard: { state: true },
     board: { state: true },
+    boardChange: { state: true },
     compactionStatus: { state: true },
     fallbackNotice: { state: true },
     sessionBranches: { state: true },
@@ -410,6 +411,7 @@ export class OpenClawApp extends LitElement {
   progressCard: ProgressCardState = emptyProgressCardState(this.sessionKey);
   // R89 Board（会话仪表盘）：board.get + board.changed 事件驱动的会话级状态
   board: BoardState = emptyBoardState(this.sessionKey);
+  boardChange: {sessionKey?: unknown; revision?: unknown} | null = null;
   compactionStatus: CompactionStatus | null = null;
   // 模型 fallback 提示（lifecycle 事件驱动，5s 自动消失；chat 终态清理）
   fallbackNotice: FallbackNotice | null = null;

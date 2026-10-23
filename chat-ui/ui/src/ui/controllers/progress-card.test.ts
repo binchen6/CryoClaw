@@ -15,6 +15,7 @@ import {
   emptyProgressCardState,
   handleProgressCardChanged,
   loadProgressCard,
+  resetProgressCardForSession,
   normalizeProgressCard,
   progressCardChangedNeedsReload,
   progressCardStats,
@@ -205,6 +206,23 @@ function makeHost(
   };
   return { host, calls };
 }
+
+test("progress reads discard old-connection responses and A-B-A session races", async () => {
+  const resolvers: Array<(v: unknown) => void> = [];
+  const {host} = makeHost({"progressCard.get":()=>new Promise(resolve=>resolvers.push(resolve))});
+  const old=loadProgressCard(host);
+  host.client={request:async()=>({card:{sessionKey:"s1",revision:9,markdown:"current"}})} as unknown as ProgressCardHost["client"];
+  await loadProgressCard(host);
+  resolvers[0]({card:{sessionKey:"s1",revision:1}});await old;
+  assert.equal(host.progressCard.card?.revision,9);
+  const {host: switched}=makeHost({"progressCard.get":()=>new Promise(resolve=>resolvers.push(resolve))});
+  const first=loadProgressCard(switched);
+  switched.sessionKey="s2";resetProgressCardForSession(switched,"s2");
+  switched.sessionKey="s1";resetProgressCardForSession(switched,"s1");
+  resolvers[3]({card:{sessionKey:"s1",revision:10,markdown:"current"}});await Promise.resolve();
+  resolvers[1]({card:{sessionKey:"s1",revision:2}});resolvers[2]({card:null});await first;
+  assert.equal(switched.progressCard.card?.revision,10);
+});
 
 test("loadProgressCard：拉取并归一化当前会话卡片", async () => {
   const { host, calls } = makeHost({

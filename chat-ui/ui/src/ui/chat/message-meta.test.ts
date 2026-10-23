@@ -27,6 +27,13 @@ test("message meta：裸 model id 原样返回", () => {
   assert.equal(extractMessageModel({ role: "assistant", model: "gpt-5" }), "gpt-5");
 });
 
+test("message meta：native attachment supplements never replace the actual provider model",()=>{
+  assert.equal(extractMessageModel({provider:"openclaw",model:"gateway-injected"}),null);
+  assert.equal(extractMessageModel({provider:"openclaw",model:"delivery-mirror"}),null);
+  assert.equal(extractMessageModel({provider:"custom",model:"gateway-injected"}),"gateway-injected");
+  assert.equal(extractMessageModel(null),null);
+});
+
 test("message meta：缺 model / 空串 / 非字符串返回 null", () => {
   assert.equal(extractMessageModel({ role: "assistant" }), null);
   assert.equal(extractMessageModel({ role: "assistant", model: "  " }), null);

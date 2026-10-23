@@ -1,0 +1,6 @@
+{
+  "id":"cryoclaw-dashboards","name":"CryoClaw Dashboards","description":"Independent dashboards and interactive cards for the desktop workspace.","enabledByDefault":true,
+  "configSchema":{"type":"object","additionalProperties":false,"properties":{}},
+  "activation":{"onStartup":true},"contracts":{"tools":["cryoclaw_dashboard","cryoclaw_query_data"]},
+  "toolMetadata":{"cryoclaw_dashboard":{"profiles":["minimal","coding","messaging","full"],"replaySafe":false},"cryoclaw_query_data":{"profiles":["minimal","coding","messaging","full"],"replaySafe":true}}
+}

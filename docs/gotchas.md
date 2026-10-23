@@ -462,3 +462,29 @@ Things that are easy to get wrong or forget when working on CryoClaw.
 162. **重打 ASAR 的 staging 路径不能放在点目录。** unpack 的 glob 默认不匹配绝对路径里的 .cache 段，会把原生 .node/.dll/.exe 重新塞入归档。使用 resources/targets 下非点目录；对比新旧 header 的 unpacked 标记，4679 个解包文件及 115061653 字节应保持一致。正式 package-resources 原路径不受影响。
 
 163. **搜索凭据初始化不应激活整个插件注册表。** 全局安装的可信 tavily 会落入运行时 provider 回退，启动 secrets-activate 实测约 129 秒。只对明确配置且显式启用、允许列表放行的可信全局插件，用原 public-artifact loader 读取 web-search-contract-api.js；禁用、非可信、缺契约或加载失败时保留原路径。实际快照准备约 5.9 秒。
+
+164. **10.5 的 agent schema 是 25，不能沿用壳层的 24。** 打包时从实际 schema gate 生成版本绑定的 compatibility 元数据；WAL 存在时只读 PRAGMA 快照，不能只看旧文件头或靠三轮 doctor 重试碰运气。
+
+165. **Code Mode 的交付结果不是普通 toolResult。** catalog 调用以 `openclaw.nested-tool.v1` 自定义消息持久化；UI 要保留原生调用名、错误标记与 result.details，归入同一助手组。直接 tools.invoke 成功不代表真实模型的嵌套路径已经适配。
+
+166. **仪表盘验收要看正文并操作生成脚本。** 原先 frame-src none 会让完整的面板外壳包着空白 iframe。只允许本机 board 路径并保留 opaque sandbox；CDP 要附加独立 iframe target，不能通过放开 allow-same-origin 来方便测试。
+
+167. **Windows 先启动原生停机，再持久化缓存。** 同步 flush 实测可占数秒，放在 SIGTERM 前会耗尽停止窗口。启动前按原生 version/build 规则限定缓存目录，避免额外 respawn 把 IPC 停机交给错误层；退出时 flush，超时仍强制兜底。测试清理也应先走应用正常退出，不应每次强杀后再宣称热启动性能。
+
+168. **独立看板不能只缓存插件实例内的目录。** Gateway 方法与模型工具可在不同原生实例中运行；长期缓存 JSON 会导致工具已发布而 UI 仍读到旧目录。使用私有 SQLite WAL 事务同步，摘要不携带 HTML/状态；布局与状态更新不改变 iframe 文档版本，避免每次打卡都重载计时器。
+
+169. **代理 Fake-IP 不是可直接放行的公共地址。** 本机 TUN 会给公网域名返回 198.18/15。数据代理不能笼统放宽私网检查；仅对完整 Fake-IP 答案通过固定 TLS 公共解析独立校验，结果仍需公共地址检查并固定连接 IP，每次重定向重做校验。真实私网、混合答案和失败解析继续拒绝。
+
+170. **卡片写回不等于 cron 已成功结束。** 定时 Agent 可先提交卡片，再完成最终回复与运行记账。验收脚本若立即删除 job，会把实际已写回的 run 标为取消。先核对同一卡片内容与布局，再等原生 lastRunStatus=ok 且 runningAtMs 清除，最后移除 QA 调度；不能只把卡片 revision 增长当作任务成功。
+
+171. **重复边界补丁不能恢复已废弃的 peer-link 跳过。** 模块已有 cryoclaw-peer-asar-link 时，不得再插入 ASAR host 直接 return unchanged，覆盖检查也要承认现代标记。否则修复了精确宿主链接后，再次打包会悄悄撤销修复。回归需先执行现代 peer 修复，再执行通用边界补丁并验证字节不变与覆盖检查。
+
+172. **不透明固定窗口的 JSON POST 会触发 CORS 预检。** 保留 sandbox 后，Origin 为 null，application/json 不是 simple request。SDK 使用 UTF-8 JSON 文本的 text/plain POST，由服务端继续核验专用写票据、单卡权限和 32 KiB 上限；不通过添加 allow-same-origin 解决。验收必须在真实固定窗口保存、读回，并刷新主卡片确认共享状态，不能只测试 GET。
+
+173. **10.6 的 Node pin 必须是实际执行网关的运行时。** 仅下载 24.22.1 不够；旧 afterPack 会删掉它并改用 Electron 内嵌的 24.22.0。当前通过显式 policy 保留独立 Node 和物理 gateway；不可用改版本号或跳过 TLS/SQLite admission 修复。CLI、更新器与启动前恢复也必须选同一个 Node。
+
+174. **上游已修复的补丁要删除，但不能只凭函数改名判断。** 10.6 的环境快照、Doctor 管理元数据修复替代旧分支；全局 Proxy 和 peer-migration 补丁删除。搜索的新快捷路径仅覆盖 bundled，当前 global Tavily 仍需按新接口做显式可信公开构件适配。物理网关不调用 ASAR 身份/junction/walk 例外，仍保留公开历史、publication 和 canonical-path 适配。
+
+175. **物理内核回退必须只发现完整备份。** 先完整复制、核对版本，再落 complete marker；单凭 package.json 或入口存在，不能证明中断的目录备份完整。整目录进位前写落盘 journal，启动读取 schema 前恢复；异常身份保留现场。Defender 短暂占用只重试当前 rename，不重放整个换装。
+
+176. **小 discovery 入口不必整包复制，但不能绕过快照。** 当前全局 Codex 的声明 discovery 入口只需要其依赖图；使用内核已有选择性捕获，仍保留实例权限、源变更检查、动态依赖和退役。作用范围限定在已审查的可信入口，其他插件不改。必须用真实延迟模块和变更拒绝验证，不能只看第一次导入成功。

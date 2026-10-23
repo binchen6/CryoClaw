@@ -80,6 +80,7 @@ export type ChatProps = {
   progressCardCollapsed?: boolean;
   // R89 Board（会话仪表盘，内核 board.get + board.changed）：会话有 board 时出面板
   board?: BoardState | null;
+  onRefreshBoard?: () => Promise<void>;
   onToggleProgressCardCollapse?: () => void;
   onDismissProgressCard?: () => void;
   messages: unknown[];
@@ -478,6 +479,7 @@ export function renderChat(props: ChatProps) {
             isStreamTextDuplicatedInHistory(props.messages, props.stream)
             ? nothing
             : html`<oc-chat-stream
+                .toolMessages=${props.toolMessages}
               aria-live="off"
               .stream=${props.stream}
               .thinkingStream=${props.thinkingStream ?? null}

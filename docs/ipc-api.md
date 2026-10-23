@@ -1,5 +1,24 @@
 # CryoClaw IPC API Reference
 
+## 独立仪表盘
+
+| 通道 | Preload 方法 | 行为 |
+|---|---|---|
+| `app:pin-dashboard-card` | `pinDashboardCard({id,url,title,width,height})` | 仅可信主 UI 可调用；校验当前本地网关与卡片专用 URL，创建或复用无 preload、sandbox、置顶窗口。固定卡片凭证由 operator.write RPC 签发，不含网关 token。 |
+
+内置插件注册 `cryoclaw.dashboards.list/getState/data/system`（operator.read）、`cryoclaw.dashboards.mutate/setState/pin`（operator.write）。模型通过 `cryoclaw_dashboard` 操作全局看板目录，默认只读取摘要，HTML 通过 read_card 按需读取。卡片 SDK 按实际 iframe 来源限定 board/card，不能调用任意网关方法。状态最多 32 KiB/卡；来源与媒体分别最多 4/8 项，公共 HTTPS、DNS 固定、重定向再校验。卡片文档以不透明 sandbox 展示，固定窗口仍受相同 CSP 约束。
+
+`cryoclaw_query_data` 是独立 Agent 工具，不要求面板或 board/card ID。支持 public（公共 HTTPS API）、system（本机指标）、dashboards（看板摘要），沿用同一数据代理与缓存。默认返回最多 4,000 字符，可设 512–16,000；超限显式标记 truncated，支持 JSON Pointer 按需选取。所有任务渠道均可发现；sandboxed 会话不能查询宿主本机状态或看板。每次结果仍检查调用代次与取消，不绕过原生工具权限配置。
+
+## 交付文件卡片
+
+| 通道 | Preload 方法 | 行为 |
+|---|---|---|
+| `app:file-card-info` | `fileCardInfo(path)` | 可信渲染源限定；仅本地绝对路径，返回常规文件的存在状态、大小和修改时间，不读取正文。 |
+| `app:save-file-copy` | `saveFileCopy(path)` | 校验本地常规文件；原生保存对话框选择目标后异步复制，取消返回 `{canceled:true}`。 |
+
+打开与定位继续使用 `app:open-path` / `app:reveal-path`；打开保留扩展名白名单。禁止 UNC、网络 URL、相对路径和 NUL。
+
 > Preload (`src/preload.ts`) 通过 `contextBridge.exposeInMainWorld("cryoclaw", {...})` 暴露的完整 IPC 接口清单。
 > Electron 43 默认 sandbox 模式，所有渲染进程与主进程的交互必须经过此桥接层。
 

@@ -164,6 +164,20 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
+test("startup recovery does not spawn an updater on an ordinary launch", async () => {
+  const spawn=vi.fn(()=>makeChild([]));mockState.spawnImpl=spawn;
+  const {recoverKernelBeforeStartup}=await import("./kernel-updater");
+  await recoverKernelBeforeStartup();expect(spawn).not.toHaveBeenCalled();
+});
+
+test("startup recovery awaits the dedicated recovery command and preserves failures", async () => {
+  fs.writeFileSync(path.join(mockState.resourcesDir,"gateway.swap.json"),"{}");
+  const spawn=vi.fn((_args:string[])=>makeChild([]));mockState.spawnImpl=spawn;
+  const {recoverKernelBeforeStartup}=await import("./kernel-updater");
+  await recoverKernelBeforeStartup();expect(spawn.mock.calls[0][0]).toContain("--recover");
+  mockState.spawnImpl=()=>makeChild([],1);await expect(recoverKernelBeforeStartup()).rejects.toThrow();
+});
+
 // ── isKernelUpdaterAvailable / getKernelUpdateState ──
 
 test("isKernelUpdaterAvailable：脚本存在时返回 true", async () => {

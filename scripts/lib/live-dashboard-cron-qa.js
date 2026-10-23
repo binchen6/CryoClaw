@@ -1,0 +1,14 @@
+const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),{randomUUID}=require('node:crypto'),{sleep}=require('./cdp-harness');
+async function verifyLiveDashboardCron(cdp,out,boardId,sessionKey){
+ const nonce='CRON_CARD_QA_'+randomUUID().slice(0,8),cardId='qa-detail',request=(method,params)=>cdp.evaluate(`document.querySelector('openclaw-app').client.request(${JSON.stringify(method)},${JSON.stringify(params)},{timeoutMs:90000})`,{timeoutMs:95000});
+ const initial=(await request('cryoclaw.dashboards.list',{})).boards.find(b=>b.id===boardId).cards.find(c=>c.id===cardId);
+ const job=await request('cron.add',{name:'QA · one native dashboard update',enabled:false,schedule:{kind:'every',everyMs:86400000},sessionTarget:'isolated',wakeMode:'now',delivery:{mode:'none'},payload:{kind:'agentTurn',message:`仅做一次定时看板验收。必须调用 cryoclaw_dashboard action=publish_card，boardId=${boardId}，cardId=${cardId}，title=定时更新验收，html 为包含 ${nonce} 的简洁自包含页面。保留原布局，不创建新卡片或看板，不读写其他文件。完成后回复 ${nonce}。`}});
+ assert.ok(job.id,'native cron id');const report={jobId:job.id,boardId,cardId,nonce,enabledForRecurringRuns:false};
+ try{
+  await request('cryoclaw.dashboards.mutate',{action:'link_task',boardId,cardId,jobId:job.id,taskTitle:job.name});await request('cron.run',{id:job.id,mode:'force'});
+  let updated;const deadline=Date.now()+240000;do{const board=(await request('cryoclaw.dashboards.list',{})).boards.find(b=>b.id===boardId);updated=board?.cards.find(c=>c.id===cardId);if(updated?.revision>initial.revision)break;await sleep(2000);}while(Date.now()<deadline);assert.ok(updated?.revision>initial.revision,'scheduled agent published to the same card');
+  const result=await request('tools.invoke',{name:'cryoclaw_dashboard',sessionKey,args:{action:'read_card',boardId,cardId}});assert.equal(result.ok,true);const card=JSON.parse(result.output.content[0].text);assert.ok(card.html.includes(nonce),'scheduled model output is the displayed card document');assert.deepEqual(updated.layout,initial.layout,'scheduled update preserves layout');report.nativeScheduledPublication=true;report.layoutPreserved=true;
+  let status;const settled=Date.now()+120000;do{const current=(await request('cron.list',{includeDisabled:true})).jobs.find(j=>j.id===job.id);status=current?.state?.lastRunStatus??current?.state?.lastStatus;if(!current?.state?.runningAtMs&&status)break;await sleep(1500);}while(Date.now()<settled);assert.equal(status,'ok','native cron completes successfully before QA cleanup');report.completedRunStatus=status;
+ }finally{await request('cron.remove',{id:job.id});await request('cryoclaw.dashboards.mutate',{action:'unlink_task',boardId,cardId,jobId:job.id});report.cleanup=true;fs.writeFileSync(path.join(out,'live-cron-report.json'),JSON.stringify(report,null,2));}return report;
+}
+module.exports={verifyLiveDashboardCron};

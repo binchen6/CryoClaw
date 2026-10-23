@@ -61,6 +61,7 @@ import { renderSettingsView } from "./views/settings/settings-view.ts";
 import { renderSetupView } from "./views/setup/setup-view.ts";
 import { renderSharePrompt } from "./views/share-prompt.ts";
 import { openWorkspaceView, renderWorkspaceIntegratedView } from "./app-workspace.ts";
+import "./components/oc-dashboard.ts";
 import { renderWebbridgePillModal } from "./views/webbridge-pill-modal.ts";
 
 declare global {
@@ -264,6 +265,9 @@ function resolveSessionOptionsMemo(state: AppViewState) {
 /** 内容区分发：按当前视图渲染对应视图（新增视图接线点之一，见 views/registry.ts） */
 function renderActiveView(state: AppViewState, view: CryoClawViewId) {
   switch (view) {
+    case "dashboard":
+      return html`<oc-dashboard .client=${state.client} .connected=${state.connected}
+        .settings=${state.settings} .onAskModel=${(prompt:string)=>{state.chatMessage=prompt;setCryoClawView(state,'chat');}} .onOpenTasks=${()=>openTasksView(state,'cron')}></oc-dashboard>`;
     case "setup":
       return renderSetupView(state);
     case "settings":
@@ -395,6 +399,7 @@ export function renderApp(state: AppViewState) {
               // App 更新角标：有待装/下载中更新时常驻，状态复位后消失
               settingsUpdateBadge: state.appUpdateBadge,
               onOpenChat: () => {if(cryoclawView!=="chat")transitionView(()=>setCryoClawView(state, "chat"));},
+              onOpenDashboard: () => {if(cryoclawView!=="dashboard")transitionView(()=>setCryoClawView(state, "dashboard"));},
               onOpenTasks: () => {if(cryoclawView!=="tasks")transitionView(()=>openTasksView(state));},
               onOpenWorkspace: () => {if(cryoclawView!=="workspace")transitionView(()=>openWorkspaceView(state));},
               onOpenExtensions: () => {if(cryoclawView!=="extensions")transitionView(()=>openExtensionsView(state));},

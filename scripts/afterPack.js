@@ -64,6 +64,7 @@ exports.default = async function afterPack(context) {
 
   const targetBase = path.join(resourcesDir, "resources");
   fs.mkdirSync(targetBase, { recursive: true });
+  if (platform === "win32") fs.copyFileSync(path.join(__dirname, "stop-bundled-runtime.ps1"), path.join(resourcesDir, "stop-bundled-runtime.ps1"));
   for (const name of ["openai-proxy.cjs", "openai-proxy-bootstrap.cjs"]) {
     fs.copyFileSync(path.join(__dirname, "..", "shared", name), path.join(targetBase, name));
   }
@@ -158,10 +159,17 @@ exports.default = async function afterPack(context) {
 
   // ── 用 Electron binary 替换独立 Node.js（节省 80-100MB） ──
   const productName = context.packager.appInfo.productFilename;
-  replaceNodeBinary(platform, targetBase, productName);
+  const nativePolicy = path.join(targetBase, "runtime", "cryoclaw-runtime.json");
+  const useNativeNode = fs.existsSync(nativePolicy);
+  if (useNativeNode) {
+    const policy = JSON.parse(fs.readFileSync(nativePolicy, "utf8"));
+    if (policy.kind !== "node" || policy.gatewayMode !== "loose" || useAsar) throw new Error("Incompatible native Node / gateway packaging policy");
+    if (!fs.statSync(path.join(targetBase, "runtime", platform === "win32" ? "node.exe" : "node")).isFile()) throw new Error("Missing bundled native Node");
+    console.log(`[afterPack] 保留独立 Node ${policy.nodeVersion}，使用物理网关目录`);
+  } else replaceNodeBinary(platform, targetBase, productName);
 
   // ── Windows: 写入 CLI 补丁脚本（安装时由 NSIS 执行，复制主 exe 并补丁 PE SUBSYSTEM） ──
-  if (platform === "win32") {
+  if (platform === "win32" && !useNativeNode) {
     writeCliBinaryPatchScript(appOutDir, productName);
   }
 };

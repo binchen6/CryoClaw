@@ -22,6 +22,7 @@
 @import "./styles/workspace.css";
 @import "./styles/cron.css";
 @import "./styles/chat-misc.css";
+@import "./styles/dashboard.css";
 @import "./styles/tasks-misc.css";
 @import "./styles/settings-misc.css";
 @import "./styles/panel.css";

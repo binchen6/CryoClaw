@@ -22,6 +22,7 @@ import { openWorkspaceView } from "./app-workspace.ts";
 import { confirmAndUndoTurnChanges } from "./app-chat-undo.ts";
 import { handleReconnect } from "./app-session-actions.ts";
 import { dismissPlan } from "./plan-stream.ts";
+import { loadBoard } from "./controllers/board.ts";
 import { dismissProgressCard } from "./controllers/progress-card.ts";
 import { t } from "./i18n.ts";
 import type { ChatProps } from "./views/chat.ts";
@@ -60,6 +61,7 @@ export function buildChatProps(state: AppViewState): ChatProps {
     // dismiss 走 progressCard.put + expectedRevision 乐观锁（细节见 controllers/progress-card.ts）
     progressCard: state.progressCard,
     board: state.board ?? null,
+    onRefreshBoard: () => loadBoard(state),
     progressCardCollapsed: state.settings.chatProgressCardCollapsed,
     onToggleProgressCardCollapse: () =>
       state.applySettings({

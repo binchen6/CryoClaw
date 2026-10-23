@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { GatewayBrowserClient } from "./gateway.ts";
+import { GatewayBrowserClient, GatewayRequestError, isAgentStartupReadError } from "./gateway.ts";
 import { FakeScheduler } from "../test-utils/fake-scheduler.ts";
 
 // 最小可控定时器，手动推进回调。
@@ -363,6 +363,7 @@ async function testLastSeqResetsOnNewSocketConnection() {
 }
 
 async function main() {
+  await testStartupReadsRecoverAndCancel();
   await testReconnectNowCancelsScheduledReconnect();
   await testRequestMustWaitForHelloHandshake();
   await testRequestTimesOutWhenGatewayNeverResponds();
@@ -370,6 +371,35 @@ async function main() {
   await testDuplicateOrRewindSeqFramesAreDroppedWithoutGap();
   await testLastSeqResetsOnNewSocketConnection();
   console.log("gateway reconnect tests passed");
+}
+
+async function testStartupReadsRecoverAndCancel() {
+  const startup = { code:"UNAVAILABLE", message:"Agent main has not completed startup inspection and preparation.", details:{agentId:"main"} };
+  const error = new GatewayRequestError(startup);
+  assert.equal(isAgentStartupReadError("chat.history",error),true);
+  for (const method of ["chat.send","progressCard.put","sessions.patch"]) assert.equal(isAgentStartupReadError(method,error),false);
+  assert.equal(isAgentStartupReadError("chat.history",new GatewayRequestError({...startup,message:"provider unavailable"})),false);
+  assert.deepEqual(error.details,{agentId:"main"});
+  FakeWebSocket.instances = [];
+  const timers = new FakeTimers(); installBrowserGlobals(timers);
+  const client = new GatewayBrowserClient({url:"ws://127.0.0.1:18789"});
+  client.start(); const socket = FakeWebSocket.instances[0];socket.open();timers.runNext();
+  await flushMicrotasks();completeHello(socket);await flushMicrotasks();
+  const result = client.request("progressCard.get",{sessionKey:"main"});
+  const respond = (ok:boolean,payload?:unknown) => {const req=JSON.parse(socket.sent.at(-1)!);socket.message(JSON.stringify({type:"res",id:req.id,ok,payload,error:ok?undefined:startup}));};
+  respond(false);await flushMicrotasks();timers.runNext();await flushMicrotasks();
+  assert.equal(JSON.parse(socket.sent.at(-1)!).method,"progressCard.get");
+  respond(true,{card:null});assert.deepEqual(await result,{card:null});
+  const slowStartup=client.request("chat.history");
+  respond(false);await flushMicrotasks();timers.runNext();await flushMicrotasks();
+  timers.runNext();await flushMicrotasks(); // Server is busy preparing; this read timed out.
+  timers.runNext();await flushMicrotasks();
+  respond(true,{messages:[]});assert.deepEqual(await slowStartup,{messages:[]});
+  const canceled = client.request("chat.history").then(()=>"ok", e=>String(e));
+  respond(false);await flushMicrotasks();const before=socket.sent.length;
+  client.stop();await flushMicrotasks();timers.runAll();
+  assert.match(await canceled,/connection changed/);
+  assert.equal(socket.sent.length,before,"stopped client must never replay a read on a new connection");
 }
 
 main().catch((error) => {

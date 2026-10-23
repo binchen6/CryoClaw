@@ -4,6 +4,7 @@ import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import type { AssistantIdentity } from "../assistant-identity.ts";
 import { icons } from "../icons.ts";
 import type { MessageGroup, ToolCard } from "../types/chat-types.ts";
+import { publishedFilesForMessages, fileCardPathKey, redundantDeliveryMirrors } from "./deliverables.ts";
 import { toSanitizedMarkdownHtml, toStreamingMarkdownParts } from "../markdown.ts";
 import { detectTextDirection } from "../text-direction.ts";
 import { renderCopyAsMarkdownButton } from "./copy-as-markdown.ts";
@@ -261,7 +262,7 @@ export function renderStreamingGroup(
   startedAt: number,
   onOpenSidebar?: (content: string) => void,
   assistant?: AssistantIdentity,
-  live?: { thinkingStream?: string | null; narrationText?: string | null },
+  live?: { thinkingStream?: string | null; narrationText?: string | null; preferredFiles?:ReadonlySet<string> },
 ) {
   const timestamp = new Date(startedAt).toLocaleTimeString([], {
     hour: "numeric",
@@ -287,7 +288,7 @@ export function renderStreamingGroup(
             content: [{ type: "text", text }],
             timestamp: startedAt,
           },
-          { isStreaming: true, showReasoning: false },
+          { isStreaming: true, showReasoning: false, preferredFiles:live?.preferredFiles },
           onOpenSidebar,
         )}
         <div class="chat-streaming-status" role="status" aria-live="polite">
@@ -355,6 +356,8 @@ function isPureToolMessage(message: unknown): boolean {
 }
 
 function renderGroupMessagesCoalesced(group: MessageGroup, opts: MessageGroupRenderOpts) {
+  const published=publishedFilesForMessages(group.messages);
+  const redundantMirrors=redundantDeliveryMirrors(group.messages,published.paths);
   const nodes: unknown[] = [];
   let pendingCards: ToolCard[] = [];
   const flushPending = () => {
@@ -366,6 +369,7 @@ function renderGroupMessagesCoalesced(group: MessageGroup, opts: MessageGroupRen
     pendingCards = [];
   };
   group.messages.forEach((item, index) => {
+    if(redundantMirrors.has(item.message))return;
     if (isPureToolMessage(item.message)) {
       pendingCards.push(...extractToolCards(item.message));
       return;
@@ -378,6 +382,7 @@ function renderGroupMessagesCoalesced(group: MessageGroup, opts: MessageGroupRen
           isStreaming: group.isStreaming && index === group.messages.length - 1,
           showReasoning: opts.showReasoning,
           isHydrating: opts.isHydrating,
+          preferredFiles:group.role==="assistant"?published.paths:undefined,
           onQuoteMessage: opts.onQuoteMessage,
           onResendError: opts.onResendError,
           onRewindToMessage: opts.onRewindToMessage,
@@ -388,6 +393,8 @@ function renderGroupMessagesCoalesced(group: MessageGroup, opts: MessageGroupRen
     );
   });
   flushPending();
+  if(published.files.length)nodes.push(html`<div class="chat-message-attachments chat-deliverables" ${chatMediaEnhanceRef}
+    aria-label=${t("chat.fileCard.deliverables")}>${published.files.map(file=>html`${unsafeHTML(buildFileCardHtml(file.path,file.path,file.title))}`)}</div>`);
   return nodes;
 }
 
@@ -730,6 +737,7 @@ function renderThinkingCollapsed(reasoningMarkdown: string) {
 // 图片/附件/思考/JSON 卡/正文/工具卡的公共组装（工具消息懒渲染 body 与普通气泡共用）。
 // mediaAttachments 仅普通气泡路径传入；工具消息 body 不传，保持不渲染附件的原行为。
 function renderMessageBodyParts(opts: {
+  preferredFiles?:ReadonlySet<string>;
   images: ImageBlock[];
   mediaAttachments?: MessageMediaAttachment[];
   reasoningMarkdown: string | null;
@@ -741,7 +749,7 @@ function renderMessageBodyParts(opts: {
 }) {
   return html`
     ${renderMessageImages(opts.images)}
-    ${opts.mediaAttachments ? renderMessageMediaAttachments(opts.mediaAttachments) : nothing}
+    ${opts.mediaAttachments ? renderMessageMediaAttachments(opts.mediaAttachments.filter(file=>!opts.preferredFiles?.has(fileCardPathKey(file.path)))) : nothing}
     ${opts.reasoningMarkdown ? renderThinkingCollapsed(opts.reasoningMarkdown) : nothing}
     ${
       opts.jsonResult
@@ -753,7 +761,7 @@ function renderMessageBodyParts(opts: {
             <pre class="chat-json-content"><code>${opts.jsonResult.pretty}</code></pre>
           </details>`
         : opts.markdown
-          ? html`<div class="chat-text" ${chatTextEnhanceRef} dir="${detectTextDirection(opts.markdown)}">${unsafeHTML(linkifyPaths(renderMediaMarkers(toSanitizedMarkdownHtml(opts.markdown))))}</div>`
+          ? html`<div class="chat-text" ${chatTextEnhanceRef} dir="${detectTextDirection(opts.markdown)}">${unsafeHTML(linkifyPaths(renderMediaMarkers(toSanitizedMarkdownHtml(opts.markdown),opts.preferredFiles)))}</div>`
           : nothing
     }
     ${opts.hasToolCards ? renderCollapsedToolCards(opts.toolCards, opts.onOpenSidebar) : nothing}
@@ -763,6 +771,7 @@ function renderMessageBodyParts(opts: {
 function renderGroupedMessage(
   message: unknown,
   opts: {
+    preferredFiles?:ReadonlySet<string>;
     isStreaming: boolean;
     showReasoning: boolean;
     isHydrating?: boolean;
@@ -921,7 +930,7 @@ function renderGroupedMessage(
               class="chat-text chat-text--streaming chat-text--stable"
               dir="${detectTextDirection(markdown)}"
               ${chatTextEnhanceRef}
-            >${unsafeHTML(linkifyPaths(renderMediaMarkers(parts.stableHtml)))}</div>`
+            >${unsafeHTML(linkifyPaths(renderMediaMarkers(parts.stableHtml,opts.preferredFiles)))}</div>`
           : nothing}
         ${parts.tail
           ? html`<div
@@ -954,6 +963,7 @@ function renderGroupedMessage(
     // 展开后随宿主重渲染重放；图片/思考/JSON/正文/工具卡全部推迟到展开时求值。
     const bodyFn = () =>
       renderMessageBodyParts({
+        preferredFiles:opts.preferredFiles,
         images,
         reasoningMarkdown,
         jsonResult,
@@ -1004,6 +1014,7 @@ function renderGroupedMessage(
   return html`
     <div class="chat-message-shell"><div class="${bubbleClasses}">
       ${renderMessageBodyParts({
+        preferredFiles:opts.preferredFiles,
         images,
         mediaAttachments,
         reasoningMarkdown,

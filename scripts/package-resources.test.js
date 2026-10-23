@@ -73,6 +73,20 @@ function writeFixture(filePath, content = "") {
   fs.writeFileSync(filePath, content);
 }
 
+test("native gateway policy overrides stale ASAR environment and command flags",t=>{
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),"cryoclaw-runtime-policy-"));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+  writeFixture(path.join(root,"package.json"),JSON.stringify({cryoclaw:{gatewayRuntime:"node"}}));
+  const proc=Object.assign(Object.create(process),{argv:[process.execPath,"package-resources.js","--asar"],env:{...process.env,CRYOCLAW_GATEWAY_ASAR:"1"}});
+  const sandbox=loadPackageResourcesSandbox({rootDir:root,process:proc});assert.equal(sandbox.parseArgs().asar,false);
+});
+test("native addon compilation follows the selected Gateway runtime ABI",t=>{
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),"cryoclaw-addon-abi-"));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+  writeFixture(path.join(root,"package.json"),JSON.stringify({cryoclaw:{gatewayRuntime:"node",node:"24.22.1"}}));
+  const sandbox=loadPackageResourcesSandbox({rootDir:root});assert.equal(JSON.stringify(sandbox.nativeAddonBuildTarget()),JSON.stringify({runtime:"node",version:"24.22.1",distUrl:"https://nodejs.org/download/release"}));
+  writeFixture(path.join(root,"package.json"),JSON.stringify({cryoclaw:{}}));writeFixture(path.join(root,"node_modules/electron/package.json"),JSON.stringify({version:"43.8.3"}));
+  assert.equal(sandbox.nativeAddonBuildTarget().runtime,"electron");assert.equal(sandbox.nativeAddonBuildTarget().version,"43.8.3");
+});
+
 function officeCliStampValue(prefix, hash, filePath) {
   const stat = fs.statSync(filePath, { bigint: true });
   return `${prefix}|${hash}|${stat.size}|${stat.mtimeNs}|${stat.ctimeNs}`;
@@ -480,6 +494,8 @@ test("verifyOutput 应要求基础扩展插件存在", () => {
 // P0-11：asar 模式下注入插件 manifest 必须有产物校验。win-arm64 交叉编译下
 // bundleAllPlugins 的注入失败只 log 跳过，9 个注入插件全缺也会绿灯出包。
 const INJECTED_PLUGIN_IDS = [
+  "cryoclaw-deliverables",
+  "cryoclaw-dashboards",
   "kimi-search",
   "dingtalk-connector",
   "feishu",

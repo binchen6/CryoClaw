@@ -37,6 +37,7 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 import kdp from "./kernel-dist-patch.js";
+import directorySwap from "./kernel-directory-swap.js";
 
 // Electron 的 fs 补丁会把 .asar 路径当归档目录拦截——copyFile/rename/rm 直接作用于
 // gateway.asar 文件本身时会 ENOENT。original-fs 是未打补丁的原生 fs，本脚本所有
@@ -85,6 +86,13 @@ const LOCK_FILE = path.join(BACKUP_ROOT, "update.lock");
 
 const ASAR_PATH = path.join(RESOURCES_DIR, "gateway.asar");
 const ASAR_UNPACKED_DIR = path.join(RESOURCES_DIR, "gateway.asar.unpacked");
+const LOOSE_PATH = path.join(RESOURCES_DIR, "gateway");
+const NATIVE_POLICY = path.join(RESOURCES_DIR, "runtime", "cryoclaw-runtime.json");
+const NATIVE_RUNTIME = xfs.existsSync(NATIVE_POLICY);
+if (NATIVE_RUNTIME) {
+  const policy = JSON.parse(xfs.readFileSync(NATIVE_POLICY, "utf8"));
+  if (policy.kind !== "node" || policy.gatewayMode !== "loose") throw new Error("Invalid native gateway runtime policy");
+}
 
 // V8 编译缓存目录（与 src/gateway-process.ts 的 NODE_COMPILE_CACHE 一致）。
 // 内核换装/回退后旧缓存全部失效，清空避免残留旧版本的编译产物。
@@ -123,6 +131,7 @@ function resolveNpmCliJs() {
 }
 
 function resolveNodeExe() {
+  if (NATIVE_RUNTIME) return path.join(RESOURCES_DIR, "runtime", process.platform === "win32" ? "node.exe" : "node");
   // CryoClaw-CLI.exe（CONSOLE 子系统）优先，回退主 exe；二者都靠 ELECTRON_RUN_AS_NODE 跑脚本
   const installRoot = path.resolve(RESOURCES_DIR, "..", "..");
   const cli = path.join(installRoot, "CryoClaw-CLI.exe");
@@ -276,6 +285,7 @@ function readVersionFromTree(gatewayDir) {
 }
 
 async function readCurrentVersion() {
+  if (NATIVE_RUNTIME) return directorySwap.versionOf(LOOSE_PATH);
   const a = await asar();
   const pkg = JSON.parse(
     a.extractFile(ASAR_PATH, path.join("node_modules", KERNEL_PACKAGE, "package.json")).toString()
@@ -449,7 +459,7 @@ function listBackups() {
     .filter((e) => e.isDirectory() && BACKUP_DIR_RE.test(e.name))
     .map((e) => e.name)
     // 只认完整备份（历史失败可能残留空目录）
-    .filter((name) => xfs.existsSync(path.join(BACKUP_ROOT, name, "gateway.asar")))
+    .filter((name) => xfs.existsSync(path.join(BACKUP_ROOT, name, NATIVE_RUNTIME ? "physical-backup-complete.json" : "gateway.asar")))
     // 按名称尾部时间戳数字降序（字典序对位数不同的数字不可靠，NaN 排最后）
     .sort((a, b) => {
       const ta = Number(a.split("-").pop());
@@ -522,8 +532,9 @@ async function cmdUpdate(tag) {
     progress("download", 8, `npm 安装 ${KERNEL_PACKAGE}@${target}（staging）`);
     const stagingGateway = path.join(staging, "gateway");
 
-    const a = await asar();
-    a.extractAll(ASAR_PATH, stagingGateway);
+    const a = NATIVE_RUNTIME ? null : await asar();
+    if (NATIVE_RUNTIME) xfs.cpSync(LOOSE_PATH, stagingGateway, {recursive:true,verbatimSymlinks:true});
+    else a.extractAll(ASAR_PATH, stagingGateway);
 
     // 旧内核包挪出，npm 装新版后做注入物搬运
     const pkgDir = path.join(stagingGateway, "node_modules", KERNEL_PACKAGE);
@@ -569,6 +580,8 @@ async function cmdUpdate(tag) {
 
     progress("patch", 45, "应用 asar 边界补丁与 windowsHide 补丁");
     const winResult = kdp.patchWindowsOpenclawArtifacts(stagingGateway, process.platform);
+    if (NATIVE_RUNTIME) kdp.patchDesktopKernel(stagingGateway);
+    else {
     kdp.patchAsarBoundaryCheck(stagingGateway);
     // 形态感知覆盖断言（R56：v9 函数迁到 @openclaw/fs-safe 包后补丁计数会
     // 误导——仅 peer-link 命中也 >0。按内核形态校验关键文件确已带补丁）
@@ -580,12 +593,21 @@ async function cmdUpdate(tag) {
     kdp.patchPluginArtifactAsarIdentity(stagingGateway);
     kdp.patchPluginNativeAsarHost(stagingGateway);
     progress("patch", 46, `fs-safe asar→unpacked 补丁: ${fsSafePatched > 0 ? "已注入" : "未命中（跳过）"}`);
+    }
     // kimi 思考档位补丁为行为增强（非 asar 必需），未命中仅告警不中止
     if (kdp.patchKimiThinkingProfile(stagingGateway) === 0) {
       progress("patch", 46, "kimi 思考档位补丁未命中（上游已修复或结构变化），跳过");
     }
 
     progress("smoke", 58, `冒烟测试 openclaw --version`);
+    if (NATIVE_RUNTIME && xfs.existsSync(path.join(newPkgDir, "node-sqlite.mjs"))) {
+      // --version is intentionally exempt from upstream runtime admission.
+      // Probe real SQLite and TLS-version admission before touching live files.
+      const probe = spawnSync(resolveNodeExe(), ["--input-type=module", "-e",
+        'import {pathToFileURL} from "node:url"; const m=await import(pathToFileURL(process.argv[1]).href); const failure=m.nodeRuntimeFailure(process.versions.node,await m.detectCurrentSqliteCapabilities()); if(failure)throw Error(failure);',
+        path.join(newPkgDir,"node-sqlite.mjs")], {encoding:"utf8",timeout:SMOKE_TIMEOUT_MS,windowsHide:true});
+      if (probe.error || probe.status !== 0) throw new Error(`New kernel runtime admission failed: ${probe.error?.message || probe.stderr?.slice(-800)}`);
+    }
     const openclawMjs = path.join(newPkgDir, "openclaw.mjs");
     const smoke = spawnSync(resolveNodeExe(), [openclawMjs, "--version"], {
       encoding: "utf8",
@@ -598,6 +620,21 @@ async function cmdUpdate(tag) {
       throw new Error(`新内核冒烟测试失败: ${detail}`);
     }
 
+    if (NATIVE_RUNTIME) {
+      progress("backup",80,`备份物理内核 ${current}`);
+      const backupDir=path.join(BACKUP_ROOT,`gateway-${current}-${Date.now()}`);
+      xfs.mkdirSync(backupDir,{recursive:true});
+      xfs.cpSync(LOOSE_PATH,path.join(backupDir,"gateway"),{recursive:true,verbatimSymlinks:true});
+      if (directorySwap.versionOf(path.join(backupDir,"gateway")) !== current) throw new Error("Physical gateway backup identity mismatch");
+      xfs.writeFileSync(path.join(backupDir,"physical-backup-complete.json"),JSON.stringify({version:current})+"\n",{flush:true});
+      try { kcs.snapshotOpenclawConfig(backupDir); } catch(error) { progress("backup",81,`配置快照附存失败: ${error.message}`); }
+      progress("swap",88,"整目录换装物理内核");
+      directorySwap.swapDirectory(stagingGateway,LOOSE_PATH,target);
+      swapped=true;clearCompileCache();
+      writeState({lastAction:"update",previous:current,current:target,backupDir,carried});
+      emit({type:"done",action:"update",from:current,to:target});
+      return;
+    }
     progress("pack", 68, "重新打包 gateway.asar");
     const newAsar = path.join(staging, "gateway.asar");
     await a.createPackageWithOptions(stagingGateway, newAsar, { unpack: UNPACK_GLOB, unpackDir: UNPACK_DIR_GLOB });
@@ -736,6 +773,13 @@ async function cmdRollback() {
   const backups = listBackups();
   if (backups.length === 0) throw new Error("没有可用的内核备份，无法回退");
   const backupDir = path.join(BACKUP_ROOT, backups[0]);
+  if (NATIVE_RUNTIME) {
+    const backup=path.join(backupDir,"gateway"),target=directorySwap.versionOf(backup),current=await readCurrentVersion();
+    progress("swap",40,`回退物理内核 ${current} → ${target}`);
+    directorySwap.swapDirectory(backup,LOOSE_PATH,target);clearCompileCache();
+    writeState({lastAction:"rollback",previous:current,current:target});
+    emit({type:"done",action:"rollback",from:current,to:target});return;
+  }
   const backupAsar = path.join(backupDir, "gateway.asar");
   if (!xfs.existsSync(backupAsar)) throw new Error(`备份损坏（缺少 gateway.asar）: ${backupDir}`);
 
@@ -1104,11 +1148,21 @@ async function main() {
   const args = process.argv.slice(2);
   if (args[0] === "update") args.shift(); // CLI wrapper 透传
 
+  if (args.includes("--recover")) {
+    acquireLock();
+    try {
+      if (NATIVE_RUNTIME) directorySwap.recoverDirectorySwap(LOOSE_PATH);
+      else reconcileSwapDebris((msg)=>progress("recover",100,msg));
+    } finally { releaseLock(); }
+    return;
+  }
+
   if (args.includes("--check")) {
     // 无锁态的尽力自愈（有并发更新在跑时跳过——其临时物是合法的）
     if (!xfs.existsSync(LOCK_FILE)) {
       try {
-        reconcileSwapDebris((m) => console.log(`[kernel-update] ${m}`));
+        if (NATIVE_RUNTIME) directorySwap.recoverDirectorySwap(LOOSE_PATH);
+        else reconcileSwapDebris((m) => console.log(`[kernel-update] ${m}`));
       } catch (e) {
         console.log(`[kernel-update] 残留自愈跳过: ${e.message || e}`);
       }
@@ -1119,9 +1173,10 @@ async function main() {
 
   acquireLock();
   try {
-    reconcileSwapDebris((m) => console.log(`[kernel-update] ${m}`));
-    if (!xfs.existsSync(ASAR_PATH)) {
-      fail(`找不到 gateway.asar: ${ASAR_PATH}`);
+    if (NATIVE_RUNTIME) directorySwap.recoverDirectorySwap(LOOSE_PATH);
+    else reconcileSwapDebris((m) => console.log(`[kernel-update] ${m}`));
+    if (!xfs.existsSync(NATIVE_RUNTIME ? LOOSE_PATH : ASAR_PATH)) {
+      fail(NATIVE_RUNTIME ? `找不到物理内核: ${LOOSE_PATH}` : `找不到 gateway.asar: ${ASAR_PATH}`);
     }
     if (args.includes("--rollback")) {
       await cmdRollback();

@@ -357,9 +357,9 @@ test("渲染接线审计：streaming 稳定段经 renderMediaMarkers（MEDIA 标
   const idx = src.indexOf("if (opts.isStreaming)");
   assert.ok(idx >= 0, "grouped-render 应保留 isStreaming 分支");
   const branch = src.slice(idx, idx + 2400);
-  const mediaIdx = branch.indexOf("renderMediaMarkers(parts.stableHtml)");
+  const mediaIdx = branch.indexOf("renderMediaMarkers(parts.stableHtml,opts.preferredFiles)");
   assert.ok(mediaIdx >= 0, "streaming 稳定段应套 renderMediaMarkers");
-  const linkifyIdx = branch.indexOf("linkifyPaths(renderMediaMarkers(parts.stableHtml))");
+  const linkifyIdx = branch.indexOf("linkifyPaths(renderMediaMarkers(parts.stableHtml,opts.preferredFiles))");
   assert.ok(
     linkifyIdx >= 0,
     "renderMediaMarkers 必须先于 linkifyPaths（路径不可被拆进 <a>）",

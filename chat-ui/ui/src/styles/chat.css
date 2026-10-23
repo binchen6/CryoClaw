@@ -426,6 +426,16 @@
   height: 15px;
 }
 
+:is(.chat-text, .chat-message-attachments) .chat-file-card {width:min(520px,100%);max-width:100%;box-sizing:border-box;padding:var(--spacer-12);gap:var(--spacer-12);}
+.chat-file-card__open {display:flex;align-items:center;gap:var(--spacer-12);flex:1;min-width:0;background:transparent;border:0;padding:0;color:inherit;text-align:left;font:inherit;cursor:pointer;}
+.chat-file-card__open:disabled {cursor:default;opacity:.65;}
+.chat-file-card__path {display:block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:var(--text-xs);color:var(--text-muted);}
+.chat-file-card__actions {display:flex;align-items:center;gap:var(--spacer-4);margin-left:auto;}
+.chat-file-card__open:focus-visible,.chat-file-card__actions button:focus-visible {outline:2px solid var(--brand-500);outline-offset:4px;border-radius:var(--radius-6);}
+.chat-file-card--missing {border-style:dashed;}
+.chat-deliverables {margin:var(--spacer-12) 0;}
+@media(max-width:700px){:is(.chat-text,.chat-message-attachments) .chat-file-card{flex-wrap:wrap}.chat-file-card__open{flex-basis:calc(100% - 8px)}.chat-file-card__actions{margin-left:auto}}
+
 /* 已发送附件区（user 消息顶层 MediaPaths 渲染，见 chat/grouped-render.ts）；
    文件卡片样式复用上方 .chat-file-card 规则（:is 作用域已含本容器） */
 .chat-message-attachments {

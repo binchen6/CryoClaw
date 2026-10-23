@@ -70,13 +70,20 @@ function launch(exe, port) {
     windowsHide: true,
     stdio: "ignore",
   });
-  const cleanup = () => killTree(child);
+  const cleanup = () => { if(child.exitCode === null && child.signalCode === null)killTree(child); };
   process.on("exit", cleanup);
   process.on("SIGINT", () => {
     cleanup();
     process.exit(130);
   });
   return { child, cleanup };
+}
+
+async function quitLaunchedApp(running, cdp, timeoutMs=70000) {
+  if(cdp)await cdp.evaluate("window.cryoclaw.quit();true").catch(()=>{});
+  const deadline=Date.now()+timeoutMs;
+  while(running?.child?.exitCode===null && running.child.signalCode===null && Date.now()<deadline)await sleep(100);
+  running?.cleanup();
 }
 
 /** 轮询 CDP /json/list 直到出现 file:// 页面 target。 */
@@ -154,7 +161,7 @@ class Cdp {
       const settle = fn => value => { clearTimeout(timer); fn(value); };
       this.pending.set(id, { resolve: settle(resolve), reject: settle(reject) });
       try {
-        this.ws.send(JSON.stringify({ id, method, params }));
+        this.ws.send(JSON.stringify({ id, method, params, ...(options.sessionId ? {sessionId:options.sessionId} : {}) }));
       } catch (error) {
         this.pending.get(id)?.reject(error);
         this.pending.delete(id);
@@ -202,7 +209,9 @@ async function waitForAppReady(cdp, { timeoutMs = 90_000, minRailItems = 4 } = {
       const ready = await cdp.evaluate(`(async () => {
         if (document.readyState !== "complete") return false;
         if (document.querySelectorAll(".oc-rail__item").length < ${minRailItems}) return false;
-        if (!document.querySelector("openclaw-app")?.connected) return false;
+        const app = document.querySelector("openclaw-app");
+        if (!app?.connected || app.chatLoading || app.sessionsLoading || app.progressCard?.loading) return false;
+        if (app.lastError || app.progressCard?.error) return false;
         await document.fonts.ready;
         return true;
       })()`);
@@ -267,6 +276,7 @@ module.exports = {
   httpCheckOk,
   killTree,
   launch,
+  quitLaunchedApp,
   waitForPageTarget,
   waitForGateway,
   connect,

@@ -1,4 +1,5 @@
 import { truncateText } from "./format.ts";
+import {deliveryDetailsForCall} from "./chat/message-normalizer.ts";
 import { debugLog } from "./debug.ts";
 import { handlePlanToolEvent, UPDATE_PLAN_TOOL_NAME, type PlanStreamHost } from "./plan-stream.ts";
 import {
@@ -44,6 +45,7 @@ export type StreamSegment = {
 };
 
 export type ToolStreamEntry = {
+  deliverableDetails?: unknown;
   toolCallId: string;
   runId: string;
   sessionKey?: string;
@@ -186,6 +188,7 @@ function buildToolCallMessage(entry: ToolStreamEntry): Record<string, unknown> {
         ...(hasResult
           ? {
               text: entry.output ?? "",
+              ...(entry.deliverableDetails ? {details:entry.deliverableDetails} : {}),
               ...(entry.isError === true ? { isError: true } : {}),
               ...(entry.toolErrorSummary ? { toolErrorSummary: entry.toolErrorSummary } : {}),
               ...(entry.exitCode !== undefined ? { exitCode: entry.exitCode } : {}),
@@ -765,6 +768,8 @@ export function handleAgentEvent(host: ToolStreamHost, payload?: AgentEventPaylo
   // result 阶段用 details 里的最终统计替换（details 无 diff 则清除实时徽标）。
   const liveDiffStat = phase === "input_delta" ? parseDiffStat(data.diff) : undefined;
   const finalDiffStat = phase === "result" ? extractResultDiffStat(data.result) : undefined;
+  const deliverableDetails = phase === "result" && name === "cryoclaw_deliver_files" && data.result && typeof data.result === "object"
+    ? (data.result as Record<string,unknown>).details : undefined;
   const toolErrorSummary = phase === "result" ? asNonEmptyString(data.toolErrorSummary) : undefined;
   const exitCode = phase === "result" ? extractExitCode(data) : undefined;
 
@@ -818,6 +823,7 @@ export function handleAgentEvent(host: ToolStreamHost, payload?: AgentEventPaylo
       // result」，卡片永远停在执行中）；update 阶段的空 partialResult 仍视为无输出
       output: phase === "result" ? (output ?? undefined) : output || undefined,
       isError,
+      deliverableDetails,
       diffStat: phase === "input_delta" ? liveDiffStat : finalDiffStat,
       toolErrorSummary,
       exitCode,
@@ -832,6 +838,7 @@ export function handleAgentEvent(host: ToolStreamHost, payload?: AgentEventPaylo
     host.toolStreamOrder.push(toolCallId);
   } else {
     entry.name = name;
+    if(deliverableDetails)entry.deliverableDetails=deliverableDetails;
     if (args !== undefined) {
       entry.args = args;
     }
@@ -863,6 +870,11 @@ export function handleAgentEvent(host: ToolStreamHost, payload?: AgentEventPaylo
     };
   }
 
+  if(phase==="result" && !entry.deliverableDetails && entry.name==="cryoclaw_deliver_files"){
+    entry.deliverableDetails=deliveryDetailsForCall({name:entry.name,id:entry.toolCallId,args:entry.args},
+      {toolName:entry.name,toolCallId:entry.toolCallId,isError:data.isError});
+    if(entry.deliverableDetails)entry.callMessage={...buildToolCallMessage(entry),timestamp:entry.callMessage.timestamp??entry.startedAt};
+  }
   trimToolStream(host);
   scheduleToolStreamSync(host, phase === "result");
 }

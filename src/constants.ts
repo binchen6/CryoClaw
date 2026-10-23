@@ -5,6 +5,7 @@ import * as os from "os";
 import { execFileSync } from "child_process";
 import { isSetupCompleteFromConfig } from "./setup-completion";
 import { readCryoclawConfig } from "./cryoclaw-config";
+import { nativeGatewayNode } from "./gateway-runtime";
 
 // ── 网络端口 ──
 
@@ -138,6 +139,8 @@ function resolveDarwinHelperNodeBin(): string | null {
  * macOS dev/packaged 均优先走 Helper.app，避免子进程在 Dock 中弹跳。
  */
 export function resolveNodeBin(): string {
+  const native = nativeGatewayNode(resolveResourcesPath());
+  if (native) return native;
   if (process.platform === "darwin") {
     const helperPath = resolveDarwinHelperNodeBin();
     if (helperPath) return helperPath;
@@ -168,6 +171,7 @@ export function resolveCliNodeBin(): string {
  * 非 Windows 或 dev 模式返回 null。
  */
 export function resolveCliExe(): string | null {
+  if (nativeGatewayNode(resolveResourcesPath())) return null;
   if (!IS_WIN || !app.isPackaged) return null;
   const exeDir = path.dirname(process.execPath);
   const ext = path.extname(process.execPath) || ".exe";
@@ -187,6 +191,7 @@ export function isAsarMode(): boolean {
  * dev 和 packaged 都需要（配合 resolveNodeBin() 始终返回 Electron binary）。
  */
 export function resolveNodeExtraEnv(): Record<string, string> {
+  if (nativeGatewayNode(resolveResourcesPath())) return { ELECTRON_RUN_AS_NODE: "" };
   return { ELECTRON_RUN_AS_NODE: "1" };
 }
 
@@ -210,7 +215,7 @@ export function resolveNpmBin(): string {
 export function resolveGatewayRoot(): string {
   const res = resolveResourcesPath();
   // dev 模式用真实 Node.js，无法读取 asar 虚拟路径，直接走散文件
-  if (!app.isPackaged) {
+  if (!app.isPackaged || nativeGatewayNode(res)) {
     return path.join(res, "gateway");
   }
   const asarPath = path.join(res, "gateway.asar");

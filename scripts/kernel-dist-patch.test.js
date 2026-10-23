@@ -8,6 +8,149 @@ const os = require("node:os");
 const path = require("node:path");
 
 const kdp = require("./lib/kernel-dist-patch");
+
+test("selective provider capture is limited to declared compiled discovery of trusted global owners",t=>{
+  const {gatewayDir,distDir}=makeGatewayDist(t,{"plugin-setup-module-test.mjs":"function getPluginSetupModuleLoader(record, source, rootDir) { bindPluginInstanceModuleLoader({origin: record.origin,\n\t\t\t\tsource,\n\t\t\t\trootDir}); }"});
+  assert.equal(kdp.patchSelectiveProviderDiscoveryCapture(gatewayDir),1);const file=path.join(distDir,"plugin-setup-module-test.mjs"),source=fs.readFileSync(file,"utf8");assert.equal(kdp.patchSelectiveProviderDiscoveryCapture(gatewayDir),1);assert.equal(fs.readFileSync(file,"utf8"),source);
+  fs.writeFileSync(file,source.replace('record.id!=="codex"||',''));assert.equal(kdp.patchSelectiveProviderDiscoveryCapture(gatewayDir),1);assert.equal(fs.readFileSync(file,"utf8"),source);
+  const root=path.resolve('plugin'),entry=path.join(root,'dist/provider-discovery.js'),record={id:'codex',origin:'global',trustedOfficialInstall:true,rootDir:root,providerDiscoverySource:entry};const vm=require('node:vm'),c=vm.createContext({path,process:{platform:process.platform}});vm.runInContext(source.slice(source.indexOf('/* cryoclaw-selective-provider-discovery */')),c);
+  assert.equal(c.cryoclawSelectiveProviderDiscovery(record,entry,root),true);
+  for(const change of [{id:'another-provider'},{origin:'workspace'},{origin:'bundled'},{trustedOfficialInstall:false},{enabled:false},{providerDiscoverySource:path.join(root,'other.js')}])assert.equal(c.cryoclawSelectiveProviderDiscovery({...record,...change},entry,root),false);
+  assert.equal(c.cryoclawSelectiveProviderDiscovery(record,path.join(root,'index.js'),root),false);assert.equal(c.cryoclawSelectiveProviderDiscovery(record,entry,path.dirname(root)),false);
+});
+
+test("10.6 explicit search shortcut admits only the configured trusted enabled global owner",t=>{
+  const {gatewayDir,distDir}=makeGatewayDist(t,{"public-artifact-factories-test.mjs":"export { loadBundledPublicArtifactEntries as t };","runtime-web-tools-test.mjs":"async function resolveBundledWebProviders(params) { return ['native fallback']; }"});
+  assert.equal(kdp.patchConfiguredTrustedSearchArtifact(gatewayDir),1);const file=path.join(distDir,"runtime-web-tools-test.mjs"),source=fs.readFileSync(file,"utf8");assert.equal(kdp.patchConfiguredTrustedSearchArtifact(gatewayDir),1);assert.equal(fs.readFileSync(file,"utf8"),source);
+  const provider={id:"search",label:"Search",hint:"",placeholder:"",signupUrl:"",credentialPath:"config.key",envVars:[],getCredentialValue(){},setCredentialValue(){},createTool(){}};let calls=0,fail=false;
+  const context=require("node:vm").createContext({cryoclawSearchPublicEntries:params=>{calls++;assert.equal(params.owner.rootDir,"/plugin");assert.ok(params.isArtifact(provider));assert.ok(!params.isArtifact({...provider,id:"other"}));if(fail)throw Error("Invalid artifact");return [provider];}});
+  require("node:vm").runInContext(source.slice(source.indexOf("/* cryoclaw-explicit-trusted-search */")),context);
+  const params={kind:"search",sourceConfig:{tools:{web:{search:{provider:"search"}}},plugins:{entries:{search:{enabled:true}}}},context:{manifestRegistry:{plugins:[{id:"search",origin:"global",trustedOfficialInstall:true,rootDir:"/plugin"}]}}};
+  assert.equal(context.cryoclawExplicitTrustedSearch(params)[0],provider);assert.equal(calls,1);assert.equal(context.cryoclawExplicitTrustedSearch({...params,kind:"fetch"}),null);
+  for(const plugins of [{enabled:false,entries:{search:{enabled:true}}},{entries:{search:{enabled:false}}},{entries:{search:{enabled:true}},allow:["other"]},{entries:{search:{enabled:true}},deny:["search"]}])assert.equal(context.cryoclawExplicitTrustedSearch({...params,sourceConfig:{...params.sourceConfig,plugins}}),null);
+  for(const change of [{trustedOfficialInstall:false},{origin:"workspace"},{id:"other"}])assert.equal(context.cryoclawExplicitTrustedSearch({...params,context:{manifestRegistry:{plugins:[{...params.context.manifestRegistry.plugins[0],...change}]}}}),null);
+  assert.equal(calls,1);fail=true;assert.equal(context.cryoclawExplicitTrustedSearch(params),null);
+});
+
+test("fs-safe Windows canonicalizer retains native errors, non-Windows and ASAR fallback semantics",t=>{
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),"cryo-fs-native-"));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));const file=path.join(root,"node_modules/@openclaw/fs-safe/dist/realpath.js");fs.mkdirSync(path.dirname(file),{recursive:true});fs.writeFileSync(file,'function resolve(input,native) { return native ? fs.realpathSync.native(input) : fs.realpathSync(input); }');
+  assert.equal(kdp.patchWindowsFsSafeCanonicalPaths(root),1);const source=fs.readFileSync(file,"utf8");assert.equal(kdp.patchWindowsFsSafeCanonicalPaths(root),1);assert.equal(fs.readFileSync(file,"utf8"),source);
+  let native=0,ordinary=0,fail=false;const f=()=>{ordinary++;return "ordinary";};f.native=()=>{native++;if(fail)throw Error("denied");return "native";};const proc={platform:"win32"};const vm=require("node:vm"),c=vm.createContext({fs:{realpathSync:f},process:proc});vm.runInContext(source,c);
+  assert.equal(c.resolve("C:/root/file",false),"native");assert.equal(c.resolve("C:/gateway.asar/file",false),"ordinary");fail=true;assert.equal(c.resolve("C:/root/file",false),"ordinary");assert.throws(()=>c.resolve("C:/root/file",true),/denied/);const before=native;proc.platform="linux";assert.equal(c.resolve("/root/file",false),"ordinary");assert.equal(native,before);assert.ok(ordinary>=3);
+});
+
+test("public history preserves bounded owned delivery receipts without exposing arbitrary details",t=>{
+  const {gatewayDir,distDir}=makeGatewayDist(t,{
+    "chat-display-projection.canvas-test.mjs":"function projectToolResultDetails(details, maxChars) { const record=details; const projected = {}; return {details:Object.keys(projected).length?projected:undefined,truncated:false}; }",
+    "chat-display-projection.core-test.mjs":"function project(entry,maxChars){return projectToolResultDetails(entry.details, maxChars);}",
+  });
+  assert.equal(kdp.patchDeliverablesHistoryProjection(gatewayDir),2);
+  assert.equal(kdp.patchDeliverablesHistoryProjection(gatewayDir),2);
+  const canvas=fs.readFileSync(path.join(distDir,"chat-display-projection.canvas-test.mjs"),"utf8");
+  const project=new Function(canvas+";return projectToolResultDetails;")();
+  const receipt={version:1,files:[{path:"C:/real/r.pdf",title:"report",size:42,mtimeMs:1,private:"omit"}]};
+  const details={cryoclawDeliverables:receipt,credential:"never expose"};
+  assert.deepEqual(project(details,4096,"cryoclaw_deliver_files").details,{cryoclawDeliverables:{version:1,files:[{path:"C:/real/r.pdf",title:"report",size:42,mtimeMs:1}]}});
+  assert.equal(project(details,4096,"other_tool").details,undefined);
+  assert.equal(project(details,4,"cryoclaw_deliver_files").details,undefined);
+  for(const path of ["https://bad.test/r.pdf","\\\\server\\r.pdf","relative.pdf","/bad\0file"])
+    assert.equal(project({cryoclawDeliverables:{version:1,files:[{path}]}},4096,"cryoclaw_deliver_files").details,undefined);
+  assert.match(fs.readFileSync(path.join(distDir,"chat-display-projection.core-test.mjs"),"utf8"),/entry\.toolName \?\? entry\.tool_name \?\? entry\.name/);
+});
+
+test("agent startup retries typed publication supersession with an active authority and a fixed budget",async t=>{
+  const {gatewayDir,distDir}=makeGatewayDist(t,{
+    "agent-database-startup-test.mjs":"async function run(activation,input,assertCurrent){await activation.publishAgent(input);}",
+    "prepared-model-runtime.errors-test.mjs":"export class Superseded extends Error {}",
+  });
+  assert.equal(kdp.patchAgentStartupPublication(gatewayDir),1);
+  const source=fs.readFileSync(path.join(distDir,"agent-database-startup-test.mjs"),"utf8");
+  class Superseded extends Error{};
+  const run=new Function("CryoclawPublicationSuperseded",source.replace(/^import[^\n]+\n/,"")+";return run;")(Superseded);
+  let calls=0,guards=0;await run({publishAgent:async()=>{if(++calls<3)throw new Superseded();}}, {},()=>{guards++;});
+  assert.equal(calls,3);assert.equal(guards,3);
+  calls=0;await run({publishAgent:async()=>{if(++calls===1)throw Error("Agent main startup preparation was superseded");}}, {},()=>{});assert.equal(calls,2);
+  calls=0;await assert.rejects(run({publishAgent:async()=>{calls++;throw Error("database damaged");}}, {},()=>{}),/damaged/);assert.equal(calls,1);
+  calls=0;await assert.rejects(run({publishAgent:async()=>{calls++;}}, {},()=>{throw Error("stale authority");}),/stale authority/);assert.equal(calls,0);
+  calls=0;await assert.rejects(run({publishAgent:async()=>{calls++;throw new Superseded();}}, {},()=>{}),Superseded);assert.equal(calls,3);
+  const once=fs.readFileSync(path.join(distDir,"agent-database-startup-test.mjs"),"utf8");kdp.patchAgentStartupPublication(gatewayDir);assert.equal(fs.readFileSync(path.join(distDir,"agent-database-startup-test.mjs"),"utf8"),once);
+});
+
+test("kernel schema metadata follows the actual admission gate and rejects an unknown gate",t=>{
+  const {gatewayDir,distDir}=makeGatewayDist(t,{"openclaw-agent-db-schema-read-test.mjs":'if (userVersion > 25) throw createNewerSqliteSchemaVersionError("OpenClaw agent database", pathname, userVersion, 25);'});
+  const root=path.dirname(distDir);fs.writeFileSync(path.join(root,"package.json"),JSON.stringify({version:"2026.10.5"}));
+  assert.equal(kdp.writeKernelCompatibilityMetadata(gatewayDir),1);
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(root,"cryoclaw-kernel-compat.json"),"utf8")),{version:"2026.10.5",agentDbUserVersion:25});
+  fs.writeFileSync(path.join(distDir,"openclaw-agent-db-schema-read-test.mjs"),"changed admission contract");
+  assert.throws(()=>kdp.writeKernelCompatibilityMetadata(gatewayDir),/admission changed/);
+});
+
+test("10.5 canonical-root optimization follows withPluginSourceFile into source-lookup",t=>{
+  const {gatewayDir,distDir}=makeGatewayDist(t,{"plugin-generation-source-lookup-test.mjs":'function withPluginSourceFile(source, boundary, read) {return admit({rootPath: boundary, rejectHardlinks:false});}'});
+  assert.equal(kdp.patchWindowsPluginCanonicalPaths(gatewayDir),1);
+  assert.match(fs.readFileSync(path.join(distDir,"plugin-generation-source-lookup-test.mjs"),"utf8"),/rootRealPath: cryoclawPluginCanonicalRoot\(boundary\)/);
+});
+
+test("10.5 split artifact keeps native Windows realpath acceleration without the moved boundary function",t=>{
+  const {gatewayDir,distDir}=makeGatewayDist(t,{"plugin-generation-artifact-test.mjs":'function resolveArtifact(input){return fs.realpathSync(input);}'});
+  assert.equal(kdp.patchWindowsPluginCanonicalPaths(gatewayDir),1);
+  const source=fs.readFileSync(path.join(distDir,"plugin-generation-artifact-test.mjs"),"utf8");
+  const realpath=()=>"fallback";realpath.native=()=>"native";
+  const resolve=new Function("fs","process",source+";return resolveArtifact;")({realpathSync:realpath},{platform:"win32"});
+  assert.equal(resolve("C:/plugin/index.js"),"native");assert.equal(resolve("C:/gateway.asar/plugin/index.js"),"fallback");
+  assert.ok(!source.includes("rootPath: boundary"));
+});
+
+test("ASAR reads preserve buffer/stat, enforce caps and repair cached legacy shims", async (t) => {
+  const { gatewayDir, fsSafeDist } = makeGatewayV9(t);
+  const file = path.join(fsSafeDist, "regular-file.js");
+  const legacy = FS_SAFE_REGULAR_FILE.replace("function readRegularFileSync(params) {", "function readRegularFileSync(params) {\n\t/* asar-bypass */ if (typeof params.filePath === 'string' && params.filePath.includes('.asar')) {\n\t\treturn fsSync.readFileSync(params.filePath);\n\t}");
+  fs.writeFileSync(file, legacy);
+  kdp.patchAsarBoundaryCheck(gatewayDir);
+  const source = fs.readFileSync(file, "utf8");
+  const body = source.replace(/^import .*;\r?\n/gm, "").replace(/export /g, "");
+  const factory = new Function("fsSync", "fs", "normalizeMaxBytes", `${body}\nreturn {readRegularFile,readRegularFileSync};`);
+  const readers = factory(fs, fs.promises, (v) => { if (v !== undefined && (!Number.isSafeInteger(v) || v < 0)) throw new RangeError("maxBytes"); return v; });
+  const inner = path.join(gatewayDir, "runtime.asar", "package.json");
+  fs.mkdirSync(path.dirname(inner), {recursive:true});
+  fs.writeFileSync(inner, '{"name":"openclaw"}');
+  for (const read of [readers.readRegularFileSync, readers.readRegularFile]) {
+    const result = await read({filePath:inner,maxBytes:100});
+    assert.equal(JSON.parse(result.buffer.toString()).name, "openclaw");
+    assert.equal(result.stat.size, result.buffer.length);
+    await assert.rejects(async () => read({filePath:inner,maxBytes:1}), /too large/);
+    await assert.rejects(async () => read({filePath:inner,maxBytes:-1}), /maxBytes/);
+    const dir = path.join(path.dirname(inner), "subdir");fs.mkdirSync(dir,{recursive:true});
+    await assert.rejects(async () => read({filePath:dir}), /regular file/);
+  }
+  kdp.patchAsarBoundaryCheck(gatewayDir);
+  assert.equal(fs.readFileSync(file,"utf8"), source, "patch must be idempotent");
+});
+
+test("10.5 split host resolver patches both lookup and artifact link checks", (t) => {
+  const { gatewayDir, distDir } = makeGatewayDist(t, {
+    "plugin-generation-artifact-split.mjs": "function check(link) { return fs.realpathSync(link); }",
+    "plugin-generation-source-lookup-split.mjs": "function resolveNativeHost(filename) { const candidate = filename; if (fs.existsSync(candidate)) return fs.realpathSync(candidate); }",
+  });
+  assert.equal(kdp.patchPluginNativeAsarHost(gatewayDir), 2);
+  for (const name of fs.readdirSync(distDir)) assert.match(fs.readFileSync(path.join(distDir,name),"utf8"), /cryoclaw-native-asar-host/);
+});
+
+test("immutable bundled skills skip observation while external workspace skills remain watched", (t) => {
+  const { gatewayDir, distDir } = makeGatewayDist(t, {
+    "refresh-skills.mjs": "function targets(resolvedTargets) { const watchTargets = resolvedTargets.targets; return watchTargets; }",
+  });
+  assert.equal(kdp.patchImmutableSkillsWatch(gatewayDir), 1);
+  const source = fs.readFileSync(path.join(distDir,"refresh-skills.mjs"),"utf8");
+  const root = path.resolve("runtime.asar/node_modules/openclaw");
+  const select = new Function("process","path",source + ";return targets;")({env:{CRYOCLAW_OPENAI_GATEWAY_ROOT:root}},path);
+  const bundled = {path:path.join(root,"dist/extensions/feishu/skills")};
+  const external = {path:path.resolve("workspace/skills")};
+  const sibling = {path:path.join(root,"dist/extensions-other/skills")};
+  assert.deepEqual(select({targets:[bundled,external,sibling]}), [external,sibling]);
+  assert.equal(kdp.patchImmutableSkillsWatch(gatewayDir),1);
+  assert.equal(fs.readFileSync(path.join(distDir,"refresh-skills.mjs"),"utf8"),source);
+});
 test("Windows native canonical paths retain admission parameters, ASAR routing and failure fallback",t=>{
   const root=fs.mkdtempSync(path.join(os.tmpdir(),"cryo-canonical-"));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));const dist=path.join(root,"node_modules/openclaw/dist");fs.mkdirSync(dist,{recursive:true});
   const file=path.join(dist,"plugin-generation-artifact-test.mjs");fs.writeFileSync(file,"function withPluginSourceFile(source, boundary, read) {return admit({rootPath: boundary, rejectHardlinks:false});} function resolve(value){return fs.realpathSync(value);}");
@@ -18,32 +161,6 @@ test("Windows native canonical paths retain admission parameters, ASAR routing a
   assert.equal(context.resolve("C:\\plugin\\file.js"),"native");assert.equal(context.resolve("C:\\gateway.asar\\file.js"),"ordinary");
   fail=true;assert.equal(context.resolve("C:\\junction\\file.js"),"ordinary");assert.equal(context.cryoclawPluginCanonicalRoot("C:\\junction"),undefined);
   const before=nativeCalls;platform.platform="linux";assert.equal(context.resolve("/plugin/file.js"),"ordinary");assert.equal(nativeCalls,before);assert.ok(ordinaryCalls>=3);
-});
-test("configured trusted search metadata uses the guarded public loader without activating unrelated plugins",t=>{
-  const root=fs.mkdtempSync(path.join(os.tmpdir(),"cryo-web-metadata-"));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));const dist=path.join(root,"node_modules/openclaw/dist");fs.mkdirSync(dist,{recursive:true});
-  fs.writeFileSync(path.join(dist,"public-artifact-factories-test.mjs"),"");const file=path.join(dist,"runtime-web-tools-test.mjs");fs.writeFileSync(file,"async function resolveBundledWebSearchProviders(params) { return 'fallback'; }");
-  assert.equal(kdp.patchConfiguredWebSearchMetadata(root),1);const source=fs.readFileSync(file,"utf8");assert.equal(kdp.patchConfiguredWebSearchMetadata(root),1);assert.equal(fs.readFileSync(file,"utf8"),source);
-  let calls=0,fail=false;const vm=require("node:vm"),provider={id:"search",label:"Search",hint:"",placeholder:"",signupUrl:"",credentialPath:"config.key",envVars:[],getCredentialValue(){},setCredentialValue(){},createTool(){}};
-  const context=vm.createContext({cryoclawPublicEntries:params=>{calls++;assert.equal(params.owner.rootDir,"/plugin");assert.ok(params.isArtifact(provider));if(fail)throw Error("Invalid artifact");return [provider];}});vm.runInContext(source.slice(source.indexOf("/* cryoclaw-configured-web-metadata */")),context);
-  const params={sourceConfig:{tools:{web:{search:{provider:"search"}}},plugins:{entries:{search:{enabled:true}}}},context:{manifestRegistry:{plugins:[{id:"search",origin:"global",trustedOfficialInstall:true,rootDir:"/plugin"}]}}};
-  assert.equal(context.cryoclawConfiguredWebSearchMetadata(params)[0],provider);assert.equal(calls,1);
-  for(const plugins of [{enabled:false,entries:{search:{enabled:true}}},{entries:{search:{enabled:false}}},{entries:{search:{enabled:true}},allow:["other"]},{entries:{search:{enabled:true}},deny:["search"]}])assert.equal(context.cryoclawConfiguredWebSearchMetadata({...params,sourceConfig:{...params.sourceConfig,plugins}}),null);
-  assert.equal(calls,1);assert.equal(context.cryoclawConfiguredWebSearchMetadata({...params,context:{manifestRegistry:{plugins:[{...params.context.manifestRegistry.plugins[0],trustedOfficialInstall:false}]}}}),null);
-  fail=true;assert.equal(context.cryoclawConfiguredWebSearchMetadata(params),null);
-});
-test("peer-only migration completion requires a repaired link and valid unchanged configuration",t=>{
-  const root=fs.mkdtempSync(path.join(os.tmpdir(),"cryo-peer-migration-"));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
-  const dist=path.join(root,"node_modules/openclaw/dist");fs.mkdirSync(dist,{recursive:true});
-  fs.writeFileSync(path.join(dist,"plugin-peer-link-test.mjs"),"");fs.writeFileSync(path.join(dist,"loader-shared-test.mjs"),"");
-  const file=path.join(dist,"plugin-update-config-migration-test.mjs");fs.writeFileSync(file,"function migrate() { const uninspected = selectedPending.filter(() => true); }");
-  assert.equal(kdp.patchRepairedPeerMigration(root),1);const source=fs.readFileSync(file,"utf8");assert.equal(kdp.patchRepairedPeerMigration(root),1);assert.equal(fs.readFileSync(file,"utf8"),source);
-  let peer=null,valid=true;const vm=require("node:vm"),context=vm.createContext({structuredClone,cryoclawAuditPeer:()=>peer,cryoclawValidatePluginConfig:({value})=>{value.changed=true;return {ok:valid};}});
-  vm.runInContext(source.slice(source.indexOf("/* cryoclaw-repaired-peer-migration */")),context);
-  const entry={pluginId:"sample",reason:'Plugin declares peerDependency "openclaw" but peer link audit failed: missing link',command:"openclaw update repair",configPaths:[["plugins","entries","sample","config"]]},plugin={rootDir:"/plugin",configSchema:{type:"object"}},config={plugins:{entries:{sample:{config:{key:"retained"}}}}};
-  const before=JSON.stringify(config);assert.equal(context.cryoclawRepairedPeerMigration(entry,plugin,config),true);assert.equal(JSON.stringify(config),before);
-  for(const change of [{requiresStateMigration:true},{requiresDoctorInspection:true},{reason:"another failure"},{validationExcludedPaths:[["channels"]]},{configPaths:[["channels","other"]]}])assert.equal(context.cryoclawRepairedPeerMigration({...entry,...change},plugin,config),false);
-  assert.equal(context.cryoclawRepairedPeerMigration(entry,{...plugin,doctorContract:{configRepair:true}},config),false);
-  peer={reason:"broken"};assert.equal(context.cryoclawRepairedPeerMigration(entry,plugin,config),false);peer=null;valid=false;assert.equal(context.cryoclawRepairedPeerMigration(entry,plugin,config),false);
 });
 test("dependency boundary scan accepts only a verified ASAR host peer junction",async t=>{
   const root=fs.mkdtempSync(path.join(os.tmpdir(),"cryo-boundary-"));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
@@ -69,6 +186,7 @@ async function linkOpenClawPeerDependency(params) {
   assert.equal(kdp.patchPluginPeerAsarLink(root),1);
   const patched=fs.readFileSync(file,"utf8");assert.ok(!patched.includes('return "unchanged"'));assert.ok(patched.includes("symlinkSync(params.hostRoot"));
   assert.equal(kdp.patchPluginPeerAsarLink(root),1);assert.equal(fs.readFileSync(file,"utf8"),patched);
+  kdp.patchAsarBoundaryCheck(root);assert.equal(fs.readFileSync(file,'utf8'),patched,'later boundary passes must not restore the obsolete peer-link bypass');
   const vm=require("node:vm"),host=path.join(root,"gateway.asar/node_modules/openclaw");let target=host;
   const context=vm.createContext({path,cryoclawReadlink:()=>target,cryoclawStat:()=>({isDirectory:()=>true}),safeRealpathSync:()=>null});
   vm.runInContext(patched.slice(patched.indexOf("/* cryoclaw-peer-asar-link */")),context);
@@ -87,7 +205,7 @@ test("native companion host resolution preserves exact host checks across ASAR j
   assert.ok(patched.includes("resolveNativeHost(target) !== expectedHost"));
   const vm=require("node:vm");let link=path.join(root,"gateway.asar","node_modules","openclaw"),symlink=true;
   const io={realpathSync(p){if(p===link)return link;throw Error("unresolved junction");},lstatSync(){return {isSymbolicLink:()=>symlink};},readlinkSync(){return link;},statSync(){return {isDirectory:()=>true};}};
-  const context=vm.createContext({fs:io,path});vm.runInContext(patched.slice(patched.indexOf("/* cryoclaw-native-asar-host */")),context);
+  const context=vm.createContext({fs:io,path,process:{platform:"win32"}});vm.runInContext(patched,context);
   const candidate=path.join(root,"capture/node_modules/openclaw");
   assert.equal(context.cryoclawResolveNativeHostPath(candidate),link);
   link=path.join(root,"unrelated");assert.equal(context.cryoclawResolveNativeHostPath(candidate),undefined);
@@ -593,10 +711,10 @@ test("v9 形态：fs-safe 包内 root-file/pinned-open/regular-file/file-identit
   assert.match(pinnedOpen, /\/\* asar-bypass \*\/ if \(params\.filePath && params\.filePath\.includes\('\.asar'\)\)/);
 
   const regularFile = fs.readFileSync(path.join(fsSafeDist, "regular-file.js"), "utf-8");
-  assert.match(regularFile, /\/\* asar-bypass \*\/ if \(typeof params\.filePath === 'string' && params\.filePath\.includes\('\.asar'\)\)/);
+  assert.match(regularFile, /cryoclaw-regular-read-contract/);
   assert.match(regularFile, /\/\* asar-bypass-async \*\//);
-  assert.match(regularFile, /fsSync\.statSync\(params\.filePath\)/);
-  assert.match(regularFile, /await fs\.stat\(params\.filePath\)/);
+  assert.match(regularFile, /fsSync\.lstatSync\(params\.filePath\)/);
+  assert.match(regularFile, /await fs\.lstat\(params\.filePath\)/);
 
   const identity = fs.readFileSync(path.join(fsSafeDist, "file-identity.js"), "utf-8");
   assert.match(identity, /Number\(left\.dev\) === 1 \|\| Number\(right\.dev\) === 1/);
@@ -702,129 +820,13 @@ test("patchFsSafeAsarUnpacked：无 fs-safe 包（v8 内核）返回 0", (t) => 
   assert.equal(kdp.patchFsSafeAsarUnpacked(gatewayDir), 0);
 });
 
-// ─── worker 输入 Proxy 清理补丁（2026.9.7 Windows 消息级 DataCloneError）───
-
-// 模拟池派发文件：含精确的 postMessage 派发点形态（tabs 与真机 dist 一致）
-const WORKER_POOL_DISPATCH = [
-  "export class Pool {",
-  "\tstart(slot, task) {",
-  "\t\tlet input = task.input;",
-  "\t\ttry {",
-  "\t\t\tconst transferList = [];",
-  "\t\t\tif (!task.done) {",
-  "\t\t\t\tworker.postMessage({",
-  "\t\t\t\t\tinput,",
-  "\t\t\t\t\ttaskId: task.id,",
-  "\t\t\t\t\tinteractive: Boolean(task.options.onRequest),",
-  "\t\t\t\t\tnativeSections: slot.nativeSections.buffer,",
-  "\t\t\t\t\tsampleMemory: true",
-  "\t\t\t\t}, transferList);",
-  "\t\t\t}",
-  "\t\t} catch (error) {",
-  "\t\t\tthrow error;",
-  "\t\t}",
-  "\t}",
-  "}",
-  "",
-].join("\n");
-
-test("patchWorkerInputCloneSanitize：命中派发点注入清理调用与 helper，幂等", (t) => {
-  const { gatewayDir } = makeGatewayDist(t, {
-    "worker-task-pool-ABC12345.mjs": WORKER_POOL_DISPATCH,
-  });
-  const poolPath = path.join(gatewayDir, "node_modules", "openclaw", "dist", "worker-task-pool-ABC12345.mjs");
-
-  assert.equal(kdp.patchWorkerInputCloneSanitize(gatewayDir), 1);
-  const patched = fs.readFileSync(poolPath, "utf-8");
-  assert.match(patched, /import \{ types as utilTypes \} from "node:util";/);
-  assert.match(patched, /\/\* cryoclaw-worker-clone \*\/ input = __cryoclawSanitizeWorkerInput\(input, new Map\(\)\);/);
-  assert.match(patched, /function __cryoclawSanitizeWorkerInput\(value, seen\) \{/);
-  // 幂等：二次运行不重复注入
-  assert.equal(kdp.patchWorkerInputCloneSanitize(gatewayDir), 1);
-  const again = fs.readFileSync(poolPath, "utf-8");
-  assert.equal((again.match(/cryoclaw-worker-clone/g) || []).length, 2, "marker 不应重复增加");
-});
-
-test("patchWorkerInputCloneSanitize：无派发点的 dist 返回 0", (t) => {
-  const { gatewayDir } = makeGatewayDist(t, {
-    "chat-unrelated-A1B2C3D4.mjs": "export const x = 1;\n",
-  });
-  assert.equal(kdp.patchWorkerInputCloneSanitize(gatewayDir), 0);
-});
-
-// 2026.10.3 内核把派发重构为顶层 postWorkerTaskInput()（2 层 tab 缩进）——
-// 旧锚（5 层 tab 字面量）在该形态下未命中导致打包中止，正则锚须兼容
-const WORKER_POOL_DISPATCH_10_3 = [
-  "function postWorkerTaskInput(worker, slot, task, input, transferList, taskContext) {",
-  "\tconst transferStartedAt = performance.now();",
-  "\tworker.postMessage({",
-  "\t\tinput,",
-  "\t\ttaskId: task.id,",
-  "\t\tinteractive: Boolean(task.options.onRequest || task.options.onRequestSync || task.options.onNotification),",
-  "\t\tnativeSections: slot.nativeSections.buffer,",
-  "\t\ttaskContext,",
-  "\t\tsampleMemory: true",
-  "\t}, transferList);",
-  "}",
-  "",
-].join("\n");
-
-test("patchWorkerInputCloneSanitize：2026.10.3 顶层函数形态同样命中", (t) => {
-  const { gatewayDir } = makeGatewayDist(t, {
-    "src-WCJCjrey.mjs": WORKER_POOL_DISPATCH_10_3,
-  });
-  const poolPath = path.join(gatewayDir, "node_modules", "openclaw", "dist", "src-WCJCjrey.mjs");
-
-  assert.equal(kdp.patchWorkerInputCloneSanitize(gatewayDir), 1);
-  const patched = fs.readFileSync(poolPath, "utf-8");
-  assert.match(patched, /\/\* cryoclaw-worker-clone \*\/ input = __cryoclawSanitizeWorkerInput\(input, new Map\(\)\);/);
-  // 注入语句在函数体内（1 层 tab），派发点保持 2 层参数缩进
-  assert.match(patched, /\n\tworker\.postMessage\(\{\n\t\tinput,\n\t\ttaskId: task\.id,/);
-});
-
-test("补丁 helper 行为：Proxy 快照为纯对象、含 Proxy 的容器重建、纯对象原样返回", async (t) => {
-  const { gatewayDir } = makeGatewayDist(t, {
-    "worker-task-pool-ABC12345.mjs": WORKER_POOL_DISPATCH,
-  });
-  const poolPath = path.join(gatewayDir, "node_modules", "openclaw", "dist", "worker-task-pool-ABC12345.mjs");
-  kdp.patchWorkerInputCloneSanitize(gatewayDir);
-  // 抽出 helper 单独导入执行（文件本体含未定义引用，不能整体 import）
-  const patched = fs.readFileSync(poolPath, "utf-8");
-  const helperStart = patched.indexOf("/* cryoclaw-worker-clone */\nfunction __cryoclawSanitizeWorkerInput");
-  assert.ok(helperStart >= 0, "helper 应存在");
-  const helperSrc = patched.slice(helperStart).replace("/* cryoclaw-worker-clone */", "");
-  const helperPath = path.join(path.dirname(poolPath), "helper-only-EXPORT.mjs");
-  fs.writeFileSync(
-    helperPath,
-    'import { types as utilTypes } from "node:util";\n' + helperSrc + "\nexport { __cryoclawSanitizeWorkerInput };\n"
-  );
-  const { pathToFileURL } = require("node:url");
-  const { __cryoclawSanitizeWorkerInput: sanitize } = await import(pathToFileURL(helperPath).href);
-
-  const proxyEnv = new Proxy({ Path: "C:\\bin", HOME: "C:\\Users\\x" }, {});
-  const input = { request: { env: proxyEnv, name: "a" }, list: [{ env: proxyEnv }] };
-  const out = sanitize(input, new Map());
-  assert.notEqual(out, input, "含 Proxy 的容器应重建");
-  assert.notEqual(out.request, input.request);
-  assert.notEqual(out.request.env, proxyEnv, "Proxy 应被快照为纯对象");
-  assert.deepEqual({ ...out.request.env }, { Path: "C:\\bin", HOME: "C:\\Users\\x" });
-  assert.deepEqual(Object.getPrototypeOf(out.request.env), Object.prototype);
-  // structuredClone 不应再抛错
-  assert.doesNotThrow(() => structuredClone(out));
-
-  // 无 Proxy：原引用返回（零重建开销）
-  const plain = { a: 1, b: { c: [1, 2, 3] } };
-  assert.equal(sanitize(plain, new Map()), plain);
-  // 非纯对象（Buffer/Date）原样保留
-  const buf = Buffer.from("hi");
-  const wrapper = { buf, when: new Date(0), proxied: new Proxy({}, {}) };
-  const out2 = sanitize(wrapper, new Map());
-  assert.equal(out2.buf, buf);
-  assert.equal(out2.when.getTime(), 0);
-  assert.doesNotThrow(() => structuredClone(out2));
-});
-
 // ─── openclaw ≥2026.9.3 形态：dist 根 chunk .js → .mjs 翻转 ───
+test("physical desktop adaptations leave worker dispatch and filesystem boundaries untouched",t=>{
+  const {gatewayDir,openclawDist,fsSafeDist}=makeGatewayV93(t);
+  const worker=path.join(openclawDist,"worker-task-pool-test.mjs"),workerSource='function dispatch(input) { worker.postMessage({ input, taskId: task.id }); }\n';fs.writeFileSync(worker,workerSource);
+  const boundary=path.join(fsSafeDist,"root-file.js"),original=fs.readFileSync(boundary,"utf8");
+  kdp.patchDesktopKernel(gatewayDir);assert.equal(fs.readFileSync(worker,"utf8"),workerSource);assert.equal(fs.readFileSync(boundary,"utf8"),original);assert.equal(kdp.patchWorkerInputCloneSanitize,undefined);
+});
 // peer-link 等函数迁入 .mjs chunk 后，扫描/断言必须同步覆盖 .mjs，
 // 否则 asar 模式下 vendored 插件 peer 审计失败（R72）。
 
@@ -852,6 +854,13 @@ function makeGatewayV93(t) {
   );
   return { gatewayDir, openclawDist, fsSafeDist };
 }
+
+test("modern peer-link repair survives later boundary passes and coverage checks",t=>{
+  const {gatewayDir,openclawDist}=makeGatewayV93(t),file=path.join(openclawDist,'plugin-peer-link-Xk9.mjs');
+  fs.writeFileSync(file,`function auditOpenClawPeerDependency(params) { const linkPath='link'; return safeRealpathSync(linkPath); }\nasync function linkOpenClawPeerDependency(params) { symlinkSync(params.hostRoot,'link','junction'); }`);
+  kdp.patchPluginPeerAsarLink(gatewayDir);const repaired=fs.readFileSync(file,'utf8');
+  kdp.patchAsarBoundaryCheck(gatewayDir);assert.equal(fs.readFileSync(file,'utf8'),repaired);assert.doesNotThrow(()=>kdp.assertAsarBoundaryCoverage(gatewayDir));
+});
 
 test("v9.3 形态：peer-link 住 .mjs chunk 仍被补丁，marker/断言均识别", (t) => {
   const { gatewayDir, openclawDist, fsSafeDist } = makeGatewayV93(t);

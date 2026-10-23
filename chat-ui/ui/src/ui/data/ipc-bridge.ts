@@ -451,6 +451,8 @@ interface CryoClawBridgeExtended {
       openExternal?: (url: string) => Promise<any>;
       openPath?: (path: string) => Promise<any>;
       revealPath?: (path: string) => Promise<any>;
+      fileCardInfo?: (path: string) => Promise<{exists:boolean;size?:number;mtimeMs?:number}>;
+      saveFileCopy?: (path: string) => Promise<{canceled:boolean}>;
       // 聊天文件附件：读本地文件为 base64（≤16MB，超限返回 { error:"too-large", size }）
       readFileBase64?: (path: string) => Promise<any>;
       quit?: () => void;
@@ -1104,6 +1106,13 @@ export function openPath(path: string): Promise<void> {
 
 export function revealPath(path: string): Promise<void> {
   return oc().revealPath(path) as Promise<void>;
+}
+
+export function fileCardInfo(path:string):Promise<{exists:boolean;size?:number;mtimeMs?:number}> {
+  return Promise.resolve().then(()=>oc().fileCardInfo?.(path) ?? Promise.reject(new Error("File metadata unavailable")));
+}
+export function saveFileCopy(path:string):Promise<{canceled:boolean}> {
+  return Promise.resolve().then(()=>oc().saveFileCopy?.(path) ?? Promise.reject(new Error("Save file unavailable")));
 }
 
 // ---------------------------------------------------------------------------

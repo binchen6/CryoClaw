@@ -1,0 +1,9 @@
+const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),{randomUUID}=require('node:crypto'),{sleep}=require('./cdp-harness');
+async function verifyLiveQuery(cdp,out){
+ const key='agent:main:data-query-qa-'+Date.now(),nonce='QUERY_QA_'+randomUUID().slice(0,8),request=(method,params)=>cdp.evaluate(`document.querySelector('openclaw-app').client.request(${JSON.stringify(method)},${JSON.stringify(params)},{timeoutMs:90000})`,{timeoutMs:95000});
+ await request('sessions.create',{key,agentId:'main',displayName:'Release QA · standalone data query'});
+ await request('chat.send',{sessionKey:key,deliver:false,idempotencyKey:randomUUID(),message:`验证普通对话中的独立数据查询。调用 cryoclaw_query_data 工具一次，kind=system，读取本机 CPU 核心数。不要创建或修改面板，不读写文件，不使用 exec 运行系统命令。工具成功后仅回复 ${nonce} 和核心数。`});
+ let history;const deadline=Date.now()+180000;do{history=await request('chat.history',{sessionKey:key,limit:20});const error=history.messages.find(m=>m.stopReason==='error');if(error)throw Error(error.errorMessage);if(history.messages.some(m=>m.role==='assistant'&&m.stopReason==='stop'&&m.content?.some(c=>c.type==='text'&&c.text?.includes(nonce))))break;await sleep(1500);}while(Date.now()<deadline);
+ assert.ok(history.messages.some(m=>m.role==='assistant'&&m.stopReason==='stop'&&m.content?.some(c=>c.type==='text'&&c.text?.includes(nonce))),'standalone query final reply');assert.ok(history.messages.some(m=>m.role!=='user'&&m.content?.some(c=>c.type==='toolCall'&&c.name==='cryoclaw_query_data')),'model invokes standalone query without a panel');
+ const report={sessionKey:key,standaloneDataQuery:true,requiresDashboard:false,usage:history.messages.filter(m=>m.role==='assistant'&&m.provider!=='openclaw').map(m=>({model:m.model,usage:m.usage}))};fs.writeFileSync(path.join(out,'live-query-report.json'),JSON.stringify(report,null,2));return report;
+}module.exports={verifyLiveQuery};

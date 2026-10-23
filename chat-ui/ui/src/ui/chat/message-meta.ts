@@ -10,10 +10,12 @@
  * - 合成消息会带全零 usage → 视为无 usage，不渲染 footer。
  */
 import { extractModelId } from "../context-window.ts";
+import { readCacheUsage } from "../usage-cache-metrics.ts";
 import { formatCost, formatTokens } from "../views/usage-metrics.ts";
 import { t } from "../i18n.ts";
 
 export type MessageUsage = {
+  cacheRead?:number;
   totalTokens: number | null;
   costUsd: number | null;
 };
@@ -24,8 +26,10 @@ function num(value: unknown): number | null {
 
 /** 消息实际生成模型（复合键取最后一段）；无 model 字段返回 null */
 export function extractMessageModel(message: unknown): string | null {
+  if(!message || typeof message!=="object")return null;
   const m = message as Record<string, unknown>;
   const raw = typeof m.model === "string" ? m.model.trim() : "";
+  if(m.provider==="openclaw" && ["gateway-injected","delivery-mirror"].includes(raw))return null;
   if (!raw) {
     return null;
   }
@@ -45,7 +49,8 @@ export function extractMessageUsage(message: unknown): MessageUsage | null {
   const output = num(u.outputTokens) ?? num(u.output) ?? num(u.completionTokens);
   const summed =
     input != null || output != null ? (input ?? 0) + (output ?? 0) : null;
-  const totalTokens = total ?? summed;
+  const cacheUsage=readCacheUsage(u);
+  const totalTokens = total ?? cacheUsage.totalTokens ?? (summed!==null?summed+(cacheUsage.cacheRead??0)+(cacheUsage.cacheWrite??0):null);
   const cost =
     u.cost && typeof u.cost === "object"
       ? num((u.cost as Record<string, unknown>).total)
@@ -56,7 +61,7 @@ export function extractMessageUsage(message: unknown): MessageUsage | null {
   if (tokens == null && costUsd == null) {
     return null;
   }
-  return { totalTokens: tokens, costUsd };
+  return { totalTokens: tokens, costUsd, ...(cacheUsage.cacheRead!==null?{cacheRead:cacheUsage.cacheRead}:{}) };
 }
 
 /** 聚合一组消息的 usage（同组多次 API 调用的 token 求和）；全组无 usage 返回 null */
@@ -65,6 +70,7 @@ export function sumGroupUsage(messages: readonly unknown[]): MessageUsage | null
   let cost = 0;
   let hasTokens = false;
   let hasCost = false;
+  let cacheRead=0,hasCache=false;
   for (const message of messages) {
     const usage = extractMessageUsage(message);
     if (!usage) {
@@ -78,16 +84,18 @@ export function sumGroupUsage(messages: readonly unknown[]): MessageUsage | null
       cost += usage.costUsd;
       hasCost = true;
     }
+    if(usage.cacheRead!==undefined){hasCache=true;cacheRead+=usage.cacheRead;}
   }
   if (!hasTokens && !hasCost) {
     return null;
   }
-  return { totalTokens: hasTokens ? tokens : null, costUsd: hasCost ? cost : null };
+  return { totalTokens: hasTokens ? tokens : null, costUsd: hasCost ? cost : null,...(hasCache?{cacheRead}:{}) };
 }
 
 /** footer 展示文案：「12.3K tokens · $0.04」（成本 <0.01 时用 4 位小数避免 $0.00） */
 export function formatUsageFooter(usage: MessageUsage): string {
   const parts: string[] = [];
+  if(usage.cacheRead!==undefined)parts.push(t("chat.usageCached").replace("{n}",formatTokens(usage.cacheRead)));
   if (usage.totalTokens != null) {
     parts.push(t("chat.usageTokens").replace("{n}", formatTokens(usage.totalTokens)));
   }

@@ -97,6 +97,15 @@ function buildNpmEnv(targetId, extraEnv = {}) {
   return env;
 }
 
+function nativeAddonBuildTarget() {
+  const config = JSON.parse(fs.readFileSync(path.join(ROOT,"package.json"),"utf8")).cryoclaw;
+  if (config?.gatewayRuntime === "node") {
+    if (!/^\d+\.\d+\.\d+$/.test(config.node)) throw Error("Native addon build needs a pinned Node version");
+    return {runtime:"node",version:config.node,distUrl:"https://nodejs.org/download/release"};
+  }
+  return {runtime:"electron",version:JSON.parse(fs.readFileSync(path.join(ROOT,"node_modules/electron/package.json"),"utf8")).version,distUrl:"https://electronjs.org/headers"};
+}
+
 // ─── 统一路径原语（结论记录） ───
 // 曾试验以 safeResolve(root, …) 原语统一路径拼接以消除跨文件污点标记：
 // 实证无效（分析器把原语自身登记为污点汇，边界校验不被跨函数采信），
@@ -150,6 +159,10 @@ function parseArgs() {
       opts.asar = false;
     }
   }
+
+  // Native Node cannot execute Electron's virtual ASAR filesystem. The product
+  // policy overrides old .env files; never ship a silently incompatible pair.
+  if (require(path.join(ROOT, "package.json")).cryoclaw?.gatewayRuntime === "node") opts.asar = false;
 
   // 参数校验
   if (!["darwin", "win32"].includes(opts.platform)) {
@@ -1568,6 +1581,8 @@ const REQUIRED_OPENCLAW_BUNDLED_EXTENSIONS = [
 // wecom-openclaw-plugin / openclaw-weixin live in extensions-mirror/ (see
 // CHANNEL_MIRROR_PLUGINS).
 const REQUIRED_OPENCLAW_INJECTED_EXTENSIONS = [
+  path.join("cryoclaw-dashboards", "openclaw.plugin.json"),
+  path.join("cryoclaw-deliverables", "openclaw.plugin.json"),
   path.join("kimi-search", "openclaw.plugin.json"),
   path.join("dingtalk-connector", "openclaw.plugin.json"),
   path.join("feishu", "openclaw.plugin.json"),
@@ -2063,7 +2078,7 @@ function installTgzPluginDeps(plugin, pluginDir, targetId, opts) {
 
     // --ignore-scripts 跳过了 native addon 编译，对需要 node-gyp 的包单独 rebuild
     // 只 rebuild 有 binding.gyp 但没有 prebuilds 的包（有 prebuilds 的如 node-pty 不需要编译）
-    // 必须 target Electron 的 Node ABI（gateway 由 Electron binary + ELECTRON_RUN_AS_NODE 启动）
+    // Target the runtime that actually executes Gateway, including its exact ABI.
     // macOS Apple Clang 支持 --arch 交叉编译（arm64 runner 可编译 x64 产物）
     const nativeAddonPkgs = Object.keys(deps).filter((name) => {
       const pkgDir = path.join(depTmpDir, "node_modules", ...name.split("/"));
@@ -2073,14 +2088,12 @@ function installTgzPluginDeps(plugin, pluginDir, targetId, opts) {
     });
     if (nativeAddonPkgs.length > 0) {
       // 读取 Electron 版本，用于 node-gyp --target（确保 ABI 匹配）
-      const electronVersion = JSON.parse(
-        fs.readFileSync(path.join(ROOT, "node_modules", "electron", "package.json"), "utf-8")
-      ).version;
-      log(`为 ${plugin.id} 编译 native addon: ${nativeAddonPkgs.join(", ")} (arch=${opts.arch}, electron=${electronVersion})`);
+      const buildTarget = nativeAddonBuildTarget();
+      log(`为 ${plugin.id} 编译 native addon: ${nativeAddonPkgs.join(", ")} (arch=${opts.arch}, ${buildTarget.runtime}=${buildTarget.version})`);
       for (const pkg of nativeAddonPkgs) {
         try {
           // pkg 来自插件清单声明的包名集合；opts.arch/electronVersion 为受控枚举/本仓库依赖版本
-          execNpmSync(["rebuild", pkg, `--arch=${opts.arch}`, "--runtime=electron", `--target=${electronVersion}`, "--dist-url=https://electronjs.org/headers"], {
+          execNpmSync(["rebuild", pkg, `--arch=${opts.arch}`, `--runtime=${buildTarget.runtime}`, `--target=${buildTarget.version}`, `--dist-url=${buildTarget.distUrl}`], {
             cwd: depTmpDir,
             env: buildNpmEnv(targetId),
           });
@@ -2281,6 +2294,10 @@ function isWindowsArm64CrossCompile(opts) {
 // 注入所有 bundled 插件 + mirror 所有 channel plugin
 async function bundleAllPlugins(targetPaths, opts) {
   const { gatewayDir, channelMirrorDir, targetId } = targetPaths;
+  for(const id of ['cryoclaw-deliverables','cryoclaw-dashboards']){
+    const localTarget=path.join(gatewayDir,'node_modules','openclaw','dist','extensions',id);
+    rmDir(localTarget);fs.cpSync(path.join(ROOT,'builtin-plugins',id),localTarget,{recursive:true});
+  }
   const winArm64Cross = isWindowsArm64CrossCompile(opts);
 
   // (1) BUNDLED_PLUGINS 注入到 gateway/node_modules/openclaw/dist/extensions/
@@ -2767,14 +2784,6 @@ async function packGatewayAsar(gatewayDir, targetBase, platform, arch) {
   kernelDistPatch.patchPluginArtifactAsarIdentity(gatewayDir);
   kernelDistPatch.patchPluginNativeAsarHost(gatewayDir);
   log(`fs-safe pinned-open asar→unpacked 补丁: ${fsSafePatched > 0 ? "已注入" : "跳过（形态未命中）"}`);
-
-  // 补丁 worker 输入 Proxy 清理：Windows 上 env Proxy 经 session-store-target 请求
-  // 进入 worker postMessage → DataCloneError（2026.9.7 上游缺陷，每条消息必触发）
-  const cloneSanitized = kernelDistPatch.patchWorkerInputCloneSanitize(gatewayDir);
-  log(`worker 输入 Proxy 清理补丁: ${cloneSanitized > 0 ? `已注入 ${cloneSanitized} 文件` : "跳过（形态未命中）"}`);
-  if (cloneSanitized === 0) {
-    die("worker 输入 Proxy 清理补丁未命中（内核形态变化？Windows 会话读取将 DataCloneError），已中止打包");
-  }
 
   // unpack 规则：二进制文件需要 unpack（dlopen 不支持 asar 虚拟路径）；
   // dist/extensions 整目录 unpack（unpackDir）——openclaw ≥2026.9.2 的 fs-safe 公开构件
@@ -3481,6 +3490,7 @@ function vendorKernelUpdater(targetBase) {
     path.join(ROOT, "scripts", "lib", "kernel-config-snapshot.js"),
     path.join(updaterDir, "kernel-config-snapshot.js")
   );
+  fs.copyFileSync(path.join(ROOT, "scripts/lib/kernel-directory-swap.js"), path.join(updaterDir, "kernel-directory-swap.js"));
 
   // @electron/asar 版本与仓库 node_modules 对齐，避免构建期/运行期行为漂移
   const asarPkg = JSON.parse(
@@ -3545,6 +3555,15 @@ async function main() {
   // dist/extensions/kimi/，把 installDependencies 阶段打的思考档位补丁冲掉（2026.820.0
   // 发版冒烟实测回归）——vendor 之后必须重打。补丁幂等，已打则跳过。
   patchKimiThinkingProfile(targetPaths.gatewayDir);
+
+  // Product adaptations apply to both physical and legacy ASAR distributions.
+  kernelDistPatch.patchDesktopKernel(targetPaths.gatewayDir);
+  if (require(path.join(ROOT, "package.json")).cryoclaw?.gatewayRuntime === "node") {
+    const core = JSON.parse(fs.readFileSync(path.join(targetPaths.gatewayDir, "node_modules/openclaw/package.json"), "utf8"));
+    const semver = require("semver");
+    if (!semver.satisfies(nodeVersion, core.engines.node)) die(`Bundled Node ${nodeVersion} does not satisfy ${core.engines.node}`);
+    fs.writeFileSync(path.join(targetPaths.runtimeDir, "cryoclaw-runtime.json"), JSON.stringify({kind:"node",nodeVersion,gatewayMode:"loose",kernelVersion:core.version}) + "\n");
+  }
 
   // 护栏：所有插件入口必须是 native——必须在 ASAR 打包前跑，因为 ASAR 会删散文件
   log("Step 2.6: 校验插件入口形态");

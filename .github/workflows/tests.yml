@@ -18,7 +18,7 @@ jobs:
           # 与发行版不同的 Node 补丁级上导致行为漂移（b559a51 把运行时升到
           # 24.21.0 时漏改这里，CI 一直跑在 22 上——Node 24 Windows fs.rmSync
           # 静默失败等发行链路问题在 CI 复现不了）
-          node-version: 24.21.0
+          node-version: 24.22.1
           cache: npm
 
       - name: Install dependencies

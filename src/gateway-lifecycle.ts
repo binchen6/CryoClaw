@@ -72,7 +72,7 @@ export function parseTasklistImageName(stdout: string): string {
 
 /** 镜像名是否属于本应用 gateway 的可能形态（Electron 复用二进制 / CLI 二进制 / 系统 node）。 */
 export function isPlausibleGatewayImage(image: string): boolean {
-  return /(?:cryoclaw|electron|node)/.test(image);
+  return /^(?:cryoclaw(?: helper|-cli)?|electron|node)(?:\.exe)?$/.test(image);
 }
 
 /**

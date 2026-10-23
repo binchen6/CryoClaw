@@ -5,7 +5,7 @@ import type { ChatItem, MessageGroup } from "../types/chat-types.ts";
 import type { ChatAttachment } from "../ui-types.ts";
 import { computeSessionFileChanges, type FileChange } from "../chat/file-changes.ts";
 import { renderMessageGroup } from "../chat/grouped-render.ts";
-import { normalizeMessage, normalizeRoleForGrouping, isToolResultMessage } from "../chat/message-normalizer.ts";
+import { normalizeMessage, normalizeRoleForGrouping, isToolResultMessage, unwrapNestedToolMessage, deliveryDetailsForCall } from "../chat/message-normalizer.ts";
 import { extractTextCached } from "../chat/message-extract.ts";
 import { getLocale, t } from "../i18n.ts";
 
@@ -199,7 +199,7 @@ function buildChatItems(input: ChatHistoryInput): Array<ChatItem | MessageGroup>
     });
   }
   for (let i = historyStart; i < history.length; i++) {
-    const msg = history[i];
+    const msg = unwrapNestedToolMessage(history[i]);
     const normalized = normalizeMessage(msg);
     const raw = msg as Record<string, unknown>;
     const marker = raw.__openclaw as Record<string, unknown> | undefined;
@@ -345,6 +345,7 @@ function mergeToolResultHistory(items: ChatItem[]): ChatItem[] {
       const block = { ...(content[slot.blockIdx] as Record<string, unknown>) };
       const text = extractTextCached(m) ?? "";
       block.text = text;
+      if(name === "cryoclaw_deliver_files")block.details=m.details ?? deliveryDetailsForCall(block,m);
       if (m.isError === true) {
         block.isError = true;
       }

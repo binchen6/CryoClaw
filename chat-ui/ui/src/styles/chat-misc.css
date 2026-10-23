@@ -258,6 +258,73 @@
   box-sizing: border-box;
 }
 
+oc-board-panel { display: block; min-width: 0; }
+.chat-board__toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacer-8);
+  padding: var(--spacer-8) var(--spacer-12);
+  border-bottom: var(--hairline);
+  flex-wrap: wrap;
+}
+.chat-board__toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--spacer-8);
+  background: transparent;
+  border: 0;
+  color: var(--text);
+  font: inherit;
+  font-weight: var(--weight-medium);
+  cursor: pointer;
+  padding: var(--spacer-4) 0;
+}
+.chat-board__actions { display: flex; align-items: center; gap: var(--spacer-6); margin-left: auto; }
+.chat-board__tabs {
+  display: flex;
+  gap: var(--spacer-4);
+  overflow-x: auto;
+  padding: var(--spacer-8) var(--spacer-12);
+}
+.chat-board__tab {
+  flex: 0 0 auto;
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border: var(--hairline);
+  border-radius: var(--radius-8);
+  padding: var(--spacer-6) var(--spacer-10);
+  background: var(--bg);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: var(--text-sm);
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-standard), color var(--duration-fast) var(--ease-standard);
+}
+.chat-board__tab[aria-pressed="true"] { background: var(--bg-hover); color: var(--text); border-color: var(--brand-500); }
+.chat-board__toggle:focus-visible, .chat-board__tab:focus-visible { outline: 2px solid var(--brand-500); outline-offset: 2px; }
+.chat-board__stage { padding: 0 var(--spacer-12) var(--spacer-12); min-height: 0; }
+.chat-board__stage .chat-board__frame { display: block; height: clamp(200px, 38vh, 440px); }
+.chat-board__error { color: var(--text-secondary); padding: var(--spacer-8) var(--spacer-12); font-size: var(--text-sm); }
+.chat-board__dialog {
+  width: min(1200px, calc(100vw - 32px));
+  max-width: none;
+  height: calc(100dvh - 48px);
+  max-height: none;
+  padding: 0;
+  border: var(--hairline);
+  border-radius: var(--radius-12);
+  color: var(--text);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-lg);
+}
+.chat-board__dialog[open] { display: flex; flex-direction: column; }
+.chat-board__dialog::backdrop { background: var(--overlay); }
+.chat-board__dialog .chat-board__stage { flex: 1; }
+.chat-board__dialog .chat-board__frame { height: 100%; }
+
 /* ── 加号菜单 ── */
 .chat-plus {
   position: relative;

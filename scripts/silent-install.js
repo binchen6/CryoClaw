@@ -14,7 +14,7 @@
  *
  * 用法：node scripts/silent-install.js <installer.exe> [expectedVersion]
  */
-const { spawn, spawnSync } = require("child_process");
+const { spawn, spawnSync, execFileSync } = require("child_process");
 const path = require("path");
 const fs = require("fs");
 
@@ -38,7 +38,7 @@ async function main(){
     console.log("[silent-install] 已暂存安装包，避免继承构建目录的低完整性标签");
     await new Promise((resolve,reject)=>{
       const child=spawn(staged.target,["/S"],{stdio:"ignore",shell:false,windowsHide:true,env:{...process.env,TEMP:staged.tempRoot,TMP:staged.tempRoot}});
-      const timer=setTimeout(()=>{child.kill();reject(Error("安装超时（15 分钟）"));},15*60_000);
+      const timer=setTimeout(()=>{child.kill();reject(Error("安装超时（30 分钟）"));},30*60_000);
       const progress=setInterval(()=>console.log("[silent-install] 安装进行中…"),30_000);
       const clear=()=>{clearTimeout(timer);clearInterval(progress);};
       child.on("error",error=>{clear();reject(error);});
@@ -48,6 +48,18 @@ async function main(){
     const target=path.join(process.env.LOCALAPPDATA||"","Programs","CryoClaw","resources","app.asar");
     const pkg=JSON.parse(asar.extractFile(target,"package.json").toString("utf8"));
     if(expectedVersion && pkg.version!==expectedVersion)throw Error("版本不符: installed="+pkg.version+" expected="+expectedVersion);
+    if(pkg.cryoclaw?.gatewayRuntime==="node"){
+      const resources=path.join(path.dirname(target),"resources"),runtime=path.join(resources,"runtime");
+      const policy=JSON.parse(fs.readFileSync(path.join(runtime,"cryoclaw-runtime.json"),"utf8"));
+      if(policy.kind!=="node"||policy.gatewayMode!=="loose"||policy.nodeVersion!==pkg.cryoclaw.node)throw Error("Native runtime policy mismatch");
+      const actual=execFileSync(path.join(runtime,"node.exe"),["--version"],{encoding:"utf8",windowsHide:true,timeout:10000}).trim();
+      if(actual!=="v"+pkg.cryoclaw.node)throw Error("Native Node version mismatch: "+actual);
+      const kernel=path.join(resources,"gateway/node_modules/openclaw"),core=JSON.parse(fs.readFileSync(path.join(kernel,"package.json"),"utf8"));
+      if(core.version!==pkg.cryoclaw.openclaw)throw Error("Bundled kernel version mismatch");
+      for(const file of ["openclaw.mjs","node-version.mjs","node-sqlite.mjs","cryoclaw-kernel-compat.json"])if(!fs.statSync(path.join(kernel,file)).isFile())throw Error("Missing kernel resource: "+file);
+      for(const file of ["kernel-update.mjs","kernel-dist-patch.js","kernel-directory-swap.js"])if(!fs.statSync(path.join(resources,"updater",file)).isFile())throw Error("Missing updater resource: "+file);
+      console.log("[silent-install] native runtime/kernel resources verified:",actual,core.version);
+    }
     console.log("[silent-install] OK, installed version:",pkg.version);
   }finally{await staged.cleanup().catch(error=>console.warn("[silent-install] 临时安装包清理失败:",error.message));}
 }
