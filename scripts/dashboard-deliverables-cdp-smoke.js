@@ -73,7 +73,7 @@ const {arg,launch,waitForPageTarget,connect,waitForAppReady,waitForGateway,dismi
     }
     await setViewport(cdp,1920,1200);await cdp.evaluate('document.querySelector("oc-rail").props.onOpenDashboard()');
     await until('document.querySelectorAll("oc-dashboard .dashboard-tabs [role=tab]").length>=2','independent dashboard tabs');
-    await cdp.evaluate('[...document.querySelectorAll("oc-dashboard [role=tab]")].find(b=>b.textContent.includes("QA · 独立看板")).click()');
+    await cdp.evaluate('[...document.querySelectorAll("oc-dashboard [role=tab]")].findLast(b=>b.textContent.includes("QA · 独立看板")).click()');
     await until('document.querySelectorAll("oc-dashboard .dashboard-card").length===2','native plugin cards discovered');report.checks.dashboardEntry=true;
     await frameEvaluate('qa-overview','document.getElementById("count").click();true');const liveDocumentMarker='doc-'+require('node:crypto').randomUUID();await frameEvaluate('qa-overview','window.qaMarker='+JSON.stringify(liveDocumentMarker));
     await until('document.querySelector("openclaw-app").client.request("cryoclaw.dashboards.getState",'+JSON.stringify({boardId:board.id,cardId:'qa-overview'})+').then(s=>s?.count===1)','sandbox state write');report.checks.dashboardDocumentInteraction=true;

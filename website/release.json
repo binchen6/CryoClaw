@@ -1,11 +1,13 @@
 {
-  "tag_name": "v2026.1019.0",
-  "published_at": "2026-10-19T02:58:34Z",
-  "html_url": "https://github.com/binchen6/CryoClaw/releases/tag/v2026.1019.0",
-  "assets": [{
-    "name": "CryoClaw-Setup-2026.1019.0-x64.exe",
-    "size": 274373674,
-    "browser_download_url": "https://github.com/binchen6/CryoClaw/releases/download/v2026.1019.0/CryoClaw-Setup-2026.1019.0-x64.exe",
-    "digest": "sha256:6eb1c03ff1b0875b7316a35ed0117e27fdec6960c2e587296f48cdc6341dc143"
-  }]
+  "tag_name": "v2026.1023.0",
+  "published_at": "2026-10-23T08:40:42Z",
+  "html_url": "https://github.com/binchen6/CryoClaw/releases/tag/v2026.1023.0",
+  "assets": [
+    {
+      "name": "CryoClaw-Setup-2026.1023.0-x64.exe",
+      "size": 318986032,
+      "browser_download_url": "https://github.com/binchen6/CryoClaw/releases/download/v2026.1023.0/CryoClaw-Setup-2026.1023.0-x64.exe",
+      "digest": "sha256:0ba94c53d1ef8064f585de008f6a18ebb842fa6ca24f90aefa11683ecb9dd4ab"
+    }
+  ]
 }

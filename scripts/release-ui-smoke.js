@@ -158,8 +158,9 @@ async function taskChecks(cdp,capture){
     await click(cdp,`document.querySelector('.cm-list__item-action')`);
     const roundTrip=await cdp.evaluate(`(()=>{const a=window.__releaseSmoke.a;a.cronBusy=true;a.cronError='Validation failed: '+('long-path/'.repeat(12));a.requestUpdate();return a.cronForm.everyAmount==='90' && a.cronForm.enabled===false && a.cronForm.timeoutSeconds==='123';})()`);
     for(const width of [800,1440]){
+      await cdp.evaluate(`(()=>{const a=window.__releaseSmoke.a;a.cronBusy=true;a.cronError='Validation failed: '+('long-path/'.repeat(12));a.requestUpdate();})()`);
       await setViewport(cdp,width);await settle(cdp,true);
-      const checks=await cdp.evaluate(`(()=>{const error=document.querySelector('.cm-detail__error'),detail=document.querySelector('.cm-detail');return {disabled:document.querySelector('fieldset.cron-form').disabled,errorAboveForm:error.getBoundingClientRect().bottom<=detail.getBoundingClientRect().top+1};})()`);
+      const checks=await cdp.evaluate(`(()=>{const error=document.querySelector('.cm-detail__error'),detail=document.querySelector('.cm-detail');return {disabled:document.querySelector('fieldset.cron-form')?.disabled===true,errorAboveForm:!!error&&!!detail&&error.getBoundingClientRect().bottom<=detail.getBoundingClientRect().top+1};})()`);
       await capture(`behavior-cron-form-${width}`,true,{...checks,roundTrip});
     }
   }finally{
