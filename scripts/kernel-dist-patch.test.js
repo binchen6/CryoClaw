@@ -909,3 +909,17 @@ test("v9.3 形态：windowsHide 扫描覆盖 .mjs chunk", (t) => {
   const again = kdp.patchWindowsHideGlobal(distDir);
   assert.equal(again.patched, 0);
 });
+
+test("Windows idle broker exits immediately without weakening live-resource cleanup",t=>{
+  const {gatewayDir,openclawDist}=makeGatewayV93(t),dir=path.join(openclawDist,"process","spawn-broker");
+  fs.mkdirSync(dir,{recursive:true});const file=path.join(dir,"worker.js");
+  const original='\tsignalGroup("SIGTERM");\n\tif (owned.size === 0 && starting.size === 0 && !resources?.size && hasLiveOwnedProcessGroupMembers() === false) {\n\t\tfinish();\n\t\treturn;\n\t}\n\tsetTimeout(finish, 5250);\n';
+  fs.writeFileSync(file,original);
+  assert.equal(kdp.patchWindowsIdleBrokerExit(gatewayDir),1);
+  const result=fs.readFileSync(file,"utf8");
+  assert.ok(result.includes('owned.size === 0 && starting.size === 0 && !resources?.size'));
+  assert.ok(result.includes('/* cryoclaw-windows-idle-broker-exit */ process.platform === "win32" || hasLiveOwnedProcessGroupMembers() === false'));
+  assert.ok(result.includes('signalGroup("SIGTERM")'));assert.ok(result.includes('setTimeout(finish, 5250)'));
+  assert.equal(kdp.patchWindowsIdleBrokerExit(gatewayDir),1);assert.equal(fs.readFileSync(file,"utf8"),result);
+  fs.writeFileSync(file,"function unsupportedUpstream() {}\n");assert.equal(kdp.patchWindowsIdleBrokerExit(gatewayDir),0);
+});

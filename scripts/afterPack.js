@@ -22,6 +22,8 @@ const rmRecursive = require("./lib/rm-rec")(fs);
 
 const REQUIRED_FILES = ["build-config.json"];
 const OPTIONAL_FILES = ["app-icon.png"];
+// Low-integrity launch shims belong to local QA and must never ship as a second Node.
+const RUNTIME_DEV_ONLY_FILES = new Set(["node-worktree-low.exe"]);
 
 // 解析 electron-builder 产物架构
 function resolveArchName(arch) {
@@ -91,7 +93,7 @@ exports.default = async function afterPack(context) {
   if (!fs.existsSync(runtimeSrc)) {
     throw new Error(`[afterPack] 资源目录不存在: ${runtimeSrc}`);
   }
-  copyDirSync(runtimeSrc, path.join(targetBase, "runtime"));
+  copyDirSync(runtimeSrc, path.join(targetBase, "runtime"), RUNTIME_DEV_ONLY_FILES);
   console.log(`[afterPack] 已注入 runtime/ → ${path.relative(appOutDir, path.join(targetBase, "runtime"))}`);
 
   // extensions-mirror/ 是 CryoClaw 第三方 channel plugin 的镜像源目录。
@@ -441,10 +443,11 @@ function walkDir(dir, callback) {
 
 // ── 递归复制目录（保留文件权限） ──
 
-function copyDirSync(src, dest) {
+function copyDirSync(src, dest, excludedNames) {
   fs.mkdirSync(dest, { recursive: true });
 
   for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
+    if (excludedNames?.has(entry.name)) continue;
     const s = path.join(src, entry.name);
     const d = path.join(dest, entry.name);
 
@@ -453,13 +456,13 @@ function copyDirSync(src, dest) {
     if (entry.isSymbolicLink()) {
       const real = fs.realpathSync(s);
       if (fs.statSync(real).isDirectory()) {
-        copyDirSync(real, d);
+        copyDirSync(real, d, excludedNames);
       } else {
         fs.copyFileSync(real, d);
         fs.chmodSync(d, fs.statSync(real).mode);
       }
     } else if (entry.isDirectory()) {
-      copyDirSync(s, d);
+      copyDirSync(s, d, excludedNames);
     } else {
       fs.copyFileSync(s, d);
       fs.chmodSync(d, fs.statSync(s).mode);

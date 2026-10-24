@@ -65,6 +65,11 @@ const kch = createRequire(import.meta.url)("./kernel-channel.js");
 const kcs = createRequire(import.meta.url)("./kernel-config-snapshot.js");
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
+const dependencyPolicy = createRequire(import.meta.url)(
+  fs.existsSync(path.join(SCRIPT_DIR, "gateway-dependency-policy.js"))
+    ? "./gateway-dependency-policy.js"
+    : "../lib/gateway-dependency-policy.js"
+);
 const REGISTRY = (process.env.CRYOCLAW_NPM_REGISTRY || "https://registry.npmmirror.com").replace(/\/+$/, "");
 const KERNEL_PACKAGE = "openclaw";
 const UNPACK_GLOB = "{**/*.node,**/*.exe,**/*.dll,**/*.dylib,**/*.so,**/spawn-helper}";
@@ -526,7 +531,9 @@ async function cmdUpdate(tag) {
   // 显式 --tag 无清单可依，不做此判定（npm preinstall 引擎校验兜底）。
   assertRuntimeSatisfies(stable?.minRuntimeNode, target);
 
-  const staging = xfs.mkdtempSync(path.join(os.tmpdir(), "cryoclaw-kernel-update-"));
+  // Native publication can consume this private staging tree by same-volume
+  // rename. Keep temporary files beside the app even on custom install drives.
+  const staging = xfs.mkdtempSync(path.join(NATIVE_RUNTIME ? path.dirname(LOOSE_PATH) : os.tmpdir(), ".cryoclaw-kernel-update-"));
   let swapped = false;
   try {
     progress("download", 8, `npm 安装 ${KERNEL_PACKAGE}@${target}（staging）`);
@@ -554,6 +561,8 @@ async function cmdUpdate(tag) {
     xfs.writeFileSync(gwPkgPath, JSON.stringify(gwPkg, null, 2), "utf-8");
 
     npmRun(["install", "--omit=dev", "--install-links", "--legacy-peer-deps", "--no-audit", "--no-fund"], stagingGateway);
+    dependencyPolicy.repairBundledDependencies(stagingGateway);
+    dependencyPolicy.assertGatewayDependencyPolicy(stagingGateway);
     const installed = readVersionFromTree(stagingGateway);
     if (installed !== target) {
       throw new Error(`npm 安装结果版本 ${installed} 与目标 ${target} 不一致`);
@@ -629,7 +638,7 @@ async function cmdUpdate(tag) {
       xfs.writeFileSync(path.join(backupDir,"physical-backup-complete.json"),JSON.stringify({version:current})+"\n",{flush:true});
       try { kcs.snapshotOpenclawConfig(backupDir); } catch(error) { progress("backup",81,`配置快照附存失败: ${error.message}`); }
       progress("swap",88,"整目录换装物理内核");
-      directorySwap.swapDirectory(stagingGateway,LOOSE_PATH,target);
+      directorySwap.swapDirectory(stagingGateway,LOOSE_PATH,target, xfs, {moveCandidate:true});
       swapped=true;clearCompileCache();
       writeState({lastAction:"update",previous:current,current:target,backupDir,carried});
       emit({type:"done",action:"update",from:current,to:target});

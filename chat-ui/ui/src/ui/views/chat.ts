@@ -125,6 +125,8 @@ export type ChatProps = {
   isBinaryThinking?: boolean;
   onThinkingToggle?: () => void;
   onThinkingLevelChange?: (level: string) => void;
+  fastMode?: import('../controllers/session-fast-mode.ts').FastMode;
+  onFastModeChange?: (enabled:boolean) => Promise<void>;
   // 消息引用：把原文构造成引用块追加到草稿末尾，并把焦点送回输入框（可接着打字）
   onQuoteMessage?: (text: string) => void;
   // 会话分支（rewind/fork/switch，内核 2026.9.7 branch tree）
@@ -180,7 +182,7 @@ export type ChatProps = {
   onScrollToBottom?: () => void;
   // Event handlers
   onDraftChange: (next: string) => void;
-  onSend: () => void;
+  onSend: (message?: string, previousDraft?: string) => void;
   onAbort?: () => void;
   onQueueRemove: (id: string) => void;
   onQueueEdit?: (id: string, newText: string) => void;

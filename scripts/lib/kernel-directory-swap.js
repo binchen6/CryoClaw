@@ -44,13 +44,18 @@ function recoverDirectorySwap(current, io = fs) {
   return result;
 }
 
-function swapDirectory(candidate, current, target, io = fs) {
+function swapDirectory(candidate, current, target, io = fs, {moveCandidate=false} = {}) {
   recoverDirectorySwap(current, io);
   if (versionOf(candidate, io) !== target) throw new Error("Physical gateway target version mismatch");
   const from = versionOf(current, io), ts = Date.now();
   const next = `${current}.new-${ts}`, old = `${current}.old-${ts}`, journalPath = current + ".swap.json", temp = journalPath + ".tmp";
   if (io.existsSync(next) || io.existsSync(old)) throw new Error("Physical gateway staging collision");
-  io.cpSync(candidate, next, { recursive: true, verbatimSymlinks: true });
+  let moved=false;
+  if(moveCandidate){
+    try{rename(candidate,next,io);moved=true;}
+    catch(error){if(error.code!=='EXDEV')throw error;}
+  }
+  if(!moved)io.cpSync(candidate, next, { recursive: true, verbatimSymlinks: true });
   if (versionOf(next, io) !== target) throw new Error("Copied physical gateway is incomplete");
   io.writeFileSync(temp, JSON.stringify({ from, to: target, ts }) + "\n", {flush:true});
   rename(temp, journalPath, io);

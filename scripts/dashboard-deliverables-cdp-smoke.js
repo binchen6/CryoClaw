@@ -12,6 +12,7 @@ const {arg,launch,waitForPageTarget,connect,waitForAppReady,waitForGateway,dismi
   let running=launch(staged.exe,port),ws,cdp,original;
   const cpuProfile=process.argv.includes("--profile") ? require('./lib/gateway-cpu-profile').profileGatewayChild(running.child.pid,out,{nativeNodeBin:path.join(path.dirname(staged.exe),'resources/resources/runtime/node.exe')}).catch(error=>({error:String(error)})) : null;
   const report={startupMs:null,startupRunsMs:[],startupSamples:[],checks:{},screenshots:[],error:null};
+  require('./lib/qa-fixtures').recordQaFixtures(out,report);
   const initialSample={windowMs:null,healthMs:null,readyMs:null,gracefulExit:false};report.startupSamples.push(initialSample);
   const initialHealth=waitForGateway('http://127.0.0.1:18789/healthz',240000,150).then(ok=>{if(ok)initialSample.healthMs=Date.now()-start;return ok;});
   const stop=async()=>{
@@ -36,9 +37,20 @@ const {arg,launch,waitForPageTarget,connect,waitForAppReady,waitForGateway,dismi
     initialSample.readyMs=report.startupMs;assert.ok(await initialHealth,'initial gateway health');
     report.startupRunsMs.push(report.startupMs);
     await dismissReleaseNotes(cdp);
+    report.recoveredFixtureCleanup=await require('./lib/qa-fixtures').cleanupOwnedQa((name,params)=>cdp.evaluate(`document.querySelector('openclaw-app').client.request(${JSON.stringify(name)},${JSON.stringify(params)})`),require('./lib/qa-fixtures').collectQaFixtureIds([path.resolve('out/feature-review'),path.resolve('out/dashboard-v2-review')]));
+    assert.deepEqual(report.recoveredFixtureCleanup.errors,[],'interrupted QA cleanup');
+    if(process.argv.includes('--dashboard-v2')){
+      const run=require('node:util').promisify(require('node:child_process').execFile);
+      for(const script of ['dashboard-v2-cdp-smoke.js','model-picker-cdp-smoke.js']){
+        const result=await run(process.execPath,[path.join(__dirname,script),'--port',String(port)],{windowsHide:true,timeout:240000,maxBuffer:4*1024*1024});
+        const detail=JSON.parse(result.stdout.trim());
+        (report.focusedUi??={})[script]=detail;
+        assert.ok(!detail.error&&Object.values(detail.checks).every(Boolean),script);
+      }
+    }
     original=await cdp.evaluate("document.querySelector('openclaw-app').sessionKey");
     report.checks.startupWithoutFalseErrors=await cdp.evaluate("!document.querySelector('openclaw-app').lastError && !document.querySelector('openclaw-app').progressCard.error");
-    const key="agent:main:dashboard-qa-"+Date.now();
+    const key="agent:main:dashboard-qa-"+Date.now();report.sessionKey=key;require('./lib/qa-fixtures').recordQaFixtures(out,report);
     const file=path.join(out,"交付报告 & sample.pdf"),other=path.join(out,"legacy-result.csv");
     fs.writeFileSync(file,"%PDF-1.4\n% QA fixture\n");fs.writeFileSync(other,"item,value\nverified,1\n");
     await cdp.evaluate(`document.querySelector('openclaw-app').client.request('sessions.create',{key:${JSON.stringify(key)},agentId:'main',displayName:'QA dashboard & deliverables'})`);
@@ -62,11 +74,11 @@ const {arg,launch,waitForPageTarget,connect,waitForAppReady,waitForGateway,dismi
     report.checks.cardActions=await cdp.evaluate("document.querySelectorAll('[data-file-copy]').length===2 && document.querySelectorAll('[data-file-save]').length===2 && document.querySelectorAll('[data-file-reveal]').length===2");
     await capture("file-cards-light");
     const rpc=(method,params={})=>cdp.evaluate('document.querySelector("openclaw-app").client.request('+JSON.stringify(method)+','+JSON.stringify(params)+')');
-    await rpc('cryoclaw.dashboards.mutate',{action:'seed'});
+    const reference=await rpc('cryoclaw.dashboards.mutate',{action:'create_example',title:'QA · reference example'});report.boardIds=[reference.board.id];require('./lib/qa-fixtures').recordQaFixtures(out,report);
     // Refresh only our untouched QA example cards when iterating an unpublished candidate.
-    if(process.argv.includes('--refresh-examples')){const starter=await import('../builtin-plugins/cryoclaw-dashboards/starter.mjs');const sample=(await rpc('cryoclaw.dashboards.list')).boards.find(b=>b.title==='Hello World');if(sample)for(const card of starter.starterCards)await rpc('cryoclaw.dashboards.mutate',{action:'publish_card',boardId:sample.id,...card});}
+    if(process.argv.includes('--refresh-examples')){const starter=await import('../builtin-plugins/cryoclaw-dashboards/starter.mjs');const sample=report.boardIds[0];if(sample)for(const card of starter.starterCards)await rpc('cryoclaw.dashboards.mutate',{action:'publish_card',boardId:sample,...card});}
     const created=await rpc('tools.invoke',{name:'cryoclaw_dashboard',sessionKey:key,args:{action:'create',title:'QA · 独立看板'}});assert.equal(created.ok,true,JSON.stringify(created.error));
-    const board=JSON.parse(created.output.content[0].text).board;report.dashboardId=board.id;
+    const board=JSON.parse(created.output.content[0].text).board;report.dashboardId=board.id;report.boardIds.push(board.id);require('./lib/qa-fixtures').recordQaFixtures(out,report);
     for(const [cardId,title] of [['qa-overview','项目概览'],['qa-detail','详细分析']]){
       const html='<!doctype html><html><head><meta charset="utf-8"><style>body{font:16px system-ui;padding:24px;background:#f8fafc;color:#111827}button{padding:12px}</style></head><body><h1>'+title+'</h1><p>模型生成的独立交互面板</p><button id="count">0</button><script>let count=0;cryoclawDashboard.getState().then(s=>{count=s?.count||0;document.getElementById("count").textContent=count});document.getElementById("count").onclick=async()=>{await cryoclawDashboard.setState({count:++count});document.getElementById("count").textContent=count};window.qaMarker="persistent-document";</script></body></html>';
       const published=await rpc('tools.invoke',{name:'cryoclaw_dashboard',sessionKey:key,args:{action:'publish_card',boardId:board.id,cardId,title,html}});assert.equal(published.ok,true,JSON.stringify(published.error));
@@ -97,7 +109,7 @@ const {arg,launch,waitForPageTarget,connect,waitForAppReady,waitForGateway,dismi
     await until('!document.querySelector("oc-dashboard-tasks").busy && document.querySelectorAll(".dashboard-task-links article").length===1','task setup completed');await capture('dashboard-task-link');
     await cdp.evaluate('document.querySelector(".dashboard-task-links article>div:last-child button:last-child").click()');await until('!document.querySelector("oc-dashboard-tasks").busy','task pause and unlink');
     assert.equal((await rpc('cron.list',{includeDisabled:true})).jobs.find(j=>j.id===linkedJobId).enabled,false);await rpc('cron.remove',{id:linkedJobId});await cdp.pressEscape();await until('!document.querySelector("oc-dashboard-tasks")','task dialog closes');report.checks.nativeTaskBinding=true;
-    await cdp.evaluate('document.querySelector("oc-dashboard").select('+JSON.stringify((await rpc('cryoclaw.dashboards.list')).boards.find(b=>b.title==='Hello World').id)+')');await sleep(1200);await capture('dashboard-reference-light');
+    await cdp.evaluate('document.querySelector("oc-dashboard").select('+JSON.stringify(report.boardIds[0])+')');await sleep(1200);await capture('dashboard-reference-light');
     await cdp.evaluate('document.querySelector("[data-card-id=todo-habits]").scrollIntoView({block:"center"})');await sleep(1000);await capture('dashboard-local-widgets');
     await cdp.evaluate('document.querySelector("[data-card-id=audio-lab]").scrollIntoView({block:"center"})');await sleep(1000);await capture('dashboard-media');
     assert.equal(await frameEvaluate('welcome','cryoclawDashboard.motion.active'),false,'offscreen module pauses motion');await cdp.evaluate('document.querySelector("[data-card-id=welcome]").scrollIntoView({block:"center"})');await sleep(400);assert.equal(await frameEvaluate('welcome','cryoclawDashboard.motion.active'),true,'visible module resumes motion');report.checks.visibilityMotion=true;
@@ -134,8 +146,19 @@ const {arg,launch,waitForPageTarget,connect,waitForAppReady,waitForGateway,dismi
     }
   }catch(error){report.error=String(error.stack||error);if(cdp){report.consoleErrors=cdp.consoleErrors;report.frameTree=await cdp.send('Page.getFrameTree').catch(()=>null);report.targets=await cdp.send('Target.getTargets').catch(()=>null);await capture("failure").catch(()=>{});}throw error;}
   finally{
-    if(cdp&&report.dashboardId)report.scheduledFixtureCleanup=await cdp.evaluate(`(async()=>{const client=document.querySelector('openclaw-app').client;const result=await client.request('cron.list',{includeDisabled:true});const jobs=(result.jobs??[]).filter(j=>j.payload?.kind==='agentTurn'&&j.payload.message?.includes('[cryoclaw-dashboard-target]\\nboardId='+${JSON.stringify(report.dashboardId)}+'\\n'));for(const job of jobs)await client.request('cron.remove',{id:job.id});return jobs.length;})()`).catch(()=>null);
-    if(cdp && original)await cdp.evaluate(`(()=>{document.querySelector('oc-rail').props.onOpenChat();document.querySelector('oc-session-panel')?.props.onSelectSession(${JSON.stringify(original)});})()`).catch(()=>{});
+    if(cdp){
+      const restore=original&&!require('./lib/qa-fixtures').isOwnedQaSession({key:original})?original:'agent:main:main';
+      await cdp.evaluate(`(()=>{document.querySelector('oc-rail').props.onOpenChat();document.querySelector('oc-session-panel')?.props.onSelectSession(${JSON.stringify(restore)});})()`).catch(()=>{});
+      report.fixtureCleanup=await require('./lib/qa-fixtures').cleanupOwnedQa((name,params)=>cdp.evaluate(`document.querySelector('openclaw-app').client.request(${JSON.stringify(name)},${JSON.stringify(params)})`),{boardIds:report.boardIds??(report.dashboardId?[report.dashboardId]:[]),jobIds:report.liveCron?.jobId?[report.liveCron.jobId]:[]}).catch(error=>({errors:[String(error)]}));
+      await cdp.evaluate(`(async()=>{const a=document.querySelector('openclaw-app');a.sessionsResult=await a.client.request('sessions.list',{includeGlobal:true,includeUnknown:true});a.requestUpdate();})()`).catch(()=>{});
+      if(report.fixtureCleanup.errors.length)process.exitCode=1;
+      try{
+        const owned=require('./lib/qa-fixtures').collectQaFixtureIds([path.resolve('out/feature-review'),path.resolve('out/dashboard-v2-review')]);
+        const verification=await cdp.evaluate(`(async()=>{const a=document.querySelector('openclaw-app');return {sessions:[...(await a.client.request('sessions.list',{includeGlobal:true,includeUnknown:true})).sessions,...(await a.client.request('sessions.list',{includeGlobal:true,includeUnknown:true,archived:true})).sessions],boards:(await a.client.request('cryoclaw.dashboards.list',{includeArchived:true})).boards,jobs:(await a.client.request('cron.list',{includeDisabled:true})).jobs};})()`);
+        report.remainingQa={sessions:verification.sessions.filter(r=>require('./lib/qa-fixtures').isOwnedQaSession(r,new Set(owned.jobIds))).map(r=>r.key),boards:verification.boards.filter(b=>owned.boardIds.includes(b.id)).map(b=>b.id),jobs:verification.jobs.filter(j=>owned.jobIds.includes(j.id)).map(j=>j.id)};
+        if(Object.values(report.remainingQa).some(items=>items.length))process.exitCode=1;
+      }catch(error){report.cleanupVerificationError=String(error);process.exitCode=1;}
+    }
     if(cpuProfile)report.cpuProfile=await cpuProfile;
     await stop();fs.writeFileSync(path.join(out,"report.json"),JSON.stringify(report,null,2));console.log(JSON.stringify({out,...report}));await staged.cleanup();
   }

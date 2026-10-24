@@ -11,4 +11,8 @@ Publish self-contained HTML (128 KiB/card). Use inline CSS/JS and semantic contr
 
 Read [runtime](references/runtime.md) only for state, data, media or app actions. Return a short confirmation; the native UI discovers cards automatically.
 
+For composition and motion, read [design](references/design.md) on demand.
+
 Modules may use CSS/SVG/Canvas animation. Respect `sdk.motion`; pause hidden JS loops. Scheduled updates use native cron + `link_task` and the same card ID; see runtime for lifecycle details.
+
+Prefer a few fluent, interruptible effects. `sdk.motion.frame(draw,{fps:30})` manages visibility/reduced motion. `create_example` creates a fresh example board without replacing user work. Use `sdk.compose(prompt)` to offer user-sent follow-up ideas.

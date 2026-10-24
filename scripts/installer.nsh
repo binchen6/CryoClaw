@@ -108,11 +108,55 @@
 ; ============================================================
 ; 安装钩子
 ; ============================================================
+!ifndef BUILD_UNINSTALLER
+Var /GLOBAL cryoclawInstallStarted
+Var /GLOBAL cryoclawPayloadDestination
+Var /GLOBAL cryoclawPayloadMode
+Var /GLOBAL cryoclawPayloadReadyMs
+Var /GLOBAL cryoclawPayloadFallback
+Var /GLOBAL cryoclawPayloadError
+!endif
+
+; The payload is already fully extracted and the old app removed. On the same
+; volume, rename the whole directory instead of Shell CopyFiles for 34k files.
+; RMDir here is deliberately NON-recursive: a nonempty destination, a lock or
+; another volume keeps the original copy/retry path. No user directory is erased.
+!macro customMoveExtractedPayload SOURCE DESTINATION
+  StrCpy $cryoclawPayloadDestination "${DESTINATION}"
+  StrCpy $cryoclawPayloadMode "copy"
+  StrCpy $cryoclawPayloadFallback "destination-not-empty-or-locked"
+  StrCpy $cryoclawPayloadError 0
+  System::Call 'kernel32::GetTickCount() i.r0'
+  IntOp $cryoclawPayloadReadyMs $0 - $cryoclawInstallStarted
+  SetOutPath "$TEMP"
+  IfFileExists "$cryoclawPayloadDestination\*.*" 0 cryoclaw_payload_rename
+  ClearErrors
+  RMDir "$cryoclawPayloadDestination"
+  IfErrors cryoclaw_payload_copy
+  cryoclaw_payload_rename:
+  StrCpy $cryoclawPayloadFallback "rename-failed"
+  ClearErrors
+  Rename "${SOURCE}" "$cryoclawPayloadDestination"
+  IfErrors cryoclaw_payload_copy
+  StrCpy $cryoclawPayloadMode "rename"
+  StrCpy $cryoclawPayloadFallback "none"
+  SetOutPath "$cryoclawPayloadDestination"
+  DetailPrint "Payload installed by directory rename"
+  Goto DoneExtract7za
+  cryoclaw_payload_copy:
+  System::Call 'kernel32::GetLastError() i.r0'
+  StrCpy $cryoclawPayloadError $0
+  DetailPrint "Directory rename unavailable; using safe copy fallback"
+  SetOutPath "$cryoclawPayloadDestination"
+  ClearErrors
+!macroend
 
 ; 杀进程后仅在确有进程被杀时等待句柄释放：
 ; taskkill 退出码 128 = 没有匹配进程（全新安装场景），跳过固定 Sleep 省 2s；
 ; 其他退出码（0=成功、1=部分失败/拒绝访问）一律等待，宁可慢不可踩文件锁。
 !macro customInit
+  System::Call 'kernel32::GetTickCount() i.r0'
+  StrCpy $cryoclawInstallStarted $0
   ; 安装前强制终止正在运行的 CryoClaw 进程（/IM 按镜像名匹配所有同名进程：
   ; 主进程/渲染/GPU/utility 全部同名 CryoClaw.exe，无需 /T）。
   ; ⚠ 绝不能加 /T（树杀）：electron-updater quitAndInstall 会把本安装器 spawn 为
@@ -190,6 +234,11 @@
 ; ============================================================
 
 !macro customInstall
+  System::Call 'kernel32::GetTickCount() i.r0'
+  IntOp $0 $0 - $cryoclawInstallStarted
+  FileOpen $1 "$INSTDIR\resources\install-performance.json" w
+  FileWrite $1 '{$\"payloadMode$\":$\"$cryoclawPayloadMode$\",$\"fallback$\":$\"$cryoclawPayloadFallback$\",$\"win32Error$\":$cryoclawPayloadError,$\"payloadReadyMs$\":$cryoclawPayloadReadyMs,$\"installMs$\":$0}'
+  FileClose $1
   ; 生成 CLI 专用二进制（SUBSYSTEM:CONSOLE）：复制主 exe 并补丁 PE header。
   ; -File 直跑（R64 审查 P3）：脚本自定位安装目录（$PSScriptRoot 上级），
   ; 旧版把 $INSTDIR 内插进 -Command 双引号串，自选安装目录含 $、反引号等

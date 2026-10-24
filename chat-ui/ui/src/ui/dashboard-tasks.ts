@@ -1,4 +1,12 @@
 import type {GatewayBrowserClient} from './gateway.ts';
+export async function pauseDashboardUpdates(client:GatewayBrowserClient,boardId:string,jobIds:string[],assertCurrent:()=>void=()=>{}){
+  const linked=new Set(jobIds);if(!linked.size)return 0;
+  const result=await client.request<{jobs:Array<{id:string;enabled:boolean;payload?:{kind?:string;message?:string}}>}>('cron.list',{includeDisabled:true});let paused=0;
+  for(const job of result.jobs??[]){
+    if(!linked.has(job.id)||!job.enabled||job.payload?.kind!=='agentTurn'||!job.payload.message?.includes(`[cryoclaw-dashboard-target]\nboardId=${boardId}\n`))continue;
+    assertCurrent();await client.request('cron.update',{id:job.id,patch:{enabled:false}});paused++;
+  }assertCurrent();return paused;
+}
 export function dashboardTaskMessage(boardId:string,cardId:string,instructions:string){
   if(!/^[\w-]{1,64}$/.test(boardId)||! /^[\w-]{1,64}$/.test(cardId))throw Error('Invalid dashboard target');
   return `${instructions.trim()}\n\n[cryoclaw-dashboard-target]\nboardId=${boardId}\ncardId=${cardId}\nUse cryoclaw_dashboard read_card to inspect this card, then publish_card with the SAME boardId/cardId. Preserve user layout by omitting layout. Do not create another board or card. Keep state and taskLinks. Show actual source timestamps and failures.\n[/cryoclaw-dashboard-target]`;

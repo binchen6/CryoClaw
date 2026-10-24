@@ -108,5 +108,7 @@ nsis:
   createDesktopShortcut: always
   createStartMenuShortcut: true
   runAfterFinish: true
+  # Keep app.asar as a byte-stable member for subsequent differential downloads.
+  differentialPackage: store-asar
   # differentialPackage 保持默认 true：生成 .exe.blockmap 供 electron-updater 差分下载
   artifactName: "CryoClaw-Setup-${version}-${arch}.${ext}"

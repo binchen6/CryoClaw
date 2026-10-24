@@ -159,5 +159,6 @@ export const KNOWN_THINKING_LEVELS = [
   "high",
   "xhigh",
   "max",
+  "ultra",
   "adaptive",
 ] as const;

@@ -8,6 +8,8 @@ import * as path from "path";
 import { app } from "electron";
 import { zip } from "fflate";
 import { resolveLogsDir, resolveUserConfigPath, resolveUserStateDir } from "./constants";
+import {redactLogSecrets} from "./log-redaction";
+import {readFileTail} from "./read-file-tail";
 
 // 单个日志文件最多纳入的字节数（取尾部，最近的日志最有诊断价值）
 const MAX_LOG_BYTES_PER_FILE = 2 * 1024 * 1024;
@@ -24,7 +26,7 @@ const SENSITIVE_KEY_PATTERN = /(apikey|api_key|token|secret|password|credential|
 const LOOPBACK_SECRET_PATTERN = /(127\.0\.0\.1:\d+\/)[A-Za-z0-9_-]{8,}(?=\/|$)/g;
 
 function redactStringValue(value: string): string {
-  return value.replace(LOOPBACK_SECRET_PATTERN, "$1***");
+  return redactLogSecrets(value).replace(LOOPBACK_SECRET_PATTERN, "$1***");
 }
 
 // 递归脱敏：敏感键的值替换为 "***"；数组/对象递归处理
@@ -68,13 +70,12 @@ async function readLogEntries(logsDir: string): Promise<Record<string, Uint8Arra
     const rel = path.relative(logsDir, full);
     if (rel.startsWith("..") || path.isAbsolute(rel)) continue;
     try {
-      const buf = await fs.promises.readFile(full);
       const budget = Math.min(MAX_LOG_BYTES_PER_FILE, MAX_LOG_BYTES_TOTAL - total);
-      const slice = buf.length > budget ? buf.subarray(buf.length - budget) : buf;
+      const slice = await readFileTail(full, budget);
       // 兜底脱敏：历史版本日志可能含未剥离 query 的入口 URL（?token=…），
       // 外发诊断包必须保证 token 不离开本机
       out[`logs/${name}`] = new Uint8Array(
-        Buffer.from(slice.toString("utf-8").replace(/([?&]token=)[^&#\s)"']*/g, "$1***"), "utf-8"),
+        Buffer.from(redactLogSecrets(slice.toString("utf-8")), "utf-8"),
       );
       total += slice.length;
     } catch {
@@ -130,10 +131,9 @@ export async function exportDiagnosticsBundle(targetZipPath: string): Promise<vo
     try {
       const p = path.join(stateDir, legacy);
       if (!files[`logs/${legacy}`]) {
-        const buf = await fs.promises.readFile(p);
-        const slice = buf.length > MAX_LOG_BYTES_PER_FILE ? buf.subarray(buf.length - MAX_LOG_BYTES_PER_FILE) : buf;
+        const slice = await readFileTail(p, MAX_LOG_BYTES_PER_FILE);
         files[`logs/legacy-${legacy}`] = new Uint8Array(
-          Buffer.from(slice.toString("utf-8").replace(/([?&]token=)[^&#\s)"']*/g, "$1***"), "utf-8"),
+          Buffer.from(redactLogSecrets(slice.toString("utf-8")), "utf-8"),
         );
       }
     } catch {}

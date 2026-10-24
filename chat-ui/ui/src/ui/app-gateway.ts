@@ -56,7 +56,7 @@ import {
   type BoardChangedPayload,
   type BoardHost,
 } from "./controllers/board.ts";
-import { loadCommands } from "./controllers/commands.ts";
+import { loadCommands, resetCommands } from "./controllers/commands.ts";
 import { GatewayBrowserClient } from "./gateway.ts";
 import {
   mapCloseCodeToPhase,
@@ -643,7 +643,8 @@ export function connectGateway(host: GatewayHost) {
       void loadWorktrees(host as unknown as OpenClawApp);
       // 预取 / 命令目录（供 compose 补全）。force：内核升级换装后 Gateway 重启会重新
       // hello，这里必须强刷——否则 5 分钟 TTL 内持续返回旧内核的命令目录。
-      void loadCommands(client, { force: true }).then(()=>{if(host.client===client && host.connected)(host as unknown as OpenClawApp).requestUpdate();});
+      resetCommands(client);
+      if(/^\s*[/／]/.test((host as unknown as OpenClawApp).chatMessage))void loadCommands(client).then(()=>{if(host.client===client && host.connected)(host as unknown as OpenClawApp).requestUpdate();});
       // 加载执行权限模式（聊天页三态）
       void (host as unknown as OpenClawApp).loadExecMode();
       // Skill prefetch is owned by schedulePagePreloads after visible chat reads.

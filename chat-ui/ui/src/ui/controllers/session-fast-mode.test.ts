@@ -1,0 +1,9 @@
+import test from 'node:test';import assert from 'node:assert/strict';import {sessionFastMode,setSessionFastMode} from './session-fast-mode.ts';import type {GatewayBrowserClient} from '../gateway.ts';import type {SessionsListResult} from '../types.ts';
+test('fast mode respects kernel effective inheritance and preserves auto/ultrafast',()=>{assert.equal(sessionFastMode({key:'a',effectiveFastMode:'auto'}),'auto');assert.equal(sessionFastMode({key:'a',fastMode:'ultrafast'}),'ultrafast');assert.equal(sessionFastMode({key:'a',fastMode:true,effectiveFastMode:false}),false);assert.equal(sessionFastMode(),false);});
+test('fast toggle persists to the captured session and never changes the newly selected session',async()=>{
+ let done!:()=>void;const calls:unknown[]=[];const client={request:async(name:string,args:unknown)=>{calls.push({name,args});await new Promise<void>(r=>done=r);}} as unknown as GatewayBrowserClient;
+ const host={client,connected:true,sessionKey:'first',sessionsResult:{sessions:[{key:'first'},{key:'second',fastMode:false}]} as SessionsListResult,lastError:null as string|null,requestUpdate(){}};
+ const pending=setSessionFastMode(host,true);host.sessionKey='second';done();await pending;
+ assert.deepEqual(calls,[{name:'sessions.patch',args:{key:'first',fastMode:true}}]);assert.equal(host.sessionsResult.sessions[0].fastMode,true);assert.equal(host.sessionsResult.sessions[1].fastMode,false);
+});
+test('failed fast toggle leaves the current mode intact',async()=>{const host={client:{request:async()=>{throw Error('rejected');}} as unknown as GatewayBrowserClient,connected:true,sessionKey:'a',sessionsResult:{sessions:[{key:'a',fastMode:false}]} as SessionsListResult,lastError:null as string|null,requestUpdate(){}};await setSessionFastMode(host,true);assert.equal(host.sessionsResult.sessions[0].fastMode,false);assert.match(host.lastError??'',/rejected/);});

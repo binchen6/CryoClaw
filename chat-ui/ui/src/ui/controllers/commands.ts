@@ -15,6 +15,10 @@ let inflight: Promise<CommandEntry[] | null> | null = null;
 let cacheClient:GatewayBrowserClient|null=null;
 let epoch=0;
 
+export function resetCommands(client:GatewayBrowserClient):void {
+  cacheClient=client;epoch++;cache=null;inflight=null;lastFailureAt=0;
+}
+
 export function getCachedCommands(): CommandEntry[] | null {
   if (cache && Date.now() - cache.at < COMMANDS_CACHE_TTL_MS) {
     return cache.commands;
@@ -26,7 +30,7 @@ export async function loadCommands(
   client: GatewayBrowserClient,
   opts?: { force?: boolean },
 ): Promise<CommandEntry[] | null> {
-  if(cacheClient!==client){cacheClient=client;epoch++;cache=null;inflight=null;lastFailureAt=0;}
+  if(cacheClient!==client)resetCommands(client);
   const cached = getCachedCommands();
   if (cached && !opts?.force) {
     return cached;

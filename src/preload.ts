@@ -263,6 +263,7 @@ contextBridge.exposeInMainWorld("cryoclaw", {
   revealPath: (path: string) => ipcRenderer.invoke("app:reveal-path", path),
   fileCardInfo: (path: string) => ipcRenderer.invoke("app:file-card-info", path),
   pinDashboardCard: (params: unknown) => ipcRenderer.invoke('app:pin-dashboard-card',params),
+  closeDashboardBoard: (boardId: string) => ipcRenderer.invoke('app:close-dashboard-board',boardId),
   saveFileCopy: (path: string) => ipcRenderer.invoke("app:save-file-copy", path),
 
   // 文件选择

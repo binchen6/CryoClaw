@@ -267,7 +267,8 @@ function renderActiveView(state: AppViewState, view: CryoClawViewId) {
   switch (view) {
     case "dashboard":
       return html`<oc-dashboard .client=${state.client} .connected=${state.connected}
-        .settings=${state.settings} .onAskModel=${(prompt:string)=>{state.chatMessage=prompt;setCryoClawView(state,'chat');}} .onOpenTasks=${()=>openTasksView(state,'cron')}></oc-dashboard>`;
+        .settings=${state.settings} .composeProps=${buildChatProps(state)} .onOpenChat=${()=>setCryoClawView(state,'chat')}
+        .onAskModel=${(prompt:string)=>{state.chatMessage=prompt;state.requestUpdate();}} .onOpenTasks=${()=>openTasksView(state,'cron')}></oc-dashboard>`;
     case "setup":
       return renderSetupView(state);
     case "settings":

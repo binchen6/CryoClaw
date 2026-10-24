@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { filterCommands, resolveCommandDescription,loadCommands } from "./commands.ts";
+import { filterCommands, resolveCommandDescription,loadCommands, resetCommands, getCachedCommands } from "./commands.ts";
 import type {GatewayBrowserClient} from "../gateway.ts";
 import { setLocale } from "../i18n.ts";
 import type { CommandEntry } from "../types.ts";
@@ -8,6 +8,13 @@ import type { CommandEntry } from "../types.ts";
 function cmd(name: string, overrides: Partial<CommandEntry> = {}): CommandEntry {
   return { name, description: `English desc for ${name}`, acceptsArgs: true, ...overrides };
 }
+
+test('reconnect invalidates commands without querying the catalog and rejects previous replies',async()=>{
+  let finish!:(value:unknown)=>void;
+  const client={request:()=>new Promise(resolve=>finish=resolve)} as unknown as GatewayBrowserClient;
+  const pending=loadCommands(client);resetCommands(client);finish({commands:[cmd('old')]});
+  assert.equal(await pending,null);assert.equal(getCachedCommands(),null);
+});
 
 test('command catalog is scoped to its connection and late responses cannot replace the new catalog',async()=>{
   let finish!:(value:unknown)=>void;

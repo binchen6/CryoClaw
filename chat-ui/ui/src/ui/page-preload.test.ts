@@ -3,6 +3,18 @@ import assert from "node:assert/strict";
 import type {AppViewState} from "./app-view-state.ts";
 import {preloadPage,stopPagePreloads,schedulePagePreloads} from "./page-preload.ts";
 
+test("connecting never scans unopened pages even after visible reads finish",async t=>{
+  const previous=globalThis.document,calls:string[]=[];
+  const host={connected:true,chatLoading:false,sessionsLoading:false,progressCard:{loading:false},client:{request:async(method:string)=>{calls.push(method);return {};}}} as unknown as AppViewState;
+  Object.assign(globalThis,{document:{hidden:false}});t.mock.timers.enable({apis:['setTimeout']});
+  try {
+    schedulePagePreloads(host);t.mock.timers.tick(60000);
+    for(let n=0;n<30;n++)await Promise.resolve();
+    assert.equal(calls.length,0,'background discovery must wait for navigation intent');
+    await preloadPage(host,'settings');assert.ok(calls.includes('config.get'));
+  }finally{stopPagePreloads(host);t.mock.timers.reset();Object.assign(globalThis,{document:previous});}
+});
+
 test("background page reads wait for visible startup data and are revoked on disconnect",async t=>{
   const previous=globalThis.document,calls:string[]=[];
   const host={connected:true,chatLoading:true,sessionsLoading:true,progressCard:{loading:false},client:{request:async(method:string)=>{calls.push(method);return {};}}} as unknown as AppViewState;

@@ -19,6 +19,7 @@
 @import "./styles/panels.css";
 @import "./styles/skills.css";
 @import "./styles/compose.css";
+@import "./styles/model-picker.css";
 @import "./styles/workspace.css";
 @import "./styles/cron.css";
 @import "./styles/chat-misc.css";

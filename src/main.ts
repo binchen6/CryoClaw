@@ -5,6 +5,7 @@ import { installGatewayOriginRewrite } from "./gateway-origin";
 import { assertLocalFilePath, readFileCardInfo, resolveLocalRegularFile } from "./file-card";
 import { ensureBundledDeliverablesEnabled } from "./bundled-deliverables";
 import {registerDashboardPin} from './dashboard-pin';
+import {redactLogSecrets} from './log-redaction';
 // CryoClaw 面向中文用户：强制 Chromium locale 为 zh-CN，
 // 使渲染层 navigator.language 返回 zh，chat-ui i18n 默认显示中文。
 // 必须在 app ready 之前调用。
@@ -89,7 +90,7 @@ function isNoisyRendererConsoleMessage(message: string): boolean {
 
 // 日志脱敏：渲染层 console 转发可能携带含 token 的文档 URL（如 CSP 警告的 sourceId）
 function sanitizeLogText(text: string): string {
-  return text.replace(/([?&]token=)[^&#\s)]*/g, "$1***");
+  return redactLogSecrets(text);
 }
 
 function attachRendererDebugHandlers(label: string, webContents: Electron.WebContents): void {
@@ -424,11 +425,13 @@ function syncKimiSearchEnv(): void {
 
 // 启动 Gateway（最多尝试 3 次，覆盖 Windows 冷启动慢导致的前两次超时）
 async function ensureGatewayRunning(source: string): Promise<boolean> {
+  if (isQuitting) return false;
   try { ensureBundledDeliverablesEnabled(); } catch(error) { log.warn(`[deliverables] Plugin setup failed: ${String(error)}`); }
   migrateLegacyFeishuConfigForGatewayStart();
   await syncGatewayRuntimeConfigFromDisk();
 
   for (let attempt = 1; attempt <= MAX_GATEWAY_START_ATTEMPTS; attempt++) {
+    if (isQuitting) return false;
     // try/catch：start/restart 内部同步 throw（如 clawhub wrapper 写盘被杀软锁定）
     // 不应打断重试链，也不应让 whenReady 启动链整体 reject（跳过失败弹窗与恢复流程）
     // supervised: true（P0-2）——本函数自身就是带重试+失败上报的监督链，starting 阶段
@@ -501,6 +504,7 @@ async function startGatewayAndShowMain(source: string, opts: StartMainOptions = 
   reconcilePluginsAllowWithEnabled();
 
   const running = await ensureGatewayRunning(source);
+  if (isQuitting) return false;
   if (!running) {
     if (reportFailure) {
       const action = reportGatewayStartFailure(source);
@@ -552,7 +556,13 @@ async function syncGatewayRuntimeConfigFromDisk(): Promise<void> {
 function healMemoryVectorExtensionPath(): void {
   try {
     const root = resolveGatewayRoot();
-    if (!root.endsWith(".asar")) return;
+    if (!root.endsWith(".asar")) {
+      const config=readUserConfig();
+      if(require('./memory-vector-path').clearMissingLegacyVectorPath(config,root)){
+        writeUserConfig(config);log.info('[memory] Removed missing legacy ASAR vector path; native platform discovery will resolve the bundled extension.');
+      }
+      return;
+    }
     // 根级 memory.search 仅内核 >=2026.8 接受（strict schema），旧内核写入会被拒绝
     const { readKernelVersionParts } = require("./openclaw-config-migration");
     const kernel = readKernelVersionParts();
@@ -1254,22 +1264,7 @@ void detectGitCached();
 // ── 退出 ──
 
 async function quit(): Promise<void> {
-  isQuitting = true;
-  if (crashRestartTimer) {
-    clearTimeout(crashRestartTimer);
-    crashRestartTimer = null;
-  }
-  cancelPendingGatewayRestart("app-quit");
-  runQuitTeardown();
-  await stopAuthProxy();
-  await stopGatewayControlServer();
-  windowManager.destroy();
-  // P0-1：等游离的 start/restart 操作落定再停 gateway——否则 doStart 预启动窗口
-  // 与 stop() 竞争，退出路径可能在 stop() 返回后 spawn 出孤儿 gateway 占端口
-  // （inflightGatewayOp 已 .catch 包裹必定 resolve，await 不会 reject）
-  await inflightGatewayOp;
-  await gateway.stop();
-  tray.destroy();
+  // All exit sources share before-quit, including immediate window closure.
   app.quit();
 }
 
@@ -1642,8 +1637,12 @@ function runQuitTeardown(): void {
 // 二段退出标志（R91 三审）：before-quit 拦截首轮以等 gateway 停稳后再清理，
 // preventDefault 后主动 app.quit() 会再触发一次 before-quit——该标志放行第二轮
 let quitCleanupProceeding = false;
+let quitCleanupComplete = false;
 
 app.on("before-quit", (event) => {
+  if (quitCleanupComplete) return;
+  event.preventDefault();
+  if (quitCleanupProceeding) return;
   // 退出序列开始：禁止崩溃自动重启再拉起网关（R71），并取消待执行的崩溃重启定时器
   isQuitting = true;
   if (crashRestartTimer) {
@@ -1657,6 +1656,7 @@ app.on("before-quit", (event) => {
   // 先放行窗口关闭，避免 close handler 拦截 WM_CLOSE 导致 NSIS 安装器报"无法关闭"
   windowManager.prepareForAppQuit();
   windowManager.destroy();
+  tray.destroy();
   stopAuthProxy();
   stopGatewayControlServer().catch(() => {});
   // R91 三审：Electron 不会等 before-quit 里的未决 Promise——直接挂异步清理
@@ -1667,9 +1667,7 @@ app.on("before-quit", (event) => {
     event.preventDefault();
     // P0-1：同 quit()，先等在途 start/restart（inflightGatewayOp）落定再停 gateway，
     // 避免预启动窗口与 stop() 竞争在退出路径留下孤儿进程
-    inflightGatewayOp
-      .catch(() => {})
-      .then(() => gateway.stop())
+    Promise.allSettled([gateway.shutdown(), inflightGatewayOp])
       .catch(() => {})
       .finally(() => {
         try {
@@ -1677,7 +1675,7 @@ app.on("before-quit", (event) => {
           runQuitCleanup();
         } catch {}
         // diagLog 已改 WriteStream 异步缓冲，退出前 flush 落盘（带超时，不阻塞退出）
-        closeDiagLogStream().catch(() => {}).finally(() => app.quit());
+        closeDiagLogStream().catch(() => {}).finally(() => { quitCleanupComplete = true; app.quit(); });
       });
   }
 });

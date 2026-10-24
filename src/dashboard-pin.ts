@@ -13,10 +13,17 @@ export function registerDashboardPin(getPort:()=>number){
   ipcMain.handle('app:pin-dashboard-card',async(event,value:unknown)=>{
     if(!assertTrustedIpcSender(event,'app:pin-dashboard-card'))throw Error('IPC sender not trusted');const p=validateDashboardPin(value,getPort()),existing=windows.get(p.id);
     if(existing&&!existing.isDestroyed()){await existing.loadURL(p.url);existing.show();existing.focus();return {pinned:true};}
+    if(windows.size>=8)throw Error('最多同时打开 8 个桌面看板卡片，请先关闭一个。 / Close a pinned card before opening more (limit: 8).');
     const win=new BrowserWindow({title:p.title,width:p.width,height:p.height,minWidth:300,minHeight:220,alwaysOnTop:true,autoHideMenuBar:true,backgroundColor:'#10191f',webPreferences:{sandbox:true,contextIsolation:true,nodeIntegration:false,webSecurity:true}});
     windows.set(p.id,win);win.on('closed',()=>windows.delete(p.id));
     win.webContents.on('will-navigate',(e,url)=>{if(url!==p.url)e.preventDefault();});win.webContents.on('will-redirect',e=>e.preventDefault());
     let lastOpen=0;win.webContents.setWindowOpenHandler(({url})=>{try{const target=new URL(url);if(target.protocol==='https:'&&!target.username&&!target.password&&win.isFocused()&&Date.now()-lastOpen>1000){lastOpen=Date.now();void win.webContents.executeJavaScriptInIsolatedWorld(999,[{code:'navigator.userActivation.isActive'}]).then(active=>{if(active&&!win.isDestroyed()&&win.isFocused())void shell.openExternal(target.href);}).catch(()=>{});}}catch{}return {action:'deny'};});
     try{await win.loadURL(p.url);return {pinned:true};}catch(error){win.destroy();throw error;}
+  });
+  ipcMain.handle('app:close-dashboard-board',async(event,value:unknown)=>{
+    if(!assertTrustedIpcSender(event,'app:close-dashboard-board'))throw Error('IPC sender not trusted');
+    if(typeof value!=='string'||!/^[-\w]{1,64}$/.test(value))throw Error('Invalid dashboard ID');
+    let closed=0;for(const [id,win]of windows){if(!id.startsWith(value+'/'))continue;closed++;if(!win.isDestroyed())win.close();}
+    return {closed};
   });
 }

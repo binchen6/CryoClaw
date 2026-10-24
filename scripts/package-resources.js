@@ -1157,7 +1157,8 @@ function installDependencies(opts, gatewayDir) {
     envKey: "CRYOCLAW_CLAWHUB_PACKAGE_SOURCE",
     pkgJsonKey: "clawhub",
   });
-  const targetStamp = `${opts.platform}-${opts.arch}|${sourceInfo.stampSource}|${clawhubInfo.stampSource}`;
+  const dependencyPolicy = require('./lib/gateway-dependency-policy');
+  const targetStamp = `${opts.platform}-${opts.arch}|${sourceInfo.stampSource}|${clawhubInfo.stampSource}|${dependencyPolicy.stamp}`;
 
   // 增量检测：stamp 匹配 + entry.js 存在 → 跳过安装
   const installedEntry = path.join(gatewayDir, "node_modules", "openclaw", "dist", "entry.js");
@@ -1165,6 +1166,8 @@ function installDependencies(opts, gatewayDir) {
   if (fs.existsSync(installedEntry) && cachedStamp === targetStamp) {
     log(`gateway 依赖未变化且平台/来源匹配 (${targetStamp})，跳过 npm install`);
     const nmDir = path.join(gatewayDir, "node_modules");
+    dependencyPolicy.repairBundledDependencies(gatewayDir);
+    dependencyPolicy.assertGatewayDependencyPolicy(gatewayDir);
     // 即使复用缓存依赖，也要执行最新裁剪规则，避免历史产物遗留冗余文件
     pruneNodeModules(nmDir, opts.platform);
     pruneNonTargetPrebuilds(nmDir, opts.platform, opts.arch);
@@ -1198,7 +1201,9 @@ function installDependencies(opts, gatewayDir) {
     dependencies: {
       openclaw: source,
       clawhub: clawhubInfo.source,
+      ...dependencyPolicy.dependencies,
     },
+    overrides: dependencyPolicy.overrides,
   };
   fs.writeFileSync(path.join(gatewayDir, "package.json"), JSON.stringify(pkg, null, 2));
 
@@ -1241,6 +1246,8 @@ function installDependencies(opts, gatewayDir) {
   });
 
   log("依赖安装完成，开始裁剪 node_modules...");
+  dependencyPolicy.repairBundledDependencies(gatewayDir);
+  dependencyPolicy.assertGatewayDependencyPolicy(gatewayDir);
   const nmDir = path.join(gatewayDir, "node_modules");
   pruneNodeModules(nmDir, opts.platform);
   pruneNonTargetPrebuilds(nmDir, opts.platform, opts.arch);
@@ -3491,6 +3498,7 @@ function vendorKernelUpdater(targetBase) {
     path.join(updaterDir, "kernel-config-snapshot.js")
   );
   fs.copyFileSync(path.join(ROOT, "scripts/lib/kernel-directory-swap.js"), path.join(updaterDir, "kernel-directory-swap.js"));
+  fs.copyFileSync(path.join(ROOT, "scripts/lib/gateway-dependency-policy.js"), path.join(updaterDir, "gateway-dependency-policy.js"));
 
   // @electron/asar 版本与仓库 node_modules 对齐，避免构建期/运行期行为漂移
   const asarPkg = JSON.parse(
@@ -3498,7 +3506,12 @@ function vendorKernelUpdater(targetBase) {
   );
   // asarPkg.version 读自本仓库 node_modules 的 package.json（受控版本串）
   // env 走 buildNpmEnv 统一注入镜像 registry（F15：本调用点此前裸奔 npmjs.org）
-  execNpmSync(["install", `--prefix=${updaterDir}`, `@electron/asar@${asarPkg.version}`, "--omit=dev", "--no-audit", "--no-fund"], { cwd: ROOT, env: buildNpmEnv(path.basename(targetBase)) });
+  const updaterManifest = path.join(updaterDir, 'package.json');
+  const updaterPackage = fs.existsSync(updaterManifest) ? JSON.parse(fs.readFileSync(updaterManifest,'utf8')) : {};
+  updaterPackage.overrides = {...updaterPackage.overrides, 'brace-expansion@5':'5.0.12'};
+  const semverVersion = JSON.parse(fs.readFileSync(path.join(ROOT, "node_modules", "semver", "package.json"), "utf-8")).version;
+  fs.writeFileSync(updaterManifest,JSON.stringify(updaterPackage,null,2)+'\n');
+  execNpmSync(["install", `--prefix=${updaterDir}`, `@electron/asar@${asarPkg.version}`, `semver@${semverVersion}`, "--omit=dev", "--no-audit", "--no-fund"], { cwd: ROOT, env: buildNpmEnv(path.basename(targetBase)) });
 
   log(`已 vendor 内核升级器 (@electron/asar@${asarPkg.version}) → updater/`);
 }
@@ -3568,6 +3581,13 @@ async function main() {
   // 护栏：所有插件入口必须是 native——必须在 ASAR 打包前跑，因为 ASAR 会删散文件
   log("Step 2.6: 校验插件入口形态");
   assertPluginsNativeEntry(targetPaths);
+  const platformPrune=require('./lib/prune-platform-packages').prunePlatformPackages(targetPaths.gatewayDir,opts.platform,opts.arch);
+  log(`已按 npm os/cpu 声明移除 ${platformPrune.packages} 个非目标平台包（保留当前平台和通用包）`);
+  const npmPolicy = require('./lib/runtime-npm-policy');
+  const npmArchive = path.join(ROOT, '.cache', `npm-${npmPolicy.version}.tgz`);
+  if (!fs.existsSync(npmArchive)) execNpmSync(['pack', `npm@${npmPolicy.version}`, '--pack-destination', path.dirname(npmArchive)], {cwd:ROOT,env:buildNpmEnv(getTargetId(opts.platform,opts.arch))});
+  npmPolicy.refreshRuntimeNpm(targetPaths.runtimeDir,opts.platform,targetPaths.gatewayDir,npmArchive);
+  log(`运行时 npm 已固定 ${npmPolicy.version}，内置 IP parser 10.7.4`);
 
   console.log();
 

@@ -1,4 +1,4 @@
-// Requires --live: invokes the configured provider and retains a clearly named QA session.
+// Requires --live: invokes the configured provider and removes its dedicated QA session afterwards.
 const path=require('node:path');
 const assert=require('node:assert/strict');
 const {randomUUID}=require('node:crypto');
@@ -8,13 +8,13 @@ const {launch,quitLaunchedApp,waitForPageTarget,connect,waitForAppReady,dismissR
   const version=require('../package.json').version;
   const exe=arg(process.argv,'--exe',path.resolve('out/win32-x64/win-unpacked/CryoClaw.exe'));
   const attached=process.argv.includes('--attach-port'),port=Number(arg(process.argv,'--attach-port','9243'));
-  const running=attached?null:launch(exe,port);let ws,cdp;
+  const running=attached?null:launch(exe,port);let ws,cdp,qaKey;
   try{
     const page=await waitForPageTarget(port);assert.ok(page,'installed app page');
     const conn=await connect(page);ws=conn.ws;cdp=conn.cdp;
     assert.ok(await waitForAppReady(cdp,{timeoutMs:210000}),'gateway connection');
     await dismissReleaseNotes(cdp);
-    const key='agent:main:release-smoke-'+Date.now();
+    const key='agent:main:release-smoke-'+Date.now();qaKey=key;
     const nonce='CRYOCLAW_ECHO_'+randomUUID();
     const prompt='这是通信回声检查，不对软件质量作判断。请只逐字回复下一行，不添加解释、不调用工具：\n'+nonce;
     let terminalError=null;
@@ -35,5 +35,5 @@ const {launch,quitLaunchedApp,waitForPageTarget,connect,waitForAppReady,dismissR
     assert.ok(reply,'real provider reply persisted in chat history');
     assert.equal(cdp.exceptions.length,0);
     console.log(JSON.stringify({targetVersion:version,realMessageReply:true,uniqueNonceEchoPersisted:true,rendererExceptions:0}));
-  }finally{if(running)await quitLaunchedApp(running,cdp);ws?.close();}
+  }finally{if(cdp&&qaKey)await cdp.evaluate(`document.querySelector('openclaw-app').client.request('sessions.delete',{key:${JSON.stringify(qaKey)},agentId:'main',deleteTranscript:true})`).catch(error=>{console.error('QA cleanup failed:',error.message);process.exitCode=1;});if(running)await quitLaunchedApp(running,cdp);ws?.close();}
 })().catch(error=>{console.error(error);process.exitCode=1;});

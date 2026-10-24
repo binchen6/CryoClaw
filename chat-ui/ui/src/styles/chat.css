@@ -3309,6 +3309,17 @@ oc-model-quota { display: inline-flex; align-items: center; }
 .chat-attachment { interpolate-size: allow-keywords; transition: width var(--duration-normal) var(--ease-standard),height var(--duration-normal) var(--ease-standard),background var(--duration-fast) var(--ease-standard); }
 .chat-attachment__img { animation: rise var(--duration-fast) var(--ease-standard); }
 .chat-attachment:focus-within .chat-attachment__remove { opacity: 1; }
+.chat-attachments{gap:10px;padding:10px;border:0;background:transparent;border-radius:16px;animation:chat-attachments-in var(--duration-normal) var(--ease-standard)}
+@keyframes chat-attachments-in{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:none}}
+.chat-attachment{width:88px;height:88px;border-radius:12px;box-shadow:var(--shadow-sm);transition:transform var(--duration-fast),box-shadow var(--duration-fast)}
+.chat-attachment:hover{transform:translateY(-2px);box-shadow:var(--shadow-md)}.chat-attachment__img{object-fit:cover;background:var(--bg-secondary)}
+.chat-attachment--file{width:min(240px,100%);min-height:54px;padding:10px 34px 10px 12px;overflow:visible}
+.chat-attachment--file .chat-attachment__file-icon{width:32px;height:32px;justify-content:center;border-radius:9px;background:var(--accent-subtle);color:var(--accent)}
+.chat-attachment__remove{top:-6px;right:-6px;width:22px;height:22px;background:var(--text);color:var(--bg);box-shadow:var(--shadow-sm);opacity:0;transform:scale(.85);transition:opacity var(--duration-fast),transform var(--duration-fast),background var(--duration-fast)}
+.chat-attachment:hover .chat-attachment__remove,.chat-attachment:focus-within .chat-attachment__remove{opacity:1;transform:scale(1)}
+.chat-compose__drop-hint{border-radius:20px;background:color-mix(in srgb,var(--bg-elevated) 88%,transparent);backdrop-filter:blur(18px)}
+@media(hover:none){.chat-attachment__remove{opacity:1;transform:scale(1)}}
+@media(prefers-reduced-motion:reduce){.chat-attachments{animation:none}.chat-attachment,.chat-attachment__remove{transition:none}.chat-attachment:hover{transform:none}}
 
 /* Reserve an action row below the body so hover never covers content or shifts it. */
 .chat-message-actions { display: flex; align-items: flex-start; flex-wrap: wrap; gap: var(--spacer-6); height: 4px; position: relative; }

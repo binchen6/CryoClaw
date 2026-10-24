@@ -141,6 +141,53 @@ afterAll(() => {
 });
 
 describe("预启动步骤并行化", () => {
+  test("退出在预启动结束后直接收尾，不再启动网关且不接受迟到启动", async () => {
+    const {ensureAgentDbSchemaReady}=await import('./agent-db-migration');
+    let release!:()=>void;
+    vi.mocked(ensureAgentDbSchemaReady).mockImplementation(()=>new Promise(resolve=>{release=()=>resolve(null);}));
+    const {GatewayProcess}=await freshModule();const gateway=new GatewayProcess({token:'t'});
+    const starting=gateway.start();await vi.waitFor(()=>expect(release).toBeTypeOf('function'));
+    const stopping=gateway.shutdown();let finished=false;void stopping.then(()=>{finished=true;});
+    await new Promise(resolve=>setTimeout(resolve,20));expect(finished).toBe(false);
+    release();await Promise.all([starting,stopping]);await gateway.start();
+    expect(h.spawnTimes).toHaveLength(0);expect(gateway.getState()).toBe('stopped');
+  });
+  test("重复停止共享同一清理，不在六秒时强杀正常退出", async () => {
+    const {GatewayProcess}=await freshModule();const gateway=new GatewayProcess({token:'t'});await gateway.start();
+    const child=h.latestChild;child.connected=true;child.send=vi.fn((_m:unknown,cb:(error:null)=>void)=>{cb(null);return true;});
+    vi.useFakeTimers();
+    try {
+      const first=gateway.stop(),second=gateway.stop();
+      await vi.advanceTimersByTimeAsync(6000);
+      expect(gateway.getState()).toBe('stopping');expect(child.send).toHaveBeenCalledTimes(1);
+      child.exitCode=0;child.emit('exit',0,null);await vi.advanceTimersByTimeAsync(100);
+      await Promise.all([first,second]);expect(gateway.getState()).toBe('stopped');
+    } finally {vi.useRealTimers();}
+  });
+  test("子进程退出立即落定停止，不追加 100ms 轮询", async () => {
+    const {GatewayProcess}=await freshModule();const gateway=new GatewayProcess({token:'t'});await gateway.start();
+    const child=h.latestChild;child.connected=true;child.send=vi.fn((_m:unknown,cb:(error:null)=>void)=>{cb(null);return true;});
+    vi.useFakeTimers();
+    try {
+      let finished=false;const stopping=gateway.stop().then(()=>{finished=true;});
+      await vi.advanceTimersByTimeAsync(99);expect(finished).toBe(false);
+      child.exitCode=0;child.emit('exit',0,null);await stopping;
+      expect(finished).toBe(true);expect(gateway.getState()).toBe('stopped');
+    } finally {vi.useRealTimers();}
+  });
+  test("日志写入失败不会被误报为启动超时或触发无效重试",async()=>{
+    h.spawnServesHealth=false;const {GatewayProcess}=await freshModule();const gateway=new GatewayProcess({token:'t'});
+    const starting=gateway.start({supervised:true});await vi.waitFor(()=>expect(h.latestChild).not.toBeNull());
+    h.latestChild.stderr.emit('data',Buffer.from('[openclaw] log file append failed; records dropped; check that the path is a writable regular file'));
+    h.latestChild.exitCode=1;h.latestChild.emit('exit',1,null);await starting;
+    expect(gateway.getStartupFailure()).toMatchObject({retryable:false});expect(gateway.getStartupFailure()?.message).toContain('日志文件无法写入');
+  });
+  test("健康检查前退出保留真实退出代码而不伪装超时",async()=>{
+    h.spawnServesHealth=false;const {GatewayProcess}=await freshModule();const gateway=new GatewayProcess({token:'t'});
+    const starting=gateway.start({supervised:true});await vi.waitFor(()=>expect(h.latestChild).not.toBeNull());
+    h.latestChild.exitCode=7;h.latestChild.emit('exit',7,null);await starting;
+    expect(gateway.getStartupFailure()?.message).toContain('code=7');expect(gateway.getStartupFailure()?.retryable).toBe(true);
+  });
   test("native Node no longer inherits the Electron ASAR deprecation workaround",async()=>{
     h.nativeRuntime=true;const {GatewayProcess}=await freshModule();const gateway=new GatewayProcess({token:"t"});await gateway.start();
     const {spawn}=await import("child_process");expect(vi.mocked(spawn).mock.calls.at(-1)?.[1]).not.toContain("--no-deprecation");await gateway.stop();

@@ -1,5 +1,16 @@
 const test = require("node:test"), assert = require("node:assert/strict"), fs = require("node:fs"), os = require("node:os"), path = require("node:path");
 const {versionOf, swapDirectory, recoverDirectorySwap} = require("./lib/kernel-directory-swap");
+test('update consumes its own same-volume staging tree without a second full copy',t=>{
+  const {tree}=fixture(t),current=tree('gateway','2026.10.5'),next=tree('candidate','2026.10.6');
+  const io={...fs,cpSync(){throw Error('redundant copy');}};
+  swapDirectory(next,current,'2026.10.6',io,{moveCandidate:true});
+  assert.equal(versionOf(current),'2026.10.6');assert.equal(fs.existsSync(next),false);
+});
+test('cross-volume staging falls back to copying while retaining the source',t=>{
+  const {tree}=fixture(t),current=tree('gateway','2026.10.5'),next=tree('candidate','2026.10.6');let copies=0;
+  const io={...fs,cpSync(...a){copies++;return fs.cpSync(...a);},renameSync(a,b){if(a===next){const error=Error('different volume');error.code='EXDEV';throw error;}return fs.renameSync(a,b);}};
+  swapDirectory(next,current,'2026.10.6',io,{moveCandidate:true});assert.equal(copies,1);assert.equal(versionOf(next),'2026.10.6');
+});
 function fixture(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "cryoclaw-directory-swap-"));
   t.after(() => fs.rmSync(root, { recursive:true, force:true }));

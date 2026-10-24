@@ -61,6 +61,7 @@ for (const native of [false, true]) test(`Windows afterPack preserves a complete
 
   fs.mkdirSync(path.join(runtimeDir, "node_modules", "npm", "bin"), { recursive: true });
   fs.writeFileSync(path.join(runtimeDir, "node.exe"), "node");
+  fs.writeFileSync(path.join(runtimeDir, "node-worktree-low.exe"), "local QA only");
   if (native) fs.writeFileSync(path.join(runtimeDir, "cryoclaw-runtime.json"), JSON.stringify({kind:"node",gatewayMode:"loose",nodeVersion:"24.22.1"}));
   fs.writeFileSync(path.join(runtimeDir, "npm.cmd"), "@echo off\r\n");
   fs.writeFileSync(path.join(runtimeDir, "npx.cmd"), "@echo off\r\n");
@@ -99,6 +100,7 @@ for (const native of [false, true]) test(`Windows afterPack preserves a complete
   assert.equal(fs.existsSync(path.join(packagedGatewayDir, "node_modules")), true);
   assert.equal(fs.existsSync(path.join(packagedGatewayDir, "node_modules.tar")), false);
   assert.equal(fs.existsSync(path.join(appOutDir, "resources/resources/runtime/node.exe")), native);
+  assert.equal(fs.existsSync(path.join(appOutDir, "resources/resources/runtime/node-worktree-low.exe")), false);
   assert.equal(fs.existsSync(path.join(appOutDir, "resources/create-cli-binary.ps1")), !native);
   assert.equal(fs.existsSync(path.join(appOutDir, "resources", "resources", "openai-proxy-bootstrap.cjs")), true);
 

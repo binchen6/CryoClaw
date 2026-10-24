@@ -46,6 +46,9 @@ export type GatewaySessionRow = {
   totalTokens?: number;
   contextTokens?: number;
   thinkingLevel?: string;
+  fastMode?: boolean|'auto'|'ultrafast';
+  effectiveFastMode?: boolean|'auto'|'ultrafast';
+  effectiveFastModeSource?: string;
   verboseLevel?: string;
   reasoningLevel?: string;
   modelProvider?: string;

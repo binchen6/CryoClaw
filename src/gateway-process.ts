@@ -226,6 +226,8 @@ export class GatewayProcess {
   // 与新进程抢端口）。下方 inflightStart 的复用即为该并发缺陷的修复：在途启动
   // 期间后续调用直接复用同一 promise，不再重复 spawn。
   private inflightStart: Promise<void> | null = null;
+  private inflightStop: Promise<void> | null = null;
+  private shuttingDown = false;
 
   // 监督式启动标记（P0-2）：仅监督链（main.ts ensureGatewayRunning，自带 3 次
   // 重试与失败上报）通过 start({ supervised: true }) 置位，doStart 落定时清除。
@@ -235,6 +237,7 @@ export class GatewayProcess {
   private supervisedStartActive = false;
 
   start(opts: { supervised?: boolean; attempt?: number } = {}): Promise<void> {
+    if (this.shuttingDown) return Promise.resolve();
     if (this.inflightStart) {
       // state 已是 stopped 但旧启动 promise 尚未落定 = 旧启动正在收尾
       //（restart() 先 stop 杀子进程 → exit handler 复位 stopped，而 doStart 的
@@ -260,22 +263,16 @@ export class GatewayProcess {
     // 前一次 stop 还未完成，等待其结束再启动
     if (this.state === "stopping") {
       diagLog("start() 等待前一次 stop 完成");
-      const deadline = Date.now() + 6000;
-      while (this.state === "stopping" && Date.now() < deadline) {
-        await sleep(100);
-      }
-      if (this.state === "stopping") {
-        diagLog("WARN: start() 等待 stop 超时，强制标记 stopped");
-        this.proc = null;
-        this.setState("stopped");
-      }
+      await this.inflightStop;
     }
+    if (this.shuttingDown) return;
 
     // 崩溃冷却期：仅上次异常退出（崩溃/健康超时）才等待；首次启动与干净停止后直接启动
     const elapsed = Date.now() - this.lastCrashTime;
     if (this.lastExitWasCrash && this.lastCrashTime > 0 && elapsed < CRASH_COOLDOWN_MS) {
       await sleep(CRASH_COOLDOWN_MS - elapsed);
     }
+    if (this.shuttingDown) return;
 
     this.setState("starting");
     this.lastFailure=null;
@@ -359,6 +356,7 @@ export class GatewayProcess {
         if(this.getState()==="starting")this.emitProgress("database",Date.now()-preparationStarted);
       },1000);
       try { await Promise.all(prestartParallel); } finally { clearInterval(preparationPulse); }
+      if (this.shuttingDown) { this.setState("stopped"); return; }
 
       // 启动前探测端口，若有旧 gateway 则自动停止
       this.emitProgress("port");
@@ -381,8 +379,9 @@ export class GatewayProcess {
     // P0-1：预启动（端口冲突路径含 10 轮 ×500ms 等待，窗口可达 20s+）期间 stop()
     // 可能已把状态复位 stopped——调用方（退出/导入路径）已认为 gateway 停妥并继续
     // 清空状态目录。此时再 spawn 会留下孤儿 gateway 占端口，spawn 前复查状态。
-    if (shouldAbortStartAfterPrestart(this.state)) {
+    if (this.shuttingDown || shouldAbortStartAfterPrestart(this.state)) {
       diagLog("start aborted: stop() raced pre-start");
+      if (this.shuttingDown) this.setState("stopped");
       return;
     }
 
@@ -445,6 +444,7 @@ export class GatewayProcess {
     this.proc.on("error", (err) => {
       diagLog(`spawn error: ${err.message}`);
       if (gen !== this.generation || this.spawnErrorGen === gen) return;
+      this.lastFailure={message:`无法启动网关运行时（${(err as NodeJS.ErrnoException).code??'spawn error'}），请检查安装文件与执行权限。`,retryable:false};
       this.spawnErrorGen = gen;
       if (this.state === "stopping") {
         // stop() 在等 exit 落定：直接落定 stopped（与 exit handler 的 stopping
@@ -479,6 +479,7 @@ export class GatewayProcess {
     this.proc.stderr?.on("data", (d: Buffer) => {
       const s = d.toString();
       if(/uses schema version.*doctor --fix/.test(s))this.lastFailure={message:"会话数据库尚未迁移到当前内核要求的版本，请完成 doctor 检查后重试。",retryable:false};
+      if(/log file append failed; records dropped/.test(s))this.lastFailure={message:"网关日志文件无法写入，请检查日志目录权限或占用；配置回退无法修复此类权限问题。",retryable:false};
       try { process.stderr.write(`[gateway] ${s}`); } catch {}
       diagLog(`stderr: ${s.trimEnd()}`);
     });
@@ -509,6 +510,7 @@ export class GatewayProcess {
         return;
       } else {
         // starting 阶段退出（如端口冲突）
+        this.lastFailure??={message:`网关进程在就绪前退出（code=${code??'none'}, signal=${signal??'none'}），请查看诊断日志。`,retryable:true};
         this.lastCrashTime = Date.now();
         this.lastExitWasCrash = true;
         this.setState("stopped");
@@ -543,6 +545,7 @@ export class GatewayProcess {
       await this.settleHealthyStart(childPid);
     } else {
       diagLog("FATAL: health check timeout");
+      this.lastFailure??={message:"网关未在限定时间内就绪，请查看诊断日志。",retryable:true};
       await this.stop();
       // health 超时视同 starting 阶段退出：spawn 成功但 HTTP 永不就绪，此前
       // stop() 走 stopping 分支不触发 onCrash，而 main.ts 的崩溃自重启链全靠
@@ -569,7 +572,7 @@ export class GatewayProcess {
     // 经 getState() 读取而非 this.state：TS 控制流分析在方法调用后不重置属性
     // 窄化，此处 this.state 被窄化为 stopped/stopping，直接比较会报 TS2367
     if (this.getState() !== "starting") {
-      this.proc = null;
+      // stop() still owns the live child until its exit event.
       return;
     }
     if (this.isChildAlive(childPid)) {
@@ -588,16 +591,21 @@ export class GatewayProcess {
   // waitForStarting 仅供导入路径使用：start() 的 starting 窗口里 proc 仍为 null，
   // 若此时走下方 !this.proc 早退，导入会在 start 仍访问状态目录时清空它。传入后
   // 会先等启动落定（running 或 stopped）再继续。退出/重启/IPC-stop 不传，行为不变。
-  async stop(opts: { waitForStarting?: boolean } = {}): Promise<void> {
-    if (this.state === "stopping") {
-      const existingStopPid = this.proc?.pid ?? 0;
-      const existingStopDeadline = Date.now() + 5500;
-      while (this.getState() === "stopping" && Date.now() < existingStopDeadline) {
-        await sleep(100);
-      }
-      if (this.getState() === "stopping") {
-        await this.forceStopAfterTimeout(existingStopPid);
-      }
+  stop(opts: { waitForStarting?: boolean } = {}): Promise<void> {
+    if (this.inflightStop) return this.inflightStop;
+    this.inflightStop = this.doStop(opts).finally(() => { this.inflightStop = null; });
+    return this.inflightStop;
+  }
+
+  /** Terminal shutdown cancels future starts but joins any database preparation already in flight. */
+  shutdown(): Promise<void> {
+    this.shuttingDown = true;
+    return this.stop();
+  }
+
+  private async doStop(opts: { waitForStarting?: boolean }): Promise<void> {
+    if (this.shuttingDown && !this.proc && this.inflightStart) {
+      await this.inflightStart.catch(() => {});
       return;
     }
     if (opts.waitForStarting && this.state === "starting") {
@@ -661,10 +669,25 @@ export class GatewayProcess {
       this.proc?.kill("SIGTERM");
     }
 
-    // 第二步：等 exit 事件将状态推到 stopped（exit handler 负责状态转移）
-    const deadline = Date.now() + (graceful ? 60000 : 5000);
-    while (this.getState() === "stopping" && Date.now() < deadline) {
-      await sleep(100);
+    // 第二步：直接等子进程 exit，不为正常清理追加一个轮询周期。
+    // exit handler 先注册，因此 promise 落定前状态已经推进到 stopped。
+    const child = this.proc;
+    if (child && this.getState() === "stopping") {
+      await new Promise<void>((resolve) => {
+        let settled = false;
+        const finish = () => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          child.off("exit", finish);
+          resolve();
+        };
+        const timer = setTimeout(finish, graceful ? 60000 : 5000);
+        child.once("exit", finish);
+        if (this.getState() !== "stopping") {
+          queueMicrotask(finish);
+        }
+      });
     }
 
     // 第三步：超时兜底 — POSIX 升级 SIGKILL；Windows 第一步 taskkill 已 await
@@ -787,6 +810,7 @@ export class GatewayProcess {
     this.emitProgress("health", 0);
     let lastHealthProgressAt = healthStart;
     while (Date.now() < deadline) {
+      if (this.shuttingDown || this.getState() !== "starting") return false;
       if (!this.isChildAlive(childPid)) {
         diagLog(`health check aborted: child exited pid=${childPid}`);
         return false;

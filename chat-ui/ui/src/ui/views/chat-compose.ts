@@ -26,9 +26,7 @@ import {
   goalTokenPercent,
   goalTokensLabel,
 } from "../chat/goal-display.ts";
-import { renderConfiguredModelOptions } from "../model-options.ts";
-import { loadModelOrg } from "./settings/model-org.lib.ts";
-import { KNOWN_THINKING_LEVELS } from "../chat/thinking-levels.ts";
+import "../components/oc-model-picker.ts";
 import type { ChatProps } from "./chat.ts";
 import "../components/model-quota.ts";
 import {quotaProvider} from "../controllers/model-quota.ts";
@@ -41,10 +39,13 @@ export type ComposeRenderContext = {
   modelSelectValue: string | null;
   isBusy: boolean;
   showStop: boolean;
+  allowEmptySend?: boolean;
 };
 
 // 加号菜单 / 目标表单本地状态（非响应式，渲染由 requestUpdate 驱动）
 let plusMenuOpen = false;
+let plusMenuLeaving = false;
+let plusMenuEpoch = 0;
 let goalFormOpen = false;
 let goalDraft = "";
 
@@ -65,7 +66,6 @@ let plusMenuOutsideCloser: ((ev: MouseEvent) => void) | null = null;
 // toggle 按钮本身 stopPropagation，document 点击永远看不到按钮点击——
 // 若关闭分支不显式注销，每次 开→关→开 循环都会永久泄漏一个持有过期
 // popover/el 闭包的 document 监听器。
-let thinkingPopoverCloser: ((ev: MouseEvent) => void) | null = null;
 let branchPopoverCloser: ((ev: MouseEvent) => void) | null = null;
 
 // popover 退场两段式：--open → --closing（播 chat-popover-out），
@@ -101,16 +101,6 @@ function revivePopover(el: Element, closingClass: string) {
   el.classList.remove(closingClass);
 }
 
-function closeThinkingPopover() {
-  for (const el of document.querySelectorAll(".chat-compose__thinking-popover--open")) {
-    animatePopoverOut(el, "chat-compose__thinking-popover--open", "chat-compose__thinking-popover--closing");
-  }
-  if (thinkingPopoverCloser) {
-    document.removeEventListener("click", thinkingPopoverCloser);
-    thinkingPopoverCloser = null;
-  }
-}
-
 function closeBranchPopover() {
   for (const el of document.querySelectorAll(".chat-compose__branch-popover--open")) {
     animatePopoverOut(el, "chat-compose__branch-popover--open", "chat-compose__branch-popover--closing");
@@ -121,8 +111,14 @@ function closeBranchPopover() {
   }
 }
 
+let plusMenuAnimation:Animation|null=null;
+
 function closePlusMenu(props: { onRequestUpdate?: () => void }) {
+  const epoch=++plusMenuEpoch;
+  plusMenuAnimation?.cancel();plusMenuAnimation=null;
+  const wasOpen=plusMenuOpen||plusMenuLeaving;
   plusMenuOpen = false;
+  plusMenuLeaving = wasOpen;
   skillPickerOpen = false;
   skillPickerGeneration++;
   skillPickerLoading = false;
@@ -131,9 +127,22 @@ function closePlusMenu(props: { onRequestUpdate?: () => void }) {
     plusMenuOutsideCloser = null;
   }
   props.onRequestUpdate?.();
+  if(!wasOpen)return;
+  requestAnimationFrame(()=>{
+    const menu=document.querySelector<HTMLElement>('.chat-plus__menu');
+    const finish=()=>{if(epoch!==plusMenuEpoch)return;plusMenuLeaving=false;plusMenuAnimation=null;props.onRequestUpdate?.();};
+    if(!menu||matchMedia('(prefers-reduced-motion: reduce)').matches){finish();return;}
+    plusMenuAnimation=menu.animate([{opacity:1,transform:'translateY(0) scale(1)'},{opacity:0,transform:'translateY(6px) scale(.98)'}],{duration:POPOVER_EXIT_MS,easing:'ease-in',fill:'forwards'});
+    plusMenuAnimation.finished.then(finish).catch(finish);
+  });
 }
 
 function openPlusMenu(props: { onRequestUpdate?: () => void }) {
+  document.dispatchEvent(new CustomEvent('cryoclaw:compose-other-menu'));
+  closeBranchPopover();
+  plusMenuEpoch++;
+  plusMenuAnimation?.cancel();plusMenuAnimation=null;
+  plusMenuLeaving=false;
   plusMenuOpen = true;
   // 延迟一帧注册，避免触发本次打开的 click 立刻把菜单关掉。
   requestAnimationFrame(() => {
@@ -153,7 +162,6 @@ function openPlusMenu(props: { onRequestUpdate?: () => void }) {
 /** 切会话复位 compose 全部模块级瞬态（renderChat 的 lastSessionKey 门控调用）。 */
 export function resetComposeTransient(props: { onRequestUpdate?: () => void }) {
   closePlusMenu(props);
-  closeThinkingPopover();
   closeBranchPopover();
   goalFormOpen = false;
   goalDraft = "";
@@ -170,13 +178,6 @@ let commandComposing = false;
 let commandIndex = 0;
 let commandDraft:string|null=null;
 let commandSource:ChatProps["commands"];
-
-// 思考档位标签：已知档走 i18n（chat.thinkLevel.*），未知档原样显示内核 id
-function thinkingLevelLabel(level: string): string {
-  return (KNOWN_THINKING_LEVELS as readonly string[]).includes(level)
-    ? t(`chat.thinkLevel.${level}`)
-    : level;
-}
 
 /**
  * Context Meter — 放在发送按钮左侧，展示当前对话记忆占用。
@@ -600,14 +601,16 @@ function renderPlusMenu(props: ChatProps) {
           }
         }}
         data-tooltip=${t("chat.plusMenu")}
+        aria-label=${t("chat.plusMenu")}
+        aria-haspopup="menu"
         ?disabled=${!props.connected}
         aria-expanded=${plusMenuOpen ? "true" : "false"}
       >
         ${icons.plus}
       </button>
-      ${plusMenuOpen
+      ${plusMenuOpen||plusMenuLeaving
         ? html`
-            <div class="chat-plus__menu" @click=${(e: Event) => e.stopPropagation()}>
+            <div class="chat-plus__menu ${plusMenuLeaving?'chat-plus__menu--closing':''}" role="menu" aria-label=${t("chat.plusMenu")} ?inert=${plusMenuLeaving} @click=${(e: Event) => e.stopPropagation()}>
               <button class="chat-plus__item" type="button" @click=${() => {
                 closePlusMenu(props);
                 void openFilePicker();
@@ -722,8 +725,12 @@ function renderCommandSuggestions(props: ChatProps) {
 // ── compose 主体：输入框 + 工具条（纯模板装配，事件全走 props 回调） ──
 export function renderCompose(props: ChatProps, ctx: ComposeRenderContext) {
   if(commandDraft!==props.draft || commandSource!==props.commands)refreshCommandSuggestions(props,props.draft??"");
+  const canSend=ctx.allowEmptySend||Boolean(props.draft.trim())||Boolean(props.attachments?.length);
+  const execMode=props.execMode??'ask';
+  const execLabel=execMode==='auto'?t('chat.execModeAuto'):execMode==='full'?t('chat.execModeApproveAll'):t('chat.execModeAsk');
   return html`
     <div class="chat-compose"
+      @cryoclaw:compose-menu=${()=>{closePlusMenu(props);closeBranchPopover();}}
       @dragenter=${(event:DragEvent)=>{if(!event.dataTransfer?.types.includes("Files"))return;const root=event.currentTarget as HTMLElement;root.dataset.dragDepth=String(Number(root.dataset.dragDepth??0)+1);root.dataset.fileDrag="true";}}
       @dragover=${(event:DragEvent)=>{if(event.dataTransfer?.types.includes("Files")){event.preventDefault();event.dataTransfer.dropEffect="copy";}}}
       @dragleave=${(event:DragEvent)=>{const root=event.currentTarget as HTMLElement;const depth=Math.max(0,Number(root.dataset.dragDepth??0)-1);root.dataset.dragDepth=String(depth);if(!depth)delete root.dataset.fileDrag;}}
@@ -792,7 +799,7 @@ export function renderCompose(props: ChatProps, ctx: ComposeRenderContext) {
             // 断开时也不拦截：发送会走乐观入队（待发送，重连自动补发），
             // 输入框保持可编辑（见 handleSendChat 的 disconnected 分支）
             e.preventDefault();
-            props.onSend();
+            if(canSend)props.onSend();
           }}
           @input=${(e: Event) => {
             const target = e.target as HTMLTextAreaElement;
@@ -822,94 +829,8 @@ export function renderCompose(props: ChatProps, ctx: ComposeRenderContext) {
         <div class="chat-compose__toolbar">
           <div class="chat-compose__toolbar-left">
             ${renderPlusMenu(props)}
-            ${props.thinkingToggleLevels && props.thinkingToggleLevels.length > 0
-              ? html`
-                  <div class="chat-compose__thinking">
-                    <button
-                      class="chat-compose__thinking-toggle ${props.thinkingToggleLevel && props.thinkingToggleLevel !=="off" ? "chat-compose__thinking-toggle--active" : ""}"
-                      type="button"
-                      data-tooltip=${t("chat.thinkingPicker")}
-                      aria-label=${t("chat.thinkingPicker")}
-                      ?disabled=${!props.connected}
-                      @click=${(e: Event) => {
-                        e.stopPropagation();
-                        // 二元模型（仅 关/开）：单击直接切换；多档模型：单击展开档位 popover
-                        if (props.isBinaryThinking) {
-                          props.onThinkingToggle?.();
-                          return;
-                        }
-                        const el = (e.currentTarget as HTMLElement).closest(".chat-compose__thinking") as HTMLElement;
-                        const popover = el?.querySelector(".chat-compose__thinking-popover") as HTMLElement | null;
-                        if (!popover) return;
-                        if (popover.classList.contains("chat-compose__thinking-popover--open")) {
-                          closeThinkingPopover();
-                        } else {
-                          closeThinkingPopover(); // 清掉上一轮可能残留的监听
-                          revivePopover(popover, "chat-compose__thinking-popover--closing");
-                          popover.classList.add("chat-compose__thinking-popover--open");
-                          const container = el;
-                          thinkingPopoverCloser = (ev: MouseEvent) => {
-                            if (!container.contains(ev.target as Node)) closeThinkingPopover();
-                          };
-                          const closer = thinkingPopoverCloser;
-                          requestAnimationFrame(() => {
-                            if (thinkingPopoverCloser === closer) document.addEventListener("click", closer);
-                          });
-                        }
-                      }}
-                    >
-                      ${icons.brain}
-                      <span class="chat-compose__thinking-label">${thinkingLevelLabel(props.thinkingToggleLevel ?? "off")}</span>
-                    </button>
-                    ${!props.isBinaryThinking
-                      ? html`<div class="chat-compose__thinking-popover">
-                          ${props.thinkingToggleLevels!.map(level => html`
-                            <button
-                              class="chat-compose__thinking-option ${level === (props.thinkingToggleLevel ??"off") ? "chat-compose__thinking-option--selected" : ""}"
-                              type="button"
-                              @click=${(e: Event) => {
-                                e.stopPropagation();
-                                props.onThinkingLevelChange?.(level);
-                                const popover = (e.currentTarget as HTMLElement).closest(".chat-compose__thinking-popover") as HTMLElement;
-                                if (popover) animatePopoverOut(popover, "chat-compose__thinking-popover--open", "chat-compose__thinking-popover--closing");
-                              }}
-                            >
-                              <span class="chat-compose__thinking-option-check">${level === (props.thinkingToggleLevel ?? "off") ? icons.check : nothing}</span>
-                              ${thinkingLevelLabel(level)}
-                            </button>
-                          `)}
-                        </div>`
-                      : nothing
-                    }
-                  </div>
-                `
-              : nothing
-            }
-            ${props.configuredModels && props.configuredModels.length >= 2
-              ? html`
-                <select
-                  class="chat-compose__model-select"
-                  .value=${ctx.modelSelectValue ?? ""}
-                  @change=${(e: Event) => {
-                    const val = (e.target as HTMLSelectElement).value;
-                    props.onModelChange?.(val);
-                  }}
-                  ?disabled=${!props.connected}
-                >
-                  ${renderConfiguredModelOptions(props.configuredModels, loadModelOrg(), ctx.modelSelectValue || undefined, true)}
-                  ${ctx.modelSelectValue !== null && !props.configuredModels.some((m) => m.key === ctx.modelSelectValue)
-                    ? html`<option value=${ctx.modelSelectValue} selected>${ctx.modelSelectValue} · ${t("chat.model.sessionCurrent")}</option>`
-                    : nothing}
-                </select>
-              `
-                : props.configuredModels && props.configuredModels.length === 1
-                  ? html`
-                    <select class="chat-compose__model-select" disabled>
-                      <option selected>${props.configuredModels[0].name}</option>
-                    </select>
-                  `
-                  : nothing
-              }
+            <oc-model-picker .props=${props} .value=${ctx.modelSelectValue}></oc-model-picker>
+            ${['ask','auto','full'].includes(execMode)?html`<button class="chat-compose__permission chat-compose__permission--${execMode}" type="button" aria-label=${`${t('chat.execMode')}: ${execLabel}`} data-tooltip=${`${t('chat.execMode')}: ${execLabel}`} ?disabled=${!props.connected} @click=${(event:Event)=>{event.stopPropagation();if(plusMenuOpen)closePlusMenu(props);else openPlusMenu(props);}}>${icons.shieldCheck}<span>${execLabel}</span></button>`:nothing}
             <div class="chat-compose__branch">
               <button
                 class="chat-compose__tool-btn"
@@ -925,6 +846,7 @@ export function renderCompose(props: ChatProps, ctx: ComposeRenderContext) {
                   if (popover.classList.contains("chat-compose__branch-popover--open")) {
                     closeBranchPopover();
                   } else {
+                    closePlusMenu(props);
                     closeBranchPopover(); // 清掉上一轮可能残留的监听
                     revivePopover(popover, "chat-compose__branch-popover--closing");
                     popover.classList.add("chat-compose__branch-popover--open");
@@ -954,7 +876,7 @@ export function renderCompose(props: ChatProps, ctx: ComposeRenderContext) {
               // busy 时停止键与发送键并存（kimi web UI 契约）：发送=入队，不再被停止键替换
               ctx.showStop
                 ? html`<button
-                    class="chat-compose__send-btn"
+                    class="chat-compose__send-btn chat-compose__send-btn--stop"
                     ?disabled=${!props.connected || Boolean(props.abortPending)}
                     @click=${props.onAbort}
                     aria-label=${t("chat.stop")}
@@ -963,8 +885,10 @@ export function renderCompose(props: ChatProps, ctx: ComposeRenderContext) {
                 : nothing
             }
             <button
-              class="chat-compose__send-btn"
+              class="chat-compose__send-btn chat-compose__send-btn--send ${canSend?'is-ready':''}"
+              ?disabled=${!canSend}
               @click=${props.onSend}
+              aria-keyshortcuts="Enter"
               aria-label=${!props.connected ? t("chat.sendQueued") : ctx.isBusy ? t("chat.sendEnqueue") : t("chat.send")}
               data-tooltip=${!props.connected ? t("chat.sendQueued") : ctx.isBusy ? t("chat.sendEnqueue") : t("chat.send")}
             >${icons.arrowUp}</button>

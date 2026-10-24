@@ -1,0 +1,11 @@
+# Composition and motion
+
+Use CryoClaw's ice blue, ink and paper with clear Chinese typography. Prefer a strong headline, one visual idea and quiet metadata. Keep source, data time, loading and failure feedback readable. Design a useful empty state. Avoid decorating every surface or copying another product's branding.
+
+The board is a 1600 px canvas with 12 columns and 20 px gaps. A card's width is `(1600 - 11*20)/12*w + (w-1)*20`; its content uses the full card height. The floating 36 px chrome overlays the top edge, so keep essential controls outside that area. Use the actual available space, internal scrolling for long content, and the separate 1600×900 expanded surface below the 44 px expanded chrome. Window resizing scales the composition; do not reorganize it with viewport breakpoints. Pick heights that fit text and controls rather than truncating them.
+
+Motion may be sparse but must be fluent, natural and useful. Preserve the same element/state during transition. Reverse from its current visual position when interrupted; avoid flashing back or restarting timers. Prefer transform/opacity and short purposeful transitions. Keep ambient movement weak enough for reading. `sdk.motion.frame(draw,{fps:30})` pauses hidden/offscreen work and draws a stable frame for reduced motion; controls must still work in that mode. Never animate through repeated publishing or storage writes. Resize Canvas only on size/DPR changes, cap DPR at two, and limit drawing frequency.
+
+Load state before enabling edits, debounce persistence, and show failures. Use deadlines for timers, not a write per second. Play real audio only after a user action; label generated sound honestly and derive any spectrum from the actual audio analyser. Keep public data provenance visible. Offer follow-up ideas through `sdk.compose(prompt)` and task setup through `sdk.tasks()`; both require a click in the main window and neither sends a message automatically.
+
+Before delivery check: initial/loading/empty/error states; rapid reverse/repeated actions; keyboard focus and Escape; narrow proportional view; reduced motion; hide/resume; refresh restoring state; no unsolicited audio; no per-frame layout, bitmap allocation, network or model work. Read one card and update its stable ID; preserve user geometry and other modules.

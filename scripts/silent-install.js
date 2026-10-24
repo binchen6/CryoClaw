@@ -57,7 +57,7 @@ async function main(){
       const kernel=path.join(resources,"gateway/node_modules/openclaw"),core=JSON.parse(fs.readFileSync(path.join(kernel,"package.json"),"utf8"));
       if(core.version!==pkg.cryoclaw.openclaw)throw Error("Bundled kernel version mismatch");
       for(const file of ["openclaw.mjs","node-version.mjs","node-sqlite.mjs","cryoclaw-kernel-compat.json"])if(!fs.statSync(path.join(kernel,file)).isFile())throw Error("Missing kernel resource: "+file);
-      for(const file of ["kernel-update.mjs","kernel-dist-patch.js","kernel-directory-swap.js"])if(!fs.statSync(path.join(resources,"updater",file)).isFile())throw Error("Missing updater resource: "+file);
+      for(const file of ["kernel-update.mjs","kernel-dist-patch.js","kernel-directory-swap.js","gateway-dependency-policy.js"])if(!fs.statSync(path.join(resources,"updater",file)).isFile())throw Error("Missing updater resource: "+file);
       console.log("[silent-install] native runtime/kernel resources verified:",actual,core.version);
     }
     console.log("[silent-install] OK, installed version:",pkg.version);

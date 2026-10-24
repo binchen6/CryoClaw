@@ -27,12 +27,14 @@ for (const name of [
   "kernel-prune.js",
   "kernel-config-snapshot.js",
   "kernel-directory-swap.js",
+  "gateway-dependency-policy.js",
 ]) {
   const src = fs.existsSync(path.join(HERE, "updater", name))
     ? path.join(HERE, "updater", name)
     : path.join(HERE, "lib", name);
   fs.copyFileSync(src, path.join(STAGE, name));
 }
+fs.cpSync(path.join(HERE, "..", "node_modules", "semver"), path.join(STAGE, "node_modules", "semver"), { recursive: true });
 
 const { reconcileSwapDebris, planSwapRecovery, evaluateLock, writeSwapJournal, readSwapJournal } = await import(
   pathToFileURL(path.join(STAGE, "kernel-update.mjs")).href

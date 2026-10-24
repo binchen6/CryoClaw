@@ -998,6 +998,17 @@ function cryoclawSelectiveProviderDiscovery(record, source, rootDir) {
   return count;
 }
 
+function patchWindowsIdleBrokerExit(gatewayDir) {
+  const file=path.join(gatewayDir,"node_modules","openclaw","dist","process","spawn-broker","worker.js");
+  if(!fs.existsSync(file))return 0;
+  const source=fs.readFileSync(file,"utf8"),marker="/* cryoclaw-windows-idle-broker-exit */";
+  if(source.includes(marker))return 1;
+  const needle="if (owned.size === 0 && starting.size === 0 && !resources?.size && hasLiveOwnedProcessGroupMembers() === false) {";
+  if(!source.includes(needle))return 0;
+  const replacement=`if (owned.size === 0 && starting.size === 0 && !resources?.size && (${marker} process.platform === "win32" || hasLiveOwnedProcessGroupMembers() === false)) {`;
+  fs.writeFileSync(file,source.replace(needle,replacement),"utf8");return 1;
+}
+
 function patchDesktopKernel(gatewayDir) {
   return {
     compatibility: writeKernelCompatibilityMetadata(gatewayDir),
@@ -1007,6 +1018,7 @@ function patchDesktopKernel(gatewayDir) {
     fsSafeCanonical: patchWindowsFsSafeCanonicalPaths(gatewayDir),
     trustedSearch: patchConfiguredTrustedSearchArtifact(gatewayDir),
     providerDiscoveryCapture: patchSelectiveProviderDiscoveryCapture(gatewayDir),
+    idleBrokerExit: patchWindowsIdleBrokerExit(gatewayDir),
   };
 }
 
@@ -1014,6 +1026,7 @@ module.exports = {
   patchSelectiveProviderDiscoveryCapture,
   patchConfiguredTrustedSearchArtifact,
   patchWindowsFsSafeCanonicalPaths,
+  patchWindowsIdleBrokerExit,
   patchDesktopKernel,
   patchAgentStartupPublication,
   writeKernelCompatibilityMetadata,

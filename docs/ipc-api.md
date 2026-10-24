@@ -5,6 +5,7 @@
 | 通道 | Preload 方法 | 行为 |
 |---|---|---|
 | `app:pin-dashboard-card` | `pinDashboardCard({id,url,title,width,height})` | 仅可信主 UI 可调用；校验当前本地网关与卡片专用 URL，创建或复用无 preload、sandbox、置顶窗口。固定卡片凭证由 operator.write RPC 签发，不含网关 token。 |
+| `app:close-dashboard-board` | `closeDashboardBoard(boardId)` | 仅可信主 UI 可调用；校验看板 ID，关闭该看板的全部置顶卡片窗口。永久删除看板后调用，其他看板窗口不受影响。 |
 
 内置插件注册 `cryoclaw.dashboards.list/getState/data/system`（operator.read）、`cryoclaw.dashboards.mutate/setState/pin`（operator.write）。模型通过 `cryoclaw_dashboard` 操作全局看板目录，默认只读取摘要，HTML 通过 read_card 按需读取。卡片 SDK 按实际 iframe 来源限定 board/card，不能调用任意网关方法。状态最多 32 KiB/卡；来源与媒体分别最多 4/8 项，公共 HTTPS、DNS 固定、重定向再校验。卡片文档以不透明 sandbox 展示，固定窗口仍受相同 CSP 约束。
 

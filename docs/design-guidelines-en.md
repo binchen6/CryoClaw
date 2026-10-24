@@ -385,6 +385,15 @@ Since the 2026.9 R2 refresh, **all app icons are drawn in-house**
   window stays draggable; every interactive element must pair with `no-drag` to stay
   keyboard/mouse reachable.
 
+### Project motion principles (2026-10-23)
+
+Motion should be precise, natural and beautiful across transitions, interruption, entrance and exit. Use fewer effects when that improves reading. **Fluency takes priority over decoration.**
+
+- Preserve element identity and state. Reverse from current visual geometry; never flash back to the starting state or reload an iframe to animate it.
+- Prefer transform/opacity, coalesce pointer updates per frame, and commit the final pointer position. Avoid per-frame layout writes, Canvas reallocations, persistence or model requests.
+- Let entrance explain origin and exit explain destination. Keep ambient motion quiet, and stop work offscreen or while the window is hidden.
+- Reduced motion presents a stable final state with complete content and keyboard focus. Verify rapid reversals, repeated clicks, resizing, hidden/resume and keyboard use.
+
 ## 10. Tooltip
 
 - **No CSS `::after` pseudo-element tooltips** (always clipped inside `overflow`

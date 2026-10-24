@@ -15,7 +15,7 @@ import {
   resolveAssistantAvatarUrl,
 } from "./app-session-actions.ts";
 import { applyQuestionResolution, buildResolveParams } from "./chat/question-cards.ts";
-import { getCachedCommands } from "./controllers/commands.ts";
+import { getCachedCommands, loadCommands } from "./controllers/commands.ts";
 import { loadSessionBranches } from "./controllers/session-branches.ts";
 import { listEligibleSkills } from "./controllers/skills.ts";
 import { openWorkspaceView } from "./app-workspace.ts";
@@ -26,6 +26,7 @@ import { loadBoard } from "./controllers/board.ts";
 import { dismissProgressCard } from "./controllers/progress-card.ts";
 import { t } from "./i18n.ts";
 import type { ChatProps } from "./views/chat.ts";
+import {sessionFastMode,setSessionFastMode} from './controllers/session-fast-mode.ts';
 
 export function buildChatProps(state: AppViewState): ChatProps {
   const workspace = state.settings.pinnedWorkspaces.find(item => item.id === state.settings.sessionWorkspaceMap[state.sessionKey]);
@@ -121,7 +122,13 @@ export function buildChatProps(state: AppViewState): ChatProps {
     error: state.lastError,
     sessions: state.sessionsResult,
     onChatScroll: (event) => state.handleChatScroll(event),
-    onDraftChange: (next) => (state.chatMessage = next),
+    onDraftChange: (next) => {
+      state.chatMessage = next;
+      const client=state.client;
+      if(client&&state.connected&&/^\s*[/／]/.test(next))void loadCommands(client).then(()=>{
+        if(state.client===client&&state.connected)state.requestUpdate();
+      });
+    },
     configuredModels: state.configuredModels,
     currentModel: state.currentModel,
     quotaClient: state.client,
@@ -132,6 +139,8 @@ export function buildChatProps(state: AppViewState): ChatProps {
     isBinaryThinking: state.isBinaryThinking,
     onThinkingToggle: () => state.handleThinkingToggle(),
     onThinkingLevelChange: (level: string) => state.handleThinkingLevelChange(level),
+    fastMode:sessionFastMode(state.sessionsResult?.sessions.find(row=>row.key===state.sessionKey)),
+    onFastModeChange:(enabled:boolean)=>setSessionFastMode(state,enabled),
     attachments: state.chatAttachments,
     onAttachmentsChange: (next) => {
       // 函数式更新基于当前 state 合并，避免异步回调闭包里的旧 attachments 覆盖新附件
@@ -200,7 +209,10 @@ export function buildChatProps(state: AppViewState): ChatProps {
         showToast(state, t("chat.resentToQueue"));
       }
     },
-    onSend: () => state.handleSendChat(),
+    onSend: (message?: string, previousDraft?: string) => state.handleSendChat(message, {
+      previousDraft,
+      attachments: message == null ? undefined : state.chatAttachments,
+    }),
     canAbort: Boolean(state.chatRunId),
     abortPending: state.chatAbortPending,
     onAbort: () => void state.handleAbortChat(),

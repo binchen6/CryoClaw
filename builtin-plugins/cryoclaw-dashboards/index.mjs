@@ -9,9 +9,9 @@ import {queryParameters,queryData} from './query.mjs';
 
 const sourceSchema={type:'array',maxItems:4,items:{type:'object',additionalProperties:false,required:['id','url'],properties:{id:{type:'string',maxLength:64},url:{type:'string',maxLength:4096},format:{type:'string',enum:['json','text']},refreshSeconds:{type:'integer',minimum:60,maximum:86400}}}};
 export const parameters={type:'object',additionalProperties:false,required:['action'],properties:{
-  action:{type:'string',enum:['list','create','read_card','publish_card','remove_card','rename','archive','restore','link_task','unlink_task']},
+  action:{type:'string',enum:['list','create','create_example','read_card','publish_card','remove_card','rename','archive','restore','delete','link_task','unlink_task']},
   boardId:{type:'string',maxLength:64},cardId:{type:'string',maxLength:64},title:{type:'string',maxLength:100},description:{type:'string',maxLength:240},
-  kind:{type:'string',enum:['html','system']},html:{type:'string',maxLength:131072},accent:{type:'string',enum:['paper','ice','ink','mint']},includeArchived:{type:'boolean'},
+  kind:{type:'string',enum:['html','system']},html:{type:'string',maxLength:131072},accent:{type:'string',enum:['paper','ice','ink','mint']},includeArchived:{type:'boolean'},confirmDelete:{type:'boolean'},
   jobId:{type:'string',maxLength:128},taskTitle:{type:'string',maxLength:100},
   dataSources:sourceSchema,assets:{type:'array',maxItems:8,items:{type:'object',additionalProperties:false,required:['id','url'],properties:{id:{type:'string',maxLength:64},url:{type:'string',maxLength:4096}}}},
   layout:{type:'object',additionalProperties:false,properties:{w:{type:'integer',minimum:2,maximum:12},h:{type:'integer',minimum:180,maximum:1000},order:{type:'integer',minimum:0,maximum:10000}}},

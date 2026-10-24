@@ -2,7 +2,34 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
-const { patchUninstallTemplate } = require("./patch-nsis-uninstall");
+const { patchUninstallTemplate,patchExtractionTemplate,patchInstallSection } = require("./patch-nsis-uninstall");
+
+test('payload extraction runs before the installer populates its empty destination',()=>{
+  const file=path.join(path.dirname(require.resolve('app-builder-lib/package.json')),'templates/nsis/installSection.nsh');
+  const result=patchInstallSection(fs.readFileSync(file,'utf8'));
+  assert.ok(result.indexOf('!insertmacro installApplicationFiles')<result.indexOf('File /oname=uninstallerIcon.ico'));
+  assert.ok(result.indexOf('File /oname=uninstallerIcon.ico')<result.indexOf('!insertmacro registryAddInstallInfo'));
+  assert.equal(result.split('File /oname=uninstallerIcon.ico').length,2);
+  assert.equal(patchInstallSection(result),result);
+  assert.throws(()=>patchInstallSection('unknown upstream'),/Unsupported/);
+});
+
+test('same-volume payload move precedes copy and preserves upstream fallback',()=>{
+  const file=path.join(path.dirname(require.resolve('app-builder-lib/package.json')),'templates/nsis/include/extractAppPackage.nsh');
+  const source=fs.readFileSync(file,'utf8'),result=patchExtractionTemplate(source);
+  assert.ok(result.indexOf('!insertmacro customMoveExtractedPayload')<result.indexOf('CopyFiles /SILENT'));
+  assert.ok(result.includes('Nsis7z::Extract'));assert.ok(result.includes('DoneExtract7za:'));
+  assert.equal(patchExtractionTemplate(result),result);
+  assert.throws(()=>patchExtractionTemplate('unknown upstream'),/Unsupported/);
+});
+
+test('new payload destinations can rename without requiring a removable directory',()=>{
+  const script=fs.readFileSync(path.join(__dirname,'installer.nsh'),'utf8');
+  assert.ok(script.includes('IfFileExists "$cryoclawPayloadDestination\\*.*" 0 cryoclaw_payload_rename'));
+  assert.match(script,/RMDir "\$cryoclawPayloadDestination"\s+IfErrors cryoclaw_payload_copy\s+cryoclaw_payload_rename:/);
+  assert.match(script,/Rename "\$\{SOURCE\}" "\$cryoclawPayloadDestination"/);
+  assert.match(script,/cryoclaw_payload_copy:[\s\S]*?DetailPrint "Directory rename unavailable; using safe copy fallback"/);
+});
 
 test("legacy uninstall failure reaches custom recovery before retry dialog", () => {
   const template = fs.readFileSync(path.join(path.dirname(require.resolve("app-builder-lib/package.json")), "templates/nsis/include/installUtil.nsh"), "utf8");
