@@ -1,0 +1,1 @@
+DemoMiSans.woff2 is a character subset of the user's local MiSans-VF.ttf. Its family name in CSS distinguishes the film's additional character coverage. The original MiSans license is retained at ../assets/fonts/MiSans-LICENSE.pdf. Inter and JetBrains Mono retain their OFL notices in ../assets/fonts/.

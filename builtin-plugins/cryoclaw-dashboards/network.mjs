@@ -1,6 +1,7 @@
 import https from 'node:https';
 import {lookup} from 'node:dns/promises';
 import {isIP} from 'node:net';
+import {isBuiltinMarketDataSource,fetchBuiltinMarketData,marketUnavailable} from './market-quotes.mjs';
 
 export function publicHttpsUrl(value){
   if(typeof value!=='string'||value.length>4096)throw Error('Invalid public source URL');const url=new URL(value);
@@ -45,13 +46,15 @@ export async function fetchPublicBody(value,{resolver=lookup,request=https.reque
 }
 export async function fetchPublicData(value,options){return (await fetchPublicBody(value,options)).body.toString('utf8');}
 export function createSourceBroker({fetchBody=fetchPublicBody,now=Date.now}={}){
-  const cache=new Map(),pending=new Map();let active=0,assetBytes=0;
-  async function obtain(source,asset){const key=(asset?'asset:':`data:${source.format}:${source.refreshSeconds}:`)+source.url,cached=cache.get(key);if(cached&&cached.until>now())return cached.value;if(pending.has(key))return pending.get(key);if(active>=4)throw Error('Sources are busy; retry shortly');active++;
-    const task=(async()=>{try{const response=await fetchBody(source.url,{maxBytes:asset?32*1024*1024:524288,expires:now()+(asset?30000:15000),accept:asset?'image/*, audio/*, video/*, font/*':'application/json, text/plain'});
+  const cache=new Map(),pending=new Map(),marketFailures=new Map();let active=0,assetBytes=0;
+  async function obtain(source,asset){const key=(asset?'asset:':`data:${source.format}:${source.refreshSeconds}:`)+source.url,cached=cache.get(key),market=!asset&&isBuiltinMarketDataSource(source);if(cached&&cached.until>now())return cached.value;if(pending.has(key))return pending.get(key);if(market&&marketFailures.get(key)>now())throw Error(marketUnavailable);if(active>=4)throw Error('Sources are busy; retry shortly');active++;
+    const task=(async()=>{try{const response=market?null:await fetchBody(source.url,{maxBytes:asset?32*1024*1024:524288,expires:now()+(asset?30000:15000),accept:asset?'image/*, audio/*, video/*, font/*':'application/json, text/plain'});
       if(asset&&!/^(?:image\/(?:png|jpeg|gif|webp|avif)|audio\/[\w.+-]+|video\/[\w.+-]+|font\/[\w.+-]+)$/.test(response.mime))throw Error('Unsupported media type');
-      const value=asset?response:{value:source.format==='text'?response.body.toString('utf8'):JSON.parse(response.body.toString('utf8')),source:source.url,fetchedAt:now()};
+      const value=market?{...await fetchBuiltinMarketData(source,{fetchBody,expires:now()+15000,now}),fetchedAt:now()}:asset?response:{value:source.format==='text'?response.body.toString('utf8'):JSON.parse(response.body.toString('utf8')),source:source.url,fetchedAt:now()};
+      if(market)marketFailures.delete(key);
       if(cached?.size)assetBytes-=cached.size;cache.delete(key);const size=asset?response.body.length:0;assetBytes+=size;cache.set(key,{value,size,until:now()+(asset?3600000:source.refreshSeconds*1000)});
       while(cache.size>64||assetBytes>64*1024*1024){const first=cache.keys().next().value;assetBytes-=cache.get(first).size;cache.delete(first);}return value;
+    }catch(error){if(market){const retryAt=now()+15000;marketFailures.set(key,retryAt);while(marketFailures.size>64)marketFailures.delete(marketFailures.keys().next().value);if(cached&&now()-cached.value.fetchedAt<=86400000){const value={...cached.value,stale:true,retryAt};cache.set(key,{...cached,value,until:retryAt});return value;}}throw error;
     }finally{active--;pending.delete(key);}})();pending.set(key,task);return task;
   }return {data:source=>obtain(source,false),asset:source=>obtain(source,true)};
 }

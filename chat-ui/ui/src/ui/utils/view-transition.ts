@@ -1,4 +1,5 @@
 let active: {skipTransition():void} | undefined;
+export function isViewTransitionActive(): boolean { return active !== undefined; }
 /** Snapshot only the named content area; rapid navigation keeps the latest action. */
 export function transitionView(change: () => void): void {
   const doc = document as Document & {startViewTransition?: (update:()=>Promise<void>)=>{skipTransition():void;finished:Promise<void>;ready?:Promise<void>;updateCallbackDone?:Promise<void>}};

@@ -32,8 +32,8 @@ import {
   resolveSessionOptions,
   updateFileDropState,
 } from "./app-session-actions.ts";
-import { openExtensionsView, renderExtensionsView } from "./app-extensions.ts";
-import { openTasksView, renderTasksView } from "./app-tasks.ts";
+import { openExtensionsView, renderExtensionsView } from "./lazy-view.ts";
+import { openTasksView, renderTasksView } from "./lazy-view.ts";
 import { getToastAction, getToastMessage, getToastKind, hideToast, isToastLeaving, showToast } from "./app-toast.ts";
 import {ref} from "lit/directives/ref.js";
 import { buildTranscriptFilename, buildTranscriptMarkdown, copyText, downloadMarkdownFile, tryFetchKernelTranscript } from "./chat/transcript-export.ts";
@@ -57,11 +57,14 @@ import { CRYOCLAW_VIEW_META, type CryoClawViewId } from "./views/registry.ts";
 import { renderRestartGatewayDialog } from "./views/restart-gateway-dialog.ts";
 import { renderConfirmDialog } from "./views/confirm-dialog.ts";
 import { renderExtDetailDialog } from "./views/ext-detail.ts";
-import { renderSettingsView } from "./views/settings/settings-view.ts";
-import { renderSetupView } from "./views/setup/setup-view.ts";
+import {
+  openWorkspaceView,
+  renderDashboardView,
+  renderSettingsView,
+  renderSetupView,
+  renderWorkspaceIntegratedView,
+} from "./lazy-view.ts";
 import { renderSharePrompt } from "./views/share-prompt.ts";
-import { openWorkspaceView, renderWorkspaceIntegratedView } from "./app-workspace.ts";
-import "./components/oc-dashboard.ts";
 import { renderWebbridgePillModal } from "./views/webbridge-pill-modal.ts";
 
 declare global {
@@ -266,9 +269,9 @@ function resolveSessionOptionsMemo(state: AppViewState) {
 function renderActiveView(state: AppViewState, view: CryoClawViewId) {
   switch (view) {
     case "dashboard":
-      return html`<oc-dashboard .client=${state.client} .connected=${state.connected}
+      return renderDashboardView(state, () => html`<oc-dashboard .client=${state.client} .connected=${state.connected}
         .settings=${state.settings} .composeProps=${buildChatProps(state)} .onOpenChat=${()=>setCryoClawView(state,'chat')}
-        .onAskModel=${(prompt:string)=>{state.chatMessage=prompt;state.requestUpdate();}} .onOpenTasks=${()=>openTasksView(state,'cron')}></oc-dashboard>`;
+        .onAskModel=${(prompt:string)=>{state.chatMessage=prompt;state.requestUpdate();}} .onError=${(message:string)=>showToast(state,message,undefined,'error')} .onOpenTasks=${()=>openTasksView(state,'cron')}></oc-dashboard>`);
     case "setup":
       return renderSetupView(state);
     case "settings":
@@ -292,6 +295,9 @@ function renderContextBar(
   currentSessionLabel: string | null,
 ) {
   const isChat = view === "chat";
+  const workspaceName = isChat
+    ? state.settings.pinnedWorkspaces.find((item) => item.id === state.settings.sessionWorkspaceMap[state.sessionKey])?.name ?? null
+    : null;
   return html`
     <div class="cc-contextbar">
       ${isChat
@@ -308,11 +314,14 @@ function renderContextBar(
             </button>
           `
         : nothing}
-      <span class="cc-contextbar__title">
-        ${isChat ? (currentSessionLabel ?? t("sidebar.newChat")) : t(CRYOCLAW_VIEW_META[view].titleKey)}
-      </span>
+      <div class="cc-contextbar__identity">
+        <span class="cc-contextbar__title">
+          ${isChat ? (currentSessionLabel ?? t("sidebar.newChat")) : t(CRYOCLAW_VIEW_META[view].titleKey)}
+        </span>
+        ${workspaceName ? html`<span class="cc-contextbar__subtitle">${icons.folder}${workspaceName}</span>` : nothing}
+      </div>
       ${isChat
-        ? html`
+        ? html`<div class="cc-contextbar__actions">
             <button
               class="cc-contextbar__toggle cc-contextbar__export"
               type="button"
@@ -324,12 +333,12 @@ function renderContextBar(
               data-tooltip-pos="bottom"
               aria-label=${t("chat.exportTranscript")}
             >
-                ${icons.download}
+              ${icons.download}
             </button>
-              <button class="cc-contextbar__toggle" type="button" aria-controls="conversation-info"
-                aria-expanded=${conversationInfoOpen()} aria-label=${t("chat.conversationInfo") === "chat.conversationInfo" ? "会话信息 / Conversation information" : t("chat.conversationInfo")}
-                @click=${() => toggleConversationInfo(() => state.requestUpdate())}>${icons.info}</button>
-          `
+            <button class="cc-contextbar__toggle" type="button" aria-controls="conversation-info"
+              aria-expanded=${conversationInfoOpen()} aria-label=${t("chat.conversationInfo") === "chat.conversationInfo" ? "会话信息 / Conversation information" : t("chat.conversationInfo")}
+              @click=${() => toggleConversationInfo(() => state.requestUpdate())}>${icons.info}</button>
+          </div>`
         : nothing}
     </div>
   `;
@@ -399,14 +408,14 @@ export function renderApp(state: AppViewState) {
               settingsBadge: weixinBadgeUnseen(),
               // App 更新角标：有待装/下载中更新时常驻，状态复位后消失
               settingsUpdateBadge: state.appUpdateBadge,
-              onOpenChat: () => {if(cryoclawView!=="chat")transitionView(()=>setCryoClawView(state, "chat"));},
-              onOpenDashboard: () => {if(cryoclawView!=="dashboard")transitionView(()=>setCryoClawView(state, "dashboard"));},
-              onOpenTasks: () => {if(cryoclawView!=="tasks")transitionView(()=>openTasksView(state));},
-              onOpenWorkspace: () => {if(cryoclawView!=="workspace")transitionView(()=>openWorkspaceView(state));},
-              onOpenExtensions: () => {if(cryoclawView!=="extensions")transitionView(()=>openExtensionsView(state));},
+              onOpenChat: () => transitionView(()=>setCryoClawView(state, "chat")),
+              onOpenDashboard: () => transitionView(()=>setCryoClawView(state, "dashboard")),
+              onOpenTasks: () => transitionView(()=>openTasksView(state)),
+              onOpenWorkspace: () => transitionView(()=>openWorkspaceView(state)),
+              onOpenExtensions: () => transitionView(()=>openExtensionsView(state)),
               onOpenSettings: () => {
                 weixinBadgeMarkSeen();
-                if(cryoclawView!=="settings")transitionView(()=>openSettingsView(state, null));
+                transitionView(()=>openSettingsView(state, null));
               },
               onOpenWebUI: () => void handleOpenWebUI(state),
               onReconnect: () => handleReconnect(state),

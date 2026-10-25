@@ -487,4 +487,12 @@ Things that are easy to get wrong or forget when working on CryoClaw.
 
 175. **物理内核回退必须只发现完整备份。** 先完整复制、核对版本，再落 complete marker；单凭 package.json 或入口存在，不能证明中断的目录备份完整。整目录进位前写落盘 journal，启动读取 schema 前恢复；异常身份保留现场。Defender 短暂占用只重试当前 rename，不重放整个换装。
 
+176. **Electron 性能基准不要把重复 file:// 重载和单实例转发混入结果。** 同一窗口连续 `Page.reload` 可能进入 `chrome-error://chromewebdata/`，第二次开始不再代表真实模块加载；每轮独立启动并只重载一次。开发实例退出尚未落定时启动新实例会转发给旧实例，测到旧代码；先核对调试端口已关闭，再启动。Git Bash `ps -W` 首列是 Cygwin PID，Windows PID 在第四列；定向清理 QA 进程必须使用后者，并核对路径与端口归属。
+
+177. **嵌套 iframe 模板里的换行要按最终文档校验。** TypeScript 模板字符串中的 `\n` 会在生成 HTML 时变成真实换行，若内嵌脚本用单引号保存多行文本就会直接语法错误。模板层写 `\\n` 保留转义，并对 `starterCards` 的最终 HTML 做 VM parse；不能只检查 TypeScript 能编译。
+
+178. **Chat UI 构建不会同步内置插件资源。** 开发态 Gateway 使用 `resources/targets/<target>` 中的插件副本，源码新增按钮或 SDK 在 `npm run build` 后仍可能不可见。CDP 前运行 `package-resources` 同步，或明确核对源文件与目标副本；安装验收必须证明实际打包资源包含新能力，不能仅凭源码测试判定完成。
+
+179. **WAAPI 的 `finished` 不是可靠的唯一卸载路径。** 后台窗口可能长期暂停动画，菜单会永远停留在 leaving 类与 inert 状态。正常播放仍等待 `animation.finished`，同时用略长于动画的计时器兜底；收尾需幂等并校验代次，避免旧动画或旧计时器误删新菜单。
+
 176. **小 discovery 入口不必整包复制，但不能绕过快照。** 当前全局 Codex 的声明 discovery 入口只需要其依赖图；使用内核已有选择性捕获，仍保留实例权限、源变更检查、动态依赖和退役。作用范围限定在已审查的可信入口，其他插件不改。必须用真实延迟模块和变更拒绝验证，不能只看第一次导入成功。

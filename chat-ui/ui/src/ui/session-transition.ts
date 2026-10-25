@@ -1,4 +1,4 @@
-import type { ChatState } from "./controllers/chat.ts";
+import { syncChatSendingState, type ChatState } from "./controllers/chat.ts";
 import { resetProgressCardForSession, type ProgressCardHost } from "./controllers/progress-card.ts";
 import { resetBoardForSession, type BoardHost } from "./controllers/board.ts";
 import { clearReconnectOrphanRun } from "./stream-recovery.ts";
@@ -70,7 +70,46 @@ export function seedSessionDraftSnapshot(
   draft: string,
   attachments: ChatState["chatAttachments"] = [],
 ) {
+  sessionDraftSnapshots.delete(sessionKey);
   sessionDraftSnapshots.set(sessionKey, { draft, attachments });
+  while (sessionDraftSnapshots.size > SESSION_DRAFT_SNAPSHOT_MAX) {
+    const oldest = sessionDraftSnapshots.keys().next().value;
+    if (oldest === undefined) break;
+    sessionDraftSnapshots.delete(oldest);
+  }
+}
+
+// Failed sends may settle after their composer has moved offscreen. Recover
+// into that session only when it has no newer draft to preserve.
+export function restoreSessionDraftSnapshot(
+  sessionKey: string,
+  draft: string,
+  attachments: ChatState["chatAttachments"] = [],
+): boolean {
+  const existing = sessionDraftSnapshots.get(sessionKey);
+  if (existing?.draft || existing?.attachments.length) return false;
+  if (draft || attachments.length > 0) seedSessionDraftSnapshot(sessionKey, draft, attachments);
+  return true;
+}
+
+// File readers, pickers and thumbnail IPC can finish after a session switch.
+// Their captured callback must still merge into the original session's draft.
+export function updateSessionAttachments(
+  host: Pick<ChatState, "sessionKey" | "chatAttachments">,
+  sessionKey: string,
+  next: ChatState["chatAttachments"] | ((previous: ChatState["chatAttachments"]) => ChatState["chatAttachments"]),
+) {
+  if (host.sessionKey === sessionKey) {
+    host.chatAttachments = typeof next === "function" ? next(host.chatAttachments ?? []) : next;
+    return;
+  }
+  const snapshot = sessionDraftSnapshots.get(sessionKey);
+  const attachments = typeof next === "function" ? next(snapshot?.attachments ?? []) : next;
+  if (snapshot?.draft || attachments.length > 0) {
+    seedSessionDraftSnapshot(sessionKey, snapshot?.draft ?? "", attachments);
+  } else {
+    sessionDraftSnapshots.delete(sessionKey);
+  }
 }
 
 export function applySessionKeyTransition(
@@ -84,16 +123,7 @@ export function applySessionKeyTransition(
   }
   // 先存当前会话的草稿/附件快照（空草稿不留条目，防 Map 无限增长）
   if (host.chatMessage || host.chatAttachments.length > 0) {
-    sessionDraftSnapshots.delete(host.sessionKey); // 重新插入以刷新 Map 迭代序（LRU 语义）
-    sessionDraftSnapshots.set(host.sessionKey, {
-      draft: host.chatMessage,
-      attachments: host.chatAttachments,
-    });
-    while (sessionDraftSnapshots.size > SESSION_DRAFT_SNAPSHOT_MAX) {
-      const oldest = sessionDraftSnapshots.keys().next().value;
-      if (oldest === undefined) break;
-      sessionDraftSnapshots.delete(oldest);
-    }
+    seedSessionDraftSnapshot(host.sessionKey, host.chatMessage, host.chatAttachments);
   } else {
     sessionDraftSnapshots.delete(host.sessionKey);
   }
@@ -122,6 +152,7 @@ export function applySessionKeyTransition(
   const savedSnapshot = sessionDraftSnapshots.get(trimmed);
   sessionDraftSnapshots.delete(trimmed);
   host.sessionKey = trimmed;
+  syncChatSendingState(host);
   // 切换会话：上一会话的重连 orphan 快照作废（防跨会话误收养）
   clearReconnectOrphanRun();
   host.chatMessage = savedSnapshot?.draft ?? "";

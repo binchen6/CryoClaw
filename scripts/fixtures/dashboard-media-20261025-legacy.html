@@ -1,0 +1,49 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%}body{font:15px/1.55 MiSans,Inter,'Microsoft YaHei UI','Microsoft YaHei','PingFang SC','Segoe UI',sans-serif;color:#101317;padding:22px;overflow:auto}h1,h2,h3,p{margin:0}h2{font-size:28px;letter-spacing:-1px}button,input{font:inherit}button{cursor:pointer;border:0;border-radius:24px;padding:10px 18px;background:#91d8ff;color:#073952}button:disabled{opacity:.5;cursor:wait}input{border:1px solid #dce3e8;border-radius:14px;padding:10px;min-width:0}.muted{color:#5d6f7a;font:12px/1.6 monospace}.foot{margin-top:16px}.error{color:#cf5c48;font-size:13px}.row{display:flex;align-items:center;justify-content:space-between;gap:12px}.ink{background:linear-gradient(140deg,#1c2a34,#050708);color:#f8fbff}.ice{background:#96d8fc;color:#082f46}a{color:inherit}.section{display:flex;align-items:center;justify-content:space-between;padding:36px 42px}.section h1{font-size:clamp(26px,4vw,46px);line-height:1.2;letter-spacing:-1.5px;white-space:pre-line}.art{white-space:pre;font:clamp(10px,2vw,20px)/1.1 monospace;letter-spacing:5px;opacity:.7}.pill{padding:5px 13px;border-radius:20px;background:#ffffff30}.line{border-top:1px solid #8883;margin:18px 0}#status{margin-top:10px}svg{width:100%;height:42px;display:block}button:focus-visible,input:focus-visible{outline:3px solid #168aff;outline-offset:3px}body{background:#05090c;color:white}video{margin-top:16px;width:100%;height:245px;border-radius:15px;background:#0e1c25;object-fit:contain}</style><style>
+@keyframes cc-enter{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:none}}
+@keyframes cc-drift{from{transform:translate3d(0,-3px,0)}to{transform:translate3d(5px,5px,0)}}
+@keyframes cc-line{from{stroke-dashoffset:400}to{stroke-dashoffset:0}}
+@keyframes cc-breathe{50%{box-shadow:0 0 0 12px #073d5812,0 0 0 25px #073d5807}}
+@keyframes cc-grip{50%{transform:translateY(4px);opacity:.6}}
+body{animation:cc-enter .42s cubic-bezier(.2,.7,.2,1) both}
+button{transition:transform .18s cubic-bezier(.2,.7,.2,1),background .2s,box-shadow .2s,opacity .2s}
+button:active{transform:scale(.97)}button:focus-visible{outline:3px solid #168aff;outline-offset:3px}
+.art{animation:cc-drift 9s ease-in-out infinite alternate;will-change:transform}
+.rate,.stock,.entry{animation:cc-enter .35s cubic-bezier(.2,.7,.2,1) both}
+.rate:nth-child(2),.stock:nth-child(2),.entry:nth-child(2){animation-delay:.05s}
+.rate:nth-child(3),.stock:nth-child(3),.entry:nth-child(3){animation-delay:.1s}
+.rate polyline,.stock polyline{stroke-dasharray:400;animation:cc-line 1.1s cubic-bezier(.2,.7,.2,1) both}
+.trip{transition:transform .25s,box-shadow .25s}.trip:hover{transform:translateY(-4px);box-shadow:0 14px 32px #0005}
+.handle,.corner{animation:cc-grip 2.8s ease-in-out 3}.corner{animation-delay:.4s}
+.release:hover{box-shadow:inset 0 0 0 2px #91d8ff88}.release h3{transition:color .2s}.release:hover h3{color:#b6e8ff}
+.todo{transition:opacity .25s,color .25s}.todo:has(input:checked){opacity:.55}
+.habit button{transition:background .2s,transform .2s,border-color .2s}.habit button:hover{transform:translateY(-2px)}
+.clock strong{font-variant-numeric:tabular-nums}.is-running .clock{animation:cc-breathe 2.8s ease-in-out infinite}
+.track i{transition:width .85s cubic-bezier(.2,.7,.2,1)}#queue button{transition:background .25s,border-color .25s,transform .25s}#queue button:hover{transform:translateX(3px)}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
+</style><style>body{font-feature-settings:'ss01' 1}h1,h2,h3{font-weight:760}button{touch-action:manipulation}.rate{padding:24px 0}.rate strong{font-size:28px}.rate b{font-size:15px!important}.stock{padding:32px 0}.stock>div:last-child{font-size:25px!important}#gallery{height:410px!important;gap:14px!important}.release{border-radius:17px!important}.release.active{flex:4.2!important}.release h3{font-weight:750}.release:focus-visible{flex:4.2}.todo{padding:13px 0!important;font-size:15px!important}.habit{margin-top:15px!important}.habit button{min-height:36px}.clock{width:250px!important;height:250px!important}.clock strong{font-size:64px!important}#queue button{padding:26px!important}.screen canvas{height:230px!important}.screen{box-shadow:inset 0 0 0 1px #ffffff0c}.art{filter:none}@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}</style><style>
+:root{color-scheme:light;--ease:cubic-bezier(.2,.75,.2,1)}
+body{text-rendering:optimizeLegibility;-webkit-font-smoothing:antialiased}
+button{-webkit-tap-highlight-color:transparent}
+button:focus-visible,input:focus-visible,video:focus-visible{outline:2px solid #168aff;outline-offset:3px}
+::selection{background:#75c9ff66}
+::-webkit-scrollbar{width:6px;height:6px}::-webkit-scrollbar-thumb{background:#7b8b9540;border-radius:8px}
+.rate,.stock{position:relative;transition:padding .25s var(--ease),background .25s var(--ease)}
+.rate:hover,.stock:hover{background:#91d8ff0d}
+#refresh,#scan{box-shadow:inset 0 0 0 1px #ffffff1c}
+#gallery{perspective:1200px}.release{box-shadow:0 12px 32px #020a1330;transition:flex .48s var(--ease),transform .3s var(--ease),box-shadow .3s var(--ease)}
+.release:hover{transform:translateY(-5px);box-shadow:0 20px 42px #020a134d}.release.active{box-shadow:0 20px 55px #020a1359}
+.release:after{content:'';position:absolute;inset:0;background:linear-gradient(180deg,transparent 45%,#02060bd9);pointer-events:none}.release span,.release h3,.release p{z-index:1}
+.release h3{max-width:calc(100% - 24px);overflow:hidden;text-overflow:ellipsis}.release.active h3{font-size:34px!important}
+.todo{min-height:46px}.todo input{appearance:none;border:1.5px solid #b8c7d1;border-radius:50%;width:20px;height:20px;padding:0;display:grid;place-items:center;transition:background .2s,border-color .2s}
+.todo input:checked{background:#168aff;border-color:#168aff}.todo input:checked:after{content:'✓';color:white;font-size:13px;font-weight:700}
+.habit button{aspect-ratio:1;min-width:0;padding:0!important;border-radius:10px}.habit button.checked{box-shadow:0 4px 12px #168aff26}
+#modes{padding:5px;background:#07395212;border-radius:99px;width:max-content;max-width:100%}#modes button{border-radius:99px}
+.clock{background:radial-gradient(circle at 50% 35%,#ffffff30,transparent 60%);box-shadow:0 14px 35px #1554751a,inset 0 0 0 1px #ffffff24}
+#start,#reset{border-radius:15px;min-height:46px}#reset{background:#ffffff35;color:#082f46}
+.space{box-shadow:0 14px 35px #0003}.track i{background:linear-gradient(90deg,#55b8ef,#c2ecff)}
+#queue{scrollbar-width:thin}#queue button{position:relative;overflow:hidden}#queue button.active{background:#91d8ff12;box-shadow:inset 3px 0 #91d8ff}
+.screen{position:relative;overflow:hidden}.screen:after{content:'';position:absolute;inset:0;pointer-events:none;background:linear-gradient(110deg,#ffffff06,transparent 35%)}
+video{box-shadow:0 15px 35px #0005}
+.recipes button{position:relative;overflow:hidden;transition:transform .3s var(--ease),box-shadow .3s var(--ease)}.recipes button:hover{transform:translateY(-4px);box-shadow:0 14px 30px #137fc419}.recipes button:after{content:'↗';position:absolute;right:18px;top:16px;font-size:18px;opacity:.45}
+@media(max-width:620px){.release.active h3{font-size:25px!important}.recipes{gap:8px}.recipes button{padding:15px}.recipes b{font-size:16px}}
+</style><style data-template-responsive>body{padding:clamp(18px,3vw,38px)}h2{font-size:clamp(23px,3.5vw,34px)}.row{min-width:0}.row>input{min-width:0}.muted,.caption{overflow-wrap:anywhere}@media(max-width:420px){.row{flex-wrap:wrap}.stamp{max-width:calc(100% - 36px);font-size:10px;letter-spacing:1px}}</style></head><body><h2>卡片内视频</h2><video id="video" controls preload="none" playsinline></video><p class="muted foot">MDN Flower · CC0 示例视频 · 点击播放后读取</p><p id="status" class="muted"></p><script>const video=document.getElementById('video');video.src=cryoclawDashboard.asset('flower');video.onerror=()=>document.getElementById('status').textContent='视频暂不可用，请检查网络后刷新';</script></body></html>

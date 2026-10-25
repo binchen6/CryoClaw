@@ -16,6 +16,7 @@ export default defineConfig({
       "src/startup-ownership.test.ts",
       "src/skill-store-registry.test.ts",
       "src/skill-store.test.ts",
+      "src/plugin-store-lifecycle.test.ts",
       "src/provider-config-cache.test.ts",
       "src/config-backup.test.ts",
       "src/openclaw-state-archive.test.ts",

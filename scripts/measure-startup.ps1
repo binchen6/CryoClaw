@@ -7,7 +7,7 @@ param(
   [int]$GatewayPort = 18789
 )
 
-$log = "$env:USERPROFILE\.openclaw\app.log"
+$log = "$env:USERPROFILE\.openclaw\logs\app.log"
 $beforeLen = if (Test-Path $log) { (Get-Item $log).Length } else { 0 }
 $t0 = [DateTime]::UtcNow
 
@@ -47,6 +47,5 @@ for ($i = 0; $i -lt 240; $i++) {
 
 Write-Host "RESULT gateway200Ms=$gwMs windowShownMs=$winMs appReadyMs=$appStartMs"
 
-Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+taskkill /PID $proc.Id /T /F
 Start-Sleep -Seconds 2
-Get-Process -Name "CryoClaw" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue

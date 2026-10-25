@@ -36,30 +36,43 @@
   z-index: 10;
 }
 
-/* compose 直接子级（context meter / 附件预览 / 输入卡片）对齐居中列；
+/* compose 直接子级（附件预览 / 输入卡片）对齐居中列；
    注意：新增 compose 直接子级会被此规则拉伸居中，需自查是否适用 */
 .chat-compose > * {
   width: 100%;
   max-width: var(--chat-column);
 }
 
-/* ── Context Meter：对话记忆占用细条（3px），贴输入卡片顶部 ──
- * 仅一根通栏进度条（无标签 / 无百分比），单色中性灰；仅反映 activeSession
- * 的占用比，会话切换即时更新。完整数值在 hover tooltip（aria-label / title）。
- */
+/* ── Context Meter：输入卡顶部状态行，标签 + 细轨道 + 百分比 ── */
 .chat-compose__ctx-meter {
-  display: block;
-  height: 3px;
-  /* 与卡片同宽；负下边距吃掉容器 gap，使底缘贴在输入卡片顶缘（留 1px 呼吸） */
-  margin: 0 0 calc(-1 * var(--spacer-12) + 1px);
+  display: flex;
+  align-items: center;
+  gap: var(--spacer-8);
+  min-height: 20px;
+  margin: 0 var(--spacer-4) var(--spacer-2);
   padding: 0;
+  color: var(--text-faint);
   cursor: default;
   user-select: none;
 }
 
+.chat-compose__ctx-meter-label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacer-4);
+  flex-shrink: 0;
+  font-size: var(--text-2xs);
+  line-height: 1;
+}
+
+.chat-compose__ctx-meter-label svg {
+  width: var(--icon-size-12);
+  height: var(--icon-size-12);
+}
+
 .chat-compose__ctx-meter-bar {
-  display: block;
-  width: 100%;
+  flex: 1;
+  min-width: 40px;
   height: 3px;
   border-radius: var(--radius-full);
   background: var(--bg-muted);
@@ -68,9 +81,23 @@
 
 .chat-compose__ctx-meter-fill {
   height: 100%;
-  background: color-mix(in srgb, var(--text) 72%, var(--muted));
+  background: var(--accent);
   border-radius: inherit;
   transition: width var(--duration-normal) var(--ease-out);
+}
+
+.chat-compose__ctx-meter-value {
+  min-width: 32px;
+  color: var(--text-muted);
+  font-family: var(--font-meta);
+  font-size: var(--font-size-meta);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  text-align: right;
+}
+
+@media (max-width: 600px) {
+  .chat-compose__ctx-meter-label > span { display: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -101,8 +128,8 @@
 }
 
 .chat-compose__field:focus-within {
-  border-color: var(--border-focus);
-  box-shadow: var(--focus-ring);
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--border));
+  box-shadow: 0 0 0 2px var(--accent-subtle), var(--shadow-sm);
 }
 
 .chat-compose .chat-compose__field textarea {
@@ -169,6 +196,19 @@
   flex-shrink: 0;
   margin-left: auto;
   gap: var(--spacer-8);
+}
+
+.chat-compose__toolbar-divider {
+  width: 1px;
+  height: 16px;
+  flex-shrink: 0;
+  background: var(--border);
+}
+
+.chat-compose__toolbar-right .chat-compose__branch-popover {
+  left: auto;
+  right: 0;
+  transform-origin: bottom right;
 }
 
 /* 工具按钮 — 无边框 ghost 按钮 */

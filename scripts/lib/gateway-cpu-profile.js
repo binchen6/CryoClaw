@@ -3,7 +3,7 @@ const fs=require("node:fs"),path=require("node:path"),{execFile}=require("node:c
 const run=promisify(execFile),sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 
 /** Profiles only a verified child of this QA launch; never attaches to another debugger target. */
-async function profileGatewayChild(parentPid,out,{delayMs=40000,durationMs=30000,nativeNodeBin}={}){
+async function profileGatewayChild(parentPid,out,{delayMs=2000,durationMs=60000,nativeNodeBin}={}){
   if(!Number.isSafeInteger(parentPid)||parentPid<=0)throw Error("Invalid QA parent PID");
   await sleep(delayMs);
   const command=`Get-CimInstance Win32_Process -Filter "Name='CryoClaw Helper.exe' OR Name='node.exe'" | Select-Object ProcessId,ParentProcessId,Name,ExecutablePath,@{Name='Gateway';Expression={$_.CommandLine -match 'gateway run'}} | ConvertTo-Json -Compress`;

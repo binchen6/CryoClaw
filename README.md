@@ -5,9 +5,9 @@
 <h1 align="center">🧊 CryoClaw</h1>
 
 <p align="center">
-  <strong>CryoClaw — 基于 openclaw 内核的高效、易用、纯净 harness</strong><br/>
-  An efficient, easy-to-use, pure harness built on the <a href="https://github.com/openclaw/openclaw">OpenClaw</a> kernel.<br/>
-  一分钟装好，即刻开聊。零配置、零依赖的 OpenClaw 桌面客户端。
+  <strong>CryoClaw — 从一句话，到一份完成的工作。</strong><br/>
+  Your models, browser and files. One <a href="https://github.com/openclaw/openclaw">OpenClaw</a> desktop workspace.<br/>
+  安装即有工作台；对话、工作流、插件与看板，在桌面上接着做。内置运行环境，无需另装 Node.js 或 npm。
 </p>
 
 <p align="center">
@@ -17,42 +17,78 @@
 
 ---
 
-> 🌐 官网主页在 `website/`（纯静态零构建，本地打开 `index.html` 即可预览；不随安装包分发）。
+> 🌐 [访问官网](https://cryoconite.cn/CryoClaw) · [下载 Windows x64 稳定版](https://github.com/binchen6/CryoClaw/releases/latest) · [观看 58 秒功能演示](website/assets/cryoclaw-demo.mp4) · [分镜与功能依据](docs/promo.md)。官网源码在 [`website/`](website/README.md)，纯静态零构建，不随安装包分发。
 
 ## 🇨🇳 中文
 
-> 2026.1023.1：21 张示例看板、共享对话输入、合并模型与思考强度菜单、原生快速模式、自然动效与性能安全修复。[深度审查与实测](docs/REVIEW-2026.1023.1.md)。
+> 2026.1025.0：重设计的响应式看板、独立模块预览、元素微调与无闪屏全屏，完善对话草稿恢复和安装更新路径；官网提供 58 秒最新版实机演示。[深度审查与实测](docs/REVIEW-2026.1025.0.md)。
 
 ### ✨ 项目简介
 
-CryoClaw 是在 **[OneClaw](https://github.com/oneclaw/oneclaw)**（AGPL-3.0）基础上**二改重构**的 openclaw 桌面 harness：保留了「一分钟装好、开箱即用」的核心体验，对视觉设计、设置架构、执行效率、存储体积与模型管理做了系统性重设计与优化。
+CryoClaw 是基于 **[OneClaw](https://github.com/oneclaw/oneclaw)**（AGPL-3.0）重构的 **OpenClaw 桌面工作台**。连接自己的模型，让 AI 从对话走向浏览器操作、文件处理和日常协作。安装包内置运行环境；首次使用仍需连接模型，并按需启用浏览器扩展、技能或消息渠道。
+
+### 五个入口，把工作接起来
+
+| 从哪里开始 | 工作如何往前走 |
+|---|---|
+| **安装体验：先开始，环境已经备好** | 安装包内置 Node.js 与 OpenClaw，跟随引导接上自己的模型。应用更新、内核升级与配置备份各有入口，少做环境准备。 |
+| **对话体验：跟得上你的思路** | 自选模型与思考档位，带上文件开始聊。工具状态、任务计划与执行审批伴随展开；引用、重发、回放与分支，让上下文接得住。 |
+| **工作流：从工具，到交付** | WebBridge 衔接浏览器，Office 技能读写文档、表格和演示文件，本地工作区继续编辑。定时任务与消息渠道，让重复工作也有去处。 |
+| **插件市场：需要什么，再添什么** | 在图形界面中搜索 ClawHub、安装技能和插件，也能导入本地扩展。已安装能力在同一入口查看、管理。 |
+| **看板：把常用信息留在手边** | 先预览模块模板再添加，或让模型制作。右键看板标签编辑标题与说明，让模型参考你的要求；编辑模式支持选择卡片或内部元素微调。 |
+
+<details>
+<summary>展开更多能力：模型、主题、文件与协作</summary>
+
+以下能力分别服务于这五条日常路径：
+
+| 卖点 | 你能用它做什么 |
+|---|---|
+| **1. 安装即有工作台** | 内置 Node.js 与 OpenClaw 运行环境，跟随引导连接模型，无需搭建开发环境。 |
+| **2. 多模型，自由切换** | 按服务商分组、搜索和排序模型，调节支持的思考档位；配置 fallback 备用链，应对模型不可用。 |
+| **3. 主题，高自由度定制** | 自定义深浅配色、字体字号、字重行高、圆角、间距、阴影与组件样式，实时预览；主题包可导入、导出，也可提交设计要求与参考图，让 Agent 辅助生成主题。 |
+| **4. 浏览器接着用** | 启用 WebBridge 扩展后，在常用浏览器中读取网页、点击和填写，衔接已有登录状态。 |
+| **5. Office 文件直接处理** | 内置 Word / Excel / PowerPoint 技能与 OfficeCLI，用自然语言驱动文档、表格和演示文件的读写与修改。 |
+| **6. 文件就在工作区** | 浏览、搜索和编辑本地文本文件，将文件带入对话；草稿备份、文件标签、Git 差异与 worktree 管理衔接同一项目。 |
+| **7. 技能与插件按需扩展** | 在图形界面发现、安装和管理技能与插件，通过 ClawHub 接入更多工具能力。 |
+| **8. 熟悉的消息入口** | 配置飞书、企业微信、钉钉、QQ Bot 或微信，在已连接的渠道中与 AI 交互。各渠道按各自流程绑定。 |
+| **9. 对话可以回头、分岔** | 从压缩回放点恢复或分支会话，配合消息引用与失败重发，继续探索另一条思路。 |
+| **10. 执行权限自己定** | 在逐步询问、智能审批和全部允许之间选择；结合工具状态与计划面板，跟进任务执行。 |
+| **11. 升级有退路** | 应用差分更新与内核升级分开管理；内核健康检查失败自动回滚，配置支持备份与恢复。 |
+| **12. 看板独立留在手边** | 看板独立于会话，支持模块模板预览与直接添加、标签右键编辑标题和说明、卡片与内部元素选择微调、自由排布与尺寸调整。本地状态会保留，公开数据源可关联定时任务更新同一卡片。 |
+
+</details>
+
+[![CryoClaw 58 秒功能与实机演示](website/assets/cryoclaw-demo-poster.jpg)](website/assets/cryoclaw-demo.mp4)
+
+*58 秒演示，依次展示安装与模型、对话与文件、扩展、模板工作台和元素微调。界面均为最新版实机录制，任务与文件为演示内容；原速片段经剪辑，未调用模型生成修改。流程经剪辑，不代表实际任务耗时。*
 
 这个项目同时是一次 **vibe coding** 实践——全部迭代由人类掌舵需求与验收，通过与多个 AI 编码助手的**多轮协同对话**完成：
 
 | 角色 | 模型 / 工具 | 分工 |
 |---|---|---|
-| 主力 | **Kimi K3**（Kimi Code） | 架构重设计、核心功能实现 |
-| 协同 | **DeepSeek v4 Flash**（Codex） | 代码审查、打包与效率优化 |
+| 主力 | **Kimi K3**（Kimi Code）+ **Codex** | 架构重设计、核心功能实现 |
+| 协同 | **DeepSeek v4 Flash** | 代码审查、打包与效率优化 |
 | 协同 | **Qwen3.8 Max**（Qoder） | 调试取证、测试与文档 |
 
-> 内核 [OpenClaw](https://github.com/openclaw/openclaw) 源码零改动，CryoClaw 只改桌面壳与打包链路（打包/升级时附带少量幂等兼容补丁：asar 边界、Windows 窗口隐藏、K3 思考档位开放等）。
+> 内核来自固定版本的官方 [OpenClaw](https://github.com/openclaw/openclaw) 包，使用独立 Node.js 与物理目录。构建和升级链路维护少量可审查、幂等的兼容与性能补丁；补丁及其验证集中在 `scripts/lib/kernel-dist-patch.js`，不绕过原生资源边界和更新回滚。
 
 ### 🆚 与 OneClaw 相比
 
 | 维度 | OneClaw | CryoClaw |
 |---|---|---|
 | 视觉设计 | 原版主题 | 2026.9 R2 全新设计体系（中性灰 + CryoBlue 蓝青混色强调色、浅色一等 + 暗色配套、design token + cc-* 原语组件、CryoIcons 自绘图标、图标轨应用壳） |
-| 更新策略 | 应用自动更新（CDN） | 应用自动更新（GitHub Releases + blockmap 差分下载，设置页可手动检查）+ 内核升级/回退（差分 ASAR 换装）双通道 |
+| 更新策略 | 应用自动更新（CDN） | 应用自动更新（GitHub Releases + blockmap 差分下载，设置页可手动检查）+ 独立内核升级、健康检查与回滚 |
 | 设置架构 | 主进程自研读写 IPC | 全面切换内核 `config.get`/`config.patch`（乐观锁 + RFC7396 diff），退役 15+ 自研 IPC |
 | 流式渲染 | 逐帧全量 markdown | 逐帧纯文本流式 + 终态一次性排版（消除 O(n²) 卡顿），折叠区懒渲染 |
-| 存储体积 | — | gateway.asar 按需裁剪（剔除非目标平台原生包/冗余类型声明/sourcemap/.pdb 调试符号，幅度随内核版本浮动） |
+| 运行环境 | — | 安装包内置独立 Node.js 与完整内核目录，按目标平台准备原生依赖；旧 ASAR 路径保留兼容用途 |
 | 模型管理 | 基础列表 | provider 分组 + 拖拽排序 + 自定义分组 + fallback 链 + 搜索 + 能力徽标 + 密钥有效性探测 + 选择器联动；ChatGPT/Codex 原生账户与额度同步、独立 HTTP(S) 代理（真实账户验收状态见 docs/CODEX-SUBSCRIPTION-INTEGRATION.md） |
 | 思考强度 | 部分模型被误限为开/关二值 | 按模型能力开放全档位（Kimi K3：low/medium/high/xhigh/max），thinkingLevelMap 正确路由 |
 | CLI | `openclaw` PATH 注入 | 额外提供 gateway CLI 托管（127.0.0.1 控制面，`openclaw gateway restart/status` 不再报错） |
-| 启动速度 | — | 窗口先行（首屏创建早于同步迁移与扩展 reconcile）+ 内核并行启动 + V8 编译缓存热启动，约 0.6s 看到界面 |
-| 插件管理 | 命令行 | 设置页「插件」tab：已安装插件清单 + 启停/卸载 + **ClawHub 插件市场**（搜索/一键安装） |
-| 测试 | — | 1948 个用例通过、4 项跳过的全量回归（vitest + node:test + typecheck），0 fail 为硬指标 |
-| 代码质量 | — | jscpd 重复率度量与防回退（全源码重复率 1.30%，阈值 5%，`npm run dupcheck`） |
+| 启动体验 | — | 窗口先行与内核并行启动，连接进度可见；V8 编译缓存帮助后续启动。具体耗时见对应版本实测记录 |
+| 插件管理 | 命令行 | 顶层「扩展」入口：技能、已安装插件与 **ClawHub 市场**，支持搜索安装、启停、卸载和本地导入 |
+| 测试 | — | vitest + node:test + Chat UI typecheck 与单测 + scripts 四层回归；`npm test` 记录每层日志与 JSON 汇总 |
+| 代码质量 | — | jscpd 度量全源码重复率，阈值 5%，通过 `npm run dupcheck` 检查 |
 
 ### 🚀 快速上手
 
@@ -86,17 +122,17 @@ Anthropic (Claude) / OpenAI (GPT / Codex) / Google (Gemini) / Moonshot（Kimi）
 
 ### 💬 多渠道集成
 
-飞书 / 企业微信 / 钉钉 / QQ Bot / 微信 —— 设置 → 渠道 中扫码绑定，让 AI 在你的团队 IM 里干活。
+飞书 / 企业微信 / 钉钉 / QQ Bot / 微信 —— 在设置 → 渠道中按各平台流程绑定，在熟悉的消息入口与 AI 交互。
 
 ### 🏗️ 技术细节
 
 ```
 CryoClaw (Electron 43 + TypeScript 5.9)
   ├── 主进程壳        src/          IPC 白名单 + sender guard；gateway 子进程托管
-  ├── 内核            openclaw 2026.9.9（版本 pin，gateway.asar，构建期打补丁）
+  ├── 内核            openclaw 2026.10.6（版本 pin，独立 Node.js 24.22.1 + 实体目录）
   ├── 聊天界面        chat-ui/      Lit 3 + Vite SPA，file:// 本地加载；图标统一 lucide 风格
   ├── 应用更新器      src/app-updater.ts  electron-updater + GitHub Releases，差分下载、静默换装
-  ├── 内核升级器      scripts/updater/  差分 ASAR 换装/回滚 + 冒烟自检
+  ├── 内核升级器      scripts/updater/  完整目录换装、恢复日志、健康检查与回滚
   └── 打包链路        scripts/package-resources.js → electron-builder
 ```
 
@@ -106,16 +142,16 @@ CryoClaw (Electron 43 + TypeScript 5.9)
 - **本地文件卡片**：历史消息中的 `MEDIA:<路径>` 标记——图片直接渲染预览，其他常见文件类型（文档/表格/压缩/音视频/代码等）渲染为文件卡片：点击打开、卡片内按钮在文件夹中显示，图标按扩展名区分。
 - **子代理等待反馈**：主回合等待子代理期间，聊天区显示子代理状态卡（标题/运行状态/进度摘要），阅读指示器同步切换为「等待子代理返回」。
 - **会话回放/分支**：压缩回放点列表（`/compact` 触发），支持回放（rewind）到任意回放点、从回放点分支（fork）出新会话，回放后可直接继续对话。
-- **插件管理**：设置页「插件」tab 管理已安装内核插件（启停/卸载），内置 **ClawHub 插件市场**（搜索、一键安装）。
+- **插件管理**：顶层「扩展」入口管理技能与内核插件（启停/卸载），内置 **ClawHub 市场**（搜索、安装），支持本地导入。
 - **快捷键**：Ctrl+N 新建对话、Ctrl+L 聚焦输入框。
 - **安全**：全部 IPC 通道过 sender guard；API Key 只存本机（`~/.openclaw/openclaw.json`）；日志统一归集到 `~/.openclaw/logs/` 并脱敏；设置 → 高级 可一键导出**诊断包**（日志 + 环境信息 + 脱敏配置摘要）；open-external 仅放行 http(s)。
 - **应用更新**：设置 → 关于 页「应用更新」卡片：启动后静默检查 GitHub Releases，blockmap 差分下载，下载完成后一键「重启更新」（NSIS 静默换装）；失败自动回退全量下载并校验 sha512，不弹窗打扰。
 - **稳定性**：渲染进程崩溃自动恢复（60s 滑窗熔断）+ 内存软监控；退出时自动清理临时缓存（保留用户配置与会话历史）。
 - **内核升级**：设置页「内核升级」卡片或 `openclaw update` CLI，差分换装、双备份、健康检查失败自动回滚。
-- **执行权限**：请求批准 / 智能审批 / 完全同意三态 + Docker 沙箱前置守卫；支持 `update_plan` 计划悬浮面板、目标模式、消息队列、`/` 命令补全。
+- **执行权限**：逐步询问 / 智能审批 / 全部允许三态 + Docker 沙箱前置守卫；支持 `update_plan` 计划悬浮面板、目标模式、消息队列、`/` 命令补全。
 - **样式体系**：`shared/design-tokens.css`（中性灰 + CryoBlue 混色 brand-500 `#2a89dd`，浅色一等）+ `styles/primitives.css` 契约组件，禁止硬编码颜色。
-- **测试**：vitest（主进程单测）+ node:test（编译产物/脚本）+ chat-ui typecheck 与单测 + scripts 用例，`npm test` 一键全量（基线 1948 pass / 0 fail / 4 skipped（vitest 276 + node 374 + chat-ui 1122 + scripts 176）。
-- **代码质量**：`npm run dupcheck`（jscpd，配置 `.jscpd.json`，阈值 5%）度量全源码重复率，当前 1.30%；公共逻辑集中在渠道面板共享模块、Kimi OAuth 流程、安全打开白名单等共享模块。
+- **测试**：vitest（主进程单测）+ node:test（编译产物/脚本）+ chat-ui typecheck 与单测 + scripts 用例，`npm test` 一键全量；当次结果与日志在 `.cache/test-results/`，版本验收记录见 `docs/OPTIMIZATION-PROGRESS.md`。
+- **代码质量**：`npm run dupcheck`（jscpd，配置 `.jscpd.json`，阈值 5%）度量全源码重复率；公共逻辑集中在渠道面板共享模块、Kimi OAuth 流程、安全打开白名单等共享模块。
 
 详细架构与历史优化记录见 `docs/architecture.md` 与 `docs/OPTIMIZATION-PROGRESS.md`。
 
@@ -139,7 +175,13 @@ A: 双通道：应用本体走 GitHub Releases 自动更新（启动后静默检
 
 **CryoClaw** is a fork-and-rebuild of [OneClaw](https://github.com/oneclaw/oneclaw) (AGPL-3.0): an efficient, easy-to-use, pure harness around the [OpenClaw](https://github.com/openclaw/openclaw) kernel. The whole project was iterated via **vibe coding** — multi-round collaborative sessions with Kimi K3 (Kimi Code, lead), DeepSeek v4 Flash (Codex) and Qwen3.8 Max (Qoder), with humans steering requirements and acceptance.
 
-Highlights over OneClaw: CryoBlue design system with light/dark themes and lucide-style icons, app auto-update via GitHub Releases with blockmap differential download plus a kernel-only upgrader (diff ASAR swap with rollback), settings fully migrated to kernel `config.get`/`config.patch`, streaming rendered as per-frame plain text (no more O(n²) jank), hardened markdown engine (GFM tables & task lists, code highlighting with language labels, KaTeX math, parse-failure fallback), message quote & error-resend actions, compaction checkpoint rewind/fork, a plugin management page with the ClawHub marketplace, gateway.asar trimmed on demand (non-target native packages, redundant type declarations, sourcemaps, .pdb symbols removed), model management with custom groups / drag-reorder / fallback chains / capability badges, per-model thinking levels done right (Kimi K3 low→max instead of a binary toggle), instant /new session reset, managed gateway CLI, ~0.6s startup (early window creation + V8 compile cache), one-click diagnostics bundle export (redacted), renderer crash self-healing, a 1948-test regression baseline (0 fail), and a jscpd-tracked code-duplication rate of 1.13% (`npm run dupcheck`, 5% threshold).
+**From a prompt to finished work.** Five everyday paths: install with a bundled runtime; chat with your choice of models, visible tool progress and conversation branches; move from browser research to Office deliverables and local files; add skills and plugins through ClawHub or local imports; and keep notes, tools and public data in independent dashboards. Model accounts, browser permissions and channel setup are required where applicable. [Explore the website](https://cryoconite.cn/CryoClaw) or [watch the 58-second feature and live demo](website/assets/cryoclaw-demo.mp4). All UI clips come from the current Electron build; demo conversations and files are labeled, and no model generation was requested.
+
+Preview module templates and add them directly to a dashboard. Right-click its tab to edit the title and description the model uses as context. In edit mode, select a card or an element inside it for targeted adjustments.
+
+Make it your own with live theme previews, paired light/dark palettes, typography, geometry, component styling, import/export and agent-assisted theme design. Fallback model chains, protected drafts and Git views, five messaging integrations, configurable execution approvals, separate app/kernel updates, configuration backups and kernel rollback help work continue across tasks.
+
+Highlights over OneClaw: a CryoBlue design system with paired themes and CryoIcons; GitHub Releases app updates with blockmap differential download; an independent kernel upgrader with health checks and rollback; kernel-backed `config.get`/`config.patch` settings; streaming plain text with final Markdown formatting; GFM tables, code highlighting and KaTeX; quote and resend actions; conversation rewind and fork; a unified extensions page; a bundled standalone Node runtime and physical kernel directory; model groups, ordering, fallback chains and capability badges; per-model thinking levels; instant /new session reset; managed gateway CLI; early window creation and V8 compile cache; redacted diagnostics; renderer crash recovery; four-layer regression checks; and jscpd duplicate-code checks (`npm run dupcheck`, 5% threshold).
 
 Download from [Releases](https://github.com/binchen6/CryoClaw/releases/latest) (Windows x64 installer), or build from source with Node.js ≥ 22.12 (`npm install && npm run dev`).
 

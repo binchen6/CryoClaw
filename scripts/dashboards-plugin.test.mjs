@@ -38,9 +38,9 @@ test('ticket expires and list renews without a catalogue mutation',async t=>{let
 test('state and document/source size limits are enforced',async t=>{const {a,board}=await fixture(t);await publish(a,board.id);await assert.rejects(a.setState(board.id,'counter','x'.repeat(32768)),/32 KiB/);await assert.rejects(publish(a,board.id,{html:'x'.repeat(131073)}),/128 KiB/);await assert.rejects(publish(a,board.id,{dataSources:[{id:'x',url:'http://localhost'}]}));assert.deepEqual(normalizeLayout({w:99,h:1,order:-5}),{w:12,h:180,order:0});});
 test('starter page has interactive cards and all inline scripts parse',()=>{
  assert.ok(starterCards.length>=17);assert.ok(starterCards.length<=24);
- const connected=starterCards.find(card=>card.cardId==='connected-section');assert.equal(connected.layout.h,320);assert.match(connected.html,/sdk\.motion\.frame/);
+ const connected=starterCards.find(card=>card.cardId==='connected-section');assert.equal(connected.layout.h,420);assert.match(connected.html,/sdk\.motion\.frame/);
  const welcome=starterCards.find(card=>card.cardId==='welcome');assert.match(welcome.html,/class="cryo-field"/);assert.doesNotMatch(welcome.html,/<pre class="art">/);
- const notes=starterCards.find(card=>card.cardId==='quick-notes');assert.match(notes.html,/cryoclawDashboard\.setState/);assert.match(notes.html,/maxlength="4000"/);
+ const notes=starterCards.find(card=>card.cardId==='quick-notes');assert.match(notes.html,/cryoclawDashboard\.setState/);assert.match(notes.html,/maxlength="4000"/);assert.match(notes.html,/id="plan"/);assert.match(notes.html,/cryoclawDashboard\.compose/);assert.match(notes.html,/cryoclawDashboard\.motion\.animate/);
  for(const card of starterCards){assert.ok(!card.html||Buffer.byteLength(card.html)<131072);for(const script of (card.html??'').matchAll(/<script>([\s\S]*?)<\/script>/g))new vm.Script(script[1],{filename:card.cardId});}
  const html=injectRuntime('<!doctype html><html><head></head><body></body></html>');assert.ok(html.startsWith('<!doctype html>'));for(const script of html.matchAll(/<script>([\s\S]*?)<\/script>/g))new vm.Script(script[1]);
 });
@@ -64,4 +64,15 @@ test('motion frames pause offscreen, resume continuously and respect reduced mot
  visible(true);assert.equal(frames.size,1);const tick=frames.values().next().value;frames.clear();tick(0);assert.equal(draws,1);assert.equal(frames.size,1);
  visible(false);assert.equal(frames.size,0);visible(true);assert.equal(frames.size,1);media.matches=true;media.change();assert.equal(frames.size,0);assert.equal(draws,2);
  document.hidden=true;events.get('visibilitychange')();assert.equal(draws,2);stop();visible(true);assert.equal(frames.size,0);assert.equal(events.has('pagehide'),false);
+});
+
+test('motion.animate pauses/resumes and reduced motion finishes immediately',()=>{
+ const window={},parent={},events=new Map(),frames=new Map(),media={matches:false,addEventListener(_n,fn){this.change=fn;}},document={hidden:false,documentElement:{toggleAttribute(){}}};let id=0;
+ const scope={window,parent,URL,Map,Set,Uint32Array,crypto:globalThis.crypto,location:{href:'http://127.0.0.1:18789/__cryoclaw__/dashboards/b/c?ticket=test'},document,matchMedia:()=>media,performance:{now:()=>123},requestAnimationFrame:fn=>{frames.set(++id,fn);return id;},cancelAnimationFrame:key=>frames.delete(key),addEventListener:(name,fn)=>events.set(name,fn),removeEventListener:(name)=>events.delete(name)};
+ vm.runInNewContext(runtimeScript().match(/<script>([\s\S]*?)<\/script>/)[1],scope);
+ const sdk=window.cryoclawDashboard,visible=active=>events.get('message')({source:parent,data:{type:'cryoclaw:dashboard:visibility',active}}),calls=[];
+ const animation={playState:'running',finished:Promise.resolve(),play(){calls.push('play');this.playState='running';},pause(){calls.push('pause');this.playState='paused';},cancel(){calls.push('cancel');this.playState='idle';},finish(){calls.push('finish');}};
+ const target={animate:(_keyframes,options)=>{calls.push(options);return animation;}};
+ visible(false);const result=sdk.motion.animate(target,[{opacity:0},{opacity:1}],{duration:180});assert.equal(result,animation);assert.equal(animation.playState,'paused');visible(true);assert.equal(animation.playState,'running');result.cancel();assert.ok(calls.includes('cancel'));
+ media.matches=true;media.change();sdk.motion.animate(target,[],{});assert.equal(calls.filter(value=>typeof value==='object').at(-1).duration,0);assert.ok(calls.includes('finish'));
 });

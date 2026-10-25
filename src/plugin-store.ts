@@ -66,14 +66,6 @@ function invalidatePluginListCache() {
   marketBrowseCache = null;
 }
 
-/**
- * T3：启动后预热——plugins list 冷启 ~15s（内核 CLI 全量加载），健康检查后
- * 预拉一次入 10min 缓存，首进扩展页直接命中。失败抛给调用方（preload-warmup 吞错）。
- */
-export async function warmPluginListCache(): Promise<void> {
-  await listInstalledPlugins();
-}
-
 // 市场浏览缓存（R91 性能审查）：单次浏览并发 14+ 路 HTTP（分类×关键词×family），
 // 前端每次重进扩展页→市场 tab 都会重发全量请求；5 分钟 TTL + limit 键控，
 // 安装/卸载/更新时经 invalidatePluginListCache 一并失效
@@ -127,6 +119,12 @@ export type MarketPlugin = {
 // 安装目录文件 → NSIS 卸载旧版失败 → 目录被清空却装不上、重试永远无效。
 // 更新交接前由 main.ts 调 killTrackedKernelCliChildren() 统一终止。
 const inflightKernelCliChildren = new Set<ChildProcess>();
+let kernelCliQuitting = false;
+
+/** Closing windows can leave queued IPC/fallback work; it must not spawn after quit. */
+export function preventKernelCliStartsForQuit(): void {
+  kernelCliQuitting = true;
+}
 
 /** 终止全部在途内核 CLI 子进程（返回终止数）；供更新换装前交接清理调用 */
 export function killTrackedKernelCliChildren(): number {
@@ -145,6 +143,7 @@ export function killTrackedKernelCliChildren(): number {
 }
 
 function execKernelCli(args: string[], timeoutMs: number = EXEC_TIMEOUT_MS): Promise<string> {
+  if (kernelCliQuitting) return Promise.reject(new Error("Application is quitting"));
   const nodeBin = resolveNodeBin();
   const entry = resolveGatewayEntry();
   const envPath = resolveUserBinDir() + path.delimiter + (process.env.PATH ?? "");

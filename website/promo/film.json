@@ -1,0 +1,26 @@
+{
+  "duration": 20,
+  "fps": 60,
+  "outro": 17.8,
+  "chapters": [
+    {"start":0,"end":3.4,"label":"选模型","title":"好模型，<em>随任务而选。</em>","description":"供应商分组 · 一键设为默认 · Fallback 备用链"},
+    {"start":3.4,"end":6.6,"label":"交付文件","title":"从网页资料，<em>到 Office 交付。</em>","description":"WebBridge 浏览器操作 · Word / Excel / PowerPoint 本地文件"},
+    {"start":6.6,"end":10.2,"label":"推进工作","title":"打开文件，<em>把工作接着做。</em>","description":"多文件标签 · 文本编辑与草稿暂存 · Git / Worktree"},
+    {"start":10.2,"end":17.8,"label":"定制主题","title":"每一处细节，<em>都可以是你的风格。</em>","description":"配对深浅外观 · 元素实时微调 · 主题包导入导出 · Agent 辅助设计"}
+  ],
+  "scenes": [
+    {"id":"models","start":0},
+    {"id":"models-selected","start":1.95},
+    {"id":"chat","start":3.4},
+    {"id":"workspace","start":6.6},
+    {"id":"workspace-edit","start":8.05},
+    {"id":"theme-light","start":10.2},
+    {"id":"theme-graphite","start":11.55},
+    {"id":"theme-dark","start":12.75},
+    {"id":"theme-studio","start":14.3},
+    {"id":"theme-tuned","start":16.45}
+  ],
+  "clicks": [1.95,8.05,11.55,12.75],
+  "drag": {"start":15.15,"end":16.45,"from":12,"to":36,"samples":25},
+  "previews": [[1.8,"models"],[2.7,"model-result"],[5.1,"office"],[7.5,"workspace"],[9.2,"workspace-edit"],[12.2,"theme-graphite"],[13.6,"theme-dark"],[15.7,"drag"],[17.1,"theme-tuned"],[19.3,"end"]]
+}

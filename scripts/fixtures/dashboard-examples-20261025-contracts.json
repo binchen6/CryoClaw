@@ -1,0 +1,212 @@
+[
+  {
+    "id": "welcome",
+    "kind": "html",
+    "layout": {
+      "w": 12,
+      "h": 300,
+      "order": 0
+    },
+    "hash": "d1ef92b0e3c5e8142d7448567a89abfc272aae106d272b44195602c05a597a55"
+  },
+  {
+    "id": "quick-notes",
+    "kind": "html",
+    "layout": {
+      "w": 4,
+      "h": 360,
+      "order": 1
+    },
+    "hash": "da3e3aa7d0ef135b9e5c10873777e75c82b4e8266993639f9485f61896379b35"
+  },
+  {
+    "id": "gesture-resize",
+    "kind": "html",
+    "layout": {
+      "w": 4,
+      "h": 360,
+      "order": 2
+    },
+    "hash": "c122499041094415a7146bc788a01b8a6562ed84a80c58de00a19b629bfca6cd"
+  },
+  {
+    "id": "gesture-open",
+    "kind": "html",
+    "layout": {
+      "w": 4,
+      "h": 360,
+      "order": 3
+    },
+    "hash": "8fcc7ea088ab8f75000260c18d6c418133cbbc9534af407252b02fdbe4eb1e4c"
+  },
+  {
+    "id": "system-check",
+    "kind": "system",
+    "layout": {
+      "w": 12,
+      "h": 300,
+      "order": 4
+    },
+    "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "id": "live-section",
+    "kind": "html",
+    "layout": {
+      "w": 12,
+      "h": 160,
+      "order": 5
+    },
+    "hash": "c858a53212e64d14cbbd0b2b6f4ede6aadb271a34429503e6d05b4c636a27c20"
+  },
+  {
+    "id": "fx-rates",
+    "kind": "html",
+    "layout": {
+      "w": 6,
+      "h": 440,
+      "order": 6
+    },
+    "hash": "73d0b45f9ca8feb9747be683b9f902b5193c725cac889594344c5abf62d8f1dd"
+  },
+  {
+    "id": "market-watch",
+    "kind": "html",
+    "layout": {
+      "w": 6,
+      "h": 440,
+      "order": 7
+    },
+    "hash": "74c1e72d25cc69598ed5105f07820d22a777658a241ab25fb8267fa2dd25ab2c"
+  },
+  {
+    "id": "release-gallery",
+    "kind": "html",
+    "layout": {
+      "w": 12,
+      "h": 460,
+      "order": 8
+    },
+    "hash": "e4d46252dd448c7f0acb902d372d5eaf7ba033b90a6a2dccac25c8f266a79788"
+  },
+  {
+    "id": "local-section",
+    "kind": "html",
+    "layout": {
+      "w": 12,
+      "h": 160,
+      "order": 9
+    },
+    "hash": "f88c405a0bb844b790929cc117dafc6a983ea7936e9d7fdadb419f42077a4f0a"
+  },
+  {
+    "id": "todo-habits",
+    "kind": "html",
+    "layout": {
+      "w": 4,
+      "h": 520,
+      "order": 10
+    },
+    "hash": "899029d3cade31dbd752c12edcf1a093a938819600ae4628ad1f8f2318ac568e"
+  },
+  {
+    "id": "pomodoro",
+    "kind": "html",
+    "layout": {
+      "w": 4,
+      "h": 520,
+      "order": 11
+    },
+    "hash": "a28dbe3a33ef99380bbd01cc696d7d21c012027f64aad1a31373de06ffac832e"
+  },
+  {
+    "id": "disk-space",
+    "kind": "html",
+    "layout": {
+      "w": 4,
+      "h": 520,
+      "order": 12
+    },
+    "hash": "338147233383035eb04c237760380e86a8d05dc3c8540033a437bf5110a88224"
+  },
+  {
+    "id": "connected-section",
+    "kind": "html",
+    "layout": {
+      "w": 12,
+      "h": 160,
+      "order": 13
+    },
+    "hash": "d15f2bcbf101420058847af9b143bc37abccae47324327a4d14a84d9976d1358"
+  },
+  {
+    "id": "audio-lab",
+    "kind": "html",
+    "layout": {
+      "w": 12,
+      "h": 500,
+      "order": 14
+    },
+    "hash": "6bd99d41526f46e73b3d2c55868064e0912fc14c57d3abf74b3ae702b0fa3352"
+  },
+  {
+    "id": "media-demo",
+    "kind": "html",
+    "layout": {
+      "w": 7,
+      "h": 420,
+      "order": 15
+    },
+    "hash": "3c70684fe4ebf534e38868de72aabd0a86312f0b4fd9f45441abd80030070503"
+  },
+  {
+    "id": "release-timeline",
+    "kind": "html",
+    "layout": {
+      "w": 5,
+      "h": 420,
+      "order": 16
+    },
+    "hash": "40b5b8031373b47054e140c800cdf87cecbe7c11f723627d2ac89f539f463457"
+  },
+  {
+    "id": "pattern-lab",
+    "kind": "html",
+    "layout": {
+      "w": 12,
+      "h": 420,
+      "order": 17
+    },
+    "hash": "fba11cb43e84f11beb2d88df89eaed95e23e7346b0a87b886a67218e68823c9d"
+  },
+  {
+    "id": "recipe-guide",
+    "kind": "html",
+    "layout": {
+      "w": 12,
+      "h": 360,
+      "order": 18
+    },
+    "hash": "1737ead156a117e8ece0b6ea276eb5e4a656d1c39e2633ab0f72b40848c48d15"
+  },
+  {
+    "id": "style-lab",
+    "kind": "html",
+    "layout": {
+      "w": 7,
+      "h": 400,
+      "order": 19
+    },
+    "hash": "89a927f5589d757c41cb785190da6bb8c561ebd404b60ca9394c3f1e63dc3a16"
+  },
+  {
+    "id": "living-guide",
+    "kind": "html",
+    "layout": {
+      "w": 5,
+      "h": 400,
+      "order": 20
+    },
+    "hash": "ae03bca8ccd5c2cc5dcba718836eb388833530c03b90ba02638696d8b281e767"
+  }
+]

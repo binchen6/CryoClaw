@@ -52,6 +52,9 @@ export type ToolStreamEntry = {
   name: string;
   args?: unknown;
   output?: string;
+  // A progress update can already contain output. Completion belongs to the
+  // result phase, including results with no textual payload.
+  completed?: boolean;
   // result 阶段从 data.isError 捕获（宽容解析：仅 true 算失败）
   isError?: boolean;
   // R52 T4：diff 行数统计。input_delta 阶段为实时值（内核 250ms 节流上报），
@@ -131,7 +134,7 @@ function extractToolOutputText(value: unknown): string | null {
       }
       return null;
     })
-    .filter((part): part is string => Boolean(part));
+    .filter((part): part is string => part !== null);
   if (parts.length === 0) {
     return null;
   }
@@ -149,7 +152,7 @@ function formatToolOutput(value: unknown): string | null {
   let text: string;
   if (typeof value === "string") {
     text = value;
-  } else if (contentText) {
+  } else if (contentText !== null) {
     text = contentText;
   } else {
     try {
@@ -172,7 +175,8 @@ function formatToolOutput(value: unknown): string | null {
 // R83：result 到达后（entry.output 有值），输出文本与 isError/toolErrorSummary/exitCode
 // 直接并入同一个 toolCall 内容块——渲染层从块上读到这些字段即得「输入+输出」合并卡。
 function buildToolCallMessage(entry: ToolStreamEntry): Record<string, unknown> {
-  const hasResult = entry.output !== undefined;
+  const hasOutput = entry.output !== undefined;
+  const completed = entry.completed ?? hasOutput;
   return {
     role: "assistant",
     runId: entry.runId,
@@ -185,7 +189,7 @@ function buildToolCallMessage(entry: ToolStreamEntry): Record<string, unknown> {
         // R52 T4：实时/最终 diff 统计随 call 内容块进渲染层（extractToolCards 读 item.diffStat）
         ...(entry.diffStat ? { diffStat: { ...entry.diffStat } } : {}),
         // R83：result 载荷并入（字段形态与 toolResult block 对齐，渲染层统一读取）
-        ...(hasResult
+        ...(hasOutput
           ? {
               text: entry.output ?? "",
               ...(entry.deliverableDetails ? {details:entry.deliverableDetails} : {}),
@@ -200,7 +204,7 @@ function buildToolCallMessage(entry: ToolStreamEntry): Record<string, unknown> {
     // 尚无 result 的 call 标记为 pending → 渲染层显示「执行中」而非「已完成」。
     // result 到达后 callMessage 会被重建（块上带输出），此标记随之消失；
     // 历史消息无此字段（历史合并见 oc-chat-history.ts::mergeToolResultHistory），不受影响。
-    ...(hasResult ? {} : { pending: true }),
+    ...(completed ? {} : { pending: true }),
   };
 }
 
@@ -259,7 +263,7 @@ function trimToolStream(host: ToolStreamHost) {
         // 超长段截断（R91）：sticky 列表只为保时间线可读，整段内容终态后由历史回归
         host.evictedLeadingSegments.push(
           seg.text.length > EVICTED_SEGMENT_CHAR_LIMIT
-            ? { ...seg, text: truncateText(seg.text, EVICTED_SEGMENT_CHAR_LIMIT).text }
+            ? { ts: seg.ts, text: truncateText(seg.text, EVICTED_SEGMENT_CHAR_LIMIT).text }
             : seg,
         );
         if (host.evictedLeadingSegments.length > EVICTED_SEGMENTS_LIMIT) {
@@ -821,7 +825,8 @@ export function handleAgentEvent(host: ToolStreamHost, payload?: AgentEventPaylo
       args,
       // R83：result 阶段空字符串也是有效 result（`|| undefined` 会把空输出当成「无
       // result」，卡片永远停在执行中）；update 阶段的空 partialResult 仍视为无输出
-      output: phase === "result" ? (output ?? undefined) : output || undefined,
+      output: phase === "result" ? (output ?? "") : output || undefined,
+      completed: phase === "result",
       isError,
       deliverableDetails,
       diffStat: phase === "input_delta" ? liveDiffStat : finalDiffStat,
@@ -842,9 +847,10 @@ export function handleAgentEvent(host: ToolStreamHost, payload?: AgentEventPaylo
     if (args !== undefined) {
       entry.args = args;
     }
-    if (phase === "result" ? output !== null : Boolean(output)) {
+    if (phase === "result" || Boolean(output)) {
       entry.output = output ?? "";
     }
+    if (phase === "result") entry.completed = true;
     if (isError !== undefined) {
       entry.isError = isError;
     }

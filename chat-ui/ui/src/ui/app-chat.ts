@@ -5,8 +5,9 @@ import { parseAgentSessionKey } from "../../../src/sessions/session-key-utils.js
 import { scheduleChatScroll } from "./app-scroll.ts";
 import { setLastActiveSessionKey } from "./app-settings.ts";
 import { resetToolStream } from "./app-tool-stream.ts";
-import { requeueChatMessageForSession } from "./run-state-store.ts";
-import { abortChatRun, loadChatHistory, sendChatMessage } from "./controllers/chat.ts";
+import { peekRunStateSnapshot, requeueChatMessageForSession } from "./run-state-store.ts";
+import { restoreSessionDraftSnapshot } from "./session-transition.ts";
+import { abortChatRun, loadChatHistory, resetChatStreamState, sendChatMessage } from "./controllers/chat.ts";
 import { loadSessions, patchSession } from "./controllers/sessions.ts";
 import { normalizeBasePath } from "./navigation.ts";
 import { managedMediaHttpOrigin,fetchGatewayAvatarMeta,fetchManagedImageObjectUrl } from "./chat/managed-media.ts";
@@ -97,12 +98,19 @@ export async function handleAbortChat(host: ChatHost) {
     return;
   }
   // 中止只停 run，不动输入框草稿（清草稿是「发送 stop 命令」的语义，见 handleSendChat）
+  const ownerSessionKey = host.sessionKey;
+  const ownerRunId = host.chatRunId;
   host.chatAbortPending = true;
   const ok = await abortChatRun(host as unknown as OpenClawApp);
   if (!ok) {
     // 提交失败：run 仍在跑，清零让按钮恢复可点；成功则保持到终态事件清零
     // （app-gateway own-run 终态），期间按钮保持禁用防重复中止。
-    host.chatAbortPending = false;
+    if (host.sessionKey === ownerSessionKey && host.chatRunId === ownerRunId) {
+      host.chatAbortPending = false;
+    } else {
+      const snapshot = peekRunStateSnapshot(ownerSessionKey);
+      if (snapshot?.chatRunId === ownerRunId) snapshot.chatAbortPending = false;
+    }
   }
 }
 
@@ -220,6 +228,7 @@ async function sendChatMessageNow(
     (host as unknown as OpenClawApp).chatVisibleMessageCount = 0;
   }
   const sessionChangedOut = { value: false };
+  const ownedRunId = { value: null as string | null };
   const ok = Boolean(
     await sendChatMessage(
       host as unknown as OpenClawApp,
@@ -229,40 +238,64 @@ async function sendChatMessageNow(
       {
         preserveRunState: Boolean(opts?.preserveRunState),
         sessionChangedDuringRead: sessionChangedOut,
+        ownedRunId,
       },
     ),
   );
+  if (!ok && ownedRunId.value) {
+    const snapshot = peekRunStateSnapshot(requestSessionKey);
+    if (snapshot?.chatRunId === ownedRunId.value) {
+      resetChatStreamState(snapshot as unknown as Parameters<typeof resetChatStreamState>[0]);
+      resetToolStream(snapshot);
+      snapshot.chatAbortPending = false;
+    }
+  }
   if (isResetCommand && !ok) {
     pendingSessionResets.delete(requestSessionKey);
     if (host.sessionKey === requestSessionKey) {
       void loadChatHistory(host as unknown as OpenClawApp);
     }
   }
-  if (!ok && opts?.previousDraft != null) {
-    host.chatMessage = opts.previousDraft;
-  }
-  if (!ok && opts?.previousAttachments) {
-    host.chatAttachments = opts.previousAttachments;
+  const isOwnerSession = host.sessionKey === requestSessionKey;
+  if (!ok && (opts?.previousDraft != null || opts?.previousAttachments)) {
+    if (!isOwnerSession) {
+      const restored = restoreSessionDraftSnapshot(requestSessionKey, opts?.previousDraft ?? "", opts?.previousAttachments ?? []);
+      if (!restored) {
+        // History cannot recover an unaccepted send. Keep its retry action in
+        // the owning queue without replacing the user's newer composer draft.
+        requeueChatMessageForSession(requestSessionKey, {
+          id: generateUUID(),
+          message,
+          text: message,
+          createdAt: Date.now(),
+          attachments: opts?.attachments?.map((attachment) => ({ ...attachment })),
+          requiresExplicitSend: true,
+        });
+      }
+    } else if (!host.chatMessage && host.chatAttachments.length === 0) {
+      host.chatMessage = opts?.previousDraft ?? "";
+      host.chatAttachments = opts?.previousAttachments ?? [];
+    }
   }
   if (ok) {
     syncSessionLabelAfterSend(host, message, requestSessionKey);
     // 附件读取期间已切走会话：last-active 写回旧会话会把用户刚切到的新会话覆盖掉，
     // 该情形跳过写回（label 同步不受影响，仍归属原会话）
-    if (!sessionChangedOut.value) {
+    if (isOwnerSession && !sessionChangedOut.value) {
       setLastActiveSessionKey(
         host as unknown as Parameters<typeof setLastActiveSessionKey>[0],
         requestSessionKey,
       );
     }
   }
-  if (ok && opts?.restoreDraft && opts.previousDraft?.trim()) {
+  if (ok && isOwnerSession && !host.chatMessage && opts?.restoreDraft && opts.previousDraft?.trim()) {
     host.chatMessage = opts.previousDraft;
   }
-  if (ok && opts?.restoreAttachments && opts.previousAttachments?.length) {
+  if (ok && isOwnerSession && host.chatAttachments.length === 0 && opts?.restoreAttachments && opts.previousAttachments?.length) {
     host.chatAttachments = opts.previousAttachments;
   }
-  scheduleChatScroll(host as unknown as Parameters<typeof scheduleChatScroll>[0]);
-  if (ok && !host.chatRunId) {
+  if (isOwnerSession) scheduleChatScroll(host as unknown as Parameters<typeof scheduleChatScroll>[0]);
+  if (ok && isOwnerSession && !host.chatRunId) {
     void flushChatQueue(host);
   }
   return ok;
@@ -273,7 +306,9 @@ async function flushChatQueue(host: ChatHost) {
     return;
   }
   const [next, ...rest] = host.chatQueue;
-  if (!next) {
+  // A recovered failed send stays visible until the user chooses Send now;
+  // returning to its session or reconnecting must not resubmit it silently.
+  if (!next || next.requiresExplicitSend === true) {
     return;
   }
   // 发送发起时的会话快照：await 窗口内可能切走会话，失败回队必须归属原会话——
@@ -355,7 +390,9 @@ export function editQueuedMessage(host: ChatHost, id: string, newText: string) {
 // 新消息注册为优先 followup，比等终态出队更早被处理）。
 // 失败时把消息放回队列原位置（与 flushChatQueue 失败放回队首同一契约）。
 export async function sendQueuedMessageNow(host: ChatHost, id: string) {
-  if (!host.connected) {
+  // A file read can precede the first chat.send. Sending a followup now would
+  // reach the gateway first and turn it into the conversation's initial run.
+  if (!host.connected || (host.chatSending && !host.chatRunId)) {
     return false;
   }
   const index = host.chatQueue.findIndex((item) => item.id === id);

@@ -197,7 +197,7 @@
   align-items: center;
   gap: var(--spacer-12);
   position: fixed;
-  bottom: var(--spacer-24);
+  bottom: calc(var(--spacer-24) + var(--chat-compose-clearance, 0px));
   left: 50%;
   transform: translateX(-50%);
   max-width: min(480px, calc(100vw - var(--spacer-48)));
@@ -211,6 +211,7 @@
   box-shadow: var(--shadow-lg);
   z-index: var(--z-toast);
   pointer-events: auto;
+  transition: bottom var(--duration-normal) var(--ease-standard);
   animation: global-toast-in var(--duration-normal) var(--ease-standard) forwards;
 }
 oc-message-box { display: none; }
@@ -253,6 +254,7 @@ oc-message-box { display: none; }
 @media (prefers-reduced-motion: reduce) {
   .global-toast {
     animation: none;
+    transition: none;
   }
 }
 

@@ -1,20 +1,28 @@
 # Dashboard runtime
 
-SDK v2 adds `motion.frame`, `compose` and `tasks`; the existing v1 methods remain compatible. The app reuses the Chat composer, including model selection, attachments, permissions and stop. A card can fill that composer after a user click; it cannot send a message automatically.
+SDK v2 adds `motion.frame`, `motion.animate`, `compose` and `tasks`; the existing v1 methods remain compatible. The app reuses the Chat composer, including model selection, attachments, permissions and stop. A card can fill that composer after a user click; it cannot send a message automatically.
 
 ```js
 const sdk = window.cryoclawDashboard;
 const stop = sdk.motion.frame(time => draw(time), {fps: 30});
 // Stops offscreen/hidden; draws one stable frame for reduced motion. Call stop() on custom teardown.
+const transition = sdk.motion.animate(card, [
+  {opacity: .4, transform: 'translateY(6px)'},
+  {opacity: 1, transform: 'none'}
+], {duration: 220});
+// Native Animation: cancel() or await finished. Pauses while hidden and resumes in place.
+await transition.finished;
 button.onclick = () => sdk.compose('Refine this board with dated public sources');
 clock.onclick = () => sdk.tasks(); // open this card's native task dialog
 ```
 
+Normal mode keeps complete motion. Use `motion.frame` for ambient loops and `motion.animate` for one-shot state transitions; do not use reduced motion as a performance strategy. The user's explicit reduced-motion preference still produces a stable final state.
+
 `compose`/`tasks` return false in a pinned window; show a short route back to the main window. No automatic audio: create/resume AudioContext only from the user's play action. Reuse Canvas bitmaps until size or DPR changes, cap DPR and frame rate, and use real analyser data when labeling a display as a spectrum.
 
-The example collection has 21 modules, including local notes, a step editor, original procedural soundscapes, palette controls and prompt recipes. `create_example` creates a new copy; existing boards are never overwritten on upgrade. `delete` permanently removes an archived board. It can also remove an active board only with `confirmDelete: true` after the user explicitly confirms permanent deletion. Pause or remove linked native cron jobs first; shared jobs must be preserved.
+The example collection has 21 modules, including local notes, a step editor, original procedural soundscapes, palette controls and prompt recipes. Quick notes persist locally and can become an action-plan draft in the shared composer without auto-sending. `create_example` creates a new copy; existing boards are never overwritten on upgrade. `delete` permanently removes an archived board. It can also remove an active board only with `confirmDelete: true` after the user explicitly confirms permanent deletion. Pause or remove linked native cron jobs first; shared jobs must be preserved.
 
-`refresh()` reloads only this card; the floating toolbar refreshes the entire board. Keep durable state in the SDK before any explicit reload. Up to 16 iframe SDK requests may be pending; pinned SDK fetches allow four concurrent requests. Debounce edits and reuse cached public data.
+`refresh()` reloads only this card; the card chrome refresh button does the same without affecting other iframes, and the floating toolbar refreshes the whole board. Keep durable state in the SDK before any explicit reload. Up to 16 iframe SDK requests may be pending; pinned SDK fetches allow four concurrent requests. Debounce edits and reuse cached public data.
 
 Standalone queries: `cryoclaw_query_data({kind:'public',url,format:'json',pointer:'/data',maxChars:4000})`, `{kind:'system'}` or `{kind:'dashboards'}` work outside panels. Public requests share the same guards/cache; results include provenance/time, and oversized output is explicitly truncated. Ask for a smaller JSON subtree rather than dumping entire API responses. Local metrics/catalog are unavailable in sandboxed sessions. The iframe SDK remains scoped to its own card.
 
@@ -45,9 +53,11 @@ Mark board-owned cron payloads with `[cryoclaw-dashboard-target]\nboardId=<id>\n
 
 Declare up to 4 dataSources on publish: `{id,url,format:'json'|'text',refreshSeconds:300}`. Minimum refresh 60 seconds; native broker caches and coalesces requests. Public HTTPS only, no credentials or API keys, <=512 KiB/response, bounded timeout. DNS/redirects reject private addresses. Fetch failures reject the promise: show a useful status, keep previous values clearly dated. Query the data's own timestamp; fetchedAt is retrieval time. Never describe daily rates as real-time ticks. Timers and refreshes must not call the model.
 
-Declare up to 8 assets `{id,url}` for images, audio, video or fonts; use sdk.asset(id), never embed a gateway token. Media proxy permits supported MIME types and <=32 MiB. Use licensed media with visible attribution. Opaque sandbox denies host DOM, storage, arbitrary network and remote scripts. Desktop pinning uses the same SDK; local state remains available. Card content uses its fixed design width and internal overflow; the app scales the canvas for smaller windows. Expansion/resizing preserves the running iframe; navigation/refresh reconstructs it. Save timer deadlines, not second-by-second counters. Pause audio on pagehide.
+Declare up to 8 assets `{id,url}` for images, audio, video or fonts; use sdk.asset(id), never embed a gateway token. Media proxy permits supported MIME types and <=32 MiB. Use licensed media with visible attribution. Opaque sandbox denies host DOM, storage, arbitrary network and remote scripts. Desktop pinning uses the same SDK; local state remains available. Card content uses the actual iframe width and height, reflowing with the card and window. Use internal scrolling for long content. Expansion/resizing preserves the running iframe; navigation/refresh reconstructs it. Save timer deadlines, not second-by-second counters. Pause audio on pagehide.
 
-Window resizing scales the whole fixed-width canvas and card contents proportionally. Keep the designed card geometry; avoid viewport-driven layout changes for the embedded presentation. Expansion has a separate fixed 1600×900 surface, scaled to fit.
+The host mounts iframe documents near the viewport instead of starting every card on first paint; scrolling near a card loads it, and later refreshes/reloads preserve SDK state. Do not require another card's document to be loaded or reach into it. Tab context menus edit the title/description. The persistent pencil dock toggles layout/content editing and the shared model composer; More actions opens the module library.
+
+Resizing changes the actual iframe viewport without reloading it. Use CSS media queries for layout and `sdk.viewport.width`, `sdk.viewport.height` or `sdk.viewport.subscribe(({width,height})=>{...})` for responsive drawing. Subscribe returns an unsubscribe function; resize callbacks coalesce to one per animation frame. A callback receives the initial size immediately. Expansion uses the same document in the browser top layer, so inputs, timers and local state survive. Never assume a fixed 1600×900 surface.
 
 HTML example:
 

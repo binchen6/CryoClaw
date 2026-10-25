@@ -87,7 +87,7 @@ test("tokens-ext：--titlebar-h 保持 44px、--panel-width/--rail-width 存在�
   const t = css("tokens-ext.css");
   assert.match(t, /--titlebar-h:\s*44px/, "--titlebar-h 应保持 44px");
   assert.match(t, /--panel-width:\s*\d+px/, "缺 --panel-width 默认宽");
-  assert.match(t, /--rail-width:\s*60px/, "缺 --rail-width（60px 图标轨）");
+  assert.match(t, /--rail-width:\s*68px/, "缺 --rail-width（68px 带标签图标轨）");
   assert.ok(!/--sidebar-width/.test(t), "旧 --sidebar-width 变量应已删除");
 });
 
@@ -226,4 +226,12 @@ test("壳层（shell/session-panel）规则无写死色值", () => {
     assert.ok(block, `${file} 缺规则块 ${frag}`);
     assert.doesNotMatch(block, colorLiteral, `${file} ${frag} 含写死色值（暗色主题风险）`);
   }
+});
+
+test("app-render：导航不依赖闭包里的旧 cryoclawView，快速往返仍可回到对话", () => {
+  const source = uiSrc("app-render.ts");
+  const rail = source.match(/onOpenChat:[\s\S]*?onOpenWebUI/)?.[0] ?? "";
+  assert.ok(rail.includes("onOpenChat"));
+  assert.doesNotMatch(rail, /cryoclawView!==/);
+  assert.match(rail, /onOpenChat: \(\) => transitionView/);
 });

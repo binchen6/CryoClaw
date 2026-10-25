@@ -5,9 +5,9 @@ function runSuite(suite,{root,outDir,timeoutMs=600000}){
   const started=Date.now(),log=path.join(outDir,`${suite.id}.log`),fd=fs.openSync(log,'w');
   return new Promise(resolve=>{
     const child=spawn(process.execPath,suite.args,{cwd:root,env:process.env,stdio:['ignore',fd,fd],windowsHide:true,detached:process.platform!=='win32'});
-    let finished=false,timedOut=false;
-    const finish=(code,error)=>{if(finished)return;finished=true;clearTimeout(timer);fs.closeSync(fd);resolve({id:suite.id,ok:code===0&&!timedOut,code,timedOut,error:error?.message,elapsedMs:Date.now()-started,log});};
-    const timer=setTimeout(()=>{timedOut=true;try{if(process.platform==='win32')execFileSync('taskkill',['/F','/T','/PID',String(child.pid)],{stdio:'ignore',timeout:5000});else process.kill(-child.pid,'SIGKILL');}catch{}},timeoutMs);
+    let finished=false,timedOut=false,killFallback;
+    const finish=(code,error)=>{if(finished)return;finished=true;clearTimeout(timer);clearTimeout(killFallback);fs.closeSync(fd);resolve({id:suite.id,ok:code===0&&!timedOut,code,timedOut,error:error?.message,elapsedMs:Date.now()-started,log});};
+    const timer=setTimeout(()=>{timedOut=true;try{if(process.platform==='win32')execFileSync('taskkill',['/F','/T','/PID',String(child.pid)],{stdio:'ignore',timeout:5000});else process.kill(-child.pid,'SIGKILL');}catch{}try{if(child.exitCode===null&&child.signalCode===null)child.kill('SIGKILL');}catch{}killFallback=setTimeout(()=>{child.unref();finish(null,new Error('Timed-out test process did not close'));},1500);},timeoutMs);
     child.once('error',error=>finish(null,error));child.once('close',code=>finish(code));
   });
 }

@@ -11,7 +11,6 @@
    双通道主题：[data-theme=dark] 或 prefers-color-scheme 切换。
    ============================================ */
 
-/* Generated copy of shared/design-tokens.css; website layout extensions follow below. */
 /* ── 静态 token（主题无关） ── */
 :root {
   /* radius 数值阶梯 */
@@ -361,26 +360,55 @@
   }
 }
 
-/* Website-only scale. Brand, neutral surfaces and motion above match the app. */
+/* Website scale; app palette, radii and motion above stay byte-for-byte in sync. */
 :root {
   --web-width: 1248px;
-  --web-gutter: clamp(20px, 4vw, 64px);
+  --web-gutter: clamp(20px, 4.5vw, 72px);
   --web-header: 76px;
-  --web-hit: 40px;
-  --web-button-height: 52px;
+  --web-hit: 42px;
+  --web-button-height: 50px;
   --web-body: 16px;
-  --web-lead: 17px;
-  --web-display: clamp(44px, 4.55vw, 68px);
-  --web-heading: clamp(28px, 3vw, 42px);
-  --web-hero-space: clamp(56px, 6vw, 88px);
-  --web-hero-height: 690px;
-  --web-section-space: clamp(56px, 7vw, 104px);
-  --web-nav: color-mix(in srgb, var(--bg) 94%, transparent);
+  --web-lead: clamp(17px, 1.45vw, 20px);
+  --web-display: clamp(56px, 6.15vw, 88px);
+  --web-heading: clamp(32px, 3.45vw, 48px);
+  --web-subheading: clamp(21px, 2vw, 28px);
+  --web-hero-space: clamp(48px, 5.5vw, 80px);
+  --web-section-space: clamp(64px, 7.6vw, 112px);
+  --web-section-gap: clamp(32px, 4vw, 64px);
+  --web-hero-frame: clamp(8px, 1.4vw, 20px);
+  --web-nav: color-mix(in srgb, var(--bg) 92%, transparent);
+  --web-tint: color-mix(in srgb, var(--accent) 5%, var(--bg));
+  --web-tint-strong: color-mix(in srgb, var(--accent) 9%, var(--bg));
+  --web-outline: color-mix(in srgb, var(--accent) 15%, var(--border));
+  --web-shadow: 0 24px 60px -32px color-mix(in srgb, var(--text-strong) 24%, transparent);
   --font-body: CryoInter, CryoMiSans, "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
   --font-display: CryoMiSans, CryoInter, "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
   --font-meta: CryoMono, CryoMiSans, ui-monospace, monospace;
   --accent-2: #218363;
 }
 :root[data-theme=dark] { --accent-2: #71c6a3; }
-@media(prefers-color-scheme:dark) { :root:not([data-theme=light]) { --accent-2: #71c6a3; } }
-@media(max-width:520px) { :root { --web-header:64px; --web-display:44px; --web-gutter:20px; } }
+@media (prefers-color-scheme: dark) { :root:not([data-theme=light]) { --accent-2: #71c6a3; } }
+@media (max-width: 520px) { :root { --web-header: 64px; --web-display: 52px; --web-gutter: 20px; --web-button-height: 48px; } }
+@font-face {
+  font-family: CryoMiSans;
+  src: url('assets/fonts/CryoMiSans.woff2?v=20261025') format('woff2');
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+}
+@font-face {
+  font-family: CryoInter;
+  src: url('assets/fonts/CryoInter.woff2') format('woff2');
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  unicode-range: U+0000-00FF,U+2000-206F,U+2190-21FF;
+}
+@font-face {
+  font-family: CryoMono;
+  src: url('assets/fonts/CryoMono.woff2') format('woff2');
+  font-style: normal;
+  font-weight: 100 800;
+  font-display: swap;
+  unicode-range: U+0000-00FF,U+2000-206F,U+2190-21FF;
+}

@@ -78,6 +78,29 @@ const JUNK_DOC_EXTENSIONS = new Set(["", ".md", ".txt", ".markdown", ".rst"]);
 module.exports = function createKernelPrune(fs) {
   const rmRecursive = rmRecursiveFactory(fs);
 
+  // Both factory builds and npm updates ship this SDK. Its optional "source"
+  // condition is for development; every production export must stay in esm/.
+  function pruneMistralSources(nmDir, removeDir = rmRecursive) {
+    const packageDir = path.join(nmDir, "@mistralai", "mistralai");
+    function isEsmTarget(target) {
+      if (target === null || target === "./package.json") return true;
+      if (typeof target === "string") {
+        return target.startsWith("./esm/") && path.posix.normalize(target).startsWith("esm/");
+      }
+      if (!target || typeof target !== "object") return false;
+      const entries = Object.entries(target).filter(([key]) => key !== "source" && key !== "types");
+      return entries.length > 0 && entries.every(([, value]) => isEsmTarget(value));
+    }
+    try {
+      const manifest = JSON.parse(fs.readFileSync(path.join(packageDir, "package.json"), "utf8"));
+      if (manifest.main !== "./esm/index.js" || manifest.exports?.["."]?.default !== "./esm/index.js" || !isEsmTarget(manifest.exports)) return false;
+      removeDir(path.join(packageDir, "src"));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   function getDirSize(dir) {
     let total = 0;
     let entries;
@@ -147,6 +170,9 @@ module.exports = function createKernelPrune(fs) {
     }
 
     return [
+      function pruneMistral(stats) {
+        pruneMistralSources(nmDir, dir => removeDirTracked(dir, stats));
+      },
       // koffi：仅保留本机平台 native binary
       function pruneKoffi(stats) {
         const koffiBuildsDir = path.join(nmDir, "koffi", "build", "koffi");
@@ -393,5 +419,5 @@ module.exports = function createKernelPrune(fs) {
     return stats;
   }
 
-  return { pruneGatewayTree };
+  return { pruneGatewayTree, pruneMistralSources };
 };

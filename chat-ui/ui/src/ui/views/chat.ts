@@ -329,6 +329,7 @@ export function renderChat(props: ChatProps) {
     subagentCards.length === 0;
   // starter prompt chips：点击即填入并发送（与 onGoalCommand 同样的同步「先改草稿再发送」时序）
   const starterKeys = ["chat.starter1", "chat.starter2", "chat.starter3", "chat.starter4"];
+  const starterTitleKeys = ["chat.starter1Title", "chat.starter2Title", "chat.starter3Title", "chat.starter4Title"];
   // R94：starter 卡配图标（CryoIcons 现有件，与四条文案语义一一对应）
   const starterIcons = [icons.terminal, icons.clock, icons.diff, icons.folder];
   const sendStarter = (text: string) => {
@@ -427,7 +428,11 @@ export function renderChat(props: ChatProps) {
                     @click=${() => sendStarter(t(key))}
                   >
                     <span class="chat-hero__chip-icon" aria-hidden="true">${starterIcons[i]}</span>
-                    <span class="chat-hero__chip-text">${t(key)}</span>
+                    <span class="chat-hero__chip-text">
+                      <strong>${t(starterTitleKeys[i])}</strong>
+                      <span>${t(key)}</span>
+                    </span>
+                    <span class="chat-hero__chip-arrow" aria-hidden="true">${icons.arrowRight}</span>
                   </button>
                 `,
               )}

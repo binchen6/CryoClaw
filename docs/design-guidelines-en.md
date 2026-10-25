@@ -127,7 +127,7 @@ parameters are each defined per theme — dark is not derived from light.
 
 ### 2.4 Chat UI extension variables (`styles/tokens-ext.css`)
 
-- **Shell-size variables (static)**: `--rail-width: 60px` (icon rail, always present
+- **Shell-size variables (static)**: `--rail-width: 68px` (labeled icon rail, always present
   except in setup), `--panel-width: 264px` (session-panel default width; overridden
   inline on `:root` once the user resizes), `--titlebar-h: 44px` (immersive
   titlebar/context-bar height — the shell reserves it uniformly), `--toggle-knob`
@@ -175,7 +175,7 @@ scale (check the file for the live set; dead classes are pruned). Functional sty
 ┌────────┬──────────────┬──────────────────────────────────┐
 │        │              │  .cryoclaw-titlebar (44px, drag)   │
 │ oc-rail│oc-session-   │  = context bar: panel toggle +     │
-│ (60px) │panel(264px,  │    session name / view title       │
+│ (68px) │panel(264px,  │    session name / view title       │
 │ always │collapsible/  ├──────────────────────────────────┤
 │  on)   │resizable)    │  .cryoclaw-content                 │
 │        │  chat view   │  (per-view content)                │
@@ -185,15 +185,16 @@ scale (check the file for the live set; dead classes are pruned). Functional sty
 
 ### 4.1 oc-rail icon rail (`shell.css`)
 
-- Width `--rail-width` (60px), present in every view except the setup fullpage wizard;
+- Width `--rail-width` (68px), present in every view except the setup fullpage wizard;
   the whole rail is a drag region, every interactive item is `no-drag`.
-- Top to bottom: brand mark (drag area) → chat / tasks (running-task count badge) /
+- Top to bottom: brand mark (drag area) → chat / dashboard / tasks (running-task count badge) /
   workspace / extensions → flexible spacer (`oc-rail__spacer`) → webbridge repair
   (conditional, warn color) → full web version / reconnect (destructive color + error
   badge when disconnected; hovering pops up the `oc-rail__error-popup` error list) →
   settings (with dot badge `oc-rail__dot`).
-- Item spec: 40×40, radius-10, 20px icons; default `--text-muted`, hover shows
-  `--bg-hover` tint, active = `--accent` text + `--accent-subtle` background.
+- Primary items are 48×48 with radius-10, a 19px icon and a short text label; secondary
+  icon-only items remain 40×40. Default `--text-muted`, hover shows `--bg-hover` tint,
+  active = `--accent` text + `--accent-subtle` background.
 - The numeric badge `oc-rail__badge` (accent background, destructive when disconnected)
   and the dot badge `oc-rail__dot` are among the few legitimate pill-radius uses.
 
@@ -209,8 +210,8 @@ scale (check the file for the live set; dead classes are pruned). Functional sty
   override on `:root`).
 - Narrow-window adaptation (only when the user has not customized the width):
   ≤900px → 232px, ≤720px → 220px.
-- Structure: panel header (title + icon buttons for new session / more / archive
-  toggle) → search box → session list (the only scroll container; group labels +
+- Structure: panel header (title + more / archive toggle) → full-width New chat primary
+  button → search box → session list (the only scroll container; group labels +
   session items + unread dot / pin / worktree badge + inline rename + "⋯" management
   menu, z-index ≤60).
 
@@ -222,7 +223,7 @@ scale (check the file for the live set; dead classes are pruned). Functional sty
 - The titlebar area is `-webkit-app-region: drag`; every interactive element inside
   must be `no-drag` (drag/no-drag pairing).
 - Content: chat view = panel toggle + session title; other views = view title
-  (`cc-contextbar__title`, `--heading-xs` semibold). View-specific actions live in the
+  (`cc-contextbar__title`, `--heading-sm` semibold). View-specific actions live in the
   content area, not in the titlebar.
 - **setup is the only fullpage view**: no rail, no context bar.
 
@@ -265,6 +266,7 @@ Modifier: `.btn--sm` (height 28, padding 10, font `--text-sm`).
 Form controls use per-component classes plus the `.field` system in `components.css`:
 **32px high, `--bg-input` background, hairline border, radius-8**; focus = `--border-focus` + `--focus-ring`; placeholder/disabled use `--text-muted`.
 `.field` = label (`--text-sm` medium muted) + control in a grid.
+The chat composer is an intentional exception: a 1px border mixed with 42% accent and a 2px `--accent-subtle` halo replace the heavy double blue ring while keeping a clear focus state.
 (R75: the zero-reference `cc-input`/`cc-select`/`cc-textarea` were removed.)
 
 ### 5.3 Cards (`.card`)
@@ -283,12 +285,10 @@ right-aligned, gap-8).
 
 ### 5.5 Global toast (`global-toast`)
 
-**Bottom-centered** floating card: `fixed; bottom: 24px; left: 50%`, `--bg-elevated`
+**Bottom-centered and clears the actual composer height**: `fixed; bottom: calc(24px + var(--chat-compose-clearance, 0px)); left: 50%`, `--bg-elevated`
 background + hairline + radius-12 + `--shadow-lg`, `--text-sm` medium, z-index 10001,
-`--duration-normal` rise-in. Defaults to `pointer-events: none` and auto-dismisses;
-the `global-toast--action` variant (e.g. "restart to update") restores clickability,
-never auto-dismisses, and carries a small accent-outlined button
-`global-toast__action` on the right.
+`--duration-normal` rise-in and continuous repositioning as composer height changes. Defaults to `pointer-events: auto` and auto-dismisses;
+the `global-toast--action` variant (e.g. "restart to update") never auto-dismisses and carries a small accent-outlined button `global-toast__action` on the right.
 
 ### 5.6 Other primitives quick reference
 
@@ -387,7 +387,8 @@ Since the 2026.9 R2 refresh, **all app icons are drawn in-house**
 
 ### Project motion principles (2026-10-23)
 
-Motion should be precise, natural and beautiful across transitions, interruption, entrance and exit. Use fewer effects when that improves reading. **Fluency takes priority over decoration.**
+Motion should be precise, natural and beautiful across transitions, interruption, entrance and exit. Normal mode keeps the complete motion language; **never trade fewer animations for fluency**. Use compositing, visibility scheduling and less redundant work instead. Use fewer effects only when that improves reading. **Fluency takes priority over decoration.**
+- `prefers-reduced-motion` is an explicit accessibility preference, never a default performance strategy; normal-mode animation must not be silently removed for performance.
 
 - Preserve element identity and state. Reverse from current visual geometry; never flash back to the starting state or reload an iframe to animate it.
 - Prefer transform/opacity, coalesce pointer updates per frame, and commit the final pointer position. Avoid per-frame layout writes, Canvas reallocations, persistence or model requests.
@@ -402,3 +403,12 @@ Motion should be precise, natural and beautiful across transitions, interruption
   text uses `.fixed-tooltip--wide`.
 - **Tooltips only on icon-only buttons** (rail items are the canonical case);
   buttons/menu items with text labels get none.
+
+## Independent dashboard workspace
+
+- Tab context menus have exactly two actions: edit details and delete. Current title/description inform the model; avoid a duplicate metadata bar.
+- One persistent pencil dock toggles model, layout and content editing; a second click exits and keeps the draft. Move the dock above the actual composer height. More actions owns Add module.
+- Widgets receive real dimensions. Responsive defaults and continuous manual sizing coexist; manual width keeps its free flag. Arrange preserves reading order and full-width anchors, balances rows and offers geometry undo.
+- Expansion uses the browser top layer without replacing the iframe, input, timer or local state. Focus mode clears the native titlebar. Outer cards have no hover translation, scale or focus effect.
+- Interactive template previews use an isolated HTTP sandbox with labeled sample data, no external network, real state writes or model requests. Changing preview size retains its state.
+- Element editing binds to the owning card and intercepts original control actions and text input. Pause hidden motion, honor reduced motion, and avoid per-frame layout reads or persistence.

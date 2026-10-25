@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=1920, height=1080">
+  <title>CryoClaw · 最新版功能演示</title>
+  <link rel="stylesheet" href="./design-tokens.css">
+  <link rel="stylesheet" href="./promo.css">
+  <script src="./vendor/gsap.min.js"></script>
+</head>
+<body>
+<main id="film" data-composition-id="cryoclaw-latest" data-start="0" data-duration="58" data-fps="30" data-width="1920" data-height="1080" aria-label="CryoClaw 最新版实机演示">
+  <div class="paper-light" data-layout-ignore></div>
+  <header class="masthead"><img src="assets/icon.png" alt=""><b>CryoClaw</b><span>你的 OpenClaw 桌面工作台</span><span class="edition">2026.1025.0</span></header>
+  <div id="intro" class="scene cover-scene" data-scene-start="0"><div class="scene-content cover-content">
+    <span class="eyebrow">01 / 安装与模型</span><h1>安装即有<span>运行环境。</span></h1><p>连接自己的模型，开始工作。</p>
+    <div class="install-points"><span>内置 Node.js</span><i></i><span>OpenClaw 内核</span><i></i><span>桌面工作台</span></div>
+    <div class="cover-brand"><span class="brand-icon"></span><b>CryoClaw</b></div>
+  </div></div>
+  <section id="models" class="scene"><div class="scene-content">
+    <div class="scene-head"><div><span class="eyebrow">01 / 安装与模型</span><h2>好模型，<span>随任务而选。</span></h2><p>连接自己的模型，按任务切换。</p></div><span class="source-badge source-badge--live">实机录制 · 本机模型配置 · 原速</span></div>
+    <div class="product-frame"><div class="camera-move"><video id="models-video" class="product-video" src="media/models.mp4" data-start="2" data-duration="4" data-track-index="1" muted playsinline preload="auto"></video></div></div>
+  </div></section>
+  <section id="chat" class="scene"><div class="scene-content">
+    <div class="scene-head"><div><span class="eyebrow">02 / 对话与文件</span><h2>从一句话，<span>到一份工作。</span></h2><p>对话、工具与文件，接入同一段工作流。</p></div><span class="source-badge source-badge--live">实机录制 · 演示会话与文件 · 原速</span></div>
+    <div class="product-frame"><div class="camera-move"><video id="chat-video" class="product-video" src="media/chat.mp4" data-start="6" data-duration="6" data-track-index="1" muted playsinline preload="auto"></video></div></div>
+    <span class="action-note">会话与文件为演示内容，本次未请求模型生成。</span>
+  </div></section>
+  <section id="workspace" class="scene"><div class="scene-content">
+    <div class="scene-head"><div><span class="eyebrow">02 / 对话与文件</span><h2>打开文件，<span>把工作接着做。</span></h2><p>多文件标签 · 文本编辑与草稿暂存</p></div><span class="source-badge source-badge--live">实机录制 · 示例本地文件 · 原速</span></div>
+    <div class="product-frame"><div class="camera-move"><video id="workspace-video" class="product-video" src="media/workspace.mp4" data-start="12" data-duration="6" data-track-index="1" muted playsinline preload="auto"></video></div></div>
+  </div></section>
+  <section id="extensions" class="scene"><div class="scene-content">
+    <div class="scene-head"><div><span class="eyebrow">03 / 技能与插件</span><h2>让工作台，<span>继续生长。</span></h2><p>查看已安装扩展，按自己的任务添加能力。</p></div><span class="source-badge source-badge--live">实机录制 · 本机扩展 · 原速</span></div>
+    <div class="product-frame"><div class="camera-move"><video id="extensions-video" class="product-video" src="media/extensions.mp4" data-start="18" data-duration="5" data-track-index="1" muted playsinline preload="auto"></video></div></div>
+  </div></section>
+  <section id="templates" class="scene"><div class="scene-content">
+    <div class="scene-head"><div><span class="eyebrow">04 / 模板工作台</span><h2>从模板，<span>开始一张工作台。</span></h2><p>打开模板菜单，选择页面尺寸，再加入工作台。</p></div><span class="source-badge source-badge--live">实机录制 · 演示数据 · 原速</span></div>
+    <div class="product-frame"><div class="camera-move"><video id="templates-video" class="product-video" src="media/templates.mp4" data-start="23" data-duration="9" data-track-index="1" muted playsinline preload="auto"></video></div></div>
+  </div></section>
+  <section id="details" class="scene"><div class="scene-content">
+    <div class="scene-head"><div><span class="eyebrow">04 / 模板工作台</span><h2>标题与说明，<span>随手就能改。</span></h2><p>右键页面标签，编辑标题与用途说明。</p></div><span class="source-badge source-badge--live">实机录制 · 演示数据 · 原速</span></div>
+    <div class="product-frame"><div class="camera-move"><video id="details-video" class="product-video" src="media/details.mp4" data-start="32" data-duration="6" data-track-index="1" muted playsinline preload="auto"></video></div></div>
+  </div></section>
+  <section id="fullscreen" class="scene"><div class="scene-content">
+    <div class="scene-head"><div><span class="eyebrow">04 / 模板工作台</span><h2>展开页面，<span>专注当前安排。</span></h2><p>从工作台进入全屏，再回到原来的行程。</p></div><span class="source-badge source-badge--live">实机录制 · 演示数据 · 原速</span></div>
+    <div class="product-frame"><div class="camera-move"><video id="fullscreen-video" class="product-video" src="media/fullscreen.mp4" data-start="38" data-duration="7" data-track-index="1" muted playsinline preload="auto"></video></div></div>
+  </div></section>
+  <section id="microadjust" class="scene"><div class="scene-content">
+    <div class="scene-head"><div><span class="eyebrow">05 / 元素微调</span><h2>点开铅笔，<span>继续调整。</span></h2><p>编辑模式与模型输入，共用一个入口。</p></div><span class="source-badge source-badge--live">实机录制 · 演示数据 · 原速</span></div>
+    <div class="product-frame"><div class="camera-move"><video id="microadjust-video" class="product-video" src="media/microadjust.mp4" data-start="45" data-duration="10" data-track-index="1" muted playsinline preload="auto"></video></div></div>
+    <span class="action-note">仅展示实际定位与填写，未调用模型生成修改。</span>
+  </div></section>
+  <section id="outro" class="scene cover-scene" data-scene-start="55"><div class="scene-content cover-content outro-content">
+    <div class="cover-brand"><span class="brand-icon"></span><b>CryoClaw</b></div>
+    <h2>从想法，<span>到你的工作台。</span></h2><p>对话 · 文件 · 扩展 · 模板 · 元素微调</p>
+    <div class="download-cta">下载 CryoClaw <span>↗</span></div><div class="project-link">github.com/binchen6/CryoClaw</div>
+    <small>内置运行环境 · 连接自己的模型 · AGPL-3.0 开源</small>
+  </div></section>
+  <footer class="film-footer"><span>最新版实机 · 演示数据 · 原速片段经剪辑</span><nav class="chapter-track" aria-label="章节"><span>01 安装与模型</span><span>02 对话与文件</span><span>03 技能与插件</span><span>04 模板工作台</span><span>05 元素微调</span></nav></footer>
+  <div class="progress-track" data-layout-ignore><div id="progress"></div></div>
+  <audio id="score" src="media/score.mp3" data-start="0" data-duration="58" data-track-index="2" data-volume="0.7"></audio>
+</main>
+<script src="./promo.js"></script>
+<script>window.__timelines=window.__timelines||{};window.__timelines['cryoclaw-latest']=window.promoTimeline;</script>
+</body>
+</html>

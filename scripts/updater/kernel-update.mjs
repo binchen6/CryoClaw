@@ -289,6 +289,18 @@ function readVersionFromTree(gatewayDir) {
   return pkg.version;
 }
 
+// npm replaces the core package. Copy its dependencies into private staging,
+// then read CryoClaw carryover from the untouched live package after install.
+export function stagePhysicalGateway(current, stagingGateway, io = xfs) {
+  const oldPkgDir = path.join(current, "node_modules", KERNEL_PACKAGE);
+  io.cpSync(current, stagingGateway, {
+    recursive: true,
+    verbatimSymlinks: true,
+    filter: source => source !== oldPkgDir,
+  });
+  return oldPkgDir;
+}
+
 async function readCurrentVersion() {
   if (NATIVE_RUNTIME) return directorySwap.versionOf(LOOSE_PATH);
   const a = await asar();
@@ -308,7 +320,7 @@ async function readCurrentVersion() {
 // 新版为 cryoclaw-*。上游已自带同名插件目录时，仍把其中"新包缺失"的注入物文件
 // （两种命名都认）补搬过去，避免 channel shim 随换装丢失。
 const INJECTED_ARTIFACT_RE = /^\.?(?:oneclaw|cryoclaw)-.*/;
-function carryOverInjected(oldPkgDir, newPkgDir) {
+export function carryOverInjected(oldPkgDir, newPkgDir) {
   const carried = [];
   for (const sub of ["skills", path.join("dist", "extensions")]) {
     const oldSub = path.join(oldPkgDir, sub);
@@ -540,13 +552,13 @@ async function cmdUpdate(tag) {
     const stagingGateway = path.join(staging, "gateway");
 
     const a = NATIVE_RUNTIME ? null : await asar();
-    if (NATIVE_RUNTIME) xfs.cpSync(LOOSE_PATH, stagingGateway, {recursive:true,verbatimSymlinks:true});
-    else a.extractAll(ASAR_PATH, stagingGateway);
-
-    // 旧内核包挪出，npm 装新版后做注入物搬运
-    const pkgDir = path.join(stagingGateway, "node_modules", KERNEL_PACKAGE);
-    const oldPkgDir = path.join(staging, "openclaw-old");
-    xfs.renameSync(pkgDir, oldPkgDir);
+    let oldPkgDir;
+    if (NATIVE_RUNTIME) oldPkgDir = stagePhysicalGateway(LOOSE_PATH, stagingGateway);
+    else {
+      a.extractAll(ASAR_PATH, stagingGateway);
+      oldPkgDir = path.join(staging, "openclaw-old");
+      xfs.renameSync(path.join(stagingGateway, "node_modules", KERNEL_PACKAGE), oldPkgDir);
+    }
 
     // 记录旧树是否保留 llama 依赖（出厂构建默认裁掉；CRYOCLAW_KEEP_LLAMA 构建保留）。
     // npm install 会把它们重新装回来，升级后需按出厂状态对齐裁剪。
@@ -584,7 +596,7 @@ async function cmdUpdate(tag) {
     progress("carryover", 30, "搬运 CryoClaw 注入的插件与 skills");
     const newPkgDir = path.join(stagingGateway, "node_modules", KERNEL_PACKAGE);
     const carried = carryOverInjected(oldPkgDir, newPkgDir);
-    rmRecursive(oldPkgDir);
+    if (!NATIVE_RUNTIME) rmRecursive(oldPkgDir);
     progress("carryover", 35, `已搬运 ${carried.length} 个注入条目`);
 
     progress("patch", 45, "应用 asar 边界补丁与 windowsHide 补丁");

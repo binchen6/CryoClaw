@@ -36,10 +36,46 @@ for (const name of [
 }
 fs.cpSync(path.join(HERE, "..", "node_modules", "semver"), path.join(STAGE, "node_modules", "semver"), { recursive: true });
 
-const { reconcileSwapDebris, planSwapRecovery, evaluateLock, writeSwapJournal, readSwapJournal } = await import(
+const { reconcileSwapDebris, planSwapRecovery, evaluateLock, writeSwapJournal, readSwapJournal, stagePhysicalGateway, carryOverInjected } = await import(
   pathToFileURL(path.join(STAGE, "kernel-update.mjs")).href
 );
 process.once("exit", () => { try { fs.rmSync(STAGE, { recursive: true, force: true }); } catch {} });
+
+test("physical update staging copies dependencies once and reads injected artifacts from the intact old package", t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "kernel-native-stage-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const current = path.join(root, "gateway"), staged = path.join(root, "staged");
+  const oldPackage = path.join(current, "node_modules", "openclaw");
+  const write = (relative, value) => {
+    const file = path.join(current, relative);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, value);
+  };
+  write("package.json", '{"dependencies":{"openclaw":"2026.10.5"}}');
+  write("package-lock.json", '{"lockfileVersion":3}');
+  write("node_modules/dependency/index.js", "original dependency");
+  write("node_modules/openclaw/package.json", '{"version":"2026.10.5"}');
+  write("node_modules/openclaw/dist/core.js", "obsolete core");
+  write("node_modules/openclaw/skills/cryoclaw-skill/SKILL.md", "bundled skill");
+  write("node_modules/openclaw/dist/extensions/custom/entry.mjs", "bundled plugin");
+  write("node_modules/openclaw/dist/extensions/official/.cryoclaw-stamp.json", "stamp");
+  write("node_modules/openclaw/dist/extensions/official/upstream.mjs", "old upstream");
+
+  assert.equal(stagePhysicalGateway(current, staged), oldPackage);
+  assert.equal(fs.existsSync(path.join(staged, "node_modules", "openclaw")), false, "the replaceable old core must never enter staging");
+  assert.equal(fs.readFileSync(path.join(staged, "package-lock.json"), "utf8"), '{"lockfileVersion":3}');
+  fs.writeFileSync(path.join(staged, "node_modules", "dependency", "index.js"), "npm changed staged dependency");
+  assert.equal(fs.readFileSync(path.join(current, "node_modules", "dependency", "index.js"), "utf8"), "original dependency", "staged dependencies must not share mutable files with the live tree");
+
+  const installed = path.join(staged, "node_modules", "openclaw");
+  fs.mkdirSync(path.join(installed, "dist", "extensions", "official"), { recursive: true });
+  fs.writeFileSync(path.join(installed, "dist", "extensions", "official", "upstream.mjs"), "new upstream");
+  const carried = carryOverInjected(oldPackage, installed);
+  assert.deepEqual(carried.map(relative => relative.replaceAll("\\", "/")).sort(), ["skills/cryoclaw-skill", "dist/extensions/custom", "dist/extensions/official/.cryoclaw-stamp.json"].sort());
+  assert.equal(fs.readFileSync(path.join(installed, "skills", "cryoclaw-skill", "SKILL.md"), "utf8"), "bundled skill");
+  assert.equal(fs.readFileSync(path.join(installed, "dist", "extensions", "official", "upstream.mjs"), "utf8"), "new upstream");
+  assert.equal(fs.readFileSync(path.join(oldPackage, "dist", "core.js"), "utf8"), "obsolete core", "carryover must leave the rollback source intact");
+});
 
 // 每个用例一套 resources 目录：asar / unpacked 正式物 + 残留物
 function makeResources() {

@@ -13,6 +13,7 @@
 import { html, nothing } from "lit";
 import { ref } from "lit/directives/ref.js";
 import { adjustTextareaHeight } from "../utils/textarea-height.ts";
+import { setComposeForToast } from "../toast-clearance.ts";
 import type { GatewaySessionRow } from "../types.ts";
 import { icons } from "../icons.ts";
 import { t,getLocale } from "../i18n.ts";
@@ -130,10 +131,13 @@ function closePlusMenu(props: { onRequestUpdate?: () => void }) {
   if(!wasOpen)return;
   requestAnimationFrame(()=>{
     const menu=document.querySelector<HTMLElement>('.chat-plus__menu');
-    const finish=()=>{if(epoch!==plusMenuEpoch)return;plusMenuLeaving=false;plusMenuAnimation=null;props.onRequestUpdate?.();};
+    let exitTimer:number|undefined,finished=false;
+    const finish=()=>{if(finished||epoch!==plusMenuEpoch)return;finished=true;if(exitTimer!==undefined)clearTimeout(exitTimer);plusMenuLeaving=false;plusMenuAnimation=null;props.onRequestUpdate?.();};
     if(!menu||matchMedia('(prefers-reduced-motion: reduce)').matches){finish();return;}
     plusMenuAnimation=menu.animate([{opacity:1,transform:'translateY(0) scale(1)'},{opacity:0,transform:'translateY(6px) scale(.98)'}],{duration:POPOVER_EXIT_MS,easing:'ease-in',fill:'forwards'});
     plusMenuAnimation.finished.then(finish).catch(finish);
+    // Background windows may suspend WAAPI completion; cleanup still needs a bound.
+    exitTimer=window.setTimeout(finish,POPOVER_EXIT_MS+50);
   });
 }
 
@@ -217,6 +221,7 @@ function renderContextMeter(
   const title = contextMeterText("chat.contextMeterHint", values);
   return html`
     <div class="chat-compose__ctx-meter" data-tooltip=${title} data-tooltip-wide="true">
+      <span class="chat-compose__ctx-meter-label">${icons.gauge}<span>${t("chat.contextMeterLabel")}</span></span>
       <div
         class="chat-compose__ctx-meter-bar"
         role="progressbar"
@@ -227,6 +232,7 @@ function renderContextMeter(
       >
         <div class="chat-compose__ctx-meter-fill" style=${`width: ${stats.widthPct}%`}></div>
       </div>
+      <span class="chat-compose__ctx-meter-value">${stats.percent}%</span>
     </div>
   `;
 }
@@ -730,6 +736,7 @@ export function renderCompose(props: ChatProps, ctx: ComposeRenderContext) {
   const execLabel=execMode==='auto'?t('chat.execModeAuto'):execMode==='full'?t('chat.execModeApproveAll'):t('chat.execModeAsk');
   return html`
     <div class="chat-compose"
+      ${ref(setComposeForToast)}
       @cryoclaw:compose-menu=${()=>{closePlusMenu(props);closeBranchPopover();}}
       @dragenter=${(event:DragEvent)=>{if(!event.dataTransfer?.types.includes("Files"))return;const root=event.currentTarget as HTMLElement;root.dataset.dragDepth=String(Number(root.dataset.dragDepth??0)+1);root.dataset.fileDrag="true";}}
       @dragover=${(event:DragEvent)=>{if(event.dataTransfer?.types.includes("Files")){event.preventDefault();event.dataTransfer.dropEffect="copy";}}}
@@ -737,9 +744,9 @@ export function renderCompose(props: ChatProps, ctx: ComposeRenderContext) {
       @drop=${(event:DragEvent)=>{const root=event.currentTarget as HTMLElement;delete root.dataset.fileDrag;delete root.dataset.dragDepth;}}>
       <div class="chat-compose__drop-hint" role="status">${getLocale().startsWith("zh")?"松开鼠标，将文件添加到当前会话":"Drop to attach files to this conversation"}</div>
       ${renderAttachmentPreview(props)}
-      ${renderContextMeter(ctx.activeSession, props.dirtyMeterSessions)}
       <div class="field chat-compose__field">
         <span>${t("chat.messageLabel")}</span>
+        ${renderContextMeter(ctx.activeSession, props.dirtyMeterSessions)}
         <textarea
           ${ref((el) => el && adjustTextareaHeight(el as HTMLTextAreaElement, true))}
           .value=${props.draft}
@@ -831,6 +838,8 @@ export function renderCompose(props: ChatProps, ctx: ComposeRenderContext) {
             ${renderPlusMenu(props)}
             <oc-model-picker .props=${props} .value=${ctx.modelSelectValue}></oc-model-picker>
             ${['ask','auto','full'].includes(execMode)?html`<button class="chat-compose__permission chat-compose__permission--${execMode}" type="button" aria-label=${`${t('chat.execMode')}: ${execLabel}`} data-tooltip=${`${t('chat.execMode')}: ${execLabel}`} ?disabled=${!props.connected} @click=${(event:Event)=>{event.stopPropagation();if(plusMenuOpen)closePlusMenu(props);else openPlusMenu(props);}}>${icons.shieldCheck}<span>${execLabel}</span></button>`:nothing}
+          </div>
+          <div class="chat-compose__toolbar-right">
             <div class="chat-compose__branch">
               <button
                 class="chat-compose__tool-btn"
@@ -847,10 +856,9 @@ export function renderCompose(props: ChatProps, ctx: ComposeRenderContext) {
                     closeBranchPopover();
                   } else {
                     closePlusMenu(props);
-                    closeBranchPopover(); // 清掉上一轮可能残留的监听
+                    closeBranchPopover();
                     revivePopover(popover, "chat-compose__branch-popover--closing");
                     popover.classList.add("chat-compose__branch-popover--open");
-                    // 打开时拉取最新分支列表
                     props.onOpenSessionBranches?.();
                     const container = el;
                     branchPopoverCloser = (ev: MouseEvent) => {
@@ -867,8 +875,7 @@ export function renderCompose(props: ChatProps, ctx: ComposeRenderContext) {
               </button>
               ${renderBranchPopover(props)}
             </div>
-          </div>
-          <div class="chat-compose__toolbar-right">
+            <span class="chat-compose__toolbar-divider" aria-hidden="true"></span>
             <oc-model-quota .client=${props.quotaClient ?? null} .connected=${props.connected}
               .model=${ctx.modelSelectValue?.includes("/")?ctx.modelSelectValue.slice(ctx.modelSelectValue.indexOf("/")+1):ctx.modelSelectValue??""}
               .provider=${quotaProvider(ctx.modelSelectValue,ctx.activeSession?.modelProvider)}></oc-model-quota>

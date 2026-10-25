@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 "use strict";
 const fs=require('node:fs'),path=require('node:path');
-const CACHE_EXPIRED=['kernel-recon','kernel-recon-913','gw-extract','gateway-extracted','probe-gw','asar-inspect','kernel-20261004','archived-release-assets','goal-temp','goal-remote-download','goal-installer-app.asar'];
+const CACHE_EXPIRED=['kernel-recon','kernel-recon-913','gw-extract','gateway-extracted','probe-gw','asar-inspect','kernel-20261004','archived-release-assets','goal-temp','goal-remote-download','goal-installer-app.asar','goal-npm-cache','package-store-asar.7z','package-compressed.7z','electron-qa','npm-build','npm-release-cache','promo-final','promo-final-2','promo-live','openclaw-10.6-pristine','openclaw-2026.10.6.tgz','e-test.exe','maintenance-temp','proxy-ui-smoke-state','theme-quota-state','next-ui-state','theme-agent-qa','ui-smoke-state','release-qa-state','workbench-qa-state','test-tmp','tmp','website-rework','app-extract','video-tools','website-20261025-font-tools','promo-font-tools'];
 const OUT_EXPIRED=['win32-x64-new','release-20261018-1','next-review','next-test','theme-quota-test','release'];
 function inside(base,target){const rel=path.relative(base,target);return rel!=='' && rel!=='..' && !rel.startsWith('..'+path.sep) && !path.isAbsolute(rel);}
 function validateTarget(root,relative){
@@ -46,8 +46,9 @@ function removeTree(target,base){
   if(!inside(base,fs.realpathSync(target)))throw Error('Deletion resolved outside the approved root');
   let bytes=0;
   if(stat.isDirectory()){
-    for(const name of fs.readdirSync(target))bytes+=removeTree(path.join(target,name),base);
-    fs.rmdirSync(target);
+    let names;try{names=fs.readdirSync(target);}catch(error){if(!['EPERM','EACCES'].includes(error.code))throw error;fs.chmodSync(target,0o700);names=fs.readdirSync(target);}
+    for(const name of names)bytes+=removeTree(path.join(target,name),base);
+    try{fs.rmdirSync(target);}catch(error){if(!['EPERM','EACCES'].includes(error.code))throw error;fs.chmodSync(target,0o700);fs.rmdirSync(target);}
   }else{
     try{fs.unlinkSync(target);}catch(error){if(!['EPERM','EACCES'].includes(error.code))throw error;fs.chmodSync(target,0o600);fs.unlinkSync(target);}
     bytes=stat.size;

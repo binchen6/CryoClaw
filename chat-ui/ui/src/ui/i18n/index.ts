@@ -1,32 +1,41 @@
 /**
- * Minimal i18n module for CryoClaw Chat UI.
- * ~25 string keys, Chinese / English.
- * Language detection: navigator.language or ?lang= URL param.
+ * Locale state and synchronous translation API.
  *
- * 阶段 16：字典拆分为 ./zh.ts、./en.ts，本文件保留 locale 状态与 API 实现。
+ * Only the active dictionary enters the initial module graph. The dictionaries have
+ * identical key sets (enforced by i18n.test.ts), so a missing key falls back to its
+ * stable key instead of eagerly loading the other 1,779-entry dictionary.
  */
-
-import { zhDict } from "./zh.ts";
-import { enDict } from "./en.ts";
 
 export type Locale = "zh" | "en";
 
-const dict: Record<Locale, Record<string, string>> = {
-  zh: zhDict,
-  en: enDict,
-};
-
+const dictionaries: Partial<Record<Locale, Record<string, string>>> = {};
 let currentLocale: Locale = detectLocale();
 
+async function loadDictionary(locale: Locale): Promise<Record<string, string>> {
+  const cached = dictionaries[locale];
+  if (cached) return cached;
+  const dictionary = locale === "zh"
+    ? (await import("./zh.ts")).zhDict
+    : (await import("./en.ts")).enDict;
+  dictionaries[locale] = dictionary;
+  return dictionary;
+}
+
+// Browser startup loads one dictionary. The Node test runner keeps both available
+// so the existing synchronous setLocale contract can be exercised without a DOM.
+if (typeof window === "undefined") {
+  await Promise.all([loadDictionary("zh"), loadDictionary("en")]);
+} else {
+  await loadDictionary(currentLocale);
+}
+
 function detectLocale(): Locale {
-  // URL param takes priority
   if (typeof window !== "undefined" && window.location?.search) {
     const params = new URLSearchParams(window.location.search);
     const lang = params.get("lang");
     if (lang?.startsWith("zh")) return "zh";
     if (lang?.startsWith("en")) return "en";
   }
-  // Browser language
   if (typeof navigator !== "undefined") {
     const lang = navigator.language || "";
     if (lang.startsWith("zh")) return "zh";
@@ -34,30 +43,26 @@ function detectLocale(): Locale {
   return "en";
 }
 
-/**
- * Translate a key to the current locale.
- * Falls back to English, then to the key itself.
- */
 export function t(key: string): string {
-  return dict[currentLocale]?.[key] ?? dict.en[key] ?? key;
+  return dictionaries[currentLocale]?.[key] ?? key;
 }
 
-// 本地化错误前缀优先展示给用户，再按原样拼接底层错误详情。
 export function tWithDetail(key: string, detail?: string | null): string {
   const prefix = t(key);
   const message = detail?.trim();
-  if (!message) {
-    return prefix;
-  }
+  if (!message) return prefix;
   return currentLocale === "zh" ? `${prefix}：${message}` : `${prefix}: ${message}`;
 }
 
-/** Get the current locale. */
 export function getLocale(): Locale {
   return currentLocale;
 }
 
-/** Set the locale explicitly. */
+export async function loadLocale(locale: Locale): Promise<void> {
+  await loadDictionary(locale);
+}
+
 export function setLocale(locale: Locale): void {
+  if (!dictionaries[locale]) throw new Error(`Locale is not loaded: ${locale}; call loadLocale first`);
   currentLocale = locale;
 }

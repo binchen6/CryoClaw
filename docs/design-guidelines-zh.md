@@ -114,7 +114,7 @@ token 分两层：**基础层 `shared/design-tokens.css`**（全局唯一事实�
 
 ### 2.4 Chat UI 扩展变量（`styles/tokens-ext.css`）
 
-- **壳尺寸变量（静态）**：`--rail-width: 60px`（图标轨，除 setup 外常驻）、
+- **壳尺寸变量（静态）**：`--rail-width: 68px`（带简短文字标签的图标轨，除 setup 外常驻）、
   `--panel-width: 264px`（会话面板默认宽；用户拖宽后由 `:root` 内联覆盖）、
   `--titlebar-h: 44px`（沉浸式标题栏/上下文栏高度，壳层统一占位）、
   `--toggle-knob`（开关滑块钮，双主题恒为白色）、`--radius` / `--radius-full` 别名。
@@ -165,7 +165,7 @@ R75 清理后原子类只保留现行使用的 15 个（flex 骨架 `oc-flex(-co
 ┌────────┬──────────────┬──────────────────────────────────┐
 │        │              │  .cryoclaw-titlebar (44px, drag)   │
 │ oc-rail│oc-session-   │  = 上下文栏：面板开关+会话名/      │
-│ (60px) │panel(264px,  │    视图标题                        │
+│ (68px) │panel(264px,  │    视图标题                        │
 │ 常驻)  │可折叠/可拖宽)├──────────────────────────────────┤
 │        │  仅 chat 视图│  .cryoclaw-content                 │
 │ 图标轨 │  显示        │  （各视图内容区）                  │
@@ -174,14 +174,15 @@ R75 清理后原子类只保留现行使用的 15 个（flex 骨架 `oc-flex(-co
 
 ### 4.1 oc-rail 图标轨（`shell.css`）
 
-- 宽 `--rail-width`（60px），所有视图（除 setup 全屏向导）常驻；整轨为拖拽区，
+- 宽 `--rail-width`（68px），所有视图（除 setup 全屏向导）常驻；整轨为拖拽区，
   每个可交互项 `no-drag`。
-- 上→下顺序：品牌标（拖拽区）→ chat / tasks（带运行中任务数徽标）/ workspace /
-  extensions → 弹性间隔（`oc-rail__spacer`）→ webbridge 修复（条件出现，warn 色）→
+- 上→下顺序：品牌标（拖拽区）→ chat / dashboard / tasks（带运行中任务数徽标）/
+  workspace / extensions → 弹性间隔（`oc-rail__spacer`）→ webbridge 修复（条件出现，warn 色）→
   完整版网页/重连（断连时 destructive 色 + 错误徽标，hover 弹出
   `oc-rail__error-popup` 错误列表）→ settings（带圆点角标 `oc-rail__dot`）。
-- 项规格：40×40、radius-10、图标 20px；默认 `--text-muted`，hover 出 `--bg-hover`
-  底，active = `--accent` 文字 + `--accent-subtle` 底。
+- 主导航项为 48×48、radius-10、19px 图标 + 简短文字标签；其余纯图标项保持 40×40。
+  默认 `--text-muted`，hover 出 `--bg-hover` 底，active = `--accent` 文字 +
+  `--accent-subtle` 底。
 - 数字徽标 `oc-rail__badge`（accent 底、断连时 destructive 底）与圆点角标
   `oc-rail__dot` 是仅有的 pill 圆角用法之一。
 
@@ -193,8 +194,8 @@ R75 清理后原子类只保留现行使用的 15 个（flex 骨架 `oc-flex(-co
   hover/active 显示 accent 指示条）拖拽调宽 **220–420px**，持久化到 `sidebarWidth`
   设置项（语义不变，CSS 变量改为 `--panel-width`，用户值经 `:root` 内联覆盖）。
 - 窄窗自适应（未自定义宽度时生效）：≤900px → 232px，≤720px → 220px。
-- 结构：面板头（标题 + 新会话/更多/归档切换图标按钮）→ 搜索框 →
-  会话列表（唯一滚动容器；分组标签 + 会话项 + 未读点/置顶/worktree 徽标 +
+- 结构：面板头（标题 + 更多/归档切换图标按钮）→ 全宽「新建对话」主按钮 →
+  搜索框 → 会话列表（唯一滚动容器；分组标签 + 会话项 + 未读点/置顶/worktree 徽标 +
   内联重命名 + 「⋯」管理菜单，z-index ≤60）。
 
 ### 4.3 上下文栏与标题让位
@@ -204,7 +205,7 @@ R75 清理后原子类只保留现行使用的 15 个（flex 骨架 `oc-flex(-co
 - 标题栏区域 `-webkit-app-region: drag`，其内每个可交互元素必须 `no-drag`
   （drag/no-drag 配对）。
 - 内容：chat 视图 = 面板开关 + 会话标题；其他视图 = 视图标题
-  （`cc-contextbar__title`，`--heading-xs` semibold）。各视图自有操作放在内容区，
+  （`cc-contextbar__title`，`--heading-sm` semibold）。各视图自有操作放在内容区，
   不塞进标题栏。
 - **setup 是唯一 fullpage 视图**：无 rail、无上下文栏。
 
@@ -244,6 +245,7 @@ focus-visible = `--focus-ring`；disabled = opacity 0.5。
 表单控件走各组件私有类 + `components.css` 的 `.field` 体系：
 **32px 高、`--bg-input` 底、hairline 描边、radius-8**；focus = `--border-focus` + `--focus-ring`；
 placeholder/disabled 用 `--text-muted`。`.field` = label（`--text-sm` medium muted）+ 控件的 grid 组合。
+对话输入卡是刻意例外：使用 42% accent 混合的 1px 边与 2px `--accent-subtle` 状态光，避免粗重双层蓝框；不得因此移除可辨识的聚焦反馈。
 （R75：零引用的 `cc-input`/`cc-select`/`cc-textarea` 已删除。）
 
 ### 5.3 卡片（`.card`）
@@ -262,10 +264,10 @@ max-width 520）。内部分区：`__head`（`__title` = `--heading-sm` semibold
 
 ### 5.5 全局 toast（`global-toast`）
 
-**底部居中**浮出卡片：`fixed; bottom: 24px; left: 50%`，`--bg-elevated` 底 +
+**底部居中、按输入区实际高度动态避让**：`fixed; bottom: calc(24px + var(--chat-compose-clearance, 0px)); left: 50%`，`--bg-elevated` 底 +
 hairline + radius-12 + `--shadow-lg`，`--text-sm` medium，z-index 10001，
-`--duration-normal` 上浮入场。默认 `pointer-events: none` 自动消失；
-`global-toast--action` 变体（如「重启更新」）恢复可点击、不自动消失，
+`--duration-normal` 上浮入场，输入区高度变化时连续调整位置。默认 `pointer-events: auto` 自动消失；
+`global-toast--action` 变体（如「重启更新」）不自动消失，
 右侧附 accent 描边小按钮 `global-toast__action`。
 
 ### 5.6 其他原语速查
@@ -365,7 +367,8 @@ hairline + radius-12 + `--shadow-lg`，`--text-sm` medium，z-index 10001，
 
 ### 项目动效准则（2026.10.23）
 
-动效要精美、自然，覆盖必要的过渡、打断、入场与出场。可以少，但必须精，服务于用户体验和视觉阅读，**流畅优先于装饰数量**。
+动效要精美、自然，覆盖必要的过渡、打断、入场与出场。正常模式保留完整动效，**不以减少动画数量换取流畅度**；通过合成层、可见性调度和减少无效重绘获得流畅。可以少，但必须精，服务于用户体验和视觉阅读，**流畅优先于装饰数量**。
+- `prefers-reduced-motion` 仅是用户主动选择的无障碍偏好，不是默认性能策略；正常模式的动画不得因性能优化被静默删减。
 
 - 同一交互保持同一元素和连续状态。展开、收起或反向操作从当前视觉位置接续；取消旧动画时保留当前几何，不闪回起点，不重载 iframe。
 - 移动与淡入优先使用 compositor 的 transform/opacity；避免每帧修改布局、重建 Canvas 位图、存储状态或调用模型。拖动按帧合并，松手前提交最后一个坐标。
@@ -380,3 +383,12 @@ hairline + radius-12 + `--shadow-lg`，`--text-sm` medium，z-index 10001，
   `data-tooltip-pos="bottom"` 控制向下弹出；宽文案用 `.fixed-tooltip--wide`。
 - **Tooltip 仅用于纯图标按钮**（图标轨各项即典型场景）；有文字标签的按钮/菜单项
   不加 tooltip。
+
+## 独立看板工作台
+
+- 标签右键菜单固定为“编辑看板详情”和“删除看板”；标题与说明在详情中编辑，模型读取当前说明。移除重复的整栏元信息。
+- 常驻悬浮铅笔统一制作、布局与内容编辑；再次点击退出，保留草稿。工具条随输入框实际高度平滑上移，输入框不提供单独退出按钮。更多菜单承载添加模块。
+- 小组件使用真实宽高，响应式重排与连续尺寸调节共存；手动宽度保留free标记。整理保持阅读顺序和全宽分区，平衡每行尺寸并提供布局撤销。
+- 展开使用浏览器顶层，保持同一iframe及其输入、计时和本机状态；专注模式避让原生标题栏。外层卡片不响应hover位移、放大或聚焦，反馈留在组件内部与明确的操作按钮。
+- 模板预览使用独立HTTP沙箱及明确的示例数据，不触网、不写正式状态、不发送模型请求。紧凑/宽屏切换保留预览状态。
+- 任意元素微调必须先选择所属卡片内的目标；选中期间拦截原控件动作和输入。动效暂停离屏工作，尊重减少动态效果，禁止每帧读布局或写存储。

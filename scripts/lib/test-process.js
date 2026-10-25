@@ -11,12 +11,14 @@ function probeProcess(executable,args,{env,cwd,isReady,timeoutMs=30000,maxOutput
       if(child.exitCode===null && child.pid){
         if(process.platform==='win32'){
           try{execFileSync('taskkill',['/F','/T','/PID',String(child.pid)],{stdio:'ignore',timeout:5000});}catch{}
-        }else child.kill('SIGKILL');
+        }
+        // Sandbox policy can deny taskkill; the process handle still owns this child.
+        try{if(child.exitCode===null&&child.signalCode===null)child.kill('SIGKILL');}catch{}
       }
       const result={kind,stdout,stderr};
       if(child.exitCode!==null || !child.pid)resolve(result);
       else {
-        const fallback=setTimeout(()=>resolve(result),1500);
+        const fallback=setTimeout(()=>{const stopped=child.exitCode!==null||child.signalCode!==null;child.stdout?.destroy();child.stderr?.destroy();child.unref();resolve(stopped?result:{...result,kind:'cleanup-failed'});},1500);
         child.once('close',()=>{clearTimeout(fallback);resolve(result);});
       }
     };

@@ -105,7 +105,7 @@ export type ChatEventPayload = {
 };
 
 const INITIAL_CHAT_HISTORY_RENDER_COUNT = 20;
-const CHAT_HISTORY_RENDER_BATCH = 10;
+const CHAT_HISTORY_RENDER_BATCH = 40;
 
 // 取消历史消息渐进渲染，避免旧帧在 session 切换后继续写状态。
 function cancelChatHistoryHydration(state: ChatState) {
@@ -115,7 +115,8 @@ function cancelChatHistoryHydration(state: ChatState) {
   }
 }
 
-// 大历史记录先露出一小批，后续逐帧补齐，避免首屏同步渲染把 renderer 卡死。
+// 大历史记录先露出 20 条，再以 40 条一批补齐：保留首屏响应，
+// 同时把 200 条历史的 18 次重复整树求值降为 5 次。
 function scheduleChatHistoryHydration(state: ChatState, sessionKey: string, total: number) {
   cancelChatHistoryHydration(state);
   if (total <= state.chatVisibleMessageCount) {
@@ -731,7 +732,11 @@ export async function loadChatHistory(
     state.chatThinkingLevel = res.thinkingLevel ?? null;
     return result;
   } catch (err) {
-    if (state.sessionKey !== requestSessionKey) {
+    if (
+      state.sessionKey !== requestSessionKey ||
+      (generation !== null && generation !== loadChatHistoryGeneration) ||
+      (opts?.silent && lastNonSilentLoadSeq > requestSeq)
+    ) {
       return null;
     }
     state.lastError = String(err);
@@ -757,6 +762,31 @@ function dataUrlToBase64(dataUrl: string): { content: string; mimeType: string }
   return { mimeType: match[1], content: match[2] };
 }
 
+// The app host survives session switches. Track acknowledgements by owner so an
+// old request cannot block another composer or clear a newer request's busy bit.
+const pendingChatSends = new WeakMap<ChatState, Map<string, number>>();
+
+export function syncChatSendingState(state: ChatState): void {
+  state.chatSending = (pendingChatSends.get(state)?.get(state.sessionKey) ?? 0) > 0;
+}
+
+function beginChatSend(state: ChatState, sessionKey: string): () => void {
+  let pending = pendingChatSends.get(state);
+  if (!pending) {
+    pending = new Map();
+    pendingChatSends.set(state, pending);
+  }
+  pending.set(sessionKey, (pending.get(sessionKey) ?? 0) + 1);
+  syncChatSendingState(state);
+  return () => {
+    const remaining = (pending.get(sessionKey) ?? 1) - 1;
+    if (remaining > 0) pending.set(sessionKey, remaining);
+    else pending.delete(sessionKey);
+    if (pending.size === 0) pendingChatSends.delete(state);
+    syncChatSendingState(state);
+  };
+}
+
 export async function sendChatMessage(
   state: ChatState,
   message: string,
@@ -770,6 +800,9 @@ export async function sendChatMessage(
     // out 参数：附件读取窗口内切换了会话时置 true。返回的 runId 带不出该信号，
     // 调用方（app-chat.ts）据此跳过 last-active 写回等旧会话归属操作
     sessionChangedDuringRead?: { value: boolean };
+    // Only a run created by this request may be cleared from an offscreen
+    // session snapshot if its acknowledgement later fails.
+    ownedRunId?: { value: string | null };
   },
 ): Promise<string | null> {
   if (!state.client || !state.connected) {
@@ -781,7 +814,7 @@ export async function sendChatMessage(
   const requestSessionKey = state.sessionKey;
   // 先占住 busy 位再进入附件读取 await 窗口：期间队列「立即发送」等并发路径
   // 会经 isChatBusy() 判断（否则可能以 preserveRunState:false 直发并覆盖本轮流式状态）
-  state.chatSending = true;
+  const finishSend = beginChatSend(state, requestSessionKey);
   // 分离图片附件和文件路径附件
   const imageAttachments = attachments?.filter((a) => a.dataUrl) ?? [];
   const fileAttachments = attachments?.filter((a) => a.filePath && !a.dataUrl) ?? [];
@@ -841,7 +874,7 @@ export async function sendChatMessage(
 
   const hasAttachments = hasImages || hasFiles;
   if (!msg && !hasAttachments) {
-    state.chatSending = false;
+    finishSend();
     return null;
   }
 
@@ -883,13 +916,15 @@ export async function sendChatMessage(
     cancelChatHistoryHydration(state);
   }
 
-  state.chatSending = true;
-  state.lastError = null;
+  if (!sessionChangedDuringRead) {
+    state.lastError = null;
+  }
   const runId = generateUUID();
   if (!opts?.preserveRunState && !sessionChangedDuringRead) {
     // 用户发起新 run：此前的重连 orphan 快照作废（防旧 run 的迟到帧被误收养进新 run）
     clearReconnectOrphanRun();
     state.chatRunId = runId;
+    if (opts?.ownedRunId) opts.ownedRunId.value = runId;
     state.chatStream = "";
     state.chatStreamStartedAt = now;
     state.chatLastActivityAt = now;
@@ -939,7 +974,7 @@ export async function sendChatMessage(
     if (state.sessionKey !== requestSessionKey) {
       return null;
     }
-    if (!opts?.preserveRunState) {
+    if (!opts?.preserveRunState && state.chatRunId === runId) {
       state.chatRunId = null;
       state.chatStream = null;
       state.chatStreamStartedAt = null;
@@ -986,7 +1021,7 @@ export async function sendChatMessage(
     state.chatVisibleMessageCount = state.chatMessages.length;
     return null;
   } finally {
-    state.chatSending = false;
+    finishSend();
   }
 }
 
@@ -995,14 +1030,17 @@ export async function abortChatRun(state: ChatState): Promise<boolean> {
     return false;
   }
   const runId = state.chatRunId;
+  const sessionKey = state.sessionKey;
   try {
     await state.client.request(
       "chat.abort",
-      runId ? { sessionKey: state.sessionKey, runId } : { sessionKey: state.sessionKey },
+      runId ? { sessionKey, runId } : { sessionKey },
     );
     return true;
   } catch (err) {
-    state.lastError = String(err);
+    if (state.sessionKey === sessionKey && state.chatRunId === runId) {
+      state.lastError = String(err);
+    }
     return false;
   }
 }

@@ -1,0 +1,48 @@
+{
+  "id": "cryoclaw-latest",
+  "duration": 58,
+  "width": 1920,
+  "height": 1080,
+  "fps": 30,
+  "posterTime": 42.2,
+  "chapters": [
+    {"start":0,"end":6,"label":"安装与模型"},
+    {"start":6,"end":18,"label":"对话与文件"},
+    {"start":18,"end":23,"label":"技能与插件"},
+    {"start":23,"end":45,"label":"模板工作台"},
+    {"start":45,"end":55,"label":"元素微调"}
+  ],
+  "scenes": [
+    {"id":"intro","start":0,"end":2},
+    {"id":"models","start":2,"end":6,"media":"media/models.mp4"},
+    {"id":"chat","start":6,"end":12,"media":"media/chat.mp4"},
+    {"id":"workspace","start":12,"end":18,"media":"media/workspace.mp4"},
+    {"id":"extensions","start":18,"end":23,"media":"media/extensions.mp4"},
+    {"id":"templates","start":23,"end":32,"media":"media/templates.mp4"},
+    {"id":"details","start":32,"end":38,"media":"media/details.mp4"},
+    {"id":"fullscreen","start":38,"end":45,"media":"media/fullscreen.mp4"},
+    {"id":"microadjust","start":45,"end":55,"media":"media/microadjust.mp4"},
+    {"id":"outro","start":55,"end":58}
+  ],
+  "captions": [
+    [0,2,"CryoClaw，安装即有运行环境。"],
+    [2,6,"连接自己的模型，随任务选择。"],
+    [6,9,"对话、工具与文件，接入同一段工作流。"],
+    [9,12,"画面使用演示会话与文件，未请求模型生成。"],
+    [12,15,"打开本地文件，继续编辑。"],
+    [15,18,"文件标签与草稿暂存，留在同一个工作区。"],
+    [18,21,"添加技能与插件，继续扩展工作台。"],
+    [21,23,"这里展示本机实际扩展管理。"],
+    [23,28,"打开模板菜单，从现有页面开始。"],
+    [28,32,"选择页面尺寸，把模板加入工作台。"],
+    [32,35,"右键页面标签，编辑标题与说明。"],
+    [35,38,"保存后，每张页面都有清楚的名字。"],
+    [38,42,"展开行程页面，专注当前安排。"],
+    [42,45,"退出全屏，回到同一个工作台。"],
+    [45,49,"点开铅笔，进入编辑与模型输入。"],
+    [49,52,"选中元素，写下调整要求。"],
+    [52,55,"填写后退出，未调用模型生成修改。"],
+    [55,58,"CryoClaw，从想法，到你的工作台。"]
+  ],
+  "previews": [[1.4,"intro"],[4.5,"models"],[9,"chat"],[15,"workspace"],[20.5,"extensions"],[29,"templates"],[35.8,"details"],[42.2,"fullscreen"],[49,"microadjust"],[53.2,"request"],[56.8,"outro"]]
+}

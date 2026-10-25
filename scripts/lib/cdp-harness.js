@@ -203,6 +203,8 @@ async function connect(page) {
  * 返回 true=就绪；超时返回 false（调用方自行决定是否继续）。
  */
 async function waitForAppReady(cdp, { timeoutMs = 90_000, minRailItems = 4 } = {}) {
+  await cdp.send("Emulation.setFocusEmulationEnabled", { enabled: true }).catch(() => {});
+  await cdp.send("Page.setWebLifecycleState", { state: "active" }).catch(() => {});
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     try {

@@ -23,3 +23,8 @@ test('prune unlinks nested directory junctions without following them',t=>{
 test('prune ignores content newer than the requested cutoff',t=>{
   const root=fixture(t);write(root,'out/next-test/a');assert.deepEqual(planPrune(root,{version:'1.0.0',before:0}),[]);
 });
+test('prune retries a denied scratch directory after restoring ordinary access',t=>{
+  const root=fixture(t);write(root,'.cache/kernel-recon/nested/a');const original=fs.readdirSync;let denied=false;
+  fs.readdirSync=function(target,...args){if(!denied&&String(target).endsWith('kernel-recon')){denied=true;const error=new Error('denied');error.code='EACCES';throw error;}return original.call(this,target,...args);};
+  try{const report=applyPlan(root,[{relative:'.cache/kernel-recon'}]);assert.equal(report.failed.length,0);assert.equal(denied,true);assert.ok(!fs.existsSync(path.join(root,'.cache/kernel-recon')));}finally{fs.readdirSync=original;}
+});

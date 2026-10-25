@@ -130,6 +130,51 @@ test("历史合并：多条 call/result 交替按 id 各自配对", () => {
   assert.equal(block2.text, "B content");
 });
 
+test("历史与实时工具时间线重叠：已持久化结果按显式 ID 只显示一次", () => {
+  const live = {
+    role: "assistant", content: [{ type: "toolCall", id: "persisted", name: "read", arguments: { path: "a.ts" }, text: "file content" }], timestamp: 1,
+  };
+  const items = buildChatItemsMemoized({
+    messages: [callMessage("persisted", "read", { path: "a.ts" }), resultMessage("persisted", "file content")],
+    toolMessages: [live], visibleHistoryCount: 0,
+  });
+  const messages = (items[0] as any).messages;
+  assert.equal(messages.length, 1);
+  assert.equal(messages[0].message.content[0].text, "file content");
+});
+
+test("历史与实时工具时间线重叠：未持久化结果使用实时卡并保留历史名称与参数", () => {
+  const live = {
+    role: "assistant", content: [{ type: "toolCall", id: "still-live", name: "tool", text: "live output" }], timestamp: 2,
+  };
+  const items = buildChatItemsMemoized({
+    messages: [callMessage("still-live", "read", { path: "a.ts" })],
+    toolMessages: [live], visibleHistoryCount: 0,
+  });
+  const messages = (items[0] as any).messages;
+  assert.equal(messages.length, 1);
+  const block = messages[0].message.content[0];
+  assert.equal(block.name, "read");
+  assert.deepEqual(block.arguments, { path: "a.ts" });
+  assert.equal(block.text, "live output");
+});
+
+test("历史与实时工具时间线重叠：被截断历史的孤儿结果保留输出并使用实时输入", () => {
+  const live = {
+    role: "assistant", content: [{ type: "toolCall", id: "orphan-live", name: "exec", arguments: { command: "npm test" } }], timestamp: 2, pending: true,
+  };
+  const items = buildChatItemsMemoized({
+    messages: [resultMessage("orphan-live", "failed", { isError: true })],
+    toolMessages: [live], visibleHistoryCount: 0,
+  });
+  const messages = (items[0] as any).messages;
+  assert.equal(messages.length, 1);
+  assert.equal(messages[0].message.toolName, "exec");
+  assert.deepEqual(messages[0].message.toolArgs, { command: "npm test" });
+  assert.equal(messages[0].message.content[0].text, "failed");
+  assert.equal(messages[0].message.isError, true);
+});
+
 test("历史合并：孤儿 result（无对应 call）保留独立消息", () => {
   const input = [resultMessage("tc-unknown", "orphan output")];
   const items = runBuild(input);

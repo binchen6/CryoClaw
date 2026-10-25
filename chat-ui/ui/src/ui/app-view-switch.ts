@@ -7,7 +7,6 @@
  */
 
 import type { AppViewState } from "./app-view-state.ts";
-import { cleanupSettingsView } from "./views/settings/settings-view.ts";
 import type { CryoClawViewId } from "./views/registry.ts";
 
 type ViewHook = (state: AppViewState) => void;
@@ -24,9 +23,6 @@ export function setCryoClawView(state: AppViewState, next: CryoClawViewId) {
     return;
   }
   leaveHooks.get(prev)?.(state);
-  if (prev === "settings") {
-    cleanupSettingsView();
-  }
   state.applySettings({
     ...state.settings,
     cryoclawView: next,

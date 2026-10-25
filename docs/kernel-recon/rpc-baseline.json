@@ -36,6 +36,13 @@
       "files": [
         "chat-ui/ui/src/ui/components/oc-dashboard.ts"
       ]
+    },
+    "cryoclaw.dashboards.templates": {
+      "status": "fallback",
+      "note": "由 cryoclaw-dashboards 内置插件注册的 operator.read 方法；按需读取模板目录及隔离预览。插件禁用或旧版本时模块库显示明确错误与重试，现有看板和对话继续可用。",
+      "files": [
+        "chat-ui/ui/src/ui/components/oc-dashboard-library.ts"
+      ]
     }
   },
   "events": {

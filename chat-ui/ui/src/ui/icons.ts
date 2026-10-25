@@ -65,6 +65,7 @@ export const icons = {
   gripVertical: renderIcon('<path d="M9 5h.01M15 5h.01M9 12h.01M15 12h.01M9 19h.01M15 19h.01"/>'),
   move: renderIcon('<path d="M12 3v18M3 12h18m-12-6 3-3 3 3m-9 3-3 3 3 3m3 3 3 3 3-3m3-9 3 3-3 3"/>'),
   resize: renderIcon('<path d="M14 4h6v6m0-6-7 7M4 14v6h6m-6 0 7-7"/>'),
+  focus: renderIcon('<path d="M9 4H4v5m11-5h5v5M4 15v5h5m11-5v5h-5"/>'),
 
   x: renderIcon('<path d="M6 6l12 12"/><path d="M18 6 6 18"/>'),
   check: renderIcon('<path d="M4 12.8 9.5 18.3 20 6"/>'),

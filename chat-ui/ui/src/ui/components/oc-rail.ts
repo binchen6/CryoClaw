@@ -146,13 +146,14 @@ function railItem(
     icon: unknown;
     onClick: () => void;
     badge?: unknown;
+    text?: string;
     extraClass?: string;
   },
 ) {
   const active = opts.view != null && props.activeView === opts.view;
   return html`
     <button
-      class="oc-rail__item ${active ?"active" : ""} ${opts.extraClass ?? ""}"
+      class="oc-rail__item ${active ?"active" : ""} ${opts.text ? "oc-rail__item--labeled" : ""} ${opts.extraClass ?? ""}"
       type="button"
       data-view=${opts.view ?? nothing}
       @click=${opts.onClick}
@@ -164,6 +165,7 @@ function railItem(
       aria-label=${opts.label}
     >
       ${opts.icon}
+      ${opts.text ? html`<span class="oc-rail__label" aria-hidden="true">${opts.text}</span>` : nothing}
       ${opts.badge ?? nothing}
     </button>
   `;
@@ -267,18 +269,21 @@ function renderRailInner(props: RailProps) {
         ${railItem(props, {
           view: "chat",
           label: t("rail.chat"),
+          text: t("rail.chat"),
           icon: icons.messagePlus,
           onClick: () => props.onOpenChat(),
         })}
         ${railItem(props, {
           view: "dashboard",
           label: t("chat.board.title"),
+          text: t("chat.board.title"),
           icon: icons.layout,
           onClick: () => props.onOpenDashboard?.(),
         })}
         ${railItem(props, {
           view: "tasks",
           label: t("sidebar.tasks"),
+          text: t("sidebar.tasks"),
           icon: icons.activity,
           onClick: () => props.onOpenTasks(),
           badge:
@@ -289,12 +294,14 @@ function renderRailInner(props: RailProps) {
         ${railItem(props, {
           view: "workspace",
           label: t("sidebar.workspace"),
+          text: t("sidebar.workspace"),
           icon: icons.folder,
           onClick: () => props.onOpenWorkspace(),
         })}
         ${railItem(props, {
           view: "extensions",
           label: t("sidebar.extensions"),
+          text: t("sidebar.extensions"),
           icon: icons.puzzle,
           onClick: () => props.onOpenExtensions(),
         })}
@@ -329,6 +336,7 @@ function renderRailInner(props: RailProps) {
         ${railItem(props, {
           view: "settings",
           label: settingsTooltip,
+          text: t("sidebar.settings"),
           icon: icons.settings,
           onClick: () => props.onOpenSettings(),
           badge:

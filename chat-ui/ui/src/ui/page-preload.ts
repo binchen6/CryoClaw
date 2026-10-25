@@ -6,6 +6,7 @@ import {loadCronJobs} from "./controllers/cron.ts";
 import {loadRunHistory} from "./controllers/tasks.ts";
 import {loadSkills} from "./controllers/skills.ts";
 import {preloadWorkspaceDirectory} from "./controllers/workspace.ts";
+import {preloadViewModule} from "./lazy-view.ts";
 
 type Scope={client:AppViewState["client"];loaded:Map<string,number>;pending:Set<string>;queue:Promise<void>;timers:Array<ReturnType<typeof setTimeout>>};
 const scopes=new WeakMap<AppViewState,Scope>();
@@ -33,7 +34,9 @@ function enqueuePreload(host:AppViewState,view:string,job:()=>Promise<unknown>):
   }).catch(()=>{}).finally(()=>{scope.pending.delete(view);});
   return scope.queue;
 }
-export function preloadPage(host:AppViewState,view:CryoClawViewId){return enqueuePreload(host,view,async()=>{
+export function preloadPage(host:AppViewState,view:CryoClawViewId){
+  preloadViewModule(view);
+  return enqueuePreload(host,view,async()=>{
   const client=host.client!;
   if(view==="settings")await Promise.all([getConfigSnapshot(client),loadGatewayModels(client)]);
   else if(view==="tasks")await Promise.all([loadCronJobs(host),loadRunHistory(host)]);

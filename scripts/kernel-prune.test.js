@@ -22,6 +22,38 @@ function touch(filePath, content = "x") {
   fs.writeFileSync(filePath, content);
 }
 
+test("native kernel updates remove duplicate Mistral sources while keeping runnable ESM and package exports", async t => {
+  const { gatewayDir, nmDir } = makeGateway(t);
+  const pkg = path.join(nmDir, "@mistralai", "mistralai");
+  touch(path.join(pkg, "package.json"), JSON.stringify({ type: "module", main: "./esm/index.js", exports: {
+    ".": { source: "./src/index.ts", types: "./esm/index.d.ts", default: "./esm/index.js" },
+    "./extra": { source: "./src/extra.ts", default: "./esm/extra.js" },
+    "./package.json": "./package.json",
+  } }));
+  touch(path.join(pkg, "src", "index.ts"), "duplicate source");
+  touch(path.join(pkg, "esm", "index.js"), "export const runtime = 'preserved';");
+  touch(path.join(pkg, "esm", "extra.js"), "export default 42;");
+  const stats = createKernelPrune(fs).pruneGatewayTree(gatewayDir, { platform: "win32", arch: "x64" });
+  assert.equal(fs.existsSync(path.join(pkg, "src")), false);
+  const { pathToFileURL } = require("node:url");
+  assert.equal((await import(pathToFileURL(path.join(pkg, "esm", "index.js")).href)).runtime, "preserved");
+  assert.equal((await import(pathToFileURL(path.join(pkg, "esm", "extra.js")).href)).default, 42);
+  assert.ok(fs.existsSync(path.join(pkg, "package.json")));
+  assert.equal(stats.bytes, 16, "the removed source bytes must be included in update progress");
+});
+
+test("Mistral sources remain when a production conditional export still uses them", t => {
+  const { gatewayDir, nmDir } = makeGateway(t);
+  const pkg = path.join(nmDir, "@mistralai", "mistralai");
+  touch(path.join(pkg, "package.json"), JSON.stringify({ main: "./esm/index.js", exports: {
+    ".": { node: "./src/index.js", default: "./esm/index.js" },
+  } }));
+  touch(path.join(pkg, "src", "index.js"), "production fallback");
+  touch(path.join(pkg, "esm", "index.js"), "default runtime");
+  createKernelPrune(fs).pruneGatewayTree(gatewayDir);
+  assert.equal(fs.readFileSync(path.join(pkg, "src", "index.js"), "utf8"), "production fallback");
+});
+
 test("koffi 仅保留目标平台目录", (t) => {
   const { gatewayDir, nmDir } = makeGateway(t);
   const koffiDir = path.join(nmDir, "koffi", "build", "koffi");

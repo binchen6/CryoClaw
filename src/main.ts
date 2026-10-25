@@ -39,7 +39,7 @@ import { TrayManager } from "./tray";
 import { registerSetupIpc } from "./setup-ipc";
 import { registerSettingsIpc } from "./settings-ipc";
 import { registerSkillStoreIpc } from "./skill-store";
-import { registerPluginStoreIpc, killTrackedKernelCliChildren } from "./plugin-store";
+import { registerPluginStoreIpc, killTrackedKernelCliChildren, preventKernelCliStartsForQuit } from "./plugin-store";
 import { registerWorkspaceIpc,authorizeWorkspaceRoot,resetWorkspaceAccessForImport } from "./workspace-ipc";
 import { registerGitIpc } from "./git-ipc";
 import { detectGitCached } from "./git-detector";
@@ -56,7 +56,6 @@ import { resolveKimiSearchApiKey, readKimiApiKey, readKimiSearchDedicatedApiKey,
 import { reconcileCliOnAppLaunch } from "./cli-integration";
 import { reconcileExtensionsOnAppLaunch } from "./extension-mirror";
 import { reconcilePluginsAllowWithEnabled } from "./plugin-allow-sync";
-import { scheduleCacheWarmupAfterStartup, cancelCacheWarmup } from "./preload-warmup";
 import { migrateLegacyFeishuPluginEntry } from "./feishu-config";
 import { migrateBrowserProfileForCurrentGateway } from "./browser-profile-config";
 import { uninstallGatewayDaemon, cleanGatewayLockFiles } from "./install-detector";
@@ -1410,10 +1409,9 @@ app.whenReady().then(async () => {
       tray.setAppUpdateReady(s.status === "downloaded");
     },
     beforeQuitAndInstall: () => {
-      // R94 更新换装交接清理：先取消启动预热并终止在途内核 CLI 子进程（均为
-      // CryoClaw Helper.exe、路径在安装目录内）——它们存活会占住安装目录文件，
+      // R94 更新换装交接清理：终止在途内核 CLI 子进程（路径在安装目录内）
+      // ——它们存活会占住安装目录文件，
       // 导致 NSIS 卸载旧版复制/删除失败，出现「无法关闭」重试死循环。
-      cancelCacheWarmup();
       killTrackedKernelCliChildren();
       windowManager.prepareForAppQuit();
     },
@@ -1543,8 +1541,8 @@ app.whenReady().then(async () => {
       });
       await startGatewayAndShowMain("app:startup");
       await earlyWindow;
-      // T3：gateway 健康后错峰预热插件/技能列表缓存（纯优化，内部吞错）
-      scheduleCacheWarmupAfterStartup();
+      // Extension and marketplace lists load on first visit. A second kernel
+      // CLI at healthz would compete with the gateway's remaining startup work.
       scheduleAutoKernelUpgradeIfNeeded();
       break;
     }
@@ -1628,6 +1626,7 @@ let quitTeardownDone = false;
 function runQuitTeardown(): void {
   if (quitTeardownDone) return;
   quitTeardownDone = true;
+  preventKernelCliStartsForQuit();
   terminateKernelUpdaterForQuit();
   stopTokenRefresh();
   analytics.track("app_closed");

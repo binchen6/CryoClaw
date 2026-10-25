@@ -222,28 +222,11 @@ function buildChatItems(input: ChatHistoryInput): Array<ChatItem | MessageGroup>
       message: msg,
     });
   }
-  // toolMessages 本身是摊平的时间线（由 app-tool-stream.ts::syncToolStreamMessages 构造）：
-  // 依次包含 leadingSegment 文本 / tool call（result 已并入，R83），作为普通 message
-  // 追加即可。工具调用/结果默认显示（渲染层折叠成 summary，点击展开），不依赖
-  // showThinking 开关；showThinking 只控制思考内容的展示。
-  for (let i = 0; i < tools.length; i++) {
-    items.push({
-      kind: "message",
-      // tool 消息 key 用固定命名空间基数，不与 history.length 耦合：
-      // buildToolCallMessage/leadingSegment 消息无顶层 toolCallId/messageId，
-      // 走 messageKey 的 index 兑底分支，若用动态偏移，run 期间 chatMessages
-      // 追加（乐观 user 消息/错误卡）会让全部 tool 卡片 key 平移 → lit repeat
-      // 整批重建（hljs 重高亮、details 折叠态丢失）。history 渲染上限远小于
-      // 该基数，两个命名空间不会撞车。
-      key: messageKey(tools[i], i + 1_000_000_000),
-      message: tools[i],
-    });
-  }
-
   // R41 Task 10：流式气泡（含空白时的思考指示）与子代理等待卡不再进 chatItems，
   // 改由 renderChat 线程尾部的 <oc-chat-stream> / renderSubagentCards 直接装配：
   // 每帧的流式 delta 不再 invalidate 本 memo，历史部分流式期间保持命中。
-  return groupMessages(mergeToolResultHistory(items));
+  const historyItems = mergeToolResultHistory(items);
+  return groupMessages(mergeToolResultHistory(appendToolStreamItems(historyItems, tools)));
 }
 
 // ── R83：历史 toolResult 消息合并进对应 assistant toolCall 内容块 ──
@@ -270,6 +253,78 @@ function isCallBlock(value: unknown): value is Record<string, unknown> {
     : ""
   ).toLowerCase();
   return ["toolcall", "tool_call", "tooluse", "tool_use"].includes(kind);
+}
+
+// Mid-run history refreshes can already contain calls still present in the
+// live timeline. Reconcile only explicit IDs; equal tool names are not identity.
+function appendToolStreamItems(history: ChatItem[], tools: unknown[]): ChatItem[] {
+  if (tools.length === 0) return history;
+  const liveCalls = new Map<string, Record<string, unknown>>();
+  for (const message of tools) {
+    const content = (message as Record<string, unknown>).content;
+    if (!Array.isArray(content)) continue;
+    for (const block of content) {
+      if (isCallBlock(block) && typeof block.id === "string" && block.id) {
+        liveCalls.set(block.id, block);
+      }
+    }
+  }
+  const persisted = new Set<string>();
+  const historicalInputs = new Map<string, Record<string, unknown>>();
+  const out: ChatItem[] = [];
+  for (const item of history) {
+    if (item.kind !== "message") { out.push(item); continue; }
+    const message = item.message as Record<string, unknown>;
+    const resultId = resultCallId(message);
+    const live = resultId ? liveCalls.get(resultId) : undefined;
+    if (resultId && live) {
+      // A cropped history may contain the result without its earlier call.
+      // Keep its authoritative output/error and recover the live input.
+      persisted.add(resultId);
+      out.push({ ...item, message: {
+        ...message,
+        toolName: message.toolName ?? message.tool_name ?? live.name,
+        toolArgs: message.toolArgs ?? live.arguments ?? live.args,
+      } });
+      continue;
+    }
+    if (!Array.isArray(message.content)) { out.push(item); continue; }
+    let changed = false;
+    const content = message.content.filter((block: unknown) => {
+      if (!isCallBlock(block) || typeof block.id !== "string" || !liveCalls.has(block.id)) return true;
+      if (typeof block.text === "string") { persisted.add(block.id); return true; }
+      historicalInputs.set(block.id, block);
+      changed = true;
+      return false;
+    });
+    if (changed && content.length === 0) continue;
+    out.push(changed ? { ...item, message: { ...message, content } } : item);
+  }
+  for (let i = 0; i < tools.length; i++) {
+    const message = tools[i] as Record<string, unknown>;
+    let changed = false;
+    const content = Array.isArray(message.content) ? message.content.flatMap((block: unknown) => {
+      if (!isCallBlock(block) || typeof block.id !== "string") return [block];
+      if (persisted.has(block.id)) { changed = true; return []; }
+      const input = historicalInputs.get(block.id);
+      if (!input) return [block];
+      changed = true;
+      const args = block.arguments ?? block.args;
+      const hasArgs = args != null && (typeof args !== "object" || Object.keys(args).length > 0);
+      return [{ ...input, ...block,
+        name: typeof block.name === "string" && block.name.trim() && block.name !== "tool" ? block.name : input.name,
+        arguments: hasArgs ? args : input.arguments ?? input.args ?? args,
+      }];
+    }) : message.content;
+    if (changed && Array.isArray(content) && content.length === 0) continue;
+    out.push({
+      kind: "message",
+      // The stream namespace stays independent of appended history messages.
+      key: messageKey(tools[i], i + 1_000_000_000),
+      message: changed ? { ...message, content } : tools[i],
+    });
+  }
+  return out;
 }
 
 function mergeToolResultHistory(items: ChatItem[]): ChatItem[] {

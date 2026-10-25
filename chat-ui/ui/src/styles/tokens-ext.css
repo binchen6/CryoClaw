@@ -5,7 +5,7 @@
 
    2026.9 重写（提案 A）：
    - --sidebar-width 更名为 --panel-width（会话面板；默认值 280→264px），
-     新增 --rail-width（图标轨 60px）；
+     新增 --rail-width（带标签图标轨 68px）；
    - :root 默认值为浅色（防浅色系统首帧闪暗）；暗色值在 [data-theme=dark]
      与 prefers-color-scheme 兜底块双通道定义。
    层叠顺序由 hub styles.css 的 @import 顺序决定，勿单独调整
@@ -20,8 +20,8 @@
   --radius-full: var(--radius-pill);
   /* 会话面板（oc-session-panel）默认宽度；用户拖宽后由 :root 内联覆盖 */
   --panel-width: 264px;
-  /* 图标轨（oc-rail）宽度：所有视图（除 setup）常驻 */
-  --rail-width: 60px;
+  /* 图标轨（oc-rail）宽度：图标 + 简短文字标签，所有视图（除 setup）常驻 */
+  --rail-width: 68px;
   /* 沉浸式标题栏/上下文栏高度：壳层统一占位，视图内容从 44px 下缘开始，
      视图自身禁止再做顶部让位 */
   --titlebar-h: 44px;

@@ -18,7 +18,7 @@ import { applyQuestionResolution, buildResolveParams } from "./chat/question-car
 import { getCachedCommands, loadCommands } from "./controllers/commands.ts";
 import { loadSessionBranches } from "./controllers/session-branches.ts";
 import { listEligibleSkills } from "./controllers/skills.ts";
-import { openWorkspaceView } from "./app-workspace.ts";
+import { openWorkspaceView } from "./lazy-view.ts";
 import { confirmAndUndoTurnChanges } from "./app-chat-undo.ts";
 import { handleReconnect } from "./app-session-actions.ts";
 import { dismissPlan } from "./plan-stream.ts";
@@ -27,8 +27,10 @@ import { dismissProgressCard } from "./controllers/progress-card.ts";
 import { t } from "./i18n.ts";
 import type { ChatProps } from "./views/chat.ts";
 import {sessionFastMode,setSessionFastMode} from './controllers/session-fast-mode.ts';
+import { updateSessionAttachments } from "./session-transition.ts";
 
 export function buildChatProps(state: AppViewState): ChatProps {
+  const sessionKey = state.sessionKey;
   const workspace = state.settings.pinnedWorkspaces.find(item => item.id === state.settings.sessionWorkspaceMap[state.sessionKey]);
   return {
     workspaceName: workspace?.name,
@@ -142,11 +144,7 @@ export function buildChatProps(state: AppViewState): ChatProps {
     fastMode:sessionFastMode(state.sessionsResult?.sessions.find(row=>row.key===state.sessionKey)),
     onFastModeChange:(enabled:boolean)=>setSessionFastMode(state,enabled),
     attachments: state.chatAttachments,
-    onAttachmentsChange: (next) => {
-      // 函数式更新基于当前 state 合并，避免异步回调闭包里的旧 attachments 覆盖新附件
-      state.chatAttachments =
-        typeof next === "function" ? next(state.chatAttachments ?? []) : next;
-    },
+    onAttachmentsChange: (next) => updateSessionAttachments(state, sessionKey, next),
     onShowToast: (message) => showToast(state, message),
     // file-changes 面板「在 git 中查看」→ git 面板视图（P4）
     gitAvailable: state.gitAvailable,

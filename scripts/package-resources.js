@@ -27,6 +27,7 @@ const kernelDistPatch = require("./lib/kernel-dist-patch");
 const { extractZipArchive, extractTarGzArchive } = require("./lib/extract-archive");
 // Windows + Node 24 的 fs.rmSync 偶发静默失败，统一走带 fallback 的 rmRecursive。
 const rmRecursive = require("./lib/rm-rec")(fs);
+const { pruneMistralSources } = require("./lib/kernel-prune")(fs);
 
 // ─── 项目根目录 ───
 const ROOT = path.resolve(__dirname, "..");
@@ -2693,6 +2694,7 @@ function pruneNodeModules(nmDir, platform) {
     }
   }
 
+  pruneMistralSources(nmDir, removeDir);
   walk(nmDir);
   log(`node_modules 裁剪统计: 删除文件 ${removedFiles} 个，删除目录 ${removedDirs} 个`);
 }

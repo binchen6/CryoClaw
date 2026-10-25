@@ -101,6 +101,24 @@ oc-session-panel.oc-panel--leaving {
   background: var(--accent-subtle);
 }
 
+/* ── 主操作：新建对话保持可见，不与低频管理图标争夺识别成本 ── */
+.oc-panel__primary-action {
+  padding: 0 var(--spacer-12) var(--spacer-8);
+  -webkit-app-region: no-drag;
+}
+
+.oc-panel__new-chat {
+  width: 100%;
+  min-height: 36px;
+  justify-content: flex-start;
+  padding-inline: var(--spacer-12);
+}
+
+.oc-panel__new-chat span {
+  flex: 1;
+  text-align: left;
+}
+
 /* ── 会话搜索 ── */
 .oc-panel__search {
   padding: 0 var(--spacer-12) var(--spacer-8);

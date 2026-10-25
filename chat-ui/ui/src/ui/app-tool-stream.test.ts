@@ -339,6 +339,51 @@ test("tool update：空 partialResult 不提前结束执行中状态", () => {
   assert.equal(entry?.callMessage.pending, true);
 });
 
+test("tool update：非空进度输出仍处于执行中，只有 result 才完成", () => {
+  const host = makeHost();
+  handleAgentEvent(host, toolEvent({ phase: "start", toolCallId: "progress", name: "exec" }));
+  handleAgentEvent(host, toolEvent({ phase: "update", toolCallId: "progress", partialResult: "50% complete" }));
+  const progress = host.toolStreamById.get("progress")!;
+  assert.equal(progress.callMessage.pending, true, "partial output is not a terminal result");
+  assert.equal((progress.callMessage.content as any[])[0].text, "50% complete");
+  handleAgentEvent(host, toolEvent({ phase: "result", toolCallId: "progress", result: "finished" }));
+  assert.equal(host.toolStreamById.get("progress")!.callMessage.pending, undefined);
+});
+
+test("tool result：null 与省略输出也结束执行中状态", () => {
+  for (const result of [null, undefined]) {
+    const host = makeHost();
+    handleAgentEvent(host, toolEvent({ phase: "start", toolCallId: "empty", name: "write" }));
+    handleAgentEvent(host, toolEvent({ phase: "result", toolCallId: "empty", result }));
+    const entry = host.toolStreamById.get("empty")!;
+    assert.equal(entry.callMessage.pending, undefined, "the result phase completes tools without textual output");
+    assert.equal(entry.output, "");
+    assert.equal((entry.callMessage.content as any[])[0].text, "");
+  }
+});
+
+test("tool result：空文本内容保持空输出，不展示 JSON 信封", () => {
+  const host = makeHost();
+  handleAgentEvent(host, toolEvent({ phase: "start", toolCallId: "empty-text", name: "exec" }));
+  handleAgentEvent(host, toolEvent({ phase: "result", toolCallId: "empty-text", result: { content: [{ type: "text", text: "" }] } }));
+  assert.equal(host.toolStreamById.get("empty-text")!.output, "");
+});
+
+test("淘汰超长冻结段时丢弃旧 renderMessage 缓存，实际渲染内容也受字符上限约束", () => {
+  const fullText = "a".repeat(20_000);
+  const host = makeHost({ chatStream: fullText, chatStreamStartedAt: 1 });
+  handleAgentEvent(host, toolEvent({ phase: "start", toolCallId: "first", name: "read" }));
+  flushToolStreamSync(host); // Materialize the cache before this segment is evicted.
+  assert.equal(((host.chatToolMessages[0].content as any[])[0].text as string).length, 20_000);
+  for (let i = 0; i < 50; i++) {
+    handleAgentEvent(host, toolEvent({ phase: "start", toolCallId: `later-${i}`, name: "read" }));
+  }
+  flushToolStreamSync(host);
+  assert.equal(host.evictedLeadingSegments[0].text.length, 12_000);
+  assert.equal(((host.chatToolMessages[0].content as any[])[0].text as string).length, 12_000);
+  assert.notEqual(host.evictedLeadingSegments[0].renderMessage?.content, undefined);
+});
+
 test("tool result：exitCode 宽容解析（非整数/缺失不计）", () => {
   const host = makeHost();
   handleAgentEvent(

@@ -701,16 +701,6 @@ function renderPanelInner(host: OcSessionPanel, props: SessionPanelProps) {
       <div class="oc-panel__header">
         <span class="oc-panel__title">${props.showArchived ? t("sidebar.archivedSessions") : t("sidebar.agent")}</span>
         <div class="oc-panel__actions">
-          <button
-            class="icon-btn icon-btn--sm"
-            type="button"
-            @click=${props.onNewChat}
-            data-tooltip=${t("sidebar.newChat")}
-            data-tooltip-pos="bottom"
-            aria-label=${t("sidebar.newChat")}
-          >
-            ${icons.messagePlus}
-          </button>
           <div class="oc-panel__more-wrap">
             <button
               class="icon-btn icon-btn--sm ${moreMenuOpen ?"is-open" : ""}"
@@ -759,6 +749,12 @@ function renderPanelInner(host: OcSessionPanel, props: SessionPanelProps) {
             ${icons.archive}
           </button>
         </div>
+      </div>
+
+      <div class="oc-panel__primary-action">
+        <button class="btn primary oc-panel__new-chat" type="button" @click=${props.onNewChat}>
+          ${icons.messagePlus}<span>${t("sidebar.newChat")}</span>
+        </button>
       </div>
 
       <!-- 会话搜索（客户端过滤，正常/归档视图通用） -->

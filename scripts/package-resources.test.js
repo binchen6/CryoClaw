@@ -380,6 +380,31 @@ test("pruneNodeModules 应按扩展白名单裁剪并清理保留插件内部垃
   fs.rmSync(tmpRoot, { recursive: true, force: true });
 });
 
+test("pruneNodeModules 只删除 Mistral src，保留生产 esm 与非纯 esm 回退", () => {
+  const sandbox = loadPackageResourcesSandbox();
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "cryoclaw-mistral-prune-"));
+  const nmDir = path.join(tmpRoot, "node_modules");
+  const pkgDir = path.join(nmDir, "@mistralai", "mistralai");
+  writeFixture(path.join(pkgDir, "package.json"), JSON.stringify({ main: "./esm/index.js", exports: { ".": { default: "./esm/index.js" } } }));
+  writeFixture(path.join(pkgDir, "src", "index.ts"), "export {};\n");
+  writeFixture(path.join(pkgDir, "esm", "index.js"), "export {};\n");
+  sandbox.pruneNodeModules(nmDir);
+  assert.equal(fs.existsSync(path.join(pkgDir, "src")), false, "默认 esm 时重复 src 应删除");
+  assert.equal(fs.existsSync(path.join(pkgDir, "esm", "index.js")), true, "生产 esm 必须保留");
+  assert.equal(fs.existsSync(path.join(pkgDir, "package.json")), true, "包元数据必须保留");
+
+  const fallbackDir = path.join(tmpRoot, "fallback", "node_modules", "@mistralai", "mistralai");
+  writeFixture(path.join(fallbackDir, "package.json"), JSON.stringify({ main: "./src/index.ts", exports: { ".": { default: "./esm/index.js" } } }));
+  writeFixture(path.join(fallbackDir, "src", "index.ts"), "export {};\n");
+  writeFixture(path.join(fallbackDir, "esm", "index.js"), "export {};\n");
+  sandbox.pruneNodeModules(path.join(tmpRoot, "fallback", "node_modules"));
+  assert.equal(fs.existsSync(path.join(fallbackDir, "src")), true, "非纯 esm 的 src 回退必须保留");
+  writeFixture(path.join(fallbackDir, "package.json"), JSON.stringify({ main: "./esm/index.js", exports: { ".": { node: "./src/index.ts", default: "./esm/index.js" } } }));
+  sandbox.pruneNodeModules(path.join(tmpRoot, "fallback", "node_modules"));
+  assert.equal(fs.existsSync(path.join(fallbackDir, "src")), true, "生产 node 条件仍指向 src 时必须保留");
+  fs.rmSync(tmpRoot, { recursive: true, force: true });
+});
+
 // R6：npm 会把所有平台的原生包装进嵌套 node_modules（openclaw/node_modules/@lydell/
 // node-pty-<os>-<arch>，win32-arm64 单个 11.4MB），collectTopLevelPackages 只看第一层，
 // 必须递归逐层清理且只保留精确匹配目标平台+架构的包。

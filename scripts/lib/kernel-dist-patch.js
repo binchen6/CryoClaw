@@ -929,6 +929,62 @@ function patchAgentStartupPublication(gatewayDir) {
   return count;
 }
 
+// Reuse the exact completion authority already consulted inside the migration.
+// The source marker wins (including explicit false); an unreadable/unknown marker
+// keeps the existing migration path. Admission, leases and quarantine stay intact.
+function patchWebhookCompletionPrecheck(gatewayDir) {
+  const directory=path.join(gatewayDir,"node_modules","openclaw","dist");if(!fs.existsSync(directory))return 0;
+  const names=fs.readdirSync(directory),targets=names.filter(name=>/^startup-config-preflight-.*\.mjs$/.test(name));
+  if(!targets.length){
+    const manifest=path.join(directory,"..","package.json");
+    if(fs.existsSync(manifest)&&JSON.parse(fs.readFileSync(manifest,"utf8")).version==="2026.10.6")throw Error("Webhook completion precheck coverage missing in pinned kernel");
+    return 0;
+  }
+  const marker="/* cryoclaw-webhook-completion-precheck */";
+  const helper=`
+${marker}
+export function cryoclawReadWebhookCompletion(sourceConfig, env) {
+  try {
+    if (!sourceConfig || typeof sourceConfig !== "object" || Array.isArray(sourceConfig)) return undefined;
+    return sourceConfig.meta?.migrations?.webhookListeners ?? readConfigMachineState(webhookCompletionKey(env), { env });
+  } catch { return undefined; }
+}
+`;
+  const implementations=names.filter(name=>/^legacy-webhook-pins-.*\.mjs$/.test(name)).map(name=>({name,source:fs.readFileSync(path.join(directory,name),"utf8")})).filter(file=>file.source.includes("function applyHistoricalWebhookPins("));
+  if(implementations.length!==1)throw Error("Webhook completion authority contract changed; review startup precheck");
+  const implementation=implementations[0],authority="const marker = mutation.config.meta?.migrations?.webhookListeners ?? readConfigMachineState(webhookCompletionKey(env), { env });";
+  const keyContract=/function webhookCompletionKey\(env\) \{\s*return `webhookListeners:\$\{resolveConfigPath\(env\)\}`;\s*\}/;
+  if(!implementation.source.includes(authority)||!keyContract.test(implementation.source)||!implementation.source.includes("function recordUnwrittenWebhookCompletion(")||!implementation.source.includes("HISTORICAL_WEBHOOK_CHANNELS as t")||!implementation.source.includes("recordUnwrittenWebhookCompletion as r"))throw Error("Webhook completion authority contract changed; review startup precheck");
+  if(implementation.source.includes(marker)&&!implementation.source.includes(helper))throw Error("Webhook completion helper contract changed; review startup precheck");
+  const original="const webhookCompletion = read.snapshot.sourceConfig.meta?.migrations?.webhookListeners;";
+  const replacement=`const webhookCompletion = ${marker} cryoclawReadWebhookCompletion(read.snapshot.sourceConfig, env);`;
+  const importPattern=/const \{ HISTORICAL_WEBHOOK_CHANNELS, recordUnwrittenWebhookCompletion \} = await import\("\.\/(legacy-webhook-pins-[A-Za-z0-9_-]+\.mjs)"\);/;
+  const newImport=`const { t: HISTORICAL_WEBHOOK_CHANNELS, r: recordUnwrittenWebhookCompletion, cryoclawReadWebhookCompletion } = await import("./${implementation.name}");`;
+  const guard="if (webhookCompletion !== true && !HISTORICAL_WEBHOOK_CHANNELS.every((id) => Object.hasOwn(webhookCompletion ?? {}, id))) {";
+  const writes=[];
+  for(const name of targets){
+    const file=path.join(directory,name),source=fs.readFileSync(file,"utf8");
+    if(!source.includes(guard)||!source.match(/await import\("\.\/doctor-contract-registry-[A-Za-z0-9_-]+\.mjs"\)/))throw Error("Webhook migration preflight contract changed; review startup precheck");
+    if(source.includes(marker)){
+      if(!source.includes(replacement)||!source.includes(newImport)||!implementation.source.includes(helper))throw Error("Webhook completion patched contract changed; review startup precheck");
+      continue;
+    }
+    const imported=source.match(importPattern);
+    if(!imported||source.split(original).length!==2)throw Error("Webhook completion preflight contract changed; review startup precheck");
+    // Follow only the known pass-through wrapper, or the authority itself.
+    if(imported[1]!==implementation.name){
+      const wrapper=path.join(directory,imported[1]);
+      if(!fs.existsSync(wrapper)||!fs.readFileSync(wrapper,"utf8").includes(`from "./${implementation.name}"`))throw Error("Webhook completion wrapper contract changed; review startup precheck");
+    }
+    writes.push({file,source:source.replace(imported[0],newImport).replace(original,replacement)});
+  }
+  // Validate every target before changing either module. Publishing the helper
+  // first also leaves the original caller valid if a later filesystem write fails.
+  if(!implementation.source.includes(marker))fs.writeFileSync(path.join(directory,implementation.name),implementation.source+helper,"utf8");
+  for(const write of writes)fs.writeFileSync(write.file,write.source,"utf8");
+  return targets.length;
+}
+
 // Physical filesystem builds need no ASAR identity, peer, walker or scanner
 // shims. Keep product behavior separate so packaging cannot re-enable them.
 function patchConfiguredTrustedSearchArtifact(gatewayDir) {
@@ -1014,6 +1070,7 @@ function patchDesktopKernel(gatewayDir) {
     compatibility: writeKernelCompatibilityMetadata(gatewayDir),
     deliveryHistory: patchDeliverablesHistoryProjection(gatewayDir),
     startupPublication: patchAgentStartupPublication(gatewayDir),
+    webhookCompletionPrecheck: patchWebhookCompletionPrecheck(gatewayDir),
     canonicalPaths: patchWindowsPluginCanonicalPaths(gatewayDir),
     fsSafeCanonical: patchWindowsFsSafeCanonicalPaths(gatewayDir),
     trustedSearch: patchConfiguredTrustedSearchArtifact(gatewayDir),
@@ -1029,6 +1086,7 @@ module.exports = {
   patchWindowsIdleBrokerExit,
   patchDesktopKernel,
   patchAgentStartupPublication,
+  patchWebhookCompletionPrecheck,
   writeKernelCompatibilityMetadata,
   patchImmutableSkillsWatch,
   patchWindowsPluginCanonicalPaths,

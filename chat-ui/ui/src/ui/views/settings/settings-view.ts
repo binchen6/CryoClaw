@@ -7,6 +7,7 @@ import { html, nothing } from "lit";
 import { keyed } from "lit/directives/keyed.js";
 import { transitionView } from "../../utils/view-transition.ts";
 import type { AppViewState } from "../../app-view-state.ts";
+import { registerViewLeaveHook } from "../../app-view-switch.ts";
 import { t } from "../../i18n.ts";
 import * as ipc from "../../data/ipc-bridge.ts";
 import { SETTINGS_TABS, getTabIcon } from "./settings-constants.ts";
@@ -155,6 +156,8 @@ export function cleanupSettingsView() {
   s.activeTab = "channels";
   s.notice = null;
 }
+
+registerViewLeaveHook("settings", cleanupSettingsView);
 
 /* ── render entry point ── */
 

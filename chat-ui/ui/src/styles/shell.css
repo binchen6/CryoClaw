@@ -69,6 +69,43 @@
   flex-direction: column;
 }
 
+.route-loading {
+  flex: 1;
+  min-height: 180px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: var(--spacer-12);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+.route-loading__track {
+  width: 120px;
+  height: 2px;
+  overflow: hidden;
+  border-radius: var(--radius-full);
+  background: var(--bg-hover);
+}
+
+.route-loading__track > span {
+  display: block;
+  width: 60%;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  animation: shimmer var(--duration-loop) var(--ease-in-out) infinite;
+}
+
+.route-loading--error {
+  color: var(--text);
+}
+
+.route-loading--error .btn {
+  min-width: 88px;
+}
+
 /* ============================================
    上下文栏（标题栏 44px，drag 区；交互元素一律 no-drag）
    ============================================ */
@@ -131,10 +168,18 @@
   stroke-linejoin: round;
 }
 
+.cc-contextbar__identity {
+  display: flex;
+  align-items: center;
+  gap: var(--spacer-10);
+  min-width: 0;
+}
+
 .cc-contextbar__title {
   font-family: var(--font-display);
-  font-size: var(--heading-xs);
+  font-size: var(--heading-sm);
   font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-tight);
   color: var(--text-strong);
   white-space: nowrap;
   overflow: hidden;
@@ -143,9 +188,40 @@
   cursor: default;
 }
 
-/* 会话导出按钮：贴右侧（titleBarOverlay 窗口控制在 contextbar padding 之外） */
-.cc-contextbar__export {
+.cc-contextbar__subtitle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacer-4);
+  max-width: 180px;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-family: var(--font-meta);
+  font-size: var(--font-size-meta);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cc-contextbar__subtitle svg {
+  width: var(--icon-size-12);
+  height: var(--icon-size-12);
+  flex-shrink: 0;
+}
+
+@media (max-width: 1000px) {
+  .cc-contextbar__subtitle { display: none; }
+}
+
+.cc-contextbar__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacer-2);
   margin-left: auto;
+  padding-left: var(--spacer-8);
+}
+
+/* 会话导出按钮：与信息按钮组成右侧操作组。 */
+.cc-contextbar__export {
+  margin-left: 0;
 }
 .cc-contextbar__export:disabled {
   opacity: 0.45;
@@ -221,6 +297,7 @@ oc-rail {
   position: relative;
   width: 40px;
   height: 40px;
+  padding: 0;
   border: none;
   border-radius: var(--radius-10);
   background: transparent;
@@ -232,6 +309,33 @@ oc-rail {
   -webkit-app-region: no-drag;
   transition: background var(--duration-fast) var(--ease-standard),
     color var(--duration-fast) var(--ease-standard);
+}
+
+.oc-rail__item--labeled {
+  width: 48px;
+  height: 48px;
+  flex-direction: column;
+  gap: var(--spacer-2);
+}
+
+.oc-rail__label {
+  max-width: 100%;
+  overflow: hidden;
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-medium);
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.oc-rail__item--labeled svg {
+  width: 19px;
+  height: 19px;
+}
+
+.oc-rail__item--labeled.active::before {
+  left: -10px;
+  height: 24px;
 }
 
 .oc-rail__item:hover {

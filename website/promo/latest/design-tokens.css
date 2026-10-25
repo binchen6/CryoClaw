@@ -1,0 +1,414 @@
+/* ============================================
+   CryoClaw Design Tokens — 全局设计语言单一事实来源
+   所有 CSS 文件通过 @import 引用此文件
+   修改此文件 = 全局生效
+
+   CryoBlue：恢复原蓝色主色 #1A6FD0，绿色仅作少量辅助点缀。
+   中性表面承担阅读层次；深色主题的文字/轮廓使用同色系亮阶保证可读性。
+   中性表面、统一线性图标与可自定义的深浅主题共同构成界面层次。
+
+   设计规范：数值阶梯（radius/spacer/text）+ 语义 token 双层结构；
+   双通道主题：[data-theme=dark] 或 prefers-color-scheme 切换。
+   ============================================ */
+
+/* ── 静态 token（主题无关） ── */
+:root {
+  /* radius 数值阶梯 */
+  --radius-2: 2px;
+  --radius-4: 4px;
+  --radius-6: 6px;
+  --radius-8: 8px;
+  --radius-10: 10px;
+  --radius-12: 12px;
+  --radius-16: 16px;
+  --radius-20: 20px;
+  --radius-24: 24px;
+  --radius-32: 32px;
+  /* 圆角兼容别名（既有组件使用，勿删） */
+  --radius-xs: var(--radius-4);
+  --radius-sm: var(--radius-8);
+  --radius-md: var(--radius-12);
+  --radius-lg: var(--radius-16);
+  --radius-xl: var(--radius-20);
+  --radius-pill: 999px;
+
+  /* spacer 数值阶梯（4px 基网） */
+  --spacer-2: 2px;
+  --spacer-3: 3px;
+  --spacer-4: 4px;
+  --spacer-6: 6px;
+  --spacer-8: 8px;
+  --spacer-10: 10px;
+  --spacer-12: 12px;
+  --spacer-16: 16px;
+  --spacer-20: 20px;
+  --spacer-24: 24px;
+  --spacer-32: 32px;
+  --spacer-40: 40px;
+  --spacer-48: 48px;
+  --spacer-64: 64px;
+
+  --icon-stroke: 1.75;
+  --control-height: 34px;
+  --control-hit-size: 32px;
+  /* icon 尺寸阶梯 */
+  --icon-size-12: 12px;
+  --icon-size-14: 14px;
+  --icon-size-16: 16px;
+  --icon-size-20: 20px;
+  --icon-size-24: 24px;
+
+  /* 阅读列宽（R84 流式化）：内容列铺满可用宽度的 92% 并随窗口伸缩，
+     仅在超宽窗口按可读性上限收束——不再固定像素窄列 */
+  --chat-column: min(92%, 1000px);
+  /* 扩展视图内容列（R91）：技能/插件/市场列表页要求占窗口 ≥85%——
+     百分比提到 94%，上限抬到 2400px（2560 宽窗口下仍占 ~94%） */
+  --ext-column: min(94%, 2400px);
+  /* 设置/任务/工作树等表单型页面的内容列（R91 同步放宽：1080 → 1600） */
+  --page-column: min(92%, 1600px);
+
+  /* 字体栈（中性工程风 + 中文回退） */
+  --font-body: "Inter", "SF Pro Text", "PingFang SC", system-ui, -apple-system,
+    "Segoe UI", Roboto, "Microsoft YaHei", "Hiragino Sans GB", sans-serif;
+  --font-display: "Inter", "SF Pro", "PingFang SC", system-ui, -apple-system,
+    "Segoe UI", Roboto, "Microsoft YaHei", "Hiragino Sans GB", sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas,
+    "Courier New", monospace;
+  /* 元信息专用（模型标签 / 工具名 / token / 时间戳 / 路径） */
+  --font-meta: var(--mono);
+  --font-size-meta: 11px;
+  --font-size-body: 14px;
+
+  /* 字号阶梯 */
+  --text-2xs: 10px;
+  --text-xs: 11px;
+  --text-sm: 12.5px;
+  --text-base: 14px;
+  --text-lg: 18px;
+  --heading-xs: 13px;
+  --heading-sm: 15px;
+  --heading-md: 18px;
+  --heading-lg: 20px;
+  --heading-xl: 24px;
+  --heading-2xl: 28px;
+  --heading-3xl: 32px;
+  /* display 阶梯：空态 hero / 大标题专用 */
+  --display-sm: 26px;
+  --display-md: 32px;
+  --display-lg: 40px;
+
+  /* 字距 */
+  --tracking-tight: -0.02em;
+  --tracking-display: -0.03em;
+  --tracking-body: -0.011em;
+  --tracking-wide: 0.04em;
+  --tracking-caps: 0.08em;
+
+  /* 行高阶梯 */
+  --leading-tight: 1.25;
+  --leading-title: 1.35;
+  --leading-body: 1.6;
+  --leading-relaxed: 1.75;
+
+  /* 字重阶梯 */
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+
+  /* 动效：easing + 时长阶梯 */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --duration-instant: 0.08s;
+  --duration-fast: 0.12s;
+  --duration-normal: 0.2s;
+  --duration-slow: 0.35s;
+  --duration-slower: 0.5s;
+  /* 循环指示器统一周期（pulse/spin/shimmer 等无限循环动画一律走此 token） */
+  --duration-loop: 1.2s;
+  /* stagger 入场延迟步长（.stagger-1..6 = 0~5 步，calc 计算式） */
+  --delay-step: 50ms;
+
+  /* 玻璃拟态模糊量（配合 --glass-* 底色使用） */
+  --glass-blur-sm: 8px;
+  --glass-blur-md: 16px;
+
+  /* Original CryoBlue palette, with restrained green secondary accents. */
+  --brand: #1a6fd0;
+  --brand-hover: #1659b1;
+  --brand-on: #ffffff;
+  --brand-50: #eef6fd;
+  --brand-100: #d8ebfb;
+  --brand-200: #b3daf6;
+  --brand-300: #85c2ee;
+  --brand-400: #4ba4e6;
+  --brand-500: #2a89dd;
+  --brand-600: #1a6fd0;
+  --brand-700: #1659b1;
+  --brand-800: #164a90;
+  --brand-900: #163e75;
+  --brand-950: #0f2a4e;
+
+  /* 中性灰阶（零色相，Notion 式纸感） */
+  --grey-50: #fafafa;
+  --grey-100: #f5f5f5;
+  --grey-200: #e5e5e5;
+  --grey-300: #d4d4d4;
+  --grey-400: #a3a3a3;
+  --grey-500: #737373;
+  --grey-600: #525252;
+  --grey-700: #404040;
+  --grey-800: #262626;
+  --grey-900: #171717;
+  --grey-950: #0a0a0a;
+}
+
+/* ── 浅色主题（默认，一等公民） ── */
+:root {
+  /* 背景：纸白层级（app 白 / 次级浅灰 / 浮层白 / hover 浅灰） */
+  --bg: #ffffff;
+  --bg-secondary: #ffffff;
+  --bg-elevated: #ffffff;
+  --bg-hover: #edf3fa;
+  --bg-input: #f3f5fa;
+  --bg-muted: var(--grey-100);
+
+  /* 文字：中性灰五级 */
+  --text: #000000;
+  --text-strong: #17223a;
+  --text-secondary: #566077;
+  --text-muted: #687080;
+  --text-faint: var(--grey-300);
+  --text-on-accent: #ffffff;
+
+  /* 边框：hairline 优先 */
+  --border: #e2e6ef;
+  --border-strong: #c4ccdb;
+  --border-hover: var(--grey-400);
+  --border-focus: var(--accent);
+
+  /* hairline：1px 细分割线快捷 token */
+  --hairline: 1px solid var(--border);
+  --hairline-strong: 1px solid var(--border-strong);
+
+  /* 强调色 —— 沉稳蓝 */
+  --accent: var(--brand-600);
+  --accent-hover: var(--brand-700);
+  --accent-subtle: rgba(26, 111, 208, 0.07);
+  --accent-glow: rgba(26, 111, 208, 0.18);
+
+  /* 语义色 */
+  --ok: #16a34a;
+  --ok-strong: #15803d;
+  --ok-muted: rgba(22, 163, 74, 0.75);
+  --ok-subtle: rgba(22, 163, 74, 0.1);
+  --destructive: #dc2626;
+  --warn: #d97706;
+  --warn-muted: rgba(217, 119, 6, 0.75);
+  --warn-subtle: rgba(217, 119, 6, 0.1);
+  --info: var(--brand-600);
+
+  /* 遮罩 & 玻璃（浅色：深色调半透明压层） */
+  --overlay: rgba(23, 23, 23, 0.4);
+  --overlay-heavy: rgba(23, 23, 23, 0.68);
+  --glass-xs: rgba(23, 23, 23, 0.02);
+  --glass-sm: rgba(23, 23, 23, 0.04);
+  --glass-md: rgba(23, 23, 23, 0.06);
+  --glass-lg: rgba(23, 23, 23, 0.12);
+  --glass-border: rgba(23, 23, 23, 0.08);
+
+  /* 卡片顶部高光（浅色：亮边，浮雕感） */
+  --highlight-inset: inset 0 1px 0 rgba(255, 255, 255, 0.65);
+
+  /* 阴影：浅色下低透明多层叠加，收敛克制 */
+  --shadow-xs: 0 1px 1px rgba(23, 23, 23, 0.04);
+  --shadow-sm: 0 1px 2px rgba(23, 23, 23, 0.05);
+  --shadow-md: 0 4px 12px rgba(23, 23, 23, 0.07), 0 0 0 1px rgba(23, 23, 23, 0.03);
+  --shadow-lg: 0 12px 28px -4px rgba(23, 23, 23, 0.1), 0 0 0 1px rgba(23, 23, 23, 0.03);
+  --shadow-xl: 0 24px 48px -8px rgba(23, 23, 23, 0.14), 0 0 0 1px rgba(23, 23, 23, 0.03);
+  /* 模态弹窗：比 xl 更深一档（弹窗叠弹窗 + 浅色主题分离度，R72 实测值 token 化） */
+  --shadow-dialog: 0 24px 48px -8px rgba(23, 23, 23, 0.24), 0 0 0 1px rgba(23, 23, 23, 0.06);
+
+  color-scheme: light;
+}
+
+/* ── 暗色主题（近黑中性，一等公民：独立调参，非浅色覆盖层） ── */
+/* 方式 1：data-theme 属性切换（Chat UI 使用） */
+:root[data-theme=dark] {
+  /* 背景：四档深度阶梯（app < secondary < elevated < hover） */
+  --bg: #13161e;
+  --bg-secondary: #191e29;
+  --bg-elevated: #202735;
+  --bg-hover: #293344;
+  --bg-input: #141a25;
+  --bg-muted: #1c2330;
+
+  /* 文字：五级灰阶 */
+  --text: #d4d4d8;
+  --text-strong: #fafafa;
+  --text-secondary: #a1a1aa;
+  --text-muted: #9da7b6;
+  --text-faint: #52525b;
+  --text-on-accent: #081524;
+
+  --border: #293344;
+  --border-strong: #465167;
+  --border-hover: #52525b;
+
+  --hairline: 1px solid var(--border);
+  --hairline-strong: 1px solid var(--border-strong);
+
+  /* 暗色下 accent 亮一档保对比度 */
+  --accent: var(--brand-400);
+  --accent-hover: var(--brand-300);
+  --accent-subtle: rgba(75, 164, 230, 0.14);
+  --accent-glow: rgba(75, 164, 230, 0.28);
+
+  --ok: #4ade80;
+  --ok-strong: #4ade80;
+  --ok-muted: rgba(74, 222, 128, 0.75);
+  --ok-subtle: rgba(74, 222, 128, 0.12);
+  --destructive: #f87171;
+  --warn: #fbbf24;
+  --warn-muted: rgba(251, 191, 36, 0.75);
+  --warn-subtle: rgba(251, 191, 36, 0.12);
+  --info: var(--brand-400);
+
+  /* 遮罩 & 玻璃（暗色：白色调半透明提亮层） */
+  --overlay: rgba(0, 0, 0, 0.5);
+  --overlay-heavy: rgba(0, 0, 0, 0.8);
+  --glass-xs: rgba(255, 255, 255, 0.02);
+  --glass-sm: rgba(255, 255, 255, 0.04);
+  --glass-md: rgba(255, 255, 255, 0.06);
+  --glass-lg: rgba(255, 255, 255, 0.12);
+  --glass-border: rgba(255, 255, 255, 0.08);
+
+  /* 卡片顶部高光（暗色：微弱白边） */
+  --highlight-inset: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+
+  /* 阴影：暗色下更深更实 */
+  --shadow-xs: 0 1px 1px rgba(0, 0, 0, 0.2);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.34), 0 0 0 1px rgba(255, 255, 255, 0.02);
+  --shadow-lg: 0 12px 28px -4px rgba(0, 0, 0, 0.44), 0 0 0 1px rgba(255, 255, 255, 0.02);
+  --shadow-xl: 0 24px 48px -8px rgba(0, 0, 0, 0.52), 0 0 0 1px rgba(255, 255, 255, 0.02);
+  /* 模态弹窗：暗色沿用 xl 的黑基调并加深（浅色 ink 硬编码在暗色下发灰） */
+  --shadow-dialog: 0 24px 48px -8px rgba(0, 0, 0, 0.62), 0 0 0 1px rgba(255, 255, 255, 0.03);
+
+  color-scheme: dark;
+}
+
+/* 方式 2：OS 系统偏好切换（Settings/Setup iframe 使用） */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme=light]) {
+    --bg: #13161e;
+    --bg-secondary: #191e29;
+    --bg-elevated: #202735;
+    --bg-hover: #293344;
+    --bg-input: #141a25;
+    --bg-muted: #1c2330;
+
+    --text: #d4d4d8;
+    --text-strong: #fafafa;
+    --text-secondary: #a1a1aa;
+    --text-muted: #9da7b6;
+    --text-faint: #52525b;
+    --text-on-accent: #081524;
+
+    --border: #293344;
+    --border-strong: #465167;
+    --border-hover: #52525b;
+
+    --hairline: 1px solid var(--border);
+    --hairline-strong: 1px solid var(--border-strong);
+
+    --accent: var(--brand-400);
+    --accent-hover: var(--brand-300);
+    --accent-subtle: rgba(75, 164, 230, 0.14);
+    --accent-glow: rgba(75, 164, 230, 0.28);
+
+    --ok: #4ade80;
+    --ok-strong: #4ade80;
+    --ok-muted: rgba(74, 222, 128, 0.75);
+    --ok-subtle: rgba(74, 222, 128, 0.12);
+    --destructive: #f87171;
+    --warn: #fbbf24;
+    --warn-muted: rgba(251, 191, 36, 0.75);
+    --warn-subtle: rgba(251, 191, 36, 0.12);
+    --info: var(--brand-400);
+
+    --overlay: rgba(0, 0, 0, 0.5);
+    --overlay-heavy: rgba(0, 0, 0, 0.8);
+    --glass-xs: rgba(255, 255, 255, 0.02);
+    --glass-sm: rgba(255, 255, 255, 0.04);
+    --glass-md: rgba(255, 255, 255, 0.06);
+    --glass-lg: rgba(255, 255, 255, 0.12);
+    --glass-border: rgba(255, 255, 255, 0.08);
+
+    --highlight-inset: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+
+    --shadow-xs: 0 1px 1px rgba(0, 0, 0, 0.2);
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+    --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.34), 0 0 0 1px rgba(255, 255, 255, 0.02);
+    --shadow-lg: 0 12px 28px -4px rgba(0, 0, 0, 0.44), 0 0 0 1px rgba(255, 255, 255, 0.02);
+    --shadow-xl: 0 24px 48px -8px rgba(0, 0, 0, 0.52), 0 0 0 1px rgba(255, 255, 255, 0.02);
+    --shadow-dialog: 0 24px 48px -8px rgba(0, 0, 0, 0.62), 0 0 0 1px rgba(255, 255, 255, 0.03);
+
+    color-scheme: dark;
+  }
+}
+
+/* Website scale; app palette, radii and motion above stay byte-for-byte in sync. */
+:root {
+  --web-width: 1248px;
+  --web-gutter: clamp(20px, 4.5vw, 72px);
+  --web-header: 76px;
+  --web-hit: 42px;
+  --web-button-height: 50px;
+  --web-body: 16px;
+  --web-lead: clamp(17px, 1.45vw, 20px);
+  --web-display: clamp(56px, 6.15vw, 88px);
+  --web-heading: clamp(32px, 3.45vw, 48px);
+  --web-subheading: clamp(21px, 2vw, 28px);
+  --web-hero-space: clamp(48px, 5.5vw, 80px);
+  --web-section-space: clamp(64px, 7.6vw, 112px);
+  --web-section-gap: clamp(32px, 4vw, 64px);
+  --web-hero-frame: clamp(8px, 1.4vw, 20px);
+  --web-nav: color-mix(in srgb, var(--bg) 92%, transparent);
+  --web-tint: color-mix(in srgb, var(--accent) 5%, var(--bg));
+  --web-tint-strong: color-mix(in srgb, var(--accent) 9%, var(--bg));
+  --web-outline: color-mix(in srgb, var(--accent) 15%, var(--border));
+  --web-shadow: 0 24px 60px -32px color-mix(in srgb, var(--text-strong) 24%, transparent);
+  --font-body: CryoInter, CryoMiSans, "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
+  --font-display: CryoMiSans, CryoInter, "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
+  --font-meta: CryoMono, CryoMiSans, ui-monospace, monospace;
+  --accent-2: #218363;
+}
+:root[data-theme=dark] { --accent-2: #71c6a3; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme=light]) { --accent-2: #71c6a3; } }
+@media (max-width: 520px) { :root { --web-header: 64px; --web-display: 52px; --web-gutter: 20px; --web-button-height: 48px; } }
+@font-face {
+  font-family: CryoMiSans;
+  src: url('assets/fonts/CryoMiSans.woff2?v=20261025') format('woff2');
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+}
+@font-face {
+  font-family: CryoInter;
+  src: url('assets/fonts/CryoInter.woff2') format('woff2');
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  unicode-range: U+0000-00FF,U+2000-206F,U+2190-21FF;
+}
+@font-face {
+  font-family: CryoMono;
+  src: url('assets/fonts/CryoMono.woff2') format('woff2');
+  font-style: normal;
+  font-weight: 100 800;
+  font-display: swap;
+  unicode-range: U+0000-00FF,U+2000-206F,U+2190-21FF;
+}

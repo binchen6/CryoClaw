@@ -111,7 +111,7 @@ export function renderQueueStrip(props: ChatProps) {
                         type="button"
                         aria-label=${t("chat.queueSendNow")}
                         data-tooltip=${t("chat.queueSendNow")}
-                        ?disabled=${!props.connected || !props.onQueueSendNow}
+                        ?disabled=${!props.connected || !props.onQueueSendNow || (props.sending && !props.canAbort)}
                         @click=${() => props.onQueueSendNow?.(item.id)}
                       >
                         ${icons.send}

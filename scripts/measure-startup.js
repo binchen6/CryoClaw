@@ -1,21 +1,18 @@
 #!/usr/bin/env node
 "use strict";
 /**
- * measure-startup.js — 测量 CryoClaw 启动时间：
- *   进程启动 → gateway HTTP 200 → 主窗口显示（~/.openclaw/app.log 新条目 "主窗口显示"）
- * 用法：node scripts/measure-startup.js [exePath] [port]
+ * measure-startup.js — measure startup liveness/readiness and main-window display.
+ * Usage: node scripts/measure-startup.js [exePath] [port]
  */
 const { spawn } = require("child_process");
 const fs = require("fs");
-// 本机 gateway 健康探测客户端（http 别名）
 const httpClient = require("http");
 const path = require("path");
 
 const exe = process.argv[2] || (process.env.LOCALAPPDATA + "\\Programs\\CryoClaw\\CryoClaw.exe");
 const port = Number(process.argv[3] || 18789);
-const logPath = path.join(process.env.USERPROFILE || "", ".openclaw", "app.log");
+const logPath = path.join(process.env.USERPROFILE || "", ".openclaw", "logs", "app.log");
 
-// 程序白名单：只允许启动 CryoClaw 主程序本体
 if (!/^cryoclaw(\.exe)?$/i.test(path.basename(exe))) {
   console.error(`拒绝启动非 CryoClaw 程序: ${exe}`);
   process.exit(2);
@@ -23,17 +20,17 @@ if (!/^cryoclaw(\.exe)?$/i.test(path.basename(exe))) {
 
 const t0 = Date.now();
 const beforeLen = fs.existsSync(logPath) ? fs.statSync(logPath).size : 0;
-
 const child = spawn(exe, [], { detached: false, stdio: "ignore" });
 console.log(`launched pid=${child.pid} at ${new Date(t0).toISOString()}`);
 
-let gwMs = null;
+let healthzMs = null;
+let readyzMs = null;
 let winMs = null;
 let appReadyMs = null;
 
-function checkGateway() {
+function checkGateway(pathname) {
   return new Promise((resolve) => {
-    const req = httpClient.get({ host: "127.0.0.1", port, path: "/", timeout: 2000 }, (res) => {
+    const req = httpClient.get({ host: "127.0.0.1", port, path: pathname, timeout: 2000 }, (res) => {
       res.resume();
       resolve(res.statusCode === 200);
     });
@@ -46,7 +43,6 @@ function scanLog() {
   if (!fs.existsSync(logPath)) return;
   const len = fs.statSync(logPath).size;
   if (len <= beforeLen) return;
-  // 读新增部分
   const fd = fs.openSync(logPath, "r");
   const buf = Buffer.alloc(len - beforeLen);
   fs.readSync(fd, buf, 0, buf.length, beforeLen);
@@ -67,15 +63,13 @@ function scanLog() {
 (async () => {
   const deadline = Date.now() + 120_000;
   while (Date.now() < deadline) {
-    if (gwMs === null) {
-      if (await checkGateway()) gwMs = Date.now() - t0;
-    }
+    if (healthzMs === null && await checkGateway("/healthz")) healthzMs = Date.now() - t0;
+    if (readyzMs === null && await checkGateway("/readyz")) readyzMs = Date.now() - t0;
     scanLog();
-    if (gwMs !== null && winMs !== null) break;
+    if (healthzMs !== null && readyzMs !== null && winMs !== null) break;
     await new Promise((r) => setTimeout(r, 250));
   }
-  console.log(`RESULT gateway200Ms=${gwMs} windowShownMs=${winMs} appReadyMs=${appReadyMs}`);
-  // 清理验证实例（只杀本次 spawn 的进程树——taskkill /IM 会误杀用户正在运行的实例）
+  console.log(`RESULT healthzMs=${healthzMs} readyzMs=${readyzMs} windowShownMs=${winMs} appReadyMs=${appReadyMs}`);
   try { process.kill(child.pid); } catch {}
   setTimeout(() => {
     try {
