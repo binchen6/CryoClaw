@@ -68,3 +68,9 @@
 宣传片为 58 秒、1920×1080/30fps、13,164,960 B，SHA-256 `33b8e3854a8828c623ab6a2e48c302008ef1641a2e62f2a8d4126e7b428367d1`。示例“卡片内视频”及精确匹配的旧官方模块使用官网 `/CryoClaw/assets/cryoclaw-demo.mp4?v=2026.1025.0`；自定义卡片内容不覆盖。其线上可播放状态随博客部署单独验收。
 
 2026-10-26 收尾核验发现最后一次全量安装位 UI 启动被中断且没有报告，重新执行后 88 场景、11 张截图全部通过，renderer 异常为 0，正常退出后报告为 `ok:true`：`.cache/closeout-installed-ui/report.json`。未配置代码签名证书，安装器沿用现有未签名分发方式；不宣称安装包显著缩小或所有机器启动固定低于某个秒数。
+
+正式发布已完成：`v2026.1025.0`、源码 `35d36034aa9ac5962cb7fd5778f2e7fb75047abc`，发布时间 `2026-10-25T23:54:01Z`（北京时间 10 月 26 日）。main 已 push。草稿与公开状态的三件套服务端 SHA-256/大小及清单 SHA-512 全部断言通过；上一版通过 GitHub 与正式 generic 清单均能发现新版本，且未下载/安装。证据：`.cache/closeout-release-public-assert.log`、`.cache/closeout-update-discovery.log`、`.cache/closeout-update-manifest-discovery.log`。
+
+官网已部署到博客的 `/CryoClaw`：博客 main `81429c9369ef8247d904b562863806fbcdf855bc`，Cloudflare 生产部署 `e862a566-00b1-4bb6-ba62-69db12e11c9b` 成功。官网视频完整 SHA-256 与本地一致，支持 206 Range；安装器 HEAD/Range、PE 文件头、准确大小/版本和下载快照一致。7 视口、双主题、普通/减少动效及实际视频播放通过，无页面异常：`.cache/website-closeout-remote.json`、`.cache/website-20261025/live-verification.json`。
+
+最终安装位通过真实资源代理播放新建 `media-demo` 和精确旧官方 Flower 模块：两者均为 58 秒、1920×1080、无媒体错误，展开和还原保留同一运行文档，renderer 异常为 0；本次临时看板随后删除。证据：`.cache/installed-promo-production/report.json`。这项验收验证线上实际播放，区别于仅检查源码中的视频 URL。

@@ -147,6 +147,15 @@ async function checkBrowser() {
       assert.notEqual(await page.locator('.faq-list details').first().getAttribute('open'), null);
       await page.locator('.faq-list summary').first().click();
       assert.equal(await page.evaluate(() => document.documentElement.classList.contains('motion-ready')), false, 'Reduced motion must show content without entrances');
+      for (const image of await page.locator('.dashboard-live img').all()) {
+        const ratio = await image.evaluate(async img => {
+          img.loading = 'eager';
+          await img.decode();
+          const rect = img.getBoundingClientRect();
+          return { shown: rect.width / rect.height, original: img.naturalWidth / img.naturalHeight };
+        });
+        assert.ok(Math.abs(ratio.shown - ratio.original) < .03, width + ': dashboard image loses its aspect ratio: ' + JSON.stringify(ratio));
+      }
       await page.mouse.move(0, 0);
       await page.evaluate(async () => {
         window.scrollTo({ top: 0, behavior: 'instant' });

@@ -71,7 +71,7 @@ Files: dashboard plugin template catalog, dashboard library component/styles and
 ## Task 7: Publication closeout (2026-10-26)
 
 - [x] Complete the final reinstalled app's full UI gate; record final hashes and installed resource identity.
-- [ ] Commit and push the integrated main branch; publish the exact EXE, blockmap and manifest after server-side hash checks.
-- [ ] Update the verified website release snapshot, deploy the blog's `/CryoClaw` page and verify production media/downloads.
-- [ ] Verify that both new and exact legacy official video cards play the deployed 58-second film through the actual asset proxy.
-- [ ] Start the next backend performance version after publication and push. The new goals are at least 50% improvement and gateway startup below 30 seconds, supported by a declared baseline and final measurements.
+- [x] Commit and push the integrated main branch; publish the exact EXE, blockmap and manifest after server-side hash checks.
+- [x] Update the verified website release snapshot, deploy the blog's `/CryoClaw` page and verify production media/downloads.
+- [x] Verify that both new and exact legacy official video cards play the deployed 58-second film through the actual asset proxy.
+- [x] Start the next backend performance version after publication and push. The new goals are at least 50% improvement and gateway startup below 30 seconds, supported by a declared baseline and final measurements.
