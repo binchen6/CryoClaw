@@ -1,35 +1,36 @@
 {
   "version": 3,
-  "updatedAt": "2026-10-26T13:17:29.438Z",
+  "updatedAt": "2026-10-29T22:51:00.537Z",
   "note": "WebBridge binary sha256 pins. App fetches this file at repair time (jsDelivr then raw.githubusercontent) and caches it locally for 24h. When upstream rebuilds the `latest` artifacts (same byte length, new Go build ID — observed twice on 2026-09-10), update this file instead of shipping a new app release. Values must be 64-hex sha256 of `https://kimi-web-img.moonshot.cn/webbridge/latest/releases/<name>`.",
   "pins": {
     "kimi-webbridge-windows-amd64.exe": [
+      "d0547eee078e5ff8e7fee6b71ad80e68177627ae10f2568f403f8d776e4f45c5",
       "de6ced2c243cebc88c26080ba418eaac78af16880883885d5858d31d336d5f92",
       "62d0bfd652a001c12ee07cf993223391745b6c2a1192f7eef836d9cfe06b521c",
       "2a904cacff1ae94e8424e6746dc6ecb421d9073f955d9661fa8581ab65c0a973",
-      "0e5645983531e70d3b2e35d0b872fe9115d91cac00386011dafa832110b4b35b",
-      "8e9dfc5bb83ca696acd3e873e8cba45933d3d5b379fc1aed88641370d0eeb338"
+      "0e5645983531e70d3b2e35d0b872fe9115d91cac00386011dafa832110b4b35b"
     ],
     "kimi-webbridge-darwin-arm64": [
+      "b57ac4885ae5204aa7df4878bd5245f05a641eee59c3d28b8a3857e68b9c670d",
       "4464909f45b9e6f86bef198a9bbdbfd7a1f64dcd86f04e57cde239881520885b",
       "bdcd9f91fdb85b42781bc223c0a5fab603231cb28d38644c53ef9c102cd97c89",
       "4156b631ac40dcb9cf6a1d229bca271834b88915255fb0d253fd580ef38df654",
-      "f5b229ea36a3a7a340a292abefabaa01d46e127fe04c66e8e2b0f85f107316bb",
-      "f36dfeba6d5925318a38a4cbe688fa83c4b2bb899c8b05be4fac0848980901f0"
+      "f5b229ea36a3a7a340a292abefabaa01d46e127fe04c66e8e2b0f85f107316bb"
     ],
     "kimi-webbridge-darwin-amd64": [
+      "4c3b65a0087051288d83082ff1dc6af2a5bd926baf94e87db983dc3b3129c349",
       "e84274a575631838565e2cf2edfa4930f6d1e4a9ec83d2cf720c0a8c67a64df5",
       "1ec05e9e942943e7b5c25a33c657ee21fc52505916447bdc3a824a0712fb92b3",
       "65790ac6c2f73084bf3526e98fa3d9145fdb11c17392be86d87b03b918b1ead6",
-      "04748652cb8008858a499fc8f8ee84bcc98460b5934285b57e9704b111268f6e",
-      "ad9aba7d4a2a5c45f60d72fcb00855220610c884f8b832ecb8869b0c1898d4ba"
+      "04748652cb8008858a499fc8f8ee84bcc98460b5934285b57e9704b111268f6e"
     ]
   },
   "extension": {
     "id": "fldmhceldgbpfpkbgopacenieobmligc",
-    "version": "2.0.24",
-    "file": "resources/webbridge/extension/kimi-webbridge-2.0.24.crx",
+    "version": "2.0.28",
+    "file": "resources/webbridge/extension/kimi-webbridge-2.0.28.crx",
     "sha256": [
+      "7dbc23ce2e349c0b5dd58b240f2e0d9dac82fe2f3468daa87350cff2522a62d5",
       "02a0d20cdebeb5ab108272cdde812ebe448c724d18307988de27c8e4876c2e90",
       "1850b37669f1715a23731600384520de967365d28cb826ee6ecb1a549790bbbc"
     ]
