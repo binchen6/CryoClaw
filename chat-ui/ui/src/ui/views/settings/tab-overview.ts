@@ -162,7 +162,7 @@ export function renderTabOverview(state: AppViewState) {
   const tasksCount = state.runHistory.length > 0 ? state.runHistory.length : null;
 
   return html`
-    <div class="oc-settings__section">
+    <div class="oc-settings__section" data-page-id="settings:overview" data-load-state=${s.loading?"loading":s.error?"error":!s.info?"loading":"ready"} aria-busy=${s.loading || !s.info && !s.error}>
       <div class="ov-head">
         <div>
           <h2 class="oc-settings__section-title">${t("settings.overview.title")}</h2>

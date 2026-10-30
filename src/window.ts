@@ -1,4 +1,4 @@
-import { BrowserWindow, app, globalShortcut } from "electron";
+import { BrowserWindow, app } from "electron";
 import * as path from "path";
 import { pathToFileURL } from "node:url";
 import * as log from "./logger";

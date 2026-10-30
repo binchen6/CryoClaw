@@ -5,6 +5,9 @@ copyright: Copyright © 2025 CryoClaw
 directories:
   output: out
 
+# Differential NSIS payloads enforce normal compression in electron-builder.
+compression: normal
+
 files:
   - dist/**/*
   - chat-ui/dist/**/*
@@ -40,6 +43,10 @@ beforePack: ./scripts/patch-nsis-uninstall.js
 
 # --- macOS ---
 mac:
+  # UI supports Chinese and English; other locales fall back to English.
+  electronLanguages:
+    - en-US
+    - zh-CN
   target:
     - dmg   # 手动分发
     - zip   # 自动更新（electron-updater 在 macOS 上要求 zip）
@@ -75,6 +82,10 @@ dmg:
 
 # --- Windows ---
 win:
+  # UI supports Chinese and English; other locales fall back to English.
+  electronLanguages:
+    - en-US
+    - zh-CN
   target: nsis
   icon: assets/icon.ico
   extraResources:

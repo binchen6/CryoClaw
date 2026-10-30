@@ -26,9 +26,13 @@ test('same-volume payload move precedes copy and preserves upstream fallback',()
 test('new payload destinations can rename without requiring a removable directory',()=>{
   const script=fs.readFileSync(path.join(__dirname,'installer.nsh'),'utf8');
   assert.ok(script.includes('IfFileExists "$cryoclawPayloadDestination\\*.*" 0 cryoclaw_payload_rename'));
-  assert.match(script,/RMDir "\$cryoclawPayloadDestination"\s+IfErrors cryoclaw_payload_copy\s+cryoclaw_payload_rename:/);
+  assert.match(script,/RMDir "\$cryoclawPayloadDestination"\s+IfErrors cryoclaw_payload_retry\s+cryoclaw_payload_rename:/);
   assert.match(script,/Rename "\$\{SOURCE\}" "\$cryoclawPayloadDestination"/);
   assert.match(script,/cryoclaw_payload_copy:[\s\S]*?DetailPrint "Directory rename unavailable; using safe copy fallback"/);
+  assert.match(script,/IntCmp \$cryoclawPayloadAttempt 6 cryoclaw_payload_entries cryoclaw_payload_wait cryoclaw_payload_entries/);
+  assert.match(script,/cryoclaw_payload_wait:\s+Sleep 100\s+Goto cryoclaw_payload_attempt/);
+  assert.ok(script.includes('StrCpy $cryoclawPayloadMode "entry-rename"'));
+  assert.ok(script.includes('Rename "$cryoclawPayloadDestination\\$cryoclawPayloadEntry" "${SOURCE}\\$cryoclawPayloadEntry"'));
 });
 
 test("legacy uninstall failure reaches custom recovery before retry dialog", () => {
@@ -42,4 +46,12 @@ test("legacy uninstall failure reaches custom recovery before retry dialog", () 
 test("unexpected template structure fails closed", () => {
   assert.throws(() => patchUninstallTemplate("changed upstream template"), /Unsupported/);
   assert.throws(() => patchUninstallTemplate("    Sleep 1000\n    Goto UninstallLoop\n    Sleep 1000\n    Goto UninstallLoop"), /Unsupported/);
+});
+test("installer phase timing covers initialization, old removal and CLI completion",()=>{
+  const script=fs.readFileSync(path.join(__dirname,'installer.nsh'),'utf8');
+  for(const field of ['initCompletedMs','oldUninstallCompletedMs','payloadReadyMs','installMs','completionMs'])assert.ok(script.includes(field),field);
+  assert.match(script,/!macro customUnInstallCheck\s+System::Call 'kernel32::GetTickCount\(\) i.r0'/);
+  const start=script.search(/!macro customInstall\r?\n/),end=script.search(/; customRemoveFiles/);assert.ok(start>=0&&end>start);
+  const install=script.slice(start,end);
+  assert.ok(install.indexOf('cryoclaw_cli_done:')<install.indexOf('FileOpen $1 "$INSTDIR\\resources\\install-performance.json" w'));
 });

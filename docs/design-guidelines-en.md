@@ -132,9 +132,9 @@ parameters are each defined per theme — dark is not derived from light.
   inline on `:root` once the user resizes), `--titlebar-h: 44px` (immersive
   titlebar/context-bar height — the shell reserves it uniformly), `--toggle-knob`
   (switch knob, white in both themes), `--radius` / `--radius-full` aliases.
-- **Focus ring**: `--ring` = `--accent`; `--focus-ring` =
-  `0 0 0 2px var(--bg), 0 0 0 4px var(--ring)` (two-layer ring: background cutout +
-  accent outer ring); `--focus-glow` adds a 16/20px glow on top.
+- **Focus ring**: `--ring` = `--accent`; focus is a three-tier token set (see §9
+  Focus system): `--focus-field` (inputs), `--focus-ring` (compact controls),
+  `--focus-ring-inset` (dense rows); `--focus-glow` adds a 16/20px glow on top.
 - **Compat aliases**: `--card(-foreground/-highlight)`, `--popover(-foreground)`,
   `--panel(-strong/-hover)`, `--chrome(-strong)`, `--muted(-strong/-foreground)`,
   `--input`, `--primary(-foreground)`, `--secondary(-foreground)`,
@@ -264,9 +264,9 @@ Modifier: `.btn--sm` (height 28, padding 10, font `--text-sm`).
 ### 5.2 Form controls
 
 Form controls use per-component classes plus the `.field` system in `components.css`:
-**32px high, `--bg-input` background, hairline border, radius-8**; focus = `--border-focus` + `--focus-ring`; placeholder/disabled use `--text-muted`.
+**32px high, `--bg-input` background, hairline border, radius-8**; focus = `--focus-field-color` border + `--focus-field` halo (§9 Focus system); placeholder/disabled use `--text-muted`.
 `.field` = label (`--text-sm` medium muted) + control in a grid.
-The chat composer is an intentional exception: a 1px border mixed with 42% accent and a 2px `--accent-subtle` halo replace the heavy double blue ring while keeping a clear focus state.
+The chat composer is the reference implementation of that same focus language (accent-mixed border + soft halo), not an exception.
 (R75: the zero-reference `cc-input`/`cc-select`/`cc-textarea` were removed.)
 
 ### 5.3 Cards (`.card`)
@@ -370,6 +370,23 @@ Since the 2026.9 R2 refresh, **all app icons are drawn in-house**
 
 ## 9. Accessibility
 
+### Focus system (unified 2026-10-30)
+
+One sentence defines the focus language: **a single accent-tinted edge plus a very light halo — never a hard stroke.** All tokens live in `styles/tokens-ext.css` and are picked by *element-to-background relationship*, not per page:
+
+| Token | Applies to | Shape |
+|---|---|---|
+| `--focus-field-color` + `--focus-field` | Text input surfaces (input / textarea / select / search / inline rename) | Border mixed from `accent 45%` and `--border`, plus a 3px `--accent-subtle` halo |
+| `--focus-ring` | Compact controls: buttons, icon buttons, menu items, chips, card entries | 2px inner `accent-subtle` + 3px `--ring` outer edge |
+| `--focus-ring-inset` | Rows inside dense lists/tables (session items) | `inset` stroke — no bleed into neighbours, no layout shift |
+
+- The chat composer (`.chat-compose__field:focus-within`) is the **reference implementation** and now references `--focus-field-color` / `--focus-field` directly, so changing the token changes it too instead of drifting.
+- No more `outline: 2px solid <color>` for focus (outline does not follow `border-radius`, leaving square corners on rounded controls). The global `:focus-visible` baseline in `base.css` is `outline: none` + `box-shadow: var(--focus-ring)`.
+- Pointer focus shows no ring (`:focus:not(:focus-visible)` clears the shadow); keyboard and programmatic focus do.
+- Colour/ring transitions use `--focus-transition` (`--duration-fast` + `--ease-standard`); do not reintroduce `--ease-out`.
+- Solid outlines stay legal for **selection state** only (a dashboard card or element selected while editing) — that is selection semantics, not focus, and the regression test separates the two by selector.
+- Regression: `chat-ui/ui/src/ui/focus-system.test.ts` pins token completeness, absence of leftover hard strokes, input adoption of `--focus-field`, and inset strokes for dense lists.
+
 - **Unified focus ring**: global `:focus-visible { box-shadow: var(--focus-ring) }`
   (base.css); individual controls redeclare the same token. Do not write custom outline
   styles, and never remove focus styles without a replacement.
@@ -394,6 +411,21 @@ Motion should be precise, natural and beautiful across transitions, interruption
 - Prefer transform/opacity, coalesce pointer updates per frame, and commit the final pointer position. Avoid per-frame layout writes, Canvas reallocations, persistence or model requests.
 - Let entrance explain origin and exit explain destination. Keep ambient motion quiet, and stop work offscreen or while the window is hidden.
 - Reduced motion presents a stable final state with complete content and keyboard focus. Verify rapid reversals, repeated clicks, resizing, hidden/resume and keyboard use.
+
+### Overlay return rules (2026-10-30)
+
+Every overlay (popover, dropdown menu, floating panel, dialog) follows "return where you came from, one continuous take, along the original path, naturally":
+
+- **Reversible.** Re-triggering the control that opened an overlay must close that same overlay; repeated activation toggles symmetrically. Any entry point that can only open, never close, is a bug. Native `popover="auto"` overlays must bind their trigger with the declarative `popovertarget` invoker (invokers are exempt from light dismiss); never hand-write `showPopover()/hidePopover()` in a click handler — pointerdown light-dismiss closes first, then the click reopens it, so it appears impossible to close.
+- **Return along the original path.** Exit mirrors entrance: same anchored edge, same direction, same distance. Use a leaving class plus delayed DOM removal, or `display`/`overlay` `allow-discrete` transitions; keep `transform-origin` on the anchored corner so a panel opening upward enters from its bottom edge and leaves the same way.
+- **Adaptive anchoring.** Position overlays relative to their trigger and flip/clamp inside the viewport instead of overflowing it; never cover the trigger itself and avoid covering the adjacent primary action (e.g. 新建对话 in the session panel header). All placement goes through `utils/popover-placement.ts` `placePopover()` — no per-component hardcoded `left`/`bottom`.
+- **One close path.** Escape, outside click and item selection share one exit and teardown; focus returns to the trigger (or the previously focused element), `aria-expanded` resets, and reopening mid-exit continues from the current geometry.
+- **Acceptance.** Walk through repeated clicks, mid-way reversal, minimized window, keyboard (Tab/Enter/Esc/arrow keys) and reduced motion; `npm run test:chat` must cover second-click close and viewport clamping, not just the first open.
+
+**Registered exceptions** — these deliberately do not follow the rule above; keep their existing semantics when editing:
+- The conversation info panel (`views/conversation-info.ts`) is a **docked** contextbar panel rather than an anchored one; it already has Esc, outside click and X wired to one close path with focus restore.
+- Dashboard expanded cards (`popover="manual"` in `oc-dashboard.ts`) and the global toast are not click-toggled surfaces, so clause 1 does not apply; they still keep a reverse morph / exit frame.
+- Native `<dialog>` surfaces (provider edit drawer, dashboard detail) get Esc/backdrop/initial focus for free; only add the `cc-dialog-out` exit from `skills.css`, never a hand-written toggle.
 
 ## 10. Tooltip
 

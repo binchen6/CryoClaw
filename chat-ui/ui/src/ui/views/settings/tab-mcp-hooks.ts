@@ -518,7 +518,7 @@ export function renderTabMcpHooks(state: AppViewState) {
   // 平级 section 时会按 basis-0 平分高度，内容溢出盒外与相邻 section 重叠
   //（R63 QA：点击"添加服务器"后全页重叠）。
   return html`
-    <div class="oc-settings__section">
+    <div class="oc-settings__section" data-page-id="settings:mcp-hooks" data-load-state=${s.loading?"loading":s.error?"error":!s.initialized?"loading":!s.servers.length?"empty":"ready"} aria-busy=${s.loading || !s.initialized}>
       <h2 class="oc-settings__section-title">${t("settings.mcpHooks.pageTitle")}</h2>
       <p class="oc-settings__page-desc">${t("settings.mcpHooks.pageDesc")}</p>
 

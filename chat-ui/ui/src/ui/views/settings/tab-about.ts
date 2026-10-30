@@ -27,6 +27,7 @@ const s = {
   appUpdate: null as AppUpdateState | null,
   appUpdateMsg: null as { ok: boolean; text: string } | null,
   initialized: false,
+  loadState: "loading",
 };
 
 // 进度推送回调需要触发重渲染，缓存当前 state 引用
@@ -42,18 +43,19 @@ let initGeneration = 0;
 async function init(state: AppViewState) {
   if (s.initialized) return;
   s.initialized = true;
+  s.loadState="loading";
   const gen = ++initGeneration;
   try {
     const about = await ipc.settingsGetAboutInfo();
     s.cryoClawVersion = about.cryoClawVersion ?? "";
     s.openClawVersion = about.openClawVersion ?? "";
     state.requestUpdate();
-  } catch {}
+  } catch { if(gen===initGeneration)s.loadState="error"; }
   if (gen !== initGeneration) return;
   try {
     s.kernelState = await ipc.kernelGetUpdateState();
     state.requestUpdate();
-  } catch {}
+  } catch { if(gen===initGeneration)s.loadState="error"; }
   if (gen !== initGeneration) return;
   // 订阅升级/回退进度（由主进程编排，可能耗时数分钟）
   unsubscribeProgress = ipc.onKernelUpdateProgress((p) => {
@@ -64,12 +66,14 @@ async function init(state: AppViewState) {
   try {
     s.appUpdate = await ipc.appUpdateGetState();
     state.requestUpdate();
-  } catch {}
+  } catch { if(gen===initGeneration)s.loadState="error"; }
   if (gen !== initGeneration) return;
   unsubscribeAppUpdate = ipc.onAppUpdateState((st) => {
     s.appUpdate = st;
     currentState?.requestUpdate();
   });
+  if(s.loadState!=="error")s.loadState="ready";
+  state.requestUpdate();
 }
 
 export function cleanupAboutTab() {
@@ -352,7 +356,7 @@ export function renderTabAbout(state: AppViewState) {
   if (!s.initialized) init(state);
 
   return html`
-    <div class="oc-settings__section">
+    <div class="oc-settings__section" data-page-id="settings:about" data-load-state=${s.loadState} aria-busy=${s.loadState === "loading"}>
       <h2 class="oc-settings__section-title">${t("settings.nav.about")}</h2>
 
       <!-- Version -->

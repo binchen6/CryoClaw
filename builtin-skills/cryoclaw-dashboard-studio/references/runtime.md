@@ -1,79 +1,164 @@
-# Dashboard runtime
+# Card runtime
 
-SDK v2 adds `motion.frame`, `motion.animate`, `compose` and `tasks`; the existing v1 methods remain compatible. The app reuses the Chat composer, including model selection, attachments, permissions and stop. A card can fill that composer after a user click; it cannot send a message automatically.
+Every card document receives `window.cryoclawDashboard` (SDK version 2) inside an opaque
+sandbox. The SDK is the only bridge: there is no host DOM, no storage, no arbitrary network and
+no gateway credential inside the iframe.
 
 ```js
 const sdk = window.cryoclawDashboard;
-const stop = sdk.motion.frame(time => draw(time), {fps: 30});
-// Stops offscreen/hidden; draws one stable frame for reduced motion. Call stop() on custom teardown.
-const transition = sdk.motion.animate(card, [
-  {opacity: .4, transform: 'translateY(6px)'},
-  {opacity: 1, transform: 'none'}
-], {duration: 220});
-// Native Animation: cancel() or await finished. Pauses while hidden and resumes in place.
-await transition.finished;
-button.onclick = () => sdk.compose('Refine this board with dated public sources');
-clock.onclick = () => sdk.tasks(); // open this card's native task dialog
 ```
 
-Normal mode keeps complete motion. Use `motion.frame` for ambient loops and `motion.animate` for one-shot state transitions; do not use reduced motion as a performance strategy. The user's explicit reduced-motion preference still produces a stable final state.
+Feature-detect optional APIs; older cards and pinned windows may not expose all of them.
 
-`compose`/`tasks` return false in a pinned window; show a short route back to the main window. No automatic audio: create/resume AudioContext only from the user's play action. Reuse Canvas bitmaps until size or DPR changes, cap DPR and frame rate, and use real analyser data when labeling a display as a spectrum.
-
-The example collection has 21 modules, including local notes, a step editor, original procedural soundscapes, palette controls and prompt recipes. Quick notes persist locally and can become an action-plan draft in the shared composer without auto-sending. `create_example` creates a new copy; existing boards are never overwritten on upgrade. `delete` permanently removes an archived board. It can also remove an active board only with `confirmDelete: true` after the user explicitly confirms permanent deletion. Pause or remove linked native cron jobs first; shared jobs must be preserved.
-
-`refresh()` reloads only this card; the card chrome refresh button does the same without affecting other iframes, and the floating toolbar refreshes the whole board. Keep durable state in the SDK before any explicit reload. Up to 16 iframe SDK requests may be pending; pinned SDK fetches allow four concurrent requests. Debounce edits and reuse cached public data.
-
-Standalone queries: `cryoclaw_query_data({kind:'public',url,format:'json',pointer:'/data',maxChars:4000})`, `{kind:'system'}` or `{kind:'dashboards'}` work outside panels. Public requests share the same guards/cache; results include provenance/time, and oversized output is explicitly truncated. Ask for a smaller JSON subtree rather than dumping entire API responses. Local metrics/catalog are unavailable in sandboxed sessions. The iframe SDK remains scoped to its own card.
-
-`cryoclaw_dashboard` actions: list, create, create_example, read_card, publish_card, remove_card, rename, archive, restore, delete, link_task, unlink_task. `list` returns summaries; pass boardId for card IDs. `read_card` reads one document. Publish fields: boardId, cardId, title, html, accent (paper/ice/ink/mint), optional layout {w:2..12,h:180..1000,order:0..10000}. Updating a stable card ID preserves local state and layout. Deleting a card deletes its state. Archive preserves a whole board.
-
-The app injects `window.cryoclawDashboard` into each document:
+## State
 
 ```js
-const sdk = window.cryoclawDashboard;
-const state = await sdk.getState(); // null initially; private per-card JSON
-await sdk.setState({todos: []}); // <=32 KiB; save on edits, debounce keystrokes
-const {value, source, fetchedAt} = await sdk.data('weather');
-const sample = await sdk.system(); // CPU, RAM and current data disk; no file scan
-video.src = sdk.asset('clip');
-button.onclick = () => sdk.expand(); // explicit user gesture
-sdk.collapse(); // Escape also closes expanded view
-link.onclick = () => sdk.openLink('https://example.org/page');
-sdk.motion.subscribe(({active,reduced}) => {
-  // Stop high-frequency Canvas/rAF work if inactive or reduced. Unsubscribe on teardown.
+const state = await sdk.getState();      // null on first run, or your last JSON
+await sdk.setState({ todos: [] });       // ≤ 32 KiB serialized
+```
+
+- State is private to the card and survives edits, reloads, resizing and expansion.
+- Writes are rejected above 32 KiB; keep only user data, never HTML or fetched payloads.
+- Debounce typing (200–400 ms) and save on blur; one write per edit, not per keystroke.
+- State is shared by every placement of the same card, so do not store placement-specific UI in
+  it. Placement-only view state is not exposed in this host; keep it local in memory.
+
+## Declared data sources
+
+Up to 4 sources, declared at publish time:
+
+```json
+{ "id": "rates", "url": "https://api.example.org/rates.json", "format": "json", "refreshSeconds": 300 }
+```
+
+```js
+const { value, source, fetchedAt, stale, retryAt } = await sdk.data("rates");
+```
+
+- Public HTTPS only. Private, loopback and link-local addresses are rejected after DNS resolution,
+  including redirects; credentials and API keys are not allowed.
+- `refreshSeconds` ≥ 60; the broker caches and coalesces requests, so calling `sdk.data` often is
+  cheap but not free.
+- Responses are bounded (512 KiB); request a smaller JSON subtree from the provider when possible.
+- Read the provider's own timestamp inside `value`. `fetchedAt` is retrieval time, not data time.
+- Expired data waits for a shared refresh. If that refresh fails and a previous snapshot is
+  available, it is returned with `stale: true` and a `retryAt` timestamp. Keep it visible with
+  its original data time and an explicit stale label; do not present it as a fresh success.
+- A first read without a usable cached snapshot rejects on failure. Keep any previous render
+  visible, label the error, and retry after the indicated cooldown. Never invent replacement data.
+
+## Media assets
+
+```json
+{ "assets": [{ "id": "cover", "url": "https://cdn.example.org/cover.jpg" }] }
+```
+
+```js
+video.src = sdk.asset("cover");
+```
+
+Up to 8 assets; images, audio, video and fonts are proxied with supported MIME types and a 32 MiB
+cap. Use licensed media with visible attribution. Audio starts only after a user action and pauses
+on `pagehide`.
+
+## System sample
+
+```js
+const sample = await sdk.system();
+// { sampledAt, elapsedMs, cpuCount, cpuPercent, memoryFree, memoryTotal, diskFree, diskTotal, platform }
+```
+
+On-demand local metrics only; no file scan, no model call. Values can be `null` when the platform
+does not expose them — render an explicit "—".
+
+## Conversation actions
+
+```js
+sdk.compose("把这些笔记整理成有优先级的行动方案"); // fills the shared composer; never sends
+sdk.tasks();                                  // opens this card's task dialog
+```
+
+Both require a real user click and return `false` in a pinned window or when unavailable. Show a
+short route back to the main window instead of retrying.
+
+```js
+sdk.expand();    // fullscreen the same document
+sdk.collapse();  // Escape also collapses
+sdk.refresh();   // reload this card only
+sdk.openLink("https://example.org/page"); // https only, user gesture required
+```
+
+## Motion
+
+```js
+const stop = sdk.motion.frame(time => draw(time), { fps: 30 });
+const transition = sdk.motion.animate(card, [
+  { opacity: .4, transform: "translateY(6px)" },
+  { opacity: 1, transform: "none" }
+], { duration: 220 });
+const unsubscribe = sdk.motion.subscribe(({ active, reduced }) => {
+  // pause/resume custom work; reduced means "draw the final state"
 });
 ```
 
-Each module may design its own CSS, SVG, Web Animations or Canvas motion with inline code. CSS animation pauses automatically when the card leaves the viewport or the app is hidden; reduced-motion disables automatic example animations. Use sdk.motion.active/reduced and subscribe for JavaScript loops, animate at most once per frame, and avoid per-frame storage/data/model calls. Intentional audio may continue while its visualization pauses. Keep controls usable without animation.
+- `motion.frame` pauses when the card leaves the viewport, the window is hidden or the user asks
+  for reduced motion. Call `stop()` on teardown.
+- `motion.animate` returns a native `Animation`; it pauses/resumes in place.
+- CSS animations pause automatically while the card is offscreen; `prefers-reduced-motion`
+  disables them.
+- No per-frame storage writes, data reads, network calls or model calls.
 
-Scheduled updates use the existing native cron tool, not a new timer loop or paid keep-warm heartbeat. Create/update an agentTurn job that reads this card with read_card and publishes to the SAME boardId/cardId; omit layout to preserve user edits. Then call cryoclaw_dashboard action=link_task with boardId, cardId, jobId and optional taskTitle. Up to four task links/card. All normal task channels can discover the tool; host writes remain unavailable inside sandboxed sessions. The card clock opens native task status, run-now, pause/unlink and schedule creation. For model-driven unlink/archive/removal, first pause or retarget the native cron job, then unlink_task; unlink_task only removes the association, it does not modify another scheduler's job. Archiving a board rejects later publishing until restored. Update task names and failure feedback honestly; do not silently schedule recurring model calls without a user request.
+## Viewport
 
-Mark board-owned cron payloads with `[cryoclaw-dashboard-target]\nboardId=<id>\ncardId=<id>\n...\n[/cryoclaw-dashboard-target]`. The app's archive and confirmed-delete flows pause linked jobs with this exact board marker; unrelated/shared jobs are left under Tasks. Restoring a board does not restart paused jobs automatically.
-
-Declare up to 4 dataSources on publish: `{id,url,format:'json'|'text',refreshSeconds:300}`. Minimum refresh 60 seconds; native broker caches and coalesces requests. Public HTTPS only, no credentials or API keys, <=512 KiB/response, bounded timeout. DNS/redirects reject private addresses. Fetch failures reject the promise: show a useful status, keep previous values clearly dated. Query the data's own timestamp; fetchedAt is retrieval time. Never describe daily rates as real-time ticks. Timers and refreshes must not call the model.
-
-Declare up to 8 assets `{id,url}` for images, audio, video or fonts; use sdk.asset(id), never embed a gateway token. Media proxy permits supported MIME types and <=32 MiB. Use licensed media with visible attribution. Opaque sandbox denies host DOM, storage, arbitrary network and remote scripts. Desktop pinning uses the same SDK; local state remains available. Card content uses the actual iframe width and height, reflowing with the card and window. Use internal scrolling for long content. Expansion/resizing preserves the running iframe; navigation/refresh reconstructs it. Save timer deadlines, not second-by-second counters. Pause audio on pagehide.
-
-The host mounts iframe documents near the viewport instead of starting every card on first paint; scrolling near a card loads it, and later refreshes/reloads preserve SDK state. Do not require another card's document to be loaded or reach into it. Tab context menus edit the title/description. The persistent pencil dock toggles layout/content editing and the shared model composer; More actions opens the module library.
-
-Resizing changes the actual iframe viewport without reloading it. Use CSS media queries for layout and `sdk.viewport.width`, `sdk.viewport.height` or `sdk.viewport.subscribe(({width,height})=>{...})` for responsive drawing. Subscribe returns an unsubscribe function; resize callbacks coalesce to one per animation frame. A callback receives the initial size immediately. Expansion uses the same document in the browser top layer, so inputs, timers and local state survive. Never assume a fixed 1600×900 surface.
-
-HTML example:
-
-```html
-<!doctype html><html><head><meta charset="utf-8">
-<style>body{font:16px system-ui;margin:24px}button{padding:12px}</style></head>
-<body><h2>Reading counter</h2><button id="add" disabled>Loading…</button>
-<p id="status" role="status"></p><script>
-(async()=>{
- const sdk=window.cryoclawDashboard,button=document.getElementById('add');
- let value=(await sdk.getState())?.count??0,busy=false;
- const draw=()=>{button.textContent=`Read ${value} pages`;button.disabled=busy;};draw();
- button.onclick=async()=>{if(busy)return;busy=true;draw();try{
-  await sdk.setState({count:value+1});value++;
- }catch(e){document.getElementById('status').textContent=e.message;}
- finally{busy=false;draw();}};
-})().catch(e=>document.getElementById('status').textContent=e.message);
-</script></body></html>
+```js
+sdk.viewport.width;   // current iframe CSS pixels
+sdk.viewport.height;
+const off = sdk.viewport.subscribe(({ width, height }) => {
+  // coalesced to one call per animation frame; fires immediately with the current size
+});
 ```
+
+Resizing changes the iframe viewport without reloading the document. Use media queries for layout
+and `viewport` for canvas/SVG drawing. Never assume a fixed surface size.
+
+## Host behavior worth designing for
+
+- Cards mount lazily near the viewport; offscreen documents may not exist yet. A card must not
+  depend on another card's document.
+- Expansion reuses the running document; navigation or refresh rebuilds it.
+- Resizing does not reload; state and timers survive.
+- The board forwards wheel deltas the card cannot use, so cards that fit their box scroll the board.
+- At most 16 SDK requests may be pending; the host also rate-limits card requests (30 per 10 s).
+  Batch reads, cache results and show progress instead of retrying in a loop.
+- Timers should store deadlines, not tick counters, and must not call the model.
+
+## Scheduled task links
+
+A card can be linked to at most four native cron jobs. The job prompt must:
+
+1. read the card with `read_card`,
+2. produce the new document,
+3. publish to the same `boardId`/`cardId` and omit `layout`,
+4. start with the `[cryoclaw-dashboard-target]` marker block.
+
+Archiving or deleting a board pauses only jobs carrying that exact marker. Restoring a board does
+not resume paused jobs.
+
+## Error handling contract
+
+```js
+async function load() {
+  try {
+    const snapshot = await sdk.data("rates");
+    render(snapshot.value, snapshot.fetchedAt);
+    if (snapshot.stale) showStale("数据已过期，等待连接恢复");
+    else clearStale();
+  } catch (error) {
+    showStale(error.message); // keep the last good render, label the failure
+  }
+}
+```
+
+- Wrap every SDK call; surface a short cause and a retry that reuses the same document.
+- Distinguish "no data yet" from "failed": empty is not an error.
+- Never log tokens, cookies or personal data into the DOM or state.

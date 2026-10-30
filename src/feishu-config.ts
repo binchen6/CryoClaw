@@ -62,6 +62,9 @@ function setFeishuChannelEnabled(config: MutableRecord, enabled: boolean): boole
 }
 
 export function migrateLegacyFeishuPluginEntry(config: MutableRecord): boolean {
+  // Current channel switches win. Managed plugin flags now mirror this switch;
+  // deleting them on every boot would undo demand policy and rewrite config twice.
+  if(typeof config.channels?.feishu?.enabled==='boolean')return false;
   const legacyEnabled = getLegacyFeishuEnabled(config);
   if (typeof legacyEnabled !== "boolean") {
     return clearLegacyFeishuPluginEntry(config);

@@ -293,6 +293,30 @@ oc-rail {
   flex: 1;
 }
 
+/* 额度圆环（从输入框移到图标轨）：余额竖排在圆环上方，窄字体；整块可点开详情。 */
+/* .oc-rail 整列是 drag 区域，可交互元素必须显式 no-drag，否则鼠标按下变成拖窗、圆环点不开（真实鼠标才复现，CDP 合成点击不受影响）。 */
+.oc-rail__footer oc-model-quota { display: flex; justify-content: center; width: 100%; -webkit-app-region: no-drag; }
+.oc-rail__footer .chat-quota__trigger[data-placement="rail"] {
+  flex-direction: column-reverse;
+  gap: 2px;
+  width: 100%;
+  height: auto;
+  padding: var(--spacer-4) 2px;
+  border-radius: var(--radius-10);
+  -webkit-app-region: no-drag;
+}
+.oc-rail__footer .chat-quota__trigger[data-placement="rail"] .chat-quota__ring { width: 20px; height: 20px; }
+.oc-rail__footer .chat-quota__trigger[data-placement="rail"] .chat-quota__balance {
+  max-width: 100%;
+  color: var(--text-muted);
+  font-family: var(--font-meta);
+  font-size: 9px;
+  font-stretch: 75%;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -.02em;
+  line-height: 1.1;
+}
+
 .oc-rail__item {
   position: relative;
   width: 40px;
@@ -443,6 +467,11 @@ oc-rail {
   border-radius: var(--radius-12);
   box-shadow: var(--shadow-lg);
   font-size: var(--text-sm);
+  /* 卡片必然越出 68px 的图标轨、压在会话面板/调宽手柄上；图标轨在 DOM 里排在它们
+     前面，不提层时卡片右缘会被树序在后的 .cryoclaw-panel-resize 盖掉（实测最后 ~15px）。
+     按 design-guidelines §4.4 层叠契约，"-popup" 类属浮层档，取 --z-dialog；
+     模态遮罩同档但树序更后，仍会正常压住它。 */
+  z-index: var(--z-dialog);
   /* 浮层内有「重试」按钮：祖先 .oc-rail 是窗口拖拽区，缺 no-drag 时按钮点不到 */
   -webkit-app-region: no-drag;
 }
@@ -587,6 +616,10 @@ oc-rail {
   border-radius: var(--radius-12);
   box-shadow: var(--shadow-lg);
   overflow: hidden;
+  /* 与连接卡同因：越出图标轨后必须自己提层，否则右侧被树序在后的面板/主列盖掉。 */
+  z-index: var(--z-dialog);
+  /* 父级 .oc-rail 是 drag 区：不显式 opt-out，真实鼠标按下会变成拖窗而非命中卡片（CDP 合成点击复现不了）。 */
+  -webkit-app-region: no-drag;
 }
 
 .oc-rail__error-wrap:hover .oc-rail__error-popup {
@@ -607,7 +640,8 @@ oc-rail {
 
 /* ============================================
    会话面板调宽手柄（右缘 8px 命中区）
-   常态细发丝线可发现；hover/active 加宽至 4px + 主色辉光
+   分割线由这里独家负责：常态是一条上下渐隐的 1px 发丝线（不抢眼），
+   hover/active 才加宽 + 主色辉光，把「可拖拽」的暗示留给交互时刻。
    ============================================ */
 
 .cryoclaw-panel-resize {
@@ -624,15 +658,18 @@ oc-rail {
   top: 0;
   bottom: 0;
   left: 3px;
-  width: 2px;
+  width: 1px;
   border-radius: var(--radius-full);
   background: var(--border);
+  /* 两端渐隐：线不顶到窗口上下边，视觉上更像「分隔」而不是「边框」 */
+  mask-image: linear-gradient(to bottom, transparent, #000 12%, #000 88%, transparent);
   transform-origin: center;
   /* 宽度变化走 transform 而非 left/width——合成层完成，不触发布局 */
   transition:
     transform var(--duration-fast) var(--ease-standard),
     background-color var(--duration-fast) var(--ease-standard),
-    box-shadow var(--duration-fast) var(--ease-standard);
+    box-shadow var(--duration-fast) var(--ease-standard),
+    mask-image var(--duration-fast) var(--ease-standard);
 }
 
 .cryoclaw-panel-resize:hover::after,
@@ -640,6 +677,8 @@ oc-rail {
   transform: scaleX(2);
   background-color: var(--accent);
   box-shadow: 0 0 12px 2px var(--accent-glow);
+  /* 悬停时线要完整可见，否则加宽后两端会突然「断开」 */
+  mask-image: none;
 }
 
 @media (prefers-reduced-motion: reduce) {

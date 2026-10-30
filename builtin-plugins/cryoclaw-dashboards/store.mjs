@@ -7,6 +7,7 @@ import {publicHttpsUrl} from './network.mjs';
 import {templateCard,boardTemplate,templateCatalog,templatePreview} from './templates.mjs';
 import {upgradeLegacyMarketHtml} from './market-watch.mjs';
 import {upgradeLegacyExampleHtml,upgradeLegacyExampleMedia,upgradeLegacyExampleLayouts} from './legacy-examples.mjs';
+import {dashboardTaskTargets,pauseDashboardTasks,targetsDashboardCard,setDashboardTaskEnabled,compensateDashboardTaskActivation} from './task-lifecycle.mjs';
 
 const idPattern=/^[a-zA-Z0-9_-]{1,64}$/;
 const bounded=(value,min,max)=>Number.isFinite(value)?Math.max(min,Math.min(max,Math.round(value))):min;
@@ -16,8 +17,8 @@ export function normalizeLayout(value={},previous={w:6,h:300,order:0}){
 function text(value,max,label){if(typeof value!=='string'||!value.trim()||value.length>max)throw Error(`Invalid ${label}`);return value.trim();}
 function description(value){if(typeof value!=='string'||value.length>240)throw Error('Invalid description');return value.trim();}
 export function createDashboardStore({stateDir,secret,now=()=>Date.now()}){
-  const dir=path.join(stateDir,'cryoclaw-dashboards');let db,cachedCatalog,dataVersion=-1;const tickets=new Map();
-  function database(){if(!db){fs.mkdirSync(dir,{recursive:true});db=new DatabaseSync(path.join(dir,'dashboards.sqlite'));db.exec("PRAGMA busy_timeout=1500; PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS catalog(id INTEGER PRIMARY KEY CHECK(id=1),json TEXT NOT NULL); CREATE TABLE IF NOT EXISTS operations(id TEXT PRIMARY KEY,hash TEXT NOT NULL,result TEXT NOT NULL); INSERT OR IGNORE INTO catalog VALUES(1,'{\"version\":1,\"revision\":0,\"boards\":[]}');");}return db;}
+  const dir=path.join(stateDir,'cryoclaw-dashboards');let db,cachedCatalog,dataVersion=-1,execution=Promise.resolve();const tickets=new Map();
+  function database(){if(!db){fs.mkdirSync(dir,{recursive:true});db=new DatabaseSync(path.join(dir,'dashboards.sqlite'));db.exec("PRAGMA busy_timeout=1500; PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS catalog(id INTEGER PRIMARY KEY CHECK(id=1),json TEXT NOT NULL); CREATE TABLE IF NOT EXISTS operations(id TEXT PRIMARY KEY,hash TEXT NOT NULL,result TEXT NOT NULL); CREATE TABLE IF NOT EXISTS source_cache(id TEXT PRIMARY KEY,value TEXT NOT NULL,until REAL NOT NULL,updated_at INTEGER NOT NULL); INSERT OR IGNORE INTO catalog VALUES(1,'{\"version\":1,\"revision\":0,\"boards\":[]}');");}return db;}
   function read(){const connection=database(),version=connection.prepare('PRAGMA data_version').get().data_version;if(cachedCatalog&&version===dataVersion)return cachedCatalog;dataVersion=version;cachedCatalog=JSON.parse(connection.prepare('SELECT json FROM catalog WHERE id=1').get().json);return cachedCatalog;}
   const summary=board=>{const layouts=upgradeLegacyExampleLayouts(board);return {id:board.id,title:board.title,description:board.description,revision:board.revision,archived:!!board.archived,updatedAt:board.updatedAt,
     cards:board.cards.map(({html,state,dataSources,assets,capabilityId,...card})=>({...card,layout:{...(layouts?.get(card.id)??card.layout)},taskLinks:structuredClone(card.taskLinks??[])})).sort((a,b)=>a.layout.order-b.layout.order)};};
@@ -42,25 +43,45 @@ export function createDashboardStore({stateDir,secret,now=()=>Date.now()}){
       const s=read();if(sinceRevision===s.revision&&[...tickets.values()].every(t=>t.until>now()+3600000))return {revision:s.revision,unchanged:true};
       return {revision:s.revision,boards:s.boards.filter(b=>includeArchived||!b.archived).map(b=>{const view=summary(b),urls=new Map(b.cards.map(c=>[c.id,frameUrl(b,c)]));return {...view,cards:view.cards.map(c=>({...c,frameUrl:urls.get(c.id)}))};})};
     },
-    async execute(args,assertCurrent=()=>{},operationId){
+    async execute(args,assertCurrent=()=>{},operationId,requestCron=async()=>{throw Error('Scheduled task access unavailable; use the dashboard with cron management permission');}){
+      const run=async()=>{
+      assertCurrent();const hash=createHash('sha256').update(JSON.stringify(args)).digest('hex');
+      if(operationId){const previous=database().prepare('SELECT hash,result FROM operations WHERE id=?').get(operationId);if(previous){if(previous.hash!==hash)throw Error('Operation ID reused with different arguments');return JSON.parse(previous.result);}}
       if(args.action==='list_templates')return templateCatalog();
       if(args.action==='list'){const result=await this.list({includeArchived:args.includeArchived===true});return {boards:result.boards.filter(b=>!args.boardId||b.id===args.boardId).map(({cards,...b})=>({...b,cardCount:cards.length,...args.boardId?{cards:cards.map(c=>({id:c.id,title:c.title,kind:c.kind,layout:c.layout,taskLinks:c.taskLinks??[]}))}:{}}))};}
       if(args.action==='read_card'){const b=boardFor(read(),args.boardId),c=b.cards.find(c=>c.id===args.cardId);if(!c)throw Error('Card not found');return {id:c.id,title:c.title,html:c.html,dataSources:c.dataSources??[],assets:c.assets??[],taskLinks:c.taskLinks??[]};}
-      return mutate(s=>{
+      let preparedRevision;
+      if(['archive','delete','remove_card','enable_task'].includes(args.action)){
+        const board=boardFor(read(),args.boardId);preparedRevision=board.revision;
+        if(args.action==='delete'&&!board.archived&&args.confirmDelete!==true)throw Error('Confirm permanent dashboard deletion');
+        if(['remove_card','enable_task'].includes(args.action)&&!board.cards.some(c=>c.id===args.cardId))throw Error('Card not found');
+        const check=()=>{assertCurrent();if(boardFor(read(),args.boardId).revision!==preparedRevision)throw Error('Dashboard changed; refresh before managing scheduled updates');};
+        if(args.action==='enable_task'){
+          const target=dashboardTaskTargets(board,args.cardId).find(target=>target.jobId===args.jobId);
+          if(board.archived||!target)throw Error('Dashboard task unavailable');
+          const job=await requestCron('cron.get',{id:args.jobId});check();
+          if(job?.id!==args.jobId||!targetsDashboardCard(job,board.id,args.cardId))throw Error('Scheduled task does not target this dashboard card');
+          try{await setDashboardTaskEnabled(job,true,requestCron);check();}
+          catch(error){await compensateDashboardTaskActivation(target,requestCron,error);}
+        }else await pauseDashboardTasks(dashboardTaskTargets(board,args.action==='remove_card'?args.cardId:undefined),requestCron,check);
+      }
+      try{return mutate(s=>{
         if(args.action==='create'||args.action==='seed'||args.action==='create_example'||args.action==='create_template'){
           if(args.action==='seed'&&s.boards.length)return ()=>({board:summary(s.boards.find(b=>!b.archived)??s.boards[0])});
           if(s.boards.length>=32)throw Error('Dashboard limit reached');
-          const example=args.action==='seed'||args.action==='create_example';
-          const preset=args.action==='create_template'?boardTemplate(args.templateId):null;
-          const board={id:randomUUID(),title:example?(args.title?text(args.title,80,'dashboard title'):'Hello World'):text(args.title??preset?.title,80,'dashboard title'),description:description(args.description??preset?.description??''),cards:[],revision:1,updatedAt:now(),archived:false,...example?{templateVersion:2}:{}};
-          if(example)board.cards=starterCards.map(c=>({...c,id:c.cardId,html:c.html??'',revision:1,capabilityId:randomUUID()}));s.boards.push(board);
+          const exemplar=args.action==='create_example',onboarding=args.action==='seed';
+          const preset=args.action==='create_template'?boardTemplate(args.templateId):onboarding?boardTemplate('onboarding'):null;
+          const board={id:randomUUID(),title:exemplar?(args.title?text(args.title,80,'dashboard title'):'Hello World'):text(args.title??preset?.title,80,'dashboard title'),description:description(args.description??preset?.description??''),cards:[],revision:1,updatedAt:now(),archived:false,...exemplar?{templateVersion:2}:{}};
+          if(exemplar)board.cards=starterCards.map(c=>({...c,id:c.cardId,html:c.html??'',revision:1,capabilityId:randomUUID()}));s.boards.push(board);
           if(preset)board.cards=preset.cards.map((c,index)=>({...c,id:c.cardId,html:c.html??'',layout:{...c.layout,order:index},revision:1,capabilityId:randomUUID()}));
           return ()=>({board:summary(board)});
         }
         const board=boardFor(s,args.boardId);let publishedCardId;
+        if(preparedRevision!==undefined&&board.revision!==preparedRevision)throw Error('Dashboard changed; refresh before managing scheduled updates');
         if(board.archived&&!['rename','restore','delete','archive'].includes(args.action))throw Error('Restore this dashboard before editing');
         if(args.action==='delete'){if(!board.archived&&args.confirmDelete!==true)throw Error('Confirm permanent dashboard deletion');s.boards=s.boards.filter(b=>b.id!==board.id);for(const key of tickets.keys())if(key.startsWith(board.id+'/'))tickets.delete(key);return ()=>({deleted:true,boardId:board.id});}
-        if(args.action==='rename'){board.title=text(args.title,80,'dashboard title');if(args.description!==undefined)board.description=description(args.description);}
+        if(args.action==='enable_task'){/* Native cron activation was checked while holding the lifecycle queue. */}
+        else if(args.action==='rename'){board.title=text(args.title,80,'dashboard title');if(args.description!==undefined)board.description=description(args.description);}
         else if(args.action==='archive'||args.action==='restore')board.archived=args.action==='archive';
         else if(args.action==='remove_card'){
           if(!board.cards.some(c=>c.id===args.cardId))throw Error('Card not found');board.cards=board.cards.filter(c=>c.id!==args.cardId);
@@ -91,12 +112,28 @@ export function createDashboardStore({stateDir,secret,now=()=>Date.now()}){
           for(const change of args.layouts){const card=board.cards.find(c=>c.id===change.cardId);if(!card)throw Error('Card was removed; refresh the dashboard');card.layout=normalizeLayout(change,card.layout);}
         }else throw Error('Unsupported dashboard action');
         touch(board);return ()=>({board:{id:board.id,title:board.title,revision:board.revision,cardCount:board.cards.length},...publishedCardId?{cardId:publishedCardId}:{}});
-      },assertCurrent,operationId,createHash('sha256').update(JSON.stringify(args)).digest('hex'));
+      },assertCurrent,operationId,hash);}catch(error){
+        if(args.action==='enable_task')await compensateDashboardTaskActivation({boardId:args.boardId,cardId:args.cardId,jobId:args.jobId},requestCron,error);
+        throw error;
+      }
+      };
+      const pending=execution.then(run,run);execution=pending.catch(()=>{});return pending;
     },
     async pin(boardId,cardId){const b=boardFor(read(),boardId),c=b.cards.find(c=>c.id===cardId);if(b.archived||!c)throw Error('Card unavailable');return {frameUrl:frameUrl(b,c,true)};},
     async getState(boardId,cardId){const b=boardFor(read(),boardId),c=b.cards.find(c=>c.id===cardId);if(b.archived||!c)throw Error('Card unavailable');return structuredClone(c.state??null);},
     async setState(boardId,cardId,value){const json=JSON.stringify(value);if(!json||Buffer.byteLength(json)>32768)throw Error('Card state exceeds 32 KiB');return mutate(s=>{const b=boardFor(s,boardId),c=b.cards.find(c=>c.id===cardId);if(b.archived||!c)throw Error('Card unavailable');c.state=JSON.parse(json);return ()=>({saved:true});});},
     async source(boardId,cardId,id,asset=false){const b=boardFor(read(),boardId),c=b.cards.find(c=>c.id===cardId);if(b.archived||!c)throw Error('Card unavailable');const effective=asset?upgradeLegacyExampleMedia(c):c,source=(asset?effective.assets:effective.dataSources)?.find(s=>s.id===id);if(!source)throw Error('Source not declared by this card');return {...source};},
+    readSourceCache(id){
+      if(typeof id!=='string'||!id||id.length>8192)return undefined;const connection=database(),row=connection.prepare('SELECT value,until FROM source_cache WHERE id=?').get(id);if(!row)return undefined;
+      try{const value=JSON.parse(row.value);if(!value||typeof value!=='object'||Array.isArray(value)||!Number.isFinite(row.until))throw Error('Invalid source cache');return {value,until:row.until,size:0};
+      }catch{connection.prepare('DELETE FROM source_cache WHERE id=?').run(id);return undefined;}
+    },
+    writeSourceCache(id,entry){
+      if(typeof id!=='string'||!id||id.length>8192||!entry?.value||typeof entry.value!=='object'||Array.isArray(entry.value)||!Number.isFinite(entry.until))throw Error('Invalid source cache entry');const json=JSON.stringify(entry.value);
+      if(Buffer.byteLength(json)>768*1024)throw Error('Source cache entry is too large');const connection=database();
+      connection.prepare('INSERT INTO source_cache(id,value,until,updated_at) VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET value=excluded.value,until=excluded.until,updated_at=excluded.updated_at').run(id,json,entry.until,now());
+      connection.prepare('DELETE FROM source_cache WHERE rowid NOT IN (SELECT rowid FROM source_cache ORDER BY updated_at DESC, rowid DESC LIMIT 64)').run();
+    },
     close(){db?.close();db=undefined;cachedCatalog=undefined;dataVersion=-1;tickets.clear();},
     async document(boardId,cardId,ticket){
       if(!idPattern.test(boardId)||!idPattern.test(cardId)||typeof ticket!=='string'||ticket.length>2048)throw Error('Invalid view ticket');

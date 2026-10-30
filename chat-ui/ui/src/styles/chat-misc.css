@@ -304,7 +304,7 @@ oc-board-panel { display: block; min-width: 0; }
   transition: background var(--duration-fast) var(--ease-standard), color var(--duration-fast) var(--ease-standard);
 }
 .chat-board__tab[aria-pressed="true"] { background: var(--bg-hover); color: var(--text); border-color: var(--brand-500); }
-.chat-board__toggle:focus-visible, .chat-board__tab:focus-visible { outline: 2px solid var(--brand-500); outline-offset: 2px; }
+.chat-board__toggle:focus-visible, .chat-board__tab:focus-visible { box-shadow: var(--focus-ring); }
 .chat-board__stage { padding: 0 var(--spacer-12) var(--spacer-12); min-height: 0; }
 .chat-board__stage .chat-board__frame { display: block; height: clamp(200px, 38vh, 440px); }
 .chat-board__error { color: var(--text-secondary); padding: var(--spacer-8) var(--spacer-12); font-size: var(--text-sm); }
@@ -612,8 +612,8 @@ oc-board-panel { display: block; min-width: 0; }
 }
 
 .chat-goal-form__input:focus {
-  border-color: var(--ring);
-  box-shadow: var(--focus-ring);
+  border-color: var(--focus-field-color);
+  box-shadow: var(--focus-field);
 }
 
 .chat-goal-form__submit,

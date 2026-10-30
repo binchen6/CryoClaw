@@ -26,6 +26,7 @@ const s = {
   error: null as string | null,
   successMsg: null as string | null,
   initialized: false,
+  loadState: "loading",
   refreshTimers: [] as ReturnType<typeof setTimeout>[],
   stateRef: null as AppViewState | null,
 };
@@ -41,6 +42,7 @@ let initGeneration = 0;
 async function init(state: AppViewState) {
   if (s.initialized) return;
   s.initialized = true;
+  s.loadState = "loading";
   s.stateRef = state;
   s.unsubscribeProgress?.();s.unsubscribeProgress=ipc.onArchiveProgress(progress=>{if(s.openclawStateBusy){s.archiveProgress=progress;state.requestUpdate();}});
   const gen = ++initGeneration;
@@ -51,7 +53,9 @@ async function init(state: AppViewState) {
     s.lastKnownGoodUpdatedAt = backup.lastKnownGoodUpdatedAt ?? "";
     s.gatewayState = readGatewayState(gw);
     state.requestUpdate();
-  } catch {}
+    if (gen === initGeneration) s.loadState = "ready";
+  } catch { if (gen === initGeneration) s.loadState = "error"; }
+  if (gen === initGeneration) state.requestUpdate();
   if (gen !== initGeneration) return;
 
   // Steady-state gateway polling via tick handler
@@ -221,7 +225,7 @@ export function renderTabBackup(state: AppViewState, notice: string | null) {
   const actionDisabled = s.openclawStateBusy || s.restoring || s.resetting;
 
   return html`
-    <div class="oc-settings__section">
+    <div class="oc-settings__section" data-page-id="settings:backup" data-load-state=${s.loadState === "ready" && !s.backups.length && !s.hasLastKnownGood ? "empty" : s.loadState} aria-busy=${s.loadState === "loading"}>
       <h2 class="oc-settings__section-title">${t("settings.backup.pageTitle")}</h2>
       <p class="oc-settings__page-desc">${t("settings.backup.pageDesc")}</p>
 

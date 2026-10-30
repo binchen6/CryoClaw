@@ -201,7 +201,7 @@ export function renderTabAppearance(state: AppViewState) {
   const applyPreset=(preset:ThemePreset)=>{s.agentFields={...EMPTY_THEME_FIELDS,...preset.fields};if(preset.mode)s.agentMode=preset.mode;s.agentError="";state.requestUpdate();};
 
   return html`
-    <div class="oc-settings__section">
+    <div class="oc-settings__section" data-page-id="settings:appearance" data-load-state=${"ready"} aria-busy=${false}>
       <h2 class="oc-settings__section-title">${t("settings.appearance.title")}</h2>
       <p class="oc-settings__page-desc">${t("settings.appearance.desc")}</p>
       ${contrastIssues.length?html`<p class="oc-theme-contrast" role="status">${text("文字对比度偏低，建议达到 4.5:1：","Text contrast is low; aim for 4.5:1:")} ${contrastIssues.map(issue=>`${issue.mode} · ${issue.role} ${issue.ratio.toFixed(2)}:1`).join(" · ")}</p>`:""}

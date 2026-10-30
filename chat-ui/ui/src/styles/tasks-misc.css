@@ -139,8 +139,8 @@
 }
 
 .ts-select:focus {
-  border-color: var(--border-focus);
-  box-shadow: var(--focus-ring);
+  border-color: var(--focus-field-color);
+  box-shadow: var(--focus-field);
 }
 
 /* ── R92：搜索输入（工具行，防抖 200ms 客户端过滤） ── */
@@ -160,8 +160,8 @@
 }
 
 .ts-search:focus {
-  border-color: var(--border-focus);
-  box-shadow: var(--focus-ring);
+  border-color: var(--focus-field-color);
+  box-shadow: var(--focus-field);
 }
 
 /* ── R92：统计条（4 枚状态 chip，点击联动状态分组过滤） ── */
@@ -769,8 +769,8 @@
 }
 
 .gitp-repo-select:focus {
-  border-color: var(--border-focus);
-  box-shadow: var(--focus-ring);
+  border-color: var(--focus-field-color);
+  box-shadow: var(--focus-field);
 }
 
 .gitp-branch-row {
@@ -1024,8 +1024,8 @@
 }
 
 .gitp-commit__input:focus {
-  border-color: var(--border-focus);
-  box-shadow: var(--focus-ring);
+  border-color: var(--focus-field-color);
+  box-shadow: var(--focus-field);
 }
 
 .gitp-commit__actions {
@@ -1277,8 +1277,8 @@
 
 .wt-create__input:focus,
 .wt-create__select:focus {
-  border-color: var(--border-focus);
-  box-shadow: var(--focus-ring);
+  border-color: var(--focus-field-color);
+  box-shadow: var(--focus-field);
 }
 
 .wt-create__select {

@@ -30,10 +30,19 @@ function arg(name, fallback) {
 
 const wrapper = arg("--wrapper", path.join(process.env.LOCALAPPDATA || os.homedir(), "CryoClaw", "bin", "openclaw.cmd"));
 const kernelEntry = arg("--kernel-entry", null);
-// 参考内核入口的运行时：默认 Electron 自带 Node 24.18.1（满足 2026.9.3 的 engine 要求
-// >=24.16.0 <25；系统 Node 若低于 24.16 会被内核 preinstall 守卫拒绝——2026.9.3 起
-// Node 22/25 线已被剔除）
-const nodeBin = arg("--node-bin", path.join(__dirname, "..", "node_modules", "electron", "dist", "electron.exe"));
+function defaultCliNodeBin(targetBase = path.join(__dirname, "..", "resources", "targets", "win32-x64")) {
+  const policyPath = path.join(targetBase, "runtime", "cryoclaw-runtime.json");
+  if (fs.existsSync(policyPath)) {
+    const policy = JSON.parse(fs.readFileSync(policyPath, "utf8"));
+    if (policy.kind !== "node" || policy.gatewayMode !== "loose") throw new Error("CLI reference runtime policy is incompatible");
+    const candidate = path.join(targetBase, "runtime", "node.exe");
+    if (!fs.existsSync(candidate)) throw new Error("CLI reference native Node is missing");
+    return candidate;
+  }
+  return path.join(__dirname, "..", "node_modules", "electron", "dist", "electron.exe");
+}
+// 当前物理网关必须选实际执行它的独立 Node；旧 ASAR 才回退 Electron。
+const nodeBin = arg("--node-bin", defaultCliNodeBin());
 const matrixOnly = process.argv.includes("--matrix-only");
 const timeoutMs = Number(arg("--timeout-ms", "30000"));
 
@@ -261,7 +270,9 @@ async function main() {
   process.exit(failed.length > 0 ? 1 : 0);
 }
 
-main().catch((e) => {
+module.exports = { defaultCliNodeBin };
+
+if (require.main === module) main().catch((e) => {
   console.error("[cli-smoke] 失败:", e.message);
   process.exit(1);
 });

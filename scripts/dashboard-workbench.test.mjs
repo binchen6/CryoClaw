@@ -3,7 +3,20 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import {transformSync} from 'esbuild';
 import {createDashboardStore} from '../builtin-plugins/cryoclaw-dashboards/store.mjs';
+import {onboardingCards} from '../builtin-plugins/cryoclaw-dashboards/onboarding.mjs';
+
+test('onboarding typography and responsive styles parse completely in every card',()=>{
+ for(const card of onboardingCards){
+  const styles=[...card.html.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/gi)];
+  assert.ok(styles.length,card.cardId+' must contain its self-contained styles');
+  for(const [,css]of styles){
+   const {warnings}=transformSync(css,{loader:'css',logLevel:'silent'});
+   assert.deepEqual(warnings.map(warning=>warning.text),[],card.cardId+' must not silently drop malformed CSS');
+  }
+ }
+});
 
 async function fixture(t){
  const stateDir=fs.mkdtempSync(path.join(os.tmpdir(),'cryoclaw-workbench-'));
@@ -62,6 +75,10 @@ test('curated board templates start with selected modules and a useful descripti
  assert.ok(next.cards.length>=3&&next.cards.length<21);
  assert.ok(next.description.length>0);
  assert.equal(new Set(next.cards.map(card=>card.id)).size,next.cards.length);
+ const intro=await store.execute({action:'create_template',templateId:'onboarding'});
+ const guided=(await store.list()).boards.find(item=>item.id===intro.board.id);
+ assert.equal(guided.title,'看板入门');assert.equal(guided.cards.length,5);
+ assert.ok((await store.templates()).boards.some(item=>item.id==='onboarding'&&item.cardCount===5));
 });
 test('layout persists continuous fractional widths across store reload',async t=>{
  const {store,board}=await fixture(t);await store.execute({action:'layout',boardId:board.id,layouts:[{cardId:'notes',w:5.257,h:387,order:0}]});

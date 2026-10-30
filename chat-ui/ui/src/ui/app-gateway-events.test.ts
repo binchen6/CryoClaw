@@ -72,15 +72,15 @@ test("app-gateway.ts：setLastActiveSessionKey 仅对当前会话事件调用（
 
 // ---- R41 Task 6：重连 orphan 未收养时的有限次历史探测 ----
 
-test("app-gateway.ts：onHello previousClient 重连分支调度 scheduleReconnectOrphanProbe", () => {
+test("app-gateway.ts：onHello 重连分支调度 scheduleReconnectOrphanProbe", () => {
   const s = src("app-gateway.ts");
   // F7 后重连读的 loadChatHistory 选项由 hasPendingSessionReset 三元决定，
   // 探测调度仍须紧跟重连读之后、仅在 previousClient 分支内：首次连接没有
   // 「断连窗口内结束的 run」，不需要探测；onGap 耗尽软恢复路径不断连也不需要。
   assert.match(
     s,
-    /if \(previousClient\) \{[\s\S]*?void loadChatHistory\([\s\S]*?scheduleReconnectOrphanProbe\(host\);[\s\S]*?\}/,
-    "onHello 的 previousClient 分支应在重连读后调用 scheduleReconnectOrphanProbe(host)",
+    /if \(isReconnect\) \{[\s\S]*?void loadChatHistory\([\s\S]*?scheduleReconnectOrphanProbe\(host\);[\s\S]*?\}/,
+    "onHello 的重连分支应在重连读后调用 scheduleReconnectOrphanProbe(host)",
   );
   // 顶部 import 必须引入 liveOrphanRunId（探测回调的存活检查只消费这一个 orphan API）
   assert.match(
@@ -104,7 +104,7 @@ test("app-gateway.ts：onHello 重连分支对未消费的 pendingReset 跳过 m
   // 旧对话/乐观写入永久留在「新会话」里。必须强制替换（传 undefined 选项）。
   assert.match(
     s,
-    /if \(previousClient\) \{[\s\S]*?hasPendingSessionReset\(host\.sessionKey\);[\s\S]*?reconnectReplace \? undefined : \{ mergeIfStale: true \}[\s\S]*?scheduleReconnectOrphanProbe\(host\);/,
+    /if \(isReconnect\) \{[\s\S]*?hasPendingSessionReset\(host\.sessionKey\);[\s\S]*?reconnectReplace \? undefined : \{ mergeIfStale: true \}[\s\S]*?scheduleReconnectOrphanProbe\(host\);/,
     "onHello 重连分支应以 hasPendingSessionReset(host.sessionKey) 判定，pendingReset 未消费时强制替换历史",
   );
   // 负向钉点：重连分支不得再有无条件的 mergeIfStale 重连读

@@ -164,3 +164,14 @@ test("R92 skills.css：可点卡片 / 按钮沉底 / 三行简介 / 显示更多
   const summary = css.match(/\.ext-market__summary\s*\{[^}]*\}/)?.[0] ?? "";
   assert.match(summary, /min-height/, "简介未定三行最小高（卡片塌陷）");
 });
+
+test("技能和插件仅在显式点击时检查更新", () => {
+  for (const [file, marker, expected] of [
+    ["app-skills.ts", "checkSkillStoreUpdates(state", 2],
+    ["views/settings/tab-plugins.ts", "checkUpdates(state", 2],
+  ] as const) {
+    const calls = stripComments(src(file)).split("\n").filter(line => line.includes(marker) && !line.includes("function"));
+    assert.equal(calls.length, expected, `${file} 不应保留自动更新检查调用`);
+    for (const line of calls) assert.match(line, /@click=/, `${file} 的更新检查必须来自显式点击`);
+  }
+});

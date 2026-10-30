@@ -27,7 +27,21 @@
   --titlebar-h: 44px;
   --theme-switch-x: 50%;
   --theme-switch-y: 50%;
-  --focus-ring: 0 0 0 2px var(--bg), 0 0 0 4px var(--ring);
+
+  /* ── 聚焦系统（2026.10.30 统一） ──
+     语言：柔和、克制、一条主色边 + 一层极淡光晕，不用硬描边（旧写法各页混用
+     `outline: 2px solid` 与双环 box-shadow，视觉重量参差）。
+     三档按「元素与背景的关系」选用，而不是按页面：
+       --focus-field     输入控件本体：边框染色 + 3px 柔光（对齐对话输入卡）
+       --focus-ring      紧凑控件（按钮/图标钮/菜单项）：2px 环，紧贴边缘
+       --focus-ring-inset 密集列表/表格内的行、chip：内描边，不撑开布局
+     变色/换环一律走 --duration-fast，避免聚焦瞬间跳色。 */
+  --focus-field-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  --focus-field: 0 0 0 3px var(--accent-subtle);
+  --focus-ring: 0 0 0 2px var(--accent-subtle), 0 0 0 3px var(--ring);
+  --focus-ring-inset: inset 0 0 0 2px var(--ring);
+  --focus-transition: border-color var(--duration-fast) var(--ease-standard),
+    box-shadow var(--duration-fast) var(--ease-standard);
 
   /* ── 布局令牌（2026.9 R94 布局统一重设计） ──
      内容列两档：表单/阅读型 vs 列表/卡片区；视图专用列宽

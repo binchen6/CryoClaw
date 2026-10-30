@@ -78,6 +78,49 @@ const JUNK_DOC_EXTENSIONS = new Set(["", ".md", ".txt", ".markdown", ".rst"]);
 module.exports = function createKernelPrune(fs) {
   const rmRecursive = rmRecursiveFactory(fs);
 
+  // These SDKs publish runnable CJS and ESM beside a second TypeScript tree.
+  // Recheck their export contract on every update; future runtime source or
+  // assets must keep the directory intact.
+  function pruneCompiledSdkSources(nmDir, removeDir = rmRecursive) {
+    function compiledOnly(value) {
+      if (value === null || value === undefined) return true;
+      if (typeof value === 'string') {
+        const target = path.posix.normalize(value);
+        return value.startsWith('./') && !target.startsWith('../') &&
+          !/^(?:src(?:\/|$)|\*)/.test(target);
+      }
+      if (typeof value !== 'object') return false;
+      return Object.entries(value).filter(([key]) => key !== 'types').every(([, target]) => compiledOnly(target));
+    }
+    function sourceOnly(dir) {
+      if (fs.lstatSync(dir).isSymbolicLink()) return false;
+      return fs.readdirSync(dir, {withFileTypes:true}).every(entry => {
+        const file = path.join(dir, entry.name);
+        return entry.isDirectory() ? sourceOnly(file) : entry.isFile() &&
+          (/\.(?:ts|mts|cts|md)$/.test(entry.name) || entry.name === 'tsconfig.json' || entry.name === '.keep');
+      });
+    }
+    function compiledBins(bin) {
+      if (bin === undefined) return true;
+      const targets = typeof bin === 'string' ? [bin] : bin && typeof bin === 'object' ? Object.values(bin) : [null];
+      return targets.every(target => typeof target === 'string' &&
+        !path.posix.isAbsolute(target) && !target.includes('\\') && !target.includes(':') &&
+        compiledOnly(target.startsWith('./') ? target : './' + target));
+    }
+    let removed = 0;
+    for (const name of ['openai', '@anthropic-ai/sdk']) {
+      const dir = path.join(nmDir, name), source = path.join(dir, 'src');
+      try {
+        const manifest = JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8'));
+        if (manifest.name !== name || manifest.main !== './index.js' || !manifest.exports ||
+            ![manifest.exports, manifest.imports].every(compiledOnly) || !compiledBins(manifest.bin) ||
+            !fs.statSync(path.join(dir, 'index.js')).isFile() || !sourceOnly(source)) continue;
+        removeDir(source); removed++;
+      } catch { /* Unknown or incomplete packages retain their original contents. */ }
+    }
+    return removed;
+  }
+
   // Both factory builds and npm updates ship this SDK. Its optional "source"
   // condition is for development; every production export must stay in esm/.
   function pruneMistralSources(nmDir, removeDir = rmRecursive) {
@@ -172,6 +215,7 @@ module.exports = function createKernelPrune(fs) {
     return [
       function pruneMistral(stats) {
         pruneMistralSources(nmDir, dir => removeDirTracked(dir, stats));
+        pruneCompiledSdkSources(nmDir, dir => removeDirTracked(dir, stats));
       },
       // koffi：仅保留本机平台 native binary
       function pruneKoffi(stats) {
@@ -419,5 +463,5 @@ module.exports = function createKernelPrune(fs) {
     return stats;
   }
 
-  return { pruneGatewayTree, pruneMistralSources };
+  return { pruneGatewayTree, pruneMistralSources, pruneCompiledSdkSources };
 };

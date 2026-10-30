@@ -47,7 +47,7 @@ import {
   AUTH_PROXY_API_KEY_SENTINEL,
   type AddSelection,
   type ProviderGroup, type GroupedProvider, type ProviderModelEntry, type ProviderGroupId,
-  type OpenclawConfigDraft, type OpenclawProviderEntry, type OpenclawProviderModelEntry,
+  type OpenclawConfigDraft, type OpenclawProviderModelEntry,
   deriveProviderView,
 } from "./tab-provider.lib.ts";
 import {
@@ -88,6 +88,11 @@ function createProviderState() {
     initialized: false,
     snapshot: null as import("../../controllers/config.ts").ConfigSnapshot | null,
     loading: false,
+    catalogLoading: false,
+    catalogFailed: false,
+    agentsLoading: false,
+    agentsFailed: false,
+    initialReadFailed: false,
     busy: false,
     pendingDefault: "",
     error: null as string | null,
@@ -239,7 +244,7 @@ function getProviderSnapshot() {
 
 async function refreshSnapshot(state: AppViewState) {
   if (!state.client) return;
-  await getConfigSnapshot(state.client, { force: true });
+  await getConfigSnapshot(state.client);
   pruneOrgAgainstConfig();
   // 主应用模型选择器（compose/cron）同步刷新
   try {
@@ -270,7 +275,9 @@ async function init(state: AppViewState) {
     if (state.client && state.connected) {
       await getConfigSnapshot(state.client);
       pruneOrgAgainstConfig();
+      s.catalogLoading=true;
       void loadGatewayModels(state.client).then(catalog => {
+        s.catalogLoading=false;s.catalogFailed=!catalog;state.requestUpdate();
         if (catalog) state.requestUpdate();
       });
       // T4：agents.list 从渲染期（renderAgentMapping 内副作用）移到 tab 激活时；
@@ -278,7 +285,8 @@ async function init(state: AppViewState) {
       void loadAgents(state);
     }
     await checkOAuthStatus(state);
-  } finally {
+  } catch(error) { s.initialReadFailed=true;throw error; }
+  finally {
     s.loading = false;
     state.requestUpdate();
   }
@@ -292,6 +300,7 @@ const AGENTS_RETRY_COOLDOWN_MS = 60_000;
 async function loadAgents(state: AppViewState) {
   if (s.agentsLoaded || !state.client || !state.connected) return;
   if (agentsLoadFailedAt && Date.now() - agentsLoadFailedAt < AGENTS_RETRY_COOLDOWN_MS) return;
+  s.agentsLoading=true;s.agentsFailed=false;
   try {
     const res = await state.client.request<any>("agents.list", {});
     const rows: AgentRow[] = [];
@@ -314,7 +323,9 @@ async function loadAgents(state: AppViewState) {
   } catch {
     /* agents.list 失败时隐藏映射表；记录时间戳避免重渲染风暴 */
     agentsLoadFailedAt = Date.now();
+    s.agentsFailed=true;
   }
+  finally {s.agentsLoading=false;state.requestUpdate();}
 }
 
 /* ── patch 执行封装 ── */
@@ -1126,7 +1137,7 @@ async function checkOAuthStatus(state: AppViewState) {
     s.oauthLoggedIn = result.loggedIn ?? false;
     if (s.oauthLoggedIn) await loadUsage(state);
     state.requestUpdate();
-  } catch {}
+  } catch { s.initialReadFailed=true; }
 }
 
 async function loadUsage(state: AppViewState) {
@@ -1348,7 +1359,7 @@ export function renderTabProvider(state: AppViewState) {
   const matchingModels=groups.flatMap(group=>group.providers).reduce((count,provider)=>count+provider.models.filter(model=>modelMatchesFilter(model,provider)).length,0);
 
   return html`
-    <div class="oc-settings__section oc-model-settings">
+    <div class="oc-settings__section oc-model-settings" data-page-id="settings:provider" data-load-state=${s.loading || s.catalogLoading || s.agentsLoading?"loading":s.initialReadFailed || s.catalogFailed || s.agentsFailed || s.error?"error":!snap?"error":!totalModels?"empty":"ready"} aria-busy=${s.loading || s.catalogLoading || s.agentsLoading}>
       <div class="oc-provider-header">
         <div>
           <h2 class="oc-settings__section-title">${t("settings.provider.title")}</h2>

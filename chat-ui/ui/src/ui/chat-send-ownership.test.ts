@@ -5,6 +5,8 @@ import { loadChatHistory, sendChatMessage } from "./controllers/chat.ts";
 import { applySessionKeyTransition, clearSessionDraftSnapshot } from "./session-transition.ts";
 import { peekRunStateSnapshot, resetRunStateStoreForTests } from "./run-state-store.ts";
 import { buildChatProps } from "./app-chat-props.ts";
+import { handleGatewayEvent } from "./app-gateway.ts";
+import { pendingSessionResets, pendingSessionLabels } from "./session-pending.ts";
 
 function deferred<T = unknown>() {
   let resolve!: (value: T) => void;
@@ -32,6 +34,7 @@ function makeHost(request: (method: string, params?: any) => Promise<unknown>) {
     chatThinkingLevel: null, chatThinkingStream: null, chatPendingThinkingText: null,
     chatNarrationText: null, chatPendingNarrationText: null, chatTerminalRun: null,
     chatToolMessages: [], toolStreamById: new Map(), toolStreamOrder: [],
+    dirtyMeterSessions: new Set(), meterTotalsBaseline: new Map(),
     evictedLeadingSegments: [], toolStreamSyncTimer: null,
     basePath: "", hello: null, chatAvatarUrl: null, sessionsResult: null,
     chatScrollFrame: null, chatScrollTimeout: null, chatScrollGeneration: 0,
@@ -262,6 +265,132 @@ test("a late send failure cannot reset a newer run in the same session", async (
   assert.equal(host.chatRunId, "new-run");
   assert.equal(host.chatStream, "new run output");
   assert.equal(host.chatStreamStartedAt, 100);
+});
+
+test("a background send acknowledgment updates its owning session's run ID", async () => {
+  const rpc = deferred();
+  const host = makeHost(() => rpc.promise);
+  host.chatMessage = "message A";
+  const sending = handleSendChat(host);
+  switchSession(host, "send-b");
+  host.chatRunId = "run-b";
+  host.chatStream = "output B";
+  rpc.resolve({ runId: "accepted-a", status: "started" });
+  assert.equal(await sending, true);
+  assert.equal(peekRunStateSnapshot("send-a")?.chatRunId, "accepted-a");
+  assert.equal(host.chatRunId, "run-b");
+  assert.equal(host.chatStream, "output B");
+});
+
+test("a background terminal send acknowledgment clears only its owning session", async () => {
+  const rpc = deferred();
+  const host = makeHost(() => rpc.promise);
+  host.chatMessage = "message A";
+  const sending = handleSendChat(host);
+  switchSession(host, "send-b");
+  host.chatRunId = "run-b";
+  rpc.resolve({ runId: "accepted-a", status: "ok" });
+  assert.equal(await sending, true);
+  assert.equal(peekRunStateSnapshot("send-a")?.chatRunId, null);
+  assert.equal(host.chatRunId, "run-b");
+  switchSession(host, "send-a");
+  assert.equal(host.chatRunId, null, "returning to A cannot restore a completed run as thinking");
+});
+
+for (const command of ["/new", "/reset"]) {
+  test(`a terminal acknowledgment for ${command} consumes its reset and clears tools through the terminal path`, async () => {
+    const rpc = deferred();
+    const host = makeHost(async (method) => method === "chat.send" ? rpc.promise : { messages: [] });
+    host.chatMessage = command;
+    const sending = handleSendChat(host);
+    assert.equal(pendingSessionResets.has("send-a"), true);
+    host.toolStreamById.set("late-tool", { id: "late-tool" });
+    host.toolStreamOrder = ["late-tool"];
+    rpc.resolve({ runId: host.chatRunId, status: "ok" });
+    assert.equal(await sending, true);
+    assert.equal(pendingSessionResets.has("send-a"), false);
+    assert.equal(host.toolStreamById.size, 0);
+    assert.deepEqual(host.chatMessages, [], "a reset's authoritative empty history replaces its optimistic command echo");
+  });
+}
+
+test("a background terminal acknowledgment consumes only its owner's reset and tools", async () => {
+  const rpc = deferred();
+  const host = makeHost(async (method) => method === "chat.send" ? rpc.promise : { messages: [] });
+  host.chatMessage = "/reset";
+  const sending = handleSendChat(host);
+  const ownerRunId = host.chatRunId;
+  switchSession(host, "send-b");
+  const snapshot = peekRunStateSnapshot("send-a")!;
+  snapshot.toolStreamById.set("old-tool", { id: "old-tool" } as any);
+  host.toolStreamById.set("new-tool", { id: "new-tool" });
+  host.chatRunId = "run-b";
+  pendingSessionResets.add("send-b");
+  rpc.resolve({ runId: ownerRunId, status: "ok" });
+  assert.equal(await sending, true);
+  assert.equal(pendingSessionResets.has("send-a"), false);
+  assert.equal(pendingSessionResets.has("send-b"), true);
+  assert.equal(snapshot.toolStreamById.size, 0);
+  assert.equal(host.toolStreamById.size, 1);
+  assert.equal(host.chatRunId, "run-b");
+  pendingSessionResets.delete("send-b");
+});
+
+test("a terminal failure acknowledgment followed by the real event produces a single error card", async () => {
+  let runId = "";
+  const host = makeHost(async (method, params) => {
+    if (method === "chat.send") { runId = params.idempotencyKey; return { runId, status: "error", summary: "provider failed" }; }
+    return { messages: host.chatMessages };
+  });
+  host.chatMessage = "hello";
+  await handleSendChat(host);
+  handleGatewayEvent(host, { type: "event", event: "chat", payload: {
+    sessionKey: "send-a", runId, state: "error", errorMessage: "provider failed",
+  } });
+  assert.equal(host.chatMessages.filter((message: any) => message.cryoclawError).length, 1);
+  assert.equal(host.chatRunId, null);
+});
+
+test("a terminal success receipt followed by a duplicate event cannot refresh over a newer run", async () => {
+  let runId = "";
+  let reads = 0;
+  const host = makeHost(async (method, params) => {
+    if (method === "chat.send") { runId = params.idempotencyKey; return { runId, status: "ok" }; }
+    if (method === "chat.history") reads++;
+    return { messages: host.chatMessages };
+  });
+  host.chatMessage = "hello";
+  await handleSendChat(host);
+  assert.equal(reads, 1);
+  host.chatRunId = "new-run-after-receipt";
+  host.chatStream = "new output";
+  host.chatMessages = [{ role: "user", content: "new question" }];
+  handleGatewayEvent(host, { type: "event", event: "chat", payload: {
+    sessionKey: "send-a", runId, state: "final",
+  } });
+  await Promise.resolve();
+  assert.equal(reads, 1, "a known terminal replay must not schedule another history replacement");
+  assert.equal(host.chatRunId, "new-run-after-receipt");
+  assert.equal(host.chatStream, "new output");
+});
+
+test("a real final before its send receipt still persists the derived first-message label", async () => {
+  const labels: string[] = [];
+  const host = makeHost(async (method, params) => {
+    if (method === "chat.send") {
+      handleGatewayEvent(host, { type: "event", event: "chat", payload: {
+        sessionKey: "send-a", runId: params.idempotencyKey, state: "final",
+      } });
+      return { runId: params.idempotencyKey, status: "started" };
+    }
+    if (method === "sessions.patch") labels.push(params.label);
+    return { messages: host.chatMessages, sessions: [] };
+  });
+  pendingSessionLabels.set("send-a", "");
+  host.chatMessage = "first message title";
+  await handleSendChat(host);
+  assert.deepEqual(labels, ["first message title"]);
+  assert.equal(pendingSessionLabels.has("send-a"), false);
 });
 
 test("history failures superseded by a successful refresh do not surface stale connection errors", async () => {

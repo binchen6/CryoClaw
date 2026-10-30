@@ -11,7 +11,8 @@
    双主题统一深底浅字（grey 阶为静态 token，两主题通用） */
 .fixed-tooltip {
   position: fixed;
-  transform: translate(-50%, -100%);
+  /* 坐标由 main.ts 的 placePopover 算好（视口内翻转+夹取，left/top 即最终位置）；
+     这里只保留方向感位移：贴边图标轨的提示向右进入，顶部提示向下进入。 */
   padding: var(--spacer-6) var(--spacer-10);
   font-size: var(--text-sm);
   line-height: 1.4;
@@ -21,9 +22,13 @@
   white-space: nowrap;
   pointer-events: none;
   opacity: 0;
-  transition: opacity var(--duration-normal) var(--ease-standard);
+  transition: opacity var(--duration-fast) var(--ease-standard), translate var(--duration-fast) var(--ease-standard);
   z-index: var(--z-topmost);
 }
+.fixed-tooltip[data-side="right"] { translate: -4px 0; }
+.fixed-tooltip[data-side="left"] { translate: 4px 0; }
+.fixed-tooltip[data-side="top"] { translate: 0 4px; }
+.fixed-tooltip[data-side="bottom"] { translate: 0 -4px; }
 
 /* WebBridge pill 修复反馈 modal — 对齐 cc-dialog 契约（overlay / radius-16 / shadow-xl） */
 .wb-modal-overlay {
@@ -155,8 +160,8 @@
 }
 .wk-nav__repo:focus {
   background: var(--bg-elevated);
-  border-color: var(--border-focus);
-  box-shadow: var(--focus-ring);
+  border-color: var(--focus-field-color);
+  box-shadow: var(--focus-field);
 }
 .wk-nav__repo:disabled {
   opacity: 0.5;

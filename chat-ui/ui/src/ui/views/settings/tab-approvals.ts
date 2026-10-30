@@ -11,6 +11,7 @@ import {
 
 const s = {
   loading: false,
+  loadFailed: false,
   error: null as string | null,
   initialized: false,
   wasConnected: false,
@@ -21,12 +22,14 @@ async function init(state: AppViewState) {
   const client = state.client;
   if (s.loading || !state.connected || !client) return;
   s.loading = true;
+  s.loadFailed=false;
   s.initialized = true;
   s.error = null;
   state.requestUpdate();
   try {
     await fetchApprovalHistory(client);
   } catch {
+    s.loadFailed=true;
     // RPC 不存在或报错时优雅降级：仅展示本地事件记录，没有则显示“暂无历史”
   } finally {
     s.loading = false;
@@ -123,7 +126,7 @@ export function renderTabApprovals(state: AppViewState) {
   if (!s.initialized && !s.loading && state.connected && state.client) init(state);
 
   return html`
-    <div class="oc-settings__section">
+    <div class="oc-settings__section" data-page-id="settings:approvals" data-load-state=${s.loading?"loading":s.loadFailed || s.error?"error":!s.initialized?"loading":!listApprovalHistory().length?"empty":"ready"} aria-busy=${s.loading || !s.initialized}>
       <h2 class="oc-settings__section-title">${t("settings.approvals.pageTitle")}</h2>
       <p class="oc-settings__page-desc">${t("settings.approvals.pageDesc")}</p>
 

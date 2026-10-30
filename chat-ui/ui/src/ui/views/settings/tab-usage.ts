@@ -11,10 +11,6 @@ import "../../components/message-box.ts";
 import "../../components/oc-context-report.ts";
 import { formatCost, formatTokens } from "../usage-metrics.ts";
 import {
-  mapSessionsUsage,
-  mapUsageCost,
-  mapUsageStatus,
-  resolveUsageRange,
   resolveUsageSessionDisplayLabel,
   sharePercent,
   topRows,
@@ -247,7 +243,7 @@ export function renderTabUsage(state: AppViewState) {
   const showSkeleton = s.loadingState === "loading" && !s.sessions.rows.length;
 
   return html`
-    <div class="oc-settings__section" aria-busy=${showSkeleton ? "true" : nothing}>
+    <div class="oc-settings__section" data-page-id="settings:usage" data-load-state=${s.loadingState === "idle"?"loading":s.loadingState === "ready" && !s.sessions.rows.length?"empty":s.loadingState} aria-busy=${s.loadingState === "loading" || s.loadingState === "idle"}>
       <h2 class="oc-settings__section-title">${t("settings.usage.pageTitle")}</h2>
       <p class="oc-settings__hint">${t("settings.usage.pageDesc")}</p>
 

@@ -60,6 +60,18 @@ function killTree(child) {
 }
 
 /**
+ * 被测应用的子进程环境：剔除会改变 Electron 启动语义的父进程变量。
+ * ELECTRON_RUN_AS_NODE=1（部分 IDE/终端会注入）会让打包后的 Electron 以 Node 模式
+ * 运行，`--remote-debugging-port` 变非法参数、进程立刻退出码 9，所有冒烟都拿不到页面。
+ * 这类变量对被测产品无意义，必须隔离，否则测量结果取决于启动脚本所在终端。
+ */
+function appLaunchEnv(source = process.env) {
+  const env = { ...source };
+  delete env.ELECTRON_RUN_AS_NODE;
+  return env;
+}
+
+/**
  * 启动被测应用并注册退出清理。返回 { child, cleanup }。
  * cleanup 幂等；进程退出 / SIGINT 时自动调用。
  */
@@ -69,6 +81,7 @@ function launch(exe, port) {
     cwd: require("path").dirname(exe),
     windowsHide: true,
     stdio: "ignore",
+    env: appLaunchEnv(),
   });
   const cleanup = () => { if(child.exitCode === null && child.signalCode === null)killTree(child); };
   process.on("exit", cleanup);
@@ -277,6 +290,7 @@ module.exports = {
   httpGetJson,
   httpCheckOk,
   killTree,
+  appLaunchEnv,
   launch,
   quitLaunchedApp,
   waitForPageTarget,

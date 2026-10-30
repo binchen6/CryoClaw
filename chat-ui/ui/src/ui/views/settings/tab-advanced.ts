@@ -87,6 +87,7 @@ function createAdvancedState() {
     error: null as string | null,
     successMsg: null as string | null,
     initialized: false,
+    loading: false,
     // 初始化拉取失败标记：为 true 时禁止保存——否则 s 仍是默认值（browserMode=openclaw、
     // launchAtLogin=false、registry 空），保存会把用户真实配置静默覆写成默认。
     loadFailed: false,
@@ -117,21 +118,32 @@ function createAdvancedState() {
 }
 
 const s = createAdvancedState();
+let initGeneration = 0;
+let initClient: AppViewState["client"] | undefined;
 
 // 退出 Settings 时直接丢掉 Advanced 页缓存，下次重新从 IPC 拉真配置。
 function resetAdvancedState() {
+  ++initGeneration;
+  initClient = undefined;
   Object.assign(s, createAdvancedState());
 }
 
 async function init(state: AppViewState) {
   if (s.initialized) return;
   s.initialized = true;
+  s.loading = true;
+  const generation = ++initGeneration;
+  const client = state.client;
+  initClient = client;
+  const current = () => generation === initGeneration && state.client === client;
   try {
     // openclaw.json 侧字段（热应用模式/执行权限/沙箱/iMessage）直接读 config 快照（R4）；
     // IPC 只保留本地字段（浏览器模式/开机自启/ClawHub registry/docker 检测）。
-    const snapshot = getCachedConfigSnapshot() ?? (state.client ? await getConfigSnapshot(state.client) : null);
+    const snapshot = client ? await getConfigSnapshot(client) : getCachedConfigSnapshot();
+    if (!current()) return;
     const advView = extractAdvancedView(snapshot?.config ?? null);
     const [adv, cli] = await Promise.all([ipc.settingsGetAdvanced(), ipc.settingsGetCliStatus()]);
+    if (!current()) return;
     s.browserMode = ipcToUi(adv);
     s.lastValidMode = s.browserMode;
     s.imessageEnabled = advView.imessageEnabled;
@@ -153,11 +165,14 @@ async function init(state: AppViewState) {
       void loadWebbridgeVersion(state);
     }
   } catch (e: any) {
+    if (!current()) return;
     // 拉取失败时 state 仍是默认值；禁止保存（见 loadFailed 注释）并把错误显示出来。
     // 保持 initialized=true 避免每次渲染重试打爆 IPC；离开设置页会 resetAdvancedState()，
     // 下次进入重新尝试。
     s.loadFailed = true;
     s.error = tWithDetail("settings.error.loadFailed", e?.message);
+  } finally {
+    if (current()) { s.loading = false; state.requestUpdate(); }
   }
 }
 
@@ -589,6 +604,7 @@ async function onRepairConfirm(state: AppViewState) {
 }
 
 async function handleSave(state: AppViewState) {
+  if (!s.initialized || s.loading || s.saving) return;
   // 初始化失败时 state 是默认值，保存会把 browserMode/launchAtLogin/registry 覆写成默认
   // （用户只改了执行模式却把浏览器模式打回 openclaw）。拦下并给出可重试的错误提示。
   if (s.loadFailed) {
@@ -791,10 +807,11 @@ function renderWebbridgeVersionCard(state: AppViewState) {
 }
 
 export function renderTabAdvanced(state: AppViewState) {
+  if (s.loading && initClient !== state.client) resetAdvancedState();
   if (!s.initialized) init(state);
 
   return html`
-    <div class="oc-settings__section">
+    <div class="oc-settings__section" data-page-id="settings:advanced" data-load-state=${s.loading?"loading":s.loadFailed?"error":"ready"} aria-busy=${s.loading}>
       <h2 class="oc-settings__section-title">${t("settings.advanced.title")}</h2>
       <p class="oc-settings__page-desc">${t("settings.advanced.desc")}</p>
 
@@ -968,7 +985,7 @@ export function renderTabAdvanced(state: AppViewState) {
       ${s.hint ? html`<div class="oc-settings__hint oc-mt-4">${s.hint}</div>` : nothing}
 
       <div class="btn-row">
-        <button class="btn primary" ?disabled=${s.saving || s.loadFailed} @click=${() => handleSave(state)}>${t("settings.save")}</button>
+        <button class="btn primary" ?disabled=${s.loading || s.saving || s.loadFailed} @click=${() => handleSave(state)}>${t("settings.save")}</button>
       </div>
 
       ${renderRepairModal(state)}

@@ -48,8 +48,8 @@
 }
 
 .skill-store__search-input:focus {
-  border-color: var(--border-focus);
-  box-shadow: var(--focus-ring);
+  border-color: var(--focus-field-color);
+  box-shadow: var(--focus-field);
 }
 
 .skill-store__search-input::placeholder {
@@ -666,8 +666,8 @@
 }
 
 .cc-dialog__textarea:focus {
-  border-color: var(--border-focus);
-  box-shadow: var(--focus-ring);
+  border-color: var(--focus-field-color);
+  box-shadow: var(--focus-field);
 }
 
 /* What's New：条目列表在 body 内滚动，头尾固定 */
@@ -744,8 +744,8 @@
 }
 
 .update-snooze-panel__input:focus {
-  border-color: var(--border-focus);
-  box-shadow: var(--focus-ring);
+  border-color: var(--focus-field-color);
+  box-shadow: var(--focus-field);
 }
 
 .update-snooze-panel__input {

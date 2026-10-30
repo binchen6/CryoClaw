@@ -175,7 +175,7 @@ export function renderSettingsView(state: AppViewState) {
             : nothing;
           return html`${groupLabel}
             <button
-              class="oc-settings-nav-item ${s.activeTab === tab.id ? 'oc-settings-nav-item--active' : ''}"
+              class="oc-settings-nav-item ${s.activeTab === tab.id ? 'oc-settings-nav-item--active' : ''}" data-page-nav=${`settings:${tab.id}`}
               @pointerenter=${()=>preloadSettingsTab(state,tab.id)}
               @focus=${()=>preloadSettingsTab(state,tab.id)}
               @click=${() => { if (s.activeTab !== tab.id) transitionView(() => { cleanupTab(s.activeTab); s.activeTab = tab.id; s.notice = null; state.requestUpdate(); }); }}

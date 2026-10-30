@@ -39,7 +39,7 @@ export function renderExtensionsView(state: AppViewState) {
     <div class="ext-layout">
       <div class="ext-tabs" role="tablist">
         <button
-          class="ext-tab ${extensionsViewTab === "skills" ? "active" : ""}"
+          class="ext-tab ${extensionsViewTab === "skills" ? "active" : ""}" data-page-nav="extensions:skills"
           type="button"
           role="tab"
           aria-selected=${extensionsViewTab === "skills" ? "true" : "false"}
@@ -50,7 +50,7 @@ export function renderExtensionsView(state: AppViewState) {
           });}}
         >${t("extensions.tabSkills")}</button>
         <button
-          class="ext-tab ${extensionsViewTab === "plugins" ? "active" : ""}"
+          class="ext-tab ${extensionsViewTab === "plugins" ? "active" : ""}" data-page-nav="extensions:plugins"
           type="button"
           role="tab"
           aria-selected=${extensionsViewTab === "plugins" ? "true" : "false"}

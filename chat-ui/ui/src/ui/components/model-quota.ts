@@ -4,6 +4,7 @@ import type {GatewayBrowserClient} from "../gateway.ts";
 import {loadModelQuota,quotaRemaining,quotaWindowLabel,summarizeModelQuota,type ModelQuota} from "../controllers/model-quota.ts";
 import {balanceAriaLabel,balanceRingView,comfortTone,currencyKey,quotaAriaLabel,quotaComfort,quotaCurrencyProfile,quotaRingView} from "../chat/quota-ring.ts";
 import {getLocale,t} from "../i18n.ts";
+import {placePopover} from "../utils/popover-placement.ts";
 let nextId=0;
 
 @customElement("oc-model-quota")
@@ -12,6 +13,7 @@ export class ModelQuotaMeter extends LitElement {
   @property({attribute:false}) client:GatewayBrowserClient | null=null;
   @property() provider="";
   @property() model="";
+  @property() placement:"composer"|"rail"="composer";
   @property({type:Boolean}) connected=false;
   @state() private value:ModelQuota | null=null;
   @state() private busy=false;
@@ -33,15 +35,33 @@ export class ModelQuotaMeter extends LitElement {
     catch(error){if(epoch===this.epoch && this.isConnected)this.value={provider,at:Date.now(),windows:[],error:error instanceof Error?error.message:String(error)};}
     finally {if(epoch===this.epoch)this.busy=false;}
   }
-  private toggle(){
-    const panel=this.querySelector<HTMLElement>(`#${this.panelId}`);
-    if(!panel)return;
-    if(this.open){panel.hidePopover();return;}
-    const rect=this.querySelector("button")!.getBoundingClientRect();
-    panel.style.left=`${Math.max(12,Math.min(window.innerWidth-332,rect.right-320))}px`;
-    panel.style.bottom=`${Math.max(12,window.innerHeight-rect.top+8)}px`;
-    panel.showPopover();
-  }
+  /**
+    圆环在图标轨左缘或输入框底部，落边必须自适应：图标轨优先向右展开、底边与圆环对齐；
+    输入框优先向上展开。面板先按视口收敛宽高，再交给 placePopover 选边夹取，任何候选边都不许盖住圆环。
+    */
+  private place=()=>{
+    const trigger=this.querySelector<HTMLButtonElement>(".chat-quota__trigger"),panel=this.querySelector<HTMLElement>(`#${this.panelId}`);
+    if(!trigger||!panel||!this.open)return;
+    const anchor=trigger.getBoundingClientRect(),viewport={width:window.innerWidth,height:window.innerHeight};
+    const width=Math.min(320,viewport.width-24),height=Math.min(panel.scrollHeight,viewport.height-48);
+    panel.style.width=`${width}px`;
+    const candidates=this.placement==="rail"
+      ?[{side:"right" as const,align:"end" as const},{side:"left" as const,align:"end" as const},{side:"top" as const,align:"end" as const},{side:"bottom" as const,align:"end" as const}]
+      :[{side:"top" as const,align:"end" as const},{side:"bottom" as const,align:"end" as const},{side:"right" as const,align:"end" as const},{side:"left" as const,align:"end" as const}];
+    const placement=placePopover({anchor,panel:{width,height},viewport,candidates,avoid:[anchor]});
+    panel.style.left=`${placement.left}px`;
+    panel.style.top=`${placement.top}px`;
+    panel.style.bottom="auto";
+    panel.dataset.side=placement.side;
+    panel.dataset.align=placement.align;
+  };
+  /** 原生 toggle 是唯一开关来源：再次点击圆环由浏览器关闭，不再手写 showPopover/hidePopover。 */
+  private onToggle=(event:ToggleEvent)=>{
+    this.open=event.newState==="open";
+    if(!this.open)return;
+    requestAnimationFrame(this.place);
+    void this.load(true);
+  };
   render(){
     // 余额与窗口是两条口径：有余额就按余额画（绝不把金额换算成限额百分比），否则按最紧窗口画。
     const value=this.value?.provider===this.provider?this.value:null;
@@ -59,14 +79,15 @@ export class ModelQuotaMeter extends LitElement {
     const currencyName=profile.currency?`${profile.currency} · ${t(currencyKey(profile.currency))}`:t(currencyKey(profile.currency));
     const panelLabel=balance?t("quota.details.balance"):t("quota.details.limits");
     const zh=getLocale().startsWith("zh");
-    return html`<button class="chat-quota__trigger" data-kind=${kind} data-tone=${tone ?? nothing} aria-label=${aria} title=${aria} aria-haspopup="dialog" aria-expanded=${this.open} aria-controls=${this.panelId} @click=${()=>this.toggle()}>
+    return html`<button class="chat-quota__trigger" data-kind=${kind} data-tone=${tone ?? nothing} data-placement=${this.placement} aria-label=${aria} title=${aria} aria-haspopup="dialog" aria-expanded=${this.open} aria-controls=${this.panelId} popovertarget=${this.panelId} popovertargetaction="toggle">
       <svg class="chat-quota__ring" viewBox="0 0 24 24" aria-hidden="true"><circle class="chat-quota__track" cx="12" cy="12" r="10" pathLength="100"></circle>
         ${ratio>0?svg`<circle class="chat-quota__fill" cx="12" cy="12" r="10" pathLength="100" stroke-dasharray=${`${ratio*100} 100`}></circle>`:nothing}
         <text class="chat-quota__center" x="12" y="12" text-anchor="middle" dominant-baseline="central">${center}</text></svg>${balance?html`<span class="chat-quota__balance">${balance.display}</span>`:nothing}
     </button><div id=${this.panelId} class="chat-quota__details" popover="auto" role="dialog" aria-label=${panelLabel}
-      @toggle=${(event:Event)=>{this.open=(event as ToggleEvent).newState==="open";}}>
+      @toggle=${this.onToggle}>
       <div class="chat-quota__header"><strong>${panelLabel}</strong><button class="btn btn--sm" ?disabled=${this.busy || !this.connected} @click=${()=>void this.load(true)}>${this.busy?t("quota.details.loading"):t("quota.details.refresh")}</button></div>
       <p class="muted">${this.provider}${value?.plan?` · ${value.plan}`:""}</p>
+      ${!this.connected?html`<p class="muted" role="status">${t("quota.details.offline")}</p>`:nothing}
       ${balance?html`<div class="chat-quota__balance-block" data-tone=${balance.tone}>
         <div class="chat-quota__amount"><span>${balance.display}</span><small>${currencyName}</small></div>
         ${balance.comfort!=="ok"?html`<p class="chat-quota__hint" data-tone=${balance.tone}>${t(balance.comfort==="danger"?"quota.details.lowBalance":"quota.details.lowBalanceWarn")}</p>`:nothing}

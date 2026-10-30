@@ -337,7 +337,11 @@ async function listChannelPairingRequests(
   message?: string;
 }> {
   try {
-    const run = await runGatewayCli(["pairing", "list", channel, "--json"]);
+    const args = ["pairing", "list", channel, "--json"];
+    const source = fs.readFileSync(path.join(__dirname, "..", "..", "shared", "channel-pairing-list.cjs"), "utf8");
+    let run = await runGatewayCli(args, source);
+    // Exit 78 means the native contract was absent before owner admission.
+    if (run.code === 78) run = await runGatewayCli(args);
     if (run.code !== 0) {
       return {
         success: false,
@@ -444,7 +448,7 @@ function collectApprovedUserIds(channel: string, configAllowFrom: unknown): stri
 // 统一运行 openclaw CLI 子命令，复用 CryoClaw 内嵌 runtime 与网关入口。
 // 带 90s 超时兑底（对齐 plugin-store execKernelCli）：CLI 内部死锁时
 // Promise 永不 settle 会让渲染层 invoke 永久 pending 且泄漏 node 子进程。
-async function runGatewayCli(args: string[]): Promise<CliRunResult> {
+async function runGatewayCli(args: string[], nativeListSource?: string): Promise<CliRunResult> {
   const nodeBin = resolveNodeBin();
   const entry = resolveGatewayEntry();
   const cwd = resolveGatewayCwd();
@@ -452,7 +456,10 @@ async function runGatewayCli(args: string[]): Promise<CliRunResult> {
   const envPath = runtimeDir + path.delimiter + (process.env.PATH ?? "");
 
   return new Promise((resolve, reject) => {
-    const child = spawn(nodeBin, [entry, ...args], {
+    const argv = nativeListSource
+      ? ["--no-warnings", "-e", nativeListSource, "--", "cryoclaw-channel-pairing-list", path.dirname(entry), args[2]]
+      : [entry, ...args];
+    const child = spawn(nodeBin, argv, {
       cwd,
       env: {
         ...process.env,

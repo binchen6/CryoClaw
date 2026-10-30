@@ -22,6 +22,35 @@ function touch(filePath, content = "x") {
   fs.writeFileSync(filePath, content);
 }
 
+for (const name of ['openai','@anthropic-ai/sdk']) test(`compiled ${name} keeps both runtime formats and removes duplicate TypeScript sources`,async t=>{
+ const {gatewayDir,nmDir}=makeGateway(t),pkg=path.join(nmDir,name);
+ touch(path.join(pkg,'package.json'),JSON.stringify({name,type:'commonjs',main:'./index.js',bin:{tool:'bin/cli'},exports:{'.':{require:{types:'./src/index.ts',default:'./index.js'},default:'./index.mjs'}},imports:{'#helper':{types:'./src/helper.cts',default:'./helper.js'}}}));
+ touch(path.join(pkg,'src/index.ts'),'source');touch(path.join(pkg,'src/helper.cts'),'source');
+ touch(path.join(pkg,'src/tsconfig.json'),'{}');touch(path.join(pkg,'src/.keep'),'');touch(path.join(pkg,'src/api.md'),'Development API documentation');
+ touch(path.join(pkg,'index.js'),'module.exports={value:42}');touch(path.join(pkg,'index.mjs'),'export const value=42;');touch(path.join(pkg,'helper.js'),'module.exports=1;');
+ createKernelPrune(fs).pruneGatewayTree(gatewayDir);
+ assert.equal(fs.existsSync(path.join(pkg,'src')),false);
+ assert.equal(require(path.join(pkg,'index.js')).value,42);
+ assert.equal((await import(require('node:url').pathToFileURL(path.join(pkg,'index.mjs')).href)).value,42);
+});
+
+for(const field of ['exports','imports','bin']) test(`SDK sources remain when ${field} exposes source at runtime`,t=>{
+ const {gatewayDir,nmDir}=makeGateway(t),pkg=path.join(nmDir,'openai');
+ const manifest={name:'openai',main:'./index.js',exports:{'.':'./index.js'}};
+ manifest[field]=field==='bin'?{tool:'./src/cli.ts'}:{'.':{node:'./src/entry.ts',default:'./index.js'}};
+ touch(path.join(pkg,'package.json'),JSON.stringify(manifest));touch(path.join(pkg,'index.js'),'module.exports=42;');touch(path.join(pkg,'src/entry.ts'),'source');
+ createKernelPrune(fs).pruneGatewayTree(gatewayDir);
+ assert.ok(fs.existsSync(path.join(pkg,'src/entry.ts')));
+});
+
+test('SDK source assets prevent pruning',t=>{
+ const {gatewayDir,nmDir}=makeGateway(t),pkg=path.join(nmDir,'openai');
+ touch(path.join(pkg,'package.json'),JSON.stringify({name:'openai',main:'./index.js',exports:{'.':'./index.js'}}));
+ touch(path.join(pkg,'index.js'),'module.exports=42;');touch(path.join(pkg,'src/template.json'),'{}');
+ createKernelPrune(fs).pruneGatewayTree(gatewayDir);
+ assert.ok(fs.existsSync(path.join(pkg,'src/template.json')));
+});
+
 test("native kernel updates remove duplicate Mistral sources while keeping runnable ESM and package exports", async t => {
   const { gatewayDir, nmDir } = makeGateway(t);
   const pkg = path.join(nmDir, "@mistralai", "mistralai");

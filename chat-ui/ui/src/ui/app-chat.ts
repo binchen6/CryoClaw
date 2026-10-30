@@ -7,12 +7,13 @@ import { setLastActiveSessionKey } from "./app-settings.ts";
 import { resetToolStream } from "./app-tool-stream.ts";
 import { peekRunStateSnapshot, requeueChatMessageForSession } from "./run-state-store.ts";
 import { restoreSessionDraftSnapshot } from "./session-transition.ts";
-import { abortChatRun, loadChatHistory, resetChatStreamState, sendChatMessage } from "./controllers/chat.ts";
+import { abortChatRun, isTerminalRunTombstoned, loadChatHistory, resetChatStreamState, sendChatMessage } from "./controllers/chat.ts";
 import { loadSessions, patchSession } from "./controllers/sessions.ts";
 import { normalizeBasePath } from "./navigation.ts";
 import { managedMediaHttpOrigin,fetchGatewayAvatarMeta,fetchManagedImageObjectUrl } from "./chat/managed-media.ts";
 import { pendingSessionLabels, pendingSessionResets } from "./session-pending.ts";
 import { generateUUID } from "./uuid.ts";
+import { handleGatewayEvent } from "./app-gateway.ts";
 
 export type ChatHost = {
   connected: boolean;
@@ -229,6 +230,7 @@ async function sendChatMessageNow(
   }
   const sessionChangedOut = { value: false };
   const ownedRunId = { value: null as string | null };
+  const terminalAcknowledgment = { value: null as "final" | "error" | null };
   const ok = Boolean(
     await sendChatMessage(
       host as unknown as OpenClawApp,
@@ -239,6 +241,12 @@ async function sendChatMessageNow(
         preserveRunState: Boolean(opts?.preserveRunState),
         sessionChangedDuringRead: sessionChangedOut,
         ownedRunId,
+        resolveRunState: (key) => peekRunStateSnapshot(key) as unknown as Parameters<typeof sendChatMessage>[0] | undefined,
+        terminalAcknowledgment,
+        onTerminalAcknowledgment: (payload) => handleGatewayEvent(
+          host as unknown as Parameters<typeof handleGatewayEvent>[0],
+          { type: "event", event: "chat", payload },
+        ),
       },
     ),
   );
@@ -279,6 +287,12 @@ async function sendChatMessageNow(
   }
   if (ok) {
     syncSessionLabelAfterSend(host, message, requestSessionKey);
+    // A receipt can finish the run before the send continuation derives its
+    // first-message label. Persist it now rather than waiting for another final.
+    if (terminalAcknowledgment.value === "final" ||
+      (ownedRunId.value && isTerminalRunTombstoned(ownedRunId.value))) {
+      void flushPendingSessionLabel(host as unknown as Parameters<typeof flushPendingSessionLabel>[0], requestSessionKey);
+    }
     // 附件读取期间已切走会话：last-active 写回旧会话会把用户刚切到的新会话覆盖掉，
     // 该情形跳过写回（label 同步不受影响，仍归属原会话）
     if (isOwnerSession && !sessionChangedOut.value) {

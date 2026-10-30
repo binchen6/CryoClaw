@@ -1,6 +1,7 @@
 import type { GatewayBrowserClient, GatewayHelloOk } from "../gateway.ts";
 import type { CronJob, CronRunHistoryResult, CronRunLogEntry } from "../types.ts";
 import { supportsMethod } from "./capabilities.ts";
+import { ResourceCache } from "../utils/resource-cache.ts";
 
 /**
  * 任务页「运行记录」数据源（2026.9.7 适配）：
@@ -212,11 +213,20 @@ export function enrichRunJobNames(
   return changed ? next : runs;
 }
 
-// 在途刷新期间若再被请求刷新（如 cron 事件触发），置脏标记并在完成后补跑一轮：
-// 否则旧请求晚到的响应会整体覆盖事件增量（列表陈旧最长一个 ticker 周期）。
-const runsRefreshPending = new WeakSet<RunHistoryState>();
+// Only event/mutation refreshes dirty a pending read; navigation shares its result.
+type RunHistoryLoad = { client: GatewayBrowserClient; promise: Promise<void> | null; refreshPending: boolean };
+const runHistoryLoads = new WeakMap<RunHistoryState, RunHistoryLoad>();
+const runHistoryCaches = new WeakMap<GatewayBrowserClient, ResourceCache<CronRunLogEntry[]>>();
+function runHistoryCacheFor(client: GatewayBrowserClient) {
+  let cache = runHistoryCaches.get(client);
+  if (!cache) {
+    cache = new ResourceCache<CronRunLogEntry[]>(10_000, 2);
+    runHistoryCaches.set(client, cache);
+  }
+  return cache;
+}
 
-export async function loadRunHistory(state: RunHistoryState) {
+export async function loadRunHistory(state: RunHistoryState, force = false) {
   if (!state.client || !state.connected) {
     return;
   }
@@ -228,30 +238,49 @@ export async function loadRunHistory(state: RunHistoryState) {
     return;
   }
   state.runsUnsupported = false;
-  if (state.runsLoading) {
-    runsRefreshPending.add(state);
-    return;
+  const client = state.client, cache = runHistoryCacheFor(client);
+  const active = runHistoryLoads.get(state);
+  if (force) cache.clear("all");
+  if (active?.client === client && active.promise) {
+    if (force) active.refreshPending = true;
+    return active.promise;
   }
-  state.runsLoading = true;
-  state.runsError = null;
-  const client = state.client;
-  try {
-    // 始终拉全量（status 过滤在客户端做）：统计条计数与筛选互不影响。
-    // 不传 id 时内核缺省 scope:"all"，返回全部任务的运行记录分页（上限 200）
-    const res = await client.request<CronRunHistoryResult>("cron.runs", {
-      scope: "all",
-      limit: 200,
-    });
-    // A response from the previous gateway must not replace the current view.
-    if (state.client !== client || !state.connected) return;
-    const entries = Array.isArray(res.entries) ? res.entries : [];
-    state.runHistory = enrichRunJobNames(sortRunsByTimestamp(entries), state.cronJobs);
-  } catch (err) {
-    if (state.client === client && state.connected) state.runsError = String(err);
-  } finally {
-    state.runsLoading = false;
-    if (runsRefreshPending.delete(state)) {
-      void loadRunHistory(state);
+  if (!force) {
+    const cached = cache.peek("all");
+    if (cached) {
+      runHistoryLoads.delete(state);
+      state.runsLoading = false;
+      state.runHistory = enrichRunJobNames(cached, state.cronJobs);
+      state.runsError = null;
+      return;
     }
   }
+  const load: RunHistoryLoad = { client, promise: null, refreshPending: false };
+  runHistoryLoads.set(state, load);
+  const current = () => runHistoryLoads.get(state) === load && state.client === client && state.connected;
+  state.runsLoading = true;
+  state.runsError = null;
+  load.promise = (async () => {
+    do {
+      load.refreshPending = false;
+      try {
+        const res = await client.request<CronRunHistoryResult>("cron.runs", { scope: "all", limit: 200 });
+        if (!current()) return;
+        if (!load.refreshPending) {
+          const entries = sortRunsByTimestamp(Array.isArray(res.entries) ? res.entries : []);
+          cache.store("all", entries);
+          state.runHistory = enrichRunJobNames(entries, state.cronJobs);
+          state.runsError = null;
+        }
+      } catch (err) {
+        if (current() && !load.refreshPending) state.runsError = String(err);
+      }
+    } while (load.refreshPending && current());
+  })().finally(() => {
+    if (runHistoryLoads.get(state) === load) {
+      load.promise = null;
+      state.runsLoading = false;
+    }
+  });
+  return load.promise;
 }

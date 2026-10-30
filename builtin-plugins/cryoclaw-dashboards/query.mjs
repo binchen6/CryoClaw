@@ -8,5 +8,5 @@ export async function queryData(args,{broker,system,store,assertCurrent=()=>{},s
   else if(args.kind==='public'){const url=publicHttpsUrl(args.url).href;result=await broker.data({url,format:args.format==='text'?'text':'json',refreshSeconds:Math.max(60,Math.min(86400,Math.round(args.refreshSeconds??300)))});}
   else throw Error('Unsupported data query');assertCurrent();
   const value=selectPointer(result.value,args.pointer),limit=Math.max(512,Math.min(16000,Math.round(args.maxChars??4000))),serialized=typeof value==='string'?value:JSON.stringify(value);
-  const truncated=serialized.length>limit;return {source:result.source,fetchedAt:result.fetchedAt??Date.now(),truncated,...truncated?{text:serialized.slice(0,limit),hint:'Select a narrower JSON Pointer for complete values.'}:{value}};
+  const truncated=serialized.length>limit;return {source:result.source,fetchedAt:result.fetchedAt??Date.now(),...result.stale===true?{stale:true,retryAt:result.retryAt}:{},truncated,...truncated?{text:serialized.slice(0,limit),hint:'Select a narrower JSON Pointer for complete values.'}:{value}};
 }

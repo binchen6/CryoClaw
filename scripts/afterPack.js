@@ -66,8 +66,12 @@ exports.default = async function afterPack(context) {
 
   const targetBase = path.join(resourcesDir, "resources");
   fs.mkdirSync(targetBase, { recursive: true });
-  if (platform === "win32") fs.copyFileSync(path.join(__dirname, "stop-bundled-runtime.ps1"), path.join(resourcesDir, "stop-bundled-runtime.ps1"));
-  for (const name of ["openai-proxy.cjs", "openai-proxy-bootstrap.cjs"]) {
+  if (platform === "win32") {
+    // Custom Electron distributions may contain a local QA launcher; never ship it.
+    fs.rmSync(path.join(appOutDir, "electron-worktree-low.exe"), { force: true });
+    fs.copyFileSync(path.join(__dirname, "stop-bundled-runtime.ps1"), path.join(resourcesDir, "stop-bundled-runtime.ps1"));
+  }
+  for (const name of ["openai-proxy.cjs", "openai-proxy-bootstrap.cjs", "gateway-core-resolution-cache.cjs"]) {
     fs.copyFileSync(path.join(__dirname, "..", "shared", name), path.join(targetBase, name));
   }
   const sourceBase = path.join(__dirname, "..", "resources", "targets", targetId);

@@ -414,8 +414,7 @@
 .ts-select:focus-visible,
 .cron-form__input:focus-visible,
 .cron-form__select:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
+  box-shadow: var(--focus-ring);
 }
 oc-context-report{display:block;margin:var(--spacer-16) 0;}
 .oc-usage__context{border:var(--hairline);border-radius:var(--radius-12);padding:var(--spacer-12);font-size:var(--text-sm);}

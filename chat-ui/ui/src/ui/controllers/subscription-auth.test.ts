@@ -3,6 +3,79 @@ import assert from "node:assert/strict";
 import { SubscriptionAuth, safeOpenAIAuthUrl } from "./subscription-auth.ts";
 import type { GatewayBrowserClient } from "../gateway.ts";
 
+test("one account action enables access and starts the standard browser login after reconnection",async()=>{
+  const calls:string[]=[];
+  const client={async request(method:string,params:any){calls.push(method);
+    if(method==='models.authStatus')return {providerCapabilities:[{provider:'openai',loginOptions:[{id:'openai/shared-token-sharing',kind:'oauth',label:'Shared'},{id:'openai/openai',kind:'oauth',label:'Browser'}]}]};
+    if(method==='models.authLogin'){assert.equal(params.authChoice,'openai/openai');return {sessionId:params.sessionId};}
+    if(method==='wizard.next')return {done:false,status:'running',step:{id:'auth',type:'text'}};
+    return {};
+  }} as unknown as GatewayBrowserClient;
+  const host={client,connected:true,requestUpdate(){}};const auth=new SubscriptionAuth(host);
+  let enables=0;await auth.enableAndLogin(async()=>{enables++;host.client=client;});
+  assert.equal(enables,1);assert.equal(calls.filter(v=>v==='models.authLogin').length,1);assert.equal(auth.step?.id,'auth');
+  await auth.cancel();
+});
+test("cancelled account activation cannot start a login after its enabling write settles",async()=>{
+  let finish!:()=>void;const calls:string[]=[];
+  const client={async request(method:string){calls.push(method);return {};}} as unknown as GatewayBrowserClient;
+  const auth=new SubscriptionAuth({client,connected:true,requestUpdate(){}});
+  const pending=auth.enableAndLogin(()=>new Promise<void>(resolve=>{finish=resolve;}));
+  await auth.cancel();finish();await pending;assert.equal(calls.includes('models.authLogin'),false);assert.equal(auth.busy,false);
+});
+test("explicit login prepares an absent deferred catalog even when the enable write is a no-op",async()=>{
+  const refreshes:boolean[]=[];
+  const option={id:'openai/openai',kind:'oauth',label:'Browser'};
+  const client={async request(method:string,params:any){
+    if(method==='models.authStatus'){refreshes.push(params.refresh);return params.refresh?{providerCapabilities:[{provider:'openai',loginOptions:[option]}]}:{unavailable:{message:'not prepared'}};}
+    if(method==='models.authLogin')return {sessionId:params.sessionId};
+    return {done:false,status:'running',step:{id:'auth',type:'text'}};
+  }} as unknown as GatewayBrowserClient;
+  const auth=new SubscriptionAuth({client,connected:true,requestUpdate(){}});
+  const pending=auth.enableAndLogin(async()=>{});
+  // One turn is sufficient to see whether explicit activation prepares the catalog.
+  await new Promise(resolve=>setTimeout(resolve,10));
+  if(!refreshes.includes(true)){await auth.cancel();await pending;assert.fail('explicit login did not prepare auth capabilities');}
+  await pending;assert.deepEqual(refreshes,[false,true]);assert.equal(auth.step?.id,'auth');await auth.cancel();
+});
+
+test("automatic account reads reuse snapshots while explicit sync forces refresh", async () => {
+  const refreshes: boolean[] = [];
+  const client = { async request(method: string, params: any) {
+    if (method === "models.authStatus") { refreshes.push(params.refresh); return { providers: [] }; }
+    if (method === "usage.status") return {};
+    return {};
+  } } as unknown as GatewayBrowserClient;
+  const auth = new SubscriptionAuth({ client, connected: true, requestUpdate() {} });
+  await auth.refresh(undefined, false);
+  await auth.refresh(undefined, true);
+  assert.deepEqual(refreshes, [false, true]);
+});
+
+test("account usage and model refresh start together after the auth snapshot", async () => {
+  const events: string[] = [];
+  let finish!: () => void;
+  const client = { async request(method: string) {
+    if (method === "models.authStatus") { events.push("auth"); return { providers: [{provider:'openai',status:'ok',profiles:[{type:'oauth',status:'ok'}]}] }; }
+    if (method === "usage.status") { events.push("usage:start"); await new Promise<void>(resolve => { finish = resolve; }); events.push("usage:end"); return {}; }
+    events.push("unexpected"); return {};
+  } } as unknown as GatewayBrowserClient;
+  const auth = new SubscriptionAuth({ client, connected: true, requestUpdate() {} });
+  const pending = auth.refresh(async () => { events.push("models:start"); });
+  try {
+    await new Promise(resolve => setImmediate(resolve));
+    assert.deepEqual(events, ["auth", "usage:start", "models:start"]);
+  } finally { finish(); }
+  await pending;
+  assert.ok(events.includes("usage:end"));
+});
+test("an account without subscription credentials does not start a quota request on page entry",async()=>{
+  const calls:string[]=[];
+  const client={async request(method:string){calls.push(method);return {providers:[]};}} as unknown as GatewayBrowserClient;
+  await new SubscriptionAuth({client,connected:true,requestUpdate(){}}).refresh(undefined,false);
+  assert.deepEqual(calls,['models.authStatus']);
+});
+
 test("account flow uses the kernel's login choices and wizard protocol", async () => {
   const calls: Array<{method:string;params:unknown}> = [];
   const snapshot = { providerCapabilities: [{ provider: "openai", loginOptions: [

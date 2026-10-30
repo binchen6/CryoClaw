@@ -2,7 +2,7 @@
 // 技能区空白）。loadSkills 15s 超时落友好错误（重试出按钮），裸 English 错误只进 console。
 import test from "node:test";
 import assert from "node:assert/strict";
-import { loadSkills, listEligibleSkills, withLoadTimeout, SKILLS_LOAD_TIMEOUT_MS } from "./skills.ts";
+import { loadSkills, listEligibleSkills, updateSkillEnabled, withLoadTimeout, SKILLS_LOAD_TIMEOUT_MS } from "./skills.ts";
 
 test("skill references refresh eligibility and do not leak a replaced connection's response",async()=>{
   let resolve!:(value:unknown)=>void;
@@ -63,6 +63,46 @@ test("loadSkills：请求失败时 skillsError 为友好文案（非裸 English 
     !state.skillsError.includes("unknown method"),
     `skillsError 不得包含裸 English 错误（实际：${state.skillsError}）`,
   );
+});
+
+test("loadSkills reuses a fresh report and force refresh bypasses it", async () => {
+  let calls = 0;
+  const state = makeState({ client: { request: async () => ({ skills: [{ skillKey: `skill-${++calls}` }] }) } });
+  await loadSkills(state as never);
+  await loadSkills(state as never);
+  assert.equal(calls, 1);
+  await loadSkills(state as never, { force: true });
+  assert.equal(calls, 2);
+});
+
+test("a successful skill mutation queues a fresh status behind an older in-flight read", async () => {
+  let first!: (value: unknown) => void, second!: (value: unknown) => void;
+  let reads = 0;
+  const state = makeState({ client: { request: async (method: string) => method === "skills.status"
+    ? new Promise(resolve => { if (++reads === 1) first = resolve; else second = resolve; }) : {} } });
+  const loading = loadSkills(state as never);
+  const updating = updateSkillEnabled(state as never, "example", false);
+  await Promise.resolve(); await Promise.resolve();
+  first({ skills: [{ skillKey: "example", disabled: false }] });
+  for (let i = 0; i < 12; i++) await Promise.resolve();
+  assert.equal(reads, 2, "mutation confirmation must request status from after the update");
+  second({ skills: [{ skillKey: "example", disabled: true }] });
+  await Promise.all([loading, updating]);
+  assert.equal((state.skillsReport as any)?.skills[0].disabled, true);
+  await loadSkills(state as never);
+  assert.equal(reads, 2, "the fresh result remains reusable in the cache");
+});
+
+test("a replacement connection can load skills while an old connection request is still pending", async () => {
+  let old!: (value: unknown) => void, current!: (value: unknown) => void;
+  const state = makeState({ client: { request: () => new Promise(resolve => { old = resolve; }) } });
+  const previous = loadSkills(state as never);
+  state.client = { request: () => new Promise(resolve => { current = resolve; }) };
+  const latest = loadSkills(state as never);
+  old({ skills: [{ skillKey: "old" }] }); await previous;
+  assert.equal(state.skillsLoading, true, "the old finally cannot clear the replacement request's loading state");
+  current({ skills: [{ skillKey: "current" }] }); await latest;
+  assert.equal((state.skillsReport as any)?.skills[0].skillKey, "current");
 });
 
 test("loadSkills：成功响应写入 skillsReport 且清空 skillsError", async () => {

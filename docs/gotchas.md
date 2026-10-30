@@ -496,3 +496,33 @@ Things that are easy to get wrong or forget when working on CryoClaw.
 179. **WAAPI 的 `finished` 不是可靠的唯一卸载路径。** 后台窗口可能长期暂停动画，菜单会永远停留在 leaving 类与 inert 状态。正常播放仍等待 `animation.finished`，同时用略长于动画的计时器兜底；收尾需幂等并校验代次，避免旧动画或旧计时器误删新菜单。
 
 176. **小 discovery 入口不必整包复制，但不能绕过快照。** 当前全局 Codex 的声明 discovery 入口只需要其依赖图；使用内核已有选择性捕获，仍保留实例权限、源变更检查、动态依赖和退役。作用范围限定在已审查的可信入口，其他插件不改。必须用真实延迟模块和变更拒绝验证，不能只看第一次导入成功。
+
+180. **物理换装要同时校正运行时版本和插件兼容性。** 目录替换本身不会更新 `runtime/cryoclaw-runtime.json`，旧内核备份也可能带更高版本的官方插件。启动恢复和 updater 共用 `shared/kernel-runtime-policy.cjs`，根据完整内核原子校正版本；发布前检查 vendor 身份及 peer/pluginApi/minHost，不兼容就保留原树。10.6 → 10.7 → 10.6 的真实副本验收必须包含回退逐文件哈希，不能只看 `--version`。
+
+181. **CLI 对照要使用同一内核运行时和配置状态。** Electron 内嵌 Node 已低于当前内核门槛，`cli-compat-smoke.js` 现在优先选择物理 `runtime/node.exe`，旧 ASAR 才回退 Electron。参考 CLI 的隔离状态会改变插件命令面；判断功能是否移除前，需在同一实际配置下比较，不能把不同插件集合造成的增删当成上游变化。
+
+182. **NSIS 测量要隔离计时寄存器，不能只信宏的返回值。** 接管宏可能复用 `$0/$1` 写错误码和路径；`System::Call` 的 `i.r8`/`i.r9` 对应 `$8`/`$9`，不是 `$R8`/`$R9`。计时起止和差值必须读写同一组未被宏占用的寄存器。最小对照需带 `Nsis7z` 资源目录和 `LogicLib`，退出后持久化载荷，并以文件数、字节和完整 SHA-256 复核；编译失败、空目录和异常短的计时不算性能证据。
+
+183. **Lit点击事件不会自动适配业务参数。** `@click=${props.onSend}`会把MouseEvent传成可选message参数。接受正文、ID等业务参数的回调必须以无参闭包调用，并用实际模板绑定触发回归；单测直接调用controller无法发现按钮接线错误。Enter在消息输入区保留原生换行，发送快捷键为Ctrl/Meta+Enter，命令补全只用Tab。
+
+184. **强制停止返回与子进程exit并非原子事件。** taskkill完成后的同代迟到exit必须尊重stopped终态，不能当作启动崩溃再拉起。手动停止还必须取消防抖重启和崩溃恢复timer，失效准备中的start意图；实际停止结果应串入控制操作链。
+
+185. **记忆文件读写与CLI结果必须尊重权威来源。** 工作区路径复用主agent配置解析；CLI stdout里有JSON不代表成功，非零退出保持失败语义。渠道插件发现直接复用内核metadata registry，不自行模拟config/workspace/登记global/bundled的优先级及SQLite恢复契约；只读元数据不得执行插件入口。
+
+186. **页面已显示不代表原生点击可命中。** document ViewTransition会使被快照捕获的控件在过渡中不可交互；pointer-events伪元素补丁无法恢复实际按钮。路由使用现有CSS入场动画、同步更新并跳过旧快照；组件特有动效另行保留。CDP必须检查elementFromPoint并立即发送原生pointer事件，等待动画结束后才点击会漏掉该故障。
+
+187. **Followup的run归属必须在ACK时重验。** 附件读取和发送确认可能晚于旧run终态；新ACK可以接管已空闲的原owner，但不能覆盖另一个活跃run。final/aborted/error在被外来事件过滤前均需记录终态，防止先收到error、后收到started ACK又复活任务。剪贴板图片也必须与文件附件共用WS帧预算，超限本地失败并保留可恢复附件。
+
+188. **内核构建hash与导出字母都不是稳定契约。** 10.9的publication superseded异常类由r改为n，r变成普通断言函数；仅检查marker/补丁计数/模块能导入会漏掉语义失效。按真实类名解析唯一导出，修复旧marker导入，并用真实包与错误导出负例校验。集成测试不以旧hash文件不存在而skip新版本；已具备原生资源时契约缺失必须失败。
+
+189. **看板滚动不能靠 `scroll-behavior:smooth` 修饰。** 它会把 `scrollTop = 0` 这类程序化归位变成动画：实测归零过程中停在 1094 px，布局恢复、测试与“回到顶部”都会被拖慢。看板滚动容器保持 `auto`；需要动画时显式使用 `scrollTo({behavior:'smooth'})`。
+
+190. **卡片 iframe 的 `overflow:hidden` 会吞掉滚轮。** 沙箱文档的根滚动容器忽略用户滚动时，滚轮增量既不让卡片滚动，也不传给看板，表现为指针一放到卡片上就“滑不动”。runtime 在 `wheel` 里先判断事件目标到根之间是否存在可滚动祖先，可用就放行，否则 `preventDefault` 并按帧合并把增量发给宿主；宿主再用 `scrollTop` 应用。不要用给 iframe 加 `pointer-events:none` 的方式规避，那会一起废掉卡片交互。
+
+191. **卡片 iframe 必须提前、分帧挂载。** 按 IntersectionObserver 在 320 px 内即时挂载会在快速滚动时一次创建十余个文档，实测单帧最长 176 ms。现在预热范围 900 px、空闲 900 ms 后预挂载本板剩余卡片，并且每帧最多挂载一个；切换看板要同时清空队列与预取计时器，否则旧看板的 key 会污染新看板。
+
+192. **滚动表面不要用实时 `backdrop-filter`。** 固定浮条和卡片操作条在滚动时每帧重算背景模糊，是低帧率机器上的稳定开销。看板浮条改为 97% 不透明背景、操作条 92%，模糊只保留在展开遮罩和模态度层。
+
+193. **`-webkit-app-region: drag` 会吞掉子元素的鼠标点击，而且 CDP 合成点击查不出来。** 图标轨 `.oc-rail` 整列是 drag 区域，供拖动窗口；里面的按钮必须显式 `-webkit-app-region: no-drag` 才收得到点击。额度圆环 `.chat-quota__trigger[data-placement="rail"]` 漏了这条，真实鼠标按下被当成拖窗，用户报「圆环点不开」，而 `Input.dispatchMouseEvent` 走的是渲染进程命中测试、绕过系统拖拽判定，探针里一切正常。判别：某控件在真实鼠标下失效、在 CDP 点击/合成事件下正常，先查它的 drag 祖先链，再查 `getComputedStyle(el).webkitAppRegion`。回归要断言计算样式或 CSS 声明，不要只断言点击结果。
+
+194. **原生 `popover="auto"` 不要用手写 click 开关。** light dismiss 在 pointerdown 就把浮层关掉，随后 click 处理器再读到 `:popover-open === false` 便 `showPopover()` 重开——表现为「再点一次关不掉」。正确写法是触发器声明 `popovertarget="<panel id>"` + `popovertargetaction="toggle"`，由浏览器统一开关；打开的副作用挂 `beforetoggle`/`toggle`（读 `event.newState`），关闭后的收尾（清查询词、`aria-expanded` 复位、焦点回触发器）也在 `toggle` 里做。见 `chat-ui/ui/src/ui/components/oc-model-picker.ts` 与 `model-quota.ts`。

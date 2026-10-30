@@ -1,5 +1,5 @@
 {
-  "kernelVersion": "2026.10.6",
+  "kernelVersion": "2026.10.9",
   "generatedBy": "scripts/kernel-method-audit.mjs --write-baseline",
   "methods": {
     "cryoclaw.context.inspect": {

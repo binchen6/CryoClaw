@@ -231,8 +231,8 @@
 .oc-setup-input::placeholder { color: var(--text-muted); }
 .oc-setup-input:focus, .oc-setup-select:focus {
   outline: none;
-  border-color: var(--border-focus);
-  box-shadow: var(--focus-ring);
+  border-color: var(--focus-field-color);
+  box-shadow: var(--focus-field);
 }
 .oc-setup-select {
   height: 32px;

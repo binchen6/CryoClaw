@@ -4,7 +4,7 @@
  */
 import type { AppViewState } from "./app-view-state.ts";
 import type { ChatAttachment } from "./ui-types.ts";
-import { refreshChatAvatar, removeFailedSendArtifacts } from "./app-chat.ts";
+import { removeFailedSendArtifacts } from "./app-chat.ts";
 import { showToast } from "./app-toast.ts";
 import {
   applySessionKey,
@@ -133,7 +133,6 @@ export function buildChatProps(state: AppViewState): ChatProps {
     },
     configuredModels: state.configuredModels,
     currentModel: state.currentModel,
-    quotaClient: state.client,
     dirtyMeterSessions: state.dirtyMeterSessions,
     onModelChange: (modelKey) => state.handleModelChange(modelKey),
     thinkingToggleLevel: state.thinkingLevel,

@@ -21,7 +21,7 @@ export function renderSubscriptionAccount(host: AppViewState) {
   const auth = account;
   if (host.connected && host.client && !auth.busy && !auth.sessionId && initializedClients.get(auth) !== host.client) {
     initializedClients.set(auth, host.client);
-    queueMicrotask(() => void sync());
+    queueMicrotask(() => void sync(false));
   }
   let bind = bindings.get(auth);
   if (!bind) {
@@ -48,61 +48,28 @@ export function renderSubscriptionAccount(host: AppViewState) {
     await auth.next(value);
     answers.delete(auth);
     host.requestUpdate();
-    if (!auth.sessionId && !auth.error && host.client) {
-      await Promise.all([loadGatewayModels(host.client, { force: true }), getConfigSnapshot(host.client, { force: true })]);
-      await host.loadConfiguredModels();
-      host.requestUpdate();
-    }
   };
   const providers = auth.snapshot?.providers?.filter(p => /^(openai|openai-codex)$/.test(p.provider)) ?? [];
   const signedIn = providers.some(p => p.profiles?.some(profile => ["oauth","token"].includes(profile.type) && ["ok","expiring","static"].includes(profile.status)));
   const usage = auth.usage?.providers?.find(p => /^(openai|openai-codex)$/.test(p.provider));
   const windows = usage?.windows ?? providers.find(p=>p.usage)?.usage?.windows ?? [];
   const plan = usage?.plan ?? providers.find(p=>p.usage?.plan)?.usage?.plan;
-  const sync = async () => {
+  const sync = async (force = true) => {
     await auth.refresh(async client => {
-      await Promise.all([loadGatewayModels(client, { force: true }), getConfigSnapshot(client, { force: true })]);
+      if(!auth.snapshot?.providers?.some(p=>p.profiles?.some(profile=>["oauth","token"].includes(profile.type))))return;
+      await Promise.all([loadGatewayModels(client, { force }), getConfigSnapshot(client, { force })]);
       await host.loadConfiguredModels();
-    });
+    }, force);
   };
   const enable = async () => {
-    if (!host.client || auth.busy) return;
-    auth.busy = true;
-    auth.error = "";
-    host.requestUpdate();
-    try {
-      // Enabling may immediately follow a proxy-triggered reconnect. Ignore a
-      // negative cached snapshot and wait briefly for the new connection.
-      let snapshot = null;
-      for (let attempt = 0; attempt < 8; attempt++) {
-        if (host.connected && host.client) snapshot = await getConfigSnapshot(host.client, {force:true});
-        if (snapshot) break;
-        await new Promise(resolve => setTimeout(resolve, 750));
-      }
-      if (!snapshot || !host.client) throw new Error(label("网关仍在重连，请稍后重试。", "The gateway is reconnecting. Try again shortly."));
-      const result = await patchConfig(host.client, (draft: Record<string, any>) => {
-        const plugins = draft.plugins ??= {};
-        if (Array.isArray(plugins.allow) && !plugins.allow.includes("openai")) plugins.allow.push("openai");
-        ((plugins.entries ??= {}).openai ??= {}).enabled = true;
-      });
-      if (!result.ok) throw new Error(result.error ?? "Could not enable OpenAI");
-      auth.snapshot = null;
-      // A plugin enable can restart the gateway. Refresh automatically once its
-      // native login capabilities become available; no page reload is needed.
-      for (let attempt = 0; attempt < 90; attempt++) {
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        if (!host.connected || !host.client) continue;
-        try {
-          const status = await host.client.request<import("../../controllers/subscription-auth.ts").AuthSnapshot>("models.authStatus", {refresh:true});
-          if (status.providerCapabilities?.some(provider => provider.provider === "openai" && provider.loginOptions?.length)) {
-            auth.snapshot = status;
-            break;
-          }
-        } catch { /* the gateway may still be finishing its restart */ }
-      }
-      if (!auth.snapshot) throw new Error(label("启用设置已保存，但网关尚未就绪。连接恢复后点击同步即可，无需刷新页面。", "The setting was saved, but the gateway is not ready yet. Sync after reconnection; no page reload is needed."));
-    } catch (error) { auth.error = error instanceof Error ? error.message : String(error); }
-    finally { auth.busy = false; host.requestUpdate(); }
+    const client=host.client;
+    if(!client || !host.connected)throw new Error(label("网关尚未连接，请稍后重试。","The gateway is not connected yet."));
+    const result=await patchConfig(client,(draft:Record<string,any>)=>{
+      const plugins=draft.plugins??={};
+      if(Array.isArray(plugins.allow) && plugins.allow.length>0 && !plugins.allow.includes("openai"))plugins.allow.push("openai");
+      ((plugins.entries??={}).openai??={}).enabled=true;
+    });
+    if(!result.ok)throw new Error(result.error??label("无法启用账户登录。","Could not enable account sign-in."));
   };
   return html`<details ${ref(bind)} class="oc-subscription-account" aria-busy=${auth.busy}
     .open=${expandedAccounts.get(host) ?? (!signedIn || !!auth.sessionId)}
@@ -124,14 +91,8 @@ export function renderSubscriptionAccount(host: AppViewState) {
       <p class="oc-settings__hint">${signedIn ? label("账户已就绪，可在下方配置模型，也可在聊天和任务中切换模型。", "Your account is ready. Configure models below or switch models in chat and tasks.") : auth.loginCompleted ? label("授权已完成，但内核尚未返回可用账户。请同步账户；若仍未恢复，请重连网关。", "Authorization completed, but the gateway has not confirmed account access. Sync your account; reconnect the gateway if it persists.") : label("登录后，这里会显示连接状态和订阅额度。", "Connection status and subscription limits appear here after sign-in.")}</p>
     </div>
     <details class="oc-subscription-account__signin" .open=${!signedIn || !!auth.sessionId}><summary>${signedIn ? label("重新登录或切换账户", "Sign in again or switch account") : label("连接 ChatGPT 账户", "Connect your ChatGPT account")}</summary>
-    <div class="btn-row">${auth.options.map(option => html`<button class=${option.kind === "oauth" && !option.id.includes("token-sharing") ? "btn primary" : "btn"}
-      ?disabled=${auth.busy || !!auth.sessionId || !host.connected}
-      @click=${() => void auth.start(option)}>${option.kind === "device-code" ? label("使用设备码登录", "Sign in with a device code") : option.id.includes("token-sharing") ? label("高级：共享账户登录", "Advanced: shared-account sign-in") : label("在浏览器中登录", "Sign in with your browser")}</button>`)}</div>
-    ${auth.snapshot && !auth.options.length && !auth.snapshot.unavailable ? html`<div>
-      <p class="oc-settings__hint">${label("内核尚未提供 OpenAI 登录方式。启用内置提供商后，等待网关重新连接并再次同步。", "The gateway has not exposed OpenAI sign-in. Enable the bundled provider, wait for reconnection, then sync again.")}</p>
-      <button class="btn" ?disabled=${auth.busy || !host.connected} @click=${() => void enable()}>${label("启用 OpenAI 账户登录", "Enable OpenAI account sign-in")}</button>
-    </div>` : nothing}
-    ${!auth.snapshot && !auth.busy ? html`<p class="oc-settings__hint">${label("连接恢复后将自动检查登录方式，也可点击上方按钮重新同步。", "Sign-in options load automatically after connection. Use the button above to sync again.")}</p>` : nothing}
+    <div class="btn-row"><button class="btn primary" ?disabled=${auth.busy || !!auth.sessionId || !host.connected}
+      @click=${()=>void auth.enableAndLogin(enable)}>${signedIn?label("重新登录","Sign in again"):label("启用并登录","Enable and sign in")}</button></div>
     </details>
     ${signedIn || auth.loginCompleted ? html`<div class="oc-subscription-account__status">
       <strong>${label("订阅额度", "Subscription limits")}</strong>

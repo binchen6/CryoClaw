@@ -68,10 +68,10 @@ import {
 import { emptyBoardState, type BoardState } from "./controllers/board.ts";
 import { resolveInjectedAssistantIdentity } from "./assistant-identity.ts";
 import { loadAssistantIdentity as loadAssistantIdentityInternal } from "./controllers/assistant-identity.ts";
-import { getConfigSnapshot, deriveConfiguredModels, patchConfig } from "./controllers/config.ts";
-import { getCachedGatewayModelEntries, resolveModelSelectKey, mergeAccountModels } from "./controllers/models.ts";
+import { getConfigSnapshot, patchConfig } from "./controllers/config.ts";
+import { getCachedGatewayModelEntries, resolveModelSelectKey } from "./controllers/models.ts";
 import { extractAdvancedView, applyAdvancedSave } from "./views/settings/tab-channels.lib.ts";
-import { markSessionMeterDirty } from "./context-meter.ts";
+import { loadConfiguredModels as loadConfiguredModelsInternal, handleModelChange as handleModelChangeInternal, applyModelThinkingCapabilities } from "./app-models.ts";
 import { isWebbridgePinStaleError } from "./webbridge-error.ts";
 import { closeTopDialog, focusOpenDialogIfNeeded, isEscapeKey, trapDialogTab } from "./dialog-a11y.ts";
 import { resolveThinkingCapabilities } from "./chat/thinking-levels.ts";
@@ -1230,70 +1230,12 @@ export class OpenClawApp extends LitElement {
     );
   }
 
-  // 从内核 config 快照加载已配置的模型列表（R4：替代 settings:get-configured-models IPC）
   async loadConfiguredModels() {
-    if (!this.client || !this.connected) {
-      return;
-    }
-    try {
-      const client = this.client;
-      const [snap, catalog] = await Promise.all([
-        getConfigSnapshot(client),
-        client.request("models.list", { view: "configured" }).catch(() => null),
-      ]);
-      if (client !== this.client || !this.connected) return;
-      const defaults = snap?.config.agents as { defaults?: { model?: { primary?: string }; models?: Record<string,{alias?:string}> } } | undefined;
-      this.configuredModels = mergeAccountModels(snap ? deriveConfiguredModels(snap.config) : [], catalog, defaults?.defaults?.model?.primary, defaults?.defaults?.models);
-      // 没有手动选择时，默认选中 isDefault 的模型
-      if (!this.currentModel && this.configuredModels.length > 0) {
-        const defaultModel = this.configuredModels.find((m) => m.isDefault);
-        this.currentModel = defaultModel?.key ?? this.configuredModels[0].key;
-      }
-      this.updateThinkingCapabilities();
-    } catch {
-      // 拉取失败（瞬断/超时）保留旧列表不清空：选择器整体空白比短暂陈旧更难恢复；
-      // configuredModels 初始值即 []，首次加载失败无需额外置空分支
-    }
+    await loadConfiguredModelsInternal(this);
   }
 
-  // 切换当前 session 的模型（通过 sessions.patch RPC）
   async handleModelChange(modelKey: string) {
-    const previousModel = this.currentModel;
-    this.currentModel = modelKey;
-    if (!this.client || !this.connected) {
-      return;
-    }
-    // 切完模型先冻结 context meter；下一轮 usage 落库（totalTokens 单调推进）后由
-    // app-gateway 的 usage 刷新清除。重新赋值以触发 Lit reactive 更新。
-    const sessionKey = this.sessionKey;
-    const currentTotal = this.sessionsResult?.sessions?.find(
-      (r) => r.key === sessionKey,
-    )?.totalTokens ?? 0;
-    const nextDirty = new Set(this.dirtyMeterSessions);
-    markSessionMeterDirty(nextDirty, sessionKey);
-    this.dirtyMeterSessions = nextDirty;
-    this.meterTotalsBaseline.set(sessionKey, currentTotal);
-    try {
-      await this.client.request("sessions.patch", {
-        key: sessionKey,
-        model: modelKey,
-      });
-    } catch (err) {
-      this.lastError = String(err);
-      // patch 失败：回滚展示值——否则选择器显示内核并未接受的模型，下条消息按旧模型跑
-      // 而 UI 声称已切换。会话行仍是旧 model，选择器（modelSelectValue）随之复位。
-      // 会话切换竞态守卫（patch 可等待数十秒）：currentModel 是跨会话的兜底展示值，
-      // 切走后已由 sessionKey watcher 按新会话行重算，旧会话的模型不能写回；且
-      // updateThinkingCapabilities 失配时会向「当前」会话 patch thinkingLevel:"off"，
-      // 跨会话执行等于把 "off" 静默写进新会话配置。
-      if (this.sessionKey === sessionKey) {
-        this.currentModel = previousModel;
-        this.updateThinkingCapabilities();
-      }
-      this.requestUpdate();
-      return;
-    }
-    this.updateThinkingCapabilities();
+    await handleModelChangeInternal(this, modelKey);
   }
 
   // 重置模型选择为默认值（新建 session 时调用）
@@ -1338,12 +1280,7 @@ export class OpenClawApp extends LitElement {
       sessionThinkingDefault: sessionRow?.thinkingDefault,
       catalogCompat: this.currentModelCatalogCompat(),
     });
-    this.thinkingLevels = caps.levels;
-    this.isBinaryThinking = caps.isBinary;
-    if (this.thinkingLevel !== "off" && !this.thinkingLevels.includes(this.thinkingLevel)) {
-      this.thinkingLevel = "off";
-      this.patchSessionThinkingLevel("off");
-    }
+    applyModelThinkingCapabilities(this, caps, level => { void this.patchSessionThinkingLevel(level); });
   }
 
   // 解析智能默认思考级别（内核 thinkingDefault 优先）

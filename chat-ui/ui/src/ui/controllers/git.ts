@@ -328,6 +328,7 @@ export async function selectGitFile(
   if (state.gitSelectedFile === key) {
     // 再次点击同一文件 = 收起（使在途 diff 响应失效，防迟到的旧响应重开已收起的 diff）
     state.gitSelectedFile = null;
+    state.gitDiffLoading = false;
     state.gitDiffFiles = null;
     state.gitDiffTruncated = false;
     ++diffSeq;

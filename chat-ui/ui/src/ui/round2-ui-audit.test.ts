@@ -136,7 +136,16 @@ test("tab-usage.ts：区间选择用 group+aria-pressed（不是没有 tabpanel 
 
 test("tab-usage.ts：首屏加载态有占位卡与状态语义（不再是孤零零的「…」）", () => {
   const s = stripComments(uiSrc("views/settings/tab-usage.ts"));
-  assert.match(s, /aria-busy=\$\{showSkeleton \? "true" : nothing\}/, "加载中应标记 aria-busy");
+  const binding = s.match(/data-page-id="settings:usage"[^\n]*aria-busy=\$\{([^}]+)\}/);
+  assert.ok(binding, "用量页根节点应暴露 aria-busy");
+  // Execute the actual binding: retained rows during refresh must stay busy too.
+  const busy = new Function("s", `return (${binding[1]});`);
+  for (const rows of [[], [{ sessionKey: "cached" }]]) {
+    for (const [loadingState, expected] of [["idle", true], ["loading", true], ["ready", false], ["error", false]] as const) {
+      assert.equal(busy({ loadingState, sessions: { rows } }), expected,
+        `${loadingState} with ${rows.length} retained rows must expose the actual loading state`);
+    }
+  }
   assert.match(s, /role="status" aria-live="polite"/, "加载占位应为 live status");
   assert.match(s, /"settings\.usage\.loading"/, "加载占位缺 loading 文案");
   assert.match(s, /renderStatCard\(t\("settings\.usage\.statTokens"\), "…"\)/, "加载态应渲染 stat 占位卡");

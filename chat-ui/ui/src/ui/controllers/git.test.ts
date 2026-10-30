@@ -9,10 +9,27 @@ import {
   isGitIdentityError,
   stageGitFiles,
   selectGitRepo,
+  selectGitFile,
   type GitPanelState,
   type GitStatusEntry,
 } from "./git.ts";
 import type { WorktreeRecord } from "./worktrees.ts";
+
+test("closing a diff while it loads clears its loading state and ignores the late response", async () => {
+  let finish!: (value: unknown) => void;
+  const previous = globalThis.window;
+  Object.assign(globalThis, { window: { cryoclaw: { gitDiff: () => new Promise(resolve => { finish = resolve; }) } } });
+  try {
+    const state = { gitRepoPath: "/repo", gitSelectedFile: null, gitDiffLoading: false, gitDiffFiles: null } as unknown as GitPanelState;
+    const loading = selectGitFile(state, "worktree", "file.ts");
+    assert.equal(state.gitDiffLoading, true);
+    await selectGitFile(state, "worktree", "file.ts");
+    finish({ success: true, data: { files: [{ newPath: "file.ts" }] } }); await loading;
+    assert.equal(state.gitSelectedFile, null);
+    assert.equal(state.gitDiffLoading, false);
+    assert.equal(state.gitDiffFiles, null);
+  } finally { Object.assign(globalThis, { window: previous }); }
+});
 
 test("a late mutation from the previous repository cannot overwrite errors or busy paths", async () => {
   let finish!: (value: unknown) => void;

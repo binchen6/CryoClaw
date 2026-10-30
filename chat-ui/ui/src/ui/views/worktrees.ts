@@ -277,7 +277,7 @@ function renderCreatePanel(props: WorktreesProps) {
 export function renderWorktrees(props: WorktreesProps, opts?: { compact?: boolean }) {
   const compact = opts?.compact === true;
   return html`
-    <div class="wt-layout ${compact ?"wt-layout--compact" : ""} panel">
+    <div class="wt-layout ${compact ?"wt-layout--compact" : ""} panel" data-page-id="workspace:worktrees" data-load-state=${props.loading?"loading":props.error?"error":!props.worktrees.length?"empty":"ready"} aria-busy=${props.loading}>
       ${compact
         ? html`<div class="wt-compact-toolbar">
             <button class="btn btn--sm" type="button"

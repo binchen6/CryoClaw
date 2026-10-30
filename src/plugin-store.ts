@@ -44,6 +44,8 @@ import { readBuildConfigClawhubRegistry } from "./build-config";
 import { readCryoclawConfig, writeCryoclawConfig } from "./cryoclaw-config";
 import { readUserConfigForWrite, writeUserConfig } from "./provider-config";
 import { reconcilePluginsAllowWithEnabled, syncPluginAllowOnEnable } from "./plugin-allow-sync";
+import {optionalPluginEnableBlock,disableOptionalPluginChannel,DEFAULT_CHANNEL_PLUGINS,type ChannelPluginMap} from "./plugin-demand-policy";
+import {currentChannelPluginInventory} from './plugin-demand';
 
 const EXEC_TIMEOUT_MS = 90_000;
 // check-updates / update 单独放宽到 180s：Windows 热重启后内核冷载 alone 就要
@@ -64,13 +66,16 @@ function invalidatePluginListCache() {
   listCache = null;
   // 市场浏览缓存同点失效：安装/卸载/更新会改变 installed 集合与推荐排除集
   marketBrowseCache = null;
+  marketBrowseRequests.clear();
 }
 
 // 市场浏览缓存（R91 性能审查）：单次浏览并发 14+ 路 HTTP（分类×关键词×family），
 // 前端每次重进扩展页→市场 tab 都会重发全量请求；5 分钟 TTL + limit 键控，
 // 安装/卸载/更新时经 invalidatePluginListCache 一并失效
 const MARKET_BROWSE_CACHE_TTL_MS = 5 * 60_000;
-let marketBrowseCache: { at: number; limit: number; items: MarketBrowseItem[] } | null = null;
+type MarketBrowseSnapshot = { at: number; limit: number; items: MarketBrowseItem[] };
+let marketBrowseCache: MarketBrowseSnapshot | null = null;
+const marketBrowseRequests = new Map<number, { epoch: number; promise: Promise<MarketBrowseSnapshot> }>();
 
 export type InstalledPlugin = {
   id: string;
@@ -663,6 +668,26 @@ async function browsePluginMarket(limit: number): Promise<MarketBrowseItem[]> {
   return mergeMarketResults(groups);
 }
 
+async function loadMarketBrowseSnapshot(limit: number): Promise<MarketBrowseSnapshot> {
+  if (marketBrowseCache?.limit === limit && Date.now() - marketBrowseCache.at < MARKET_BROWSE_CACHE_TTL_MS) {
+    return marketBrowseCache;
+  }
+  const active = marketBrowseRequests.get(limit);
+  if (active?.epoch === listEpoch) return active.promise;
+  const epoch = listEpoch;
+  const promise = browsePluginMarket(limit).then(items => {
+    const snapshot = { at: Date.now(), limit, items };
+    // Installation retires earlier reads even when their HTTP requests finish later.
+    if (epoch === listEpoch) marketBrowseCache = snapshot;
+    return snapshot;
+  });
+  marketBrowseRequests.set(limit, { epoch, promise });
+  try { return await promise; }
+  finally {
+    if (marketBrowseRequests.get(limit)?.promise === promise) marketBrowseRequests.delete(limit);
+  }
+}
+
 async function listInstalledPlugins(): Promise<InstalledPlugin[]> {
   if (listCache && Date.now() - listCache.at < LIST_CACHE_TTL_MS) {
     return listCache.plugins;
@@ -1052,6 +1077,20 @@ export function registerPluginStoreIpc(): void {
     if (!isValidPluginName(id)) return { success: false, message: "invalid plugin id" };
     try {
       const { config, baseSnapshot } = readUserConfigForWrite();
+      let channels:ChannelPluginMap;
+      try {
+        const inventory=await currentChannelPluginInventory(config,!enabled);
+        channels=inventory.channels;
+        if(!enabled&&!inventory.installed.has(id)&&DEFAULT_CHANNEL_PLUGINS.has(id))channels=new Map([...channels,[id,DEFAULT_CHANNEL_PLUGINS.get(id)!]]);
+      }catch(error){
+        if(enabled)throw error;
+        // A broken third-party manifest must not block the recovery action.
+        channels=DEFAULT_CHANNEL_PLUGINS;
+        log.warn(`[plugin-store] Disabling without full metadata: ${String(error)}`);
+      }
+      const blocked=enabled?optionalPluginEnableBlock(config,id,channels):null;
+      if(blocked)return {success:false,message:blocked};
+      if(!enabled)disableOptionalPluginChannel(config,id,channels);
       const entries = (config.plugins ??= {}).entries ??= {};
       const existing = typeof entries[id] === "object" && entries[id] !== null ? entries[id] : {};
       entries[id] = { ...existing, enabled };
@@ -1137,16 +1176,11 @@ export function registerPluginStoreIpc(): void {
     const limit = typeof params?.limit === "number" && params.limit > 0
       ? Math.min(Math.floor(params.limit), MARKET_BROWSE_MAX_LIMIT)
       : MARKET_BROWSE_DEFAULT_LIMIT;
-    if (marketBrowseCache && marketBrowseCache.limit === limit
-        && Date.now() - marketBrowseCache.at < MARKET_BROWSE_CACHE_TTL_MS) {
-      return { success: true, data: { items: marketBrowseCache.items, fetchedAt: marketBrowseCache.at } };
-    }
     try {
-      const items = await browsePluginMarket(limit);
-      marketBrowseCache = { at: Date.now(), limit, items };
+      const snapshot = await loadMarketBrowseSnapshot(limit);
       // fetchedAt 统一取缓存的 at：browse 耗时可能达 30s，另取 Date.now() 会让
       // fetchedAt 晚于缓存命中口径（同一份数据两种时间戳）
-      return { success: true, data: { items, fetchedAt: marketBrowseCache.at } };
+      return { success: true, data: { items: snapshot.items, fetchedAt: snapshot.at } };
     } catch (err: any) {
       log.info(`[plugin-store] market-browse failed: ${err?.message ?? err}`);
       return { success: false, message: err?.message ?? String(err) };

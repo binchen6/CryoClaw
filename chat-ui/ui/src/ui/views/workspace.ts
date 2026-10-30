@@ -7,7 +7,7 @@ import {tabListKeydown} from "../a11y.ts";
 import {copyText} from "../chat/transcript-export.ts";
 import "../components/oc-resizable-divider.ts";
 import "../components/toggle-switch.ts";
-export type WorkspaceViewOptions={gitSlot:TemplateResult;worktreesSlot:TemplateResult;onSelectGitNode:()=>void;onOpenFiles:()=>void;onRepoChange:(path:string)=>void;onRefreshFiles:()=>void;onOpenRootFolder:()=>void;onOpenItemFolder:(path:string)=>void;onChooseRoot:()=>void;onDefaultRoot:()=>void;onAttachFile:(path:string,name:string)=>void;onPinRoot:()=>void};
+export type WorkspaceViewOptions={initializing?:boolean;gitSlot:TemplateResult;worktreesSlot:TemplateResult;onSelectGitNode:()=>void;onOpenFiles:()=>void;onRepoChange:(path:string)=>void;onRefreshFiles:()=>void;onOpenRootFolder:()=>void;onOpenItemFolder:(path:string)=>void;onChooseRoot:()=>void;onDefaultRoot:()=>void;onAttachFile:(path:string,name:string)=>void;onPinRoot:()=>void};
 const ws=workspaceViewState;
 function workspaceKeydown(event:KeyboardEvent,state:AppViewState){
   if(event.isComposing || event.keyCode===229 || event.defaultPrevented || ws.mode!=="files")return;
@@ -46,15 +46,15 @@ export function renderWorkspaceView(state:AppViewState,opts:WorkspaceViewOptions
   const locations=[...state.gitRepoOptions.map(repo=>({path:repo.path,name:repo.kind==="workspace"?t("git.repoWorkspace"):`${t("git.repoWorktree")} · ${repo.branch||repo.path}`})),...state.settings.pinnedWorkspaces.map(root=>({path:root.path,name:`${root.icon} ${root.name}`}))];
   if(ws.root && !locations.some(root=>root.path===ws.root))locations.unshift({path:ws.root,name:ws.root.split(/[/\\]/).at(-1)??ws.root});
   const copy=async(value:string)=>{try{const result=await copyText(value);ws.draftStatus=result?t("workspace.browser.copied"):t("workspace.browser.copyFailed");}catch{ws.draftStatus=t("workspace.browser.copyFailed");}state.requestUpdate();};
-  return html`<div class="wk-layout" style=${`--wk-nav-ratio:${ws.navRatio}`} @keydown=${(event:KeyboardEvent)=>workspaceKeydown(event,state)}><aside class="wk-nav">
+  return html`<div class="wk-layout" aria-busy=${opts.initializing === true} style=${`--wk-nav-ratio:${ws.navRatio}`} @keydown=${(event:KeyboardEvent)=>workspaceKeydown(event,state)}><aside class="wk-nav">
     <div class="wk-nav__location"><select class="wk-nav__repo" aria-label=${t("workspace.browser.rootLabel")} .value=${ws.root??""} ?disabled=${ws.fileSaving} @change=${(event:Event)=>{const value=(event.target as HTMLSelectElement).value;if(value==="__choose__")opts.onChooseRoot();else if(value==="__default__")opts.onDefaultRoot();else opts.onRepoChange(value);}}>
       ${locations.filter((root,index,array)=>array.findIndex(other=>other.path===root.path)===index).map(root=>html`<option value=${root.path}>${root.name}</option>`)}<option value="__default__">${t("workspace.browser.defaultRoot")}</option><option value="__choose__">${t("workspace.browser.chooseRoot")}</option></select></div>
     <div class="wk-nav__search"><input type="search" aria-label=${t("workspace.browser.searchLabel")} placeholder=${t("workspace.browser.searchPlaceholder")} .value=${ws.search} @input=${(event:Event)=>setWorkspaceSearch(state,(event.target as HTMLInputElement).value)} @keydown=${(event:KeyboardEvent)=>{if(event.key==="Escape")setWorkspaceSearch(state,"");}} /></div>
     <div class="wk-nav__node ${ws.mode==="files"?"active":""}">
-      <button type="button" class="wk-nav__open" @click=${opts.onOpenFiles}>${icons.folder}<span>${t("workspace.files")}</span></button><span class="wk-nav__node-actions"><button class="icon-btn icon-btn--xs" aria-label=${t("workspace.refresh")} title=${t("workspace.refresh")} @click=${opts.onRefreshFiles}>${icons.refreshCw}</button><button class="icon-btn icon-btn--xs" aria-label=${t("workspace.openRoot")} title=${t("workspace.openRoot")} @click=${opts.onOpenRootFolder}>${icons.folderOpen}</button></span>
+      <button type="button" class="wk-nav__open" data-page-nav="workspace:files" @click=${opts.onOpenFiles}>${icons.folder}<span>${t("workspace.files")}</span></button><span class="wk-nav__node-actions"><button class="icon-btn icon-btn--xs" aria-label=${t("workspace.refresh")} title=${t("workspace.refresh")} @click=${opts.onRefreshFiles}>${icons.refreshCw}</button><button class="icon-btn icon-btn--xs" aria-label=${t("workspace.openRoot")} title=${t("workspace.openRoot")} @click=${opts.onOpenRootFolder}>${icons.folderOpen}</button></span>
     </div>
     <div class="wk-nav__hidden"><oc-toggle-switch .checked=${ws.showHidden} .label=${t("workspace.browser.showHidden")} @change=${(event:CustomEvent)=>{ws.showHidden=!!event.detail.checked;persistWorkspacePreferences();if(ws.search)setWorkspaceSearch(state,ws.search);else if(ws.currentPath)void loadWorkspaceDirectory(state,ws.currentPath,true);}}></oc-toggle-switch></div>
-    <div class="wk-nav__tree" aria-busy=${ws.loading||ws.searchLoading}>
+    <div class="wk-nav__tree" data-page-id="workspace:files" data-load-state=${ws.loading||ws.searchLoading?"loading":ws.error?"error":!items.length?"empty":"ready"} aria-busy=${ws.loading||ws.searchLoading}>
       ${!isAtRoot && !ws.search?html`<button class="wk-nav__item wk-nav__item--back" @click=${()=>navigateWorkspaceUp(state)}>..</button>`:nothing}
       ${ws.loading || ws.searchLoading?html`<div class="wk-nav__hint" role="status">${t("workspace.loading")}</div>`:nothing}
       ${ws.error?html`<div class="wk-nav__hint" role="alert">${ws.error}</div>`:nothing}
@@ -63,7 +63,7 @@ export function renderWorkspaceView(state:AppViewState,opts:WorkspaceViewOptions
       ${!items.length && !ws.loading && !ws.searchLoading && !ws.error?html`<div class="wk-nav__hint">${ws.search?t("workspace.browser.noMatches"):t("workspace.browser.empty")}</div>`:nothing}
       ${(ws.search?ws.searchTruncated:ws.truncated)?html`<div class="wk-nav__hint">${t("workspace.browser.refineSearch")}</div>`:nothing}
     </div>
-    <button class="wk-nav__node wk-nav__node--git ${ws.mode==="git"?"active":""}" @click=${opts.onSelectGitNode}>${icons.diff}<span>${t("git.title")}</span></button>
+    <button class="wk-nav__node wk-nav__node--git ${ws.mode==="git"?"active":""}" data-page-nav="workspace:git" @click=${opts.onSelectGitNode}>${icons.diff}<span>${t("git.title")}</span></button>
     <section class="wk-nav__section"><div class="wk-nav__section-title">${t("worktrees.title")}</div>${opts.worktreesSlot}</section>
   </aside><oc-resizable-divider .splitRatio=${ws.navRatio} .minRatio=${.16} .maxRatio=${.45} @resize=${handleNavResize}></oc-resizable-divider>
   <section class="wk-main">${ws.mode==="git"?opts.gitSlot:html`

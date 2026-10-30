@@ -39,6 +39,8 @@ export type TasksProps = {
   /** 当前内核未注册 cron.runs（2026.9.7 之前的内核）：显示说明性空态（非错误） */
   unsupported: boolean;
   tab: TasksViewTab;
+  cronLoading?: boolean;
+  cronError?: string | null;
   /** 定时 tab 内容（由装配层组装 renderCronView，避免 views 层反向依赖 app-cron） */
   cronSlot: TemplateResult;
   /** 启用中定时任务数（定时 tab 徽标） */
@@ -426,17 +428,17 @@ function renderTasksRuns(props: TasksProps) {
 
 export function renderTasks(props: TasksProps) {
   return html`
-    <div class="ts-layout panel">
+    <div class="ts-layout panel" data-page-id=${`tasks:${props.tab}`} data-load-state=${props.tab === "cron"?(props.cronLoading?"loading":props.cronError?"error":!props.cronJobs.length?"empty":"ready"):(props.loading || props.cronLoading?"loading":props.error || props.cronError?"error":props.unsupported?"unsupported":!props.runs.length?"empty":"ready")} aria-busy=${props.tab === "cron"?props.cronLoading:props.loading || props.cronLoading}>
       <div class="ts-tabs" role="tablist">
         <button
-          class="ts-tab ${props.tab ==="runs" ? "ts-tab--active" : ""}"
+          class="ts-tab ${props.tab ==="runs" ? "ts-tab--active" : ""}" data-page-nav="tasks:runs"
           type="button"
           role="tab"
           aria-selected=${props.tab === "runs" ? "true" : "false"}
           @click=${() => {if(props.tab !== "runs")transitionView(()=>props.onTabChange("runs"));}}
         >${t("tasks.runsTab")}</button>
         <button
-          class="ts-tab ${props.tab ==="cron" ? "ts-tab--active" : ""}"
+          class="ts-tab ${props.tab ==="cron" ? "ts-tab--active" : ""}" data-page-nav="tasks:cron"
           type="button"
           role="tab"
           aria-selected=${props.tab === "cron" ? "true" : "false"}

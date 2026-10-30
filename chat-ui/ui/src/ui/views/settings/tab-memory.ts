@@ -16,7 +16,7 @@
  */
 import { html, nothing } from "lit";
 import type { AppViewState } from "../../app-view-state.ts";
-import { loadMemoryStatus, resetGroundedShortTerm, resetDreamDiary, type MemoryStatus } from "../../controllers/memory.ts";
+import { loadMemoryStatus, memoryStatusFresh, resetGroundedShortTerm, resetDreamDiary, type MemoryStatus } from "../../controllers/memory.ts";
 import { t, tWithDetail } from "../../i18n.ts";
 import * as ipc from "../../data/ipc-bridge.ts";
 import type { MemoryWorkspaceList, MemoryRecallData, MemoryReindexData, DreamListEntry } from "../../data/ipc-bridge.ts";
@@ -89,6 +89,7 @@ function createMemoryState() {
     successMsg: null as string | null,
     hint: null as string | null,
     initialized: false,
+    loadState: "loading",
     // 记忆状态区块（走 gateway RPC，与配置读写互不阻塞）
     memoryStatus: null as MemoryStatus | null,
     statusLoading: false,
@@ -132,9 +133,15 @@ function createMemoryState() {
 }
 
 const s = createMemoryState();
+let memoryViewEpoch = 0;
+let workspaceExpandRequest = 0;
+let dreamExpandRequest = 0;
 
 // 退出 Settings 时直接丢掉 Memory 页缓存，下次重新从 config 快照拉真配置。
 function resetMemoryState() {
+  ++memoryViewEpoch;
+  ++workspaceExpandRequest;
+  ++dreamExpandRequest;
   Object.assign(s, createMemoryState());
 }
 
@@ -197,34 +204,46 @@ export async function refreshMemoryAfterGatewayReady(state:AppViewState):Promise
 
 async function loadWorkspaceList(state: AppViewState, force = false) {
   if (s.wsLoading || (s.wsLoaded && !force)) return;
+  const epoch = memoryViewEpoch;
   s.wsLoading = true; s.wsFailed = false;
   state.requestUpdate();
   try {
-    s.wsList = await ipc.memoryListWorkspace();
+    const list = await ipc.memoryListWorkspace();
+    if (epoch !== memoryViewEpoch) return;
+    s.wsList = list;
     s.wsLoaded = true;
   } catch {
-    s.wsFailed = true;
+    if (epoch === memoryViewEpoch) s.wsFailed = true;
   } finally {
-    s.wsLoading = false;
-    state.requestUpdate();
+    if (epoch === memoryViewEpoch) {
+      s.wsLoading = false;
+      state.requestUpdate();
+    }
   }
 }
 
 async function loadDreams(state: AppViewState, force = false) {
   if (s.dreamLoading || (s.dreamList && !force)) return;
+  const epoch = memoryViewEpoch;
   s.dreamLoading = true; s.dreamFailed = false;
   state.requestUpdate();
   try {
-    s.dreamList = await ipc.memoryListDreams();
+    const list = await ipc.memoryListDreams();
+    if (epoch !== memoryViewEpoch) return;
+    s.dreamList = list;
   } catch {
-    s.dreamFailed = true;
+    if (epoch === memoryViewEpoch) s.dreamFailed = true;
   } finally {
-    s.dreamLoading = false;
-    state.requestUpdate();
+    if (epoch === memoryViewEpoch) {
+      s.dreamLoading = false;
+      state.requestUpdate();
+    }
   }
 }
 
 async function toggleMemoryExpand(state: AppViewState, id: string) {
+  const epoch = memoryViewEpoch, request = ++workspaceExpandRequest;
+  const current = () => epoch === memoryViewEpoch && request === workspaceExpandRequest && s.wsExpandedId === id;
   if (s.wsExpandedId === id) {
     s.wsExpandedId = null; s.wsExpandedContent = null; s.wsExpandedLoading = false;
     state.requestUpdate();
@@ -232,15 +251,14 @@ async function toggleMemoryExpand(state: AppViewState, id: string) {
   }
   s.wsExpandedId = id; s.wsExpandedContent = null; s.wsExpandedLoading = true;
   state.requestUpdate();
-  // 迟到守卫（R91 审查修复）：快速 展开 A→收起→展开 B 时，A 的慢响应晚到
-  // 会把正文写进 B 的展开面板；await 返回（含失败）先确认仍展开同一 id
+  // A → collapse → A needs a request token as well as the entry ID.
   try {
     const content = await ipc.memoryReadEntry(id);
-    if (s.wsExpandedId === id) s.wsExpandedContent = content;
+    if (current()) s.wsExpandedContent = content;
   } catch {
-    if (s.wsExpandedId === id) s.wsExpandedContent = null;
+    if (current()) s.wsExpandedContent = null;
   } finally {
-    if (s.wsExpandedId === id) {
+    if (current()) {
       s.wsExpandedLoading = false;
       state.requestUpdate();
     }
@@ -248,6 +266,8 @@ async function toggleMemoryExpand(state: AppViewState, id: string) {
 }
 
 async function toggleDreamExpand(state: AppViewState, index: number) {
+  const epoch = memoryViewEpoch, request = ++dreamExpandRequest;
+  const current = () => epoch === memoryViewEpoch && request === dreamExpandRequest && s.dreamExpandedIndex === index;
   if (s.dreamExpandedIndex === index) {
     s.dreamExpandedIndex = null; s.dreamExpandedBody = null; s.dreamExpandedLoading = false;
     state.requestUpdate();
@@ -258,11 +278,11 @@ async function toggleDreamExpand(state: AppViewState, index: number) {
   // 迟到守卫（同 toggleMemoryExpand）
   try {
     const body = await ipc.memoryReadDream(index);
-    if (s.dreamExpandedIndex === index) s.dreamExpandedBody = body;
+    if (current()) s.dreamExpandedBody = body;
   } catch {
-    if (s.dreamExpandedIndex === index) s.dreamExpandedBody = null;
+    if (current()) s.dreamExpandedBody = null;
   } finally {
-    if (s.dreamExpandedIndex === index) {
+    if (current()) {
       s.dreamExpandedLoading = false;
       state.requestUpdate();
     }
@@ -1196,7 +1216,7 @@ export function renderTabMemory(state: AppViewState) {
   // 网关断线后标记状态过期，重连回来时重新拉取（对齐 tab-usage 的做法）。
   if (s.wasConnected && !state.connected) s.statusLoaded = false;
   s.wasConnected = state.connected;
-  if (!s.statusLoaded && !s.statusLoading && state.connected && state.client) {
+  if (!s.statusLoading && state.connected && state.client && (!s.statusLoaded || !s.statusFailed && !memoryStatusFresh(state.client))) {
     loadMemoryStatus(s, state, () => state.requestUpdate());
   }
 
@@ -1217,14 +1237,17 @@ export function renderTabMemory(state: AppViewState) {
     { id: "settings", key: "settings.memory.subtabSettings" },
   ];
 
+  const loading=s.loadState === "loading" || s.statusLoading || !s.statusLoaded || (s.subtab === "overview" || s.subtab === "memories") && s.wsLoading || (s.subtab === "overview" || s.subtab === "dreams") && s.dreamLoading;
+  const failed=s.loadState === "error" || s.statusFailed || s.error || (s.subtab === "overview" || s.subtab === "memories") && s.wsFailed || (s.subtab === "overview" || s.subtab === "dreams") && s.dreamFailed;
+  const empty=s.subtab === "memories"?!s.wsList?.entries?.length:s.subtab === "dreams"?!s.dreamList?.entries?.length:s.subtab === "overview"&&!s.wsList?.entries?.length&&!s.dreamList?.entries?.length;
   return html`
-    <div class="oc-settings__section">
+    <div class="oc-settings__section" data-page-id=${`settings:memory:${s.subtab}`} data-load-state=${loading?"loading":failed?"error":empty?"empty":"ready"} aria-busy=${loading}>
       <h2 class="oc-settings__section-title">${t("settings.memory.title")}</h2>
       <p class="oc-settings__page-desc">${t("settings.memory.desc")}</p>
 
       <div class="oc-memory-subtabs" role="tablist">
         ${subtabs.map(tb => html`
-          <button type="button" role="tab" class="oc-memory-subtabs__btn"
+          <button type="button" role="tab" class="oc-memory-subtabs__btn" data-page-nav=${`settings:memory:${tb.id}`}
             aria-selected=${s.subtab === tb.id ? "true" : "false"}
             @click=${() => { s.subtab = tb.id; state.requestUpdate(); }}>${t(tb.key)}</button>
         `)}

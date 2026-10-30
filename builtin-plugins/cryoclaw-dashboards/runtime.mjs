@@ -33,6 +33,31 @@ function request(action,value){
 ${inspectorScript()}
 addEventListener('message',e=>{if(e.source!==parent)return;if(e.data?.type==='cryoclaw:dashboard:inspect'){updateInspector(e.data.active,e.data.selector,e.data.color);return;}if(e.data?.type==='cryoclaw:dashboard:visibility'){updateMotion(e.data.active===true);return;}if(e.data?.type!=='cryoclaw:dashboard:result')return;const p=pending.get(e.data.requestId);if(!p)return;clearTimeout(p.timer);pending.delete(e.data.requestId);e.data.error?p.reject(Error(e.data.error)):p.resolve(e.data.value);});
 const control=action=>{if(parent===window){if(action==='refresh')location.reload();return;}parent.postMessage({type:'cryoclaw:dashboard',action},'*');};
+// The card is an opaque sandbox whose root ignores user scrolling, so a wheel over card
+// content would die here instead of scrolling the board. Hand unhandled deltas to the host.
+function scrollableInDirection(target,deltaY){
+ const root=document.scrollingElement||document.documentElement,userScroll=/^(auto|scroll|overlay)$/;
+ for(let element=target instanceof Element?target:null;element&&element!==root;element=element.parentElement){
+  if(!userScroll.test(getComputedStyle(element).overflowY)||element.scrollHeight-element.clientHeight<=1)continue;
+  if(deltaY>0?element.scrollTop+element.clientHeight<element.scrollHeight-1:element.scrollTop>1)return true;
+ }
+ if(userScroll.test(getComputedStyle(root).overflowY)){if(deltaY>0?root.scrollTop+root.clientHeight<root.scrollHeight-1:root.scrollTop>1)return true;}
+ return false;
+}
+if(parent!==window){
+ let pendingWheel=null,wheelFrame=0;
+ const flushWheel=()=>{wheelFrame=0;const pending=pendingWheel;pendingWheel=null;if(pending&&pending.dy)parent.postMessage({type:'cryoclaw:dashboard',action:'wheel',value:pending},'*');};
+ addEventListener('wheel',event=>{
+  if(event.ctrlKey||event.defaultPrevented)return;
+  const scale=event.deltaMode===1?16:event.deltaMode===2?innerHeight:1,deltaY=event.deltaY*scale;
+  if(!Number.isFinite(deltaY)||!deltaY||scrollableInDirection(event.target,deltaY))return;
+  event.preventDefault();
+  pendingWheel=pendingWheel||{dy:0};
+  pendingWheel.dy+=Math.max(-1200,Math.min(1200,deltaY));
+  if(!wheelFrame)wheelFrame=requestAnimationFrame(flushWheel);
+ },{passive:false});
+ addEventListener('pagehide',()=>{if(wheelFrame)cancelAnimationFrame(wheelFrame);wheelFrame=0;pendingWheel=null;},{once:true});
+}
 Object.defineProperty(window,'cryoclawDashboard',{value:Object.freeze({version:2,motion,viewport,getState:()=>request('getState'),setState:value=>request('setState',value),data:id=>request('data',id),system:()=>request('system'),asset:id=>{const url=new URL(endpoint);url.searchParams.set('api','asset');url.searchParams.set('id',id);return url.href;},refresh:()=>control('refresh'),expand:()=>control('expand'),collapse:()=>control('collapse'),compose:prompt=>{if(parent===window||!navigator.userActivation.isActive||typeof prompt!=='string'||!prompt.trim()||prompt.length>2000)return false;parent.postMessage({type:'cryoclaw:dashboard',action:'compose',value:prompt},'*');return true;},tasks:()=>{if(parent===window||!navigator.userActivation.isActive)return false;control('tasks');return true;},openLink:url=>{if(!navigator.userActivation.isActive)return;if(parent===window)window.open(url,'_blank','noopener,noreferrer');else parent.postMessage({type:'cryoclaw:dashboard',action:'openLink',value:url},'*');}})});
 addEventListener('keydown',e=>{if(e.key==='Escape')control('collapse');});
 })();<\/script>`;}

@@ -8,6 +8,7 @@ import { readFileBase64 } from "../data/ipc-bridge.ts";
 import { t } from "../i18n.ts";
 import { showToastGlobal } from "../app-toast.ts";
 import { reduceChatStreamDelta } from "./chat-stream-reducer.ts";
+import { hasPendingSessionModelChange, waitForSessionModelChange } from "../app-models.ts";
 
 // delivery-mirror 是 gateway 将外发消息镜像写回 transcript 的副本。
 // 当 agent 已在 transcript 中写过同文本的 assistant 消息时，mirror 条目是冗余的，
@@ -295,6 +296,9 @@ export type InFlightRunSnapshot = {
 // 早退/失败路径返回 null（无权威信息，调用方按"未知"处理）。
 export type ChatHistoryLoadResult = {
   inFlightRun?: InFlightRunSnapshot;
+  // Unfiltered transcript evidence for probes. Rendering may temporarily strip
+  // a persisted reply that matches the still-visible stream.
+  messages?: unknown[];
 } | null;
 
 // 非 silent 加载的代际令牌：两个常规加载并发时，后发起者使先前加载整体失效——
@@ -335,7 +339,7 @@ export function recordTerminalRunTombstone(runId: string, now = Date.now()) {
   }
 }
 
-function isTerminalRunTombstoned(runId: string, now = Date.now()): boolean {
+export function isTerminalRunTombstoned(runId: string, now = Date.now()): boolean {
   const id = runId.trim();
   if (!id) {
     return false;
@@ -602,12 +606,13 @@ function adoptInFlightRunFromHistory(
 
 export async function loadChatHistory(
   state: ChatState,
-  opts?: { mergeIfStale?: boolean; silent?: boolean },
+  opts?: { mergeIfStale?: boolean; silent?: boolean; expectedRunId?: string | null },
 ): Promise<ChatHistoryLoadResult> {
   if (!state.client || !state.connected) {
     return null;
   }
   const requestSessionKey = state.sessionKey;
+  const requestClient = state.client;
   cancelChatHistoryHydration(state);
   const requestSeq = ++loadChatHistorySeq;
   const generation = opts?.silent ? null : ++loadChatHistoryGeneration;
@@ -620,7 +625,7 @@ export async function loadChatHistory(
   }
   state.lastError = null;
   try {
-    const res = await state.client.request<{
+    const res = await requestClient.request<{
       messages?: Array<unknown>;
       thinkingLevel?: string;
       inFlightRun?: InFlightRunSnapshot;
@@ -631,7 +636,8 @@ export async function loadChatHistory(
         limit: 200,
       },
     );
-    if (state.sessionKey !== requestSessionKey) {
+    if (state.sessionKey !== requestSessionKey || state.client !== requestClient ||
+      (opts?.expectedRunId !== undefined && state.chatRunId !== opts.expectedRunId)) {
       return null;
     }
     // 被更新的非 silent 加载取代：旧响应不得写回（防旧快照覆盖新快照）。
@@ -647,8 +653,8 @@ export async function loadChatHistory(
     }
     // 权威在途声明尽早取出：下方 mergeIfStale 滞后保留分支会提前 return，
     // 探测调用方在该分支同样需要 inFlightRun 做"中途落盘 vs 终态回复"判定。
-    const result: ChatHistoryLoadResult = { inFlightRun: res.inFlightRun };
     const raw = Array.isArray(res.messages) ? res.messages : [];
+    const result: ChatHistoryLoadResult = { inFlightRun: res.inFlightRun, messages: raw };
     // 在途 run 收养放在会话守卫之后、滞后读保留分支之前：inFlightRun 来自内核侧
     // 实时 abort-controller 表（与消息列表的持久化快照无关），即便消息列表命中滞后
     // 读走「保留本地」分支，run 态恢复也应生效（重连 mergeIfStale 路径同样受益）。
@@ -734,6 +740,8 @@ export async function loadChatHistory(
   } catch (err) {
     if (
       state.sessionKey !== requestSessionKey ||
+      state.client !== requestClient ||
+      (opts?.expectedRunId !== undefined && state.chatRunId !== opts.expectedRunId) ||
       (generation !== null && generation !== loadChatHistoryGeneration) ||
       (opts?.silent && lastNonSilentLoadSeq > requestSeq)
     ) {
@@ -765,6 +773,9 @@ function dataUrlToBase64(dataUrl: string): { content: string; mimeType: string }
 // The app host survives session switches. Track acknowledgements by owner so an
 // old request cannot block another composer or clear a newer request's busy bit.
 const pendingChatSends = new WeakMap<ChatState, Map<string, number>>();
+// A model patch can delay submission after the UI has allocated a provisional
+// run. Stop cancels that local admission instead of aborting a nonexistent run.
+const localChatAdmissions = new WeakMap<ChatState, Map<string, { sessionKey: string; cancel: () => void }>>();
 
 export function syncChatSendingState(state: ChatState): void {
   state.chatSending = (pendingChatSends.get(state)?.get(state.sessionKey) ?? 0) > 0;
@@ -803,6 +814,11 @@ export async function sendChatMessage(
     // Only a run created by this request may be cleared from an offscreen
     // session snapshot if its acknowledgement later fails.
     ownedRunId?: { value: string | null };
+    // Acknowledgments may arrive after the viewport switches sessions.
+    resolveRunState?: (sessionKey: string) => ChatState | null | undefined;
+    // The app routes receipts through the same lifecycle as broadcast events.
+    onTerminalAcknowledgment?: (payload: ChatEventPayload) => void;
+    terminalAcknowledgment?: { value: "final" | "error" | null };
   },
 ): Promise<string | null> {
   if (!state.client || !state.connected) {
@@ -812,8 +828,10 @@ export async function sendChatMessage(
   // 16MB、数百毫秒窗口）之前取。窗口内用户切换会话后，若无快照守卫：chat.send 会
   // 发进新会话、乐观气泡 append 进新会话消息流、run 态覆写新会话的流式状态。
   const requestSessionKey = state.sessionKey;
+  const preservedRunId = opts?.preserveRunState ? state.chatRunId : null;
   // 先占住 busy 位再进入附件读取 await 窗口：期间队列「立即发送」等并发路径
   // 会经 isChatBusy() 判断（否则可能以 preserveRunState:false 直发并覆盖本轮流式状态）
+  const requestClient = state.client;
   const finishSend = beginChatSend(state, requestSessionKey);
   // 分离图片附件和文件路径附件
   const imageAttachments = attachments?.filter((a) => a.dataUrl) ?? [];
@@ -956,9 +974,53 @@ export async function sendChatMessage(
         .filter((a): a is NonNullable<typeof a> => a !== null)
     : [];
   const apiAttachments = [...imageApiAttachments, ...fileApiAttachments];
+  const resolveOwnerState = () => state.sessionKey === requestSessionKey
+    ? state : opts?.resolveRunState?.(requestSessionKey);
+  let localCanceled = false;
+  let cancelModelWait: ((value: boolean) => void) | undefined;
+  const admissions = localChatAdmissions.get(state) ?? new Map();
+  const admission = {
+    sessionKey: requestSessionKey,
+    cancel() {
+      localCanceled = true;
+      const ownerState = resolveOwnerState();
+      if (ownerState?.chatRunId === runId) {
+        resetChatStreamState(ownerState);
+        ownerState.chatAbortPending = false;
+      }
+      if (state.sessionKey === requestSessionKey) {
+        state.chatMessages = state.chatMessages.filter((m) => m !== echoMessage);
+        state.chatVisibleMessageCount = state.chatMessages.length;
+      }
+      cancelModelWait?.(false);
+    },
+  };
+  if (!opts?.preserveRunState) {
+    admissions.set(runId, admission);
+    localChatAdmissions.set(state, admissions);
+  }
 
   try {
-    await state.client.request("chat.send", {
+    // Clipboard images have no path to fall back to. Reject their combined
+    // base64 before WebSocket admission and retain the normal retry/draft path.
+    if (frameBudgetUsed > ATTACHMENT_FRAME_BUDGET_BYTES) {
+      throw new Error(t("chat.attachmentImagesTooLarge"));
+    }
+    // sessions.patch and chat.send are separate admissions. Wait for a pending
+    // model choice so the first turn cannot silently run on the previous model.
+    if (hasPendingSessionModelChange(state, requestSessionKey)) {
+      const applied = await Promise.race([
+        waitForSessionModelChange(state, requestSessionKey),
+        new Promise<boolean>((resolve) => { cancelModelWait = resolve; }),
+      ]);
+      if (localCanceled) return null;
+      if (!applied) throw new Error("The selected model could not be applied. Please select a model and retry.");
+    }
+    if (state.client !== requestClient || !state.connected) {
+      throw new Error("gateway connection changed before chat.send");
+    }
+    admissions.delete(runId); // From here Stop must use the actual gateway run.
+    const ack = await requestClient.request<{ runId?: string; status?: string; summary?: string }>("chat.send", {
       sessionKey: requestSessionKey,
       message: msg,
       deliver: false,
@@ -966,7 +1028,55 @@ export async function sendChatMessage(
       attachments: apiAttachments.length > 0 ? apiAttachments : undefined,
       ...(thinkingLevel && thinkingLevel !== "off" ? { thinking: thinkingLevel } : {}),
     });
-    return runId;
+    // 2026.10.7 may return a cached terminal receipt instead of broadcasting
+    // another event. Its runId is authoritative; the idempotency key is only
+    // provisional until admission acknowledges it.
+    const acceptedRunId = typeof ack?.runId === "string" && ack.runId.trim()
+      ? ack.runId.trim() : runId;
+    const ownerState = resolveOwnerState();
+    // An active followup may become a new run while files are being read or
+    // admission is pending. Its ACK may claim an idle owner, never another run.
+    const followupStartedRun = Boolean(opts?.preserveRunState && ownerState &&
+      !ownerState.chatRunId && acceptedRunId !== preservedRunId);
+    if (state.client === requestClient && ownerState &&
+      ((!opts?.preserveRunState && ownerState.chatRunId === runId) || followupStartedRun)) {
+      const status = typeof ack?.status === "string" ? ack.status.trim().toLowerCase() : "";
+      if (isTerminalRunTombstoned(acceptedRunId)) {
+        resetChatStreamState(ownerState);
+      } else {
+        if (followupStartedRun) {
+          resetChatStreamState(ownerState);
+          ownerState.chatStream = "";
+          ownerState.chatStreamStartedAt = Date.now();
+          ownerState.chatLastActivityAt = ownerState.chatStreamStartedAt;
+          ownerState.chatAbortPending = false;
+          ownerState.chatTerminalRun = null;
+          if (ownerState === state) {
+            clearReconnectOrphanRun();
+            noteStaleRetryNewRound(requestSessionKey, acceptedRunId);
+          }
+        }
+        ownerState.chatRunId = acceptedRunId;
+        if (opts?.ownedRunId) opts.ownedRunId.value = acceptedRunId;
+        if (status === "ok" || status === "error" || status === "timeout") {
+          const terminalState = status === "ok" ? "final" : "error";
+          if (opts?.terminalAcknowledgment) opts.terminalAcknowledgment.value = terminalState;
+          const payload: ChatEventPayload = {
+            sessionKey: requestSessionKey,
+            runId: acceptedRunId,
+            state: terminalState,
+            errorMessage: (typeof ack.summary === "string" && ack.summary.trim()) || `chat run ${status}`,
+          };
+          if (opts?.onTerminalAcknowledgment) opts.onTerminalAcknowledgment(payload);
+          else {
+            handleChatEvent(ownerState, payload);
+            ownerState.chatAbortPending = false;
+            if (ownerState === state) void loadChatHistory(state, { mergeIfStale: true });
+          }
+        }
+      }
+    }
+    return acceptedRunId;
   } catch (err) {
     const error = String(err);
     // 发送期间已切换会话：旧会话的失败结果不写入新会话状态（切回旧会话时
@@ -1021,6 +1131,8 @@ export async function sendChatMessage(
     state.chatVisibleMessageCount = state.chatMessages.length;
     return null;
   } finally {
+    admissions.delete(runId);
+    if (admissions.size === 0) localChatAdmissions.delete(state);
     finishSend();
   }
 }
@@ -1031,11 +1143,42 @@ export async function abortChatRun(state: ChatState): Promise<boolean> {
   }
   const runId = state.chatRunId;
   const sessionKey = state.sessionKey;
+  const client = state.client;
+  const localAdmission = runId ? localChatAdmissions.get(state)?.get(runId) : undefined;
+  if (localAdmission?.sessionKey === sessionKey) {
+    localAdmission.cancel();
+    return true;
+  }
   try {
-    await state.client.request(
+    const result = await client.request<{ aborted?: boolean }>(
       "chat.abort",
       runId ? { sessionKey, runId } : { sessionKey },
     );
+    if (result?.aborted === false) {
+      if (state.client === client && state.sessionKey === sessionKey && state.chatRunId === runId) {
+        // An abort miss promises no later aborted event. Release Stop now and
+        // reconcile only against an exact persisted terminal reply; live or
+        // inconclusive history must keep the run available for another Stop.
+        void loadChatHistory(state, { mergeIfStale: true, silent: true, expectedRunId: runId }).then((history) => {
+          if (!history || state.client !== client || state.sessionKey !== sessionKey ||
+            state.chatRunId !== runId || !runId || history.inFlightRun?.runId === runId) return;
+          const terminalReasons = new Set(["stop", "end_turn", "length", "max_tokens", "error", "aborted"]);
+          const terminal = history.messages?.some((message) => {
+            const row = message as Record<string, unknown>;
+            return row?.role === "assistant" && row.runId === runId &&
+              typeof row.stopReason === "string" && terminalReasons.has(row.stopReason);
+          });
+          if (terminal) {
+            noteRunTerminal(state, runId, state.chatStreamStartedAt);
+            resetChatStreamState(state);
+            state.chatAbortPending = false;
+            state.chatMessages = deduplicateDeliveryMirrors(history.messages ?? []);
+            state.chatVisibleMessageCount = state.chatMessages.length;
+          }
+        });
+      }
+      return false;
+    }
     return true;
   } catch (err) {
     if (state.sessionKey === sessionKey && state.chatRunId === runId) {
@@ -1051,6 +1194,11 @@ export function handleChatEvent(state: ChatState, payload?: ChatEventPayload) {
   }
   if (payload.sessionKey !== state.sessionKey) {
     return null;
+  }
+  // Admission ACKs can lag terminal broadcasts for a not-yet-owned followup.
+  // Remember completion before filtering foreign runs, without rendering them.
+  if (payload.runId && (payload.state === "final" || payload.state === "aborted" || payload.state === "error")) {
+    recordTerminalRunTombstone(payload.runId);
   }
 
   // 无本地活跃 run 时，带 runId 的 delta/error 是别家 run（sub-agent、其他客户端、
@@ -1086,8 +1234,6 @@ export function handleChatEvent(state: ChatState, payload?: ChatEventPayload) {
       // 上方僵尸过滤丢弃，重连恢复链路断裂。
       if (payload.state === "final" || payload.state === "aborted") {
         clearReconnectOrphanRun(payload.runId, state.sessionKey);
-        // 外来 run 的终态同样是终态证据： tombstone 之，防其迟到快照被收养。
-        recordTerminalRunTombstone(payload.runId);
       }
       return payload.state;
     }
@@ -1097,7 +1243,6 @@ export function handleChatEvent(state: ChatState, payload?: ChatEventPayload) {
   // See https://github.com/openclaw/openclaw/issues/1909
   if (payload.runId && state.chatRunId && payload.runId !== state.chatRunId) {
     if (payload.state === "final") {
-      recordTerminalRunTombstone(payload.runId);
       return "final";
     }
     return null;

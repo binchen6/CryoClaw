@@ -38,7 +38,19 @@ export type MemoryStatusState = {
   statusLoaded: boolean;
   statusFailed: boolean;
 };
-const statusCache = new WeakMap<GatewayBrowserClient, MemoryStatus>();
+const statusCache = new WeakMap<GatewayBrowserClient, {value:MemoryStatus;at:number}>();
+const statusRequests = new WeakMap<GatewayBrowserClient, Promise<MemoryStatus>>();
+const generations = new WeakMap<GatewayBrowserClient, number>();
+const readers = new WeakMap<MemoryStatusState, {client:GatewayBrowserClient}>();
+export function invalidateMemoryStatus(client: GatewayBrowserClient): void {
+  generations.set(client,(generations.get(client)??0)+1);
+  statusCache.delete(client);
+  statusRequests.delete(client);
+}
+export function memoryStatusFresh(client: GatewayBrowserClient): boolean {
+  const cached=statusCache.get(client);
+  return !!cached && Date.now()-cached.at<30000;
+}
 
 // 拉取记忆系统状态；RPC 失败时降级为提示文字，不影响设置页其他开关。
 // probe=true 时深测 embedding 连通性（doctor.memory.status { probe: true }）。
@@ -49,30 +61,50 @@ export async function loadMemoryStatus(
   opts?: { probe?: boolean; force?: boolean },
 ) {
   const client = gateway.client;
-  if (state.statusLoading || (!opts?.force && state.statusLoaded) || !client || !gateway.connected) {
+  const force=opts?.force || opts?.probe;
+  if (!client || !gateway.connected || state.statusLoading && readers.get(state)?.client===client) {
     return;
   }
-  if (!opts?.force && statusCache.has(client)) {
-    state.memoryStatus=statusCache.get(client)!;state.statusLoaded=true;state.statusFailed=false;requestUpdate();return;
+  const reader={client};readers.set(state,reader);
+  if (!force && memoryStatusFresh(client)) {
+    state.memoryStatus=statusCache.get(client)!.value;state.statusLoaded=true;state.statusLoading=false;state.statusFailed=false;requestUpdate();return;
   }
+  const generation=generations.get(client)??0;
+  const owns=()=>readers.get(state)===reader;
+  const current=()=>owns() && gateway.client===client && gateway.connected && (generations.get(client)??0)===generation;
+  const pending = statusRequests.get(client);
+  let request: Promise<MemoryStatus> | undefined;
   state.statusLoading = true;
   requestUpdate();
   try {
-    const status = (await client.request("doctor.memory.status", opts?.probe ? { probe: true } : {})) as MemoryStatus;
-    if(gateway.client!==client || !gateway.connected)return;
+    if (pending && !force) {
+      request = pending;
+    } else {
+      request = (async () => {
+        if (pending) await pending.catch(() => {});
+        return (await client.request("doctor.memory.status", opts?.probe ? { probe: true } : {})) as MemoryStatus;
+      })();
+      statusRequests.set(client, request);
+    }
+    const status = await request;
+    if(!current())return;
     state.memoryStatus = status;
-    statusCache.set(client,status);
+    statusCache.set(client,{value:status,at:Date.now()});
     state.statusLoaded = true;
     state.statusFailed = false;
   } catch {
-    if(gateway.client!==client || !gateway.connected)return;
+    if(!current())return;
     state.memoryStatus = null;
     state.statusLoaded = true;
     state.statusFailed = true;
   } finally {
-    state.statusLoading = false;
-    requestUpdate();
+    if (request && statusRequests.get(client) === request) statusRequests.delete(client);
+    if(owns()){state.statusLoading = false;requestUpdate();}
   }
+}
+
+export function preloadMemoryStatus(gateway: MemoryGatewayState): Promise<void> {
+  return loadMemoryStatus({ memoryStatus: null, statusLoading: false, statusLoaded: false, statusFailed: false }, gateway, () => {});
 }
 
 // 危险区：清空短期回忆信号（doctor.memory.resetGroundedShortTerm）
@@ -80,6 +112,7 @@ export async function resetGroundedShortTerm(client: GatewayBrowserClient | null
   if (!client) return false;
   try {
     await client.request("doctor.memory.resetGroundedShortTerm", {});
+    invalidateMemoryStatus(client);
     return true;
   } catch {
     return false;
@@ -91,6 +124,7 @@ export async function resetDreamDiary(client: GatewayBrowserClient | null): Prom
   if (!client) return false;
   try {
     await client.request("doctor.memory.resetDreamDiary", {});
+    invalidateMemoryStatus(client);
     return true;
   } catch {
     return false;

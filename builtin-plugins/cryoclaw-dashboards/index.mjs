@@ -7,6 +7,7 @@ import {injectRuntime} from './runtime.mjs';
 import {readSystemSample,systemDocument} from './system.mjs';
 import {queryParameters,queryData} from './query.mjs';
 import {templatePreview} from './templates.mjs';
+import {authenticatedCronRequest} from './task-lifecycle.mjs';
 
 const sourceSchema={type:'array',maxItems:4,items:{type:'object',additionalProperties:false,required:['id','url'],properties:{id:{type:'string',maxLength:64},url:{type:'string',maxLength:4096},format:{type:'string',enum:['json','text']},refreshSeconds:{type:'integer',minimum:60,maximum:86400}}}};
 export const parameters={type:'object',additionalProperties:false,required:['action'],properties:{
@@ -25,13 +26,13 @@ export default {
   id:'cryoclaw-dashboards',name:'CryoClaw Dashboards',
   register(api){
     const stateDir=process.env.OPENCLAW_STATE_DIR||path.join(os.homedir(),'.openclaw'),token=process.env.OPENCLAW_GATEWAY_TOKEN||api.config?.gateway?.auth?.token;
-    const secret=createHash('sha256').update(typeof token==='string'?token:randomBytes(32)).update('cryoclaw-dashboards:v1').digest(),store=createDashboardStore({stateDir,secret}),broker=createSourceBroker();
+    const secret=createHash('sha256').update(typeof token==='string'?token:randomBytes(32)).update('cryoclaw-dashboards:v1').digest(),store=createDashboardStore({stateDir,secret}),broker=createSourceBroker({readCache:key=>store.readSourceCache(key),writeCache:(key,entry)=>store.writeSourceCache(key,entry)});
     let systemPending,systemCached;const system=()=>systemCached&&Date.now()-systemCached.sampledAt<1000?Promise.resolve(systemCached):systemPending??=(readSystemSample(stateDir).then(s=>systemCached=s).finally(()=>{systemPending=null;}));
     const data=async p=>broker.data(await store.source(p.boardId,p.cardId,p.id));
-    const method=(name,scope,handler)=>api.registerGatewayMethod?.(name,async({params,respond})=>{try{respond(true,await handler(params??{}));}catch(error){respond(false,undefined,{code:'INVALID_REQUEST',message:error instanceof Error?error.message:'Dashboard operation failed'});}},{scope});
+    const method=(name,scope,handler)=>api.registerGatewayMethod?.(name,async context=>{const {params,respond}=context;try{respond(true,await handler(params??{},context));}catch(error){respond(false,undefined,{code:'INVALID_REQUEST',message:error instanceof Error?error.message:'Dashboard operation failed'});}},{scope});
     method('cryoclaw.dashboards.list','operator.read',params=>store.list(params));
     method('cryoclaw.dashboards.templates','operator.read',async params=>{const result=await store.templates(params);return params.templateId?{...result,previewPath:`${prefix}preview/${result.id}?v=${previewVersion}`}:result;});
-    method('cryoclaw.dashboards.mutate','operator.write',({requestId,...params})=>store.execute(params,()=>{},typeof requestId==='string'?requestId.slice(0,128):undefined));
+    method('cryoclaw.dashboards.mutate','operator.write',({requestId,...params},context)=>store.execute(params,()=>{context.signal?.throwIfAborted();context.sessionMutationCommitGuard?.();},typeof requestId==='string'?requestId.slice(0,128):undefined,authenticatedCronRequest));
     method('cryoclaw.dashboards.pin','operator.write',p=>store.pin(p.boardId,p.cardId));
     method('cryoclaw.dashboards.getState','operator.read',p=>store.getState(p.boardId,p.cardId));
     method('cryoclaw.dashboards.setState','operator.write',p=>store.setState(p.boardId,p.cardId,p.value));
@@ -75,7 +76,7 @@ export default {
     api.registerTool({contextVersion:2,create(ctx){
       if(ctx.sandboxed)return null;
       return {name:'cryoclaw_dashboard',label:'Dashboard',description:'Create independent dashboards and self-contained HTML cards. List IDs before edits; user layout and local state are preserved. Runtime SDK supports declared public data, media, state and system metrics.',parameters,
-        async execute(id,args,signal){const assertCurrent=()=>{if(signal?.aborted)throw Error('Dashboard operation canceled');ctx.assertInvocationCurrent();};assertCurrent();const result=await store.execute(args,assertCurrent,id?`${ctx.sessionKey??''}:${id}`:undefined);return {content:[{type:'text',text:JSON.stringify(result)}]};}};
+        async execute(id,args,signal){const assertCurrent=()=>{if(signal?.aborted)throw Error('Dashboard operation canceled');ctx.assertInvocationCurrent();};assertCurrent();const requestCron=async(method,params)=>{if(!api.runtime?.gateway?.request)throw Error('Scheduled task access unavailable');return api.runtime.gateway.request(method,params);};const result=await store.execute(args,assertCurrent,id?`${ctx.sessionKey??''}:${id}`:undefined,requestCron);return {content:[{type:'text',text:JSON.stringify(result)}]};}};
     }},{optional:false});
     api.registerTool({contextVersion:2,create(ctx){return {name:'cryoclaw_query_data',label:'Query data',description:'Read public HTTPS data, local computer metrics or dashboard summaries in any task. No dashboard required. Returns source/time and bounded results; use JSON Pointer for focused fields.',parameters:queryParameters,
       async execute(_id,args,signal){const assertCurrent=()=>{if(signal?.aborted)throw Error('Data query canceled');ctx.assertInvocationCurrent();};const result=await queryData(args,{broker,system,store,assertCurrent,sandboxed:ctx.sandboxed});return {content:[{type:'text',text:JSON.stringify(result)}]};}};}},{optional:false});

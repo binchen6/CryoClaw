@@ -43,65 +43,70 @@
   max-width: var(--chat-column);
 }
 
-/* ── Context Meter：输入卡顶部状态行，标签 + 细轨道 + 百分比 ── */
-.chat-compose__ctx-meter {
-  display: flex;
-  align-items: center;
-  gap: var(--spacer-8);
-  min-height: 20px;
-  margin: 0 var(--spacer-4) var(--spacer-2);
-  padding: 0;
-  color: var(--text-faint);
-  cursor: default;
-  user-select: none;
-}
-
-.chat-compose__ctx-meter-label {
+/* ── Context Ring：工具条右侧的小圆环，与额度圆环同一位置、同一尺寸 ── */
+.chat-compose__ctx-ring {
   display: inline-flex;
   align-items: center;
-  gap: var(--spacer-4);
-  flex-shrink: 0;
-  font-size: var(--text-2xs);
-  line-height: 1;
-}
-
-.chat-compose__ctx-meter-label svg {
-  width: var(--icon-size-12);
-  height: var(--icon-size-12);
-}
-
-.chat-compose__ctx-meter-bar {
-  flex: 1;
-  min-width: 40px;
-  height: 3px;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  flex: none;
   border-radius: var(--radius-full);
-  background: var(--bg-muted);
-  overflow: hidden;
-}
-
-.chat-compose__ctx-meter-fill {
-  height: 100%;
-  background: var(--accent);
-  border-radius: inherit;
-  transition: width var(--duration-normal) var(--ease-out);
-}
-
-.chat-compose__ctx-meter-value {
-  min-width: 32px;
   color: var(--text-muted);
-  font-family: var(--font-meta);
-  font-size: var(--font-size-meta);
-  font-variant-numeric: tabular-nums;
-  line-height: 1;
-  text-align: right;
+  cursor: default;
+  transition: background var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
 }
 
-@media (max-width: 600px) {
-  .chat-compose__ctx-meter-label > span { display: none; }
+.chat-compose__ctx-ring:hover,
+.chat-compose__ctx-ring:focus-within {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.chat-compose__ctx-ring svg {
+  width: 22px;
+  height: 22px;
+  overflow: visible;
+}
+
+.chat-compose__ctx-ring-track,
+.chat-compose__ctx-ring-fill {
+  fill: none;
+  stroke-width: 2.2;
+}
+
+.chat-compose__ctx-ring-track {
+  stroke: var(--border);
+}
+
+.chat-compose__ctx-ring-fill {
+  stroke: var(--accent);
+  stroke-linecap: round;
+  transform: rotate(-90deg);
+  transform-origin: center;
+  transition: stroke var(--duration-fast) var(--ease-standard),
+    stroke-dasharray var(--duration-normal) var(--ease-standard);
+}
+
+.chat-compose__ctx-ring[data-tone="warn"] .chat-compose__ctx-ring-fill {
+  stroke: var(--warn);
+}
+
+.chat-compose__ctx-ring[data-tone="danger"] .chat-compose__ctx-ring-fill {
+  stroke: var(--destructive);
+}
+
+.chat-compose__ctx-ring-center {
+  fill: currentColor;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-variant-numeric: tabular-nums;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .chat-compose__ctx-meter-fill {
+  .chat-compose__ctx-ring,
+  .chat-compose__ctx-ring-fill {
     transition: none;
   }
 }
@@ -127,9 +132,12 @@
   display: none;
 }
 
+/* 对话输入卡是聚焦系统的参照实现（2026.10.30）：主色混色边框 + 极淡柔光。
+   显式复用 --focus-field-color / --focus-field，确保改令牌时这里跟着一起变，
+   不会出现「参照实现和统一规则各写一份」的漂移。 */
 .chat-compose__field:focus-within {
-  border-color: color-mix(in srgb, var(--accent) 42%, var(--border));
-  box-shadow: 0 0 0 2px var(--accent-subtle), var(--shadow-sm);
+  border-color: var(--focus-field-color);
+  box-shadow: var(--focus-field), var(--shadow-sm);
 }
 
 .chat-compose .chat-compose__field textarea {
@@ -600,22 +608,21 @@
   stroke-width: var(--icon-stroke);
 }
 
-/* 发送/停止按钮 — accent 实心圆形 */
+/* Keep both actions in one geometry; the stop glyph does not inherit SVG fills. */
 .chat-compose__send-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
+  width: 34px;
+  height: 34px;
   padding: 0;
   border: none;
-  border-radius: var(--radius-full);
-  background: var(--accent);
-  color: var(--text-on-accent);
+  border-radius: 11px;
+  background: var(--text);
+  color: var(--bg);
   cursor: pointer;
-  transition: transform var(--duration-fast) var(--ease-out),
-    opacity var(--duration-fast) var(--ease-out),
-    background var(--duration-fast) var(--ease-out);
+  transition: transform var(--duration-fast) var(--ease-standard),
+    opacity var(--duration-fast), background var(--duration-fast), color var(--duration-fast);
   flex-shrink: 0;
 }
 
@@ -630,9 +637,18 @@
 }
 
 .chat-compose__send-btn:hover:not(:disabled) {
-  transform: scale(1.08);
-  background: var(--accent-hover);
+  transform: translateY(-1px);
 }
+
+.chat-compose__send-btn--send.is-ready {
+  background: var(--accent);
+  color: var(--text-on-accent);
+  box-shadow: 0 5px 15px color-mix(in srgb, var(--accent) 24%, transparent);
+}
+.chat-compose__send-btn--send.is-ready:hover:not(:disabled) { background: var(--accent-hover); }
+.chat-compose__send-btn:focus-visible { box-shadow: var(--focus-ring); }
+.chat-compose__stop-icon { width: 10px; height: 10px; border-radius: 2px; background: currentColor; flex: none; }
+.chat-compose__send-btn--stop[aria-busy="true"] .chat-compose__stop-icon { opacity: .6; }
 
 /* 按下反馈：active 压感缩放（hover 放大之上再收，给点击一个确认感） */
 .chat-compose__send-btn:active:not(:disabled) {
@@ -641,7 +657,8 @@
 }
 
 .chat-compose__send-btn:disabled {
-  opacity: 0.4;
+  opacity: 0.35;
+  box-shadow: none;
   cursor: not-allowed;
 }
 
@@ -661,7 +678,7 @@
 
 .chat-compose{gap:var(--spacer-8);padding-bottom:var(--spacer-12)}
 .chat-compose__field{border-radius:20px;padding:10px 12px 9px;background:color-mix(in srgb,var(--bg-elevated) 97%,transparent);box-shadow:0 1px 2px color-mix(in srgb,var(--text) 3%,transparent),0 12px 36px color-mix(in srgb,var(--text) 6%,transparent);transition:border-color var(--duration-fast) var(--ease-standard),box-shadow var(--duration-normal) var(--ease-standard),transform var(--duration-fast) var(--ease-standard)}
-.chat-compose__field:focus-within{border-color:color-mix(in srgb,var(--accent) 50%,var(--border));box-shadow:0 0 0 3px var(--accent-subtle),0 16px 42px color-mix(in srgb,var(--text) 8%,transparent)}
+ .chat-compose__field:focus-within{border-color:var(--focus-field-color);box-shadow:var(--focus-field),0 16px 42px color-mix(in srgb,var(--text) 8%,transparent)}
 .chat-compose .chat-compose__field textarea{min-height:46px;max-height:min(260px,38vh);padding:7px 6px 5px;font-size:14px;line-height:1.65;scrollbar-width:thin;scrollbar-color:var(--border) transparent}
 .chat-compose .chat-compose__field textarea::placeholder{color:var(--text-muted);opacity:.78}
 .chat-compose__toolbar{padding-top:1px;min-height:36px;flex-wrap:nowrap}.chat-compose__toolbar-left{flex-wrap:nowrap;overflow:visible}.chat-compose__toolbar-right{gap:6px}
@@ -669,10 +686,6 @@
 .chat-compose__tool-btn:active:not(:disabled){transform:scale(.92)}
 .chat-compose__permission{display:flex;align-items:center;gap:6px;height:32px;padding:0 9px;border:0;border-radius:9px;background:transparent;color:var(--text-muted);font:inherit;font-size:11px;white-space:nowrap;cursor:pointer;transition:color var(--duration-fast),background var(--duration-fast),transform var(--duration-fast)}
 .chat-compose__permission .cryo-icon{width:14px;height:14px}.chat-compose__permission:hover{background:var(--bg-hover);color:var(--text)}.chat-compose__permission:active{transform:scale(.96)}.chat-compose__permission--auto{color:var(--accent)}.chat-compose__permission--full{color:var(--warning)}.chat-compose__permission:disabled{opacity:.4;cursor:default}
-.chat-compose__send-btn{width:34px;height:34px;border-radius:11px;transition:transform var(--duration-fast) var(--ease-standard),opacity var(--duration-fast),background var(--duration-fast),color var(--duration-fast)}
-.chat-compose__send-btn--send{background:var(--text);color:var(--bg)}.chat-compose__send-btn--send.is-ready{background:var(--accent);color:var(--text-on-accent);box-shadow:0 5px 15px color-mix(in srgb,var(--accent) 24%,transparent)}.chat-compose__send-btn--send:disabled{opacity:.22;box-shadow:none}
-.chat-compose__send-btn--stop{border-radius:50%;background:var(--text);color:var(--bg)}.chat-compose__send-btn--stop svg{width:13px;height:13px;fill:currentColor;stroke:none}
-.chat-compose__send-btn:hover:not(:disabled){transform:translateY(-1px);background:var(--accent-hover)}.chat-compose__send-btn:active:not(:disabled){transform:scale(.91)}
 @media(max-width:900px){.chat-compose__permission span{display:none}.chat-compose__permission{width:32px;padding:0;justify-content:center}.chat-compose__toolbar-left{gap:3px}.model-picker__level{display:none}}
 @media(max-width:680px){.chat-compose__branch{display:none}.chat-compose__field{padding-inline:9px}.chat-compose__toolbar-right{gap:4px}}
 @media(prefers-reduced-motion:reduce){.chat-compose__field,.chat-compose__tool-btn,.chat-compose__permission,.chat-compose__send-btn{transition:none}.chat-compose__send-btn:hover:not(:disabled){transform:none}}

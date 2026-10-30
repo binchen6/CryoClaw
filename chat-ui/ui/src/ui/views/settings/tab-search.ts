@@ -30,6 +30,7 @@ function createSearchState() {
     successMsg: null as string | null,
     hint: null as string | null,
     initialized: false,
+    loadState: "loading",
   };
 }
 
@@ -53,9 +54,9 @@ async function refreshSearchConfig(state: AppViewState) {
     }
   }
   // 专属 key 存 sidecar 文件（主进程读取），不随 config 快照走
-  const key = await ipc.settingsGetKimiSearchKey().catch(() => null);
+  const key = await ipc.settingsGetKimiSearchKey().catch(() => { s.loadState="error"; return null; });
   if (key) s.apiKey = key.apiKey ?? "";
-  const runtime = await ipc.settingsGetChannelRuntimeState().catch(() => null);
+  const runtime = await ipc.settingsGetChannelRuntimeState().catch(() => { s.loadState="error"; return null; });
   if (runtime) {
     s.bundled = runtime.bundled.kimiSearch;
     s.bundleMessage = runtime.bundleMessages.kimiSearch ?? "";
@@ -66,9 +67,12 @@ async function refreshSearchConfig(state: AppViewState) {
 async function init(state: AppViewState) {
   if (s.initialized) return;
   s.initialized = true;
+  s.loadState = "loading";
   try {
     await refreshSearchConfig(state);
-  } catch {}
+    if(s.loadState!=="error")s.loadState="ready";
+  } catch { s.loadState="error"; }
+  state.requestUpdate();
 }
 
 async function handleSave(state: AppViewState) {
@@ -114,7 +118,7 @@ export function renderTabSearch(state: AppViewState) {
   const autoReuseHint = !s.apiKey && s.isKimiCodeConfigured;
 
   return html`
-    <div class="oc-settings__section">
+    <div class="oc-settings__section" data-page-id="settings:search" data-load-state=${s.loadState} aria-busy=${s.loadState === "loading"}>
       <h2 class="oc-settings__section-title">${t("settings.search.title")}</h2>
       <p class="oc-settings__hint">${t("settings.search.desc")}</p>
 

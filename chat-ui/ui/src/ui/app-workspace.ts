@@ -20,15 +20,17 @@ import { renderGitView } from "./app-git.ts";
 import { renderWorktreesView } from "./app-worktrees.ts";
 
 // 打开工作区页（mode 缺省 files；file-changes「在 git 中查看」走 git 模式）
+let navigationGeneration=0, navigationLoading=false;
 export function openWorkspaceView(state: AppViewState, mode: "files" | "git" = "files") {
+  const generation=++navigationGeneration;navigationLoading=true;
   registerViewLeaveHook("workspace",leaveWorkspace);
   selectWorkspaceMode(mode);
   setCryoClawView(state, "workspace");
   // 初始化链：workspace 根解析 + 白名单注册（全应用唯一注册点）→ worktrees
   // 快照刷新（git 仓库选项依赖）→ git 选项组装 + 首刷 status
-  void initWorkspace(state).then(() =>
-    void loadWorktrees(state).then(() => initGitPanel(state, workspaceViewState.root)),
-  );
+  void initWorkspace(state).then(() => loadWorktrees(state)).then(() => initGitPanel(state, workspaceViewState.root)).finally(()=>{
+    if(generation===navigationGeneration){navigationLoading=false;state.requestUpdate();}
+  });
 }
 
 // worktree 节点点击：切换仓库上下文 + 右区切 git（worktree→git 联动）
@@ -46,6 +48,7 @@ async function switchWorkspaceRepository(state:AppViewState,path:string){
 
 export function renderWorkspaceIntegratedView(state: AppViewState) {
   return renderWorkspaceView(state, {
+    initializing:navigationLoading,
     gitSlot: renderGitView(state, { showRepoSelect: false }),
     worktreesSlot: renderWorktreesView(state, {
       compact: true,

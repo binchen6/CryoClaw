@@ -20,7 +20,10 @@ if (!/^cryoclaw(\.exe)?$/i.test(path.basename(exe))) {
 
 const t0 = Date.now();
 const beforeLen = fs.existsSync(logPath) ? fs.statSync(logPath).size : 0;
-const child = spawn(exe, [], { detached: false, stdio: "ignore" });
+// 父进程的 ELECTRON_RUN_AS_NODE 会让 Electron 以 Node 模式启动并因参数非法立刻退出码 9。
+const childEnv = { ...process.env };
+delete childEnv.ELECTRON_RUN_AS_NODE;
+const child = spawn(exe, [], { detached: false, stdio: "ignore", env: childEnv });
 console.log(`launched pid=${child.pid} at ${new Date(t0).toISOString()}`);
 
 let healthzMs = null;

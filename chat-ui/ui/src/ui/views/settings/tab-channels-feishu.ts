@@ -15,7 +15,7 @@ import "../../components/message-box.ts";
 import { getConfigSnapshot, getCachedConfigSnapshot } from "../../controllers/config.ts";
 import { runConfigPatch } from "./tab-patch.ts";
 import { extractFeishuView, applyFeishuSave, looksLikeFeishuGroupId } from "./tab-channels.lib.ts";
-import { loadPairingData, type PairingPanelState } from "./tab-channels-pairing-panel.ts";
+import { loadPairingData } from "./tab-channels-pairing-panel.ts";
 import { markChannelSaved, renderChannelSaveFooter, renderAddGroupDialog, renderChannelPairingSection, createChannelPanelBaseState, runChannelToggle, runChannelSave, verifyChannelCredentials, loadBundledRuntimeState, openChannelAddGroupDialog, closeChannelAddGroupDialog, confirmChannelAddGroup, renderChannelEnableCard } from "./tab-channels-shared.ts";
 
 // Feishu 面板状态必须可整体回滚，避免未保存表单和配对缓存跨会话残留。
@@ -60,6 +60,7 @@ function loadFromSnapshot(): boolean {
 async function init(state: AppViewState) {
   if (s.initialized) return;
   s.initialized = true;
+  s.loadState="loading";
   try {
     if (state.client && state.connected) {
       await getConfigSnapshot(state.client);
@@ -71,10 +72,13 @@ async function init(state: AppViewState) {
     await loadBundledRuntimeState("feishu", s);
     state.requestUpdate();
     refreshFeishuPairing(state);
-  } catch {}
+    if(s.loadState!=="error")s.loadState="ready";
+  } catch { s.loadState="error"; }
+  state.requestUpdate();
 }
 
 export async function refreshFeishuPairing(state: AppViewState) {
+  s.pairingPanel.loading=true;
   s.pairingPanel = await loadPairingData("feishu");
   state.requestUpdate();
 }
@@ -142,7 +146,7 @@ export function renderChannelFeishu(state: AppViewState) {
   if (!s.initialized) init(state);
 
   return html`
-    <div class="oc-settings__section">
+    <div class="oc-settings__section" data-page-id="settings:channels:feishu" data-load-state=${s.loadState === "loading" || s.pairingPanel.loading?"loading":s.loadState === "error" || s.error || s.pairingPanel.loadFailed?"error":"ready"} aria-busy=${s.loadState === "loading" || s.pairingPanel.loading}>
       <div class="oc-flex oc-items-start oc-justify-end oc-mb-8">
         <div class="oc-flex oc-flex-shrink-0 oc-gap-12">
           <a class="oc-settings__link" href="#" @click=${(e: Event) => { e.preventDefault(); ipc.openExternal("https://oneclaw.cn/docs/tutorials/feishu-bot.html"); }}>${t("settings.channels.feishu.setupGuide")} &rarr;</a>

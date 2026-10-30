@@ -1,7 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import type {AppViewState} from "./app-view-state.ts";
-import {preloadPage,stopPagePreloads,schedulePagePreloads} from "./page-preload.ts";
+import {preloadPage,stopPagePreloads,schedulePagePreloads,preloadSettingsTab} from "./page-preload.ts";
+import {loadMemoryStatus} from "./controllers/memory.ts";
 
 test("connecting never scans unopened pages even after visible reads finish",async t=>{
   const previous=globalThis.document,calls:string[]=[];
@@ -57,4 +58,26 @@ test("preloads coalesce by view, serialize across pages and stop queued work on 
     stopPagePreloads(host);finish({skills:[]});await next;
     assert.deepEqual(calls,["skills.status"],"revoked queued task requests never start");
   } finally {stopPagePreloads(host);Object.assign(globalThis,{document:previous});}
+});
+
+test("memory intent prefetch shares its in-flight RPC with the visible page",async()=>{
+  const previous=globalThis.document,calls:string[]=[],resolvers:Array<(value:unknown)=>void>=[];
+  const client={request(method:string){calls.push(method);return new Promise(resolve=>resolvers.push(resolve));}};
+  const host={client,connected:true,chatLoading:false,sessionsLoading:false,progressCard:{loading:false},requestUpdate(){}} as unknown as AppViewState;
+  const state: import("./controllers/memory.ts").MemoryStatusState={memoryStatus:null,statusLoading:false,statusLoaded:false,statusFailed:false};
+  Object.assign(globalThis,{document:{hidden:false}});
+  try {
+    const prefetch=preloadSettingsTab(host,"memory");
+    for(let n=0;n<100&&!resolvers.length;n++)await Promise.resolve();
+    assert.equal(resolvers.length,1);
+    const visible=loadMemoryStatus(state,host,()=>{});
+    assert.deepEqual(calls,["doctor.memory.status"]);
+    resolvers.shift()!({provider:"memory"});
+    await Promise.all([prefetch,visible]);
+    assert.deepEqual(calls,["doctor.memory.status"]);assert.equal(state.statusLoaded,true);
+    const forced=loadMemoryStatus(state,host,()=>{},{force:true});
+    for(let n=0;n<100&&!resolvers.length;n++)await Promise.resolve();
+    resolvers.shift()!({provider:"fresh"});await forced;
+    assert.deepEqual(calls,["doctor.memory.status","doctor.memory.status"]);assert.equal(state.memoryStatus?.provider,"fresh");
+  } finally {stopPagePreloads(host);resolvers.forEach(resolve=>resolve({}));Object.assign(globalThis,{document:previous});}
 });

@@ -14,7 +14,7 @@ import "../../components/password-input.ts";
 import "../../components/message-box.ts";
 import { runConfigPatch } from "./tab-patch.ts";
 import { extractWecomView, applyWecomSave } from "./tab-channels.lib.ts";
-import { loadPairingData, type PairingPanelState } from "./tab-channels-pairing-panel.ts";
+import { loadPairingData } from "./tab-channels-pairing-panel.ts";
 import { markChannelSaved, renderChannelSaveFooter, renderAddGroupDialog, renderChannelPairingSection, createChannelPanelBaseState, runChannelToggle, runChannelSave, initChannelTabOnce, loadBundledRuntimeState, verifyChannelCredentials, openChannelAddGroupDialog, closeChannelAddGroupDialog, confirmChannelAddGroup, renderChannelEnableCard } from "./tab-channels-shared.ts";
 
 // WeCom 面板状态必须可整体回滚，避免未保存表单和配对缓存跨会话残留。
@@ -56,6 +56,7 @@ async function init(state: AppViewState) {
 }
 
 export async function refreshWecomPairing(state: AppViewState) {
+  s.pairingPanel.loading=true;
   s.pairingPanel = await loadPairingData("wecom");
   state.requestUpdate();
 }
@@ -116,7 +117,7 @@ export function renderChannelWecom(state: AppViewState) {
   if (!s.initialized) init(state);
 
   return html`
-    <div class="oc-settings__section">
+    <div class="oc-settings__section" data-page-id="settings:channels:wecom" data-load-state=${s.loadState === "loading" || s.pairingPanel.loading?"loading":s.loadState === "error" || s.error || s.pairingPanel.loadFailed?"error":"ready"} aria-busy=${s.loadState === "loading" || s.pairingPanel.loading}>
       <div class="oc-flex oc-items-start oc-justify-end oc-mb-8">
         <div class="oc-flex oc-flex-shrink-0 oc-gap-12">
           <a class="oc-settings__link" href="#" @click=${(e: Event) => { e.preventDefault(); ipc.openExternal("https://doc.weixin.qq.com/doc/w3_AFYA1wY6ACoCNRxfnyGRJQaSa6jjJ?scode=AJEAIQdfAAo0RJmzxLAFYA1wY6ACo"); }}>${t("settings.channels.wecom.pluginReadme")} &rarr;</a>

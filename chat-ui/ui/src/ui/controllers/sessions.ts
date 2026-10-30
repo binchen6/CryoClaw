@@ -1,6 +1,7 @@
 import type { GatewayBrowserClient } from "../gateway.ts";
 import { withPendingSessionRows } from "../session-pending.ts";
 import type { SessionsListResult } from "../types.ts";
+import { captureSessionModelRead, reconcileSessionModelRead } from "../app-models.ts";
 
 export type SessionsState = {
   client: GatewayBrowserClient | null;
@@ -27,6 +28,7 @@ type SessionsLoadOverrides = {
 };
 
 type SessionsLoadMeta = {
+  client: GatewayBrowserClient | null;
   activePromise: Promise<void> | null;
   pending: boolean;
   pendingOverrides: SessionsLoadOverrides | undefined;
@@ -41,8 +43,9 @@ function toNumber(value: string, fallback: number): number {
 
 function getSessionsLoadMeta(state: SessionsState): SessionsLoadMeta {
   let meta = sessionsLoadMeta.get(state);
-  if (!meta) {
+  if (!meta || meta.client !== state.client) {
     meta = {
+      client: state.client,
       activePromise: null,
       pending: false,
       pendingOverrides: undefined,
@@ -70,6 +73,7 @@ export async function loadSessions(
   }
   meta.activePromise = (async () => {
     while (meta.pending) {
+      if (state.client !== client || !state.connected) return;
       const currentOverrides = meta.pendingOverrides;
       meta.pending = false;
       meta.pendingOverrides = undefined;
@@ -96,15 +100,17 @@ export async function loadSessions(
         if (limit > 0) {
           params.limit = limit;
         }
+        const modelRead = captureSessionModelRead(state);
         const res = await client.request<SessionsListResult | undefined>("sessions.list", params);
+        if (state.client !== client || !state.connected) return;
         if (res) {
-          state.sessionsResult = withPendingSessionRows(res);
+          state.sessionsResult = reconcileSessionModelRead(state, withPendingSessionRows(res), modelRead);
           state.onSessionsLoaded?.();
         }
       } catch (err) {
-        state.sessionsError = String(err);
+        if (state.client === client && state.connected) state.sessionsError = String(err);
       } finally {
-        state.sessionsLoading = false;
+        if (state.client === client) state.sessionsLoading = false;
       }
     }
   })().finally(() => {

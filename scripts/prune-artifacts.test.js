@@ -10,6 +10,12 @@ test('prune keeps current and previous releases, user state, backups, dependency
   for(const rel of ['.cache/node/cache','.cache/db-backup/a','.cache/user-state/a','.cache/unknown/a','out/win32-x64/CryoClaw-Setup-2026.1018.3-x64.exe','out/win32-x64/CryoClaw-Setup-2026.1018.4-x64.exe'])assert.ok(fs.existsSync(path.join(root,rel)),rel);
   assert.ok(!fs.existsSync(path.join(root,'.cache/kernel-recon')));assert.ok(!fs.existsSync(path.join(root,'out/next-test')));assert.ok(!fs.existsSync(path.join(root,'out/win32-x64/CryoClaw-Setup-2026.1018.2-x64.exe')));
 });
+test('prune removes only expired gateway repack scratch inside resources targets',t=>{
+  const root=fixture(t);for(const rel of ['resources/targets/win32-x64/gateway-before-pin-state-1.asar','resources/targets/win32-x64/gateway-before-pin-state-1.asar.unpacked/a','resources/targets/win32-x64/gateway-boundary-repack/a','resources/targets/win32-x64/repack-pin-state-1/a','resources/targets/win32-x64/gateway/keep'])write(root,rel);
+  const report=applyPlan(root,planPrune(root,{version:'1.0.0',before:Date.now()+1000}));assert.equal(report.failed.length,0);
+  for(const rel of ['resources/targets/win32-x64/gateway-before-pin-state-1.asar','resources/targets/win32-x64/gateway-before-pin-state-1.asar.unpacked','resources/targets/win32-x64/gateway-boundary-repack','resources/targets/win32-x64/repack-pin-state-1'])assert.ok(!fs.existsSync(path.join(root,rel)),rel);
+  assert.ok(fs.existsSync(path.join(root,'resources/targets/win32-x64/gateway/keep')));
+});
 test('prune rejects workspace roots, traversal and redirected cleanup roots',t=>{
   const root=fixture(t);for(const rel of ['.cache','out','../outside','.git'])assert.throws(()=>validateTarget(root,rel));
   const outside=fixture(t);fs.rmdirSync(path.join(root,'.cache'));fs.symlinkSync(path.join(outside,'.cache'),path.join(root,'.cache'),'junction');write(outside,'.cache/kernel-recon/keep');

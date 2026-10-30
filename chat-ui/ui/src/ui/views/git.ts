@@ -367,7 +367,7 @@ export function renderGitPanel(props: GitPanelProps, opts?: { showRepoSelect?: b
     !!groups && (groups.staged.length > 0 || groups.unstaged.length > 0 || groups.untracked.length > 0);
 
   return html`
-    <div class="gitp-layout panel">
+    <div class="gitp-layout panel" data-page-id="workspace:git" data-load-state=${props.loading || props.logLoading || props.diffLoading?"loading":props.errorKind?"error":props.repoState === "no-git" || props.repoState === "not-a-repo"?"unsupported":!props.repoPath?"empty":!props.status?"loading":"ready"} aria-busy=${props.loading || props.logLoading || props.diffLoading}>
       ${opts?.showRepoSelect === false
         ? html`<div class="gitp-toolbar">
             ${renderGitActions(props)}

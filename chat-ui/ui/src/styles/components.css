@@ -155,15 +155,16 @@
   outline: none;
   font-size: var(--text-base);
   color: var(--text);
-  transition: border-color var(--duration-fast) var(--ease-out),
-    box-shadow var(--duration-fast) var(--ease-out);
+  transition: var(--focus-transition);
 }
 
+/* 输入控件聚焦（聚焦系统 --focus-field）：与对话输入卡同一套——
+   边框染成半透明主色 + 3px 极淡柔光，不用全饱和的实色环，视觉更柔和。 */
 .field input:focus,
 .field textarea:focus,
 .field select:focus {
-  border-color: var(--border-focus);
-  box-shadow: var(--focus-ring);
+  border-color: var(--focus-field-color);
+  box-shadow: var(--focus-field);
 }
 
 .field input::placeholder,

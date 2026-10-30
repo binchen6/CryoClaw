@@ -6,8 +6,8 @@ const OUT_EXPIRED=['win32-x64-new','release-20261018-1','next-review','next-test
 function inside(base,target){const rel=path.relative(base,target);return rel!=='' && rel!=='..' && !rel.startsWith('..'+path.sep) && !path.isAbsolute(rel);}
 function validateTarget(root,relative){
   const canonical=fs.realpathSync(root),target=path.resolve(root,relative);
-  const base=['.cache','out'].map(name=>path.resolve(root,name)).find(base=>inside(base,target));
-  if(!base || !inside(canonical,base))throw Error('Cleanup target must be inside .cache or out');
+  const base=['.cache','out',path.join('resources','targets')].map(name=>path.resolve(root,name)).find(base=>inside(base,target));
+  if(!base || !inside(canonical,base))throw Error('Cleanup target must be inside .cache, out or resources/targets');
   const baseReal=fs.realpathSync(base);
   if(!inside(canonical,baseReal) || fs.lstatSync(base).isSymbolicLink())throw Error('Cleanup root must not redirect outside the workspace');
   const stat=fs.lstatSync(target);
@@ -15,7 +15,7 @@ function validateTarget(root,relative){
   return {target,base:baseReal};
 }
 function planPrune(root,{version,before=Date.now()-24*60*60*1000}={}){
-  for(const name of ['.cache','out']){
+  for(const name of ['.cache','out',path.join('resources','targets')]){
     const base=path.resolve(root,name);
     if(fs.existsSync(base) && (fs.lstatSync(base).isSymbolicLink() || !inside(fs.realpathSync(root),fs.realpathSync(base))))throw Error('Cleanup root must not redirect outside the workspace');
   }
@@ -23,6 +23,11 @@ function planPrune(root,{version,before=Date.now()-24*60*60*1000}={}){
   const add=(relative,reason)=>{if(!fs.existsSync(path.resolve(root,relative)))return;const checked=validateTarget(root,relative);if(fs.statSync(checked.target).mtimeMs<=before)candidates.push({relative,reason});};
   for(const name of CACHE_EXPIRED)add(path.join('.cache',name),'obsolete investigation or completed release scratch');
   for(const name of OUT_EXPIRED)add(path.join('out',name),'superseded experimental build');
+  const targets=path.join(root,'resources','targets');
+  if(fs.existsSync(targets))for(const target of fs.readdirSync(targets)){
+    if(!/^win32-(?:x64|arm64)$|^darwin-(?:x64|arm64)$/.test(target))continue;
+    for(const name of fs.readdirSync(path.join(targets,target)))if(/^gateway-before-pin-state-.*\.asar(?:\.unpacked)?$|^gateway-boundary-repack$|^repack-pin-state-/.test(name))add(path.join('resources','targets',target,name),'superseded gateway repack scratch');
+  }
   const outputs=path.join(root,'out');
   if(fs.existsSync(outputs))for(const target of fs.readdirSync(outputs).filter(name=>/^win32-(x64|arm64)$/.test(name))){
     const dir=path.join(outputs,target);if(fs.lstatSync(dir).isSymbolicLink())throw Error('Build output must not be a link');

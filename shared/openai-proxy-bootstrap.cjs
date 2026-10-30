@@ -6,6 +6,11 @@ const { createRequire } = require("node:module");
 // Windows can stop the process tree forcibly. Persist on graceful shutdown and
 // once after startup; synchronous cache writes must not interrupt admission.
 const nodeModule = require("node:module");
+try {
+  require("./gateway-core-resolution-cache.cjs").installCoreResolutionCache(process.env.CRYOCLAW_OPENAI_GATEWAY_ROOT);
+} catch (error) {
+  console.warn(`[core-resolution] cache unavailable: ${error.message}`);
+}
 if (typeof process.send === "function") {
   let stopping = false;
   process.on("message", message => {

@@ -6,6 +6,11 @@ test('resource cache coalesces requests, honors TTL and preserves empty snapshot
   const load=async()=>{calls++;return [];};const first=cache.read('a',load);assert.equal(first,cache.read('a',load));await first;
   await cache.read('a',load);assert.equal(calls,1);clock=101;await cache.read('a',load);assert.equal(calls,2);
 });
+test('resource cache starts the first load synchronously without losing coalescing',async()=>{
+  let started=0;const cache=new ResourceCache<number>(1000);
+  const pending=cache.read('a',async()=>{started++;return 1;});
+  assert.equal(started,1);assert.equal(pending,cache.read('a',async()=>{started++;return 2;}));assert.equal(await pending,1);
+});
 test('failed loads retry and old in-flight values cannot overwrite forced refreshes',async()=>{
   const cache=new ResourceCache<string>(1000);await assert.rejects(cache.read('a',async()=>{throw Error('offline');}));
   let finish!:(value:string)=>void;const old=cache.read('a',()=>new Promise(resolve=>finish=resolve));await Promise.resolve();

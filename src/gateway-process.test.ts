@@ -175,6 +175,26 @@ describe("预启动步骤并行化", () => {
       expect(finished).toBe(true);expect(gateway.getState()).toBe('stopped');
     } finally {vi.useRealTimers();}
   });
+  test("强制停止后迟到的 exit 不触发崩溃恢复", async () => {
+    const {GatewayProcess}=await freshModule();const onCrash=vi.fn();
+    const gateway=new GatewayProcess({token:'t',onCrash});await gateway.start();
+    const child=h.latestChild;
+    child.connected=true;
+    child.send=vi.fn((_message:unknown,callback:(error:null)=>void)=>{callback(null);return true;});
+    const {execFile}=await import('child_process');
+    // taskkill can complete before Electron dispatches the child's exit event.
+    vi.mocked(execFile).mockImplementationOnce(((_cmd:unknown,_args:unknown,_opts:unknown,callback:any)=>{callback(null,'','');}) as any);
+    vi.useFakeTimers();
+    try {
+      const stopping=gateway.stop();
+      await vi.advanceTimersByTimeAsync(60_001);await stopping;
+      expect(gateway.getState()).toBe('stopped');
+      child.exitCode=0;child.emit('exit',0,null);
+      expect(gateway.getState()).toBe('stopped');
+      expect(onCrash).not.toHaveBeenCalled();
+      expect(gateway.getStartupFailure()).toBeNull();
+    } finally {vi.useRealTimers();}
+  });
   test("日志写入失败不会被误报为启动超时或触发无效重试",async()=>{
     h.spawnServesHealth=false;const {GatewayProcess}=await freshModule();const gateway=new GatewayProcess({token:'t'});
     const starting=gateway.start({supervised:true});await vi.waitFor(()=>expect(h.latestChild).not.toBeNull());

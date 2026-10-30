@@ -341,6 +341,23 @@ hairline + radius-12 + `--shadow-lg`，`--text-sm` medium，z-index 10001，
 
 ## 9. 可访问性
 
+### 聚焦系统（2026.10.30 统一）
+
+聚焦语言只有一句：**一条主色边 + 一层极淡光晕，不用硬描边**。全部令牌在 `styles/tokens-ext.css`，按「元素与背景的关系」三档选用，不按页面各写一套：
+
+| 令牌 | 用在哪 | 形态 |
+|---|---|---|
+| `--focus-field-color` + `--focus-field` | 文本类输入控件本体（input / textarea / select / 搜索框 / 内联重命名） | 边框染成 `accent 45%` 与 border 的混色 + 3px `--accent-subtle` 柔光 |
+| `--focus-ring` | 紧凑控件：按钮、图标钮、菜单项、chip、卡片入口 | 内 2px `accent-subtle` + 外 3px `--ring` 收边 |
+| `--focus-ring-inset` | 密集列表/表格内的行（会话条目等） | `inset` 内描边，不溢出到相邻行、不撑开布局 |
+
+- 对话输入卡（`.chat-compose__field:focus-within`）是**参照实现**，且已改为直接引用 `--focus-field-color` / `--focus-field`：改令牌时它跟着变，不再各写一份数值。
+- 禁止再用 `outline: 2px solid <色>` 做聚焦（outline 不跟随 `border-radius`，圆角控件会露方角）；全局 `:focus-visible` 基线在 `base.css`，`outline: none` + `box-shadow: var(--focus-ring)`。
+- 指针聚焦不显示环（`:focus:not(:focus-visible)` 清空阴影）；键盘与程序聚焦才显示。
+- 颜色/换环过渡统一走 `--focus-transition`（`--duration-fast` + `--ease-standard`），不要各写 `--ease-out`。
+- 只有「选中态」「编辑态标记」可以用实色 outline（看板编辑中选中卡片/元素），那是选择语义不是聚焦，不属本规则；回归用例按选择器区分这两类。
+- 回归：`chat-ui/ui/src/ui/focus-system.test.ts` 钉住令牌齐备、无残留硬描边、输入控件接入 `--focus-field`、密集列表用内描边。
+
 - **focus-ring 统一**：全局 `:focus-visible { box-shadow: var(--focus-ring) }`
   （base.css），控件各自重复声明同 token；不要写自定义 outline 样式，
   不要移除 focus 样式而不给替代。
@@ -375,6 +392,21 @@ hairline + radius-12 + `--shadow-lg`，`--text-sm` medium，z-index 10001，
 - 入场说明来源，退出保留去向；不让多个循环同时抢阅读。常驻背景应弱、慢，离屏和窗口隐藏时停止工作。
 - 减少动态效果时直接呈现稳定终态，内容、键盘焦点和操作仍完整；动画不得成为功能的前置条件。
 - 验收包括中途反向、连续点击、缩放、低帧率、隐藏后恢复、键盘与减少动态效果；不能只检查首次播放。
+
+### 浮层返回准则（2026.10.30）
+
+浮层（popover / 下拉菜单 / 悬浮面板 / 弹窗）统一遵循「从哪来就从哪去，一镜到底，原路返回，自然流畅」：
+
+- **可逆**：打开浮层的触发器再次触发必须关闭同一个浮层；反复点击在「开 / 关」之间对称切换，任何入口都不得只能开不能关。原生 `popover="auto"` 用 `popovertarget` 声明式 invoker 绑定触发器（invoker 不受 light dismiss 影响）；不要在 click 里手写 `showPopover()/hidePopover()` 开关——pointerdown 的 light dismiss 会先关闭，随后的 click 又把它打开，表现为关不掉。
+- **原路返回**：退场是入场的反向（同一锚定边、同一方向、同一距离）。用 leaving 类 + 延迟移除 DOM 播放退场帧，或 `display` / `overlay` 的 `allow-discrete` 过渡；`transform-origin` 落在锚定角上，向上展开的浮层从下沿滑入、退出沿原路收起。
+- **锚定自适应**：浮层相对触发器定位，在视口内翻转 / 夹取，放不下时换边而不是溢出窗口；不得遮挡自己的触发器，并尽量不遮挡触发器邻接的主操作（例如面板头部的「新建对话」）。定位统一走 `utils/popover-placement.ts` 的 `placePopover()`，不要各处硬编码 `left/bottom`。
+- **单一关闭路径**：Esc、点击外部、选中条目三条路径共用同一条退场与收尾；关闭后焦点回到触发器（或触发前的焦点元素），`aria-expanded` 同步复位，退场期间重开要从当前几何接续。
+- **验收**：连续点击、中途改向、窗口最小化后再开、键盘（Tab / Enter / Esc / 方向键）、减少动态效果各走一遍；`npm run test:chat` 必须有「二次点击关闭」与「视口边缘夹取」用例，不能只测首次打开。
+
+**例外登记**：以下浮层是有意不按本条实现的，改动时必须保持它们各自的既有语义——
+- 会话信息面板（`views/conversation-info.ts`）是 contextbar 的**停靠式**面板，不锚定触发按钮；它已具备 Esc、点外部、X 三条同源关闭路径与回焦。
+- 看板展开卡（`oc-dashboard.ts` 的 `popover="manual"`）与全局 toast 不是点击开合，不受①约束，但仍有反向 morph / 退场帧。
+- 原生 `<dialog>`（provider 编辑抽屉、看板详情）自带 Esc/backdrop/初始焦点，只需按 `skills.css` 的 `cc-dialog-out` 契约补退场，不再自写开关。
 
 ## 10. Tooltip
 

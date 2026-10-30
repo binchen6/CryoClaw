@@ -497,6 +497,12 @@ export class GatewayProcess {
         this.proc = null;
         return;
       }
+      if (this.state === "stopped") {
+        // Forced shutdown may settle before the OS dispatches exit. Preserve
+        // the completed stop instead of scheduling a crash recovery.
+        this.proc = null;
+        return;
+      }
       if (this.state === "stopping") {
         this.setState("stopped");
       } else if (this.state === "running") {

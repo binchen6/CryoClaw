@@ -8,8 +8,10 @@ import type { CryoClawViewId } from "./views/registry.ts";
 type DeferredViewId = Exclude<CryoClawViewId, "chat">;
 type ViewContent = () => unknown;
 type ViewRenderer = (state: AppViewState, content?: ViewContent) => unknown;
+type ViewOpener = (state: AppViewState, option?: any) => void;
 
 const renderers = new Map<DeferredViewId, ViewRenderer>();
+const openers = new Map<DeferredViewId, ViewOpener>();
 const pending = new Map<DeferredViewId, Promise<ViewRenderer>>();
 
 function routeLoading() {
@@ -45,14 +47,17 @@ async function importRenderer(view: DeferredViewId): Promise<ViewRenderer> {
     }
     case "extensions": {
       const module = await import("./app-extensions.ts");
+      openers.set(view, module.openExtensionsView);
       return (state) => module.renderExtensionsView(state);
     }
     case "workspace": {
       const module = await import("./app-workspace.ts");
+      openers.set(view, module.openWorkspaceView);
       return (state) => module.renderWorkspaceIntegratedView(state);
     }
     case "tasks": {
       const module = await import("./app-tasks.ts");
+      openers.set(view, module.openTasksView);
       return (state) => module.renderTasksView(state);
     }
   }
@@ -111,23 +116,26 @@ export function renderTasksView(state: AppViewState) {
   return renderDeferredView(state, "tasks");
 }
 
-export function openTasksView(state: AppViewState, tab: "runs" | "cron" = "runs") {
-  setCryoClawView(state, "tasks");
-  void import("./app-tasks.ts").then((module) => {
-    if (state.settings.cryoclawView === "tasks") module.openTasksView(state, tab);
+function openDeferredView(state: AppViewState, view: DeferredViewId, option?: any) {
+  const loaded = openers.get(view);
+  if (loaded) {
+    loaded(state, option);
+    return;
+  }
+  setCryoClawView(state, view);
+  void loadRenderer(view).then(() => {
+    if (state.settings.cryoclawView === view) openers.get(view)?.(state, option);
   }).catch(() => state.requestUpdate());
+}
+
+export function openTasksView(state: AppViewState, tab: "runs" | "cron" = "runs") {
+  openDeferredView(state, "tasks", tab);
 }
 
 export function openWorkspaceView(state: AppViewState, mode: "files" | "git" = "files") {
-  setCryoClawView(state, "workspace");
-  void import("./app-workspace.ts").then((module) => {
-    if (state.settings.cryoclawView === "workspace") module.openWorkspaceView(state, mode);
-  }).catch(() => state.requestUpdate());
+  openDeferredView(state, "workspace", mode);
 }
 
 export function openExtensionsView(state: AppViewState, tab: "skills" | "plugins" = "skills") {
-  setCryoClawView(state, "extensions");
-  void import("./app-extensions.ts").then((module) => {
-    if (state.settings.cryoclawView === "extensions") module.openExtensionsView(state, tab);
-  }).catch(() => state.requestUpdate());
+  openDeferredView(state, "extensions", tab);
 }

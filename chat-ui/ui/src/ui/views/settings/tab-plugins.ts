@@ -16,7 +16,6 @@ import "../../components/toggle-switch.ts";
 import "../../components/message-box.ts";
 import { runConfigPatch } from "./tab-patch.ts";
 import {
-  isValidPluginName,
   mapInstalledPlugin,
   mapMarketPlugin,
   sortInstalledPlugins,
@@ -33,7 +32,6 @@ import {
   rankMarket,
   diversifyByCategory,
   type MarketCategory,
-  type MarketItemCore,
 } from "../../market/market-recommend.ts";
 
 type PluginsSubTab = "installed" | "market";
@@ -85,8 +83,10 @@ const s = {
   updatingAll: false,
   needsRestart: false,
 };
+let installedLoadToken = 0;
 
 export function resetPluginsView() {
+  ++installedLoadToken;
   // P3-8：离开视图时使在途市场搜索/浏览请求失效——否则迟到响应落地后会把
   // 已清空的 marketResults/browseItems 重新填回并重渲染（对照 tab-backup 的
   // initGeneration 模式；token 判定见 searchMarket/loadMarketBrowse）
@@ -121,11 +121,13 @@ export function resetPluginsView() {
 
 async function loadInstalled(state: AppViewState) {
   if (!window.cryoclaw?.pluginStoreList) return;
+  const token = ++installedLoadToken;
   s.loading = true;
   s.error = null;
   state.requestUpdate();
   try {
     const result = await window.cryoclaw.pluginStoreList();
+    if (token !== installedLoadToken) return;
     if (result?.success && Array.isArray(result.data)) {
       s.installed = sortInstalledPlugins(
         result.data.map(mapInstalledPlugin).filter((p: InstalledPluginView | null): p is InstalledPluginView => p !== null),
@@ -134,10 +136,9 @@ async function loadInstalled(state: AppViewState) {
       s.error = result?.message ?? t("settings.plugins.loadFailed");
     }
   } catch {
-    s.error = t("settings.plugins.loadFailed");
+    if (token === installedLoadToken) s.error = t("settings.plugins.loadFailed");
   } finally {
-    s.loading = false;
-    state.requestUpdate();
+    if (token === installedLoadToken) { s.loading = false; state.requestUpdate(); }
   }
 }
 
@@ -704,19 +705,23 @@ function renderBody(state: AppViewState) {
 export function renderPluginsView(state: AppViewState) {
   init(state);
   const hasUpdates = s.updatable.length > 0;
+  const unsupported=!window.cryoclaw?.pluginStoreList || s.subtab!=="installed" && (s.browseMode?!window.cryoclaw?.pluginStoreMarketBrowse:!window.cryoclaw?.pluginStoreSearch);
+  const loading=s.loading || s.subtab!=="installed" && (s.searching || s.browseLoading);
+  const failed=s.error || s.subtab!=="installed" && s.browseMode && s.browseError;
+  const empty=s.subtab==="installed"?!s.installed.length:s.browseMode?!s.browseItems.length:!s.marketResults.length;
   return html`
-    <div class="oc-settings__section">
+    <div class="oc-settings__section" data-page-id=${`extensions:plugins:${s.subtab}`} data-load-state=${unsupported?"unsupported":loading?"loading":failed?"error":empty?"empty":"ready"} aria-busy=${loading}>
       <h2 class="oc-settings__section-title">${t("settings.plugins.title")}</h2>
       <p class="oc-settings__hint">${t("settings.plugins.desc")}</p>
 
       <div class="oc-plugins__tabs">
         <button
-          class="oc-plugins__tab ${s.subtab ==="installed" ? "oc-plugins__tab--active" : ""}"
+          class="oc-plugins__tab ${s.subtab ==="installed" ? "oc-plugins__tab--active" : ""}" data-page-nav="extensions:plugins:installed"
           type="button"
           @click=${() => { s.subtab = "installed"; state.requestUpdate(); }}
         >${t("settings.plugins.installed")} (${s.installed.length})</button>
         <button
-          class="oc-plugins__tab ${s.subtab ==="market" ? "oc-plugins__tab--active" : ""}"
+          class="oc-plugins__tab ${s.subtab ==="market" ? "oc-plugins__tab--active" : ""}" data-page-nav="extensions:plugins:market"
           type="button"
           @click=${() => {
             s.subtab = "market";

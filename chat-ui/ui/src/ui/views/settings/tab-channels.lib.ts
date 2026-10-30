@@ -125,30 +125,17 @@ export function looksLikeFeishuGroupId(value: string): boolean {
   return /^oc_[A-Za-z0-9]/.test(value);
 }
 
-function legacyFeishuPluginEnabled(config: Record<string, unknown>): boolean | undefined {
-  const entry = isRecord(config.plugins) && isRecord(config.plugins.entries)
-    ? (config.plugins.entries as Record<string, unknown>)[FEISHU_CHANNEL_ID]
-    : undefined;
-  const enabled = isRecord(entry) ? entry.enabled : undefined;
-  return typeof enabled === "boolean" ? enabled : undefined;
-}
-
-/** 清除旧版 plugins.entries.feishu 开关残留（与主进程 clearLegacyFeishuPluginEntry 一致） */
-function clearLegacyFeishuPluginEntry(draft: Record<string, unknown>): void {
-  const entries = isRecord(draft.plugins) && isRecord(draft.plugins.entries)
-    ? (draft.plugins.entries as Record<string, unknown>)
-    : null;
-  if (entries && Object.prototype.hasOwnProperty.call(entries, FEISHU_CHANNEL_ID)) {
-    delete entries[FEISHU_CHANNEL_ID];
-  }
+function setFeishuPluginEnabled(draft:Record<string,unknown>,enabled:boolean):void {
+  const entries=ensureRecord(ensureRecord(draft,'plugins'),'entries');
+  entries[FEISHU_CHANNEL_ID]={...(isRecord(entries[FEISHU_CHANNEL_ID])?entries[FEISHU_CHANNEL_ID]:{}),enabled};
+  if(enabled)syncPluginAllowOnEnable(draft,FEISHU_CHANNEL_ID);
 }
 
 /** 从配置快照提取飞书视图模型（语义同旧 settings:get-channel-config） */
 export function extractFeishuView(config: Record<string, unknown> | null | undefined): FeishuView {
   const channels = isRecord(config?.channels) ? config.channels : {};
   const feishu = isRecord(channels[FEISHU_CHANNEL_ID]) ? (channels[FEISHU_CHANNEL_ID] as Record<string, unknown>) : {};
-  const legacyEnabled = config ? legacyFeishuPluginEnabled(config) : undefined;
-  const enabled = typeof legacyEnabled === "boolean" ? legacyEnabled : feishu.enabled === true;
+  const enabled = optionalChannelEnabled(feishu);
   const dmPolicy = normalizeDmPolicy(feishu.dmPolicy, "open");
   const allowFrom = normalizeAllowFromEntries(feishu.allowFrom);
   return {
@@ -192,7 +179,7 @@ export function applyFeishuSave(draft: Record<string, unknown>, params: FeishuSa
   if (params.enabled === false) {
     const feishu = ensureRecord(channels, FEISHU_CHANNEL_ID);
     feishu.enabled = false;
-    clearLegacyFeishuPluginEntry(draft);
+    setFeishuPluginEnabled(draft,false);
     return true;
   }
 
@@ -210,7 +197,7 @@ export function applyFeishuSave(draft: Record<string, unknown>, params: FeishuSa
     enabled: true,
   };
   channels[FEISHU_CHANNEL_ID] = feishu;
-  clearLegacyFeishuPluginEntry(draft);
+  setFeishuPluginEnabled(draft,true);
 
   const allowFromWithoutWildcard = normalizeAllowFromEntries(feishu.allowFrom)
     .filter((entry) => entry !== WILDCARD_ALLOW_ENTRY);
@@ -257,12 +244,10 @@ export interface QqbotView {
 }
 
 export function extractQqbotView(config: Record<string, unknown> | null | undefined): QqbotView {
-  const entry = isRecord(config?.plugins) && isRecord(config.plugins.entries)
-    ? (config.plugins.entries as Record<string, unknown>)[QQBOT_PLUGIN_ID] : undefined;
   const channel = isRecord(config?.channels) && isRecord(config.channels[QQBOT_PLUGIN_ID])
     ? (config.channels[QQBOT_PLUGIN_ID] as Record<string, unknown>) : {};
   return {
-    enabled: (isRecord(entry) && entry.enabled === true) || channel.enabled === true,
+    enabled: optionalChannelEnabled(channel),
     appId: typeof channel.appId === "string" ? channel.appId : "",
     clientSecret: typeof channel.clientSecret === "string" ? channel.clientSecret : "",
     markdownSupport: channel.markdownSupport === true,
@@ -331,12 +316,10 @@ function normalizeDingtalkSessionTimeout(value: unknown, fallback: number): numb
 }
 
 export function extractDingtalkView(config: Record<string, unknown> | null | undefined): DingtalkView {
-  const entry = isRecord(config?.plugins) && isRecord(config.plugins.entries)
-    ? (config.plugins.entries as Record<string, unknown>)[DINGTALK_CONNECTOR_PLUGIN_ID] : undefined;
   const channel = isRecord(config?.channels) && isRecord(config.channels[DINGTALK_CONNECTOR_PLUGIN_ID])
     ? (config.channels[DINGTALK_CONNECTOR_PLUGIN_ID] as Record<string, unknown>) : {};
   return {
-    enabled: (isRecord(entry) && entry.enabled === true) || channel.enabled === true,
+    enabled: optionalChannelEnabled(channel),
     clientId: typeof channel.clientId === "string" ? channel.clientId : "",
     clientSecret: typeof channel.clientSecret === "string" ? channel.clientSecret : "",
     sessionTimeout: normalizeDingtalkSessionTimeout(channel.sessionTimeout, DEFAULT_DINGTALK_SESSION_TIMEOUT_MS),
@@ -426,13 +409,16 @@ export interface WecomView {
   groupAllowFrom: string[];
 }
 
+function optionalChannelEnabled(channel:Record<string,unknown>):boolean {
+  if(channel.enabled===false)return false;
+  return channel.enabled===true || isRecord(channel.accounts) && Object.values(channel.accounts).some(account=>isRecord(account)&&account.enabled===true);
+}
+
 export function extractWecomView(config: Record<string, unknown> | null | undefined): WecomView {
-  const entry = isRecord(config?.plugins) && isRecord(config.plugins.entries)
-    ? (config.plugins.entries as Record<string, unknown>)[WECOM_PLUGIN_ID] : undefined;
   const channel = isRecord(config?.channels) && isRecord(config.channels[WECOM_CHANNEL_ID])
     ? (config.channels[WECOM_CHANNEL_ID] as Record<string, unknown>) : {};
   return {
-    enabled: (isRecord(entry) && entry.enabled === true) || channel.enabled === true,
+    enabled: optionalChannelEnabled(channel),
     botId: typeof channel.botId === "string" ? channel.botId : "",
     secret: typeof channel.secret === "string" ? channel.secret : "",
     dmPolicy: channel.dmPolicy === "pairing" ? "pairing" : "open",
@@ -460,6 +446,7 @@ export function applyWecomSave(draft: Record<string, unknown>, params: WecomSave
   const existingChannel = isRecord(channels[WECOM_CHANNEL_ID]) ? (channels[WECOM_CHANNEL_ID] as Record<string, unknown>) : {};
 
   entries[WECOM_PLUGIN_ID] = { ...existingEntry, enabled: params.enabled === true };
+  if(params.enabled)syncPluginAllowOnEnable(draft,WECOM_PLUGIN_ID);
 
   if (params.enabled !== true) {
     channels[WECOM_CHANNEL_ID] = { ...existingChannel, enabled: false };
@@ -491,11 +478,9 @@ export function applyWecomSave(draft: Record<string, unknown>, params: WecomSave
 export const WEIXIN_PLUGIN_ID = "openclaw-weixin";
 
 export function extractWeixinEnabled(config: Record<string, unknown> | null | undefined): boolean {
-  const entry = isRecord(config?.plugins) && isRecord(config.plugins.entries)
-    ? (config.plugins.entries as Record<string, unknown>)[WEIXIN_PLUGIN_ID] : undefined;
   const channel = isRecord(config?.channels) && isRecord(config.channels[WEIXIN_PLUGIN_ID])
     ? (config.channels[WEIXIN_PLUGIN_ID] as Record<string, unknown>) : {};
-  return (isRecord(entry) && entry.enabled === true) || channel.enabled === true;
+  return optionalChannelEnabled(channel);
 }
 
 /** 移植自主进程 saveWeixinConfig（仅 enabled 开关；插件 reconcile 留在主进程） */
@@ -508,6 +493,7 @@ export function applyWeixinSave(draft: Record<string, unknown>, enabled: boolean
   const existingChannel = isRecord(channels[WEIXIN_PLUGIN_ID]) ? (channels[WEIXIN_PLUGIN_ID] as Record<string, unknown>) : {};
 
   entries[WEIXIN_PLUGIN_ID] = { ...existingEntry, enabled };
+  if(enabled)syncPluginAllowOnEnable(draft,WEIXIN_PLUGIN_ID);
 
   channels[WEIXIN_PLUGIN_ID] = {
     ...existingChannel,

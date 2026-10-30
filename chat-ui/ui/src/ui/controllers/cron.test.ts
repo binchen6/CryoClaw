@@ -190,6 +190,15 @@ test("loadCronJobs / loadCronStatus：内核声明无对应方法时零请求", 
   assert.deepEqual(state.requests, [], "未注册的 cron.* 不得发出死 RPC");
 });
 
+test("loadCronJobs reuses a fresh list and force refresh bypasses it", async () => {
+  const state = fakeCronState(null);
+  await loadCronJobs(state);
+  await loadCronJobs(state);
+  assert.deepEqual(state.requests, ["cron.list"]);
+  await loadCronJobs(state, true);
+  assert.deepEqual(state.requests, ["cron.list", "cron.list"]);
+});
+
 test("loadCronJobs / loadCronStatus：内核声明对应方法或缺省保守放行时正常请求", async () => {
   const gated = fakeCronState(helloWith(["cron.list", "cron.status", "cron.runs"]));
   await loadCronJobs(gated);

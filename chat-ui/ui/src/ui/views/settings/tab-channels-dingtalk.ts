@@ -29,6 +29,7 @@ function createDingtalkState() {
     successMsg: null as string | null,
     hint: null as string | null,
     initialized: false,
+    loadState: "loading",
   };
 }
 
@@ -84,7 +85,7 @@ export function renderChannelDingtalk(state: AppViewState) {
   if (!s.initialized) init(state);
 
   return html`
-    <div class="oc-settings__section">
+    <div class="oc-settings__section" data-page-id="settings:channels:dingtalk" data-load-state=${s.loadState === "loading"?"loading":s.loadState === "error" || s.error?"error":"ready"} aria-busy=${s.loadState === "loading"}>
       <div class="oc-flex oc-items-start oc-justify-end oc-mb-8">
         <div class="oc-flex oc-flex-shrink-0 oc-gap-12">
           <a class="oc-settings__link" href="#" @click=${(e: Event) => { e.preventDefault(); ipc.openExternal("https://oneclaw.cn/docs/tutorials/dingtalk.html"); }}>${t("settings.channels.dingtalk.setupGuide")} &rarr;</a>

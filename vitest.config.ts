@@ -27,6 +27,7 @@ export default defineConfig({
       "src/agent-db-migration.test.ts",
       "src/analytics.test.ts",
       "src/memory-workspace.test.ts",
+      "src/settings-memory.test.ts",
       "src/wecom-config.test.ts",
     ],
   },

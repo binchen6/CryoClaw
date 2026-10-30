@@ -229,7 +229,7 @@ async function ensurePluginNativeEntry(pluginDirInput, opts = {}) {
   const external = ["openclaw", "openclaw/*", "*.node", ...(opts.extraExternal || [])];
 
   try {
-    await esbuild.build({
+    await buildToFile({
       entryPoints: [entry.absPath],
       bundle: true,
       platform: "node",
@@ -263,6 +263,17 @@ async function ensurePluginNativeEntry(pluginDirInput, opts = {}) {
   patchPluginEntryFields(pluginDir, BUNDLE_REL);
 
   return { action: "bundled", pluginDir, entry: entry.relPath, outFile: BUNDLE_REL };
+}
+
+async function buildToFile(options) {
+  // Windows may label a downloaded build tool below the destination's integrity
+  // level. Keep output writes in the controlling Node process.
+  const result = await require("esbuild").build({ ...options, write: false });
+  if (!options.outfile || result.outputFiles.length !== 1) {
+    throw new Error("Expected exactly one JavaScript output");
+  }
+  fs.writeFileSync(options.outfile, result.outputFiles[0].contents);
+  return result;
 }
 
 // 把插件 dist/ 下含静态 bare import（默认 "ws"）的 chunk 原地重 bundle。
@@ -329,7 +340,7 @@ async function rebundlePluginDistChunks(pluginDirInput, opts = {}) {
   for (const file of hits) {
     const abs = path.join(distDir, file);
     try {
-      await esbuild.build({
+      await buildToFile({
         entryPoints: [abs],
         bundle: true,
         platform: "node",

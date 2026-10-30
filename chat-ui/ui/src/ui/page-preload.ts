@@ -44,6 +44,7 @@ export function preloadPage(host:AppViewState,view:CryoClawViewId){
   else if(view==="workspace")await preloadWorkspaceDirectory(host);
 });}
 export function preloadSettingsTab(host:AppViewState,tab:string){
+  if(tab==="memory")return enqueuePreload(host,"settings:memory",async()=>{const module=await import("./controllers/memory.ts");await module.preloadMemoryStatus(host);});
   if(tab==="voice")return enqueuePreload(host,"settings:voice",async()=>{const module=await import("./controllers/voice.ts");await module.preloadVoiceStatus(host);});
   if(tab==="usage")return enqueuePreload(host,"settings:usage",async()=>{const module=await import("./controllers/usage-cache.ts");await module.loadUsageSnapshot(host,"30d");});
 }

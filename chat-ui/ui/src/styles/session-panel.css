@@ -57,7 +57,8 @@ oc-session-panel.oc-panel--leaving {
   height: 100%;
   display: flex;
   flex-direction: column;
-  border-right: var(--hairline);
+  /* 分隔线只由调宽手柄画一条（shell.css 的 .cryoclaw-panel-resize::after）：
+     这里再画 border-right 会与手柄线并排成两条，视觉上像双描边。 */
   background: var(--bg);
   overflow: hidden;
   -webkit-app-region: drag;
@@ -144,8 +145,8 @@ oc-session-panel.oc-panel--leaving {
 
 .oc-panel__search-input:focus {
   background: var(--bg-elevated);
-  border-color: var(--border-focus);
-  box-shadow: var(--focus-ring);
+  border-color: var(--focus-field-color);
+  box-shadow: var(--focus-field);
 }
 
 /* ── 会话列表（唯一滚动容器） ── */
@@ -244,9 +245,10 @@ oc-session-panel.oc-panel--leaving {
   opacity: 1;
 }
 
+/* 密集列表里的行用内描边（--focus-ring-inset）：外环会溢出到相邻行上。 */
 .oc-panel__session-item:has(.oc-panel__session-select:focus-visible) {
-  outline: 2px solid var(--accent);
-  outline-offset: -2px;
+  box-shadow: var(--focus-ring-inset);
+  border-radius: var(--radius-8);
 }
 
 /* 省略号只能落在独立的文本载体上：inline-flex 容器的 flex 格式化上下文会让
@@ -441,10 +443,9 @@ oc-session-panel.oc-panel--leaving {
   font-family: inherit;
   color: var(--text-strong);
   background: var(--bg-elevated);
-  border: 1px solid var(--border-focus);
-  border-radius: var(--radius-6);
+  border: 1px solid var(--focus-field-color);
   outline: none;
-  box-shadow: var(--focus-ring);
+  box-shadow: var(--focus-field);
 }
 
 /* ── 「更多」菜单（Worktree 新会话等） ── */
@@ -467,6 +468,15 @@ oc-session-panel.oc-panel--leaving {
   padding: var(--spacer-4);
   z-index: 60;
   -webkit-app-region: no-drag;
+}
+
+/* 自适应落边：向上展开时从下沿滑入，退场原路返回。 */
+.oc-panel__more-menu[data-side="top"] {
+  transform-origin: bottom right;
+}
+
+.oc-panel__more-menu[data-side="top"].cc-leaving {
+  animation-name: chat-popover-out;
 }
 
 .oc-panel__more-item {
@@ -587,6 +597,15 @@ oc-session-panel.oc-panel--leaving {
   animation: chat-popover-in var(--duration-fast) var(--ease-spring);
 }
 
+/* 退场原路返回：遮罩淡出、卡片按入场反向收回（runExitAnimation 两段式驱动）。 */
+.oc-panel__ws-dialog-backdrop.cc-leaving {
+  animation: oc-fade-out var(--duration-fast) var(--ease-in-out) forwards;
+  pointer-events: none;
+}
+.oc-panel__ws-dialog.cc-leaving {
+  animation: chat-popover-out var(--duration-fast) var(--ease-in-out) forwards;
+}
+
 .oc-panel__ws-dialog-title {
   margin-bottom: var(--spacer-12);
   font-size: var(--text-sm);
@@ -619,8 +638,8 @@ oc-session-panel.oc-panel--leaving {
 }
 
 .oc-panel__ws-field input:focus {
-  border-color: var(--border-focus);
-  box-shadow: var(--focus-ring);
+  border-color: var(--focus-field-color);
+  box-shadow: var(--focus-field);
 }
 
 .oc-panel__ws-path-row {

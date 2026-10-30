@@ -12,8 +12,13 @@ import {
 } from "./run-state-store.ts";
 import { restoreChatScrollPosition, saveChatScrollPosition } from "./app-scroll.ts";
 import type { UiSettings } from "./storage.ts";
+import type { ConfiguredModel } from "./ui-types.ts";
+import { resolveModelSelectKey } from "./controllers/models.ts";
 
 export type SessionTransitionHost = ChatState & {
+  configuredModels?: ConfiguredModel[];
+  currentModel?: string | null;
+  sessionsResult?: import("./types.ts").SessionsListResult | null;
   chatQueue: unknown[];
   chatAvatarUrl: string | null;
   // 中止请求在途标记（可选：测试替身不实现也无妨；切换会话时清零）
@@ -152,6 +157,12 @@ export function applySessionKeyTransition(
   const savedSnapshot = sessionDraftSnapshots.get(trimmed);
   sessionDraftSnapshots.delete(trimmed);
   host.sessionKey = trimmed;
+  if ("currentModel" in host) {
+    const models = host.configuredModels ?? [];
+    const row = host.sessionsResult?.sessions.find(session => session.key === trimmed);
+    host.currentModel = resolveModelSelectKey(row?.model, models)
+      ?? models.find(model => model.isDefault)?.key ?? models[0]?.key ?? null;
+  }
   syncChatSendingState(host);
   // 切换会话：上一会话的重连 orphan 快照作废（防跨会话误收养）
   clearReconnectOrphanRun();

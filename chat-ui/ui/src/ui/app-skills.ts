@@ -48,13 +48,15 @@ const skillStoreState: SkillStoreState = {
 let skillStoreDataLoaded = false;
 let localSkillSlugs = new Set<string>();
 let localInventoryStarted = false;
+let localInventoryPending = 0;
+let localInventoryFailed = false;
 let localImportBusy = false;
 
 // 商店请求代次守卫：排序/搜索快速切换时旧响应晚到会整体覆写当前列表与
 // nextCursor（展示错误排序/旧结果，分页游标错配）。发起前自增，写回前比对。
 let storeRequestToken = 0;
 
-// ── 技能更新（R102）：进入已安装 tab 时后台检查一次，按钮只在有更新时出现 ──
+// ── 技能更新：仅由用户显式检查，不在进入页面或更新完成后自动重查 ──
 let skillUpdates: Array<{ slug: string; current: string | null; latest: string }> | null = null;
 let skillUpdatesChecking = false;
 let skillUpdatesApplying = false;
@@ -104,10 +106,9 @@ async function updateAllSkills(state: AppViewState, slug?: string) {
     } else {
       showToast(state, t("skillStore.updateFailed"),undefined,"error");
     }
-    skillUpdates = null; // 强制重查（版本表已变）
+    skillUpdates = null; // 版本表已变；下次由用户手动重查。
     void loadSkills(state);
     await refreshInstalledSlugs();
-    await checkSkillStoreUpdates(state, { force: true });
   } catch {
       showToast(state, t("skillStore.updateFailed"),undefined,"error");
   } finally {
@@ -261,14 +262,16 @@ async function searchSkillStore(state: AppViewState) {
 
 // 刷新已安装列表
 async function refreshInstalledSlugs() {
-  if (!window.cryoclaw?.skillStoreListInstalled) return;
+  if (!window.cryoclaw?.skillStoreListInstalled) { localInventoryFailed=true; return; }
+  localInventoryPending++;localInventoryFailed=false;
   try {
     const result = await window.cryoclaw.skillStoreListInstalled();
     if (result?.success && Array.isArray(result.data)) {
       skillStoreState.installedSlugs = new Set(result.data);
       localSkillSlugs = new Set(Array.isArray(result.local)?result.local:[]);
-    }
-  } catch { /* ignore */ }
+    } else localInventoryFailed=true;
+  } catch { localInventoryFailed=true; }
+  finally { localInventoryPending--; }
 }
 
 // 安装技能
@@ -413,7 +416,7 @@ function renderInstalledSkillsView(state: AppViewState) {
             class="btn btn--sm"
             type="button"
             ?disabled=${state.skillsLoading}
-            @click=${() => void loadSkills(state)}
+            @click=${() => void loadSkills(state,{force:true})}
           >${t("ext.market.retry")}</button>
         </div>`
       : nothing}
@@ -530,12 +533,12 @@ function renderInstalledSkillsView(state: AppViewState) {
 // 技能视图根渲染（app-extensions 的扩展视图 skills tab 调用）
 export function renderSkillsView(state: AppViewState) {
   if(!localInventoryStarted){localInventoryStarted=true;void refreshInstalledSlugs().then(()=>state.requestUpdate());}
-  // 已安装 tab 首开自动后台检查更新（会话内一次；检查后 skillUpdates !== null 不再重复）
-  if (skillsSubTab === "installed" && skillUpdates === null && !skillUpdatesChecking) {
-    void checkSkillStoreUpdates(state);
-  }
+  // 更新检查仅由用户显式触发，不在页面渲染或切换时自动联网。
+  const loading=skillsSubTab === "installed"?state.skillsLoading || !state.skillsReport && !state.skillsError || localInventoryPending>0:skillStoreState.loading || localInventoryPending>0;
+  const failed=localInventoryFailed || (skillsSubTab === "installed"?state.skillsError:skillStoreState.error);
+  const empty=skillsSubTab === "installed"?!selectVisibleInstalledSkills(state).length:!skillStoreState.skills.length;
   return html`
-    <div class="skills-scroll panel" @scroll=${(e: Event) => {
+    <div data-page-id=${`extensions:skills:${skillsSubTab}`} data-load-state=${loading?"loading":failed?"error":empty?"empty":"ready"} aria-busy=${loading} class="skills-scroll panel" @scroll=${(e: Event) => {
       if (skillsSubTab !== "store") return;
       if (skillStoreState.loading || !skillStoreState.nextCursor) return;
       const el = e.target as HTMLElement;
@@ -547,18 +550,17 @@ export function renderSkillsView(state: AppViewState) {
         <!-- 标签栏 + 右侧操作区（R94 砍级：原「技能」H2 与 ext-tabs 重复，已移除） -->
         <div class="skills-tab-bar">
           <button
-            class="skills-tab-btn ${skillsSubTab === "installed" ? "active" : ""}"
+            class="skills-tab-btn ${skillsSubTab === "installed" ? "active" : ""}" data-page-nav="extensions:skills:installed"
             aria-pressed=${skillsSubTab === "installed"}
             type="button"
             @click=${() => {
               skillsSubTab = "installed";
               void loadSkills(state);
-              void checkSkillStoreUpdates(state);
               state.requestUpdate();
             }}
           >${t("skills.tabInstalled")}</button>
           <button
-            class="skills-tab-btn ${skillsSubTab === "store" ? "active" : ""}"
+            class="skills-tab-btn ${skillsSubTab === "store" ? "active" : ""}" data-page-nav="extensions:skills:store"
             aria-pressed=${skillsSubTab === "store"}
             type="button"
             @click=${() => {
@@ -573,7 +575,7 @@ export function renderSkillsView(state: AppViewState) {
             <button class="btn btn--sm" type="button" ?disabled=${localImportBusy || skillUpdatesApplying} @click=${async()=>{
               if(!window.cryoclaw?.skillStoreImportLocal)return;
               localImportBusy=true;state.requestUpdate();
-              try{const result=await window.cryoclaw.skillStoreImportLocal();if(!result?.success)showToast(state,result?.message??t("skillStore.error"),undefined,"error");else if(!result.canceled){await refreshInstalledSlugs();await loadSkills(state);}}
+              try{const result=await window.cryoclaw.skillStoreImportLocal();if(!result?.success)showToast(state,result?.message??t("skillStore.error"),undefined,"error");else if(!result.canceled){await refreshInstalledSlugs();await loadSkills(state,{force:true});}}
               catch(error){showToast(state,String(error),undefined,"error");}finally{localImportBusy=false;state.requestUpdate();}
             }}>${t("ext.importLocal")}</button>
             ${skillsSubTab === "installed"
@@ -598,8 +600,14 @@ export function renderSkillsView(state: AppViewState) {
                   <button
                     class="skill-store__sort-btn"
                     type="button"
+                    ?disabled=${skillUpdatesChecking || skillUpdatesApplying}
+                    @click=${() => void checkSkillStoreUpdates(state, { force: true })}
+                  >${skillUpdatesChecking ? t("ext.plugins.checking") : t("ext.plugins.checkUpdates")}</button>
+                  <button
+                    class="skill-store__sort-btn"
+                    type="button"
                     ?disabled=${state.skillsLoading}
-                    @click=${() => void loadSkills(state)}
+                    @click=${() => void loadSkills(state,{force:true})}
                   >${state.skillsLoading ? t("skills.refreshing") : t("skills.refresh")}</button>
                 `
               : html`

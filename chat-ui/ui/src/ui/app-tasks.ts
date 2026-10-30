@@ -101,6 +101,8 @@ export function renderTasksView(state: AppViewState) {
     connected: state.connected,
     unsupported: state.runsUnsupported === true,
     tab: tasksViewTab,
+    cronLoading: state.cronLoading,
+    cronError: state.cronError,
     autoRefresh: tasksAutoRefreshEnabled,
     cronJobCount: state.cronJobs.filter((j) => j.enabled !== false && !isExpiredOneShot(j)).length,
     // 仅定时 tab 活跃时才构建 cron 内容（runs tab 每帧渲染不白花成本）
@@ -133,9 +135,9 @@ export function renderTasksView(state: AppViewState) {
       state.requestUpdate();
     },
     onRefresh: () => {
-      void loadRunHistory(state);
+      void loadRunHistory(state, true);
       // jobName 兜底补全依赖 cron.list，随刷新一并更新
-      void loadCronJobs(state);
+      void loadCronJobs(state, true);
     },
     onOpenChat: (sessionKey) => {
       // 走完整会话切换（重置流态/拉历史/同步 URL），与侧边栏点击一致

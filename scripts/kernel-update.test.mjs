@@ -15,6 +15,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { createHash } from 'node:crypto';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
@@ -28,18 +29,49 @@ for (const name of [
   "kernel-config-snapshot.js",
   "kernel-directory-swap.js",
   "gateway-dependency-policy.js",
+  "kernel-runtime-policy.cjs",
 ]) {
   const src = fs.existsSync(path.join(HERE, "updater", name))
     ? path.join(HERE, "updater", name)
-    : path.join(HERE, "lib", name);
+    : name === "kernel-runtime-policy.cjs" ? path.join(HERE, "..", "shared", name) : path.join(HERE, "lib", name);
   fs.copyFileSync(src, path.join(STAGE, name));
 }
 fs.cpSync(path.join(HERE, "..", "node_modules", "semver"), path.join(STAGE, "node_modules", "semver"), { recursive: true });
 
-const { reconcileSwapDebris, planSwapRecovery, evaluateLock, writeSwapJournal, readSwapJournal, stagePhysicalGateway, carryOverInjected } = await import(
+const { reconcileSwapDebris, planSwapRecovery, evaluateLock, acquireUpdaterLock, selectRollbackBackup, writeSwapJournal, readSwapJournal, stagePhysicalGateway, carryOverInjected, refreshSynchronizedVendorPlugins, assertVendoredPluginCompatibility } = await import(
   pathToFileURL(path.join(STAGE, "kernel-update.mjs")).href
 );
 process.once("exit", () => { try { fs.rmSync(STAGE, { recursive: true, force: true }); } catch {} });
+
+test("vendored official plugins must support the selected kernel before publication", t => {
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),"kernel-plugin-compat-"));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+ const plugin=path.join(root,"node_modules","openclaw","dist","extensions","feishu");fs.mkdirSync(plugin,{recursive:true});
+ const manifest={name:"@openclaw/feishu",version:"2026.10.7",peerDependencies:{openclaw:">=2026.10.7"},openclaw:{compat:{pluginApi:">=2026.10.7"}}};
+ fs.writeFileSync(path.join(plugin,"package.json"),JSON.stringify(manifest));fs.writeFileSync(path.join(plugin,".cryoclaw-vendor-stamp.json"),JSON.stringify({id:"feishu",packageName:manifest.name}));
+ assert.deepEqual(assertVendoredPluginCompatibility(root,"2026.10.7"),["feishu"]);
+ assert.throws(()=>assertVendoredPluginCompatibility(root,"2026.10.6"),/do not support OpenClaw 2026\.10\.6/);
+ const stamp=path.join(plugin,".cryoclaw-vendor-stamp.json");fs.writeFileSync(stamp,"{}");assert.throws(()=>assertVendoredPluginCompatibility(root,"2026.10.7"),/vendor identity/);
+});
+
+test("synchronized vendor plugins update in staging without replacing independent plugins or trusting a wrong package", t => {
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),"kernel-sync-plugins-"));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+ const oldPkg=path.join(root,"old"),newPkg=path.join(root,"new"),staging=path.join(root,"plugins");
+ const write=(base,relative,value)=>{const file=path.join(base,relative);fs.mkdirSync(path.dirname(file),{recursive:true});fs.writeFileSync(file,typeof value==="string"?value:JSON.stringify(value));};
+ for(const [id,packageName,version] of [["feishu","@openclaw/feishu","2026.10.7"],["qqbot","@openclaw/qqbot","2026.7.1"]]){
+  write(oldPkg,`dist/extensions/${id}/package.json`,{name:packageName,version});
+  write(oldPkg,`dist/extensions/${id}/.cryoclaw-vendor-stamp.json`,{id,packageName});
+ }
+ carryOverInjected(oldPkg,newPkg);
+ const source="node_modules/@openclaw/feishu";write(staging,`${source}/package.json`,{name:"@openclaw/feishu",version:"2026.10.8"});write(staging,`${source}/openclaw.plugin.json`,"{}");
+ assert.throws(()=>refreshSynchronizedVendorPlugins(oldPkg,newPkg,staging,"2026.10.9"),/version mismatch/);
+ assert.equal(JSON.parse(fs.readFileSync(path.join(newPkg,"dist/extensions/feishu/package.json"),"utf8")).version,"2026.10.7");
+ write(staging,`${source}/package.json`,{name:"@openclaw/feishu",version:"2026.10.9"});write(staging,`${source}/dist/index.js`,"new feishu");
+ assert.deepEqual(refreshSynchronizedVendorPlugins(oldPkg,newPkg,staging,"2026.10.9"),["feishu"]);
+ assert.equal(JSON.parse(fs.readFileSync(path.join(newPkg,"dist/extensions/feishu/package.json"),"utf8")).version,"2026.10.9");
+ assert.equal(fs.readFileSync(path.join(newPkg,"dist/extensions/feishu/dist/index.js"),"utf8"),"new feishu");
+ assert.equal(JSON.parse(fs.readFileSync(path.join(newPkg,"dist/extensions/feishu/.cryoclaw-vendor-stamp.json"),"utf8")).spec,"@openclaw/feishu@2026.10.9");
+ assert.equal(JSON.parse(fs.readFileSync(path.join(newPkg,"dist/extensions/qqbot/package.json"),"utf8")).version,"2026.7.1");
+});
 
 test("physical update staging copies dependencies once and reads injected artifacts from the intact old package", t => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "kernel-native-stage-"));
@@ -459,16 +491,16 @@ test("L9 纯判定：锁内容解析与过期/存活/兼容分支", () => {
   const dead = () => false;
 
   assert.equal(evaluateLock(null, now, alive).held, false, "无锁文件");
-  assert.equal(evaluateLock("   ", now, alive).held, false, "空内容按陈旧处理");
-  assert.equal(evaluateLock("{ 半个 json", now, alive).held, false, "残缺 JSON 按陈旧处理");
+  assert.equal(evaluateLock("   ", now, alive).held, true, "初始化中的空锁不得被夺取");
+  assert.equal(evaluateLock("{ 半个 json", now, alive).held, true, "初始化中的半写锁不得被夺取");
   assert.deepEqual(evaluateLock("{ 半个 json", now, alive).reason, "unreadable");
 
   // 新锁 + PID 存活 → 忙
   assert.equal(evaluateLock(JSON.stringify({ pid: 42, startedAt: now - 1000 }), now, alive).held, true);
-  // 过期锁 + PID 存活 → 判死（PID 复用正是这个分支要救的场景）
+  // 年龄超过桌面 watchdog 也不能夺取独立 CLI 的活锁。
   const expired = evaluateLock(JSON.stringify({ pid: 42, startedAt: now - 16 * 60_000 }), now, alive);
-  assert.equal(expired.held, false);
-  assert.equal(expired.reason, "expired");
+  assert.equal(expired.held, true);
+  assert.equal(expired.reason, "alive");
   // 过期锁 + PID 已退出 → 同样判死
   assert.equal(evaluateLock(JSON.stringify({ pid: 42, startedAt: now - 16 * 60_000 }), now, dead).held, false);
   // 时钟回拨（startedAt 在未来）不当作过期
@@ -479,8 +511,8 @@ test("L9 纯判定：锁内容解析与过期/存活/兼容分支", () => {
   // 旧格式纯 PID → 只按 PID 判定（无超时）
   assert.equal(evaluateLock("42", now, alive).held, true);
   assert.equal(evaluateLock("42", now, dead).held, false);
-  assert.equal(evaluateLock("not-a-pid", now, alive).held, false);
-  assert.equal(evaluateLock("0", now, alive).held, false);
+  assert.equal(evaluateLock("not-a-pid", now, alive).held, true);
+  assert.equal(evaluateLock("0", now, alive).held, true);
 });
 
 // 子进程跑 stage 后的脚本：acquireLock 拒绝会 process.exit(1)，进程内调用会带走测试进程。
@@ -511,22 +543,182 @@ function makeBackupDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), "kernel-lock-"));
 }
 
-test("L9：过期锁（startedAt 超 15 分钟 + PID 存活）→ 清理后继续", () => {
+test('updater lock publishes a complete owner atomically, rejects contention and releases only its owner', t => {
+  const dir = makeBackupDir(); t.after(() => fs.rmSync(dir, {recursive:true,force:true}));
+  const file = path.join(dir, 'update.lock'); let publications = 0;
+  const io = {...fs, linkSync(source, target) {
+    const record = JSON.parse(fs.readFileSync(source, 'utf8'));
+    assert.equal(record.pid, process.pid); assert.match(record.owner, /^[a-f0-9-]+$/);
+    assert.equal(fs.existsSync(target), false);
+    fs.linkSync(source, target); publications++;
+  }};
+  const release = acquireUpdaterLock(file, {io});
+  assert.equal(publications, 1);
+  assert.throws(() => acquireUpdaterLock(file), /已有内核升级任务/);
+  const replacement = {pid:process.pid,startedAt:Date.now(),owner:'replacement'};
+  fs.writeFileSync(file, JSON.stringify(replacement)); release();
+  assert.deepEqual(JSON.parse(fs.readFileSync(file,'utf8')), replacement);
+  fs.unlinkSync(file);
+  const ownRelease = acquireUpdaterLock(file); ownRelease();
+  assert.equal(fs.existsSync(file), false);
+  assert.deepEqual(fs.readdirSync(dir), []);
+});
+
+test('unsupported hard links fail closed and clean only the private owner file', t => {
+  const dir = makeBackupDir(); t.after(() => fs.rmSync(dir, {recursive:true,force:true}));
+  const file = path.join(dir, 'update.lock'); fs.writeFileSync(path.join(dir,'unrelated'), 'keep');
+  assert.throws(() => acquireUpdaterLock(file, {io:{...fs,linkSync(){throw Object.assign(Error('no hardlinks'),{code:'ENOTSUP'});}}}), /原子发布.*ENOTSUP/);
+  assert.deepEqual(fs.readdirSync(dir), ['unrelated']);
+});
+
+test('failed private owner writes remove their own incomplete file without publishing a lock', t => {
+  const dir=makeBackupDir();t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));
+  const file=path.join(dir,'update.lock');
+  const io={...fs,writeFileSync(target,value,options){fs.writeFileSync(target,'{"pid":',options);throw Object.assign(Error('disk write failed'),{code:'EIO'});}};
+  assert.throws(()=>acquireUpdaterLock(file,{io}),/disk write failed/);
+  assert.deepEqual(fs.readdirSync(dir),[]);
+});
+
+test('unknown legacy lock owners remain closed even when an old writer holds its FD beyond the former grace period', t => {
+  const dir = makeBackupDir(); t.after(() => fs.rmSync(dir, {recursive:true,force:true}));
+  const file = path.join(dir, 'update.lock');
+  const fd=fs.openSync(file,'wx');
+  try{
+    fs.utimesSync(file,new Date(0),new Date(0));
+    assert.throws(()=>acquireUpdaterLock(file),/缺少可验证的持有者.*确认旧更新器已退出/);
+    const original=JSON.stringify({pid:process.pid,startedAt:Date.now()-60_000});
+    fs.writeSync(fd,original);
+    assert.equal(fs.readFileSync(file,'utf8'),original,'the old writer must still own the named lock');
+    assert.throws(()=>acquireUpdaterLock(file),/已有内核升级任务/);
+  }finally{fs.closeSync(fd);}
+  fs.writeFileSync(file,'{"pid":');fs.utimesSync(file,new Date(0),new Date(0));
+  assert.throws(()=>acquireUpdaterLock(file),/缺少可验证的持有者.*确认旧更新器已退出/);
+  assert.equal(fs.readFileSync(file,'utf8'),'{"pid":');
+  fs.unlinkSync(file);
+  const deadPid = spawnSync(process.execPath, ['-e','']).pid;
+  fs.writeFileSync(file, String(deadPid)); acquireUpdaterLock(file)();
+  assert.deepEqual(fs.readdirSync(dir), []);
+});
+
+test('a contender publishing first keeps its lock when another initialized owner loses publication', t => {
+  const dir=makeBackupDir();t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));
+  const file=path.join(dir,'update.lock');let winnerRelease, winnerRaw;
+  const io={...fs,linkSync(source,target){
+    if(!winnerRelease){winnerRelease=acquireUpdaterLock(file);winnerRaw=fs.readFileSync(file,'utf8');}
+    fs.linkSync(source,target);
+  }};
+  assert.throws(()=>acquireUpdaterLock(file,{io}),/已有内核升级任务/);
+  assert.equal(fs.readFileSync(file,'utf8'),winnerRaw);
+  assert.deepEqual(fs.readdirSync(dir),['update.lock']);winnerRelease();
+});
+
+test('stale lock reclamation is serialized so a delayed remover cannot delete a new live owner', t => {
+  const dir=makeBackupDir();t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));
+  const file=path.join(dir,'update.lock'),deadPid=spawnSync(process.execPath,['-e','']).pid;
+  fs.writeFileSync(file,String(deadPid)); let competingRelease, checked=false;
+  const io={...fs,unlinkSync(target){
+    if(target===file&&!checked){checked=true;
+      try{competingRelease=acquireUpdaterLock(file);}catch(error){assert.match(error.message,/已有内核升级任务/);}
+      assert.equal(competingRelease,undefined,'only one stale remover may progress');
+    }
+    fs.unlinkSync(target);
+  }};
+  try{const release=acquireUpdaterLock(file,{io});release();assert.equal(checked,true);assert.deepEqual(fs.readdirSync(dir),[]);}
+  finally{competingRelease?.();}
+});
+
+test('orphan cleanup removes only a validated dead private owner and preserves live or unrelated evidence', t => {
+  const dir=makeBackupDir();t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));
+  const file=path.join(dir,'update.lock'),deadPid=spawnSync(process.execPath,['-e','']).pid;
+  const owner='10000000-0000-4000-8000-000000000000';
+  const dead=`update.lock.owner-${deadPid}-${owner}`,live=`update.lock.owner-${process.pid}-${owner}`;
+  fs.writeFileSync(path.join(dir,dead),JSON.stringify({pid:deadPid,owner}));
+  fs.writeFileSync(path.join(dir,live),JSON.stringify({pid:process.pid,owner}));
+  fs.writeFileSync(path.join(dir,'update.lock.owner-unrelated'),'keep');
+  const release=acquireUpdaterLock(file);release();
+  assert.equal(fs.existsSync(path.join(dir,dead)),false);
+  assert.deepEqual(fs.readdirSync(dir).sort(),[live,'update.lock.owner-unrelated'].sort());
+});
+
+test('a crashed stale-lock reclaimer is superseded atomically and its dead claim is cleaned after publication', t => {
+  const dir=makeBackupDir();t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));
+  const file=path.join(dir,'update.lock'),deadPid=spawnSync(process.execPath,['-e','']).pid;
+  fs.writeFileSync(file,String(deadPid));const stat=fs.lstatSync(file),raw=fs.readFileSync(file,'utf8');
+  const key=JSON.stringify([stat.dev,stat.ino,stat.birthtimeMs,raw]);
+  const claim=file+'.reap-'+createHash('sha256').update(key).digest('hex');
+  fs.writeFileSync(claim,JSON.stringify({pid:deadPid,startedAt:Date.now(),owner:'dead-reclaimer'}));
+  const release=acquireUpdaterLock(file);release();
+  assert.deepEqual(fs.readdirSync(dir),[]);
+});
+
+test('a finite chain of more than 32 dead reclaimers recovers without a permanent depth limit', t => {
+  const dir=makeBackupDir();t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));
+  const file=path.join(dir,'update.lock'),deadPid=spawnSync(process.execPath,['-e','']).pid;
+  fs.writeFileSync(file,String(deadPid));let previous=file;
+  for(let depth=0;depth<40;depth++){
+    const stat=fs.lstatSync(previous),raw=fs.readFileSync(previous,'utf8');
+    const key=JSON.stringify([stat.dev,stat.ino,stat.birthtimeMs,raw]);
+    const claim=file+'.reap-'+createHash('sha256').update(key).digest('hex');
+    fs.writeFileSync(claim,JSON.stringify({pid:deadPid,owner:'dead-reclaimer-'+depth}));previous=claim;
+  }
+  const release=acquireUpdaterLock(file);release();
+  assert.deepEqual(fs.readdirSync(dir),[]);
+});
+
+test('cyclic dead reclaimer identities fail closed and retain the original evidence',t=>{
+  const dir=makeBackupDir();t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));
+  const file=path.join(dir,'update.lock'),deadPid=spawnSync(process.execPath,['-e','']).pid;
+  fs.writeFileSync(file,String(deadPid));const stat=fs.lstatSync(file),raw=fs.readFileSync(file,'utf8');
+  const key=JSON.stringify([stat.dev,stat.ino,stat.birthtimeMs,raw]);
+  const claim=file+'.reap-'+createHash('sha256').update(key).digest('hex');fs.linkSync(file,claim);
+  assert.throws(()=>acquireUpdaterLock(file),/清理链存在循环.*已保留现场/);
+  assert.equal(fs.readFileSync(file,'utf8'),raw);
+  assert.deepEqual(fs.readdirSync(dir).sort(),[path.basename(file),path.basename(claim)].sort());
+});
+
+test('rollback skips a failed update backup of the current version and ignores incomplete identities', async t => {
+  const root = makeBackupDir(); t.after(() => fs.rmSync(root,{recursive:true,force:true}));
+  function backup(version, timestamp, actual=version) {
+    const name=`gateway-${version}-${timestamp}`, dir=path.join(root,name), pkg=path.join(dir,'gateway/node_modules/openclaw');
+    fs.mkdirSync(pkg,{recursive:true}); fs.writeFileSync(path.join(pkg,'package.json'), JSON.stringify({version:actual}));
+    fs.writeFileSync(path.join(pkg,'openclaw.mjs'), 'export {};');
+    fs.writeFileSync(path.join(dir,'physical-backup-complete.json'), JSON.stringify({version})); return name;
+  }
+  const previous=backup('2026.10.5',100); backup('2026.10.7',200);
+  backup('2026.10.4',300,'2026.10.7');
+  assert.deepEqual(await selectRollbackBackup('2026.10.7',{root,native:true}), {name:previous,version:'2026.10.5'});
+  assert.equal(await selectRollbackBackup('2026.10.7',{root,native:true,names:['gateway-2026.10.7-200']}), null);
+});
+
+test('legacy ASAR rollback still restores a valid backup when the current version cannot be read',t=>{
+  const r=makeResources(),root=makeBackupDir(),moduleDir=path.join(STAGE,'node_modules/@electron/asar');
+  t.after(()=>{fs.rmSync(r.dir,{recursive:true,force:true});fs.rmSync(root,{recursive:true,force:true});fs.rmSync(moduleDir,{recursive:true,force:true});});
+  fs.mkdirSync(moduleDir,{recursive:true});
+  fs.writeFileSync(path.join(moduleDir,'package.json'),'{"name":"@electron/asar","type":"module","exports":"./index.js"}');
+  fs.writeFileSync(path.join(moduleDir,'index.js'),'import fs from "node:fs"; export function extractFile(file){return fs.readFileSync(file);}');
+  fs.writeFileSync(r.asar,'damaged current archive');
+  const backup=path.join(root,'gateway-2026.10.5-100');fs.mkdirSync(backup);
+  fs.writeFileSync(path.join(backup,'gateway.asar'),'{"version":"2026.10.5"}');
+  const out=runUpdater(r.dir,root,['--rollback']);
+  assert.equal(out.status,0,out.stdout+out.stderr);
+  assert.equal(JSON.parse(fs.readFileSync(r.asar,'utf8')).version,'2026.10.5');
+});
+
+test("L9：超过 15 分钟但 PID 存活的锁仍拒绝并发更新", () => {
   const r = makeResources();
   const backup = makeBackupDir();
   const lock = path.join(backup, "update.lock");
   try {
-    // PID 用测试进程自身（确定存活）：仅凭 PID 判活时这条锁会被误判成「有人正在升级」
+    // PID 用测试进程自身，证明长时间运行的独立 CLI 仍受到互斥保护。
     fs.writeFileSync(lock, JSON.stringify({ pid: process.pid, startedAt: Date.now() - 16 * 60_000 }));
 
     const out = runUpdater(r.dir, backup);
 
     assert.equal(out.status, 1);
-    assert.deepEqual(out.messages, [`找不到 gateway.asar: ${path.join(r.dir, "gateway.asar")}`], "应越过过期锁继续执行");
-    // 过期锁被清理后重新落锁；子进程随后 fail() 直接 exit，锁留在盘上是本次进程的
+    assert.deepEqual(out.messages, ["已有内核升级任务在进行中"]);
+    // 被拒绝的子进程不能修改原 owner。
     const relocked = JSON.parse(fs.readFileSync(lock, "utf-8"));
-    assert.equal(relocked.pid, out.pid, "锁已由幸存进程重新持有（过期锁未残留）");
-    assert.ok(Date.now() - relocked.startedAt < 60_000, "重新落锁的 startedAt 是本次运行时间");
+    assert.equal(relocked.pid, process.pid, "不能夺取仍存活的 CLI 更新器锁");
   } finally {
     fs.rmSync(r.dir, { recursive: true, force: true });
     fs.rmSync(backup, { recursive: true, force: true });

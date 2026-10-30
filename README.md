@@ -129,14 +129,14 @@ Anthropic (Claude) / OpenAI (GPT / Codex) / Google (Gemini) / Moonshot（Kimi）
 ```
 CryoClaw (Electron 43 + TypeScript 5.9)
   ├── 主进程壳        src/          IPC 白名单 + sender guard；gateway 子进程托管
-  ├── 内核            openclaw 2026.10.6（版本 pin，独立 Node.js 24.22.1 + 实体目录）
+  ├── 内核            openclaw 2026.10.9（版本 pin，独立 Node.js 24.22.1 + 实体目录）
   ├── 聊天界面        chat-ui/      Lit 3 + Vite SPA，file:// 本地加载；图标统一 lucide 风格
   ├── 应用更新器      src/app-updater.ts  electron-updater + GitHub Releases，差分下载、静默换装
   ├── 内核升级器      scripts/updater/  完整目录换装、恢复日志、健康检查与回滚
   └── 打包链路        scripts/package-resources.js → electron-builder
 ```
 
-- **通信**：chat-ui 经 WebSocket RPC 与 gateway 内核通信（内核注册 483 个 RPC 方法（随内核升级增长））；渲染层 CSP 只允许连接 127.0.0.1。
+- **通信**：chat-ui 经 WebSocket RPC 与 gateway 内核通信（内核注册 515 个 RPC 方法（随内核升级增长））；渲染层 CSP 只允许连接 127.0.0.1。
 - **渲染**：markdown 引擎（marked + DOMPurify）支持 GFM 表格/任务列表，样式化的标题与斑马纹表格；代码块带语法高亮（highlight.js 按需加载 15 种常用语言）、语言标签与悬停复制按钮；LaTeX 公式（$$块级$$/$行内$）KaTeX 专业排版；历史消息 `MEDIA:<路径>` 标记渲染为本地图片（点击全屏预览）；LRU 缓存 + 流式旁路防污染，解析异常自动退化为纯文本。
 - **消息操作**：任意消息悬停「引用」一键插入 markdown 引用块到输入框；发送失败错误卡片带「重发」按钮，可反复重试。
 - **本地文件卡片**：历史消息中的 `MEDIA:<路径>` 标记——图片直接渲染预览，其他常见文件类型（文档/表格/压缩/音视频/代码等）渲染为文件卡片：点击打开、卡片内按钮在文件夹中显示，图标按扩展名区分。

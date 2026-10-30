@@ -16,7 +16,7 @@ Electron Main Process
   └── BrowserWindow          (loads Lit Chat UI via file://, connects to gateway via WebSocket)
 ```
 
-The main process opens the local Lit Chat UI early (via `file://`) while it starts and checks the gateway subprocess. The UI displays connection progress, then connects over WebSocket for chat and HTTP for API calls. A system tray icon keeps the app alive when all windows are closed. OpenClaw 2026.10.6 requires a newer Node patch than Electron embeds: the current product keeps standalone Node and a physical gateway directory. `runtime/cryoclaw-runtime.json` selects this pair; old ASAR helpers are compatibility code, not the current release path. See docs/REVIEW-2026.1023.0.md before changing runtime or patch policy.
+The main process opens the local Lit Chat UI early (via `file://`) while it starts and checks the gateway subprocess. The UI displays connection progress, then connects over WebSocket for chat and HTTP for API calls. A system tray icon keeps the app alive when all windows are closed. OpenClaw 2026.10.9 requires a newer Node patch than Electron embeds: the current product keeps standalone Node and a physical gateway directory. `runtime/cryoclaw-runtime.json` selects this pair; old ASAR helpers are compatibility code, not the current release path. See docs/REVIEW-2026.1023.0.md before changing runtime or patch policy.
 
 ## Tech Stack
 
@@ -250,6 +250,8 @@ For comprehensive design guidelines, please refer to:
 4. **Default action buttons align right.** In settings pages, action rows should right-align buttons by default (`.btn-row { justify-content: flex-end; }`) for a consistent visual rhythm. Only deviate when an inline/list context explicitly requires local actions.
 
 5. **Motion follows "one continuous take" (一镜到底): elements never pop in or vanish — they travel.** Enter from somewhere (fade + short translate from the edge the element is anchored to), exit the way it came (delayed DOM removal with an exit animation, e.g. toast's leaving state), state swaps cross-fade rather than hard-cut (tool status pop). Everything through the motion tokens (`--ease-standard` for panels/entrances, `--ease-spring` for scale entrances, `--duration-fast/normal` ladder); reduced-motion collapses to instant in `base.css`, and new press/translate feedback must be explicitly registered there.
+
+   **Overlays return where they came from.** Any overlay (popover, menu, floating panel) must close by re-triggering the control that opened it, enter and exit along the same anchored edge, and pick its own side/position adaptively inside the viewport — never covering its trigger or the adjacent primary action. Native `popover="auto"` overlays bind their trigger with the declarative `popovertarget` invoker instead of a manual click toggle, because pointerdown light-dismiss plus a click handler is exactly what makes them impossible to close. Positioning goes through `chat-ui/ui/src/ui/utils/popover-placement.ts`. Full rule and acceptance checklist: `docs/design-guidelines-zh.md` § 浮层返回准则（2026.10.30）.
 
 ## Writing Style (changelog, comments, docs)
 

@@ -4,7 +4,7 @@
  */
 
 import { parseAgentSessionKey } from "../../../src/routing/session-key.js";
-import { refreshChat, refreshChatAvatar } from "./app-chat.ts";
+import { refreshChatAvatar } from "./app-chat.ts";
 import { loadChatHistory } from "./controllers/chat.ts";
 import { patchSession, loadSessions } from "./controllers/sessions.ts";
 import {

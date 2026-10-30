@@ -130,7 +130,7 @@ test('each board keeps its final pending layout when another board is edited dur
 
 test('a parent dashboard update leaves its nested template library modal open',()=>{
   const {host}=hostFixture();host.libraryOpen=true;
-  host.resizeObserver={observe(){}};host.visibilityObserver={observe(){},unobserve(){}};
+  host.resizeObserver={observe(){}};host.visibilityObserver={observe(){},unobserve(){}};host.prefetchObserver={observe(){},unobserve(){}};
   let closed=0;
   const libraryDialog={open:true,close(){closed++;}},ownDialog={open:false};
   host.querySelector=selector=>selector==='dialog'?libraryDialog:selector.includes('dashboard-dialog')?ownDialog:null;

@@ -27,7 +27,7 @@ const kernelDistPatch = require("./lib/kernel-dist-patch");
 const { extractZipArchive, extractTarGzArchive } = require("./lib/extract-archive");
 // Windows + Node 24 的 fs.rmSync 偶发静默失败，统一走带 fallback 的 rmRecursive。
 const rmRecursive = require("./lib/rm-rec")(fs);
-const { pruneMistralSources } = require("./lib/kernel-prune")(fs);
+const { pruneMistralSources, pruneCompiledSdkSources } = require("./lib/kernel-prune")(fs);
 
 // ─── 项目根目录 ───
 const ROOT = path.resolve(__dirname, "..");
@@ -378,7 +378,7 @@ function assertZipHasCentralDirectory(zipPath) {
   }
 }
 
-// ─── Step 1: 下载 Node.js 22 发行包 ───
+// ─── Step 1: 准备捆绑 Node.js 发行包 ───
 // （R64 起 Node 运行时版本钉定在 package.json cryoclaw.node，不再运行时取
 //  "最新 22.x"——升级 Node 走显式改 pin，同法于 cryoclaw.openclaw。）
 
@@ -1030,9 +1030,8 @@ function pruneNonTargetPrebuilds(nmDir, targetPlatform, targetArch) {
   }
 }
 
-// 清理非目标平台的 fs-safe native 目录（@openclaw/fs-safe/dist/native/ 与
-// openclaw/dist/native/ 双份，各含 7 个平台目录、仅 1 个本机有用）。
-// win32-arm64 无专属目录，x64 模拟运行，按 win32 一律保留 win32-x64-msvc。
+// 兼容旧版 fs-safe 的 dist/native 目录布局；0.26 的独立平台包由通用
+// os/cpu 裁剪处理。旧布局没有 Windows ARM64 目录，保留其 x64 模拟路径。
 function pruneFsSafeNativePlatforms(nmDir, platform, arch) {
   const keepDir =
     platform === "win32" ? "win32-x64-msvc"
@@ -1159,7 +1158,12 @@ function installDependencies(opts, gatewayDir) {
     pkgJsonKey: "clawhub",
   });
   const dependencyPolicy = require('./lib/gateway-dependency-policy');
-  const targetStamp = `${opts.platform}-${opts.arch}|${sourceInfo.stampSource}|${clawhubInfo.stampSource}|${dependencyPolicy.stamp}`;
+  // Patch removal must invalidate cached trees too; otherwise a later build can
+  // silently resurrect an adaptation that no longer exists in this source tree.
+  const kernelPatchStamp = require("crypto").createHash("sha256")
+    .update(fs.readFileSync(path.join(__dirname, "lib", "kernel-dist-patch.js")))
+    .digest("hex");
+  const targetStamp = `${opts.platform}-${opts.arch}|${sourceInfo.stampSource}|${clawhubInfo.stampSource}|${dependencyPolicy.stamp}|${kernelPatchStamp}`;
 
   // 增量检测：stamp 匹配 + entry.js 存在 → 跳过安装
   const installedEntry = path.join(gatewayDir, "node_modules", "openclaw", "dist", "entry.js");
@@ -1208,11 +1212,8 @@ function installDependencies(opts, gatewayDir) {
   };
   fs.writeFileSync(path.join(gatewayDir, "package.json"), JSON.stringify(pkg, null, 2));
 
-  // 使用捆绑运行时（Step 1 下载的 Node 22.x）执行 npm install，而非宿主机 npm：
-  // openclaw ≥2026.8 的 preinstall 硬性校验 Node 版本
-  // （>=22.22.3 <23 || >=24.15.0 <25 || >=25.9.0），宿主机 Node 不在范围内
-  // （如 24.14.0）会被直接拒装；捆绑 runtime 版本由我们钉定，恒定满足，
-  // 同时也保证构建产物与宿主环境解耦。
+  // 使用 Step 1 下载的捆绑 Node 执行 npm install。宿主机版本不一定满足
+  // 当前 openclaw 的引擎门槛；构建与实际运行使用同一个受控版本。
   const runtimeDir = path.join(path.dirname(gatewayDir), "runtime");
   const nodeExe = path.join(runtimeDir, opts.platform === "darwin" ? "node" : "node.exe");
   const npmCli = opts.platform === "darwin"
@@ -2695,6 +2696,7 @@ function pruneNodeModules(nmDir, platform) {
   }
 
   pruneMistralSources(nmDir, removeDir);
+  pruneCompiledSdkSources(nmDir, removeDir);
   walk(nmDir);
   log(`node_modules 裁剪统计: 删除文件 ${removedFiles} 个，删除目录 ${removedDirs} 个`);
 }
@@ -3501,21 +3503,49 @@ function vendorKernelUpdater(targetBase) {
   );
   fs.copyFileSync(path.join(ROOT, "scripts/lib/kernel-directory-swap.js"), path.join(updaterDir, "kernel-directory-swap.js"));
   fs.copyFileSync(path.join(ROOT, "scripts/lib/gateway-dependency-policy.js"), path.join(updaterDir, "gateway-dependency-policy.js"));
+  fs.copyFileSync(path.join(ROOT, "shared", "kernel-runtime-policy.cjs"), path.join(updaterDir, "kernel-runtime-policy.cjs"));
 
-  // @electron/asar 版本与仓库 node_modules 对齐，避免构建期/运行期行为漂移
-  const asarPkg = JSON.parse(
-    fs.readFileSync(path.join(ROOT, "node_modules", "@electron", "asar", "package.json"), "utf-8")
-  );
-  // asarPkg.version 读自本仓库 node_modules 的 package.json（受控版本串）
-  // env 走 buildNpmEnv 统一注入镜像 registry（F15：本调用点此前裸奔 npmjs.org）
+  // The physical updater never imports @electron/asar. Keep its compatibility
+  // dependency tree only in ASAR distributions; source helpers remain shared.
+  const runtimePolicyPath=path.join(targetBase,'runtime','cryoclaw-runtime.json');
+  let mode='asar';
+  if(fs.existsSync(runtimePolicyPath)){
+    const policy=JSON.parse(fs.readFileSync(runtimePolicyPath,'utf8'));
+    if(policy.kind!=='node'||policy.gatewayMode!=='loose')throw Error('Invalid updater runtime mode');
+    mode='native';
+  }
+  const asarVersion=mode==='asar'?JSON.parse(fs.readFileSync(path.join(ROOT,'node_modules','@electron','asar','package.json'),'utf8')).version:null;
   const updaterManifest = path.join(updaterDir, 'package.json');
-  const updaterPackage = fs.existsSync(updaterManifest) ? JSON.parse(fs.readFileSync(updaterManifest,'utf8')) : {};
-  updaterPackage.overrides = {...updaterPackage.overrides, 'brace-expansion@5':'5.0.12'};
   const semverVersion = JSON.parse(fs.readFileSync(path.join(ROOT, "node_modules", "semver", "package.json"), "utf-8")).version;
+  const dependencies=mode==='native'?{semver:semverVersion}:{'@electron/asar':asarVersion,semver:semverVersion};
+  const updaterPackage={private:true,dependencies,...(mode==='asar'?{overrides:{'brace-expansion@5':'5.0.12'}}:{})};
   fs.writeFileSync(updaterManifest,JSON.stringify(updaterPackage,null,2)+'\n');
-  execNpmSync(["install", `--prefix=${updaterDir}`, `@electron/asar@${asarPkg.version}`, `semver@${semverVersion}`, "--omit=dev", "--no-audit", "--no-fund"], { cwd: ROOT, env: buildNpmEnv(path.basename(targetBase)) });
+  const stampPath=path.join(updaterDir,'.cryoclaw-updater-stamp');
+  const hash=require('crypto').createHash('sha256').update(mode).update(kernelUpdateSrc).update(JSON.stringify(updaterPackage));
+  for(const name of ['gateway-ctl.mjs','kernel-dist-patch.js','kernel-channel.js','rm-rec.js','kernel-prune.js','kernel-config-snapshot.js','kernel-directory-swap.js','gateway-dependency-policy.js','kernel-runtime-policy.cjs'])hash.update(fs.readFileSync(path.join(updaterDir,name),'utf8'));
+  const stamp=hash.digest('hex');
+  let cacheValid=fs.existsSync(stampPath)&&fs.readFileSync(stampPath,'utf8').trim()===stamp;
+  if(cacheValid){
+    try{
+      cacheValid=Object.entries(dependencies).every(([name,version])=>JSON.parse(fs.readFileSync(path.join(updaterDir,'node_modules',name,'package.json'),'utf8')).version===version);
+      if(mode==='native'&&fs.existsSync(path.join(updaterDir,'node_modules','@electron','asar')))cacheValid=false;
+    }catch{cacheValid=false;}
+  }
+  if(cacheValid)log('内核更新器依赖内容戳未变化，跳过 npm install');
+  else{
+    // Rebuild the private dependency tree on any mode/content change. Merely
+    // changing npm arguments leaves the old direct dependency in package.json
+    // and its transitive files in existing cached resource trees.
+    const modules=path.join(updaterDir,'node_modules');
+    if(fs.existsSync(modules))rmDir(modules);
+    fs.rmSync(path.join(updaterDir,'package-lock.json'),{force:true});
+    fs.rmSync(path.join(updaterDir,'npm-shrinkwrap.json'),{force:true});
+    fs.rmSync(stampPath,{force:true});
+    execNpmSync(["install", `--prefix=${updaterDir}`, ...Object.entries(dependencies).map(([name,version])=>`${name}@${version}`), "--omit=dev", "--no-audit", "--no-fund"], { cwd: ROOT, env: buildNpmEnv(path.basename(targetBase)) });
+    fs.writeFileSync(stampPath,stamp+'\n');
+  }
 
-  log(`已 vendor 内核升级器 (@electron/asar@${asarPkg.version}) → updater/`);
+  log(`已 vendor 内核升级器 (${mode}: ${Object.entries(dependencies).map(([name,version])=>`${name}@${version}`).join(', ')}) → updater/`);
 }
 
 // ─── 主流程 ───
@@ -3532,8 +3562,8 @@ async function main() {
   log("========================================");
   console.log();
 
-  // Step 1: 下载 Node.js 22 运行时
-  log("Step 1: 下载 Node.js 22 运行时");
+  // Step 1: 准备捆绑 Node.js 运行时
+  log("Step 1: 准备捆绑 Node.js 运行时");
   // 版本钉定（R64 审查 P2）：与 cryoclaw.openclaw 同法钉在 package.json
   // cryoclaw.node——"每次取最新 22.x"会让同一次发版的产物随网络时间漂移，
   // 官方一发坏补丁版即同时打崩全部构建；升级走显式改 pin。
@@ -3572,7 +3602,8 @@ async function main() {
   patchKimiThinkingProfile(targetPaths.gatewayDir);
 
   // Product adaptations apply to both physical and legacy ASAR distributions.
-  kernelDistPatch.patchDesktopKernel(targetPaths.gatewayDir);
+  if (opts.asar) kernelDistPatch.patchDesktopKernel(targetPaths.gatewayDir);
+  else kernelDistPatch.patchPhysicalDesktopKernel(targetPaths.gatewayDir);
   if (require(path.join(ROOT, "package.json")).cryoclaw?.gatewayRuntime === "node") {
     const core = JSON.parse(fs.readFileSync(path.join(targetPaths.gatewayDir, "node_modules/openclaw/package.json"), "utf8"));
     const semver = require("semver");

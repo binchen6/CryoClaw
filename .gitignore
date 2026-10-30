@@ -86,3 +86,8 @@ src/**/*.js
 
 # Rust sidecar 构建产物（native/cryoclaw-archive）
 native/cryoclaw-archive/target/
+
+# 其他工具的本地产物（勿提交）
+.zcode/
+.zcodeignore
+output/

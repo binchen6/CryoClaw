@@ -1,5 +1,6 @@
 import type { GatewayBrowserClient } from "../gateway.ts";
 import { t } from "../i18n.ts";
+import { ResourceCache } from "../utils/resource-cache.ts";
 import type { SkillStatusEntry, SkillStatusReport } from "../types.ts";
 
 export type SkillsState = {
@@ -22,6 +23,7 @@ export type SkillMessageMap = Record<string, SkillMessage>;
 
 type LoadSkillsOptions = {
   clearMessages?: boolean;
+  force?: boolean;
 };
 
 function setSkillMessage(state: SkillsState, key: string, message?: SkillMessage) {
@@ -55,7 +57,7 @@ async function runSkillMutation(
   state.skillsError = null;
   try {
     const message = await action();
-    await loadSkills(state);
+    await loadSkills(state, { force: true });
     setSkillMessage(state, skillKey, {
       kind: "success",
       message,
@@ -93,35 +95,59 @@ export function withLoadTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
   });
 }
 
+const skillStatusCaches = new WeakMap<GatewayBrowserClient, ResourceCache<SkillStatusReport>>();
+function skillStatusCacheFor(client: GatewayBrowserClient) {
+  let cache = skillStatusCaches.get(client);
+  if (!cache) {
+    cache = new ResourceCache<SkillStatusReport>(10_000, 2);
+    skillStatusCaches.set(client, cache);
+  }
+  return cache;
+}
+
+type SkillsLoad = { client: GatewayBrowserClient; promise: Promise<void> | null; refreshPending: boolean };
+const skillLoads = new WeakMap<SkillsState, SkillsLoad>();
+
 export async function loadSkills(state: SkillsState, options?: LoadSkillsOptions) {
-  if (options?.clearMessages && Object.keys(state.skillMessages).length > 0) {
-    state.skillMessages = {};
+  if (options?.clearMessages && Object.keys(state.skillMessages).length > 0) state.skillMessages = {};
+  if (!state.client || !state.connected) return;
+  const client = state.client, cache = skillStatusCacheFor(client);
+  const active = skillLoads.get(state);
+  if (active?.client === client && active.promise) {
+    if (options?.force) active.refreshPending = true;
+    return active.promise;
   }
-  if (!state.client || !state.connected) {
-    return;
+  if (!options?.force) {
+    const cached = cache.peek("status");
+    if (cached) { state.skillsReport = cached; state.skillsError = null; return; }
   }
-  if (state.skillsLoading) {
-    return;
-  }
+  const load: SkillsLoad = { client, promise: null, refreshPending: false };
+  skillLoads.set(state, load);
+  const current = () => skillLoads.get(state) === load && state.client === client && state.connected;
   state.skillsLoading = true;
-  const client = state.client;
   state.skillsError = null;
-  try {
-    const res = await withLoadTimeout(
-      client.request<SkillStatusReport | undefined>("skills.status", {}),
-      SKILLS_LOAD_TIMEOUT_MS,
-    );
-    if (res && state.client === client && state.connected) {
-      state.skillsReport = res;
-    }
-  } catch (err) {
-    // 裸错误（gateway request timeout / Error: unknown method ...）只进 console，
-    // UI 统一走友好文案 + 重试（渲染层 skillsError → skill-store__error 出重试按钮）
-    console.warn("[skills] skills.status failed:", err);
-    if (state.client === client && state.connected) state.skillsError = t("skillStore.error");
-  } finally {
-    state.skillsLoading = false;
-  }
+  load.promise = (async () => {
+    do {
+      load.refreshPending = false;
+      try {
+        const report = await withLoadTimeout(client.request<SkillStatusReport>("skills.status", {}), SKILLS_LOAD_TIMEOUT_MS);
+        if (!current()) return;
+        // A successful mutation requested this read again. Its earlier snapshot
+        // must not repopulate either the visible list or the shared cache.
+        if (report && !load.refreshPending) {
+          cache.store("status", report);
+          state.skillsReport = report;
+          state.skillsError = null;
+        }
+      } catch (error) {
+        console.warn("[skills] skills.status failed:", error);
+        if (current() && !load.refreshPending) state.skillsError = t("skillStore.error");
+      }
+    } while (load.refreshPending && current());
+  })().finally(() => {
+    if (skillLoads.get(state) === load) { load.promise = null; state.skillsLoading = false; }
+  });
+  return load.promise;
 }
 
 export function updateSkillEdit(state: SkillsState, skillKey: string, value: string) {

@@ -4,6 +4,7 @@ import type { CronJob, CronRunLogEntry, CronStatus } from "../types.ts";
 import type { CronFormState } from "../ui-types.ts";
 import { toNumber } from "../format.ts";
 import { supportsMethod } from "./capabilities.ts";
+import { ResourceCache } from "../utils/resource-cache.ts";
 
 export type CronState = {
   client: GatewayBrowserClient | null;
@@ -43,39 +44,71 @@ export async function loadCronStatus(state: CronState) {
   }
 }
 
-// 事件驱动重入补跑（对齐 loadRunHistory 的 runsRefreshPending）：cron 广播恰在
-// 在途窗口到达时标记补跑，落地后再拉一轮，避免任务列表最长陈旧一个 tick 周期。
-// chat-ui 按单 app 实例设计，模块级瞬态变量依赖单挂载前提。
-const cronJobsRefreshPending = new WeakSet<CronState>();
+// Navigation shares the current read; mutations/events await a clean follow-up.
+type CronJobsLoad = { client: GatewayBrowserClient; promise: Promise<void> | null; refreshPending: boolean };
+const cronJobsLoads = new WeakMap<CronState, CronJobsLoad>();
+const cronJobsCaches = new WeakMap<GatewayBrowserClient, ResourceCache<CronJob[]>>();
+function cronJobsCacheFor(client: GatewayBrowserClient) {
+  let cache = cronJobsCaches.get(client);
+  if (!cache) {
+    cache = new ResourceCache<CronJob[]>(10_000, 2);
+    cronJobsCaches.set(client, cache);
+  }
+  return cache;
+}
 
-export async function loadCronJobs(state: CronState) {
+export async function loadCronJobs(state: CronState, force = false) {
   if (!state.client || !state.connected) {
     return;
   }
   if (!supportsMethod(state.hello, "cron.list")) {
     return;
   }
-  if (state.cronLoading) {
-    cronJobsRefreshPending.add(state);
-    return;
+  const client = state.client, cache = cronJobsCacheFor(client);
+  const active = cronJobsLoads.get(state);
+  if (force) cache.clear("jobs");
+  if (active?.client === client && active.promise) {
+    if (force) active.refreshPending = true;
+    return active.promise;
   }
-  state.cronLoading = true;
-  const client = state.client;
-  state.cronError = null;
-  try {
-    const res = await client.request<{ jobs?: Array<CronJob> }>("cron.list", {
-      includeDisabled: true,
-    });
-    if (state.client === client && state.connected) state.cronJobs = Array.isArray(res.jobs) ? res.jobs : [];
-  } catch (err) {
-    if (state.client === client && state.connected) state.cronError = String(err);
-  } finally {
-    state.cronLoading = false;
-    if (cronJobsRefreshPending.has(state)) {
-      cronJobsRefreshPending.delete(state);
-      void loadCronJobs(state);
+  if (!force) {
+    const cached = cache.peek("jobs");
+    if (cached) {
+      cronJobsLoads.delete(state);
+      state.cronLoading = false;
+      state.cronJobs = cached;
+      state.cronError = null;
+      return;
     }
   }
+  const load: CronJobsLoad = { client, promise: null, refreshPending: false };
+  cronJobsLoads.set(state, load);
+  const current = () => cronJobsLoads.get(state) === load && state.client === client && state.connected;
+  state.cronLoading = true;
+  state.cronError = null;
+  load.promise = (async () => {
+    do {
+      load.refreshPending = false;
+      try {
+        const res = await client.request<{ jobs?: Array<CronJob> }>("cron.list", { includeDisabled: true });
+        if (!current()) return;
+        if (!load.refreshPending) {
+          const jobs = Array.isArray(res.jobs) ? res.jobs : [];
+          cache.store("jobs", jobs);
+          state.cronJobs = jobs;
+          state.cronError = null;
+        }
+      } catch (err) {
+        if (current() && !load.refreshPending) state.cronError = String(err);
+      }
+    } while (load.refreshPending && current());
+  })().finally(() => {
+    if (cronJobsLoads.get(state) === load) {
+      load.promise = null;
+      state.cronLoading = false;
+    }
+  });
+  return load.promise;
 }
 
 const HHMM_RE = /^\d{1,2}:\d{2}$/;
@@ -261,7 +294,7 @@ export async function addCronJob(state: CronState) {
       description: "",
       payloadText: "",
     };
-    await loadCronJobs(state);
+    await loadCronJobs(state, true);
     if (current()) await loadCronStatus(state);
     return current() && !state.cronError;
   } catch (err) {
@@ -305,7 +338,7 @@ export async function updateCronJob(state: CronState, jobId: string) {
     };
     await client.request("cron.update", { id: jobId, patch });
     if (!current()) return false;
-    await loadCronJobs(state);
+    await loadCronJobs(state, true);
     if (current()) await loadCronStatus(state);
     return current() && !state.cronError;
   } catch (err) {
@@ -330,7 +363,7 @@ export async function toggleCronJob(state: CronState, job: CronJob, enabled: boo
   try {
     await client.request("cron.update", { id: job.id, patch: { enabled } });
     if (!current()) return false;
-    await loadCronJobs(state);
+    await loadCronJobs(state, true);
     if (current()) await loadCronStatus(state);
     return current() && !state.cronError;
   } catch (err) {
@@ -383,7 +416,7 @@ export async function removeCronJob(state: CronState, job: CronJob) {
       state.cronRunsJobId = null;
       state.cronRuns = [];
     }
-    await loadCronJobs(state);
+    await loadCronJobs(state, true);
     if (current()) await loadCronStatus(state);
     return current() && !state.cronError;
   } catch (err) {

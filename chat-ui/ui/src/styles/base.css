@@ -198,9 +198,18 @@ select {
   animation-delay: calc(var(--delay-step) * 5)
 }
 
+/* 全局聚焦基线（2026.10.30 聚焦系统）：一条柔和环，不用 outline——
+   outline 无法跟随 border-radius，圆角控件上会露出方角。
+   输入控件另有更贴合的 .field 变体（边框染色 + 柔光），见 components.css。 */
 :focus-visible {
   outline: none;
   box-shadow: var(--focus-ring)
+}
+
+/* 指针聚焦不显示环；键盘/程序聚焦才显示（:focus-visible 语义已覆盖，
+   这里兜住个别浏览器把 mouseup 后的 :focus 也算可见的情况）。 */
+:focus:not(:focus-visible) {
+  box-shadow: none;
 }
 
 /* Decorative glyphs inherit the accessible name of their owning control. */

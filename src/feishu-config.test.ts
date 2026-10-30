@@ -21,7 +21,7 @@ function setupTempStateDir(t: TestContext): string {
   return stateDir;
 }
 
-test("migrateLegacyFeishuPluginEntry 应把旧插件开关迁移到 channels.feishu.enabled 并移除插件开关", () => {
+test("migrateLegacyFeishuPluginEntry keeps an explicit current channel switch authoritative", () => {
   const config: Record<string, any> = {
     channels: {
       feishu: {
@@ -41,15 +41,15 @@ test("migrateLegacyFeishuPluginEntry 应把旧插件开关迁移到 channels.fei
 
   const changed = migrateLegacyFeishuPluginEntry(config);
 
-  assert.equal(changed, true);
+  assert.equal(changed, false);
   assert.equal(config.channels.feishu.enabled, true);
   assert.equal(config.channels.feishu.appId, "cli_a");
   assert.deepEqual(config.plugins.allow, ["openclaw-weixin", "wecom-openclaw-plugin", "kimi", "browser"]);
-  assert.equal(config.plugins.entries.feishu, undefined);
+  assert.equal(config.plugins.entries.feishu.enabled, true);
   assert.equal(config.plugins.entries.kimi.enabled, true);
 });
 
-test("migrateLegacyFeishuPluginEntry 应以旧插件开关为准，避免用户禁用后被 channels 旧值重新启用", () => {
+test("migrateLegacyFeishuPluginEntry does not let an old plugin flag overwrite the channel switch", () => {
   const config: Record<string, any> = {
     channels: {
       feishu: {
@@ -66,10 +66,10 @@ test("migrateLegacyFeishuPluginEntry 应以旧插件开关为准，避免用户�
 
   const changed = migrateLegacyFeishuPluginEntry(config);
 
-  assert.equal(changed, true);
-  assert.equal(config.channels.feishu.enabled, false);
+  assert.equal(changed, false);
+  assert.equal(config.channels.feishu.enabled, true);
   assert.equal(config.channels.feishu.appId, "cli_disabled");
-  assert.equal(config.plugins.entries.feishu, undefined);
+  assert.equal(config.plugins.entries.feishu.enabled, false);
 });
 
 /* ── isFeishuPluginBundled 四根判定（T5） ──

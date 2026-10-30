@@ -15,7 +15,8 @@ import { assertTrustedIpcSender } from "../ipc-sender-guard";
 import {
   resolveNodeBin, resolveGatewayEntry, resolveGatewayCwd, resolveUserStateDir,
 } from "../constants";
-import { readUserConfigForWrite, writeUserConfig } from "../provider-config";
+import { readUserConfig, readUserConfigForWrite, writeUserConfig } from "../provider-config";
+import { configuredWorkspacePath } from "../workspace-ipc";
 import { syncPluginAllowOnEnable } from "../kimi-config";
 import {
   listWorkspaceMemory, readWorkspaceMemoryEntry, appendMemorySection, deleteDreamEntryFile,
@@ -27,7 +28,7 @@ const MEMORY_CLI_TIMEOUT_SEARCH_MS = 90_000;
 const MEMORY_CLI_TIMEOUT_INDEX_MS = 300_000;
 
 function workspaceDir(): string {
-  return path.join(resolveUserStateDir(), "workspace");
+  return configuredWorkspacePath(readUserConfig());
 }
 
 // 与 gateway-process spawn 保持一致的最小环境（asar 入口 + 统一状态目录）
@@ -92,6 +93,10 @@ function runMemoryCli(args: string[], timeoutMs: number): Promise<CliOutcome> {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      if (code !== 0) {
+        resolve({ ok: false, message: stderr.trim().split("\n").slice(-3).join(" ") || `memory CLI exited (${code})` });
+        return;
+      }
       const parsed = extractCliJson(stdout);
       if (parsed === null) {
         resolve({ ok: false, message: stderr.trim().split("\n").slice(-3).join(" ") || `memory CLI exited (${code})` });

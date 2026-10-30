@@ -9,7 +9,7 @@ export class ResourceCache<T>{
     if(!force && previous?.pending)return previous.pending;
     const cached=!force?this.peek(key):undefined;if(cached!==undefined)return Promise.resolve(cached);
     const entry:Entry<T>={at:0};this.entries.set(key,entry);
-    const pending=Promise.resolve().then(load).then(value=>{
+    const pending=(async()=>load())().then(value=>{
       if(this.entries.get(key)===entry){entry.value=value;entry.at=this.now();entry.pending=undefined;}
       return value;
     },error=>{if(this.entries.get(key)===entry)this.entries.delete(key);throw error;});
@@ -17,5 +17,6 @@ export class ResourceCache<T>{
     while(this.entries.size>this.limit)this.entries.delete(this.entries.keys().next().value!);
     return pending;
   }
+  store(key:string,value:T):void{this.entries.set(key,{value,at:this.now()});while(this.entries.size>this.limit)this.entries.delete(this.entries.keys().next().value!);}
   clear(key?:string):void{if(key===undefined)this.entries.clear();else this.entries.delete(key);}
 }

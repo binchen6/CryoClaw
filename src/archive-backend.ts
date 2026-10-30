@@ -14,7 +14,6 @@ import * as fs from "fs";
 import * as path from "path";
 
 const TOOL_EXE = process.platform === "win32" ? "cryoclaw-archive.exe" : "cryoclaw-archive";
-const VERSION_PREFIX = "cryoclaw-archive ";
 const HANDSHAKE_TIMEOUT_MS = 10_000;
 // 会话级 stdout 空闲看门狗：合法最慢路径是 sidecar 解析超大 stdin command JSON 或
 // 单条目 deflate，均在秒级；AV 扫描锁文件/协议死锁类挂起 2 分钟足够判死

@@ -165,7 +165,7 @@ export function renderTabVoice(state: AppViewState) {
   }
 
   return html`
-    <div class="oc-settings__section" aria-busy=${s.ttsLoading && !s.ttsLoaded ? "true" : nothing}>
+    <div class="oc-settings__section" data-page-id="settings:voice" data-load-state=${s.ttsLoading || !s.ttsLoaded?"loading":s.ttsFailed?"error":"ready"} aria-busy=${s.ttsLoading || !s.ttsLoaded}>
       <h2 class="oc-settings__section-title">${t("settings.voice.title")}</h2>
       <p class="oc-settings__hint">${t("settings.voice.desc")}</p>
       <div class="btn-row"><button class="btn btn--sm" ?disabled=${s.ttsLoading || s.actionPending || !state.connected} @click=${()=>void loadVoiceStatus(s,state,()=>state.requestUpdate(),true)}>${s.ttsLoading?t("settings.voice.statusLoading"):t("settings.voice.refresh")}</button></div>

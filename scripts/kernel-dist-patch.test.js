@@ -9,17 +9,150 @@ const path = require("node:path");
 
 const kdp = require("./lib/kernel-dist-patch");
 
+test("command catalog cache shares concurrent builds and invalidates changed generations",async t=>{
+  const {gatewayDir,distDir}=makeGatewayDist(t,{
+    "commands-list-result-test.mjs":"async function buildCommandsListResult(params) { return {commands:[]}; }",
+    "refresh-state-test.mjs":"","runtime-aaa.mjs":"","runtime-test.mjs":"export { getActivePluginRegistryVersion as d };","agent-scope-config-test.mjs":"","workspace-skill-loader-test.mjs":"",
+  });
+  assert.equal(kdp.patchCommandCatalogCache(gatewayDir),1);
+  const file=path.join(distDir,"commands-list-result-test.mjs"),source=fs.readFileSync(file,"utf8");
+  assert.match(source,/\.\/runtime-test\.mjs/);assert.doesNotMatch(source,/\.\/runtime-aaa\.mjs/);
+  fs.writeFileSync(file,source.replace("runtime-test.mjs","runtime-aaa.mjs"));assert.equal(kdp.patchCommandCatalogCache(gatewayDir),1);assert.match(fs.readFileSync(file,"utf8"),/\.\/runtime-test\.mjs/);
+  assert.equal(kdp.patchCommandCatalogCache(gatewayDir),1);assert.equal(fs.readFileSync(file,"utf8"),source);
+  assert.match(source,/ttlMs=5000/);assert.match(source,/buildCommandsListResultUncached/);
+  const factory=new Function(source.slice(source.indexOf("function createCryoclawCommandCache"),source.indexOf("const cryoclawCommandCache="))+";return createCryoclawCommandCache;")();
+  let version=1,builds=0;const cache=factory({configFingerprint:()=>"config",workspaceDir:()=>"workspace",sourceVersion:()=>version,snapshotVersion:()=>version,registryVersion:()=>version});
+  const params={cfg:{},agentId:"main"},build=async()=>({build:++builds});
+  const [first,second]=await Promise.all([cache.run(params,build),cache.run(params,build)]);
+  assert.equal(first.build,1);assert.equal(second.build,1);assert.equal(builds,1);
+  await cache.run(params,build);assert.equal(builds,1);
+  version++;await cache.run(params,build);assert.equal(builds,2);
+  version++;await assert.rejects(cache.run(params,async()=>{throw Error("read failed")}),/read failed/);
+  await cache.run(params,build);assert.equal(builds,3);
+});
+
+test("plugin copy batches share directory admissions for one source capture and close on disposal",t=>{
+  const {gatewayDir,distDir}=makeGatewayDist(t,{
+    "plugin-generation-source-lookup-aaa.mjs":"export {};","plugin-generation-artifact-aaa.mjs":"export {};",
+    "plugin-generation-source-lookup-test.mjs":'import { copyRootFileSync, createFileSync } from "@openclaw/fs-safe/advanced";\nfunction createPluginSourceCapture(){ const captureFailures = /* @__PURE__ */ new Map(); const beginDisposal = () => {\n\t\tdisposed = true; return { additions,\n\t\tcapture: acquire }; }',
+    "plugin-generation-artifact-test.mjs":'import { createRootFileCopyBatchSync } from "@openclaw/fs-safe/advanced";\nfunction createPluginGenerationFileCapture(){}\nreturn (source, target) => {\n\t\ttry {\n\t\t\tvar _usingCtx$1 = _usingCtx();\n\t\t\tconst batch = _usingCtx$1.u(createRootFileCopyBatchSync());\n\t\t\treturn copy(source, target, batch.copyFile.bind(batch));\n\t\t} catch (_) {\n\t\t\t_usingCtx$1.e = _;\n\t\t} finally {\n\t\t\t_usingCtx$1.d();\n\t\t}\n\t};',
+  });
+  assert.equal(kdp.patchPluginCopyBatchLifetime(gatewayDir),2);
+  const lookup=fs.readFileSync(path.join(distDir,"plugin-generation-source-lookup-test.mjs"),"utf8"),artifact=fs.readFileSync(path.join(distDir,"plugin-generation-artifact-test.mjs"),"utf8");
+  assert.match(lookup,/copyBatch\.close\(\)/);assert.match(lookup,/copyBatch,\n\t\tcapture: acquire/);assert.match(artifact,/sourceCapture\.copyBatch\.copyFile/);assert.doesNotMatch(artifact,/_usingCtx\$1\.u\(createRootFileCopyBatchSync/);
+  assert.equal(kdp.patchPluginCopyBatchLifetime(gatewayDir),2);assert.equal(fs.readFileSync(path.join(distDir,"plugin-generation-source-lookup-test.mjs"),"utf8"),lookup);assert.equal(fs.readFileSync(path.join(distDir,"plugin-generation-artifact-test.mjs"),"utf8"),artifact);
+});
+
+test("small plugin sources revalidate canonical identity without reopening and retain the original fallback",t=>{
+  const assertion=`\t\tconst assertSource = () => withPluginSourceFile(source, boundary, (currentFd) => {\n\t\t\tconst current = fs.fstatSync(currentFd, { bigint: true });\n\t\t\tconst before = pluginSourceStatIdentity(admitted);\n\t\t\tconst after = pluginSourceStatIdentity(current);\n\t\t\tif (before !== after && !pluginSourceIdentityChangedOnlyByCtime(before, after)) throw new FsSafeError(current.size > admitted.size ? "too-large" : "path-mismatch", "Plugin source changed while preparing its reload; retry after the edit finishes.");\n\t\t});`;
+  const {gatewayDir,distDir}=makeGatewayDist(t,{
+    "plugin-generation-source-lookup-aaa.mjs":"export {};",
+    "plugin-generation-source-lookup-test.mjs":`function copySmallPluginSourceFile() {\n${assertion}\n}`,
+  });
+  assert.equal(kdp.patchPluginSmallSourceRevalidation(gatewayDir),1);
+  const file=path.join(distDir,"plugin-generation-source-lookup-test.mjs"),source=fs.readFileSync(file,"utf8");
+  assert.match(source,/cryoclaw-plugin-small-source-revalidation/);assert.match(source,/process\.platform === "win32"/);assert.match(source,/fs\.fstatSync\(fd, \{ bigint: true \}\)/);assert.match(source,/if \(!directSource\) return withPluginSourceFile/);assert.match(source,/root\.dev !== boundaryIdentity\.dev/);assert.match(source,/cryoclawPluginRealpath\(source\) !== canonicalSource/);
+  assert.match(source,/CRYOCLAW_PLUGIN_SMALL_SOURCE_REVALIDATION !== "0"/);
+  // Upgrading already patched trees must add the switch too.
+  fs.writeFileSync(file,source.replace(' && process.env.CRYOCLAW_PLUGIN_SMALL_SOURCE_REVALIDATION !== "0"',''));
+  assert.equal(kdp.patchPluginSmallSourceRevalidation(gatewayDir),1);assert.equal(fs.readFileSync(file,"utf8"),source);
+  const makeAssertion=new Function('fs','process','cryoclawPluginCanonicalRoot','cryoclawPluginRealpath','isPathInside','pluginSourceStatIdentity','pluginSourceIdentityChangedOnlyByCtime','withPluginSourceFile','FsSafeError',source.replace('function copySmallPluginSourceFile()','function copySmallPluginSourceFile(source,boundary,fd,admitted)').replace(/\n}$/, '\nreturn assertSource;\n}')+';return copySmallPluginSourceFile;');
+  const root=fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(),'small-source-identity-')));
+  t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+  const input=path.join(root,'input.js');fs.writeFileSync(input,'original');
+  const fd=fs.openSync(input,'r');t.after(()=>fs.closeSync(fd));
+  const identity=stat=>`${stat.dev}:${stat.ino}:${stat.mode}:${stat.size}:${stat.mtimeNs}:${stat.ctimeNs}`;
+  const onlyCtime=(a,b)=>a.slice(0,a.lastIndexOf(':'))===b.slice(0,b.lastIndexOf(':'));
+  let fallbackCalls=0;
+  const env={};
+  const factory=makeAssertion(fs,{platform:'win32',env},fs.realpathSync.native,fs.realpathSync.native,(a,b)=>{const rel=path.relative(a,b);return rel===''||!rel.startsWith('..'+path.sep)&&rel!=='..'&&!path.isAbsolute(rel);},identity,onlyCtime,(source,boundary,read)=>{fallbackCalls++;const current=fs.openSync(source,'r');try{return read(current);}finally{fs.closeSync(current);}},class extends Error {constructor(code,message){super(message);this.code=code;}});
+  const admitted=fs.fstatSync(fd,{bigint:true}),check=factory(input,root,fd,admitted);
+  check();assert.equal(fallbackCalls,0,'canonical paths reuse the admitted descriptor');
+  env.CRYOCLAW_PLUGIN_SMALL_SOURCE_REVALIDATION='0';factory(input,root,fd,admitted)();assert.equal(fallbackCalls,1,'opt-out returns to the original guarded-open callback');
+  delete env.CRYOCLAW_PLUGIN_SMALL_SOURCE_REVALIDATION;
+  factory(root+path.sep+'.'+path.sep+'input.js',root,fd,admitted)();assert.equal(fallbackCalls,2,'noncanonical spelling uses the guarded-open callback');
+  // A changed pathname must not be accepted just because the original fd is alive.
+  fs.renameSync(input,input+'.held');fs.writeFileSync(input,'replacement');
+  assert.throws(check,/Plugin source changed/);
+  fs.unlinkSync(input);fs.renameSync(input+'.held',input);
+  const changed=factory(input,root,fd,fs.fstatSync(fd,{bigint:true}));
+  fs.writeFileSync(input,'longer contents');assert.throws(changed,/Plugin source changed/);
+  fs.writeFileSync(file,source.replace("const current = fs.fstatSync(currentFd, { bigint: true });","const current = null;"));
+  assert.throws(()=>kdp.patchPluginSmallSourceRevalidation(gatewayDir),/small source revalidation contract changed/);
+});
+
+test("usage summary and display context start together without changing their inputs",t=>{
+  const body=`\t\t\t\t\tconst { summaries: usageByEntryIndex, cacheStatus } = await loadUsageSessionSummaries({\n\t\t\t\t\t\tentries: mergedEntries,\n\t\t\t\t\t\tconfig,\n\t\t\t\t\t\tstartMs,\n\t\t\t\t\t\tendMs,\n\t\t\t\t\t\tincludeUntimestamped,\n\t\t\t\t\t\tdayBucket\n\t\t\t\t\t});\n\t\t\t\t\tawait loadUsageSessionContext(mergedEntries.slice(0, limit), visibilityFilter);`;
+  const {gatewayDir,distDir}=makeGatewayDist(t,{"usage-test.mjs":body});
+  assert.equal(kdp.patchUsageSessionContextOverlap(gatewayDir),1);
+  const file=path.join(distDir,"usage-test.mjs"),source=fs.readFileSync(file,"utf8");
+  assert.match(source,/Promise\.all\(\[/);assert.match(source,/loadUsageSessionSummaries\(\{/);assert.match(source,/loadUsageSessionContext\(mergedEntries\.slice\(0, limit\), visibilityFilter\)/);assert.doesNotMatch(source,/await loadUsageSessionContext/);
+  assert.equal(kdp.patchUsageSessionContextOverlap(gatewayDir),1);assert.equal(fs.readFileSync(file,"utf8"),source);
+  fs.writeFileSync(file,body.replace("includeUntimestamped","changed"));assert.throws(()=>kdp.patchUsageSessionContextOverlap(gatewayDir),/Usage context overlap contract changed/);
+});
+
+test("Control UI retention is lazy, verifies on fallback and honors shutdown",async t=>{
+  const {gatewayDir,distDir}=makeGatewayDist(t,{
+    "server-control-ui-root-test.mjs":`function createControlUiAssetRetention(root) {
+	let generations = [];
+	let preparing;
+	let inventory;
+	const findAsset = (assetPath) => null;
+	return {
+		prepare({ signal } = {}) {},
+		async resolveAsset(assetPath) {
+			const asset = findAsset(assetPath);
+			if (asset || !inventory) return asset;
+			await inventory.catch(() => void 0);
+			return findAsset(assetPath);
+		}
+};
+}
+async function prepareLifecycle(params) {
+		if (state.kind === "bundled") await state.retainedAssets?.prepare({ signal }).catch((error) => {
+			if (isStopped()) return;
+			const detail = error instanceof Error ? error.message : String(error);
+			params.log.warn(\`gateway: Control UI asset retention failed: \${detail}\`);
+		});
+}
+async function read(root, owner, fileRel) {
+	return await root.retainedAssets?.resolveAsset(fileRel);
+}`,
+  });
+  assert.equal(kdp.patchLazyControlUiRetention(gatewayDir),1);
+  const source=fs.readFileSync(path.join(distDir,"server-control-ui-root-test.mjs"),"utf8");
+  assert.doesNotMatch(source,/state\.retainedAssets\?\.prepare\(\{ signal \}\)/);
+  assert.match(source,/resolveAsset\(fileRel, owner\.controller\.signal\)/);
+  const body=source.match(/async resolveAsset\(assetPath, signal\) \{[\s\S]*?\n\t\t\}/)[0];
+  const makeResolver=(find,prepare,logger,inventory)=>new Function("findAsset","prepare","log","inventory","return {"+body+"};")(find,prepare,logger,inventory).resolveAsset;
+  const asset={filePath:"verified"};let ready=false;const calls=[];
+  const resolve=makeResolver(assetPath=>ready&&assetPath==="assets/old.js"?asset:null,async options=>{calls.push(options);ready=true;},{warn(){}},undefined);
+  const controller=new AbortController();
+  assert.equal(await resolve("assets/old.js",controller.signal),asset);
+  assert.equal(calls.length,1);assert.equal(calls[0].signal,controller.signal);
+  controller.abort();await assert.rejects(resolve("assets/other.js",controller.signal),/aborted/);assert.equal(calls.length,1);
+  const cached=makeResolver(()=>asset,()=>{throw Error("eager validation")},{warn(){}},Promise.resolve());
+  assert.equal(await cached("assets/cached.js"),asset);
+  const warnings=[];
+  const failed=makeResolver(()=>null,async()=>{throw Error("verification failed")},{warn:(...args)=>warnings.push(args)},undefined);
+  assert.equal(await failed("assets/missing.js"),null);assert.equal(warnings.length,1);
+  assert.equal(kdp.patchLazyControlUiRetention(gatewayDir),1);assert.equal(fs.readFileSync(path.join(distDir,"server-control-ui-root-test.mjs"),"utf8"),source);
+});
+
 test("selective provider capture is limited to declared compiled discovery of trusted global owners",t=>{
   const {gatewayDir,distDir}=makeGatewayDist(t,{"plugin-setup-module-test.mjs":"function getPluginSetupModuleLoader(record, source, rootDir) { bindPluginInstanceModuleLoader({origin: record.origin,\n\t\t\t\tsource,\n\t\t\t\trootDir}); }"});
   assert.equal(kdp.patchSelectiveProviderDiscoveryCapture(gatewayDir),1);const file=path.join(distDir,"plugin-setup-module-test.mjs"),source=fs.readFileSync(file,"utf8");assert.equal(kdp.patchSelectiveProviderDiscoveryCapture(gatewayDir),1);assert.equal(fs.readFileSync(file,"utf8"),source);
   fs.writeFileSync(file,source.replace('record.id!=="codex"||',''));assert.equal(kdp.patchSelectiveProviderDiscoveryCapture(gatewayDir),1);assert.equal(fs.readFileSync(file,"utf8"),source);
   const root=path.resolve('plugin'),entry=path.join(root,'dist/provider-discovery.js'),record={id:'codex',origin:'global',trustedOfficialInstall:true,rootDir:root,providerDiscoverySource:entry};const vm=require('node:vm'),c=vm.createContext({path,process:{platform:process.platform}});vm.runInContext(source.slice(source.indexOf('/* cryoclaw-selective-provider-discovery */')),c);
   assert.equal(c.cryoclawSelectiveProviderDiscovery(record,entry,root),true);
+  for(const id of ['deepseek','moonshot'])assert.equal(c.cryoclawSelectiveProviderDiscovery({...record,id},entry,root),true);
+  const ollamaEntry=path.join(root,'provider-discovery.js');assert.equal(c.cryoclawSelectiveProviderDiscovery({...record,id:'ollama',providerDiscoverySource:ollamaEntry},ollamaEntry,root),true);
+  assert.equal(c.cryoclawSelectiveProviderDiscovery({...record,id:'deepseek',sourcePreferred:true},entry,root),false);
   for(const change of [{id:'another-provider'},{origin:'workspace'},{origin:'bundled'},{trustedOfficialInstall:false},{enabled:false},{providerDiscoverySource:path.join(root,'other.js')}])assert.equal(c.cryoclawSelectiveProviderDiscovery({...record,...change},entry,root),false);
   assert.equal(c.cryoclawSelectiveProviderDiscovery(record,path.join(root,'index.js'),root),false);assert.equal(c.cryoclawSelectiveProviderDiscovery(record,entry,path.dirname(root)),false);
 });
 
-test("10.6 explicit search shortcut admits only the configured trusted enabled global owner",t=>{
+test("10.7 explicit search shortcut admits only the configured trusted enabled global owner",t=>{
   const {gatewayDir,distDir}=makeGatewayDist(t,{"public-artifact-factories-test.mjs":"export { loadBundledPublicArtifactEntries as t };","runtime-web-tools-test.mjs":"async function resolveBundledWebProviders(params) { return ['native fallback']; }"});
   assert.equal(kdp.patchConfiguredTrustedSearchArtifact(gatewayDir),1);const file=path.join(distDir,"runtime-web-tools-test.mjs"),source=fs.readFileSync(file,"utf8");assert.equal(kdp.patchConfiguredTrustedSearchArtifact(gatewayDir),1);assert.equal(fs.readFileSync(file,"utf8"),source);
   const provider={id:"search",label:"Search",hint:"",placeholder:"",signupUrl:"",credentialPath:"config.key",envVars:[],getCredentialValue(){},setCredentialValue(){},createTool(){}};let calls=0,fail=false;
@@ -61,7 +194,7 @@ test("public history preserves bounded owned delivery receipts without exposing 
 test("agent startup retries typed publication supersession with an active authority and a fixed budget",async t=>{
   const {gatewayDir,distDir}=makeGatewayDist(t,{
     "agent-database-startup-test.mjs":"async function run(activation,input,assertCurrent){await activation.publishAgent(input);}",
-    "prepared-model-runtime.errors-test.mjs":"export class Superseded extends Error {}",
+    "prepared-model-runtime.errors-test.mjs":"var PreparedModelRuntimePublicationSupersededError = class extends Error {}; export { PreparedModelRuntimePublicationSupersededError as r };",
   });
   assert.equal(kdp.patchAgentStartupPublication(gatewayDir),1);
   const source=fs.readFileSync(path.join(distDir,"agent-database-startup-test.mjs"),"utf8");
@@ -76,6 +209,42 @@ test("agent startup retries typed publication supersession with an active author
   const once=fs.readFileSync(path.join(distDir,"agent-database-startup-test.mjs"),"utf8");kdp.patchAgentStartupPublication(gatewayDir);assert.equal(fs.readFileSync(path.join(distDir,"agent-database-startup-test.mjs"),"utf8"),once);
 });
 
+test('10.9 publication retries bind the actual exported class and repair an old marked alias',async t=>{
+  const {pathToFileURL}=require('node:url');
+  const {gatewayDir,distDir}=makeGatewayDist(t,{
+    'agent-database-startup-test.mjs':'export async function run(activation,input,assertCurrent){await activation.publishAgent(input);}',
+    'prepared-model-runtime.errors-test.mjs':`var PreparedModelRuntimePublicationSupersededError = class extends Error {};
+function assertPreparedModelRuntimeCandidatesCurrent(){}
+export {PreparedModelRuntimePublicationSupersededError as n,assertPreparedModelRuntimeCandidatesCurrent as r};`,
+  });
+  const file=path.join(distDir,'agent-database-startup-test.mjs');
+  assert.equal(kdp.patchAgentStartupPublication(gatewayDir),1);
+  const source=fs.readFileSync(file,'utf8');assert.match(source,/import \{ n as CryoclawPublicationSuperseded \}/);
+  const {n:Superseded}=await import(require('node:url').pathToFileURL(path.join(distDir,'prepared-model-runtime.errors-test.mjs')).href);
+  const {run}=await import(pathToFileURL(file).href);let calls=0,guards=0;
+  await run({publishAgent:async()=>{if(++calls<3)throw new Superseded('prepared model runtime publication was superseded');}}, {},()=>{guards++;});
+  assert.equal(calls,3);assert.equal(guards,3);
+  fs.writeFileSync(file,source.replace('n as CryoclawPublicationSuperseded','r as CryoclawPublicationSuperseded'));
+  assert.equal(kdp.patchAgentStartupPublication(gatewayDir),1);assert.equal(fs.readFileSync(file,'utf8'),source);
+  assert.equal(kdp.patchAgentStartupPublication(gatewayDir),1);assert.equal(fs.readFileSync(file,'utf8'),source);
+  const errors=path.join(distDir,'prepared-model-runtime.errors-test.mjs');
+  fs.writeFileSync(errors,'function PreparedModelRuntimePublicationSupersededError() {}\nexport {PreparedModelRuntimePublicationSupersededError as n};');
+  assert.throws(()=>kdp.patchAgentStartupPublication(gatewayDir),/publication error contract changed/i);
+  assert.equal(fs.readFileSync(file,'utf8'),source,'unknown class contract must fail before touching an existing marker');
+});
+
+for(const version of ['2026.10.7','2026.10.9'])for(const [name,pattern]of [
+  ['writeKernelCompatibilityMetadata',/exactly one agent schema admission/],
+  ['patchWebhookCompletionPrecheck',/Webhook.*coverage/],
+  ['patchCommandCatalogCache',/Command catalog cache did not cover/],
+  ['patchLazyControlUiRetention',/Control UI retention patch must cover/],
+  ['patchDeliverablesHistoryProjection',/Delivery history projection did not cover/],
+])test(`${version} required ${name} coverage cannot silently disappear`,t=>{
+  const {gatewayDir,distDir}=makeGatewayDist(t,{'runtime-test.mjs':'export { getActivePluginRegistryVersion as d };'});
+  fs.writeFileSync(path.join(path.dirname(distDir),'package.json'),JSON.stringify({version,openclaw:{schemaVersions:{state:20,agent:25}}}));
+  assert.throws(()=>kdp[name](gatewayDir),pattern);
+});
+
 test("kernel schema metadata follows the actual admission gate and rejects an unknown gate",t=>{
   const {gatewayDir,distDir}=makeGatewayDist(t,{"openclaw-agent-db-schema-read-test.mjs":'if (userVersion > 25) throw createNewerSqliteSchemaVersionError("OpenClaw agent database", pathname, userVersion, 25);'});
   const root=path.dirname(distDir);fs.writeFileSync(path.join(root,"package.json"),JSON.stringify({version:"2026.10.5"}));
@@ -83,6 +252,16 @@ test("kernel schema metadata follows the actual admission gate and rejects an un
   assert.deepEqual(JSON.parse(fs.readFileSync(path.join(root,"cryoclaw-kernel-compat.json"),"utf8")),{version:"2026.10.5",agentDbUserVersion:25});
   fs.writeFileSync(path.join(distDir,"openclaw-agent-db-schema-read-test.mjs"),"changed admission contract");
   assert.throws(()=>kdp.writeKernelCompatibilityMetadata(gatewayDir),/admission changed/);
+});
+
+test("10.7 schema metadata rejects a missing gate or a manifest that disagrees with admission",t=>{
+  const {gatewayDir,distDir}=makeGatewayDist(t,{"openclaw-agent-db-schema-read-test.mjs":'if (userVersion > 25) throw createNewerSqliteSchemaVersionError("OpenClaw agent database", pathname, userVersion, 25);'});
+  const root=path.dirname(distDir),manifest=path.join(root,"package.json"),schema=path.join(distDir,"openclaw-agent-db-schema-read-test.mjs");
+  fs.writeFileSync(manifest,JSON.stringify({version:"2026.10.7",openclaw:{schemaVersions:{state:20,agent:25}}}));
+  assert.equal(kdp.writeKernelCompatibilityMetadata(gatewayDir),1);
+  fs.writeFileSync(manifest,JSON.stringify({version:"2026.10.7",openclaw:{schemaVersions:{state:20,agent:26}}}));
+  assert.throws(()=>kdp.writeKernelCompatibilityMetadata(gatewayDir),/manifest and admission gate disagree/);
+  fs.rmSync(schema);assert.throws(()=>kdp.writeKernelCompatibilityMetadata(gatewayDir),/exactly one agent schema admission module/);
 });
 
 test("10.5 canonical-root optimization follows withPluginSourceFile into source-lookup",t=>{

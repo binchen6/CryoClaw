@@ -7,6 +7,7 @@ import type { TemplateResult } from "lit";
 import type { AppViewState } from "../../app-view-state.ts";
 import { t, tWithDetail } from "../../i18n.ts";
 import { runExitAnimation, exitHostFromEvent } from "../../utils/exit-anim.ts";
+import { restoreDialogOpenerSoon } from "../../dialog-a11y.ts";
 import * as ipc from "../../data/ipc-bridge.ts";
 import { getConfigSnapshot, getCachedConfigSnapshot } from "../../controllers/config.ts";
 import { updateChannelEnabled, syncChannelEnabledFromSnapshot } from "./tab-channels.ts";
@@ -17,7 +18,7 @@ import { renderPairingPanel, type PairingPanelState } from "./tab-channels-pairi
 // 首次打开时从 config 快照填充表单，再做面板自定义的附加加载（runtime 探测、账号列表等）。
 export async function initChannelTabOnce(
   state: AppViewState,
-  st: { initialized: boolean },
+  st: { initialized: boolean; loadState?: string },
   opts: {
     applyConfig?: (config: Record<string, unknown>) => void;
     loadExtra?: () => Promise<void>;
@@ -26,6 +27,7 @@ export async function initChannelTabOnce(
 ): Promise<void> {
   if (st.initialized) return;
   st.initialized = true;
+  st.loadState = "loading";
   try {
     if (state.client && state.connected) {
       await getConfigSnapshot(state.client);
@@ -35,16 +37,18 @@ export async function initChannelTabOnce(
     await opts.loadExtra?.();
     state.requestUpdate();
     opts.after?.();
-  } catch {}
+    if (st.loadState !== "error") st.loadState = "ready";
+  } catch { st.loadState = "error"; }
+  state.requestUpdate();
 }
 
 // bundled 运行态探测（dingtalk / qqbot / wecom / feishu 共用）：未打包时携带主进程提示文案。
 // 提取逻辑走 tab-channels.lib 的纯函数（含旧主进程缺键的 fail-open 语义），可独立单测。
 export async function loadBundledRuntimeState(
   platform: "dingtalk" | "qqbot" | "wecom" | "feishu",
-  st: { bundled: boolean; bundleMessage: string },
+  st: { bundled: boolean; bundleMessage: string; loadState?: string },
 ): Promise<void> {
-  const runtime = await ipc.settingsGetChannelRuntimeState().catch(() => null);
+  const runtime = await ipc.settingsGetChannelRuntimeState().catch(() => { st.loadState = "error"; return null; });
   const view = extractBundledRuntimeView(runtime, platform);
   if (view) {
     st.bundled = view.bundled;
@@ -82,6 +86,7 @@ export function createChannelPanelBaseState() {
     hint: null as string | null,
     pairingPanel: { pairingRequests: [], approvedEntries: [], loading: false } as PairingPanelState,
     initialized: false,
+    loadState: "loading",
     addGroupDialogOpen: false,
     addGroupInput: "",
     addGroupError: null as string | null,
@@ -236,13 +241,22 @@ export function openChannelAddGroupDialog(state: AppViewState, st: AddGroupDialo
   st.addGroupInput = "";
   st.addGroupError = null;
   state.requestUpdate();
+  // 弹窗出现后焦点直接落进输入框（Lit 的更新在微任务里跑完，下一帧 DOM 已就位）。
+  // 不套 ref：每次输入都会重渲染，ref 回调会把焦点从「确认」按钮抢回输入框。
+  requestAnimationFrame(() => {
+    document.querySelector<HTMLInputElement>(".oc-modal-overlay [data-dialog-autofocus]")?.focus();
+  });
 }
 
-// 关闭添加群弹窗（取消/确认后共用）
+// 关闭添加群弹窗（取消/确认后共用）——本弹窗唯一的"真的关掉了"的收口：
+// 状态一清 Lit 就把 overlay 从 DOM 摘掉，所以先抓住节点，再按「原路返回」把焦点
+// 还给打开它的那个"+"按钮（opener 由 dialog-a11y 在焦点移入时记录）。
 export function closeChannelAddGroupDialog(state: AppViewState, st: AddGroupDialogFullState) {
+  const host = document.querySelector<HTMLElement>("[data-dialog-autofocus]")?.closest<HTMLElement>(".oc-modal-overlay") ?? null;
   st.addGroupDialogOpen = false;
   st.addGroupError = null;
   state.requestUpdate();
+  if (host) restoreDialogOpenerSoon(host);
 }
 
 // 确认添加群：feishu 传 validate 做群号前缀校验，wecom 不校验。
@@ -278,15 +292,17 @@ export function renderAddGroupDialog(
   },
 ): TemplateResult {
   return html`
-    <div class="oc-modal-overlay" @click=${(e: Event) => { if (e.target === e.currentTarget) runExitAnimation(e.currentTarget as Element, opts.onCancel); }}>
+    <div class="oc-modal-overlay" role="dialog" aria-modal="true" tabindex="-1"
+      aria-label=${opts.promptLabel}
+      @click=${(e: Event) => { if (e.target === e.currentTarget) runExitAnimation(e.currentTarget as Element, opts.onCancel); }}>
       <div class="oc-modal-dialog">
         <label class="oc-settings__label">${opts.promptLabel}</label>
-        <input class="oc-settings__input" .value=${st.addGroupInput} placeholder=${opts.placeholder}
+        <input class="oc-settings__input" data-dialog-autofocus .value=${st.addGroupInput} placeholder=${opts.placeholder}
           @input=${(e: Event) => { st.addGroupInput = (e.target as HTMLInputElement).value; state.requestUpdate(); }}
-          @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter" && !e.isComposing) opts.onConfirm(); if (e.key === "Escape") runExitAnimation(exitHostFromEvent(e, ".oc-modal-overlay"), opts.onCancel); }} />
+          @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter" && !e.isComposing) opts.onConfirm(); }} />
         ${st.addGroupError ? html`<div class="oc-settings__field-hint oc-settings__field-hint--danger oc-mt-4">${st.addGroupError}</div>` : nothing}
         <div class="oc-flex oc-gap-8 oc-justify-end oc-mt-12">
-          <button class="btn" @click=${(e: Event) => runExitAnimation(exitHostFromEvent(e, ".oc-modal-overlay"), opts.onCancel)}>${t("settings.cancel")}</button>
+          <button class="btn" data-dialog-dismiss @click=${(e: Event) => runExitAnimation(exitHostFromEvent(e, ".oc-modal-overlay"), opts.onCancel)}>${t("settings.cancel")}</button>
           <button class="btn primary" @click=${() => opts.onConfirm()}>${t("settings.confirm")}</button>
         </div>
       </div>

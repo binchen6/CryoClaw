@@ -49,15 +49,15 @@ test("queued refresh belongs to its requesting state and coalesces repeated requ
     return new Promise(resolve => finish.push(resolve));
   } } as unknown as RunHistoryState["client"];
   const loading = loadRunHistory(a);
-  await loadRunHistory(a);
-  await loadRunHistory(a);
+  const refresh = loadRunHistory(a, true);
+  const repeatedRefresh = loadRunHistory(a, true);
   await loadRunHistory(b);
   assert.equal(b.requests.length, 1, "another view must not consume the queued refresh");
   finish[0]({ entries: [] });
-  await loading;
+  for (let n = 0; n < 12; n++) await Promise.resolve();
   assert.equal(calls, 2, "coalesce refresh requests into one follow-up");
   finish[1]({ entries: [run({ ts: 123 })] });
-  await Promise.resolve();
+  await Promise.all([loading, refresh, repeatedRefresh]);
   assert.equal(a.runHistory[0].ts, 123);
   assert.equal(a.runsLoading, false);
 });
@@ -247,6 +247,15 @@ test("loadRunHistory：内核有 cron.runs 时以 scope:all 拉取并按时间�
     [300, 100],
     "按展示时间降序",
   );
+});
+
+test("loadRunHistory reuses a fresh snapshot and force refresh bypasses it", async () => {
+  const state = fakeState(null);
+  await loadRunHistory(state);
+  await loadRunHistory(state);
+  assert.equal(state.requests.length, 1);
+  await loadRunHistory(state, true);
+  assert.equal(state.requests.length, 2);
 });
 
 test("loadRunHistory：响应缺 entries 字段时防御为空数组", async () => {

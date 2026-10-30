@@ -26,9 +26,6 @@ const PATH_ARG_KEYS = ["path", "file_path", "filePath", "file"];
 const WRITE_TOOLS = new Set(["write", "write_file", "create", "create_file"]);
 const EDIT_TOOLS = new Set(["edit", "edit_file", "str_replace", "str_replace_editor", "apply_diff"]);
 const PATCH_TOOLS = new Set(["apply_patch", "applypatch"]);
-// 只读工具：读取不产生改动，也不再计入「触碰」（read 只证明文件存在，
-// 同轮先读后新建应显示「新增」而非「修改」）。
-const READ_TOOLS = new Set(["read", "read_file"]);
 
 function extractPathArg(args: unknown): string | null {
   if (!args || typeof args !== "object") {
@@ -167,7 +164,7 @@ export function collectGroupFileChanges(
         mergeInto(changes, { path, kind: "modified" });
         touched.add(path);
       }
-      // READ_TOOLS：只读引用不触碰、不产生改动，直接忽略
+      // 只读引用不触碰、不产生改动，直接忽略
     }
   }
   return changes;

@@ -45,16 +45,24 @@ export async function fetchPublicBody(value,{resolver=lookup,request=https.reque
   if('redirect' in result){if(!result.redirect||redirects<=0)throw Error('Too many source redirects');return fetchPublicBody(new URL(result.redirect,url).href,{resolver,request,maxBytes,redirects:redirects-1,expires,accept});}return result;
 }
 export async function fetchPublicData(value,options){return (await fetchPublicBody(value,options)).body.toString('utf8');}
-export function createSourceBroker({fetchBody=fetchPublicBody,now=Date.now}={}){
-  const cache=new Map(),pending=new Map(),marketFailures=new Map();let active=0,assetBytes=0;
-  async function obtain(source,asset){const key=(asset?'asset:':`data:${source.format}:${source.refreshSeconds}:`)+source.url,cached=cache.get(key),market=!asset&&isBuiltinMarketDataSource(source);if(cached&&cached.until>now())return cached.value;if(pending.has(key))return pending.get(key);if(market&&marketFailures.get(key)>now())throw Error(marketUnavailable);if(active>=4)throw Error('Sources are busy; retry shortly');active++;
-    const task=(async()=>{try{const response=market?null:await fetchBody(source.url,{maxBytes:asset?32*1024*1024:524288,expires:now()+(asset?30000:15000),accept:asset?'image/*, audio/*, video/*, font/*':'application/json, text/plain'});
-      if(asset&&!/^(?:image\/(?:png|jpeg|gif|webp|avif)|audio\/[\w.+-]+|video\/[\w.+-]+|font\/[\w.+-]+)$/.test(response.mime))throw Error('Unsupported media type');
-      const value=market?{...await fetchBuiltinMarketData(source,{fetchBody,expires:now()+15000,now}),fetchedAt:now()}:asset?response:{value:source.format==='text'?response.body.toString('utf8'):JSON.parse(response.body.toString('utf8')),source:source.url,fetchedAt:now()};
-      if(market)marketFailures.delete(key);
-      if(cached?.size)assetBytes-=cached.size;cache.delete(key);const size=asset?response.body.length:0;assetBytes+=size;cache.set(key,{value,size,until:now()+(asset?3600000:source.refreshSeconds*1000)});
-      while(cache.size>64||assetBytes>64*1024*1024){const first=cache.keys().next().value;assetBytes-=cache.get(first).size;cache.delete(first);}return value;
-    }catch(error){if(market){const retryAt=now()+15000;marketFailures.set(key,retryAt);while(marketFailures.size>64)marketFailures.delete(marketFailures.keys().next().value);if(cached&&now()-cached.value.fetchedAt<=86400000){const value={...cached.value,stale:true,retryAt};cache.set(key,{...cached,value,until:retryAt});return value;}}throw error;
-    }finally{active--;pending.delete(key);}})();pending.set(key,task);return task;
-  }return {data:source=>obtain(source,false),asset:source=>obtain(source,true)};
+export function createSourceBroker({fetchBody=fetchPublicBody,now=Date.now,readCache,writeCache}={}){
+  const cache=new Map(),pending=new Map(),marketFailures=new Map(),restored=new Set();let active=0,assetBytes=0;
+  async function refresh(source,asset,key,cached){const market=!asset&&isBuiltinMarketDataSource(source);try{
+    const response=market?null:await fetchBody(source.url,{maxBytes:asset?32*1024*1024:524288,expires:now()+(asset?30000:15000),accept:asset?'image/*, audio/*, video/*, font/*':'application/json, text/plain'});
+    if(asset&&!/^(?:image\/(?:png|jpeg|gif|webp|avif)|audio\/[\w.+-]+|video\/[\w.+-]+|font\/[\w.+-]+)$/.test(response.mime))throw Error('Unsupported media type');
+    const value=market?{...await fetchBuiltinMarketData(source,{fetchBody,expires:now()+15000,now}),fetchedAt:now()}:asset?response:{value:source.format==='text'?response.body.toString('utf8'):JSON.parse(response.body.toString('utf8')),source:source.url,fetchedAt:now()};
+    marketFailures.delete(key);
+    if(cached?.size)assetBytes-=cached.size;cache.delete(key);const size=asset?response.body.length:0,entry={value,size,until:now()+(asset?3600000:source.refreshSeconds*1000)};assetBytes+=size;cache.set(key,entry);
+    if(!asset&&writeCache)try{writeCache(key,entry);}catch{}
+    while(cache.size>64||assetBytes>64*1024*1024){const first=cache.keys().next().value;assetBytes-=cache.get(first).size;cache.delete(first);}return value;
+  }catch(error){const retryAt=now()+15000;marketFailures.set(key,retryAt);while(marketFailures.size>64)marketFailures.delete(marketFailures.keys().next().value);if(!asset&&cached&&(!market||now()-cached.value.fetchedAt<=86400000)){const value={...cached.value,stale:true,retryAt};cache.set(key,{...cached,value,until:retryAt});return value;}throw error;
+  }finally{active--;pending.delete(key);}}
+  async function obtain(source,asset){
+    const key=(asset?'asset:':`data:${source.format}:${source.refreshSeconds}:`)+source.url,market=!asset&&isBuiltinMarketDataSource(source);let cached=cache.get(key);
+    if(!cached&&!asset&&readCache&&!restored.has(key)){restored.add(key);try{const persisted=readCache(key);if(persisted?.value&&Number.isFinite(persisted.until)){cached={value:persisted.value,size:0,until:persisted.until};cache.set(key,cached);}}catch{}}
+    if(cached&&cached.until>now())return cached.value;
+    if(pending.has(key))return pending.get(key);if(market&&marketFailures.get(key)>now())throw Error(marketUnavailable);if(active>=4)throw Error('Sources are busy; retry shortly');active++;
+    const task=refresh(source,asset,key,cached);pending.set(key,task);return task;
+  }
+  return {data:source=>obtain(source,false),asset:source=>obtain(source,true)};
 }

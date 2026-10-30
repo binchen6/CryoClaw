@@ -603,8 +603,8 @@
 .cron-form__input:focus,
 .cron-form__select:focus,
 .cron-form__textarea:focus {
-  border-color: var(--border-focus);
-  box-shadow: var(--focus-ring);
+  border-color: var(--focus-field-color);
+  box-shadow: var(--focus-field);
 }
 
 .cron-form__textarea {

@@ -1,4 +1,4 @@
-import { LitElement, html, nothing } from "lit";
+import { LitElement, nothing } from "lit";
 import { customElement } from "lit/decorators.js";
 import { publishedFilesForMessages } from "../chat/deliverables.ts";
 import type { AssistantIdentity } from "../assistant-identity.ts";

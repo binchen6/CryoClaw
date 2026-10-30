@@ -4,6 +4,8 @@ import { app, clipboard, dialog, ipcMain, shell, Menu, BrowserWindow } from "ele
 import { installGatewayOriginRewrite } from "./gateway-origin";
 import { assertLocalFilePath, readFileCardInfo, resolveLocalRegularFile } from "./file-card";
 import { ensureBundledDeliverablesEnabled } from "./bundled-deliverables";
+import { ensureOptionalPluginDemand } from "./plugin-demand";
+import { cancelChannelPluginInventory } from "./channel-plugin-inventory";
 import {registerDashboardPin} from './dashboard-pin';
 import {redactLogSecrets} from './log-redaction';
 // CryoClaw 面向中文用户：强制 Chromium locale 为 zh-CN，
@@ -43,7 +45,7 @@ import { registerPluginStoreIpc, killTrackedKernelCliChildren, preventKernelCliS
 import { registerWorkspaceIpc,authorizeWorkspaceRoot,resetWorkspaceAccessForImport } from "./workspace-ipc";
 import { registerGitIpc } from "./git-ipc";
 import { detectGitCached } from "./git-detector";
-import { isSetupComplete, resolveGatewayPort, resolveGatewayLogPath, resolveUserStateDir, resolveUserConfigPath, resolveGatewayRoot } from "./constants";
+import { resolveGatewayPort, resolveGatewayLogPath, resolveUserStateDir, resolveUserConfigPath, resolveGatewayRoot } from "./constants";
 import { resolveGatewayAuthToken } from "./gateway-auth";
 import {
   getConfigRecoveryData,
@@ -58,7 +60,7 @@ import { reconcileExtensionsOnAppLaunch } from "./extension-mirror";
 import { reconcilePluginsAllowWithEnabled } from "./plugin-allow-sync";
 import { migrateLegacyFeishuPluginEntry } from "./feishu-config";
 import { migrateBrowserProfileForCurrentGateway } from "./browser-profile-config";
-import { uninstallGatewayDaemon, cleanGatewayLockFiles } from "./install-detector";
+import { cleanGatewayLockFiles } from "./install-detector";
 import { runQuitCleanup } from "./quit-cleanup";
 import { detectOwnership, migrateFromLegacy, readCryoclawConfig, writeCryoclawConfig, appendChannelUtm } from "./cryoclaw-config";
 import { startTokenRefresh, stopTokenRefresh, loadOAuthToken } from "./kimi-oauth";
@@ -422,15 +424,21 @@ function syncKimiSearchEnv(): void {
   }
 }
 
-// 启动 Gateway（最多尝试 3 次，覆盖 Windows 冷启动慢导致的前两次超时）
-async function ensureGatewayRunning(source: string): Promise<boolean> {
-  if (isQuitting) return false;
+async function prepareGatewayForStart(): Promise<void> {
   try { ensureBundledDeliverablesEnabled(); } catch(error) { log.warn(`[deliverables] Plugin setup failed: ${String(error)}`); }
   migrateLegacyFeishuConfigForGatewayStart();
+  try { await ensureOptionalPluginDemand(); } catch(error) { log.warn(`[plugins] Demand reconciliation failed: ${String(error)}`); }
   await syncGatewayRuntimeConfigFromDisk();
+}
+
+// A manual stop invalidates the entire startup attempt, including async preparation.
+async function ensureGatewayRunning(source: string): Promise<boolean> {
+  const epoch=gatewayControlEpoch;
+  if (isQuitting || gatewayManuallyStopped) return false;
+  await prepareGatewayForStart();
 
   for (let attempt = 1; attempt <= MAX_GATEWAY_START_ATTEMPTS; attempt++) {
-    if (isQuitting) return false;
+    if (isQuitting || gatewayManuallyStopped || epoch!==gatewayControlEpoch) return false;
     // try/catch：start/restart 内部同步 throw（如 clawhub wrapper 写盘被杀软锁定）
     // 不应打断重试链，也不应让 whenReady 启动链整体 reject（跳过失败弹窗与恢复流程）
     // supervised: true（P0-2）——本函数自身就是带重试+失败上报的监督链，starting 阶段
@@ -448,6 +456,7 @@ async function ensureGatewayRunning(source: string): Promise<boolean> {
       continue;
     }
 
+    if(isQuitting || gatewayManuallyStopped || epoch!==gatewayControlEpoch)return false;
     if (gateway.getState() === "running") {
       // 仅在真正启动成功后刷新“最近可用快照”，保证一键回退目标可启动。
       recordLastKnownGoodConfigSnapshot();
@@ -481,6 +490,7 @@ async function handleExternalOpenclawTakeover(): Promise<void> {
 }
 
 async function startGatewayAndShowMain(source: string, opts: StartMainOptions = {}): Promise<boolean> {
+  const epoch=gatewayControlEpoch;
   const openOnFailure = opts.openOnFailure ?? true;
   const reportFailure = opts.reportFailure ?? true;
 
@@ -503,7 +513,7 @@ async function startGatewayAndShowMain(source: string, opts: StartMainOptions = 
   reconcilePluginsAllowWithEnabled();
 
   const running = await ensureGatewayRunning(source);
-  if (isQuitting) return false;
+  if (isQuitting || gatewayManuallyStopped || epoch!==gatewayControlEpoch) return false;
   if (!running) {
     if (reportFailure) {
       const action = reportGatewayStartFailure(source);
@@ -589,16 +599,19 @@ function healMemoryVectorExtensionPath(): void {
 
 // 跟踪最近一次用户触发的 start/restart 游离 promise（已 .catch 包裹，必定 resolve）。
 // 导入 .openclaw 前会 await 它，确保在途启动不会与清空/还原状态目录并发。
-// 注意：仅 requestGatewayStart/requestGatewayRestart 喂这个变量；ensureGatewayRunning
+// 手动 start/restart/stop 共用此链；ensureGatewayRunning
 // （启动/Setup/导入自身的启动路径）刻意不跟踪，否则导入会 await 自己的 start 而死锁。
 // 那条未跟踪路径与 Settings 触发的导入在现实中不会重叠，且由 stop({ waitForStarting }) 兜底。
 // 后续操作链到上一个 promise 尾部（而非覆盖）：两个操作并发时，若互相覆盖，
 // 静默网关方只等到后一个，前一个的 syncGatewayRuntimeConfigFromDisk（auth-proxy
 // 重绑 + 端口写回）可能与后一个交错，把过期端口写进 openclaw.json。
 let inflightGatewayOp: Promise<void> = Promise.resolve();
+let gatewayControlEpoch=0;
+let gatewayManuallyStopped=false;
 
 // 手动控制 Gateway：统一入口，确保启动前同步最新 port/token。
 function requestGatewayStart(source: string): void {
+  if(isQuitting)return;
   if (openclawStateImportLifecycle.isImportActive()) {
     log.info(`[gateway] start ignored during .openclaw import: ${source}`);
     return;
@@ -607,9 +620,15 @@ function requestGatewayStart(source: string): void {
     log.info(`[gateway] start ignored during kernel update: ${source}`);
     return;
   }
+  gatewayManuallyStopped=false;
+  const epoch=gatewayControlEpoch;
+  cancelPendingGatewayRestart(source);
+  cancelScheduledCrashRestart(source);
   inflightGatewayOp = inflightGatewayOp
     .then(async () => {
-      await syncGatewayRuntimeConfigFromDisk();
+      if(isQuitting || gatewayManuallyStopped || epoch!==gatewayControlEpoch)return;
+      await prepareGatewayForStart();
+      if(isQuitting || gatewayManuallyStopped || epoch!==gatewayControlEpoch)return;
       await gateway.start();
     })
     .catch((err) => {
@@ -637,7 +656,7 @@ let isQuitting = false;
 function scheduleGatewayCrashRestart(info: { code: number | null; signal: string | null }): void {
   // 应用退出中不重启（stop 触发的退出已在 gateway-process 里按 stopping 分支处理，
   // 这里再兜一层：退出流程进行中崩溃不应再拉起新进程）
-  if (isQuitting) return;
+  if (isQuitting || gatewayManuallyStopped) return;
   const decision = decideCrashRestart(crashRestartTimes, Date.now());
   crashRestartTimes = decision.times;
   if (!decision.allow) {
@@ -655,7 +674,7 @@ function scheduleGatewayCrashRestart(info: { code: number | null; signal: string
     // 延迟窗口内可能已进入 .openclaw 导入/内核换装：此时起 gateway 会访问
     // 半清空的状态目录或半换装的内核（与 requestGatewayStart 的入口护栏同源），
     // 两条流程收尾时都会自行 ensureGatewayRunning，这里直接跳过即可。
-    if (isQuitting) return;
+    if (isQuitting || gatewayManuallyStopped) return;
     if (openclawStateImportLifecycle.isImportActive()) {
       log.info("[gateway] crash restart skipped during .openclaw import");
       return;
@@ -678,6 +697,7 @@ function cancelScheduledCrashRestart(source: string): void {
 }
 
 function requestGatewayRestart(source: string): void {
+  if(isQuitting)return;
   if (openclawStateImportLifecycle.isImportActive()) {
     log.info(`[gateway] restart ignored during .openclaw import: ${source}`);
     return;
@@ -686,10 +706,14 @@ function requestGatewayRestart(source: string): void {
     log.info(`[gateway] restart ignored during kernel update: ${source}`);
     return;
   }
+  gatewayManuallyStopped=false;
+  const epoch=gatewayControlEpoch;
+  cancelScheduledCrashRestart(source);
   if (restartTimer) clearTimeout(restartTimer);
   log.info(`[gateway] restart requested: ${source}`);
   restartTimer = setTimeout(() => {
     restartTimer = null;
+    if(isQuitting || gatewayManuallyStopped || epoch!==gatewayControlEpoch)return;
     if (openclawStateImportLifecycle.isImportActive()) {
       log.info(`[gateway] restart skipped during .openclaw import: ${source}`);
       return;
@@ -703,7 +727,9 @@ function requestGatewayRestart(source: string): void {
     log.info(`[gateway] restart executing: ${source}`);
     inflightGatewayOp = inflightGatewayOp
       .then(async () => {
-        await syncGatewayRuntimeConfigFromDisk();
+        if(isQuitting || gatewayManuallyStopped || epoch!==gatewayControlEpoch)return;
+        await prepareGatewayForStart();
+        if(isQuitting || gatewayManuallyStopped || epoch!==gatewayControlEpoch)return;
         await gateway.restart();
       })
       .catch((err) => {
@@ -729,6 +755,8 @@ const openclawStateImportLifecycle = createOpenclawStateImportLifecycle({
     if (getKernelUpdateState().running) throw new Error("内核升级进行中，请稍后重试");
   },
   quiesceGateway: async () => {
+    gatewayManuallyStopped=false;
+    gatewayControlEpoch++;
     // 崩溃重启定时器与 restart 防抖同为延迟 spawn 入口：导入清空状态目录期间
     // 触发会把 gateway 拉到半清空的状态上（R71 定时器未接护栏，本轮补齐）
     cancelScheduledCrashRestart("settings:import-openclaw-state");
@@ -884,10 +912,18 @@ function ensureOAuthTokenRefresh(): void {
   });
 }
 
-function requestGatewayStop(source: string): void {
-  gateway.stop().catch((err) => {
+function requestGatewayStop(source: string): Promise<void> {
+  gatewayManuallyStopped=true;
+  gatewayControlEpoch++;
+  cancelPendingGatewayRestart(source);
+  cancelScheduledCrashRestart(source);
+  // Stop a running child immediately, then join preparation before the final stop.
+  const firstStop=gateway.stop().catch((err)=>log.warn(`Gateway initial stop failed(${source}): ${err}`));
+  const operation=Promise.all([inflightGatewayOp,firstStop]).then(()=>gateway.stop());
+  inflightGatewayOp=operation.catch((err) => {
     log.error(`Gateway 停止失败(${source}): ${err}`);
   });
+  return operation;
 }
 
 // ── IPC 注册 ──
@@ -902,12 +938,7 @@ ipcMain.on("gateway:start", (event) => {
 });
 ipcMain.handle("gateway:stop", async (event) => {
   if (!assertTrustedIpcSender(event, "gateway:stop")) throw new Error("IPC sender not trusted");
-  try {
-    await gateway.stop();
-  } catch (err) {
-    log.error(`Gateway 停止失败(ipc:stop): ${err}`);
-    throw err;
-  }
+  await requestGatewayStop("ipc:stop");
 });
 ipcMain.handle("gateway:state", (event) => {
   if (!assertTrustedIpcSender(event, "gateway:state")) throw new Error("IPC sender not trusted");
@@ -945,12 +976,14 @@ ipcMain.handle("kernel:update", (event, params?: { tag?: string }) => {
   if (!assertTrustedIpcSender(event, "kernel:update")) throw new Error("IPC sender not trusted");
   // 与 .openclaw 导入互斥：导入进行中禁止内核换装，避免状态目录被并发改写
   if (openclawStateImportLifecycle.isImportActive()) throw new Error(".openclaw 导入进行中，请稍后重试");
+  if(!getKernelUpdateState().running){gatewayManuallyStopped=false;gatewayControlEpoch++;}
   return runKernelUpdate(params?.tag);
 });
 ipcMain.handle("kernel:rollback", (event) => {
   if (!assertTrustedIpcSender(event, "kernel:rollback")) throw new Error("IPC sender not trusted");
   // 与 .openclaw 导入互斥：导入进行中禁止内核回滚，避免状态目录被并发改写
   if (openclawStateImportLifecycle.isImportActive()) throw new Error(".openclaw 导入进行中，请稍后重试");
+  if(!getKernelUpdateState().running){gatewayManuallyStopped=false;gatewayControlEpoch++;}
   return runKernelRollback();
 });
 ipcMain.on("app:quit", (event) => {
@@ -1314,6 +1347,7 @@ function scheduleAutoKernelUpgradeIfNeeded(): void {
   autoKernelUpgradeScheduled = true;
   // 延迟 25s：错开启动高峰与 30s 的内核版本静默检查，且 unref 不阻塞退出
   const timer = setTimeout(() => {
+    if(isQuitting || gatewayManuallyStopped)return;
     if (openclawStateImportLifecycle.isImportActive()) {
       log.warn("[kernel-updater] 自动升级取消：.openclaw 导入进行中");
       return;
@@ -1421,7 +1455,7 @@ app.whenReady().then(async () => {
     gateway,
     onRestartGateway: () => requestGatewayRestart("tray:restart"),
     onStartGateway: () => requestGatewayStart("tray:start"),
-    onStopGateway: () => requestGatewayStop("tray:stop"),
+    onStopGateway: () => { void requestGatewayStop("tray:stop").catch(()=>{}); },
     onOpenSettings: () => {
       openSettingsInMainWindow().catch((err) => {
         log.error(`托盘设置打开失败: ${err}`);
@@ -1479,6 +1513,8 @@ app.whenReady().then(async () => {
       if (getKernelUpdateState().running) {
         throw new Error("内核升级进行中，请稍后重试");
       }
+      gatewayManuallyStopped=false;
+      cancelScheduledCrashRestart("gateway-control:restart");
       cancelPendingGatewayRestart("gateway-control:restart");
       await inflightGatewayOp;
       await gateway.stop();
@@ -1644,6 +1680,7 @@ app.on("before-quit", (event) => {
   if (quitCleanupProceeding) return;
   // 退出序列开始：禁止崩溃自动重启再拉起网关（R71），并取消待执行的崩溃重启定时器
   isQuitting = true;
+  cancelChannelPluginInventory();
   if (crashRestartTimer) {
     clearTimeout(crashRestartTimer);
     crashRestartTimer = null;

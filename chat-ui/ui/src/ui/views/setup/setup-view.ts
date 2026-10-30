@@ -5,7 +5,6 @@
 import { html, nothing } from "lit";
 import type { AppViewState } from "../../app-view-state.ts";
 import * as ipc from "../../data/ipc-bridge.ts";
-import type { DetectionResult } from "../../data/ipc-bridge.ts";
 import {t} from "../../i18n.ts";
 import {createSetupFlow,detectSetup} from "./setup-flow.ts";
 import { renderStep0 } from "./setup-step0-conflict.ts";

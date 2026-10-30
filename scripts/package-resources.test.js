@@ -73,6 +73,50 @@ function writeFixture(filePath, content = "") {
   fs.writeFileSync(filePath, content);
 }
 
+test('native updater vendors only semver and mode changes remove all old ASAR dependencies',t=>{
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'cryoclaw-updater-vendor-'));
+  t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+  const target=path.join(root,'resources/targets/win32-x64'), updater=path.join(target,'updater');
+  writeFixture(path.join(root,'package.json'),JSON.stringify({cryoclaw:{openclaw:'2026.10.7',gatewayRuntime:'node'}}));
+  for(const rel of ['scripts/updater/kernel-update.mjs','scripts/updater/gateway-ctl.mjs','scripts/lib/kernel-dist-patch.js','scripts/lib/kernel-channel.js','scripts/lib/rm-rec.js','scripts/lib/kernel-prune.js','scripts/lib/kernel-config-snapshot.js','scripts/lib/kernel-directory-swap.js','scripts/lib/gateway-dependency-policy.js','shared/kernel-runtime-policy.cjs']){
+    writeFixture(path.join(root,rel),fs.readFileSync(path.join(__dirname,'..',rel),'utf8'));
+  }
+  writeFixture(path.join(root,'node_modules/@electron/asar/package.json'),JSON.stringify({version:'4.1.0'}));
+  writeFixture(path.join(root,'node_modules/semver/package.json'),JSON.stringify({version:'7.7.4'}));
+  const sandbox=loadPackageResourcesSandbox({rootDir:root}); let installs=0;
+  sandbox.execNpmSync=(args)=>{
+    installs++;
+    const pkg=JSON.parse(fs.readFileSync(path.join(updater,'package.json'),'utf8'));
+    for(const [name,version] of Object.entries(pkg.dependencies||{})){
+      writeFixture(path.join(updater,'node_modules',name,'package.json'),JSON.stringify({name,version}));
+      writeFixture(path.join(updater,'node_modules',name,'index.js'),name+' runtime');
+    }
+    if(pkg.dependencies?.['@electron/asar']){
+      for(const name of ['glob','minimatch','plist','commander'])writeFixture(path.join(updater,'node_modules',name,'index.js'),name+' runtime');
+    }
+    writeFixture(path.join(updater,'package-lock.json'),JSON.stringify({dependencies:pkg.dependencies}));
+  };
+  function measure(dir){let files=0,bytes=0;for(const e of fs.readdirSync(dir,{withFileTypes:true})){const p=path.join(dir,e.name);if(e.isDirectory()){const v=measure(p);files+=v.files;bytes+=v.bytes;}else{files++;bytes+=fs.statSync(p).size;}}return {files,bytes};}
+  const nativePolicy=path.join(target,'runtime/cryoclaw-runtime.json');
+  writeFixture(nativePolicy,JSON.stringify({kind:'node',gatewayMode:'loose'}));
+  sandbox.vendorKernelUpdater(target);
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(updater,'package.json'),'utf8')).dependencies,{semver:'7.7.4'});
+  assert.equal(fs.existsSync(path.join(updater,'node_modules/@electron/asar')),false);
+  const nativeStamp=fs.readFileSync(path.join(updater,'.cryoclaw-updater-stamp'),'utf8');
+  const nativeSize=measure(path.join(updater,'node_modules'));
+  sandbox.vendorKernelUpdater(target);assert.equal(installs,1,'unchanged dependency content must reuse the cache');
+  fs.unlinkSync(nativePolicy); sandbox.vendorKernelUpdater(target);
+  assert.equal(installs,2); assert.equal(fs.existsSync(path.join(updater,'node_modules/@electron/asar')),true);
+  const legacySize=measure(path.join(updater,'node_modules'));
+  assert.ok(legacySize.files>nativeSize.files); assert.ok(legacySize.bytes>nativeSize.bytes);
+  t.diagnostic(`fixture dependency tree: ASAR ${legacySize.files} files/${legacySize.bytes} logical bytes; native ${nativeSize.files} files/${nativeSize.bytes} logical bytes (real distribution measured after packaging)`);
+  assert.notEqual(fs.readFileSync(path.join(updater,'.cryoclaw-updater-stamp'),'utf8'),nativeStamp);
+  writeFixture(nativePolicy,JSON.stringify({kind:'node',gatewayMode:'loose'})); sandbox.vendorKernelUpdater(target);
+  assert.equal(installs,3);assert.deepEqual(measure(path.join(updater,'node_modules')),nativeSize);
+  for(const name of ['@electron/asar','glob','minimatch','plist','commander'])assert.equal(fs.existsSync(path.join(updater,'node_modules',name)),false,name+' must not survive mode change');
+  assert.equal(fs.readFileSync(path.join(updater,'package-lock.json'),'utf8').includes('@electron/asar'),false);
+});
+
 test("native gateway policy overrides stale ASAR environment and command flags",t=>{
   const root=fs.mkdtempSync(path.join(os.tmpdir(),"cryoclaw-runtime-policy-"));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
   writeFixture(path.join(root,"package.json"),JSON.stringify({cryoclaw:{gatewayRuntime:"node"}}));

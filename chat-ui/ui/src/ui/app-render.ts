@@ -43,6 +43,8 @@ import { loadSessions } from "./controllers/sessions.ts";
 import { t } from "./i18n.ts";
 import { icons } from "./icons.ts";
 import { resolveMainSessionKey } from "./session-visibility.ts";
+import { resolveModelSelectKey } from "./controllers/models.ts";
+import { quotaProvider } from "./controllers/model-quota.ts";
 // 图标轨 / 会话面板独立组件：流式帧等根组件高频更新不再重求值这两棵模板树
 // （props 数据字段比较 + 组件级 bump 纪元，见各自文件头契约）
 import "./components/oc-rail.ts";
@@ -337,7 +339,7 @@ function renderContextBar(
             </button>
             <button class="cc-contextbar__toggle" type="button" aria-controls="conversation-info"
               aria-expanded=${conversationInfoOpen()} aria-label=${t("chat.conversationInfo") === "chat.conversationInfo" ? "会话信息 / Conversation information" : t("chat.conversationInfo")}
-              @click=${() => toggleConversationInfo(() => state.requestUpdate())}>${icons.info}</button>
+              @click=${(event: Event) => toggleConversationInfo(() => state.requestUpdate(), event.currentTarget as HTMLElement)}>${icons.info}</button>
           </div>`
         : nothing}
     </div>
@@ -385,6 +387,13 @@ export function renderApp(state: AppViewState) {
   const connection = state.connected
     ? null
     : { phase: state.gatewayPhase ?? "reconnecting", progress: state.gatewayProgress };
+  // 额度圆环在图标轨：沿用输入框原来的取值口径（会话模型优先，回退全局默认）。
+  const quotaSession = state.sessionsResult?.sessions.find((row) => row.key === currentSessionKey) ?? null;
+  const quotaKey = quotaSession?.model
+    ? resolveModelSelectKey(quotaSession.model, state.configuredModels ?? []) ?? quotaSession.model
+    : state.currentModel ?? "";
+  const quotaModel = quotaKey.includes("/") ? quotaKey.slice(quotaKey.indexOf("/") + 1) : quotaKey;
+  const quotaProviderName = quotaProvider(quotaKey, quotaSession?.modelProvider);
 
   return html`
     <div
@@ -419,6 +428,9 @@ export function renderApp(state: AppViewState) {
               },
               onOpenWebUI: () => void handleOpenWebUI(state),
               onReconnect: () => handleReconnect(state),
+              quotaClient: state.client,
+              quotaModel,
+              quotaProvider: quotaProviderName,
             }}></oc-rail>`}
       ${chatFocus || meta.fullpage || cryoclawView !== "chat" || panelCollapsed
         ? nothing

@@ -5,6 +5,7 @@ import { createRequire } from "node:module";
 import { writeFileAtomicSync } from "./atomic-write";
 import { resolveGatewayPackageDir, resolveUserExtensionsDir, resolveUserStateDir } from "./constants";
 import { isPluginPresentAnywhere } from "./plugin-presence";
+import {syncPluginAllowOnEnable} from './plugin-allow-sync';
 
 export const WEIXIN_PLUGIN_ID = "openclaw-weixin";
 export const WEIXIN_CHANNEL_ID = "openclaw-weixin";
@@ -60,6 +61,7 @@ export function saveWeixinConfig(config: any, params: SaveWeixinConfigParams): v
     ...existingEntry,
     enabled: params.enabled === true,
   };
+  if(params.enabled)syncPluginAllowOnEnable(config,WEIXIN_PLUGIN_ID);
 
   config.channels[WEIXIN_CHANNEL_ID] = {
     ...existingChannel,

@@ -1,4 +1,5 @@
 import type { OpenClawApp } from "./app.ts";
+import { invalidateMemoryStatus } from "./controllers/memory.ts";
 import {schedulePagePreloads,stopPagePreloads} from "./page-preload.ts";
 import type { ExecApprovalRequest } from "./controllers/exec-approval.ts";
 import type { GatewayEventFrame, GatewayHelloOk } from "./gateway.ts";
@@ -29,7 +30,7 @@ import {
   upsertQuestion,
 } from "./chat/question-cards.ts";
 import { consumePendingSessionReset, hasPendingSessionReset } from "./session-pending.ts";
-import { handleChatEvent, type ChatEventPayload } from "./controllers/chat.ts";
+import { handleChatEvent, isTerminalRunTombstoned, type ChatEventPayload } from "./controllers/chat.ts";
 import {
   addExecApproval,
   parseExecApprovalRequested,
@@ -68,6 +69,7 @@ import { applySessionKeyTransition } from "./session-transition.ts";
 import {
   accumulateBackgroundAgentEvent,
   dispatchBackgroundChatEvent,
+  peekRunStateSnapshot,
 } from "./run-state-store.ts";
 import { isToleratedHiddenSession } from "./session-jump.ts";
 import {
@@ -559,6 +561,7 @@ export function connectGateway(host: GatewayHost) {
     sharedToken: host.settings.token.trim() ? host.settings.token : undefined,
   });
   let helloEpoch=0;
+  let hasCompletedHello = false;
   const client = new GatewayBrowserClient({
     url: host.settings.gatewayUrl,
     token: host.settings.token.trim() ? host.settings.token : undefined,
@@ -580,6 +583,10 @@ export function connectGateway(host: GatewayHost) {
       // with preparation or manufacture operation-failed banners.
       void client.request("agent.identity.get",{sessionKey:host.sessionKey}).then(()=>{
       if(host.client!==client || !client.connected || helloEpoch!==epoch)return;
+      // The browser client reconnects its own socket without calling
+      // connectGateway again. previousClient alone misses that common path.
+      const isReconnect = Boolean(previousClient) || hasCompletedHello;
+      hasCompletedHello = true;
       host.connected = true;
       host.lastError = null;
       // 连接成功：三态复位 + 启动进度结束（启动进度只在未连接窗口展示）
@@ -592,7 +599,7 @@ export function connectGateway(host: GatewayHost) {
       applySnapshot(host, hello);
       // Reset orphaned chat run state from before disconnect.
       // Any in-flight run's final event was lost during the disconnect window.
-      if (previousClient) {
+      if (isReconnect) {
         // R30：断连前的在途 run 快照为 orphan——内核侧 run 可能仍在跑，
         // 重连后同 runId 的 delta（全量累计文本）会被收养续显（见 handleChatEvent）
         markReconnectOrphanRun(host.chatRunId, host.sessionKey);
@@ -609,7 +616,7 @@ export function connectGateway(host: GatewayHost) {
       // 握手完成后重拉持久化历史重建视图（仅重连路径，首次连接不走）。
       // R30：重连读改用 mergeIfStale——撞上内核滞后快照时保留本地视图防倒退，
       // 滞后收敛由延迟补拉（scheduleStaleHistoryRetry）接管。
-      if (previousClient) {
+      if (isReconnect) {
         // F7：/new、/reset 的 final 帧丢失在断连窗口时 pendingSessionResets 未消费，
         // 内核 transcript 已被清空——若仍走 mergeIfStale，滞后兜底（内核短于本地时
         // 保留本地 + R23 空读保护）会把重置前/乐观写入的本地内容保留下来，旧对话
@@ -683,6 +690,7 @@ export function connectGateway(host: GatewayHost) {
         return;
       }
       host.connected = false;
+      invalidateMemoryStatus(client);
       stopPagePreloads(host as unknown as import("./app-view-state.ts").AppViewState);
       // R41：新断连作废上轮重连的挂起探测（下一轮 onHello 会重新调度）
       cancelReconnectOrphanProbe();
@@ -810,6 +818,11 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
 
   if (evt.event === "chat") {
     const payload = evt.payload as ChatEventPayload | undefined;
+    // A cached terminal receipt and its broadcast can arrive in either order.
+    // Ignore the replay before it can refresh over a newer run or consume its
+    // reset/label work; the first terminal path already performed those effects.
+    if (payload?.runId && payload.state !== "delta" && payload.state !== "status" &&
+      isTerminalRunTombstoned(payload.runId)) return;
     // 仅当前会话的活跃事件代表「用户正在看的对话」；后台会话（cron/渠道/
     // sub-agent）事件覆写会让重启后恢复到后台会话而非用户上次所看会话。
     if (payload?.sessionKey && payload.sessionKey === host.sessionKey) {
@@ -819,6 +832,9 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
       );
     }
     if (payload?.sessionKey && payload.sessionKey !== host.sessionKey) {
+      const backgroundRun = peekRunStateSnapshot(payload.sessionKey);
+      const isOwnBackgroundRun = Boolean(backgroundRun?.chatRunId &&
+        (!payload.runId || payload.runId === backgroundRun.chatRunId));
       // 切换不断流（后台累积）：后台会话事件分派进 per-session run 态快照——
       // delta 实时累积（全量快照语义，漏帧 reducer 自愈），own-run 终态清条目内
       // run 态（队列保留）并标记历史脏；无快照维持既有丢弃语义。host 响应式字段
@@ -828,6 +844,12 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
         payload.state === "final" || payload.state === "error" || payload.state === "aborted";
       if (!isBackgroundTerminal) {
         return;
+      }
+      if (isOwnBackgroundRun) {
+        consumePendingSessionReset(payload.sessionKey);
+        if (payload.state === "final") {
+          void flushPendingSessionLabel(host as unknown as OpenClawApp, payload.sessionKey);
+        }
       }
       // 后台会话终态：侧边栏排序/标题/未读需要及时刷新——对齐事件驱动刷新，
       // 不落到 30s ticker 兜底（复用既有 per-session 去重 + in-flight 合并）。
@@ -990,8 +1012,8 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
   if (evt.event === "cron") {
     const app = host as unknown as OpenClawApp;
     if (app.settings?.cryoclawView === "tasks") {
-      void loadCronJobs(app as unknown as Parameters<typeof loadCronJobs>[0]);
-      void loadRunHistory(app as unknown as Parameters<typeof loadRunHistory>[0]);
+      void loadCronJobs(app as unknown as Parameters<typeof loadCronJobs>[0], true);
+      void loadRunHistory(app as unknown as Parameters<typeof loadRunHistory>[0], true);
     }
     app.requestUpdate?.();
     return;

@@ -110,42 +110,190 @@
 ; ============================================================
 !ifndef BUILD_UNINSTALLER
 Var /GLOBAL cryoclawInstallStarted
+Var /GLOBAL cryoclawInitCompletedMs
+Var /GLOBAL cryoclawOldUninstallCompletedMs
+Var /GLOBAL cryoclawPostPayloadMs
+Var /GLOBAL cryoclawCompletionMs
 Var /GLOBAL cryoclawPayloadDestination
 Var /GLOBAL cryoclawPayloadMode
 Var /GLOBAL cryoclawPayloadReadyMs
 Var /GLOBAL cryoclawPayloadFallback
 Var /GLOBAL cryoclawPayloadError
+Var /GLOBAL cryoclawPayloadAttempt
+Var /GLOBAL cryoclawPayloadFind
+Var /GLOBAL cryoclawPayloadEntry
+Var /GLOBAL cryoclawPayloadMoved
+Var /GLOBAL cryoclawPayloadPassMoved
+Var /GLOBAL cryoclawPayloadSourceVolume
+Var /GLOBAL cryoclawPayloadFindData
+Var /GLOBAL cryoclawPayloadFindError
+
+; Capture the native error together with FindNextFileW. The NSIS FindNext
+; instruction exposes only a generic error flag, so it cannot prove EOF.
+Function CryoClawNextPayloadEntry
+  System::Call 'kernel32::FindNextFileW(p $cryoclawPayloadFind, p $cryoclawPayloadFindData) i.r0 ?e'
+  Pop $cryoclawPayloadFindError
+  StrCmp $0 0 cryoclaw_payload_find_end
+  ; WIN32_FIND_DATAW has a fixed 44-byte header before cFileName[260].
+  IntOp $0 $cryoclawPayloadFindData + 44
+  System::Call '*$0(&w260 .r1)'
+  StrCpy $cryoclawPayloadEntry $1
+  StrCpy $cryoclawPayloadFindError 0
+  Return
+  cryoclaw_payload_find_end:
+  StrCpy $cryoclawPayloadEntry ""
+FunctionEnd
 !endif
+
+
 
 ; The payload is already fully extracted and the old app removed. On the same
 ; volume, rename the whole directory instead of Shell CopyFiles for 34k files.
-; RMDir here is deliberately NON-recursive: a nonempty destination, a lock or
-; another volume keeps the original copy/retry path. No user directory is erased.
+; RMDir is deliberately NON-recursive. An empty pinned target can adopt top-level
+; entries on the same volume; nonempty targets retain the copy/retry path.
 !macro customMoveExtractedPayload SOURCE DESTINATION
   StrCpy $cryoclawPayloadDestination "${DESTINATION}"
   StrCpy $cryoclawPayloadMode "copy"
   StrCpy $cryoclawPayloadFallback "destination-not-empty-or-locked"
   StrCpy $cryoclawPayloadError 0
+  StrCpy $cryoclawPayloadFindData 0
   System::Call 'kernel32::GetTickCount() i.r0'
   IntOp $cryoclawPayloadReadyMs $0 - $cryoclawInstallStarted
   SetOutPath "$TEMP"
+  StrCpy $cryoclawPayloadAttempt 0
+  cryoclaw_payload_attempt:
+  IntOp $cryoclawPayloadAttempt $cryoclawPayloadAttempt + 1
+  StrCpy $cryoclawPayloadFallback "destination-not-empty-or-locked"
   IfFileExists "$cryoclawPayloadDestination\*.*" 0 cryoclaw_payload_rename
   ClearErrors
   RMDir "$cryoclawPayloadDestination"
-  IfErrors cryoclaw_payload_copy
+  IfErrors cryoclaw_payload_retry
   cryoclaw_payload_rename:
   StrCpy $cryoclawPayloadFallback "rename-failed"
   ClearErrors
   Rename "${SOURCE}" "$cryoclawPayloadDestination"
-  IfErrors cryoclaw_payload_copy
+  IfErrors cryoclaw_payload_retry
   StrCpy $cryoclawPayloadMode "rename"
   StrCpy $cryoclawPayloadFallback "none"
+  StrCpy $cryoclawPayloadError 0
   SetOutPath "$cryoclawPayloadDestination"
   DetailPrint "Payload installed by directory rename"
   Goto DoneExtract7za
-  cryoclaw_payload_copy:
+  cryoclaw_payload_retry:
   System::Call 'kernel32::GetLastError() i.r0'
   StrCpy $cryoclawPayloadError $0
+  ; Indexers and antivirus can briefly hold an otherwise empty destination.
+  ; Only retry nonrecursive removal/rename; nonempty targets keep the fallback.
+  IntCmp $cryoclawPayloadAttempt 6 cryoclaw_payload_entries cryoclaw_payload_wait cryoclaw_payload_entries
+  cryoclaw_payload_wait:
+  Sleep 100
+  Goto cryoclaw_payload_attempt
+  cryoclaw_payload_entries:
+  ; Cross-volume directory moves must retain the original single copy path.
+  System::Call 'kernel32::GetVolumePathNameW(w "${SOURCE}", w .r1, i ${NSIS_MAX_STRLEN}) i.r0'
+  IntCmp $0 0 cryoclaw_payload_copy cryoclaw_payload_copy +1
+  StrCpy $cryoclawPayloadSourceVolume $1
+  System::Call 'kernel32::GetVolumePathNameW(w "$cryoclawPayloadDestination", w .r1, i ${NSIS_MAX_STRLEN}) i.r0'
+  IntCmp $0 0 cryoclaw_payload_copy cryoclaw_payload_copy +1
+  StrCmp $cryoclawPayloadSourceVolume $1 +1 cryoclaw_payload_copy
+  System::Alloc 592
+  Pop $cryoclawPayloadFindData
+  StrCmp $cryoclawPayloadFindData 0 cryoclaw_payload_copy
+  ; An open handle can pin an empty destination itself while allowing children
+  ; to move. Never merge entries through this path: any existing entry falls
+  ; back to the original copier, including directories and reparse points.
+  ClearErrors
+  FindFirst $cryoclawPayloadFind $cryoclawPayloadEntry "$cryoclawPayloadDestination\*.*"
+  IfErrors cryoclaw_payload_copy
+  cryoclaw_payload_target_next:
+  StrCmp $cryoclawPayloadEntry "" cryoclaw_payload_target_empty
+  StrCmp $cryoclawPayloadEntry "." cryoclaw_payload_target_skip
+  StrCmp $cryoclawPayloadEntry ".." cryoclaw_payload_target_skip
+  FindClose $cryoclawPayloadFind
+  Goto cryoclaw_payload_copy
+  cryoclaw_payload_target_skip:
+  Call CryoClawNextPayloadEntry
+  StrCmp $cryoclawPayloadFindError 0 cryoclaw_payload_target_next
+  StrCmp $cryoclawPayloadFindError 18 cryoclaw_payload_target_empty
+  FindClose $cryoclawPayloadFind
+  Goto cryoclaw_payload_copy
+  cryoclaw_payload_target_empty:
+  FindClose $cryoclawPayloadFind
+  System::Call 'kernel32::GetFileAttributesW(w "$cryoclawPayloadDestination") i.r0'
+  IntOp $0 $0 & 0x400
+  IntCmp $0 0 cryoclaw_payload_entries_empty cryoclaw_payload_copy cryoclaw_payload_copy
+  cryoclaw_payload_entries_empty:
+  StrCpy $cryoclawPayloadMoved 0
+  cryoclaw_payload_entries_scan:
+  StrCpy $cryoclawPayloadPassMoved 0
+  ClearErrors
+  FindFirst $cryoclawPayloadFind $cryoclawPayloadEntry "${SOURCE}\*.*"
+  IfErrors cryoclaw_payload_entry_scan_failed
+  cryoclaw_payload_entry_next:
+  StrCmp $cryoclawPayloadEntry "" cryoclaw_payload_entries_scanned
+  StrCmp $cryoclawPayloadEntry "." cryoclaw_payload_entry_skip
+  StrCmp $cryoclawPayloadEntry ".." cryoclaw_payload_entry_skip
+  ClearErrors
+  Rename "${SOURCE}\$cryoclawPayloadEntry" "$cryoclawPayloadDestination\$cryoclawPayloadEntry"
+  IfErrors cryoclaw_payload_entry_failed
+  Push $cryoclawPayloadEntry
+  IntOp $cryoclawPayloadMoved $cryoclawPayloadMoved + 1
+  IntOp $cryoclawPayloadPassMoved $cryoclawPayloadPassMoved + 1
+  cryoclaw_payload_entry_skip:
+  Call CryoClawNextPayloadEntry
+  StrCmp $cryoclawPayloadFindError 0 cryoclaw_payload_entry_next
+  StrCmp $cryoclawPayloadFindError 18 cryoclaw_payload_entries_scanned
+  StrCpy $cryoclawPayloadError $cryoclawPayloadFindError
+  StrCpy $cryoclawPayloadFallback "entry-enumeration-failed"
+  FindClose $cryoclawPayloadFind
+  Goto cryoclaw_payload_entry_rollback
+  cryoclaw_payload_entries_scanned:
+  FindClose $cryoclawPayloadFind
+  ; Re-enumerate after moves so directory enumeration cannot skip a member.
+  IntCmp $cryoclawPayloadPassMoved 0 cryoclaw_payload_entries_finished cryoclaw_payload_entries_finished cryoclaw_payload_entries_scan
+  cryoclaw_payload_entries_finished:
+  IntCmp $cryoclawPayloadMoved 0 cryoclaw_payload_copy cryoclaw_payload_copy cryoclaw_payload_entries_validate
+  cryoclaw_payload_entries_validate:
+  ClearErrors
+  RMDir "${SOURCE}"
+  IfErrors cryoclaw_payload_entry_scan_failed
+  cryoclaw_payload_entries_commit:
+  Pop $cryoclawPayloadEntry
+  IntOp $cryoclawPayloadMoved $cryoclawPayloadMoved - 1
+  IntCmp $cryoclawPayloadMoved 0 cryoclaw_payload_entries_done cryoclaw_payload_entries_done cryoclaw_payload_entries_commit
+  cryoclaw_payload_entries_done:
+  System::Free $cryoclawPayloadFindData
+  StrCpy $cryoclawPayloadFindData 0
+  StrCpy $cryoclawPayloadMode "entry-rename"
+  StrCpy $cryoclawPayloadFallback "none"
+  StrCpy $cryoclawPayloadError 0
+  SetOutPath "$cryoclawPayloadDestination"
+  DetailPrint "Payload installed by top-level entry rename"
+  Goto DoneExtract7za
+  cryoclaw_payload_entry_failed:
+  System::Call 'kernel32::GetLastError() i.r0'
+  StrCpy $cryoclawPayloadError $0
+  StrCpy $cryoclawPayloadFallback "entry-rename-failed"
+  FindClose $cryoclawPayloadFind
+  Goto cryoclaw_payload_entry_rollback
+  cryoclaw_payload_entry_scan_failed:
+  System::Call 'kernel32::GetLastError() i.r0'
+  StrCpy $cryoclawPayloadError $0
+  StrCpy $cryoclawPayloadFallback "entry-enumeration-failed"
+  cryoclaw_payload_entry_rollback:
+  IntCmp $cryoclawPayloadMoved 0 cryoclaw_payload_copy cryoclaw_payload_copy cryoclaw_payload_entry_restore
+  cryoclaw_payload_entry_restore:
+  Pop $cryoclawPayloadEntry
+  ; If a restore is also blocked, its bytes stay at the intended destination;
+  ; the original copier fills the remaining entries without deleting anything.
+  Rename "$cryoclawPayloadDestination\$cryoclawPayloadEntry" "${SOURCE}\$cryoclawPayloadEntry"
+  IntOp $cryoclawPayloadMoved $cryoclawPayloadMoved - 1
+  Goto cryoclaw_payload_entry_rollback
+  cryoclaw_payload_copy:
+  StrCmp $cryoclawPayloadFindData 0 cryoclaw_payload_copy_ready
+  System::Free $cryoclawPayloadFindData
+  StrCpy $cryoclawPayloadFindData 0
+  cryoclaw_payload_copy_ready:
   DetailPrint "Directory rename unavailable; using safe copy fallback"
   SetOutPath "$cryoclawPayloadDestination"
   ClearErrors
@@ -157,6 +305,7 @@ Var /GLOBAL cryoclawPayloadError
 !macro customInit
   System::Call 'kernel32::GetTickCount() i.r0'
   StrCpy $cryoclawInstallStarted $0
+  StrCpy $cryoclawOldUninstallCompletedMs -1
   ; 安装前强制终止正在运行的 CryoClaw 进程（/IM 按镜像名匹配所有同名进程：
   ; 主进程/渲染/GPU/utility 全部同名 CryoClaw.exe，无需 /T）。
   ; ⚠ 绝不能加 /T（树杀）：electron-updater quitAndInstall 会把本安装器 spawn 为
@@ -226,6 +375,8 @@ Var /GLOBAL cryoclawPayloadError
       !endif
     ${endif}
   ${endif}
+  System::Call 'kernel32::GetTickCount() i.r0'
+  IntOp $cryoclawInitCompletedMs $0 - $cryoclawInstallStarted
 !macroend
 
 ; ============================================================
@@ -235,10 +386,7 @@ Var /GLOBAL cryoclawPayloadError
 
 !macro customInstall
   System::Call 'kernel32::GetTickCount() i.r0'
-  IntOp $0 $0 - $cryoclawInstallStarted
-  FileOpen $1 "$INSTDIR\resources\install-performance.json" w
-  FileWrite $1 '{$\"payloadMode$\":$\"$cryoclawPayloadMode$\",$\"fallback$\":$\"$cryoclawPayloadFallback$\",$\"win32Error$\":$cryoclawPayloadError,$\"payloadReadyMs$\":$cryoclawPayloadReadyMs,$\"installMs$\":$0}'
-  FileClose $1
+  IntOp $cryoclawPostPayloadMs $0 - $cryoclawInstallStarted
   ; 生成 CLI 专用二进制（SUBSYSTEM:CONSOLE）：复制主 exe 并补丁 PE header。
   ; -File 直跑（R64 审查 P3）：脚本自定位安装目录（$PSScriptRoot 上级），
   ; 旧版把 $INSTDIR 内插进 -Command 双引号串，自选安装目录含 $、反引号等
@@ -251,6 +399,11 @@ Var /GLOBAL cryoclawPayloadError
     DetailPrint "WARNING: create-cli-binary.ps1 failed (exit=$0) - openclaw CLI binary was not created. Reinstall or run resources\create-cli-binary.ps1 manually to restore it."
   ${endif}
   cryoclaw_cli_done:
+  System::Call 'kernel32::GetTickCount() i.r0'
+  IntOp $cryoclawCompletionMs $0 - $cryoclawInstallStarted
+  FileOpen $1 "$INSTDIR\resources\install-performance.json" w
+  FileWrite $1 '{$\"payloadMode$\":$\"$cryoclawPayloadMode$\",$\"fallback$\":$\"$cryoclawPayloadFallback$\",$\"win32Error$\":$cryoclawPayloadError,$\"initCompletedMs$\":$cryoclawInitCompletedMs,$\"oldUninstallCompletedMs$\":$cryoclawOldUninstallCompletedMs,$\"payloadReadyMs$\":$cryoclawPayloadReadyMs,$\"installMs$\":$cryoclawPostPayloadMs,$\"completionMs$\":$cryoclawCompletionMs}'
+  FileClose $1
 !macroend
 
 ; ============================================================
@@ -259,17 +412,42 @@ Var /GLOBAL cryoclawPayloadError
 ;  %TEMP%\ns*.tmp\old-install 报 Can't rename $INSTDIR → Abort(exit 2)
 ;  → 新安装器 5 轮重试 → uninstallFailed 弹窗（silent 下也弹），更新链路
 ;  整体卡死。v2026.909.6 全旧代码同样复现，非本仓库回归，属上游缺陷。）
-; 对策：更新场景旧文件本就要丢弃，无需 rename 暂存/还原语义——直接
-; RMDir /r 删除；残留（文件确被锁）时 retry 一轮，仍非空才 Abort 交回
-; 官方重试循环。非更新（真卸载）同样直接删（官方删法等价，少一跳）。
+; 对策：沿用已验证的直接删除和有界重试。卸载器与新安装器属于独立进程，
+; 不能以 NSIS 全局变量传递暂存目录；未验证的跨进程回收方案不进入发行。
 ; ============================================================
+
+; Native Node removes long SDK paths that NSIS 3 cannot enumerate. Its own
+; executable is retained until it exits; the existing NSIS fallback finishes.
+!define CRYOCLAW_REMOVE_HELPER "${__FILEDIR__}\remove-installed-files.cjs"
+!macro cryoclawRemoveInstallDirectory
+  Push $0
+  StrCpy $0 2
+  ${if} ${FileExists} "$INSTDIR\resources\resources\runtime\node.exe"
+    InitPluginsDir
+    SetOutPath "$PLUGINSDIR"
+    File /oname=cryoclaw-remove-install.cjs "${CRYOCLAW_REMOVE_HELPER}"
+    nsExec::ExecToLog '"$INSTDIR\resources\resources\runtime\node.exe" --no-warnings "$PLUGINSDIR\cryoclaw-remove-install.cjs" "$INSTDIR"'
+    Pop $0
+    ${if} $0 != 0
+      DetailPrint "Native file removal unavailable (exit=$0); using NSIS fallback"
+    ${endif}
+  ${endif}
+  SetOutPath "$TEMP"
+  ; A locked long file needs the native runtime and ownership markers for the
+  ; outer bounded retry. Remove them only after native cleanup succeeds, or
+  ; when native cleanup was unavailable and the legacy fallback owns the work.
+  ${if} $0 != 1
+    RMDir /r "$INSTDIR"
+  ${endif}
+  Pop $0
+!macroend
 
 !macro customRemoveFiles
   SetOutPath "$TEMP"
-  RMDir /r "$INSTDIR"
+  !insertmacro cryoclawRemoveInstallDirectory
   ${if} ${FileExists} "$INSTDIR\*.*"
     Sleep 1000
-    RMDir /r "$INSTDIR"
+    !insertmacro cryoclawRemoveInstallDirectory
   ${endif}
   ${if} ${FileExists} "$INSTDIR\*.*"
     DetailPrint "removeFiles: $INSTDIR 仍有残留（文件被占用），交回重试"
@@ -289,13 +467,15 @@ Var /GLOBAL cryoclawPayloadError
 ; ============================================================
 
 !macro customUnInstallCheck
+  System::Call 'kernel32::GetTickCount() i.r0'
+  IntOp $cryoclawOldUninstallCompletedMs $0 - $cryoclawInstallStarted
   ${if} $R0 != 0
     DetailPrint "old uninstaller failed (exit=$R0), falling back to direct removal"
     SetOutPath "$TEMP"
-    RMDir /r "$INSTDIR"
+    !insertmacro cryoclawRemoveInstallDirectory
     ${if} ${FileExists} "$INSTDIR\*.*"
       Sleep 1500
-      RMDir /r "$INSTDIR"
+      !insertmacro cryoclawRemoveInstallDirectory
     ${endif}
     ${if} ${FileExists} "$INSTDIR\*.*"
       DetailPrint "fallback removal left residue in $INSTDIR (locked files will be overwritten)"

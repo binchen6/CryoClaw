@@ -366,8 +366,16 @@ export async function patchConfig<T extends Record<string, unknown> = Record<str
       if (replacePaths.length > 0) params.replacePaths = replacePaths;
       if (options?.note) params.note = options.note;
       if (options?.sessionKey) params.sessionKey = options.sessionKey;
+      const writeEpoch = cacheEpoch;
       const payload = await client.request("config.patch", params);
-      invalidateConfigSnapshotCache();
+      // Current kernels return the confirmed, normalized redacted config and its
+      // revision. Reuse that snapshot so model settings update on acknowledgement.
+      // Older kernels without a hash still take the normal config.get fallback.
+      if (cacheClient === client && cacheEpoch === writeEpoch && cache?.hash === snapshot.hash) {
+        const confirmed = parseSnapshot(payload);
+        invalidateConfigSnapshotCache();
+        if (confirmed) cache = confirmed;
+      }
       return { ok: true, ...parsePatchResponse(payload) };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err ?? "");

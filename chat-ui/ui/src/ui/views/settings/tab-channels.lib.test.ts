@@ -52,7 +52,7 @@ function testFeishuExtract() {
     session: { dmScope: "per-peer" },
   };
   const view = extractFeishuView(config as any);
-  assert.equal(view.enabled, true, "legacy plugins.entries 开关优先");
+  assert.equal(view.enabled, false, "channel switch overrides legacy plugin flag");
   assert.equal(view.appId, "cli_1");
   assert.equal(view.dmPolicy, "open", "allowFrom 含通配符视为 open");
   assert.equal(view.dmScope, "per-peer");
@@ -95,7 +95,7 @@ function testFeishuSaveWildcardAndLegacyCleanup() {
   assert.deepEqual(feishu.allowFrom, ["ou_old", "*"], "open 追加通配符并保留旧条目");
   assert.equal(feishu.groupPolicy, "allowlist", "默认群策略");
   assert.equal("groupAllowFrom" in feishu, false, "空群白名单删除字段");
-  assert.equal((draft.plugins as any).entries.feishu, undefined, "legacy 开关清除");
+  assert.equal((draft.plugins as any).entries.feishu.enabled, true, "plugin flag follows enabled channel");
   assert.equal(draft.session, undefined, "dmScope main 不残留 session");
 }
 
@@ -132,7 +132,7 @@ function testFeishuSaveDisableOnly() {
   assert.equal(feishu.enabled, false);
   assert.equal(feishu.appId, "cli_1", "禁用不动凭据");
   assert.deepEqual(feishu.allowFrom, ["*"], "禁用不动 allowFrom");
-  assert.equal((draft.plugins as any).entries.feishu, undefined, "禁用也清 legacy");
+  assert.equal((draft.plugins as any).entries.feishu.enabled, false, "disabled channel disables its plugin");
 }
 
 /* ── QQ Bot ── */
@@ -143,7 +143,7 @@ function testQqbotExtract() {
     channels: { qqbot: { appId: "app1", clientSecret: "__OPENCLAW_REDACTED__", markdownSupport: true } },
   };
   const view = extractQqbotView(config as any);
-  assert.equal(view.enabled, true);
+  assert.equal(view.enabled, false);
   assert.equal(view.appId, "app1");
   assert.equal(view.markdownSupport, true);
   assert.equal(extractQqbotView(null).enabled, false);
@@ -191,7 +191,7 @@ function testDingtalkExtract() {
     channels: { "dingtalk-connector": { clientId: "cid", clientSecret: "sec", sessionTimeout: 60000 } },
   };
   const view = extractDingtalkView(config as any);
-  assert.equal(view.enabled, true);
+  assert.equal(view.enabled, false);
   assert.equal(view.clientId, "cid");
   assert.equal(view.sessionTimeout, 60000);
   assert.equal(extractDingtalkView(null).sessionTimeout, 30 * 60 * 1000, "默认 30 分钟");
@@ -251,7 +251,12 @@ function testWecomExtract() {
     channels: { wecom: { botId: "bot1", secret: "s", dmPolicy: "pairing", groupPolicy: "allowlist", groupAllowFrom: ["g1"] } },
   };
   const view = extractWecomView(config as any);
-  assert.equal(view.enabled, true);
+  assert.equal(view.enabled, false, "plugin presence does not enable a channel");
+  assert.equal(extractWecomView({...config,channels:{wecom:{enabled:true}}} as any).enabled,true);
+  assert.equal(extractWecomView({...config,channels:{wecom:{enabled:false}}} as any).enabled,false);
+  assert.equal(extractWeixinEnabled({plugins:{entries:{"openclaw-weixin":{enabled:true}}}}),false);
+  assert.equal(extractWeixinEnabled({channels:{"openclaw-weixin":{enabled:false}}}),false);
+  assert.equal(extractWeixinEnabled({channels:{"openclaw-weixin":{enabled:true}}}),true);
   assert.equal(view.botId, "bot1");
   assert.equal(view.dmPolicy, "pairing");
   assert.equal(view.groupPolicy, "allowlist");
@@ -262,13 +267,14 @@ function testWecomExtract() {
 }
 
 function testWecomSaveOpenWritesWildcard() {
-  const draft: Record<string, unknown> = { channels: { wecom: { allowFrom: ["u1"], advanced: { x: 1 } } } };
+  const draft: Record<string, unknown> = { plugins:{allow:["other"]}, channels: { wecom: { allowFrom: ["u1"], advanced: { x: 1 } } } };
   applyWecomSave(draft, { enabled: true, botId: "bot1", secret: "s", dmPolicy: "open", groupPolicy: "open" });
   const channel = (draft.channels as any).wecom;
   assert.equal(channel.enabled, true);
   assert.deepEqual(channel.allowFrom, ["*"], "open 强制通配符");
   assert.deepEqual(channel.advanced, { x: 1 }, "高级字段保留");
   assert.equal((draft.plugins as any).entries["wecom-openclaw-plugin"].enabled, true);
+  assert.ok((draft.plugins as any).allow.includes("wecom-openclaw-plugin"));
 }
 
 function testWecomSavePairingPreservesAllowFrom() {
@@ -293,7 +299,7 @@ function testWecomSaveDisableKeepsCredentials() {
 /* ── 微信 ── */
 
 function testWeixinSave() {
-  const draft: Record<string, unknown> = { channels: { "openclaw-weixin": { foo: 1 } } };
+  const draft: Record<string, unknown> = { plugins:{allow:["other"]}, channels: { "openclaw-weixin": { foo: 1 } } };
   applyWeixinSave(draft, true);
   const channel = (draft.channels as any)["openclaw-weixin"];
   assert.equal(channel.enabled, true);
@@ -301,6 +307,7 @@ function testWeixinSave() {
   assert.equal(typeof channel.channelConfigUpdatedAt, "string", "写入 channelConfigUpdatedAt");
   assert.ok(!Number.isNaN(Date.parse(channel.channelConfigUpdatedAt)), "ISO 时间格式");
   assert.equal((draft.plugins as any).entries["openclaw-weixin"].enabled, true);
+  assert.ok((draft.plugins as any).allow.includes("openclaw-weixin"));
   assert.equal(extractWeixinEnabled(draft), true);
   applyWeixinSave(draft, false);
   assert.equal(extractWeixinEnabled(draft), false);
@@ -468,7 +475,7 @@ function testMergePatchIntegration() {
   assert.equal((patch.plugins as any).entries["wecom-openclaw-plugin"].enabled, true);
   assert.deepEqual(
     (patch.plugins as any).allow,
-    ["kimi-search", "dingtalk-connector", "qqbot"],
+    ["kimi-search", "dingtalk-connector", "wecom-openclaw-plugin", "qqbot"],
     "数组追加以完整数组进 patch（字符串数组追加无需 replacePaths）",
   );
   assert.deepEqual(

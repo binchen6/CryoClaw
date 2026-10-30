@@ -17,6 +17,7 @@ import { StringDecoder } from "string_decoder";
 import * as fs from "fs";
 import * as path from "path";
 import { resolveResourcesPath, resolveNodeBin, resolveNodeExtraEnv, resolveCliExe } from "./constants";
+import { syncNativeKernelVersion } from "./gateway-runtime";
 import { migrateOpenclawConfigForKernelUpgrade, readKernelVersionParts, versionAtLeast } from "./openclaw-config-migration";
 import * as log from "./logger";
 
@@ -77,8 +78,9 @@ export function isKernelUpdaterAvailable(): boolean {
 
 /** Recover a torn whole-directory swap before config/schema discovery reads it. */
 export async function recoverKernelBeforeStartup(): Promise<void> {
-  if (!fs.existsSync(path.join(resolveResourcesPath(), "gateway.swap.json"))) return;
-  await runUpdater(["--recover"], () => {});
+  const resources = resolveResourcesPath();
+  if (fs.existsSync(path.join(resources, "gateway.swap.json"))) await runUpdater(["--recover"], () => {});
+  syncNativeKernelVersion(resources);
 }
 
 // 最低支持内核版本：与根目录 kernel-channel.json 的 minSupported 字段保持一致

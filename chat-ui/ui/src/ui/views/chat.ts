@@ -116,7 +116,6 @@ export type ChatProps = {
   // 模型选择器
   configuredModels?: ConfiguredModel[];
   currentModel?: string | null;
-  quotaClient?: import("../gateway.ts").GatewayBrowserClient | null;
   dirtyMeterSessions?: ReadonlySet<string>;
   onModelChange?: (modelKey: string) => void;
   // 思考开关
@@ -339,7 +338,7 @@ export function renderChat(props: ChatProps) {
   };
   const thread = html`
     <div
-      class="chat-thread ${isEmptySession ?"chat-thread--empty" : ""}"
+      class="chat-thread ${isEmptySession ?"chat-thread--empty" : ""}" data-page-id="chat" data-load-state=${props.loading?"loading":props.error?"error":isEmptySession?"empty":"ready"} aria-busy=${props.loading}
       role="log"
       aria-live="polite"
       @scroll=${props.onChatScroll}

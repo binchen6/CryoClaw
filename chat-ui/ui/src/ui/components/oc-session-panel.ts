@@ -321,6 +321,7 @@ let moreMenuOutsideCloser: ((ev: MouseEvent) => void) | null = null;
 function closeMoreMenu(requestUpdate: () => void) {
   const wasOpen = moreMenuOpen;
   moreMenuEpoch++;
+  window.removeEventListener("resize", placeMoreMenu);
   if (moreMenuOutsideCloser) {
     document.removeEventListener("click", moreMenuOutsideCloser);
     moreMenuOutsideCloser = null;
@@ -336,6 +337,38 @@ function closeMoreMenu(requestUpdate: () => void) {
     }
     requestUpdate();
   });
+}
+
+/**
+ * 「更多」菜单定位：贴着触发器正下方右对齐，只在真的放不下时才翻到上方，
+ * 且必须留在面板内——.oc-panel 是 overflow:hidden 的滚动裁剪容器，
+ * 菜单一旦越出面板右缘就会被整块裁掉（此前把「新建对话」「搜索框」当避让目标，
+ * 反而把菜单向下推了 94px、还推到面板左边界之外，用户看到的就是「更偏了/被遮挡」）。
+ * 菜单是 wrap 内的 absolute 元素，最终把视口坐标换算成 wrap 相对坐标。
+ */
+function placeMoreMenu() {
+  const wrap = document.querySelector<HTMLElement>(".oc-panel__more-wrap");
+  const menu = document.querySelector<HTMLElement>(".oc-panel__more-menu");
+  if (!wrap || !menu || menu.classList.contains("cc-leaving")) return;
+  const anchor = wrap.getBoundingClientRect();
+  const panel = document.querySelector<HTMLElement>(".oc-panel");
+  // 裁剪容器就是面板本身：可见区域是它的 padding box，夹取边界必须用它而不是视口。
+  const clip = panel ? panel.getBoundingClientRect() : { left: 0, top: 0, right: window.innerWidth, bottom: window.innerHeight };
+  const padding = 6;
+  const size = { width: menu.offsetWidth, height: menu.offsetHeight };
+  const spaceBelow = clip.bottom - anchor.bottom - padding;
+  const spaceAbove = anchor.top - clip.top - padding;
+  // 下方放得下就向下（默认），否则向上；两侧都放不下时取空间更大的一侧。
+  const side = spaceBelow >= size.height || spaceBelow >= spaceAbove ? "bottom" : "top";
+  const top = side === "bottom" ? anchor.bottom + 4 : anchor.top - 4 - size.height;
+  // 右对齐触发按钮，再夹进面板可视区：不越界就不会被 overflow:hidden 裁掉。
+  const maxLeft = Math.max(clip.left + padding, clip.right - padding - size.width);
+  const left = Math.min(Math.max(clip.left + padding, anchor.right - size.width), maxLeft);
+  menu.style.left = `${Math.round(left - anchor.left)}px`;
+  menu.style.top = `${Math.round(top - anchor.top)}px`;
+  menu.style.right = "auto";
+  menu.dataset.side = side;
+  menu.dataset.align = "end";
 }
 
 function toggleMoreMenu(host: OcSessionPanel, keyboard=false) {
@@ -359,6 +392,10 @@ function toggleMoreMenu(host: OcSessionPanel, keyboard=false) {
     document.addEventListener("click", moreMenuOutsideCloser);
   });
   host.bump();
+  // 菜单渲染完成后再量宽高定位：首帧几何还不存在，rAF 保证拿到真实尺寸。
+  void host.updateComplete.then(placeMoreMenu);
+  window.addEventListener("resize", placeMoreMenu);
+  requestAnimationFrame(placeMoreMenu);
   if(keyboard)requestAnimationFrame(()=>document.querySelector<HTMLButtonElement>('.oc-panel__more-menu button[role="menuitem"]')?.focus());
 }
 
@@ -378,6 +415,7 @@ function resetMenuState() {
     document.removeEventListener("click", moreMenuOutsideCloser);
     moreMenuOutsideCloser = null;
   }
+  window.removeEventListener("resize", placeMoreMenu);
 }
 
 // ── 新建工作区对话框本地状态（草稿为纯 UI 态，提交才回调 props.onCreateWorkspace）──
@@ -414,13 +452,21 @@ function closeWorkspaceDialogState() {
   workspaceDialogReturnFocus=null;
 }
 
+/**
+ * 关闭新建工作区对话框：走 runExitAnimation 两段式（原路返回），
+ * 退场帧播完才清状态卸载 DOM；取消/提交/backdrop/Esc 共用这一条路径并回焦打开者。
+ */
 function closeWorkspaceDialog(host: OcSessionPanel) {
-  workspaceDialogEpoch++;
-  workspaceDialogOpen = false;
-  host.bump();
   const target = workspaceDialogReturnFocus;
   workspaceDialogReturnFocus = null;
-  requestAnimationFrame(() => target?.isConnected && target.focus());
+  const epoch = ++workspaceDialogEpoch;
+  const dialog = document.querySelector<HTMLElement>(".oc-panel__ws-dialog");
+  const backdrop = document.querySelector<HTMLElement>(".oc-panel__ws-dialog-backdrop");
+  runExitAnimation([backdrop, dialog], () => {
+    if (epoch === workspaceDialogEpoch) workspaceDialogOpen = false;
+    host.bump();
+    requestAnimationFrame(() => target?.isConnected && target.focus());
+  });
 }
 
 // 目录选择走 Electron 主进程 dialog（preload 桥 selectDirectory）；非桌面环境无桥时静默忽略

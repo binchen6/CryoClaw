@@ -6,7 +6,6 @@ import * as path from "path";
 import * as log from "./logger";
 import { resolveUserStateDir } from "./constants";
 import { assertTrustedIpcSender } from "./ipc-sender-guard";
-import { isSafeOpenExt } from "./safe-open";
 import {readUserConfig} from "./provider-config";
 import {readCryoclawConfig,writeCryoclawConfig} from "./cryoclaw-config";
 import {readWorkspaceText,saveWorkspaceText,findWorkspaceFiles,readWorkspaceDraft,writeWorkspaceDraft} from "./workspace-files";

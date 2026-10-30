@@ -305,7 +305,8 @@ async function handleVerify(state: AppViewState, goToStep: (step: number) => voi
 
 async function handleOAuthLogin(state: AppViewState, goToStep: (step: number) => void) {
   if(setupBusy())return;
-  const attempt=++oauthAttempt,selection={...s};
+  ++oauthAttempt;
+  const selection={...s};
   await runKimiOAuthLogin(state, s, async (token,isCurrent) => {
     s.verificationStage="verify";
     const modelID = s.showCustomModelInput

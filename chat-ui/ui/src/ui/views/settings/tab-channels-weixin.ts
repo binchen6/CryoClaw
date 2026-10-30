@@ -33,13 +33,14 @@ function createWeixinState() {
     error: null as string | null,
     hint: null as string | null,
     initialized: false,
+    loadState: "loading",
   };
 }
 
 const s = createWeixinState();
 
 async function refreshAccounts(): Promise<void> {
-  const runtime = await ipc.settingsGetChannelRuntimeState().catch(() => null);
+  const runtime = await ipc.settingsGetChannelRuntimeState().catch(() => { s.loadState="error"; return null; });
   if (runtime) s.accounts = runtime.weixinAccounts ?? [];
 }
 
@@ -175,7 +176,7 @@ export function renderChannelWeixin(state: AppViewState) {
   const connected = s.accounts.length > 0;
 
   return html`
-    <div class="oc-settings__section">
+    <div class="oc-settings__section" data-page-id="settings:channels:weixin" data-load-state=${s.loadState === "loading"?"loading":s.loadState === "error" || s.error?"error":"ready"} aria-busy=${s.loadState === "loading"}>
       ${renderChannelEnableCard("weixin", s.enabled, (checked) => void handleToggle(state, checked))}
 
       ${s.enabled ? html`

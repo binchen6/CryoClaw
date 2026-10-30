@@ -29,8 +29,6 @@ import {
 } from "../chat/goal-display.ts";
 import "../components/oc-model-picker.ts";
 import type { ChatProps } from "./chat.ts";
-import "../components/model-quota.ts";
-import {quotaProvider} from "../controllers/model-quota.ts";
 import {hydrateAttachmentThumbnails} from "../chat/attachment-thumbnails.ts";
 
 // renderChat 已派生好的 compose 上下文（模型选择器/占位文案/忙碌态在装配层算好传入）
@@ -68,6 +66,15 @@ let plusMenuOutsideCloser: ((ev: MouseEvent) => void) | null = null;
 // 若关闭分支不显式注销，每次 开→关→开 循环都会永久泄漏一个持有过期
 // popover/el 闭包的 document 监听器。
 let branchPopoverCloser: ((ev: MouseEvent) => void) | null = null;
+// 分支 popover 的开关态镜像：面板开关是 DOM class，但 aria-expanded 必须随渲染更新，
+// 否则读屏用户听不到「已展开」。Escape 与点选分支共用同一条关闭路径。
+let branchPopoverOpen = false;
+let branchPopoverEscape: ((ev: KeyboardEvent) => void) | null = null;
+
+// 加号菜单的打开者：关闭后焦点回到真正触发它的按钮（加号 / 权限档位共用一个菜单），
+// 而不是一律回加号——否则键盘用户从权限按钮打开后会被丢到别处。
+let plusMenuOpener: HTMLElement | null = null;
+let plusMenuEscape: ((ev: KeyboardEvent) => void) | null = null;
 
 // popover 退场两段式：--open → --closing（播 chat-popover-out），
 // --duration-fast(120ms) 后摘净。重开时清定时器 + 摘 --closing 防串场。
@@ -102,19 +109,34 @@ function revivePopover(el: Element, closingClass: string) {
   el.classList.remove(closingClass);
 }
 
-function closeBranchPopover() {
+function closeBranchPopover(options: { restoreFocus?: boolean } = {}) {
   for (const el of document.querySelectorAll(".chat-compose__branch-popover--open")) {
     animatePopoverOut(el, "chat-compose__branch-popover--open", "chat-compose__branch-popover--closing");
   }
+  const wasOpen = branchPopoverOpen;
+  branchPopoverOpen = false;
   if (branchPopoverCloser) {
     document.removeEventListener("click", branchPopoverCloser);
     branchPopoverCloser = null;
   }
+  if (branchPopoverEscape) {
+    document.removeEventListener("keydown", branchPopoverEscape, true);
+    branchPopoverEscape = null;
+  }
+  // 原路返回：关闭后焦点回到开启它的分支按钮，键盘用户不必重新 Tab 一遍。
+  if (wasOpen && options.restoreFocus !== false) {
+    requestAnimationFrame(() => document.querySelector<HTMLElement>(".chat-compose__branch .chat-compose__tool-btn")?.focus());
+  }
+}
+
+/** 分支 popover 是否展开（渲染 aria-expanded 用）。 */
+export function branchPopoverIsOpen() {
+  return branchPopoverOpen;
 }
 
 let plusMenuAnimation:Animation|null=null;
 
-function closePlusMenu(props: { onRequestUpdate?: () => void }) {
+function closePlusMenu(props: { onRequestUpdate?: () => void }, options: { restoreFocus?: boolean } = {}) {
   const epoch=++plusMenuEpoch;
   plusMenuAnimation?.cancel();plusMenuAnimation=null;
   const wasOpen=plusMenuOpen||plusMenuLeaving;
@@ -127,7 +149,15 @@ function closePlusMenu(props: { onRequestUpdate?: () => void }) {
     document.removeEventListener("click", plusMenuOutsideCloser);
     plusMenuOutsideCloser = null;
   }
+  if (plusMenuEscape) {
+    document.removeEventListener("keydown", plusMenuEscape, true);
+    plusMenuEscape = null;
+  }
+  const opener=plusMenuOpener;
+  plusMenuOpener=null;
   props.onRequestUpdate?.();
+  // 原路返回：焦点交回真正打开菜单的那个按钮（加号或权限档位）。
+  if(wasOpen && options.restoreFocus !== false)requestAnimationFrame(()=>opener?.isConnected&&opener.focus());
   if(!wasOpen)return;
   requestAnimationFrame(()=>{
     const menu=document.querySelector<HTMLElement>('.chat-plus__menu');
@@ -141,13 +171,14 @@ function closePlusMenu(props: { onRequestUpdate?: () => void }) {
   });
 }
 
-function openPlusMenu(props: { onRequestUpdate?: () => void }) {
+function openPlusMenu(props: { onRequestUpdate?: () => void }, opener: HTMLElement | null = null) {
   document.dispatchEvent(new CustomEvent('cryoclaw:compose-other-menu'));
-  closeBranchPopover();
+  closeBranchPopover({ restoreFocus: false });
   plusMenuEpoch++;
   plusMenuAnimation?.cancel();plusMenuAnimation=null;
   plusMenuLeaving=false;
   plusMenuOpen = true;
+  plusMenuOpener = opener;
   // 延迟一帧注册，避免触发本次打开的 click 立刻把菜单关掉。
   requestAnimationFrame(() => {
     if (!plusMenuOpen || plusMenuOutsideCloser) return;
@@ -160,13 +191,29 @@ function openPlusMenu(props: { onRequestUpdate?: () => void }) {
     };
     document.addEventListener("click", plusMenuOutsideCloser);
   });
+  // Esc 与「再点一次触发器」走同一条关闭路径：菜单开着时任何位置按 Esc 都收起菜单并回焦。
+  if (!plusMenuEscape) {
+    plusMenuEscape = (ev: KeyboardEvent) => {
+      if (ev.key !== "Escape" || ev.isComposing) return;
+      if (!plusMenuOpen) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      closePlusMenu(props);
+    };
+    document.addEventListener("keydown", plusMenuEscape, true);
+  }
   props.onRequestUpdate?.();
+}
+
+/** 加号菜单是否展开（渲染 aria-expanded 用）。 */
+export function plusMenuIsOpen() {
+  return plusMenuOpen;
 }
 
 /** 切会话复位 compose 全部模块级瞬态（renderChat 的 lastSessionKey 门控调用）。 */
 export function resetComposeTransient(props: { onRequestUpdate?: () => void }) {
-  closePlusMenu(props);
-  closeBranchPopover();
+  closePlusMenu(props, { restoreFocus: false });
+  closeBranchPopover({ restoreFocus: false });
   goalFormOpen = false;
   goalDraft = "";
   commandSuggestions = [];
@@ -184,7 +231,7 @@ let commandDraft:string|null=null;
 let commandSource:ChatProps["commands"];
 
 /**
- * Context Meter — 放在发送按钮左侧，展示当前对话记忆占用。
+ * Context Ring — 输入卡工具条右侧的小圆环，展示当前对话记忆占用。
  * 数据源：
  *   - used = session.totalTokens（最后一次调用的 prompt token 数，gateway 在
  *            turn 结束后持久化）
@@ -193,7 +240,7 @@ let commandSource:ChatProps["commands"];
  * 仅展示「当前会话」占用比例，跨会话独立；模型未知且 used>0 时整体隐藏。
  *
  * 模型切换：用户切完 model 后，该 sessionKey 会被加入 dirtyMeterSessions 集合，
- * 直到下一轮 usage（totalTokens 单调推进）落库才清除——天然 per-session 独立。
+ * 直到下一轮 usage（totalTokens 变化）落库才清除——天然 per-session 独立。
  */
 function contextMeterText(
   key: string,
@@ -205,7 +252,7 @@ function contextMeterText(
     .replace("{max}", values.max);
 }
 
-function renderContextMeter(
+function renderContextRing(
   session: GatewaySessionRow | null | undefined,
   dirtySessions: ReadonlySet<string> | undefined,
 ) {
@@ -219,21 +266,25 @@ function renderContextMeter(
   };
   const label = contextMeterText("chat.contextMeterAria", values);
   const title = contextMeterText("chat.contextMeterHint", values);
+  const tone = stats.ratio >= 0.9 ? "danger" : stats.ratio >= 0.7 ? "warn" : "ok";
   return html`
-    <div class="chat-compose__ctx-meter" data-tooltip=${title} data-tooltip-wide="true">
-      <span class="chat-compose__ctx-meter-label">${icons.gauge}<span>${t("chat.contextMeterLabel")}</span></span>
-      <div
-        class="chat-compose__ctx-meter-bar"
-        role="progressbar"
-        aria-label=${label}
-        aria-valuemin="0"
-        aria-valuemax="100"
-        aria-valuenow=${String(stats.percent)}
-      >
-        <div class="chat-compose__ctx-meter-fill" style=${`width: ${stats.widthPct}%`}></div>
-      </div>
-      <span class="chat-compose__ctx-meter-value">${stats.percent}%</span>
-    </div>
+    <span
+      class="chat-compose__ctx-ring"
+      data-tone=${tone}
+      data-tooltip=${title}
+      data-tooltip-wide="true"
+      role="progressbar"
+      aria-label=${label}
+      aria-valuemin="0"
+      aria-valuemax="100"
+      aria-valuenow=${String(stats.percent)}
+    >
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <circle class="chat-compose__ctx-ring-track" cx="12" cy="12" r="10" pathLength="100"></circle>
+        <circle class="chat-compose__ctx-ring-fill" cx="12" cy="12" r="10" pathLength="100" stroke-dasharray=${`${stats.widthPct} 100`}></circle>
+        <text class="chat-compose__ctx-ring-center" x="12" y="12" text-anchor="middle" dominant-baseline="central">${stats.percent}</text>
+      </svg>
+    </span>
   `;
 }
 
@@ -350,7 +401,7 @@ function renderBranchPopover(props: ChatProps) {
   const branches = keyMismatch ? [] : (props.sessionBranches ?? []);
   const busySwitch = busy?.startsWith("switch:") ? busy.slice("switch:".length) : null;
   return html`
-    <div class="chat-compose__branch-popover">
+    <div class="chat-compose__branch-popover" role="menu" aria-label=${t("chat.branch.title")}>
       <div class="chat-compose__branch-title">${t("chat.branch.title")}</div>
       ${loading
         ? html`<div class="chat-compose__branch-status">${t("chat.loading")}</div>`
@@ -389,7 +440,11 @@ function renderBranchPopover(props: ChatProps) {
                     class="chat-compose__branch-action"
                     type="button"
                     ?disabled=${busy !== null}
-                    @click=${() => props.onSwitchBranch?.(branch.leafEntryId)}
+                    @click=${() => {
+                      props.onSwitchBranch?.(branch.leafEntryId);
+                      // 选中即完成：收起 popover 并回焦触发按钮，否则面板悬在原处像「没生效」。
+                      closeBranchPopover();
+                    }}
                   >
                     ${busySwitch === branch.leafEntryId ? icons.loader : nothing}${t(
                       "chat.branch.switch",
@@ -441,7 +496,7 @@ function insertSkillReference(props: ChatProps, name: string) {
       ? `${draft}${mention}`
       : `${draft} ${mention}`;
   props.onDraftChange(next);
-  closePlusMenu(props);
+  closePlusMenu(props, { restoreFocus: false });
   // 焦点送回输入框，引用完可以接着打字
   requestAnimationFrame(() => {
     const textarea = document.querySelector<HTMLTextAreaElement>(".chat-compose__field textarea");
@@ -524,8 +579,21 @@ export function renderGoalForm(props: ChatProps) {
   if (!goalFormOpen) {
     return nothing;
   }
+  // 关闭一律走这里：Esc / 取消 / 提交同一条路径，并把焦点交回长得像「返回原地」的触发按钮。
+  const closeGoalForm = (restoreFocus = true) => {
+    goalFormOpen = false;
+    goalDraft = "";
+    props.onRequestUpdate?.();
+    if (restoreFocus) requestAnimationFrame(() => document.querySelector<HTMLElement>(".chat-plus__trigger")?.focus());
+  };
   return html`
-    <div class="chat-goal-form">
+    <div class="chat-goal-form"
+      @keydown=${(e: KeyboardEvent) => {
+        if (e.key !== "Escape" || e.isComposing) return;
+        e.preventDefault();
+        e.stopPropagation();
+        closeGoalForm();
+      }}>
       <input
         class="chat-goal-form__input"
         type="text"
@@ -536,23 +604,16 @@ export function renderGoalForm(props: ChatProps) {
           if (e.isComposing || e.keyCode === 229) return;
           if (e.key === "Enter" && goalDraft.trim()) {
             props.onGoalCommand?.(`/goal ${goalDraft.trim()}`);
-            goalFormOpen = false;
-            goalDraft = "";
-            props.onRequestUpdate?.();
-          } else if (e.key === "Escape") {
-            goalFormOpen = false;
-            props.onRequestUpdate?.();
+            closeGoalForm(false);
           }
         }}
       />
       <button class="chat-goal-form__submit" type="button" ?disabled=${!goalDraft.trim()} @click=${() => {
         if (!goalDraft.trim()) return;
         props.onGoalCommand?.(`/goal ${goalDraft.trim()}`);
-        goalFormOpen = false;
-        goalDraft = "";
-        props.onRequestUpdate?.();
+        closeGoalForm(false);
       }}>${t("goal.start")}</button>
-      <button class="chat-goal-form__cancel" type="button" @click=${() => { goalFormOpen = false; props.onRequestUpdate?.(); }}>${t("chat.cancel")}</button>
+      <button class="chat-goal-form__cancel" type="button" @click=${() => closeGoalForm()}>${t("chat.cancel")}</button>
     </div>
   `;
 }
@@ -603,7 +664,7 @@ function renderPlusMenu(props: ChatProps) {
           if (plusMenuOpen) {
             closePlusMenu(props);
           } else {
-            openPlusMenu(props);
+            openPlusMenu(props, e.currentTarget as HTMLElement);
           }
         }}
         data-tooltip=${t("chat.plusMenu")}
@@ -639,10 +700,12 @@ function renderPlusMenu(props: ChatProps) {
                 `
                 : nothing}
               <button class="chat-plus__item" type="button" @click=${() => {
-                closePlusMenu(props);
+                closePlusMenu(props, { restoreFocus: false });
                 goalFormOpen = !goalFormOpen;
                 goalDraft = props.goal?.objective ?? "";
                 props.onRequestUpdate?.();
+                // 表单从菜单里长出来：焦点跟着一起过去，否则 Esc/输入都要再点一次。
+                requestAnimationFrame(() => document.querySelector<HTMLInputElement>(".chat-goal-form__input")?.focus());
               }}>
                 <span class="chat-plus__item-icon">${icons.brain}</span>
                 <span>${t("chat.plusGoal")}</span>
@@ -737,7 +800,7 @@ export function renderCompose(props: ChatProps, ctx: ComposeRenderContext) {
   return html`
     <div class="chat-compose"
       ${ref(setComposeForToast)}
-      @cryoclaw:compose-menu=${()=>{closePlusMenu(props);closeBranchPopover();}}
+      @cryoclaw:compose-menu=${()=>{closePlusMenu(props,{restoreFocus:false});closeBranchPopover({restoreFocus:false});}}
       @dragenter=${(event:DragEvent)=>{if(!event.dataTransfer?.types.includes("Files"))return;const root=event.currentTarget as HTMLElement;root.dataset.dragDepth=String(Number(root.dataset.dragDepth??0)+1);root.dataset.fileDrag="true";}}
       @dragover=${(event:DragEvent)=>{if(event.dataTransfer?.types.includes("Files")){event.preventDefault();event.dataTransfer.dropEffect="copy";}}}
       @dragleave=${(event:DragEvent)=>{const root=event.currentTarget as HTMLElement;const depth=Math.max(0,Number(root.dataset.dragDepth??0)-1);root.dataset.dragDepth=String(depth);if(!depth)delete root.dataset.fileDrag;}}
@@ -746,7 +809,6 @@ export function renderCompose(props: ChatProps, ctx: ComposeRenderContext) {
       ${renderAttachmentPreview(props)}
       <div class="field chat-compose__field">
         <span>${t("chat.messageLabel")}</span>
-        ${renderContextMeter(ctx.activeSession, props.dirtyMeterSessions)}
         <textarea
           ${ref((el) => el && adjustTextareaHeight(el as HTMLTextAreaElement, true))}
           .value=${props.draft}
@@ -756,7 +818,7 @@ export function renderCompose(props: ChatProps, ctx: ComposeRenderContext) {
           aria-activedescendant=${commandSuggestions.length?`chat-command-option-${commandIndex}`:nothing}
           @keydown=${(e: KeyboardEvent) => {
             // IME owns its candidate keys before either completion or send handles them.
-            if(e.isComposing || e.keyCode===229)return;
+            if(e.defaultPrevented || e.isComposing || e.keyCode===229)return;
             // 程序化改 draft（引用消息/插入技能/发送清空）不触发 @input，过期建议
             // 须先作废——否则 Enter 会把 draft 替换成损坏文本（与下方
             // renderCommandSuggestions 的 /^\/(\S*)$/ 防御同款，两处缺一不可：
@@ -769,7 +831,7 @@ export function renderCompose(props: ChatProps, ctx: ComposeRenderContext) {
               commandIndex = 0;
             }
             if (commandSuggestions.length > 0) {
-              if (!e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey && (e.key === "Tab" || e.key === "Enter")) {
+              if (!e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey && e.key === "Tab") {
                 e.preventDefault();
                 const pick = commandSuggestions[commandIndex];
                 if (pick) {
@@ -797,14 +859,8 @@ export function renderCompose(props: ChatProps, ctx: ComposeRenderContext) {
                 return;
               }
             }
-            if (e.key !== "Enter") {
-              return;
-            }
-            if (e.shiftKey) {
-              return;
-            } // Allow Shift+Enter for line breaks
-            // 断开时也不拦截：发送会走乐观入队（待发送，重连自动补发），
-            // 输入框保持可编辑（见 handleSendChat 的 disconnected 分支）
+            // Enter stays a native line break, including while completing commands.
+            if(e.key!=="Enter" || !(e.ctrlKey||e.metaKey) || e.shiftKey || e.altKey || e.repeat)return;
             e.preventDefault();
             if(canSend)props.onSend();
           }}
@@ -837,7 +893,7 @@ export function renderCompose(props: ChatProps, ctx: ComposeRenderContext) {
           <div class="chat-compose__toolbar-left">
             ${renderPlusMenu(props)}
             <oc-model-picker .props=${props} .value=${ctx.modelSelectValue}></oc-model-picker>
-            ${['ask','auto','full'].includes(execMode)?html`<button class="chat-compose__permission chat-compose__permission--${execMode}" type="button" aria-label=${`${t('chat.execMode')}: ${execLabel}`} data-tooltip=${`${t('chat.execMode')}: ${execLabel}`} ?disabled=${!props.connected} @click=${(event:Event)=>{event.stopPropagation();if(plusMenuOpen)closePlusMenu(props);else openPlusMenu(props);}}>${icons.shieldCheck}<span>${execLabel}</span></button>`:nothing}
+            ${['ask','auto','full'].includes(execMode)?html`<button class="chat-compose__permission chat-compose__permission--${execMode}" type="button" aria-label=${`${t('chat.execMode')}: ${execLabel}`} data-tooltip=${`${t('chat.execMode')}: ${execLabel}`} aria-haspopup="menu" aria-expanded=${plusMenuOpen ? "true" : "false"} ?disabled=${!props.connected} @click=${(event:Event)=>{event.stopPropagation();if(plusMenuOpen)closePlusMenu(props);else openPlusMenu(props,event.currentTarget as HTMLElement);}}>${icons.shieldCheck}<span>${execLabel}</span></button>`:nothing}
           </div>
           <div class="chat-compose__toolbar-right">
             <div class="chat-compose__branch">
@@ -846,6 +902,8 @@ export function renderCompose(props: ChatProps, ctx: ComposeRenderContext) {
                 type="button"
                 data-tooltip=${t("chat.branch.tooltip")}
                 aria-label=${t("chat.branch.tooltip")}
+                aria-haspopup="menu"
+                aria-expanded=${branchPopoverOpen ? "true" : "false"}
                 ?disabled=${!props.connected}
                 @click=${(e: Event) => {
                   e.stopPropagation();
@@ -855,10 +913,12 @@ export function renderCompose(props: ChatProps, ctx: ComposeRenderContext) {
                   if (popover.classList.contains("chat-compose__branch-popover--open")) {
                     closeBranchPopover();
                   } else {
-                    closePlusMenu(props);
-                    closeBranchPopover();
+                    closePlusMenu(props, { restoreFocus: false });
+                    closeBranchPopover({ restoreFocus: false });
                     revivePopover(popover, "chat-compose__branch-popover--closing");
                     popover.classList.add("chat-compose__branch-popover--open");
+                    branchPopoverOpen = true;
+                    props.onRequestUpdate?.();
                     props.onOpenSessionBranches?.();
                     const container = el;
                     branchPopoverCloser = (ev: MouseEvent) => {
@@ -868,6 +928,16 @@ export function renderCompose(props: ChatProps, ctx: ComposeRenderContext) {
                     requestAnimationFrame(() => {
                       if (branchPopoverCloser === closer) document.addEventListener("click", closer);
                     });
+                    // 分支 popover 与其它浮层同一套 Esc 语义：任何位置按 Esc 收起并回焦。
+                    if (!branchPopoverEscape) {
+                      branchPopoverEscape = (ev: KeyboardEvent) => {
+                        if (ev.key !== "Escape" || ev.isComposing || !branchPopoverOpen) return;
+                        ev.preventDefault();
+                        ev.stopPropagation();
+                        closeBranchPopover();
+                      };
+                      document.addEventListener("keydown", branchPopoverEscape, true);
+                    }
                   }
                 }}
               >
@@ -876,28 +946,29 @@ export function renderCompose(props: ChatProps, ctx: ComposeRenderContext) {
               ${renderBranchPopover(props)}
             </div>
             <span class="chat-compose__toolbar-divider" aria-hidden="true"></span>
-            <oc-model-quota .client=${props.quotaClient ?? null} .connected=${props.connected}
-              .model=${ctx.modelSelectValue?.includes("/")?ctx.modelSelectValue.slice(ctx.modelSelectValue.indexOf("/")+1):ctx.modelSelectValue??""}
-              .provider=${quotaProvider(ctx.modelSelectValue,ctx.activeSession?.modelProvider)}></oc-model-quota>
+            ${renderContextRing(ctx.activeSession, props.dirtyMeterSessions)}
             ${
               // busy 时停止键与发送键并存（kimi web UI 契约）：发送=入队，不再被停止键替换
               ctx.showStop
                 ? html`<button
                     class="chat-compose__send-btn chat-compose__send-btn--stop"
+                    type="button"
                     ?disabled=${!props.connected || Boolean(props.abortPending)}
-                    @click=${props.onAbort}
-                    aria-label=${t("chat.stop")}
-                    data-tooltip=${t("chat.stop")}
-                  >${icons.stop}</button>`
+                    @click=${()=>props.onAbort?.()}
+                    aria-busy=${Boolean(props.abortPending)}
+                    aria-label=${props.abortPending?t("chat.stopping"):t("chat.stop")}
+                    data-tooltip=${props.abortPending?t("chat.stopping"):t("chat.stop")}
+                  ><span class="chat-compose__stop-icon" aria-hidden="true"></span></button>`
                 : nothing
             }
             <button
               class="chat-compose__send-btn chat-compose__send-btn--send ${canSend?'is-ready':''}"
+              type="button"
               ?disabled=${!canSend}
-              @click=${props.onSend}
-              aria-keyshortcuts="Enter"
+              @click=${()=>{if(canSend)props.onSend();}}
+              aria-keyshortcuts="Control+Enter Meta+Enter"
               aria-label=${!props.connected ? t("chat.sendQueued") : ctx.isBusy ? t("chat.sendEnqueue") : t("chat.send")}
-              data-tooltip=${!props.connected ? t("chat.sendQueued") : ctx.isBusy ? t("chat.sendEnqueue") : t("chat.send")}
+              data-tooltip=${`${!props.connected ? t("chat.sendQueued") : ctx.isBusy ? t("chat.sendEnqueue") : t("chat.send")} · ${t("chat.sendShortcut")}`}
             >${icons.arrowUp}</button>
           </div>
         </div>

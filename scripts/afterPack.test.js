@@ -55,7 +55,7 @@ for (const native of [false, true]) test(`Windows afterPack preserves a complete
   fs.copyFileSync(path.join(__dirname, "afterPack.js"), scriptPath);
   fs.copyFileSync(path.join(__dirname, "stop-bundled-runtime.ps1"), path.join(scriptDir, "stop-bundled-runtime.ps1"));
   fs.mkdirSync(path.join(tmpRoot, "shared"), { recursive: true });
-  for (const name of ["openai-proxy.cjs", "openai-proxy-bootstrap.cjs"]) {
+  for (const name of ["openai-proxy.cjs", "openai-proxy-bootstrap.cjs", "gateway-core-resolution-cache.cjs"]) {
     fs.copyFileSync(path.join(__dirname, "..", "shared", name), path.join(tmpRoot, "shared", name));
   }
 
@@ -84,6 +84,7 @@ for (const native of [false, true]) test(`Windows afterPack preserves a complete
   const sandbox = loadAfterPackSandbox(scriptPath);
   const appOutDir = path.join(tmpRoot, "out");
   fs.mkdirSync(path.join(appOutDir, "resources"), { recursive: true });
+  fs.writeFileSync(path.join(appOutDir, "electron-worktree-low.exe"), "local QA only");
 
   await sandbox.exports.default({
     electronPlatformName: "win32",
@@ -99,6 +100,7 @@ for (const native of [false, true]) test(`Windows afterPack preserves a complete
   const packagedGatewayDir = path.join(appOutDir, "resources", "resources", "gateway");
   assert.equal(fs.existsSync(path.join(packagedGatewayDir, "node_modules")), true);
   assert.equal(fs.existsSync(path.join(packagedGatewayDir, "node_modules.tar")), false);
+  assert.equal(fs.existsSync(path.join(appOutDir, "electron-worktree-low.exe")), false);
   assert.equal(fs.existsSync(path.join(appOutDir, "resources/resources/runtime/node.exe")), native);
   assert.equal(fs.existsSync(path.join(appOutDir, "resources/resources/runtime/node-worktree-low.exe")), false);
   assert.equal(fs.existsSync(path.join(appOutDir, "resources/create-cli-binary.ps1")), !native);

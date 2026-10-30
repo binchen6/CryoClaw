@@ -7,7 +7,6 @@ import {
   resolveNodeExtraEnv,
   resolveClawhubEntry,
   resolveGatewayPackageDir,
-  IS_WIN,
 } from "./constants";
 import { execFile } from "child_process";
 import * as fs from "fs";
@@ -400,18 +399,6 @@ export function isNetworkFailure(err: unknown): boolean {
   if (typeof e.statusCode === "number") return e.statusCode >= 500;
   const msg = String(e?.message ?? err);
   return /timeout|ENOTFOUND|ECONNREFUSED|ECONNRESET|EAI_AGAIN|network|socket/i.test(msg);
-}
-
-// 镜像 search/detail 与主源同构；detail 信封不同（{skill, latestVersion, owner, history}）
-function mapMirrorDetail(raw: any): SkillDetail {
-  const s = (raw && typeof raw.skill === "object" && raw.skill) ? raw.skill : raw;
-  return {
-    ...mapItem({ ...s, owner: raw?.owner?.handle ?? raw?.owner?.ownerHandle ?? s.owner }),
-    // 镜像详情无 readme（实测），留空——UI 对空 readme 自然隐藏说明区
-    readme: s.readme ?? "",
-    author: raw?.owner?.handle ?? raw?.owner?.ownerHandle ?? s.owner ?? "",
-    tags: Array.isArray(s.tags) ? s.tags.filter((t: unknown): t is string => typeof t === "string") : [],
-  };
 }
 
 // 主源与镜像的 detail 信封同构（实测：{ skill, owner, metadata?, latestVersion? }），

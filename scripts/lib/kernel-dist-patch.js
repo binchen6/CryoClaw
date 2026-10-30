@@ -400,8 +400,10 @@ function patchAsarBoundaryCheck(gatewayDir) {
 
 function writeKernelCompatibilityMetadata(gatewayDir) {
   const root=path.join(gatewayDir,"node_modules","openclaw"),dist=path.join(root,"dist");
-  if(!fs.existsSync(dist))return 0;
+  if(!fs.existsSync(dist)||!fs.existsSync(path.join(root,"package.json")))return 0;
+  const pkg=JSON.parse(fs.readFileSync(path.join(root,"package.json"),"utf8"));
   const files=fs.readdirSync(dist).filter(name=>/^openclaw-agent-db-schema-read-.*\.(?:m?js)$/.test(name));
+  if(["2026.10.7","2026.10.9"].includes(pkg.version)&&files.length!==1)throw Error("Pinned kernel must have exactly one agent schema admission module");
   if(!files.length)return 0;
   const versions=new Set();
   for(const file of files){
@@ -411,8 +413,9 @@ function writeKernelCompatibilityMetadata(gatewayDir) {
     versions.add(Number(match[1]));
   }
   if(versions.size!==1)throw Error("Conflicting agent schema admission requirements");
-  const version=JSON.parse(fs.readFileSync(path.join(root,"package.json"),"utf8")).version;
-  fs.writeFileSync(path.join(root,"cryoclaw-kernel-compat.json"),JSON.stringify({version,agentDbUserVersion:[...versions][0]})+"\n");return 1;
+  const agentDbUserVersion=[...versions][0];
+  if(pkg.openclaw?.schemaVersions?.agent!==undefined&&pkg.openclaw.schemaVersions.agent!==agentDbUserVersion)throw Error("Agent schema manifest and admission gate disagree");
+  fs.writeFileSync(path.join(root,"cryoclaw-kernel-compat.json"),JSON.stringify({version:pkg.version,agentDbUserVersion})+"\n");return 1;
 }
 
 // 检查 openclaw dist 根与 @openclaw/fs-safe dist 根下是否已存在任一 asar-bypass marker。
@@ -863,7 +866,7 @@ function cryoclawProjectDeliveryReceipt(value,maxChars) {
     fs.writeFileSync(file,source);count++;
   }
   const manifest=path.join(dir,"..","package.json");
-  if(fs.existsSync(manifest) && /^2026\.10\.[56]$/.test(JSON.parse(fs.readFileSync(manifest,"utf8")).version) && count<2)
+  if(fs.existsSync(manifest) && /^2026\.10\.(?:[5-7]|9)$/.test(JSON.parse(fs.readFileSync(manifest,"utf8")).version) && count<2)
     throw Error("Delivery history projection did not cover both core and canvas modules");
   return count;
 }
@@ -904,27 +907,47 @@ function cryoclawPluginRealpath(value,...options) {
 function patchAgentStartupPublication(gatewayDir) {
   const dir=path.join(gatewayDir,"node_modules","openclaw","dist");
   if(!fs.existsSync(dir))return 0;
-  const files=fs.readdirSync(dir),errors=files.find(name=>/^prepared-model-runtime\.errors-.*\.mjs$/.test(name));
+  const files=fs.readdirSync(dir);
+  const contracts=[];
+  for(const name of files.filter(name=>/^prepared-model-runtime\.errors-.*\.mjs$/.test(name))){
+    const source=fs.readFileSync(path.join(dir,name),"utf8");
+    if(!/(?:\bclass\s+PreparedModelRuntimePublicationSupersededError\s+extends\s+|\b(?:var|let|const)\s+PreparedModelRuntimePublicationSupersededError\s*=\s*class\s+extends\s+)/.test(source))continue;
+    const aliases=[];
+    for(const block of source.matchAll(/\bexport\s*\{([^}]+)\}/g))for(const entry of block[1].split(",")){
+      const match=entry.trim().match(/^PreparedModelRuntimePublicationSupersededError(?:\s+as\s+([A-Za-z_$][\w$]*))?$/);
+      if(match)aliases.push(match[1]||"PreparedModelRuntimePublicationSupersededError");
+    }
+    if(/\bexport\s+class\s+PreparedModelRuntimePublicationSupersededError\s+extends\s+/.test(source))aliases.push("PreparedModelRuntimePublicationSupersededError");
+    if(aliases.length===1)contracts.push({name,alias:aliases[0]});
+  }
   let count=0;
   for(const name of files){
     if(!/^agent-database-startup-.*\.mjs$/.test(name))continue;
     const file=path.join(dir,name);let source=fs.readFileSync(file,"utf8");
+    if(!source.includes("await activation.publishAgent(input);")&&!source.includes("/* cryoclaw-startup-publication-retry */"))continue;
+    if(contracts.length!==1)throw Error("Prepared model publication error contract changed");
+    const errors=contracts[0];
+    const importLine=`import { ${errors.alias} as CryoclawPublicationSuperseded } from "./${errors.name}";\n`;
     const oldCatch="catch (error) { if (!(error instanceof CryoclawPublicationSuperseded) || attempt >= 2) throw error; }";
     const newCatch="catch (error) { /* cryoclaw-startup-publication-retry-v2 */ const superseded = error instanceof CryoclawPublicationSuperseded || error instanceof Error && /^Agent [a-z0-9_-]+ (?:startup|secrets) preparation was superseded$/i.test(error.message); if (!superseded || attempt >= 2) throw error; await new Promise(resolve => setTimeout(resolve, 50 * (attempt + 1))); }";
     if(source.includes("/* cryoclaw-startup-publication-retry */")){
-      if(source.includes(oldCatch)){source=source.replace(oldCatch,newCatch);fs.writeFileSync(file,source);}
+      const previous=source;
+      const existingImport=/^import \{ [A-Za-z_$][\w$]* as CryoclawPublicationSuperseded \} from "\.\/prepared-model-runtime\.errors-[^"]+";\r?\n/m;
+      if(!existingImport.test(source))throw Error("Prepared model publication error import contract changed");
+      source=source.replace(existingImport,importLine);
+      if(source.includes(oldCatch))source=source.replace(oldCatch,newCatch);
+      if(source!==previous)fs.writeFileSync(file,source);
       count++;continue;
     }
     const needle="await activation.publishAgent(input);";
     if(!source.includes(needle))continue;
-    if(!errors)throw Error("Prepared model publication error contract changed");
     const replacement=`/* cryoclaw-startup-publication-retry */\n`+
       `\t\t\t\t\t\t\tfor (let attempt = 0; ; attempt++) {\n`+
       `\t\t\t\t\t\t\t\tassertCurrent();\n`+
       `\t\t\t\t\t\t\t\ttry { await activation.publishAgent(input); break; }\n`+
       `\t\t\t\t\t\t\t\t${newCatch}\n`+
       `\t\t\t\t\t\t\t}`;
-    fs.writeFileSync(file,`import { r as CryoclawPublicationSuperseded } from "./${errors}";\n`+source.replace(needle,replacement));count++;
+    fs.writeFileSync(file,importLine+source.replace(needle,replacement));count++;
   }
   return count;
 }
@@ -937,7 +960,7 @@ function patchWebhookCompletionPrecheck(gatewayDir) {
   const names=fs.readdirSync(directory),targets=names.filter(name=>/^startup-config-preflight-.*\.mjs$/.test(name));
   if(!targets.length){
     const manifest=path.join(directory,"..","package.json");
-    if(fs.existsSync(manifest)&&JSON.parse(fs.readFileSync(manifest,"utf8")).version==="2026.10.6")throw Error("Webhook completion precheck coverage missing in pinned kernel");
+    if(fs.existsSync(manifest)&&["2026.10.7","2026.10.9"].includes(JSON.parse(fs.readFileSync(manifest,"utf8")).version))throw Error("Webhook completion precheck coverage missing in pinned kernel");
     return 0;
   }
   const marker="/* cryoclaw-webhook-completion-precheck */";
@@ -1034,8 +1057,19 @@ function patchSelectiveProviderDiscoveryCapture(gatewayDir) {
   for(const name of fs.readdirSync(dist)){
     if(!/^plugin-setup-module-.*\.mjs$/.test(name))continue;
     const file=path.join(dist,name);let source=fs.readFileSync(file,"utf8");if(source.includes("/* cryoclaw-selective-provider-discovery */")){
-      const old='if(record.origin!=="global"||record.trustedOfficialInstall!==true';
-      if(source.includes(old)){source=source.replace(old,'if(record.id!=="codex"||record.origin!=="global"||record.trustedOfficialInstall!==true');fs.writeFileSync(file,source);}
+      const helperStart=source.indexOf("function cryoclawSelectiveProviderDiscovery(record, source, rootDir) {");
+      if(helperStart>=0&&!source.includes("const selectiveProviderDiscoveryEntries=")){
+        source=source.slice(0,helperStart).replace(/\/\* cryoclaw-selective-provider-discovery \*\/\s*$/,"")+`/* cryoclaw-selective-provider-discovery */
+const selectiveProviderDiscoveryEntries={codex:"dist/provider-discovery.js",deepseek:"dist/provider-discovery.js",moonshot:"dist/provider-discovery.js",ollama:"provider-discovery.js"};
+function cryoclawSelectiveProviderDiscovery(record, source, rootDir) {
+  const relative=selectiveProviderDiscoveryEntries[record.id];
+  if(!relative||record.origin!=="global"||record.trustedOfficialInstall!==true||record.enabled===false||record.sourcePreferred===true||typeof record.providerDiscoverySource!=="string"||typeof source!=="string"||typeof rootDir!=="string")return false;
+  const normalize=value=>{const resolved=path.resolve(value);return process.platform==="win32"?resolved.toLowerCase():resolved;};
+  return normalize(record.providerDiscoverySource)===normalize(source)&&normalize(source)===normalize(path.join(rootDir,relative));
+}
+`;
+        fs.writeFileSync(file,source);
+      }
       count++;continue;
     }
     const start=source.indexOf("function getPluginSetupModuleLoader(record, source, rootDir) {");if(start<0)continue;
@@ -1043,10 +1077,12 @@ function patchSelectiveProviderDiscoveryCapture(gatewayDir) {
     source=source.slice(0,at)+source.slice(at).replace(needle,needle+",\n\t\t\t\tstandalone: cryoclawSelectiveProviderDiscovery(record, source, rootDir)");
     source+=`
 /* cryoclaw-selective-provider-discovery */
+const selectiveProviderDiscoveryEntries={codex:"dist/provider-discovery.js",deepseek:"dist/provider-discovery.js",moonshot:"dist/provider-discovery.js",ollama:"provider-discovery.js"};
 function cryoclawSelectiveProviderDiscovery(record, source, rootDir) {
-  if(record.id!=="codex"||record.origin!=="global"||record.trustedOfficialInstall!==true||record.enabled===false||typeof record.providerDiscoverySource!=="string"||typeof source!=="string"||typeof rootDir!=="string")return false;
+  const relative=selectiveProviderDiscoveryEntries[record.id];
+  if(!relative||record.origin!=="global"||record.trustedOfficialInstall!==true||record.enabled===false||record.sourcePreferred===true||typeof record.providerDiscoverySource!=="string"||typeof source!=="string"||typeof rootDir!=="string")return false;
   const normalize=value=>{const resolved=path.resolve(value);return process.platform==="win32"?resolved.toLowerCase():resolved;};
-  return normalize(record.providerDiscoverySource)===normalize(source)&&normalize(source)===normalize(path.join(rootDir,"dist","provider-discovery.js"));
+  return normalize(record.providerDiscoverySource)===normalize(source)&&normalize(source)===normalize(path.join(rootDir,relative));
 }
 `;
     fs.writeFileSync(file,source);count++;
@@ -1065,6 +1101,121 @@ function patchWindowsIdleBrokerExit(gatewayDir) {
   fs.writeFileSync(file,source.replace(needle,replacement),"utf8");return 1;
 }
 
+function patchPluginCopyBatchLifetime(gatewayDir) {
+  const dist=path.join(gatewayDir,"node_modules","openclaw","dist");if(!fs.existsSync(dist))return 0;
+  const names=fs.readdirSync(dist),marker="/* cryoclaw-plugin-copy-batch */",lookupName=names.find(name=>/^plugin-generation-source-lookup-.*\.mjs$/.test(name)&&fs.readFileSync(path.join(dist,name),"utf8").includes("function createPluginSourceCapture")),artifactName=names.find(name=>/^plugin-generation-artifact-.*\.mjs$/.test(name)&&fs.readFileSync(path.join(dist,name),"utf8").includes("function createPluginGenerationFileCapture"));
+  if(!lookupName||!artifactName)return 0;
+  const lookupFile=path.join(dist,lookupName),artifactFile=path.join(dist,artifactName);let lookup=fs.readFileSync(lookupFile,"utf8"),artifact=fs.readFileSync(artifactFile,"utf8"),count=0;
+  if(!lookup.includes(marker)){
+    const required=["copyRootFileSync, createFileSync","const captureFailures = /* @__PURE__ */ new Map();","beginDisposal = () => {\n\t\tdisposed = true;","additions,\n\t\tcapture: acquire"];
+    for(const needle of required)if(!lookup.includes(needle))throw Error("Plugin source capture copy-batch contract changed");
+    lookup=lookup.replace("copyRootFileSync, createFileSync","copyRootFileSync, createRootFileCopyBatchSync, createFileSync")
+      .replace("const captureFailures = /* @__PURE__ */ new Map();",`const captureFailures = /* @__PURE__ */ new Map();\n\tconst copyBatch = ${marker} createRootFileCopyBatchSync();`)
+      .replace("beginDisposal = () => {\n\t\tdisposed = true;","beginDisposal = () => {\n\t\tdisposed = true;\n\t\tcopyBatch.close();")
+      .replace("additions,\n\t\tcapture: acquire","additions,\n\t\tcopyBatch,\n\t\tcapture: acquire");
+    fs.writeFileSync(lookupFile,lookup);count++;
+  }
+  if(!artifact.includes(marker)){
+    const needle=`return (source, target) => {\n\t\ttry {\n\t\t\tvar _usingCtx$1 = _usingCtx();\n\t\t\tconst batch = _usingCtx$1.u(createRootFileCopyBatchSync());\n\t\t\treturn copy(source, target, batch.copyFile.bind(batch));\n\t\t} catch (_) {\n\t\t\t_usingCtx$1.e = _;\n\t\t} finally {\n\t\t\t_usingCtx$1.d();\n\t\t}\n\t};`;
+    if(!artifact.includes(needle))throw Error("Plugin generation copy-batch contract changed");
+    artifact=artifact.replace(needle,`${marker}\n\treturn (source, target) => copy(source, target, sourceCapture.copyBatch.copyFile.bind(sourceCapture.copyBatch));`)
+      .replace('import { createRootFileCopyBatchSync } from "@openclaw/fs-safe/advanced";\n',"");
+    fs.writeFileSync(artifactFile,artifact);count++;
+  }
+  return Number(lookup.includes(marker))+Number(artifact.includes(marker));
+}
+
+function patchPluginSmallSourceRevalidation(gatewayDir) {
+  const dist=path.join(gatewayDir,"node_modules","openclaw","dist");if(!fs.existsSync(dist))return 0;
+  const marker="/* cryoclaw-plugin-small-source-revalidation */",names=fs.readdirSync(dist).filter(name=>/^plugin-generation-source-lookup-.*\.mjs$/.test(name)&&fs.readFileSync(path.join(dist,name),"utf8").includes("function copySmallPluginSourceFile"));
+  if(names.length>1)throw Error("Plugin small source revalidation contract changed: ambiguous modules");if(!names.length)return 0;
+  const file=path.join(dist,names[0]);let source=fs.readFileSync(file,"utf8");
+  const needle=`\t\tconst assertSource = () => withPluginSourceFile(source, boundary, (currentFd) => {\n\t\t\tconst current = fs.fstatSync(currentFd, { bigint: true });\n\t\t\tconst before = pluginSourceStatIdentity(admitted);\n\t\t\tconst after = pluginSourceStatIdentity(current);\n\t\t\tif (before !== after && !pluginSourceIdentityChangedOnlyByCtime(before, after)) throw new FsSafeError(current.size > admitted.size ? "too-large" : "path-mismatch", "Plugin source changed while preparing its reload; retry after the edit finishes.");\n\t\t});`;
+  const replacement=`\t\tconst sourceBoundary = cryoclawPluginCanonicalRoot(boundary) ?? cryoclawPluginRealpath(boundary);\n\t\tconst canonicalSource = cryoclawPluginRealpath(source);\n\t\tconst boundaryIdentity = fs.lstatSync(sourceBoundary, { bigint: true });\n\t\tconst directSource = ${marker} process.platform === "win32" && process.env.CRYOCLAW_PLUGIN_SMALL_SOURCE_REVALIDATION !== "0" && canonicalSource === source && sourceBoundary === cryoclawPluginRealpath(boundary) && isPathInside(sourceBoundary, source) && boundaryIdentity.isDirectory() && !boundaryIdentity.isSymbolicLink();\n\t\tconst before = pluginSourceStatIdentity(admitted);\n\t\tconst assertSource = () => {\n\t\t\tif (!directSource) return withPluginSourceFile(source, boundary, (currentFd) => {\n\t\t\t\tconst current = fs.fstatSync(currentFd, { bigint: true });\n\t\t\t\tconst after = pluginSourceStatIdentity(current);\n\t\t\t\tif (before !== after && !pluginSourceIdentityChangedOnlyByCtime(before, after)) throw new FsSafeError(current.size > admitted.size ? "too-large" : "path-mismatch", "Plugin source changed while preparing its reload; retry after the edit finishes.");\n\t\t\t});\n\t\t\tconst root = fs.lstatSync(sourceBoundary, { bigint: true });\n\t\t\tif (!root.isDirectory() || root.isSymbolicLink() || root.dev !== boundaryIdentity.dev || root.ino !== boundaryIdentity.ino || cryoclawPluginRealpath(source) !== canonicalSource) throw new FsSafeError("path-mismatch", "Plugin source changed while preparing its reload; retry after the edit finishes.");\n\t\t\tfor (const current of [fs.lstatSync(source, { bigint: true }), fs.fstatSync(fd, { bigint: true })]) {\n\t\t\t\tconst after = pluginSourceStatIdentity(current);\n\t\t\t\tif (before !== after && !pluginSourceIdentityChangedOnlyByCtime(before, after)) throw new FsSafeError(current.size > admitted.size ? "too-large" : "path-mismatch", "Plugin source changed while preparing its reload; retry after the edit finishes.");\n\t\t\t}\n\t\t};`;
+  if(source.includes(marker)){
+    if(!source.includes("CRYOCLAW_PLUGIN_SMALL_SOURCE_REVALIDATION"))source=source.replace("process.platform === \"win32\" && canonicalSource === source","process.platform === \"win32\" && process.env.CRYOCLAW_PLUGIN_SMALL_SOURCE_REVALIDATION !== \"0\" && canonicalSource === source");
+    for(const required of ["const current = fs.fstatSync(currentFd, { bigint: true });","if (!directSource) return withPluginSourceFile","fs.fstatSync(fd, { bigint: true })"])if(!source.includes(required))throw Error("Plugin small source revalidation contract changed");
+  }else{
+    if(!source.includes(needle))throw Error("Plugin small source revalidation contract changed");
+    source=source.replace(needle,replacement);
+  }
+  const syntax=require("node:child_process").spawnSync(process.execPath,["--input-type=module","--check"],{input:source,encoding:"utf8"});
+  if(syntax.status!==0)throw Error("Small source revalidation patch generated invalid ESM: "+syntax.stderr.slice(-600));
+  if(!source.includes(marker))throw Error("Plugin small source revalidation patch was not applied");
+  if(fs.readFileSync(file,"utf8")!==source)fs.writeFileSync(file,source,"utf8");return 1;
+}
+
+function patchUsageSessionContextOverlap(gatewayDir) {
+  const dist=path.join(gatewayDir,"node_modules","openclaw","dist");if(!fs.existsSync(dist))return 0;
+  const marker="/* cryoclaw-usage-context-overlap */",names=fs.readdirSync(dist).filter(name=>/^usage-.*\.mjs$/.test(name)&&fs.readFileSync(path.join(dist,name),"utf8").includes("loadUsageSessionSummaries")&&fs.readFileSync(path.join(dist,name),"utf8").includes("loadUsageSessionContext"));
+  if(names.length>1)throw Error("Usage context overlap contract changed: ambiguous modules");if(!names.length)return 0;
+  const file=path.join(dist,names[0]);let source=fs.readFileSync(file,"utf8");
+  const needle=`\t\t\t\t\tconst { summaries: usageByEntryIndex, cacheStatus } = await loadUsageSessionSummaries({\n\t\t\t\t\t\tentries: mergedEntries,\n\t\t\t\t\t\tconfig,\n\t\t\t\t\t\tstartMs,\n\t\t\t\t\t\tendMs,\n\t\t\t\t\t\tincludeUntimestamped,\n\t\t\t\t\t\tdayBucket\n\t\t\t\t\t});\n\t\t\t\t\tawait loadUsageSessionContext(mergedEntries.slice(0, limit), visibilityFilter);`;
+  const replacement=`\t\t\t\t\tconst [{ summaries: usageByEntryIndex, cacheStatus }] = await Promise.all([\n\t\t\t\t\t\tloadUsageSessionSummaries({\n\t\t\t\t\t\t\tentries: mergedEntries,\n\t\t\t\t\t\t\tconfig,\n\t\t\t\t\t\t\tstartMs,\n\t\t\t\t\t\t\tendMs,\n\t\t\t\t\t\t\tincludeUntimestamped,\n\t\t\t\t\t\t\tdayBucket\n\t\t\t\t\t\t}),\n\t\t\t\t\t\tloadUsageSessionContext(mergedEntries.slice(0, limit), visibilityFilter)\n\t\t\t\t\t]); ${marker}`;
+  if(source.includes(marker)){
+    if(!source.includes("const [{ summaries: usageByEntryIndex, cacheStatus }] = await Promise.all(["))throw Error("Usage context overlap contract changed");
+  }else{
+    if(!source.includes(needle))throw Error("Usage context overlap contract changed");
+    source=source.replace(needle,replacement);
+  }
+  const syntax=require("node:child_process").spawnSync(process.execPath,["--input-type=module","--check"],{input:source,encoding:"utf8"});
+  if(syntax.status!==0)throw Error("Usage context overlap patch generated invalid ESM: "+syntax.stderr.slice(-600));
+  if(!source.includes(marker))throw Error("Usage context overlap patch was not applied");
+  if(fs.readFileSync(file,"utf8")!==source)fs.writeFileSync(file,source,"utf8");return 1;
+}
+
+function patchCommandCatalogCache(gatewayDir) {
+  const dist=path.join(gatewayDir,"node_modules","openclaw","dist");if(!fs.existsSync(dist))return 0;
+  const names=fs.readdirSync(dist),find=(prefix,contract)=>{const name=names.find(candidate=>candidate.startsWith(prefix)&&candidate.endsWith(".mjs")&&(!contract||fs.readFileSync(path.join(dist,candidate),"utf8").includes(contract)));if(!name)throw Error(`Command cache dependency changed: ${prefix}`);return name;};
+  const runtimeModule=find("runtime-","getActivePluginRegistryVersion as d"),runtimeImport=`import { d as cryoclawPluginRegistryVersion } from "./${runtimeModule}";`;
+  const marker="/* cryoclaw-command-catalog-cache */";let count=0;
+  for(const name of names){
+    if(!/^commands-list-result-.*\.mjs$/.test(name))continue;
+    const file=path.join(dist,name);let source=fs.readFileSync(file,"utf8");
+    if(source.includes(marker)){
+      const previous=source;source=source.replace(/import \{ d as cryoclawPluginRegistryVersion \} from "\.\/runtime-[^"]+";/,runtimeImport);
+      if(source!==previous)fs.writeFileSync(file,source);count++;continue;
+    }
+    const needle="async function buildCommandsListResult(params) {";if(!source.includes(needle))continue;
+    const imports=[
+      `import { a as cryoclawSkillsSourceVersion, i as cryoclawSkillsSnapshotVersion } from "./${find("refresh-state-")}";`,
+      runtimeImport,
+      `import { d as cryoclawAgentWorkspaceDir } from "./${find("agent-scope-config-")}";`,
+      `import { c as cryoclawConfigFingerprint } from "./${find("workspace-skill-loader-")}";`,
+    ].join("\n");
+    const helper=`
+${marker}
+function createCryoclawCommandCache(deps) {
+  const cache=new Map(),ttlMs=5000,maxEntries=16;
+  const key=(params)=>JSON.stringify([
+    deps.configFingerprint(params.cfg),params.agentId,params.provider?.trim().toLowerCase()||"",params.scope??"both",params.includeArgs!==false,params.sessionKey??null,params.sessionEntry?.skillLibrarySelections??null,
+    deps.sourceVersion(deps.workspaceDir(params.cfg,params.agentId)),deps.snapshotVersion(deps.workspaceDir(params.cfg,params.agentId)),deps.registryVersion()
+  ]);
+  const prune=()=>{while(cache.size>maxEntries)cache.delete(cache.keys().next().value);};
+  return {async run(params,build){
+    const before=key(params),now=Date.now(),existing=cache.get(before);
+    if(existing&&now-existing.at<=ttlMs)return existing.promise;
+    if(existing)cache.delete(before);
+    const promise=(async()=>{
+      const result=await build();
+      if(key(params)!==before){cache.delete(before);return null;}
+      cache.set(before,{at:Date.now(),promise:Promise.resolve(result)});prune();return result;
+    })();
+    cache.set(before,{at:Number.POSITIVE_INFINITY,promise});prune();
+    try{const result=await promise;if(result===null)return this.run(params,build);return result;}
+    catch(error){if(cache.get(before)?.promise===promise)cache.delete(before);throw error;}
+  }};
+}
+const cryoclawCommandCache=createCryoclawCommandCache({configFingerprint:cryoclawConfigFingerprint,workspaceDir:cryoclawAgentWorkspaceDir,sourceVersion:cryoclawSkillsSourceVersion,snapshotVersion:cryoclawSkillsSnapshotVersion,registryVersion:cryoclawPluginRegistryVersion});
+async function buildCommandsListResult(params) { return cryoclawCommandCache.run(params,()=>buildCommandsListResultUncached(params)); }
+`;
+    source=imports+"\n"+source.replace(needle,"async function buildCommandsListResultUncached(params) {")+helper;
+    fs.writeFileSync(file,source);count++;
+  }
+  const manifest=path.join(dist,"..","package.json");if(fs.existsSync(manifest)&&["2026.10.7","2026.10.9"].includes(JSON.parse(fs.readFileSync(manifest,"utf8")).version)&&count<1)throw Error("Command catalog cache did not cover the pinned kernel");
+  return count;
+}
+
 function patchDesktopKernel(gatewayDir) {
   return {
     compatibility: writeKernelCompatibilityMetadata(gatewayDir),
@@ -1079,12 +1230,76 @@ function patchDesktopKernel(gatewayDir) {
   };
 }
 
+function patchLazyControlUiRetention(gatewayDir) {
+  const dist=path.join(gatewayDir,"node_modules","openclaw","dist"),marker="/* cryoclaw-lazy-control-ui-retention */";let count=0;
+  const lifecycleNeedle=[
+    '\t\tif (state.kind === "bundled") await state.retainedAssets?.prepare({ signal }).catch((error) => {',
+    '\t\t\tif (isStopped()) return;',
+    '\t\t\tconst detail = error instanceof Error ? error.message : String(error);',
+    '\t\t\tparams.log.warn(`gateway: Control UI asset retention failed: ${detail}`);',
+    '\t\t});'
+  ].join("\n");
+  const resolveNeedle=`\t\tasync resolveAsset(assetPath) {
+\t\t\tconst asset = findAsset(assetPath);
+\t\t\tif (asset || !inventory) return asset;
+\t\t\tawait inventory.catch(() => void 0);
+\t\t\treturn findAsset(assetPath);
+\t\t}`;
+  const resolveReplacement=`\t\tasync resolveAsset(assetPath, signal) {
+\t\t\tconst cached = findAsset(assetPath);
+\t\t\tif (cached || inventory) {
+\t\t\t\tif (cached) return cached;
+\t\t\t\tawait inventory.catch(() => void 0);
+\t\t\t\tconst verified = findAsset(assetPath);
+\t\t\t\tif (verified) return verified;
+\t\t\t}
+\t\t\tsignal?.throwIfAborted();
+\t\t\t// Retained generations are needed only when the current root misses an asset.
+\t\t\tawait prepare({ signal }).catch(error => {
+\t\t\t\tlog.warn("Control UI asset retention failed", { error: String(error) });
+\t\t\t});
+\t\t\tsignal?.throwIfAborted();
+\t\t\treturn findAsset(assetPath);
+\t\t}`;
+  for(const name of fs.existsSync(dist)?fs.readdirSync(dist):[]){
+    if(!/^server-control-ui-root-.*\.mjs$/.test(name))continue;
+    const file=path.join(dist,name);let source=fs.readFileSync(file,"utf8");
+    if(source.includes(marker)){count++;continue;}
+    if(!source.includes(lifecycleNeedle)||!source.includes(resolveNeedle)||!source.includes("await root.retainedAssets?.resolveAsset(fileRel)")||!source.includes("function createControlUiAssetRetention(root)"))throw Error("Control UI retention lifecycle contract changed");
+    source=source.replace(lifecycleNeedle,"");
+    source=source.replace(resolveNeedle,resolveReplacement).replace("await root.retainedAssets?.resolveAsset(fileRel)","await root.retainedAssets?.resolveAsset(fileRel, owner.controller.signal)");
+    source+=`\n${marker}\n`;
+    const syntax=require("node:child_process").spawnSync(process.execPath,["--input-type=module","--check"],{input:source,encoding:"utf8"});
+    if(syntax.status!==0)throw Error("Lazy Control UI retention patch generated invalid ESM: "+syntax.stderr.slice(-600));
+    fs.writeFileSync(file,source,"utf8");count++;
+  }
+  const manifest=path.join(dist,"..","package.json");if(fs.existsSync(manifest)&&["2026.10.7","2026.10.9"].includes(JSON.parse(fs.readFileSync(manifest,"utf8")).version)&&count!==1)throw Error("Lazy Control UI retention patch must cover exactly one pinned module");
+  return count;
+}
+
+function patchPhysicalDesktopKernel(gatewayDir) {
+  return {
+    ...patchDesktopKernel(gatewayDir),
+    pluginCopyBatchLifetime: patchPluginCopyBatchLifetime(gatewayDir),
+    pluginSmallSourceRevalidation: patchPluginSmallSourceRevalidation(gatewayDir),
+    usageSessionContextOverlap: patchUsageSessionContextOverlap(gatewayDir),
+    commandCatalogCache: patchCommandCatalogCache(gatewayDir),
+    lazyControlUiRetention: patchLazyControlUiRetention(gatewayDir),
+  };
+}
+
 module.exports = {
   patchSelectiveProviderDiscoveryCapture,
   patchConfiguredTrustedSearchArtifact,
   patchWindowsFsSafeCanonicalPaths,
   patchWindowsIdleBrokerExit,
+  patchCommandCatalogCache,
+  patchPluginCopyBatchLifetime,
+  patchPluginSmallSourceRevalidation,
+  patchUsageSessionContextOverlap,
+  patchLazyControlUiRetention,
   patchDesktopKernel,
+  patchPhysicalDesktopKernel,
   patchAgentStartupPublication,
   patchWebhookCompletionPrecheck,
   writeKernelCompatibilityMetadata,

@@ -1,7 +1,7 @@
 /**
  * Shared pairing approval panel for Feishu and WeCom.
  */
-import { html, nothing, type TemplateResult } from "lit";
+import { html, nothing } from "lit";
 import type { AppViewState } from "../../app-view-state.ts";
 import { t, tWithDetail } from "../../i18n.ts";
 import * as ipc from "../../data/ipc-bridge.ts";
@@ -11,6 +11,7 @@ export interface PairingPanelState {
   pairingRequests: PairingRequest[];
   approvedEntries: ApprovedEntry[];
   loading: boolean;
+  loadFailed?: boolean;
 }
 
 export interface PairingPanelOptions {
@@ -26,7 +27,7 @@ export async function loadPairingData(platform: "feishu" | "wecom"): Promise<Pai
     ]);
     return { pairingRequests: pending ?? [], approvedEntries: approved ?? [], loading: false };
   } catch {
-    return { pairingRequests: [], approvedEntries: [], loading: false };
+    return { pairingRequests: [], approvedEntries: [], loading: false, loadFailed: true };
   }
 }
 

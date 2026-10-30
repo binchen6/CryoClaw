@@ -41,15 +41,55 @@ export class SubscriptionAuth {
     return this.snapshot?.providerCapabilities?.filter(c => /^(openai|openai-codex)$/.test(c.provider))
       .flatMap(c => c.loginOptions ?? []).filter(o => o.kind === "oauth" || o.kind === "device-code") ?? [];
   }
-  async refresh(after?: (client: GatewayBrowserClient) => Promise<unknown>): Promise<void> {
+  async enableAndLogin(enable: () => Promise<void>): Promise<void> {
+    if(this.busy || this.sessionId || !this.host.connected || !this.host.client)return;
+    const epoch=++this.epoch;
+    const current=()=>this.epoch===epoch;
+    this.busy=true;this.error="";this.host.requestUpdate();
+    let option:LoginOption|undefined;
+    let preparedClient:GatewayBrowserClient|null=null;
+    const deadline=Date.now()+120000;
+    try {
+      await enable();
+      while(Date.now()<deadline && current()){
+        const client:GatewayBrowserClient|null=this.host.client;
+        if(client && this.host.connected){
+          try {
+            const snapshot=await client.request<AuthSnapshot>("models.authStatus",{refresh:false},{timeoutMs:5000});
+            if(!current())return;
+            if(this.host.client===client && this.host.connected){
+              this.snapshot=snapshot;
+              if(!this.options.length && preparedClient!==client){
+                preparedClient=client;
+                const prepared=await client.request<AuthSnapshot>("models.authStatus",{refresh:true},{timeoutMs:Math.min(65000,Math.max(1000,deadline-Date.now()))});
+                if(!current())return;
+                if(this.host.client!==client||!this.host.connected)continue;
+                this.snapshot=prepared;
+              }
+              option=this.options.find(o=>o.kind==='oauth'&&!o.id.includes('token-sharing'))
+                ?? this.options.find(o=>o.kind==='device-code') ?? this.options[0];
+              if(option)break;
+            }
+          }catch { preparedClient=null; /* A provider activation can restart the gateway. */ }
+        }
+        if(current())await new Promise(resolve=>setTimeout(resolve,1000));
+      }
+      if(current() && !option)throw new Error("Account sign-in is not ready. Reconnect and try again.");
+    }catch(error){if(current())this.error=error instanceof Error?error.message:String(error);}
+    finally{if(current()){this.busy=false;this.host.requestUpdate();}}
+    if(current() && option && !this.error)await this.start(option);
+  }
+  async refresh(after?: (client: GatewayBrowserClient) => Promise<unknown>, force = true): Promise<void> {
     if (this.busy || this.sessionId || !this.host.connected || !this.host.client) return;
     const client = this.host.client;
     await this.run(async current => {
-      const snapshot = await client.request<AuthSnapshot>("models.authStatus", { refresh: true });
+      const snapshot = await client.request<AuthSnapshot>("models.authStatus", { refresh: force });
       if (current()) {
         this.snapshot = snapshot;
-        await this.loadUsage(client, current);
-        await after?.(client);
+        const hasSubscription=snapshot.providers?.some(p=>/^(openai|openai-codex)$/.test(p.provider)
+          && p.profiles?.some(profile=>['oauth','token'].includes(profile.type)));
+        if(!hasSubscription)this.usage=null;
+        await Promise.all([hasSubscription?this.loadUsage(client, current, force):undefined, after?.(client)]);
       }
     });
   }
@@ -131,9 +171,9 @@ export class SubscriptionAuth {
       this.pollTimer = setTimeout(() => { this.pollTimer = null; void this.next(undefined, false); }, 1500);
     }
   }
-  private async loadUsage(client: GatewayBrowserClient, current: () => boolean): Promise<void> {
+  private async loadUsage(client: GatewayBrowserClient, current: () => boolean, force = true): Promise<void> {
     try {
-      const quota = await loadModelQuota(client,"openai-codex",true);
+      const quota = await loadModelQuota(client,"openai-codex",force);
       if (current()) this.usage = {providers:[{provider:"openai",windows:quota.windows,plan:quota.plan,error:quota.error,stale:quota.stale}]};
     } catch {
       // Account state remains usable when the upstream quota service is offline.

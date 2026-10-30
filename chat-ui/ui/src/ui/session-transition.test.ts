@@ -324,6 +324,12 @@ async function testBackgroundTerminalClearsRunStateButKeepsQueue() {
 }
 
 async function main() {
+  const modelCtx = makeHost();
+  modelCtx.host.currentModel = "p/previous-session";
+  modelCtx.host.configuredModels = [{ key: "p/default", isDefault: true }];
+  modelCtx.host.sessionsResult = { sessions: [{ key: "session-b" }] };
+  applySessionKeyTransition(modelCtx.host, "session-b");
+  assert.equal(modelCtx.host.currentModel, "p/default", "a session without an override must not inherit the previous session's model");
   await testApplySessionKeyTransitionResetsComposerState();
   await testDraftSnapshotSavedAndRestored();
   await testClearSessionDraftSnapshot();

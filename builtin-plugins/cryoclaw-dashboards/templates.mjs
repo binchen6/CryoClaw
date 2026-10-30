@@ -1,4 +1,5 @@
 import {starterCards} from './starter.mjs';
+import {onboardingCards} from './onboarding.mjs';
 import {viewportScript,responsiveStyle} from './viewport.mjs';
 import {previewFixture,systemPreviewDocument} from './preview.mjs';
 
@@ -16,12 +17,14 @@ const definitions=[
  ['style-lab','冰蓝调色间','Color studio','挑选色板，保存灵感。','Explore palettes and keep your choices.','creative'],
 ];
 const presets=[
+ {id:'onboarding',title:'看板入门',titleEn:'Getting started',description:'五个部分带你看懂看板：示例、模板、提示词、排版和手势。',descriptionEn:'Five sections: examples, templates, prompts, layout and gestures.',cards:['onboarding-hero','onboarding-templates','onboarding-prompts','onboarding-layout','onboarding-basics']},
  {id:'productivity',title:'个人效率',titleEn:'Daily workspace',description:'集中记录想法、管理待办和习惯、安排专注时间，按需查看本机状态。',descriptionEn:'Notes, tasks, habits, focus time and on-demand system checks.',cards:['quick-notes','todo-habits','pomodoro','system-check']},
  {id:'briefing',title:'信息简报',titleEn:'Daily briefing',description:'关注公开数据与项目动态，更新时核对来源和时间，不补造缺失数据。',descriptionEn:'Follow public data and project updates, keeping sources and timestamps visible.',cards:['fx-rates','market-watch','release-gallery']},
  {id:'creative',title:'创作实验室',titleEn:'Creative studio',description:'声音、节奏与配色的小工作台，保留每张卡片的本机状态。',descriptionEn:'A local workspace for sound, rhythm and color.',cards:['audio-lab','pattern-lab','style-lab']},
 ];
-export function templateCard(id){const definition=definitions.find(item=>item[0]===id),card=starterCards.find(item=>item.cardId===id);if(!definition||!card)throw Error('Unknown card template');return structuredClone(card);}
-export function boardTemplate(id){const preset=presets.find(item=>item.id===id);if(!preset)throw Error('Unknown dashboard template');return {...preset,cards:preset.cards.map(templateCard)};}
+const catalogCard=id=>starterCards.find(item=>item.cardId===id)??onboardingCards.find(item=>item.cardId===id);
+export function templateCard(id){const definition=definitions.find(item=>item[0]===id),card=catalogCard(id);if(!definition||!card)throw Error('Unknown card template');return structuredClone(card);}
+export function boardTemplate(id){const preset=presets.find(item=>item.id===id);if(!preset)throw Error('Unknown dashboard template');return {...preset,cards:preset.cards.map(cardId=>{const card=catalogCard(cardId);if(!card)throw Error('Unknown card template');return structuredClone(card);})};}
 export function templateCatalog(){return {cards:definitions.map(([id,title,titleEn,description,descriptionEn,category])=>{const {accent,layout}=templateCard(id);return {id,title,titleEn,description,descriptionEn,category,accent,layout};}),boards:presets.map(({cards,...preset})=>({...preset,cardCount:cards.length}))};}
 
 /** A preview has no capability ticket, network, persistent state or parent actions. */

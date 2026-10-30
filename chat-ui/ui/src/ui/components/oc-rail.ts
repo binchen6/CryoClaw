@@ -6,6 +6,8 @@ import type { CryoClawViewId } from "../views/registry.ts";
 import type { GatewayConnPhase, GatewayProgressInfo } from "../gateway-connection.ts";
 import { gatewayStepIndex, gatewayStepKey, GATEWAY_PROGRESS_STEPS } from "../gateway-connection.ts";
 import { unsafeSVG } from "lit/directives/unsafe-svg.js";
+import "./model-quota.ts";
+import type { GatewayBrowserClient } from "../gateway.ts";
 
 // 品牌标：与 chat-ui favicon 同源（assets/cryoclaw-favicon.svg），内联避免资产
 // URL 导入（测试 tsconfig 不含 vite/client 类型；file:// 打包也无额外请求）。
@@ -92,6 +94,10 @@ export type RailProps = {
   onPreload?: (view:CryoClawViewId)=>void;
   onOpenWebUI: () => void;
   onReconnect: () => void;
+  /** 额度圆环从输入框移到图标轨：账户额度属于应用级状态，不属于单次对话。 */
+  quotaClient: GatewayBrowserClient | null;
+  quotaModel: string;
+  quotaProvider: string;
 };
 
 export type RailConnection = {
@@ -111,6 +117,9 @@ const DATA_FIELDS = [
   "settingsUpdateBadge",
   "errors",
   "connection",
+  "quotaClient",
+  "quotaModel",
+  "quotaProvider",
 ] as const;
 
 function errorsEqual(a: string[], b: string[]): boolean {
@@ -310,6 +319,8 @@ function renderRailInner(props: RailProps) {
       <span class="oc-rail__spacer"></span>
 
       <div class="oc-rail__footer">
+        <oc-model-quota placement="rail" .client=${props.quotaClient} .connected=${props.connected}
+          .model=${props.quotaModel} .provider=${props.quotaProvider}></oc-model-quota>
         ${props.webbridgeRepairVisible
           ? railItem(props, {
               label: t("sidebar.webbridgeRepairNeeded"),

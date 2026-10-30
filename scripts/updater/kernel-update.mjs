@@ -36,6 +36,7 @@ import https from "node:https";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
+import { createHash, randomUUID } from "node:crypto";
 import kdp from "./kernel-dist-patch.js";
 import directorySwap from "./kernel-directory-swap.js";
 
@@ -63,6 +64,8 @@ const kch = createRequire(import.meta.url)("./kernel-channel.js");
 
 // 内核备份附存 openclaw.json 配置快照（kernel-config-snapshot.js）
 const kcs = createRequire(import.meta.url)("./kernel-config-snapshot.js");
+const runtimePolicy = createRequire(import.meta.url)("./kernel-runtime-policy.cjs");
+const semver = createRequire(import.meta.url)("semver");
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const dependencyPolicy = createRequire(import.meta.url)(
@@ -163,10 +166,8 @@ function npmRun(args, cwd) {
     cmd = resolveNpmBin();
     cmdArgs = fullArgs;
   }
-  // openclaw ≥2026.8 的 preinstall 会用裸 `node` 校验版本（>=22.22.3 <23 ||
-  // >=24.15.0 <25 || >=25.9.0），按 PATH 解析——用户机器上可能没有系统 Node，
-  // 或版本不在范围内（都会直接拒装）。把捆绑 runtime 目录前置到 PATH，确保
-  // 生命周期脚本里的 `node` 命中我们钉的 22.x 运行时。
+  // preinstall 的裸 `node` 必须命中捆绑运行时；用户机器上的其他 Node
+  // 可能不存在，也可能不满足当前内核的引擎门槛。
   const env = { ...process.env };
   if (process.platform === "win32") {
     env.ELECTRON_RUN_AS_NODE = "1";
@@ -289,6 +290,31 @@ function readVersionFromTree(gatewayDir) {
   return pkg.version;
 }
 
+export function assertVendoredPluginCompatibility(gatewayDir, hostVersion, io = xfs) {
+  if (!semver.valid(hostVersion)) throw new Error("Invalid kernel version for plugin compatibility");
+  const root = path.join(gatewayDir, "node_modules", KERNEL_PACKAGE, "dist", "extensions");
+  if (!io.existsSync(root)) return [];
+  const checked = [], incompatible = [];
+  for (const entry of io.readdirSync(root, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const dir = path.join(root, entry.name), stampPath = path.join(dir, ".cryoclaw-vendor-stamp.json");
+    if (!io.existsSync(stampPath)) continue;
+    const stamp = JSON.parse(io.readFileSync(stampPath, "utf8"));
+    const pkg = JSON.parse(io.readFileSync(path.join(dir, "package.json"), "utf8"));
+    if (stamp.id !== entry.name || !stamp.packageName || stamp.packageName !== pkg.name) throw new Error(`Official plugin vendor identity mismatch: ${entry.name}`);
+    const ranges = [pkg.peerDependencies?.openclaw, pkg.openclaw?.compat?.pluginApi, pkg.openclaw?.install?.minHostVersion];
+    for (const range of ranges) if (range !== undefined && (typeof range !== "string" || !semver.validRange(range))) throw new Error(`Official plugin ${entry.name} has an invalid OpenClaw compatibility range`);
+    checked.push(entry.name);
+    if (ranges.some(range => range !== undefined && !semver.satisfies(hostVersion, range))) incompatible.push(`${entry.name}@${pkg.version}`);
+  }
+  if (incompatible.length) throw new Error(`Bundled official plugins do not support OpenClaw ${hostVersion}: ${incompatible.join(", ")}; use a compatible app/plugin set`);
+  return checked.sort();
+}
+
+export function syncNativeRuntimePolicy() {
+  return runtimePolicy.syncNativeKernelVersion(RESOURCES_DIR, xfs);
+}
+
 // npm replaces the core package. Copy its dependencies into private staging,
 // then read CryoClaw carryover from the untouched live package after install.
 export function stagePhysicalGateway(current, stagingGateway, io = xfs) {
@@ -349,15 +375,66 @@ export function carryOverInjected(oldPkgDir, newPkgDir) {
   return carried;
 }
 
+const SYNCHRONIZED_VENDOR_PACKAGES = new Set([
+  "@openclaw/feishu",
+  "@openclaw/moonshot-provider",
+  "@openclaw/kimi-provider",
+  "@openclaw/zai-provider",
+  "@openclaw/qwen-provider",
+  "@openclaw/deepseek-provider",
+]);
+
+function synchronizedVendorPluginSpecs(oldPkgDir, target) {
+  const root = path.join(oldPkgDir, "dist", "extensions");
+  if (!xfs.existsSync(root)) return [];
+  const plugins = [];
+  for (const entry of xfs.readdirSync(root, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const stampPath = path.join(root, entry.name, ".cryoclaw-vendor-stamp.json");
+    if (!xfs.existsSync(stampPath)) continue;
+    const stamp = JSON.parse(xfs.readFileSync(stampPath, "utf8"));
+    if (!SYNCHRONIZED_VENDOR_PACKAGES.has(stamp.packageName)) continue;
+    if (stamp.id !== entry.name) throw new Error(`Official plugin vendor identity mismatch: ${entry.name}`);
+    plugins.push({ id: entry.name, packageName: stamp.packageName, spec: `${stamp.packageName}@${target}` });
+  }
+  return plugins;
+}
+
+export function refreshSynchronizedVendorPlugins(oldPkgDir, newPkgDir, pluginStaging, target) {
+  const plugins = synchronizedVendorPluginSpecs(oldPkgDir, target);
+  const updates = plugins.map(plugin => {
+    const source = path.join(pluginStaging, "node_modules", ...plugin.packageName.split("/"));
+    const manifestPath = path.join(source, "package.json");
+    if (!xfs.existsSync(manifestPath) || !xfs.existsSync(path.join(source, "openclaw.plugin.json"))) {
+      throw new Error(`Synchronized official plugin ${plugin.id} is incomplete in staging`);
+    }
+    const manifest = JSON.parse(xfs.readFileSync(manifestPath, "utf8"));
+    if (manifest.name !== plugin.packageName || manifest.version !== target) {
+      throw new Error(`Synchronized official plugin ${plugin.id} version mismatch`);
+    }
+    return { ...plugin, source };
+  });
+  for (const plugin of updates) {
+    const destination = path.join(newPkgDir, "dist", "extensions", plugin.id);
+    xfs.rmSync(destination, { recursive: true, force: true });
+    xfs.cpSync(plugin.source, destination, { recursive: true, verbatimSymlinks: true });
+    xfs.writeFileSync(path.join(destination, ".cryoclaw-vendor-stamp.json"), JSON.stringify({
+      id: plugin.id,
+      packageName: plugin.packageName,
+      source: `pinned:${plugin.spec}`,
+      spec: plugin.spec,
+      vendoredAt: new Date().toISOString(),
+    }, null, 2) + "\n");
+  }
+  return updates.map(plugin => plugin.id).sort();
+}
+
 // ── 锁与状态 ──
 
-// 锁文件内容 {pid, startedAt}（旧格式 = 纯 PID 文本，仍兼容）。仅凭 PID 判活会在
-// Windows PID 复用下永久误判「锁忙」：持有者早已崩溃、其 PID 被无关进程复用，
-// process.kill(pid, 0) 恒成功 → 每次升级都被拒，只能手动删锁文件。
-// 超时兜底：startedAt 早于 LOCK_STALE_MS 即判死锁并清理；取值与 src/kernel-updater.ts
-// 的 UPDATOR_OVERALL_TIMEOUT_MS（updater 子进程整体看门狗，同样 15 分钟）一致——
-// 超过它，持有者一定已被看门狗杀掉，锁不可能是活的。
-const LOCK_STALE_MS = 15 * 60_000;
+// New locks atomically publish {pid, startedAt, owner}; JSON/decimal PID locks
+// from older releases remain readable. A live PID always holds its lock: direct
+// CLI invocations do not have the desktop app's 15-minute watchdog. An unknown
+// legacy writer can still hold its FD indefinitely: incomplete records fail closed.
 
 function isPidAlive(pid) {
   try {
@@ -370,69 +447,128 @@ function isPidAlive(pid) {
 
 // 锁判定（纯函数，便于单测）：raw = 锁文件内容（null = 读不到）。
 // 返回 { held, pid, reason }；held=false 时调用方清理并按需重新落锁。
-// reason: empty/unreadable（无有效信息）/ expired（startedAt 超时）/ dead（PID 已退出）/ alive。
-export function evaluateLock(raw, nowMs = Date.now(), alive = isPidAlive, staleMs = LOCK_STALE_MS) {
-  if (raw == null || raw.trim() === "") return { held: false, pid: null, reason: "empty" };
+// reason: empty/unreadable（初始化或损坏）/ dead（PID 已退出）/ alive。
+export function evaluateLock(raw, _nowMs = Date.now(), alive = isPidAlive) {
+  if (raw == null) return { held: false, pid: null, reason: "empty" };
+  if (raw.trim() === "") return { held: true, pid: null, reason: "empty" };
   const text = raw.trim();
   let pid;
-  let startedAt = null;
   if (text.startsWith("{")) {
     let obj;
     try {
       obj = JSON.parse(text);
     } catch {
-      return { held: false, pid: null, reason: "unreadable" };
+      return { held: true, pid: null, reason: "unreadable" };
     }
-    if (!obj || typeof obj !== "object") return { held: false, pid: null, reason: "unreadable" };
+    if (!obj || typeof obj !== "object") return { held: true, pid: null, reason: "unreadable" };
     pid = Number(obj.pid);
-    startedAt = Number(obj.startedAt);
   } else {
     pid = Number(text); // 旧格式：纯 PID，无 startedAt → 只按 PID 判定（向后兼容）
   }
-  if (!Number.isFinite(pid) || pid <= 0) return { held: false, pid: null, reason: "unreadable" };
-  // 超时优先于判活：PID 存活也可能是复用（这正是本判定的目的）
-  if (Number.isFinite(startedAt) && nowMs - startedAt > staleMs) {
-    return { held: false, pid, reason: "expired" };
-  }
+  if (!Number.isSafeInteger(pid) || pid <= 0) return { held: true, pid: null, reason: "unreadable" };
+  // CLI updates have no parent watchdog. Age alone never proves a live owner dead.
   return alive(pid) ? { held: true, pid, reason: "alive" } : { held: false, pid, reason: "dead" };
 }
 
-function acquireLock() {
-  xfs.mkdirSync(BACKUP_ROOT, { recursive: true });
-  if (xfs.existsSync(LOCK_FILE)) {
-    let raw = null;
+export function acquireUpdaterLock(file, {io = xfs, alive = isPidAlive, now = Date.now} = {}) {
+  const busy = () => new Error("已有内核升级任务在进行中");
+  const unknownOwner = () => new Error(`内核升级锁缺少可验证的持有者，已保留现场；确认旧更新器已退出后再手动移除锁文件: ${file}`);
+  const owner = randomUUID(), record = {pid:process.pid, startedAt:now(), owner};
+  io.mkdirSync(path.dirname(file), {recursive:true});
+  const owned = target => {
     try {
-      raw = xfs.readFileSync(LOCK_FILE, "utf-8");
-    } catch {}
-    const verdict = evaluateLock(raw);
-    if (verdict.held) fail("已有内核升级任务在进行中");
+      const stat=io.lstatSync(target);
+      if (!stat.isFile() || stat.isSymbolicLink()) return false;
+      const value=JSON.parse(io.readFileSync(target,'utf8'));
+      return value.pid===record.pid && value.owner===owner;
+    } catch { return false; }
+  };
+  // An interrupted pre-publication write leaves only a private file. Clean only
+  // named, physical files whose record agrees with a provably dead owner.
+  const prefix=path.basename(file)+'.owner-';
+  for (const name of io.readdirSync(path.dirname(file))) {
+    if (!name.startsWith(prefix)) continue;
+    const match=name.slice(prefix.length).match(/^(\d+)-([a-f0-9-]{36})$/);
+    if (!match || alive(Number(match[1]))) continue;
+    const target=path.join(path.dirname(file),name);
     try {
-      xfs.rmSync(LOCK_FILE, { force: true }); // stale lock，清理
-    } catch {}
-    if (verdict.reason === "expired") {
-      progress(
-        "lock",
-        1,
-        `清理过期的内核升级锁（PID ${verdict.pid}，已超过 ${Math.round(LOCK_STALE_MS / 60_000)} 分钟）`
-      );
+      const stat=io.lstatSync(target), value=JSON.parse(io.readFileSync(target,'utf8'));
+      if (stat.isFile() && !stat.isSymbolicLink() && value.pid===Number(match[1]) && value.owner===match[2]) io.unlinkSync(target);
+    } catch { /* Unknown files retain their evidence. */ }
+  }
+  const privateFile=`${file}.owner-${record.pid}-${owner}`;
+  let privateStat=null;
+  const identity=(stat,raw)=>JSON.stringify([stat.dev,stat.ino,stat.birthtimeMs,raw]);
+  const inspect=target=>{const stat=io.lstatSync(target);if(!stat.isFile()||stat.isSymbolicLink())throw busy();const raw=io.readFileSync(target,'utf8');return {raw,stat,key:identity(stat,raw)};};
+  const reclaims=[];
+  function claimStale(stale) {
+    const claim={staleKey:stale.key,own:null,dead:[]};
+    let previous=stale;
+    const visited=new Set();
+    // Immutable generation-specific claims serialize stale removers. If a
+    // remover itself died, claim its generation instead of deleting its claim:
+    // two delayed reclaimers must never remove each other's new live lock.
+    for(;;){
+      const target=`${file}.reap-${createHash('sha256').update(previous.key).digest('hex')}`;
+      if(visited.has(target))throw new Error(`内核升级锁清理链存在循环，已保留现场: ${file}`);
+      visited.add(target);
+      try{io.linkSync(privateFile,target);claim.own=target;reclaims.push(claim);return;}
+      catch(error){if(error.code!=='EEXIST')throw new Error(`无法原子发布内核更新锁 (${error.code||'UNKNOWN'}): ${error.message}`);}
+      const existing=inspect(target);
+      const verdict=evaluateLock(existing.raw,now(),alive);
+      if(verdict.pid===null)throw unknownOwner();
+      if(verdict.held)throw busy();
+      claim.dead.push({target,key:existing.key});previous=existing;
     }
   }
-  // "wx" 独占创建：existsSync→writeFileSync 之间存在 TOCTOU 窗口，两个并发
-  // 更新器可能同时通过检查并交错换装；EEXIST 即对手方抢先落锁
   try {
-    const fd = xfs.openSync(LOCK_FILE, "wx");
-    xfs.writeSync(fd, JSON.stringify({ pid: process.pid, startedAt: Date.now() }), "utf-8");
-    xfs.closeSync(fd);
-  } catch (e) {
-    if (e && e.code === "EEXIST") fail("已有内核升级任务在进行中");
-    throw e;
+    const fd=io.openSync(privateFile,'wx');
+    try { privateStat=io.fstatSync(fd); io.writeFileSync(fd,JSON.stringify(record),{flush:true}); }
+    finally { io.closeSync(fd); }
+    for (let attempt=0;attempt<3;attempt++) {
+      try { io.linkSync(privateFile,file); return () => { if(owned(file))io.unlinkSync(file); }; }
+      catch (error) {
+        if(error.code!=='EEXIST')throw new Error(`无法原子发布内核更新锁 (${error.code || 'UNKNOWN'}): ${error.message}`);
+      }
+      let raw, stat;
+      try { stat=io.lstatSync(file); raw=io.readFileSync(file,'utf8'); }
+      catch(error) { if(error.code==='ENOENT')continue; throw busy(); }
+      if(!stat.isFile() || stat.isSymbolicLink())throw busy();
+      const verdict=evaluateLock(raw,now(),alive);
+      if(verdict.pid===null)throw unknownOwner();
+      if(verdict.held)throw busy();
+      const stale={raw,stat,key:identity(stat,raw)};
+      claimStale(stale);
+      // No other reclaimer can pass the immutable claim while its owner lives.
+      // A normal publisher may have won after a preceding remover: preserve it.
+      if(inspect(file).key!==stale.key)throw busy();
+      io.unlinkSync(file);
+    }
+    throw busy();
+  } finally {
+    for(const claim of reclaims){
+      let changed=false;try{changed=inspect(file).key!==claim.staleKey;}catch(error){changed=error.code==='ENOENT';}
+      // Keep dead ancestor claims if the original stale generation survives;
+      // deleting them could create a second concurrent reclamation branch.
+      if(changed)for(const dead of claim.dead){try{if(inspect(dead.target).key===dead.key)io.unlinkSync(dead.target);}catch{}}
+      if(owned(claim.own))io.unlinkSync(claim.own);
+    }
+    if(privateStat){
+      try {
+        const stat=io.lstatSync(privateFile);
+        if(stat.isFile()&&!stat.isSymbolicLink()&&stat.dev===privateStat.dev&&stat.ino===privateStat.ino&&stat.birthtimeMs===privateStat.birthtimeMs)io.unlinkSync(privateFile);
+      }catch{}
+    }
   }
 }
 
+let heldLockRelease = null;
+function acquireLock() {
+  try { heldLockRelease=acquireUpdaterLock(LOCK_FILE); }
+  catch(error) { if(error.message==='已有内核升级任务在进行中')fail(error.message); throw error; }
+}
 function releaseLock() {
-  try {
-    xfs.rmSync(LOCK_FILE, { force: true });
-  } catch {}
+  try { heldLockRelease?.(); } catch {} finally { heldLockRelease=null; }
 }
 
 function writeState(patch) {
@@ -469,14 +605,14 @@ function validateKernelVersion(v) {
 // （version 仍用 KERNEL_VERSION_RE 校验，timestamp 必须是纯数字）。
 const BACKUP_DIR_RE = /^gateway-(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)-(\d+)$/;
 
-function listBackups() {
-  if (!xfs.existsSync(BACKUP_ROOT)) return [];
-  return xfs
-    .readdirSync(BACKUP_ROOT, { withFileTypes: true })
+function listBackups(root = BACKUP_ROOT, native = NATIVE_RUNTIME, io = xfs) {
+  if (!io.existsSync(root)) return [];
+  return io
+    .readdirSync(root, { withFileTypes: true })
     .filter((e) => e.isDirectory() && BACKUP_DIR_RE.test(e.name))
     .map((e) => e.name)
     // 只认完整备份（历史失败可能残留空目录）
-    .filter((name) => xfs.existsSync(path.join(BACKUP_ROOT, name, NATIVE_RUNTIME ? "physical-backup-complete.json" : "gateway.asar")))
+    .filter((name) => io.existsSync(path.join(root, name, native ? "physical-backup-complete.json" : "gateway.asar")))
     // 按名称尾部时间戳数字降序（字典序对位数不同的数字不可靠，NaN 排最后）
     .sort((a, b) => {
       const ta = Number(a.split("-").pop());
@@ -492,6 +628,20 @@ function listBackups() {
 function backupVersionOf(name) {
   const m = BACKUP_DIR_RE.exec(name);
   return m ? m[1] : null;
+}
+
+export async function selectRollbackBackup(current, {root=BACKUP_ROOT,native=NATIVE_RUNTIME,io=xfs,names=listBackups(root,native,io)} = {}) {
+  for (const name of names) {
+    if(!BACKUP_DIR_RE.test(name))continue;
+    try {
+      const dir=path.join(root,name);
+      const version=native ? directorySwap.versionOf(path.join(dir,'gateway'),io) : JSON.parse((await asar()).extractFile(path.join(dir,'gateway.asar'),path.join('node_modules',KERNEL_PACKAGE,'package.json')).toString()).version;
+      if(version!==backupVersionOf(name) || version===current)continue;
+      if(native && JSON.parse(io.readFileSync(path.join(dir,'physical-backup-complete.json'),'utf8')).version!==version)continue;
+      return {name,version};
+    } catch { /* Incomplete/corrupt backups cannot hide an earlier usable version. */ }
+  }
+  return null;
 }
 
 // Gateway 运行中会持有 gateway.asar 句柄，rename 会 EPERM/EBUSY——给出可操作的提示。
@@ -580,28 +730,42 @@ async function cmdUpdate(tag) {
       throw new Error(`npm 安装结果版本 ${installed} 与目标 ${target} 不一致`);
     }
 
-    // npm 装回的是完整发布包——按打包期口径裁剪死重（ffmpeg/koffi/prebuilds/.map 等），
-    // 否则升级后的 gateway.asar 比出厂版本膨胀上百 MB。注入物搬运在裁剪之后，
-    // 搬运内容来自已裁剪的旧树，不受影响。
-    progress("prune", 25, "裁剪新内核冗余文件（ffmpeg/koffi/文档/地图文件）");
+    progress("carryover", 30, "搬运 CryoClaw 注入的插件与 skills");
+    const newPkgDir = path.join(stagingGateway, "node_modules", KERNEL_PACKAGE);
+    const carried = carryOverInjected(oldPkgDir, newPkgDir);
+    progress("carryover", 35, `已搬运 ${carried.length} 个注入条目`);
+
+    const synchronizedPlugins = synchronizedVendorPluginSpecs(oldPkgDir, target);
+    if (synchronizedPlugins.length > 0) {
+      const pluginStaging = path.join(staging, "official-plugins");
+      xfs.mkdirSync(pluginStaging, { recursive: true });
+      xfs.writeFileSync(path.join(pluginStaging, "package.json"), JSON.stringify({
+        private: true,
+        dependencies: Object.fromEntries(synchronizedPlugins.map(plugin => [plugin.packageName, target])),
+      }));
+      progress("carryover", 36, `暂存 ${synchronizedPlugins.length} 个与内核同步的官方插件`);
+      npmRun(["install", "--omit=dev", "--install-links", "--legacy-peer-deps", "--no-audit", "--no-fund"], pluginStaging);
+      refreshSynchronizedVendorPlugins(oldPkgDir, newPkgDir, pluginStaging, target);
+    }
+    if (!NATIVE_RUNTIME) rmRecursive(oldPkgDir);
+
+    // Prune after both carryover and synchronized refreshes so newly vendored
+    // plugin dependencies follow the same distribution-size policy as the core.
+    progress("prune", 40, "裁剪新内核与官方插件冗余文件");
     const pruned = pruneGatewayTree(stagingGateway, { keepLlama });
     const prunedMB = (pruned.bytes / 1048576).toFixed(1);
     progress(
       "prune",
-      28,
+      42,
       `裁剪完成：删除 ${pruned.removedDirs} 个目录、${pruned.removedFiles} 个文件，节省 ${prunedMB} MB` +
         (pruned.errors.length > 0 ? `（${pruned.errors.length} 个步骤跳过）` : "")
     );
-
-    progress("carryover", 30, "搬运 CryoClaw 注入的插件与 skills");
-    const newPkgDir = path.join(stagingGateway, "node_modules", KERNEL_PACKAGE);
-    const carried = carryOverInjected(oldPkgDir, newPkgDir);
-    if (!NATIVE_RUNTIME) rmRecursive(oldPkgDir);
-    progress("carryover", 35, `已搬运 ${carried.length} 个注入条目`);
+    const compatiblePlugins = assertVendoredPluginCompatibility(stagingGateway, target);
+    progress("carryover", 43, `官方插件兼容检查 ${compatiblePlugins.length} 项通过`);
 
     progress("patch", 45, "应用 asar 边界补丁与 windowsHide 补丁");
     const winResult = kdp.patchWindowsOpenclawArtifacts(stagingGateway, process.platform);
-    if (NATIVE_RUNTIME) kdp.patchDesktopKernel(stagingGateway);
+    if (NATIVE_RUNTIME) kdp.patchPhysicalDesktopKernel(stagingGateway);
     else {
     kdp.patchAsarBoundaryCheck(stagingGateway);
     // 形态感知覆盖断言（R56：v9 函数迁到 @openclaw/fs-safe 包后补丁计数会
@@ -651,7 +815,7 @@ async function cmdUpdate(tag) {
       try { kcs.snapshotOpenclawConfig(backupDir); } catch(error) { progress("backup",81,`配置快照附存失败: ${error.message}`); }
       progress("swap",88,"整目录换装物理内核");
       directorySwap.swapDirectory(stagingGateway,LOOSE_PATH,target, xfs, {moveCandidate:true});
-      swapped=true;clearCompileCache();
+      swapped=true;clearCompileCache();if(NATIVE_RUNTIME)syncNativeRuntimePolicy();
       writeState({lastAction:"update",previous:current,current:target,backupDir,carried});
       emit({type:"done",action:"update",from:current,to:target});
       return;
@@ -767,7 +931,7 @@ async function cmdUpdate(tag) {
     }
     swapped = true;
 
-    clearCompileCache();
+    clearCompileCache();if(NATIVE_RUNTIME)syncNativeRuntimePolicy();
     writeState({ lastAction: "update", previous: current, current: target, backupDir, carried });
     progress("cleanup", 96, "清理临时文件");
     emit({ type: "done", action: "update", from: current, to: target });
@@ -791,13 +955,17 @@ async function cmdUpdate(tag) {
 
 async function cmdRollback() {
   progress("prepare", 5, "查找可用备份");
-  const backups = listBackups();
-  if (backups.length === 0) throw new Error("没有可用的内核备份，无法回退");
-  const backupDir = path.join(BACKUP_ROOT, backups[0]);
+  let liveVersion='unknown';
+  try { liveVersion=await readCurrentVersion(); }
+  catch(error) { if(NATIVE_RUNTIME)throw error; } // Preserve legacy damaged-ASAR recovery.
+  const selected=await selectRollbackBackup(liveVersion);
+  if (!selected) throw new Error("没有可用的不同版本内核备份，无法回退");
+  const backupDir = path.join(BACKUP_ROOT, selected.name);
   if (NATIVE_RUNTIME) {
     const backup=path.join(backupDir,"gateway"),target=directorySwap.versionOf(backup),current=await readCurrentVersion();
+    assertVendoredPluginCompatibility(backup,target);
     progress("swap",40,`回退物理内核 ${current} → ${target}`);
-    directorySwap.swapDirectory(backup,LOOSE_PATH,target);clearCompileCache();
+    directorySwap.swapDirectory(backup,LOOSE_PATH,target);clearCompileCache();if(NATIVE_RUNTIME)syncNativeRuntimePolicy();
     writeState({lastAction:"rollback",previous:current,current:target});
     emit({type:"done",action:"rollback",from:current,to:target});return;
   }
@@ -860,7 +1028,7 @@ async function cmdRollback() {
     throw e;
   }
 
-  clearCompileCache();
+  clearCompileCache();if(NATIVE_RUNTIME)syncNativeRuntimePolicy();
   writeState({ lastAction: "rollback", previous: current, current: backupVersion });
   progress("cleanup", 90, "清理");
   // 备份里若带 openclaw.json 快照，提示位置；刻意不自动恢复，避免覆盖用户新配置
@@ -882,15 +1050,15 @@ async function cmdCheck() {
     emit({ type: "state", current, latest: null, updateAvailable: false, checkError: String(e.message || e) });
     return;
   }
-  const backups = listBackups();
+  const rollback = await selectRollbackBackup(current);
   emit({
     type: "state",
     current,
     latest: stable.version,
     updateAvailable: computeUpdateAvailable(current, stable.version),
     stableSource: stable.source,
-    rollbackAvailable: backups.length > 0,
-    rollbackVersion: backups[0] ? backupVersionOf(backups[0]) : null,
+    rollbackAvailable: rollback !== null,
+    rollbackVersion: rollback?.version ?? null,
   });
 }
 
@@ -1172,7 +1340,7 @@ async function main() {
   if (args.includes("--recover")) {
     acquireLock();
     try {
-      if (NATIVE_RUNTIME) directorySwap.recoverDirectorySwap(LOOSE_PATH);
+      if (NATIVE_RUNTIME) { directorySwap.recoverDirectorySwap(LOOSE_PATH); syncNativeRuntimePolicy(); }
       else reconcileSwapDebris((msg)=>progress("recover",100,msg));
     } finally { releaseLock(); }
     return;
@@ -1182,7 +1350,7 @@ async function main() {
     // 无锁态的尽力自愈（有并发更新在跑时跳过——其临时物是合法的）
     if (!xfs.existsSync(LOCK_FILE)) {
       try {
-        if (NATIVE_RUNTIME) directorySwap.recoverDirectorySwap(LOOSE_PATH);
+        if (NATIVE_RUNTIME) { directorySwap.recoverDirectorySwap(LOOSE_PATH); syncNativeRuntimePolicy(); }
         else reconcileSwapDebris((m) => console.log(`[kernel-update] ${m}`));
       } catch (e) {
         console.log(`[kernel-update] 残留自愈跳过: ${e.message || e}`);
@@ -1194,7 +1362,7 @@ async function main() {
 
   acquireLock();
   try {
-    if (NATIVE_RUNTIME) directorySwap.recoverDirectorySwap(LOOSE_PATH);
+    if (NATIVE_RUNTIME) { directorySwap.recoverDirectorySwap(LOOSE_PATH); syncNativeRuntimePolicy(); }
     else reconcileSwapDebris((m) => console.log(`[kernel-update] ${m}`));
     if (!xfs.existsSync(NATIVE_RUNTIME ? LOOSE_PATH : ASAR_PATH)) {
       fail(NATIVE_RUNTIME ? `找不到物理内核: ${LOOSE_PATH}` : `找不到 gateway.asar: ${ASAR_PATH}`);
