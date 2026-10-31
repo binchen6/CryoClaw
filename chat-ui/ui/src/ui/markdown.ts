@@ -70,7 +70,11 @@ const MARKDOWN_CHAR_LIMIT = 140_000;
 const MARKDOWN_PARSE_LIMIT = 40_000;
 const MARKDOWN_CACHE_LIMIT = 200;
 const MARKDOWN_CACHE_MAX_CHARS = 50_000;
+// Bound source + sanitized HTML together: escaping can expand a short input
+// several-fold. Entry count alone retained tens of MB across session switches.
+const MARKDOWN_CACHE_MAX_CODE_UNITS = 2_000_000;
 const markdownCache = new Map<string, string>();
+let markdownCacheCodeUnits = 0;
 
 function getCachedMarkdown(key: string): string | null {
   const cached = markdownCache.get(key);
@@ -83,12 +87,19 @@ function getCachedMarkdown(key: string): string | null {
 }
 
 function setCachedMarkdown(key: string, value: string) {
+  const cost = key.length + value.length;
+  if (cost > MARKDOWN_CACHE_MAX_CODE_UNITS) return;
+  const previous = markdownCache.get(key);
+  if (previous !== undefined) {
+    markdownCacheCodeUnits -= key.length + previous.length;
+    markdownCache.delete(key);
+  }
   markdownCache.set(key, value);
-  while (markdownCache.size > MARKDOWN_CACHE_LIMIT) {
+  markdownCacheCodeUnits += cost;
+  while (markdownCache.size > MARKDOWN_CACHE_LIMIT || markdownCacheCodeUnits > MARKDOWN_CACHE_MAX_CODE_UNITS) {
     const oldest = markdownCache.keys().next().value;
-    if (!oldest) {
-      break;
-    }
+    if (oldest === undefined) break;
+    markdownCacheCodeUnits -= oldest.length + markdownCache.get(oldest)!.length;
     markdownCache.delete(oldest);
   }
 }
@@ -96,6 +107,11 @@ function setCachedMarkdown(key: string, value: string) {
 // 测试观测钩子：返回当前 LRU 缓存条数（防污染回归测试用）
 export function markdownCacheSize(): number {
   return markdownCache.size;
+}
+
+/** Retained string cost, not a browser heap measurement (engines vary encoding). */
+export function markdownCacheStats() {
+  return { entries: markdownCache.size, retainedCodeUnits: markdownCacheCodeUnits, maxCodeUnits: MARKDOWN_CACHE_MAX_CODE_UNITS };
 }
 
 function installHooks() {

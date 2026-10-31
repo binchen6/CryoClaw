@@ -10,6 +10,23 @@
    design-tokens / tokens-ext，禁止硬编码色值与 [data-theme] / prefers-color-scheme 块。
    ========================================================================== */
 
+/* Reference-style keyboard list: one scrolling page, no nested scrollbar chrome. */
+.oc-shortcuts { width: 100%; max-width: 800px; }
+.oc-shortcuts__header { margin-bottom: var(--spacer-20); }
+.oc-shortcuts__header h2 { margin: 0 0 var(--spacer-8); font-size: var(--heading-md); font-weight: var(--weight-semibold); }
+.oc-shortcuts__search { display: flex; align-items: center; gap: var(--spacer-8); margin-bottom: var(--spacer-16); }
+.oc-shortcuts__search > svg { flex: none; color: var(--text-muted); }
+.oc-shortcuts__search input { width: 100%; }
+.oc-shortcuts__list { border: var(--hairline); border-radius: var(--radius-12); overflow: hidden; background: var(--bg-secondary); }
+.oc-shortcuts__row { display: flex; align-items: center; justify-content: space-between; gap: var(--spacer-16); padding: var(--spacer-16); }
+.oc-shortcuts__row + .oc-shortcuts__row { border-top: var(--hairline); }
+.oc-shortcuts__copy { min-width: 0; }
+.oc-shortcuts__copy strong { font-size: var(--text-base); font-weight: var(--weight-medium); }
+.oc-shortcuts__copy p { margin: var(--spacer-4) 0 0; color: var(--text-secondary); font-size: var(--text-sm); line-height: 1.5; }
+.oc-shortcuts__keys { display: inline-flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--spacer-4); flex-shrink: 0; }
+.oc-shortcuts kbd { padding: var(--spacer-4) var(--spacer-8); border: var(--hairline); border-radius: var(--radius-6); background: var(--bg-elevated); color: var(--text-secondary); font: inherit; font-size: var(--text-sm); box-shadow: var(--shadow-xs); }
+@container settings-pane (max-width: 420px) { .oc-shortcuts__row { align-items: flex-start; flex-direction: column; gap: var(--spacer-8); } }
+
 /* ============================================
    骨架：左导航 + 内容列
    ============================================ */

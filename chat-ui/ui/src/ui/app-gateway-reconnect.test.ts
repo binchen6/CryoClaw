@@ -34,19 +34,31 @@ test("automatic reconnect on the original client restores its running chat from 
     connectGateway(host);
     const client = host.client;
     Object.defineProperty(client, "connected", { get: () => true });
-    mock.method(client, "request", async (method: string) => method === "agent.identity.get"
-      ? {} : new Promise(() => {}));
+    let identityRequests = 0;
+    const requestMethods: string[] = [];
+    mock.method(client, "request", async (method: string) => {
+      requestMethods.push(method);
+      if (method !== "agent.identity.get") return new Promise(() => {});
+      identityRequests += 1;
+      return { name: "Cryo", avatar: null, agentId: "main" };
+    });
     const hello = () => (client as any).opts.onHello({ type: "hello-ok", protocol: 4 });
     hello();
     await tick();
     assert.equal(host.connected, true);
     assert.equal(host.lastError, null, "the fixture must complete admission without an unrelated error");
+    assert.equal(identityRequests, 1, "admission identity must be reused instead of requested twice");
+    assert.equal(host.assistantName, "Cryo");
+    assert.equal(host.assistantAgentId, "main");
+    assert.equal(requestMethods.includes("agents.list"), false, "无消费方的 agents 全量读取不得挤占首屏");
+    assert.equal(requestMethods.includes("channels.status"), false, "任务表单渠道元数据应推迟到任务页");
 
     host.chatRunId = "live-run";
     host.chatStream = "before disconnect";
     host.connected = false;
     hello(); // GatewayBrowserClient reconnects internally; connectGateway is not called again.
     await tick();
+    assert.equal(identityRequests, 2, "each hello needs one admission request, not a duplicate identity read");
     handleGatewayEvent(host, { type: "event", event: "chat", payload: {
       sessionKey: "auto-reconnect", runId: "live-run", state: "delta", deltaText: "after reconnect",
     } });

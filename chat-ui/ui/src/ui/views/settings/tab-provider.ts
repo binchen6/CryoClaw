@@ -13,6 +13,7 @@ import {showToast} from "../../app-toast.ts";
  */
 import { html, nothing } from "lit";
 import { repeat } from "lit/directives/repeat.js";
+import { keyed } from "lit/directives/keyed.js";
 import { ref } from "lit/directives/ref.js";
 import type { AppViewState } from "../../app-view-state.ts";
 import { t, tWithDetail, getLocale } from "../../i18n.ts";
@@ -26,6 +27,7 @@ import "../../components/toggle-switch.ts";
 import "../../components/password-input.ts";
 import "../../components/message-box.ts";
 import "../../components/provider-segment.ts";
+import { providerIcon, resolveProviderIcon } from "../../components/provider-icons.ts";
 import {
   PROVIDERS, CUSTOM_PRESETS, KIMI_CODE_FIXED_MODEL,
   CUSTOM_MODEL_SENTINEL, PROVIDER_DISPLAY_ORDER, getProviderLabels,
@@ -85,6 +87,8 @@ interface DropTarget {
 
 function createProviderState() {
   return {
+    selectedProviderKey: null as string | null,
+    lifetime: {},
     initialized: false,
     snapshot: null as import("../../controllers/config.ts").ConfigSnapshot | null,
     loading: false,
@@ -109,6 +113,8 @@ function createProviderState() {
     // provider 密钥行内编辑
     keyEditing: null as string | null,
     keyDraft: "",
+    keySaving: false,
+    keySaveToken: null as object | null,
     // 添加面板
     addOpen: false,
     addProvider: "moonshot" as string,
@@ -122,6 +128,7 @@ function createProviderState() {
     addApiType: "openai-completions",
     addShowCustomModelInput: false,
     saving: false,
+    addSaveToken: null as object | null,
     /** 分组追加模式：目标 providerKey（复用其端点与密钥）；null = 完整添加流程 */
     addToProviderKey: null as string | null,
     /** 追加模式的能力覆盖草稿（选型时从目录初始化） */
@@ -165,6 +172,7 @@ function createProviderState() {
     syncChecked: new Set<string>(),
     // R58：添加面板手动拉取
     addFetchBusy: false,
+    addFetchToken: null as object | null,
     addFetchedFor: "" as string,
     addFetchError: null as string | null,
     // R58：用量/余额查询（非 kimi-coding 提供商）
@@ -176,8 +184,10 @@ function createProviderState() {
 }
 
 const s = createProviderState();
+let providerStageDirection: "forward" | "back" = "forward";
 
 function resetProviderState() {
+  providerStageDirection = "forward";
   Object.assign(s, createProviderState());
   // T6：模块级冷却/缓存一并清——否则切走再回会带着旧失败冷却与旧分组记忆
   agentsLoadFailedAt = 0;
@@ -242,10 +252,11 @@ function getProviderSnapshot() {
 
 /* ── 数据加载 ── */
 
-async function refreshSnapshot(state: AppViewState) {
+async function refreshSnapshot(state: AppViewState, isCurrent?: () => boolean) {
   if (!state.client) return;
+  const lifetime = s.lifetime;
   await getConfigSnapshot(state.client);
-  pruneOrgAgainstConfig();
+  if (s.lifetime === lifetime && (!isCurrent || isCurrent())) pruneOrgAgainstConfig();
   // 主应用模型选择器（compose/cron）同步刷新
   try {
     void state.loadConfiguredModels?.().catch(()=>{});
@@ -333,22 +344,30 @@ async function loadAgents(state: AppViewState) {
 async function runPatch(
   state: AppViewState,
   mutator: (draft: OpenclawConfigDraft) => void,
-  opts?: { replacePaths?: string[] },
+  opts?: { replacePaths?: string[]; isCurrent?: () => boolean },
 ): Promise<boolean> {
-  if (!state.client || s.busy) return false;
+  const lifetime = s.lifetime;
+  const isCurrent = () => s.lifetime === lifetime && (!opts?.isCurrent || opts.isCurrent());
+  if (!state.client || s.busy || !isCurrent()) return false;
   s.busy = true;
   s.error = null;
   s.successMsg = null;
   s.restartHint = null;
   state.requestUpdate();
   try {
-    const result: ConfigPatchResult = await patchConfig(state.client, mutator, opts);
+    // Callback gates belong to this view, not the gateway patch protocol.
+    const result: ConfigPatchResult = await patchConfig(state.client, draft => {
+      // A snapshot read / conflict rebase can also outlive this view. No-op before sending.
+      if (isCurrent()) mutator(draft);
+    }, opts?.replacePaths ? { replacePaths: opts.replacePaths } : undefined);
+    if (!isCurrent()) return false;
     if (!result.ok) {
       s.error = result.error ?? t("setup.error.connection");
       return false;
     }
     showToast(state,t("settings.saved"),undefined,"success");
-    await refreshSnapshot(state);
+    await refreshSnapshot(state, isCurrent);
+    if (!isCurrent()) return false;
     s.successMsg = t("settings.saved");
     if (result.restartScheduled) {
       s.restartHint = t("settings.patch.restartScheduled");
@@ -360,10 +379,15 @@ async function runPatch(
     if (s.restartHint) s.successMsg = `${s.successMsg} · ${s.restartHint}`;
     return true;
   } catch(error) {
-    s.error=error instanceof Error?error.message:String(error);showToast(state,s.error,undefined,"error");return false;
+    if (isCurrent()) {
+      s.error=error instanceof Error?error.message:String(error);showToast(state,s.error,undefined,"error");
+    }
+    return false;
   } finally {
-    s.busy = false;
-    state.requestUpdate();
+    if (isCurrent()) {
+      s.busy = false;
+      state.requestUpdate();
+    }
   }
 }
 
@@ -449,31 +473,45 @@ async function handleAliasSave(prov: GroupedProvider, entry: ProviderModelEntry,
 /* ── provider 密钥编辑 ── */
 
 function startKeyEdit(prov: GroupedProvider, state: AppViewState) {
+  if (s.keySaving) return;
   s.keyEditing = prov.providerKey;
   s.keyDraft = "";
   state.requestUpdate();
 }
 
 async function handleKeySave(prov: GroupedProvider, state: AppViewState) {
-  // verify 是真实 HTTP 探测（可达数秒），入口即占 busy 防重复点击（R64 审查 P3）
-  if (s.busy) return;
+  // 验证独占自己的锁；busy 只由 runPatch 管理，否则验证成功后的写入会被自己拦截。
+  if (s.busy || s.keySaving) return;
   const apiKey = s.keyDraft.trim();
   if (!apiKey) {
     s.keyEditing = null;
+    s.keyDraft = "";
     state.requestUpdate();
     return;
   }
-  s.busy = true;
+  const token = {};
+  s.keySaveToken = token;
+  s.keySaving = true;
   state.requestUpdate();
   try {
-    await handleKeySaveInner(prov, state, apiKey);
+    await handleKeySaveInner(prov, state, apiKey, token);
+  } catch (error) {
+    // 旧 IPC 的 reject 同样不能借调用方的错误处理污染新编辑器。
+    if (s.keySaveToken === token) throw error;
   } finally {
-    s.busy = false;
-    state.requestUpdate();
+    // reset / 新一轮编辑已撤销旧操作时，旧 finally 不得解开新操作的锁。
+    if (s.keySaveToken === token) {
+      s.keySaveToken = null;
+      s.keySaving = false;
+      // 仅在仍打开的失败编辑器中保留草稿供重试；关闭后不驻留秘密。
+      if (!s.keyEditing) s.keyDraft = "";
+      state.requestUpdate();
+    }
   }
 }
 
-async function handleKeySaveInner(prov: GroupedProvider, state: AppViewState, apiKey: string) {
+async function handleKeySaveInner(prov: GroupedProvider, state: AppViewState, apiKey: string, token: object) {
+  const isCurrent = () => s.keySaveToken === token && s.keyEditing === prov.providerKey;
   const isKimiCoding = prov.providerKey === "kimi-coding";
   // verify 参数映射回 UI provider/preset（verifyProvider 只识别五大 UI provider）
   const presetKey = Object.keys(CUSTOM_PRESETS).find(k => CUSTOM_PRESETS[k].providerKey === prov.providerKey);
@@ -496,6 +534,7 @@ async function handleKeySaveInner(prov: GroupedProvider, state: AppViewState, ap
   }
   // 先真实 HTTP 验证（保留主进程 IPC）
   const verifyResult = await ipc.settingsVerifyKey(verifyParams);
+  if (!isCurrent()) return;
   if (!verifyResult.success) {
     s.error = verifyResult.message ?? verifyResult.error ?? t("setup.error.verifyFailed");
     state.requestUpdate();
@@ -504,6 +543,7 @@ async function handleKeySaveInner(prov: GroupedProvider, state: AppViewState, ap
   if (isKimiCoding) {
     // 真实 key 写 sidecar + 注入代理；config 只写占位符
     const sidecar = await ipc.settingsWriteKimiApiKey({ apiKey });
+    if (!isCurrent()) return;
     const proxyPort = sidecar?.proxyPort ?? 0;
     if (proxyPort <= 0) {
       s.error = t("setup.error.connection");
@@ -517,8 +557,8 @@ async function handleKeySaveInner(prov: GroupedProvider, state: AppViewState, ap
       target.apiKey = AUTH_PROXY_API_KEY_SENTINEL;
       target.baseUrl = `http://127.0.0.1:${proxyPort}/coding`;
       applyKimiCodeLinkage(draft, proxyPort);
-    });
-    if (ok) s.keyEditing = null;
+    }, { isCurrent });
+    if (ok && isCurrent()) s.keyEditing = null;
     return;
   }
   const ok = await runPatch(state, draft => {
@@ -526,8 +566,8 @@ async function handleKeySaveInner(prov: GroupedProvider, state: AppViewState, ap
     const target = providers[prov.providerKey];
     if (!target) return;
     target.apiKey = apiKey;
-  });
-  if (ok) s.keyEditing = null;
+  }, { isCurrent });
+  if (ok && isCurrent()) s.keyEditing = null;
 }
 
 /* ── 拖拽排序 ── */
@@ -700,12 +740,16 @@ async function handleAgentModelChange(agentId: string, modelKey: string, state: 
 /* ── 添加流程 ── */
 
 function toggleAddPanel(state: AppViewState) {
+  if (providerBusy()) return;
+  providerStageDirection = s.addOpen ? "back" : "forward";
   s.addOpen = !s.addOpen;
   s.error = null;
   s.successMsg = null;
   if (!s.addOpen) {
     s.addToProviderKey = null;
     s.addCaps = null;
+    s.addApiKey = "";
+    s.pendingOAuthToken = null;
   }
   if (s.addOpen) {
     const options = getAddModelOptions();
@@ -805,6 +849,18 @@ function reasoningBudgetWarningText(providerKey: string, modelId: string, caps: 
   return t("settings.provider.reasoningMaxTokensWarning").replace("{n}", String(hit.effectiveMaxTokens));
 }
 
+/**
+ * 按钮点击入口：add 保存内部在 `isCurrent()` 为真时把 verify/写盘错误重新抛出（旧 token
+ * 的错误不得污染新表单），因此调用点必须接住——否则按钮点击变成 unhandled rejection，
+ * 用户只看到按钮弹回、没有任何错误提示。
+ */
+function submitAddSave(handler: (state: AppViewState) => Promise<void>, state: AppViewState): void {
+  handler(state).catch(error => {
+    s.error = tWithDetail("settings.error.saveFailed", error instanceof Error ? error.message : String(error));
+    state.requestUpdate();
+  });
+}
+
 async function handleAddToGroupSave(state: AppViewState) {
   if (s.saving || s.busy) return;
   const providerKey = s.addToProviderKey;
@@ -825,18 +881,25 @@ async function handleAddToGroupSave(state: AppViewState) {
     return;
   }
 
-  const addBudgetWarning = s.addCaps ? reasoningBudgetWarningText(providerKey, modelId, s.addCaps) : null;
-  if (addBudgetWarning && !(await showConfirm(state, addBudgetWarning))) return;
-
+  const caps = s.addCaps ? structuredClone(s.addCaps) : null;
+  const alias = s.addAlias.trim();
+  const addBudgetWarning = caps ? reasoningBudgetWarningText(providerKey, modelId, caps) : null;
+  const token = {};
+  s.addSaveToken = token;
+  const isCurrent = () => s.addSaveToken === token && s.addOpen && s.addToProviderKey === providerKey;
   s.saving = true;
   s.error = null;
   state.requestUpdate();
   try {
+    if (addBudgetWarning) {
+      const confirmed = await showConfirm(state, addBudgetWarning);
+      if (!isCurrent() || !confirmed) return;
+    }
     const catalogProvider = catalogProviderForKey(providerKey);
-    const supportsImage = catalogModelSupportsImage(catalogProvider ?? providerKey, modelId) ?? s.addCaps?.image ?? false;
+    const supportsImage = catalogModelSupportsImage(catalogProvider ?? providerKey, modelId) ?? caps?.image ?? false;
     const entry = buildModelEntry(
-      catalogProvider, modelId, s.addAlias.trim(), supportsImage,
-      s.addCaps ? buildOverridesFromCaps(s.addCaps, true) : undefined,
+      catalogProvider, modelId, alias, supportsImage,
+      caps ? buildOverridesFromCaps(caps, true) : undefined,
     );
     const hasPrimary = !!snapDraft?.agents?.defaults?.model?.primary;
     // 进入时 provider 是否已存在：patchConfig 在 baseHash 冲突时会用新快照重放 mutator，
@@ -853,15 +916,16 @@ async function handleAddToGroupSave(state: AppViewState) {
         const defaults = (agents.defaults ??= {});
         (defaults.model ??= {}).primary = `${providerKey}/${modelId}`;
       }
-    });
-    if (ok) {
-      s.addToProviderKey = null;
-      s.addCaps = null;
-      closeAddPanelAfterSave(state);
-    }
+    }, { isCurrent });
+    if (ok && isCurrent()) closeAddPanelAfterSave(state, token);
+  } catch (error) {
+    if (isCurrent()) throw error;
   } finally {
-    s.saving = false;
-    state.requestUpdate();
+    if (s.addSaveToken === token) {
+      s.addSaveToken = null;
+      s.saving = false;
+      state.requestUpdate();
+    }
   }
 }
 
@@ -937,6 +1001,9 @@ async function handleModelEditSave(entry: ProviderModelEntry, state: AppViewStat
 }
 
 function onAddProviderChange(provider: string, state: AppViewState) {
+  if (providerBusy()) return;
+  s.addFetchToken = null;
+  s.addFetchBusy = false;
   s.addProvider = provider;
   s.addCustomPreset = "";
   s.addApiKey = "";
@@ -944,6 +1011,11 @@ function onAddProviderChange(provider: string, state: AppViewState) {
   s.addCustomModelId = "";
   s.addShowCustomModelInput = false;
   s.addBaseUrl = "";
+  s.addAlias = "";
+  s.addApiType = "openai-completions";
+  s.pendingOAuthToken = null;
+  s.oauthSuccess = false;
+  s.oauthNoMembership = false;
   s.addFetchError = null;
   s.error = null;
   if (provider === "moonshot") s.addSubPlatform = "kimi-code";
@@ -954,6 +1026,9 @@ function onAddProviderChange(provider: string, state: AppViewState) {
 
 async function handleAddSave(state: AppViewState) {
   if (s.saving || s.busy) return;
+  const selection = currentAddSelection();
+  const alias = s.addAlias.trim();
+  const pendingOAuthToken = s.pendingOAuthToken;
   const target = resolveAddTarget();
   if (!target) return;
   const modelId = getAddModelId();
@@ -987,7 +1062,7 @@ async function handleAddSave(state: AppViewState) {
   }
 
   let apiKey = s.addApiKey.trim();
-  if (isKimiCode && s.pendingOAuthToken) apiKey = s.pendingOAuthToken;
+  if (isKimiCode && pendingOAuthToken) apiKey = pendingOAuthToken;
   // kimi-code 已登录且未提供新 key：沿用代理现有 token，跳过 verify 与 sidecar 写入
   const keepProxyAuth = isKimiCode && !apiKey && s.oauthLoggedIn;
   const reuseExistingKey = !apiKey && !!existingProv?.apiKey;
@@ -997,6 +1072,9 @@ async function handleAddSave(state: AppViewState) {
     return;
   }
 
+  const token = {};
+  s.addSaveToken = token;
+  const isCurrent = () => s.addSaveToken === token && s.addOpen && s.addToProviderKey === null;
   s.saving = true;
   s.error = null;
   state.requestUpdate();
@@ -1005,23 +1083,25 @@ async function handleAddSave(state: AppViewState) {
     let supportsImage: boolean | undefined;
     if (apiKey) {
       const verifyParams: Record<string, unknown> = {
-        provider: s.addProvider,
+        provider: selection.provider,
         apiKey,
         modelID: modelId,
-        subPlatform: s.addProvider === "moonshot" ? s.addSubPlatform : "",
-        customPreset: s.addCustomPreset,
+        subPlatform: selection.provider === "moonshot" ? selection.subPlatform : "",
+        customPreset: selection.customPreset,
       };
-      if (s.addProvider === "custom" && !s.addCustomPreset) {
+      if (selection.provider === "custom" && !selection.customPreset) {
         verifyParams.baseURL = target.baseUrl;
-        verifyParams.apiType = s.addApiType;
+        verifyParams.apiType = selection.apiType;
       }
       if (isKimiCode) verifyParams.verifyViaProxy = true;
       const verifyResult = await ipc.settingsVerifyKey(verifyParams);
+      if (!isCurrent()) return;
       if (!verifyResult.success) {
         const errMsg = verifyResult.message ?? verifyResult.error ?? "";
-        if (isKimiCode && s.pendingOAuthToken && errMsg.includes("401")) {
+        if (isKimiCode && pendingOAuthToken && errMsg.includes("401")) {
           s.pendingOAuthToken = null;
           try { await ipc.kimiOAuthLogout(); } catch {}
+          if (!isCurrent()) return;
           s.oauthNoMembership = true;
           return;
         }
@@ -1035,13 +1115,13 @@ async function handleAddSave(state: AppViewState) {
       supportsImage = catalogModelSupportsImage(target.catalogProvider ?? target.providerKey, modelId) ?? false;
     }
 
-    const alias = s.addAlias.trim();
     const entry = buildModelEntry(target.catalogProvider, modelId, alias, supportsImage);
     const hasPrimary = !!snapDraft?.agents?.defaults?.model?.primary;
 
     if (isKimiCode && apiKey) {
       // 真实 key 写 sidecar + 注入代理；config 只写占位符
       const sidecar = await ipc.settingsWriteKimiApiKey({ apiKey });
+      if (!isCurrent()) return;
       const proxyPort = sidecar?.proxyPort ?? 0;
       if (proxyPort <= 0) {
         s.error = t("setup.error.connection");
@@ -1059,11 +1139,8 @@ async function handleAddSave(state: AppViewState) {
           (((draft.agents ??= {}).defaults ??= {}).model ??= {}).primary = `kimi-coding/${modelId}`;
         }
         applyKimiCodeLinkage(draft, proxyPort);
-      });
-      if (ok) {
-        s.pendingOAuthToken = null;
-        closeAddPanelAfterSave(state);
-      }
+      }, { isCurrent });
+      if (ok && isCurrent()) closeAddPanelAfterSave(state, token);
       return;
     }
 
@@ -1087,18 +1164,29 @@ async function handleAddSave(state: AppViewState) {
       if (!hasPrimary) {
         (((draft.agents ??= {}).defaults ??= {}).model ??= {}).primary = `${target.providerKey}/${modelId}`;
       }
-    });
-    if (ok) closeAddPanelAfterSave(state);
+    }, { isCurrent });
+    if (ok && isCurrent()) closeAddPanelAfterSave(state, token);
+  } catch (error) {
+    if (isCurrent()) throw error;
   } finally {
-    s.saving = false;
-    state.requestUpdate();
+    if (s.addSaveToken === token) {
+      s.addSaveToken = null;
+      s.saving = false;
+      state.requestUpdate();
+    }
   }
 }
 
-function closeAddPanelAfterSave(state: AppViewState) {
+function closeAddPanelAfterSave(state: AppViewState, token: object) {
+  if (s.addSaveToken !== token) return;
+  s.addSaveToken = null;
+  s.saving = false;
   s.addOpen = false;
+  s.addToProviderKey = null;
+  s.addCaps = null;
   s.addApiKey = "";
   s.addAlias = "";
+  s.pendingOAuthToken = null;
   s.addCustomModelId = "";
   s.addShowCustomModelInput = false;
   state.requestUpdate();
@@ -1247,6 +1335,10 @@ async function handleSyncAddSelected(prov: GroupedProvider, state: AppViewState)
 async function handleAddFetchModels(state: AppViewState) {
   if (s.addFetchBusy) return;
   const isKimiCode = isKimiCodeAdd();
+  const targetKey = resolveAddTarget()?.providerKey ?? s.addProvider;
+  const selection = JSON.stringify(currentAddSelection());
+  const token = {};
+  const current = () => s.addFetchToken === token && s.addOpen && JSON.stringify(currentAddSelection()) === selection;
   const params: Record<string, unknown> = {
     provider: s.addProvider,
     subPlatform: s.addProvider === "moonshot" ? s.addSubPlatform : "",
@@ -1268,18 +1360,17 @@ async function handleAddFetchModels(state: AppViewState) {
     return;
   }
   // kimi-code 已 OAuth 登录时，代理已有 token，允许不带 key 拉取
+  s.addFetchToken = token;
   s.addFetchBusy = true;
   s.addFetchError = null;
   state.requestUpdate();
   try {
     const res = await ipc.settingsFetchProviderModels(params);
+    if (!current()) return;
     if (res?.success && res.data?.models) {
       // storage key：kimi-code → kimi-coding；custom 预设 → 预设 providerKey；
       // 手动 custom → resolveAddTarget 的 providerKey（与 getAddModelOptions 的读取端一致）
-      const target = resolveAddTarget();
-      const key = isKimiCode
-        ? "kimi-coding"
-        : target?.providerKey ?? s.addProvider;
+      const key = targetKey;
       s.liveModels[key] = { models: res.data.models, at: Date.now() };
       s.addFetchedFor = key;
       // 未选中或选中项不在新列表时，默认选第一个
@@ -1294,10 +1385,13 @@ async function handleAddFetchModels(state: AppViewState) {
       s.addFetchError = res?.message ?? t("settings.provider.syncFailed");
     }
   } catch (err: any) {
-    s.addFetchError = err?.message ?? String(err);
+    if (current()) s.addFetchError = err?.message ?? String(err);
   } finally {
-    s.addFetchBusy = false;
-    state.requestUpdate();
+    if (s.addFetchToken === token) {
+      s.addFetchToken = null;
+      s.addFetchBusy = false;
+      state.requestUpdate();
+    }
   }
 }
 
@@ -1351,58 +1445,233 @@ export function renderTabProvider(state: AppViewState) {
   const snap = getProviderSnapshot();
   const view = snap ? deriveProviderView(snap) : null;
   const groups = view?.groups ?? [];
-  const fallbacks = view?.fallbacks ?? [];
-  const fallbackRank = view?.fallbackRank ?? new Map<string, number>();
-  const defaultEntry = view?.defaultEntry;
+  const providers = groups.flatMap(group => group.providers);
+  const selected = providers.find(provider => provider.providerKey === s.selectedProviderKey);
+  // A provider may disappear after its last model is deleted or a fresh snapshot arrives.
+  if (!selected && !s.loading) s.selectedProviderKey = null;
   const totalModels = view?.totalModels ?? 0;
-  const text=(cn:string,en:string)=>getLocale().startsWith("zh")?cn:en;
-  const matchingModels=groups.flatMap(group=>group.providers).reduce((count,provider)=>count+provider.models.filter(model=>modelMatchesFilter(model,provider)).length,0);
-
+  const stage = s.addOpen ? "add" : selected ? "detail" : "catalog";
   return html`
-    <div class="oc-settings__section oc-model-settings" data-page-id="settings:provider" data-load-state=${s.loading || s.catalogLoading || s.agentsLoading?"loading":s.initialReadFailed || s.catalogFailed || s.agentsFailed || s.error?"error":!snap?"error":!totalModels?"empty":"ready"} aria-busy=${s.loading || s.catalogLoading || s.agentsLoading}>
-      <div class="oc-provider-header">
-        <div>
-          <h2 class="oc-settings__section-title">${t("settings.provider.title")}</h2>
-          <p class="oc-settings__hint">${t("settings.provider.desc")}</p>
+    <div class="oc-settings__section oc-model-settings oc-provider-workbench" data-page-id="settings:provider"
+      data-provider-view=${stage}
+      data-load-state=${s.loading || s.catalogLoading || s.agentsLoading ? "loading" : s.initialReadFailed || s.catalogFailed || s.agentsFailed || s.error || !snap ? "error" : !totalModels ? "empty" : "ready"}
+      aria-busy=${s.loading || s.catalogLoading || s.agentsLoading}>
+      ${keyed(stage, html`
+        <div class="oc-provider-stage" data-direction=${providerStageDirection}>
+          ${s.addOpen ? html`
+            <div class="oc-provider-add-page">
+              <header class="oc-provider-detail__header"><button class="icon-btn oc-provider-back" aria-label=${providerText("返回", "Back")} ?disabled=${providerBusy()} @click=${() => closeProviderAdd(state)}>${icons.arrowLeft}</button><div><h2 class="oc-settings__section-title">${s.addToProviderKey ? t("settings.provider.addModel") : providerText("添加供应商", "Add provider")}</h2><p class="oc-settings__hint">${providerText("连接你的模型，让灵感有自己的引擎。", "Connect your models. Give your ideas their own engine.")}</p></div></header>
+              ${renderAddPanel(state)}
+            </div>
+          ` : selected ? renderProviderDetail(selected, groups, state, view?.fallbackRank ?? new Map()) : html`
+            <div class="oc-provider-catalog">
+              <header class="oc-provider-header"><div><h2 class="oc-settings__section-title">${providerText("模型供应商", "Model providers")}</h2><p class="oc-settings__hint">${providerText("让每一种思考，都连接到合适的模型。", "The right model for every way you think.")}</p></div><button class="btn primary" ?disabled=${providerBusy()} @click=${() => toggleAddPanel(state)}>${icons.plus}${providerText("添加供应商", "Add provider")}</button></header>
+              <div class="oc-model-overview"><div class="oc-model-overview__primary">${icons.cpu}<div><small>${providerText("当前主模型", "Primary model")}</small><strong>${view?.defaultEntry?.name ?? providerText("尚未选择", "Choose a model")}</strong></div></div><div class="oc-model-overview__stat"><strong>${totalModels}</strong><span>${providerText("已配置模型", "Configured models")}</span></div></div>
+              ${s.loading && !snap ? html`<div class="oc-provider-loading">${t("settings.loading")}</div>` : nothing}
+              ${!snap && !s.loading ? html`<div class="cc-alert cc-alert--warn">${t("settings.provider.configUnavailable")}</div>` : nothing}
+              ${providers.length ? html`<div class="oc-provider-filter">${icons.search}<input class="oc-provider-filter__input" aria-label=${t("settings.provider.filterPlaceholder")} .value=${s.filterQuery} placeholder=${t("settings.provider.filterPlaceholder")} @input=${(event: Event) => { s.filterQuery = (event.target as HTMLInputElement).value; state.requestUpdate(); }} />${s.filterQuery ? html`<button class="icon-btn" aria-label=${providerText("清除搜索", "Clear search")} @click=${() => { s.filterQuery = ""; state.requestUpdate(); }}>${icons.x}</button>` : nothing}</div>` : nothing}
+              ${renderProviderCollection(providers.filter(provider => provider.proxyManaged || provider.providerKey === "kimi-coding"), providerText("订阅与托管账户", "Subscription & managed accounts"), state)}
+              ${renderProviderCollection(providers.filter(provider => !provider.proxyManaged && provider.providerKey !== "kimi-coding"), providerText("API 供应商", "API providers"), state)}
+              ${snap && !providers.some(provider => provider.models.some(model => modelMatchesFilter(model, provider))) ? html`<div class="oc-model-library-empty" role="status">${s.filterQuery ? providerText("没有找到匹配的模型或供应商。", "No matching models or providers.") : providerText("添加供应商，或从订阅账户同步模型。", "Add a provider or sync models from your subscription.")}</div>` : nothing}
+              <details class="oc-provider-secondary"><summary>${providerText("订阅账户与模型路由", "Subscription accounts & model routing")}</summary>${renderSubscriptionAccount(state)}${renderModelRoles(state, html`${renderFallbacks(state, view?.fallbacks ?? [])}${renderAgentMapping(state)}`)}</details>
+              ${snap ? html`<details class="oc-provider-secondary"><summary>${providerText("分组与排序", "Groups & ordering")}</summary>${renderOrgManager(state)}${groups.map(group => renderGroup(group, state, view?.fallbackRank ?? new Map()))}</details>` : nothing}
+            </div>
+          `}
         </div>
-        <button class="btn primary" @click=${() => toggleAddPanel(state)}>
-          ${s.addOpen ? t("settings.provider.cancelAdd") : `+ ${t("settings.provider.addModel")}`}
-        </button>
-      </div>
-
-      <div class="oc-model-overview"><div class="oc-model-overview__primary">${icons.cpu}<div><small>${text("当前主模型", "Primary model")}</small><strong>${defaultEntry?.name??text("尚未选择", "Choose a model")}</strong>${defaultEntry?html`<span class="oc-provider-status__key" title=${defaultEntry.key}>${defaultEntry.key}</span>`:nothing}</div></div><div class="oc-model-overview__stat"><strong>${totalModels}</strong><span>${text("已配置模型", "Configured models")}</span></div></div>
-
-      ${renderSubscriptionAccount(state)}
-      ${renderModelRoles(state,html`${renderFallbacks(state,fallbacks)}${renderAgentMapping(state)}`)}
-
-      ${s.loading && !snap ? html`<div class="oc-provider-loading">${t("settings.loading")}</div>` : nothing}
-
-      ${s.addOpen ? renderAddPanel(state) : nothing}
-
-      ${!snap && !s.loading ? html`
-        <div class="cc-alert cc-alert--warn">${t("settings.provider.configUnavailable")}</div>
-      ` : nothing}
-
-      <div class="oc-model-library-heading"><div><h3 class="oc-settings__section-subtitle">${text("模型库", "Model library")}</h3><p class="oc-settings__hint">${text("按供应商管理模型，星标设为主模型。", "Manage models by provider; use the star to set your primary model.")}</p></div></div>
-      ${totalModels > 0 ? html`
-        <div class="oc-provider-filter">
-          ${icons.search}
-          <input class="oc-provider-filter__input" aria-label=${t("settings.provider.filterPlaceholder")} .value=${s.filterQuery} placeholder=${t("settings.provider.filterPlaceholder")}
-            @input=${(e: Event) => { s.filterQuery = (e.target as HTMLInputElement).value; state.requestUpdate(); }} />
-          ${s.filterQuery?html`<span class="oc-model-filter-count" role="status">${matchingModels} / ${totalModels}</span><button class="icon-btn" aria-label=${text("清除搜索", "Clear search")} @click=${()=>{s.filterQuery="";state.requestUpdate();}}>${icons.x}</button>`:nothing}
-        </div>
-      ` : nothing}
-
-      ${snap ? renderOrgManager(state) : nothing}
-
-      ${groups.map(group => renderGroup(group, state, fallbackRank))}
-
-      ${snap && matchingModels===0?html`<div class="oc-model-library-empty" role="status">${s.filterQuery?text("没有找到匹配的模型，试试其他名称或供应商。", "No matching models. Try another model or provider name."):text("从订阅账户同步，或点击“添加模型”连接供应商。", "Sync a subscription account or add a provider model to get started.")}</div>`:nothing}
-
+      `)}
       <oc-message-box .message=${s.error ?? ""} .type=${"error"} .visible=${!!s.error}></oc-message-box>
       <oc-message-box .message=${s.successMsg ?? ""} .type=${"success"} .visible=${!!s.successMsg}></oc-message-box>
     </div>
     ${renderModelEditDrawer(state, groups)}
+  `;
+}
+
+function providerText(chinese: string, english: string): string {
+  return getLocale().startsWith("zh") ? chinese : english;
+}
+
+function providerBusy(): boolean {
+  return s.busy || s.saving || s.keySaving || s.oauthLoading;
+}
+
+function openProvider(provider: GroupedProvider, state: AppViewState) {
+  if (providerBusy()) return;
+  providerStageDirection = "forward";
+  s.selectedProviderKey = provider.providerKey;
+  s.keyEditing = provider.providerKey === "kimi-coding" ? null : provider.providerKey;
+  s.keyDraft = "";
+  s.error = null;
+  s.successMsg = null;
+  state.requestUpdate();
+}
+
+function closeProviderDetail(state: AppViewState) {
+  if (providerBusy()) return;
+  providerStageDirection = "back";
+  s.selectedProviderKey = null;
+  s.keyEditing = null;
+  s.keyDraft = "";
+  state.requestUpdate();
+}
+
+function closeProviderAdd(state: AppViewState) {
+  if (providerBusy()) return;
+  providerStageDirection = "back";
+  s.addOpen = false;
+  s.addFetchToken = null;
+  s.addFetchBusy = false;
+  s.addToProviderKey = null;
+  s.addCaps = null;
+  s.addApiKey = "";
+  s.pendingOAuthToken = null;
+  s.oauthSuccess = false;
+  s.error = null;
+  state.requestUpdate();
+}
+
+function renderProviderCollection(providers: GroupedProvider[], label: string, state: AppViewState) {
+  const visible = providers.filter(provider => provider.models.some(model => modelMatchesFilter(model, provider)));
+  if (!visible.length) return nothing;
+  return html`
+    <section class="oc-provider-collection">
+      <h3 class="oc-settings__section-subtitle">${label}</h3>
+      ${repeat(visible, provider => provider.providerKey, provider => html`
+        <button class="oc-provider-tile" data-provider-key=${provider.providerKey}
+          @click=${() => openProvider(provider, state)}>
+          <span class="oc-provider-avatar" aria-hidden="true"
+            data-provider-icon=${resolveProviderIcon(provider.providerKey, provider.baseUrl)}>
+            ${providerIcon(provider.providerKey, provider.baseUrl, provider.displayName)}
+          </span>
+          <span class="oc-provider-tile__body">
+            <strong>${provider.providerKey === "kimi-coding" ? t("setup.provider.subPlatform.kimiCode") : provider.displayName}</strong>
+            <span class="oc-provider-tile__meta">
+              <span class="cc-tag">${provider.proxyManaged ? providerText("托管认证", "Managed auth") : provider.api || "API"}</span>
+              ${provider.models.some(model => model.isDefault)
+                ? html`<span class="cc-tag cc-tag--brand">${t("settings.provider.badge.default")}</span>`
+                : nothing}
+              <span>${provider.hasApiKey ? t("settings.provider.keySet") : t("settings.provider.keyMissing")}</span>
+            </span>
+          </span>
+          <span class="oc-provider-tile__count">${provider.models.length} ${providerText("个模型", "models")}</span>
+          ${icons.chevronRight}
+        </button>
+      `)}
+    </section>
+  `;
+}
+
+function renderProviderDetail(provider: GroupedProvider, groups: ProviderGroup[], state: AppViewState, fallbackRank: Map<string, number>) {
+  const managed = provider.providerKey === "kimi-coding";
+  const group = groups.find(item => item.providers.includes(provider))!;
+  return html`
+    <div class="oc-provider-detail" data-provider-key=${provider.providerKey}>
+      <header class="oc-provider-detail__header">
+        <button class="icon-btn oc-provider-back" aria-label=${providerText("返回供应商列表", "Back to providers")}
+          ?disabled=${providerBusy()} @click=${() => closeProviderDetail(state)}>${icons.arrowLeft}</button>
+        <span class="oc-provider-avatar" aria-hidden="true"
+          data-provider-icon=${resolveProviderIcon(provider.providerKey, provider.baseUrl)}>
+          ${providerIcon(provider.providerKey, provider.baseUrl, provider.displayName)}
+        </span>
+        <h2 class="oc-settings__section-title">${provider.displayName}</h2>
+        <span class="cc-tag cc-tag--brand">${managed ? providerText("订阅账户", "Subscription") : providerText("按量 API", "API connection")}</span>
+      </header>
+      <div class="oc-provider-connection">
+        <div class="oc-settings__form-group">
+          <label class="oc-settings__label" for="provider-identity">${providerText("供应商标识", "Provider ID")}</label>
+          <input id="provider-identity" class="oc-settings__input" readonly .value=${provider.providerKey} />
+        </div>
+        <div class="oc-settings__form-group">
+          <label class="oc-settings__label" for="provider-protocol">${t("setup.provider.apiType")}</label>
+          <input id="provider-protocol" class="oc-settings__input" readonly .value=${provider.api || "—"} />
+        </div>
+        <div class="oc-settings__form-group oc-provider-connection__full">
+          <label class="oc-settings__label">${t("setup.provider.apiKey")}</label>
+          ${managed && s.keyEditing !== provider.providerKey ? html`
+            <p class="oc-settings__hint">${providerText("凭据由本地安全代理托管，请使用下方账户操作管理登录。", "Credentials are managed by the local secure proxy. Manage sign-in below.")}</p>
+          ` : html`
+            <oc-password-input .value=${s.keyDraft} .disabled=${providerBusy()}
+              .label=${t("setup.provider.apiKey")}
+              .placeholder=${provider.hasApiKey
+                ? providerText("已安全保存 · 留空保留原密钥", "Securely saved · leave blank to keep")
+                : t("settings.provider.newKeyPlaceholder")}
+              @input=${(event: CustomEvent) => {
+                if (!providerBusy()) {
+                  s.keyEditing = provider.providerKey;
+                  s.keyDraft = event.detail.value;
+                  state.requestUpdate();
+                }
+              }}></oc-password-input>
+          `}
+        </div>
+        <div class="oc-settings__form-group oc-provider-connection__full">
+          <label class="oc-settings__label" for="provider-endpoint">${t("setup.provider.baseUrl")}</label>
+          <input id="provider-endpoint" class="oc-settings__input" readonly .value=${provider.baseUrl} />
+          <p class="oc-settings__hint">${providerText("标识、协议与端点由连接预设维护；密钥留空不会覆盖已保存凭据。", "Identity, protocol and endpoint follow the connection preset. An empty key preserves saved credentials.")}</p>
+        </div>
+      </div>
+      <div class="oc-provider-detail__models-heading">
+        <h3 class="oc-settings__section-subtitle">${providerText("模型", "Models")} <span class="cc-tag">${provider.models.length}</span></h3>
+        <div class="btn-row">
+          ${providerSupportsLiveModels(provider) ? html`
+            <button class="btn" ?disabled=${s.syncFetching.has(provider.providerKey) || providerBusy()}
+              @click=${() => toggleSyncPanel(provider, state)}>${t("settings.provider.syncModelsShort")}</button>
+          ` : nothing}
+          <button class="btn" ?disabled=${providerBusy()} @click=${() => startAddToGroup(provider, state)}>
+            ${icons.plus}${t("settings.provider.addModel")}
+          </button>
+        </div>
+      </div>
+      ${s.syncOpenFor === provider.providerKey ? renderSyncPanel(provider, state) : nothing}
+      <div class="oc-provider-model-table">
+        <div class="oc-provider-model-table__head">
+          <span>${providerText("模型 ID", "Model ID")}</span><span>${providerText("上下文", "Context")}</span>
+          <span>${providerText("显示名", "Display name")}</span><span>${providerText("操作", "Actions")}</span>
+        </div>
+        ${repeat(provider.models, model => model.key, model => html`
+          <div class="oc-provider-model-table__row" data-model-key=${model.key}>
+            <code title=${model.id}>${model.id}</code>
+            <span>${model.contextWindow ? formatContextWindow(model.contextWindow) : providerText("继承", "Inherited")}</span>
+            <strong>
+              ${model.name}
+              ${model.isDefault ? html`<span class="cc-tag cc-tag--brand">${t("settings.provider.badge.default")}</span>` : nothing}
+            </strong>
+            <div class="btn-row">
+              <button class="icon-btn" aria-label=${t("settings.provider.editModel")} ?disabled=${providerBusy()}
+                @click=${() => startModelEdit(provider, model, state)}>${icons.sliders}</button>
+              <button class="icon-btn" aria-label=${t("settings.provider.setDefault")}
+                ?disabled=${model.isDefault || providerBusy()} @click=${() => handleSetDefault(model.key, state)}>
+                <svg class="cryo-icon" aria-hidden="true" viewBox="0 0 24 24" fill=${model.isDefault ? "currentColor" : "none"}
+                  stroke="currentColor" stroke-width="1.75" stroke-linejoin="round">
+                  <path d="m12 2 3.09 6.26 6.91 1-5 4.88 1.18 6.88L12 17.77 5.82 21.02 7 14.14 2 9.27l6.91-1z"/>
+                </svg>
+              </button>
+              ${!model.isDefault ? html`
+                <button class="icon-btn danger" aria-label=${t("settings.provider.deleteModel")} ?disabled=${providerBusy()}
+                  @click=${() => handleDeleteModel(provider, model, state)}>${icons.trash}</button>
+              ` : nothing}
+            </div>
+          </div>
+        `)}
+      </div>
+      <details class="oc-provider-secondary">
+        <summary>${providerText("账户、用量与高级模型操作", "Account, usage & advanced model actions")}</summary>
+        ${renderProvider(provider, group, state, fallbackRank)}
+      </details>
+      <footer class="oc-provider-detail__footer">
+        <button class="btn danger" ?disabled=${providerBusy() || provider.models.some(model => model.isDefault)}
+          @click=${() => handleDeleteProvider(provider, state)}>${t("settings.provider.deleteProvider")}</button>
+        <div class="oc-provider-detail__footer-actions">
+          <button class="btn" ?disabled=${providerBusy()} @click=${() => closeProviderDetail(state)}>${t("settings.cancel")}</button>
+          ${!managed || s.keyEditing === provider.providerKey ? html`
+            <button class="btn primary" ?disabled=${providerBusy() || !s.keyDraft.trim()} aria-busy=${s.keySaving}
+              @click=${() => handleKeySave(provider, state).catch(error => {
+                s.error = error instanceof Error ? error.message : String(error);
+                state.requestUpdate();
+              })}>${s.keySaving ? t("settings.loading") : t("settings.save")}</button>
+          ` : nothing}
+        </div>
+      </footer>
+    </div>
   `;
 }
 
@@ -1617,7 +1886,7 @@ function renderProvider(prov: GroupedProvider, group: ProviderGroup, state: AppV
               @click=${() => startAddToGroup(prov, state)}>
               <svg class="cryo-icon" aria-hidden="true" focusable="false" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
             </button>
-            ${!isKimiCoding ? html`
+            ${!isKimiCoding && s.selectedProviderKey !== prov.providerKey ? html`
               <button class="oc-provider-list-item__action-btn" aria-label=${t("settings.provider.editKey")} data-tooltip=${t("settings.provider.editKey")}
                 @click=${() => startKeyEdit(prov, state)}>
                 ${icons.edit}
@@ -1639,14 +1908,14 @@ function renderProvider(prov: GroupedProvider, group: ProviderGroup, state: AppV
 
       ${isKimiCoding ? renderKimiCodingExtras(prov, state) : nothing}
 
-      ${s.keyEditing === prov.providerKey ? html`
+      ${s.keyEditing === prov.providerKey && s.selectedProviderKey !== prov.providerKey ? html`
         <div class="oc-provider-key-editor">
           <oc-password-input .value=${s.keyDraft} .placeholder=${t("settings.provider.newKeyPlaceholder")}
             @input=${(e: CustomEvent) => { s.keyDraft = e.detail.value; state.requestUpdate(); }}
           ></oc-password-input>
           <div class="btn-row">
-            <button class="btn" @click=${() => { s.keyEditing = null; state.requestUpdate(); }}>${t("settings.cancel")}</button>
-            <button class="btn primary" ?disabled=${s.busy} @click=${() => {
+            <button class="btn" @click=${() => { s.keyEditing = null; s.keyDraft = ""; state.requestUpdate(); }} ?disabled=${s.keySaving}>${t("settings.cancel")}</button>
+            <button class="btn primary" ?disabled=${s.busy || s.keySaving} @click=${() => {
               // catch：verify IPC reject（sender guard / kimi 代理启动失败）时给出可见错误，
               // 而不是静默 unhandled rejection
               handleKeySave(prov, state).catch(e => {
@@ -2058,11 +2327,15 @@ function renderAddAliasInput(state: AppViewState) {
 /** 分组追加面板的手动拉取（provider 已配置，主进程读真实凭据） */
 async function handleGroupAddFetchModels(state: AppViewState, providerKey: string) {
   if (s.addFetchBusy) return;
+  const token = {};
+  s.addFetchToken = token;
+  const current = () => s.addFetchToken === token && s.addOpen && s.addToProviderKey === providerKey;
   s.addFetchBusy = true;
   s.addFetchError = null;
   state.requestUpdate();
   try {
     const res = await ipc.settingsFetchProviderModels({ providerKey });
+    if (!current()) return;
     if (res?.success && res.data?.models) {
       s.liveModels[providerKey] = { models: res.data.models, at: Date.now() };
       s.addFetchedFor = providerKey;
@@ -2078,10 +2351,13 @@ async function handleGroupAddFetchModels(state: AppViewState, providerKey: strin
       s.addFetchError = res?.message ?? t("settings.provider.syncFailed");
     }
   } catch (err: any) {
-    s.addFetchError = err?.message ?? String(err);
+    if (current()) s.addFetchError = err?.message ?? String(err);
   } finally {
-    s.addFetchBusy = false;
-    state.requestUpdate();
+    if (s.addFetchToken === token) {
+      s.addFetchToken = null;
+      s.addFetchBusy = false;
+      state.requestUpdate();
+    }
   }
 }
 
@@ -2116,9 +2392,9 @@ function renderGroupAddPanel(state: AppViewState) {
       </details>
 
       <div class="btn-row">
-        <button class="btn" @click=${() => toggleAddPanel(state)}>${t("settings.cancel")}</button>
+        <button class="btn" @click=${() => closeProviderAdd(state)} ?disabled=${providerBusy()}>${t("settings.cancel")}</button>
         <button class="btn primary" ?disabled=${s.saving || s.busy}
-          @click=${() => handleAddToGroupSave(state)}>
+          @click=${() => submitAddSave(handleAddToGroupSave, state)}>
           ${s.saving ? "..." : t("settings.provider.addModelSave")}
         </button>
       </div>
@@ -2137,15 +2413,14 @@ function renderAddPanel(state: AppViewState) {
 
   return html`
     <div class="oc-provider-add-panel">
-      <div class="oc-provider-add-panel__title">${t("settings.provider.addModelTitle")}</div>
+      <div class="oc-provider-add-summary"><h3 class="oc-settings__section-subtitle">${target?.providerKey ?? t("settings.provider.addModelTitle")}</h3><span class="cc-tag cc-tag--brand">${isOAuth ? providerText("订阅认证", "Subscription auth") : "API"}</span></div>
 
       <!-- 1. 选择 provider -->
-      <oc-provider-segment
-        .providers=${PROVIDER_DISPLAY_ORDER.map(p => p)}
-        .selected=${s.addProvider}
-        .labels=${getProviderLabels()}
-        @select=${(e: CustomEvent) => onAddProviderChange(e.detail.provider, state)}
-      ></oc-provider-segment>
+      <div class="oc-provider-presets" aria-label=${providerText("供应商预设", "Provider presets")}>
+        ${PROVIDER_DISPLAY_ORDER.filter(key => key !== "custom").map(key => html`<button class="oc-provider-preset" ?disabled=${providerBusy()} aria-pressed=${s.addProvider === key} @click=${() => onAddProviderChange(key, state)}><span class="oc-provider-avatar" data-provider-icon=${resolveProviderIcon(key)} aria-hidden="true">${providerIcon(key)}</span>${getProviderLabels()[key] ?? key}</button>`)}
+        ${Object.entries(CUSTOM_PRESETS).map(([key, preset]) => html`<button class="oc-provider-preset" ?disabled=${providerBusy()} aria-pressed=${s.addProvider === "custom" && s.addCustomPreset === key} @click=${() => { onAddProviderChange("custom", state); s.addCustomPreset = key; s.addModelId = getAddModelOptions()[0] ?? ""; state.requestUpdate(); }}><span class="oc-provider-avatar" data-provider-icon=${resolveProviderIcon(preset.providerKey, preset.baseUrl)} aria-hidden="true">${providerIcon(preset.providerKey, preset.baseUrl)}</span>${preset.providerKey}</button>`)}
+        <button class="oc-provider-preset" ?disabled=${providerBusy()} aria-pressed=${isManualCustom} @click=${() => onAddProviderChange("custom", state)}><span class="oc-provider-avatar" data-provider-icon="custom" aria-hidden="true">${providerIcon("custom")}</span>${providerText("自定义", "Custom")}</button>
+      </div>
 
       ${s.addProvider === "moonshot" ? html`
         <div class="oc-settings__form-group oc-mt-12">
@@ -2162,27 +2437,6 @@ function renderAddPanel(state: AppViewState) {
               ${t("setup.provider.subPlatform.moonshotCn")}
             </label>
           </div>
-        </div>
-      ` : nothing}
-
-      ${isCustom ? html`
-        <div class="oc-settings__form-group oc-mt-12">
-          <label class="oc-settings__label">${t("setup.provider.preset")}</label>
-          <select class="oc-settings__select" .value=${s.addCustomPreset}
-            @change=${(e: Event) => {
-              s.addCustomPreset = (e.target as HTMLSelectElement).value;
-              s.addModelId = "";
-              s.addShowCustomModelInput = false;
-              const o = getAddModelOptions();
-              if (o.length) s.addModelId = o[0];
-              state.requestUpdate();
-            }}>
-            <option value="__placeholder__" disabled ?selected=${!s.addCustomPreset}>${t("setup.provider.presetPlaceholder")}</option>
-            ${Object.entries(CUSTOM_PRESETS).map(([k, v]) => html`
-              <option value=${k} ?selected=${s.addCustomPreset === k}>${v.providerKey}</option>
-            `)}
-            <option value="">${t("setup.provider.presetManual")}</option>
-          </select>
         </div>
       ` : nothing}
 
@@ -2225,7 +2479,7 @@ function renderAddPanel(state: AppViewState) {
             <summary>${t("setup.provider.oauth.advanced")}</summary>
             <div class="oc-settings__form-group">
               <label class="oc-settings__label">${t("setup.provider.apiKey")}</label>
-              <oc-password-input .value=${s.addApiKey} .placeholder=${target?.placeholder ?? ""}
+              <oc-password-input .value=${s.addApiKey} .label=${t("setup.provider.apiKey")} .disabled=${providerBusy()} .placeholder=${target?.placeholder ?? ""}
                 @input=${(e: CustomEvent) => { s.addApiKey = e.detail.value; state.requestUpdate(); }}
               ></oc-password-input>
             </div>
@@ -2234,7 +2488,7 @@ function renderAddPanel(state: AppViewState) {
       ` : html`
         <div class="oc-settings__form-group oc-mt-12">
           <label class="oc-settings__label">${t("setup.provider.apiKey")}</label>
-          <oc-password-input .value=${s.addApiKey} .placeholder=${target?.placeholder ?? ""}
+          <oc-password-input .value=${s.addApiKey} .label=${t("setup.provider.apiKey")} .disabled=${providerBusy()} .placeholder=${target?.placeholder ?? ""}
             @input=${(e: CustomEvent) => { s.addApiKey = e.detail.value; state.requestUpdate(); }}
           ></oc-password-input>
           ${target?.platformUrl ? html`
@@ -2267,9 +2521,9 @@ function renderAddPanel(state: AppViewState) {
 
       <!-- 4. 保存 -->
       <div class="btn-row">
-        <button class="btn" @click=${() => toggleAddPanel(state)}>${t("settings.cancel")}</button>
+        <button class="btn" @click=${() => closeProviderAdd(state)} ?disabled=${providerBusy()}>${t("settings.cancel")}</button>
         <button class="btn primary" ?disabled=${s.saving || s.busy}
-          @click=${() => handleAddSave(state)}>
+          @click=${() => submitAddSave(handleAddSave, state)}>
           ${s.saving ? "..." : t("settings.provider.addModelSave")}
         </button>
       </div>

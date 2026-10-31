@@ -226,6 +226,50 @@ test("writeUserConfig baseSnapshot：文件不存在时快照 {} 与磁盘一致
   fs.rmSync(cfgPath, { force: true });
 });
 
+test("readUserConfigForWrite：一次新读生成独立的深层快照，不再序列化配置", async () => {
+  const { readUserConfigForWrite, writeUserConfig } = await import("./provider-config");
+  fs.mkdirSync(tmpDir, { recursive: true });
+  const raw = '{"models":{"providers":{"custom":{"models":[{"id":"original"}]}}},"__proto__":{"retained":true}}';
+  fs.writeFileSync(cfgPath, raw, "utf-8");
+  vi.mocked(fs.readFileSync).mockClear();
+  const stringify = vi.spyOn(JSON, "stringify");
+  let snapshot: ReturnType<typeof readUserConfigForWrite>;
+  try {
+    snapshot = readUserConfigForWrite();
+    expect(stringify).not.toHaveBeenCalled();
+  } finally {
+    stringify.mockRestore();
+  }
+  expect(vi.mocked(fs.readFileSync).mock.calls.filter(([p]) => String(p) === cfgPath)).toHaveLength(1);
+  const { config, baseSnapshot } = snapshot!;
+  config.models.providers.custom.models[0].id = "changed";
+  config.__proto__.retained = false;
+  expect(baseSnapshot.models.providers.custom.models[0].id).toBe("original");
+  expect(baseSnapshot.__proto__.retained).toBe(true);
+  expect(Object.hasOwn(baseSnapshot, "__proto__")).toBe(true);
+  writeUserConfig(config, { baseSnapshot });
+  expect(JSON.parse(fs.readFileSync(cfgPath, "utf-8")).models.providers.custom.models[0].id).toBe("changed");
+  fs.rmSync(cfgPath, { force: true });
+});
+
+test("readUserConfigForWrite：缺失/损坏返回两份独立空对象，IO 错误仍抛出", async () => {
+  const { readUserConfigForWrite } = await import("./provider-config");
+  fs.mkdirSync(tmpDir, { recursive: true });
+  fs.rmSync(cfgPath, { force: true });
+  for (const raw of [undefined, "{", "null", "[]", "42"]) {
+    if (raw !== undefined) fs.writeFileSync(cfgPath, raw, "utf-8");
+    const { config, baseSnapshot } = readUserConfigForWrite();
+    expect(config).toEqual({});
+    expect(baseSnapshot).toEqual({});
+    expect(config).not.toBe(baseSnapshot);
+  }
+  vi.mocked(fs.statSync).mockImplementationOnce(() => {
+    throw Object.assign(new Error("resource busy or locked, stat"), { code: "EBUSY" });
+  });
+  expect(() => readUserConfigForWrite()).toThrow(/杀毒软件/);
+  fs.rmSync(cfgPath, { force: true });
+});
+
 test("writeUserConfig baseSnapshot：未传快照的路径不做比对（启动期迁移等）", async () => {
   const { writeUserConfig } = await import("./provider-config");
   fs.mkdirSync(tmpDir, { recursive: true });

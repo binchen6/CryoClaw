@@ -1,8 +1,8 @@
 # CryoClaw 优化进度
 
 当前基线：**2026.1019.0**。2026.1018.3 及以前的五轮优化、测试基线与已闭环问题见
-[历史归档](archive/optimization-through-2026.1018.3.md)；2026.1019.0 的安装、四路 UI、
-真实消息与发布验收细节见 [验收记录](RELEASE-2026.1019.0-VERIFICATION.md)。本页只记录
+[历史归档](optimization-through-2026.1018.3.md)；2026.1019.0 的安装、四路 UI、
+真实消息与发布验收细节见 [验收记录](../RELEASE-2026.1019.0-VERIFICATION.md)。本页只记录
 当前优化循环的新增改动与下一轮候选。
 
 ## 优化循环记录
@@ -465,5 +465,5 @@ Windows 沙箱下测试可将 TEMP/TMP 指向工作区的 `.cache/maintenance-te
 - 对异步请求同时检查请求代次和所属连接/会话；有副作用的主进程调用还要保证执行顺序。
 - 键盘确认入口要区分输入法组词：`isComposing` 或 `keyCode === 229` 时不得触发提交/保存。
 - UI 采用设计 token、原生交互控件和中英对称字典；以 800px 最小窗宽检查布局和键盘操作。
-- 新发现的非平凡问题要写入 [gotchas](gotchas.md)，不再复制整段历史到当前交接页。
-- 发布流程只有 [releasing.md](releasing.md) 一份现行入口；正式版必须同时包含 exe、blockmap、latest.yml。
+- 新发现的非平凡问题要写入 [gotchas](../gotchas.md)，不再复制整段历史到当前交接页。
+- 发布流程只有 [releasing.md](../releasing.md) 一份现行入口；正式版必须同时包含 exe、blockmap、latest.yml。

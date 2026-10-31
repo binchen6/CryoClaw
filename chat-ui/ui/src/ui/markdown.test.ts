@@ -11,7 +11,7 @@ g.window ??= {
   Element: class {},
 };
 
-const { markdownCacheSize, toSanitizedMarkdownHtml } = await import("./markdown.ts");
+const { markdownCacheSize, markdownCacheStats, toSanitizedMarkdownHtml } = await import("./markdown.ts");
 
 // ── R5 任务 2：markdown LRU 防污染 ──
 
@@ -51,6 +51,23 @@ test("markdown 缓存：LRU 上限 200 条，超出后旧条目被逐出", () =>
     toSanitizedMarkdownHtml(`${prefix}${i}`);
   }
   assert.ok(markdownCacheSize() <= 200, `缓存条数应不超过 200，实际 ${markdownCacheSize()}`);
+});
+
+test("markdown cache bounds retained source + HTML, not only entry count", () => {
+  for (let i = 0; i < 200; i++) {
+    toSanitizedMarkdownHtml(`${i}:` + "&".repeat(49_990));
+  }
+  // Escaped HTML is five times larger than its source. A count-only LRU
+  // retains ~60M code units for this fixture, despite its per-input limit.
+  assert.ok(markdownCacheSize() < 20, "large escaped entries must obey the total retention budget");
+  const stats = markdownCacheStats();
+  assert.equal(stats.maxCodeUnits, 2_000_000);
+  assert.ok(stats.retainedCodeUnits <= stats.maxCodeUnits);
+  const hottest = "199:" + "&".repeat(49_990);
+  toSanitizedMarkdownHtml(hottest);
+  assert.deepEqual(markdownCacheStats(), stats, "LRU promotion must not double-count retained strings");
+  toSanitizedMarkdownHtml(hottest, { bypassCache: true });
+  assert.deepEqual(markdownCacheStats(), stats, "streaming bypass must not change retention accounting");
 });
 
 // ── markdown 渲染引擎增强 ──

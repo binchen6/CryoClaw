@@ -657,6 +657,54 @@ async function testStaleRetryBudgetExhaustedRecoversOnSessionSwitch() {
   }
 }
 
+// 旧轮次的补拉 deadline 泄漏到新 run：换轮只重置档位、不取消挂起定时器时，旧 deadline
+// 会在新 run 里到期——多打一次 chat.history，并提前吃掉本轮的档位预算。
+async function testStaleRetryFromOldRoundDoesNotSpendNewRound() {
+  installBrowserGlobals(new FakeRaf());
+  mock.timers.enable({ apis: ["setTimeout"] });
+  try {
+    const local = [1, 2, 3].map((i) => ({ role: "user", content: [{ type: "text", text: `m${i}` }] }));
+    let historyCalls = 0;
+    const client = {
+      request: async (method: string) => {
+        if (method === "chat.history") {
+          historyCalls++;
+          return { messages: [local[0]] }; // 恒短读：留在滞后保留 + 补拉链
+        }
+        return {};
+      },
+    } as any;
+    const flush = async () => {
+      for (let i = 0; i < 5; i++) await new Promise((r) => setImmediate(r));
+    };
+    const state = makeState({ client, sessionKey: "session-A", chatMessages: [...local], chatRunId: null });
+
+    // 第 1 轮：触发滞后保留，挂起 600ms 首档补拉。
+    await loadChatHistory(state, { mergeIfStale: true });
+    assert.equal(historyCalls, 1);
+
+    // 第 2 轮在同会话内开始 → noteStaleRetryNewRound 换轮。
+    await sendChatMessage(state, "new round", undefined, undefined);
+    await flush();
+    const callsAfterSend = historyCalls;
+
+    // 旧轮次的 600ms deadline 到期：不得为新轮打 RPC。
+    mock.timers.tick(600);
+    await flush();
+    assert.equal(historyCalls, callsAfterSend, "旧轮次的 deadline 不得在新 run 里发出 chat.history");
+
+    // 新轮仍持有满额预算：自己的首档补拉到点就发出。
+    await loadChatHistory(state, { mergeIfStale: true });
+    const beforeNewRetry = historyCalls;
+    mock.timers.tick(600);
+    await flush();
+    assert.equal(historyCalls, beforeNewRetry + 1, "新轮次应仍有 600ms 首档预算");
+  } finally {
+    mock.timers.reset();
+    cancelStaleHistoryRetryForTests();
+  }
+}
+
 // 发送失败（非 preserveRunState）：乐观 user 气泡打 cryoclawSendFailed 标记 + 注入错误卡，
 // 供 onResendError 重发时一并移除（防重发后新旧两条 user 气泡并存）。
 async function testSendFailureMarksLocalEchoForResend() {
@@ -836,6 +884,99 @@ async function testCumulativeFrameBudgetDegradesLaterFiles() {
   const echo = state.chatMessages[0] as Record<string, unknown>;
   assert.deepEqual(echo.MediaPaths, ["/tmp/big.bin"], "乐观气泡 MediaPaths 只含成功编码的文件");
   assert.deepEqual(echo.MediaTypes, ["application/octet-stream"], "降级文件不占 MediaTypes 槽位");
+}
+
+// 多附件并发必须有界：附件数量本身没有上限，全部同时读盘会放大 IPC 与 base64 内存压力。
+// 乱序完成仍按原附件顺序消费，顺序与帧预算结算顺序都不能变。
+async function testFileAttachmentReadsStartConcurrentlyAndKeepOrder() {
+  installBrowserGlobals(new FakeRaf());
+  const paths = Array.from({ length: 6 }, (_, index) => `/tmp/${index + 1}.txt`);
+  const base64 = ["MQ==", "Mg==", "Mw==", "NA==", "NQ==", "Ng=="];
+  const started: string[] = [];
+  const pending = new Map<string, (value: unknown) => void>();
+  let active = 0;
+  let maxActive = 0;
+  stubReadFileBase64((path: string) => {
+    started.push(path);
+    active++;
+    maxActive = Math.max(maxActive, active);
+    return new Promise((resolve) => {
+      pending.set(path, (value) => {
+        active--;
+        resolve(value);
+      });
+    });
+  });
+  const requests: Array<Record<string, unknown>> = [];
+  const state = makeState({
+    client: {
+      request: async (_method: string, params: Record<string, unknown>) => {
+        requests.push(params);
+        return {};
+      },
+    },
+  });
+  const flush = async () => {
+    for (let i = 0; i < 12; i++) await Promise.resolve();
+    await new Promise(resolve => setImmediate(resolve));
+  };
+
+  const send = sendChatMessage(state, "six files", paths.map((filePath, index) => ({
+    id: `a${index + 1}`, filePath, name: `${index + 1}.txt`,
+  })) as never);
+
+  await flush();
+  assert.deepEqual(started, paths.slice(0, 4), "前四个读取完成前不得启动第五个");
+  assert.equal(maxActive, 4, "最多只能有四个在途读取");
+
+  for (const index of [3, 1, 0, 2]) {
+    pending.get(paths[index])!({ base64: base64[index], size: 1, mimeType: "text/plain" });
+    await flush();
+  }
+  assert.deepEqual(started, paths, "读取槽位释放后应按原顺序启动剩余文件");
+  pending.get(paths[5])!({ base64: base64[5], size: 1, mimeType: "text/plain" });
+  pending.get(paths[4])!({ base64: base64[4], size: 1, mimeType: "text/plain" });
+
+  assert.ok(await send, "发送应成功");
+  assert.equal(maxActive, 4);
+  const atts = requests[0].attachments as Array<Record<string, unknown>>;
+  assert.deepEqual(atts.map(a => a.fileName), paths.map((_, index) => `${index + 1}.txt`), "附件顺序必须与用户选择顺序一致");
+  assert.deepEqual(atts.map(a => a.content), base64);
+  const echo = state.chatMessages[0] as Record<string, unknown>;
+  assert.deepEqual(echo.MediaPaths, paths);
+}
+
+// 并发后必须立刻接住 rejection：先失败的读取可能比轮到它更早 reject。
+async function testEarlyFailedAttachmentReadDoesNotRejectUnhandled() {
+  installBrowserGlobals(new FakeRaf());
+  const failures: unknown[] = [];
+  const onUnhandled = (reason: unknown) => { failures.push(reason); };
+  process.on("unhandledRejection", onUnhandled);
+  try {
+    const resolves = new Map<string, (value: unknown) => void>();
+    stubReadFileBase64((path: string) => {
+      if (path.includes("missing")) return Promise.reject(new Error("ENOENT"));
+      return new Promise((resolve) => { resolves.set(path, resolve); });
+    });
+    const requests: Array<Record<string, unknown>> = [];
+    const state = makeState({
+      client: { request: async (_method: string, params: Record<string, unknown>) => { requests.push(params); return {}; } },
+    });
+    const send = sendChatMessage(state, "mixed", [
+      { id: "a1", filePath: "/tmp/first.txt", name: "first.txt" },
+      { id: "a2", filePath: "/tmp/missing.bin", name: "missing.bin" },
+    ] as never);
+    for (let i = 0; i < 8; i++) await Promise.resolve();
+    // 首个读取仍悬着，第二个已失败——此刻不得有 unhandled rejection。
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.deepEqual(failures, [], "提前失败的读取不得变成 unhandled rejection");
+    resolves.get("/tmp/first.txt")!({ base64: "MQ==", size: 1, mimeType: "text/plain" });
+    assert.ok(await send);
+    assert.equal((requests[0].attachments as unknown[]).length, 1, "读取失败的文件降级为文本前缀");
+    assert.match(String(requests[0].message), /\/tmp\/missing\.bin/);
+  } finally {
+    process.off("unhandledRejection", onUnhandled);
+  }
 }
 
 // R41 Task 2：同会话终态刷新（mergeIfStale）保留现有可见数，不重走渐进注水——
@@ -2052,7 +2193,30 @@ async function testFinalSkipsPartialWhenReplyAlreadyInHistory() {
   );
 }
 
+async function testPendingHistoryReadDoesNotFreezeInitialHydration() {
+  installBrowserGlobals(new FakeRaf());
+  mock.timers.enable({ apis: ["setTimeout"] });
+  try {
+    const messages = Array.from({ length: 80 }, (_, i) => ({ role: "user", content: `history-${i}` }));
+    const state = makeState({ client: { request: async () => ({ messages }) } });
+    await loadChatHistory(state);
+    assert.equal(state.chatVisibleMessageCount, 20);
+    let rejectRead!: (error: Error) => void;
+    state.client.request = () => new Promise((_, reject) => { rejectRead = reject; });
+    const pending = loadChatHistory(state, { mergeIfStale: true, silent: true });
+    mock.timers.tick(32);
+    assert.equal(state.chatVisibleMessageCount, 60, "waiting for a refresh must not freeze the first history load");
+    rejectRead(new Error("offline"));
+    await pending;
+    mock.timers.tick(32);
+    assert.equal(state.chatVisibleMessageCount, 80, "failed refresh must leave hydration running");
+  } finally {
+    mock.timers.reset();
+  }
+}
+
 async function main() {
+  await testPendingHistoryReadDoesNotFreezeInitialHydration();
   await testChatStreamIsRafThrottled();
   await testLoadChatHistoryBatchesInitialRender();
   await testDeltaAfterToolUseShowsOnlyTrailingText();
@@ -2073,10 +2237,13 @@ async function main() {
   await testStaleRetryBackoffAndCancelOnReplace();
   await testStaleRetryAbortedOnSessionSwitch();
   await testStaleRetryBudgetResetsOnTargetSessionSwitch();
+  await testStaleRetryFromOldRoundDoesNotSpendNewRound();
   await testStaleRetryBudgetExhaustedRecoversOnSessionSwitch();
   await testSendFailureMarksLocalEchoForResend();
   await testPreserveRunStateFailureDoesNotInject();
   await testSendFileAttachmentGoesBase64AndEchoHasMediaPaths();
+  await testFileAttachmentReadsStartConcurrentlyAndKeepOrder();
+  await testEarlyFailedAttachmentReadDoesNotRejectUnhandled();
   await testOversizedFileFallsBackToTextPrefix();
   await testSendFailureKeepsResendAttachments();
   await testCumulativeFrameBudgetDegradesLaterFiles();

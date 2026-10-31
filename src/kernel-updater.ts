@@ -67,6 +67,12 @@ export type Deps = {
 let deps: Deps | null = null;
 let running = false;
 let lastCheck: Partial<KernelUpdateState> = {};
+let checkInFlight: Promise<KernelUpdateState> | null = null;
+let quitting = false;
+const QUIT_ERROR = "应用正在退出，已取消内核任务";
+function assertNotQuitting(): void {
+  if (quitting) throw new Error(QUIT_ERROR);
+}
 
 function resolveUpdaterScript(): string {
   return path.join(resolveResourcesPath(), "updater", "kernel-update.mjs");
@@ -127,6 +133,9 @@ let liveUpdaterChild: ReturnType<typeof spawn> | null = null;
 
 /** 应用退出序列调用：终止在跑的 updater 子进程（幂等）。 */
 export function terminateKernelUpdaterForQuit(): void {
+  // Permanent for this process: an awaited child/gateway operation may settle
+  // after teardown started, but must never launch another updater or restart.
+  quitting = true;
   if (liveUpdaterChild && liveUpdaterChild.exitCode === null && !liveUpdaterChild.killed) {
     log.warn("[kernel-updater] 应用退出：终止在跑的内核更新子进程");
     try {
@@ -139,6 +148,7 @@ export function terminateKernelUpdaterForQuit(): void {
 /** 运行 updater 脚本，逐行解析 JSONL 协议；onEvent 抛错不影响子进程。 */
 function runUpdater(args: string[], onEvent: (e: UpdaterEvent) => void): Promise<UpdaterEvent[]> {
   return new Promise((resolve, reject) => {
+    assertNotQuitting();
     const script = resolveUpdaterScript();
     const child = spawn(resolveNodeBin(), [script, ...args], {
       env: {
@@ -214,28 +224,34 @@ function runUpdater(args: string[], onEvent: (e: UpdaterEvent) => void): Promise
 
 export async function checkKernelUpdate(): Promise<KernelUpdateState> {
   // 升级/回退进行中直接返回缓存状态，不 spawn --check：避免 swap 中途并发读版本
-  if (running) return getKernelUpdateState();
+  if (running || quitting) return getKernelUpdateState();
   if (!isKernelUpdaterAvailable()) return getKernelUpdateState();
-  const events = await runUpdater(["--check"], () => {});
-  // 探测期间编排可能已开跑（running 翻转）：此时读到的版本可能是换装中途态，
-  // 丢弃本次结果，保持缓存状态不被污染。
-  if (running) return getKernelUpdateState();
-  const state = events.find((e) => e.type === "state");
-  if (state && state.type === "state") {
-    lastCheck = {
-      current: state.current,
-      latest: state.latest,
-      updateAvailable: state.updateAvailable,
-      rollbackAvailable: state.rollbackAvailable ?? false,
-      checkError: state.checkError ?? null,
-      stableSource: state.stableSource ?? null,
-    };
+  // Only coalesce overlapping probes. A later explicit check must reach the
+  // registry again, including after errors; this is not a freshness cache.
+  if (!checkInFlight) {
+    checkInFlight = (async () => {
+      const events = await runUpdater(["--check"], () => {});
+      if (running || quitting) return getKernelUpdateState();
+      const state = events.find((e) => e.type === "state");
+      if (state && state.type === "state") {
+        lastCheck = {
+          current: state.current,
+          latest: state.latest,
+          updateAvailable: state.updateAvailable,
+          rollbackAvailable: state.rollbackAvailable ?? false,
+          checkError: state.checkError ?? null,
+          stableSource: state.stableSource ?? null,
+        };
+      }
+      return getKernelUpdateState();
+    })().finally(() => { checkInFlight = null; });
   }
-  return getKernelUpdateState();
+  return checkInFlight;
 }
 
 /** Upgrade to the curated stable pin when tag is absent, or roll back. */
 async function orchestrate(args: string[], source: "auto" | "manual" = "manual"): Promise<KernelUpdateResult> {
+  if (quitting) return { ok: false, error: QUIT_ERROR };
   if (!deps) return { ok: false, error: "kernel-updater 未初始化" };
   if (running) return { ok: false, error: "已有内核升级任务进行中" };
   if (!isKernelUpdaterAvailable()) return { ok: false, error: "当前环境缺少内核升级器资源" };
@@ -247,6 +263,10 @@ async function orchestrate(args: string[], source: "auto" | "manual" = "manual")
   // 追踪是否走到过 swap 阶段：走到过说明 asar 可能已被换装，失败时需先自动回滚
   let sawSwap = false;
   try {
+    // Finish the metadata probe before stopping the gateway or swapping trees.
+    // Its failure must not prevent a separately verified update/rollback.
+    if (checkInFlight) await checkInFlight.catch(() => {});
+    assertNotQuitting();
     d.push({ step: "gateway-stop", pct: 0, msg: "停止 Gateway", source });
     await d.stopGateway();
 
@@ -256,6 +276,7 @@ async function orchestrate(args: string[], source: "auto" | "manual" = "manual")
         d.push({ step: e.step, pct: e.pct, msg: e.msg, source });
       }
     });
+    assertNotQuitting();
     const done = events.find((e) => e.type === "done");
     if (!done || done.type !== "done") {
       throw new Error("updater 未返回完成事件");
@@ -266,7 +287,9 @@ async function orchestrate(args: string[], source: "auto" | "manual" = "manual")
     migrateOpenclawConfigForKernelUpgrade();
 
     d.push({ step: "gateway-start", pct: 97, msg: "重启 Gateway 并健康检查", source });
+    assertNotQuitting();
     const healthy = await d.startGateway();
+    assertNotQuitting();
     if (healthy) {
       lastCheck = { current: done.to, latest: lastCheck.latest ?? null, updateAvailable: false, rollbackAvailable: true };
       // 终态事件：自动升级的全局横幅靠它收敛（done 几秒后自动消失）；
@@ -290,10 +313,13 @@ async function orchestrate(args: string[], source: "auto" | "manual" = "manual")
       await runUpdater(["--rollback"], (e) => {
         if (e.type === "progress") d.push({ step: e.step, pct: e.pct, msg: e.msg, source });
       });
+      assertNotQuitting();
       // 回滚换装完成、重启 gateway 前重跑配置迁移：双向规则会把
       // tools.updatePlan 等 2026.8 新落位搬回旧内核位置，保证旧内核校验通过
       migrateOpenclawConfigForKernelUpgrade();
+      assertNotQuitting();
       const restored = await d.startGateway();
+      assertNotQuitting();
       const error = restored
         ? `新内核 ${done.to} 启动失败，已自动回滚到 ${done.from}`
         : `新内核 ${done.to} 启动失败，自动回滚后仍无法启动，请手动检查`;
@@ -304,6 +330,9 @@ async function orchestrate(args: string[], source: "auto" | "manual" = "manual")
     d.push({ step: "error", pct: 100, msg: error, source });
     return { ok: false, error };
   } catch (err: any) {
+    // Quit owns teardown. Leave recovery journals for next startup instead of
+    // launching a rollback child or resurrecting Gateway behind that teardown.
+    if (quitting) return { ok: false, error: QUIT_ERROR };
     log.error(`[kernel-updater] ${err?.message ?? err}`);
     // 脚本在 swap 之后失败：asar 可能已被换装，先尽力回滚（best-effort，失败吞掉）
     if (sawSwap) {
@@ -311,6 +340,7 @@ async function orchestrate(args: string[], source: "auto" | "manual" = "manual")
         await runUpdater(["--rollback"], (e) => {
           if (e.type === "progress") d.push({ step: e.step, pct: e.pct, msg: e.msg, source });
         });
+        assertNotQuitting();
         // best-effort 回滚成功：恢复启动前同样把配置迁回旧内核落位
         migrateOpenclawConfigForKernelUpgrade();
       } catch (rollbackErr: any) {
@@ -319,6 +349,7 @@ async function orchestrate(args: string[], source: "auto" | "manual" = "manual")
     }
     // 仅当 gateway 原本在运行时才恢复启动；恢复失败必须在错误文案中透出，
     // 否则用户只看到“升级失败”，不知道 gateway 已停摆。
+    if (quitting) return { ok: false, error: QUIT_ERROR };
     let restored = true;
     if (wasRunning) {
       try {

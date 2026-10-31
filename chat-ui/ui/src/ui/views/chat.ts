@@ -15,7 +15,10 @@ import "../components/oc-chat-stream.ts";
 // 历史 memo 调用点也随之移入组件（接线见 renderChat 线程内 hero 与 <oc-chat-stream> 之间）
 import "../components/oc-chat-history.ts";
 import "../components/oc-turn-files.ts";
+import "../components/oc-command-jobs.ts";
 import { computeStopButtonVisible } from "./chat-stop-button-gate.ts";
+import { resolveChatShortcut } from "../keyboard-shortcuts.ts";
+import { findOpenDialog } from "../dialog-a11y.ts";
 import { resolveModelSelectKey } from "../controllers/models.ts";
 import { resolveActiveToolName } from "../chat/tool-summary.ts";
 import { appendQuoteToDraft } from "../chat/quote-text.ts";
@@ -244,12 +247,11 @@ function ensureChatShortcuts(props: ChatProps) {
     // 设置/任务等页面按 Ctrl+N 会在无关视图上弹「新建对话」确认框。以聊天视图
     // 独有的输入框容器存在与否判定当前视图。
     if (!document.querySelector(".chat-compose__field")) return;
-    if (!ev.ctrlKey || ev.metaKey || ev.altKey || ev.shiftKey) return;
-    const key = ev.key.toLowerCase();
-    if (key === "n") {
+    const action = resolveChatShortcut(ev, Boolean(document.querySelector("dialog[open]") || findOpenDialog()));
+    if (action === "new-session") {
       ev.preventDefault();
       chatShortcutProps?.onNewSession?.();
-    } else if (key === "l") {
+    } else if (action === "focus-composer") {
       ev.preventDefault();
       document.querySelector<HTMLTextAreaElement>(".chat-compose__field textarea")?.focus();
     }
@@ -592,6 +594,7 @@ export function renderChat(props: ChatProps) {
         .workspacePath=${props.workspacePath ?? ""} .runActive=${isBusy}
         .gitAvailable=${props.gitAvailable === true}
         .onOpenFile=${(path: string) => openChatPath(path, props)}></oc-turn-files>
+      <oc-command-jobs .messages=${props.toolMessages} .sessionKey=${props.sessionKey} .locale=${getLocale()}></oc-command-jobs>
       ${renderProgressCard(props.progressCard ?? null, {
         sessionKey: props.sessionKey,
         collapsed: props.progressCardCollapsed ?? false,

@@ -458,7 +458,7 @@ test("renderToolCardSidebar：长输出走卡内输出区块，超 20 行出现�
     renderToolCardSidebar({ kind: "call", name: "exec", args: { command: "ls" }, text }),
   );
   const strings = result.strings.join("");
-  assert.ok(strings.includes("chat-tool-card__output"), "缺卡内输出区块");
+  assert.ok(strings.includes("chat-tool-sheet__code"), "缺卡内代码输出区块");
   assert.ok(strings.includes("chat-tool-card__output-meta"), "缺输出规模元信息行");
   assert.ok(!strings.includes("chat-tool-card__more"), "未截断时不应出现「查看完整输出」入口");
 });
@@ -466,10 +466,41 @@ test("renderToolCardSidebar：长输出走卡内输出区块，超 20 行出现�
 test("renderToolCardSidebar：超长输出截断并给出「查看完整输出」入口", () => {
   const text = "x".repeat(9_000);
   const result = collect(
-    renderToolCardSidebar({ kind: "call", name: "exec", args: { command: "cat big.log" }, text }),
+    renderToolCardSidebar({ kind: "call", name: "exec", args: { command: "cat big.log" }, text }, () => {}),
   );
   const strings = result.strings.join("");
   assert.ok(strings.includes("chat-tool-card__more"), "截断时应出现「查看完整输出」入口");
+});
+
+test("code sheets retain uncapped source for sidebar and copy, without a no-op full button", async () => {
+  const text = "x".repeat(9_000);
+  const card = { kind: "call" as const, name: "exec", args: { command: "cat big.log" }, text };
+  let full = "";
+  const withSidebar = collect(renderToolCardSidebar(card, content => { full = content; }));
+  const fullClick = withSidebar.values.find(value => typeof value === "function" && String(value).includes("formatToolOutputForSidebar(section.text")) as (() => void) | undefined;
+  assert.ok(fullClick, "full-output action must be bound");
+  fullClick();
+  assert.ok(full.includes(text), "sidebar receives the full 9k source, not the visible slice");
+  const withoutSidebar = collect(renderToolCardSidebar(card));
+  assert.ok(!withoutSidebar.strings.join("").includes("chat-tool-card__more"), "no callback must not produce a no-op full button");
+  const copyClicks = withoutSidebar.values.filter(value => typeof value === "function" && String(value).includes("const text = getText()")) as Array<(event: Event) => Promise<void>>;
+  assert.equal(copyClicks.length, 3, "card header, command and output each retain a source-copy action");
+  const copied: string[] = [];
+  const previousClipboard = Object.getOwnPropertyDescriptor(navigator, "clipboard");
+  const previousTimeout = window.setTimeout;
+  Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: async (value: string) => { copied.push(value); } } });
+  window.setTimeout = (() => 0) as unknown as typeof window.setTimeout;
+  try {
+    for (const click of copyClicks) {
+      const button = { dataset: {}, isConnected: true, title: "", setAttribute() {} };
+      await click({ currentTarget: button, stopPropagation() {} } as unknown as Event);
+    }
+    assert.deepEqual(copied, [text, "cat big.log", text]);
+  } finally {
+    window.setTimeout = previousTimeout;
+    if (previousClipboard) Object.defineProperty(navigator, "clipboard", previousClipboard);
+    else Reflect.deleteProperty(navigator, "clipboard");
+  }
 });
 
 // ── CSS 结构审计：横向溢出防线的可自动化部分 ──

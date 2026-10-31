@@ -42,18 +42,41 @@
   animation-duration: var(--duration-normal);
   animation-timing-function: var(--ease-standard);
 }
-::view-transition-old(page-content), ::view-transition-old(settings-content) {
-  animation: oc-fade-out var(--duration-fast) var(--ease-standard) both;
+::view-transition-old(page-content), ::view-transition-old(settings-content), ::view-transition-old(task-content) {
+  animation: oc-nav-forward-out var(--duration-fast) var(--ease-standard) both;
 }
-::view-transition-new(page-content), ::view-transition-new(settings-content) {
-  animation: rise var(--duration-normal) var(--ease-standard) both;
+::view-transition-new(page-content), ::view-transition-new(settings-content), ::view-transition-new(task-content) {
+  animation: oc-nav-forward-in var(--duration-normal) var(--ease-standard) both;
+}
+:root[data-navigation-direction="back"]::view-transition-old(page-content),
+:root[data-navigation-direction="back"]::view-transition-old(settings-content),
+:root[data-navigation-direction="back"]::view-transition-old(task-content) {
+  animation-name: oc-nav-back-out;
+}
+:root[data-navigation-direction="back"]::view-transition-new(page-content),
+:root[data-navigation-direction="back"]::view-transition-new(settings-content),
+:root[data-navigation-direction="back"]::view-transition-new(task-content) {
+  animation-name: oc-nav-back-in;
 }
 
-/* 顶层视图切换入场：keyed(cryoclawView) 保证切视图时重建 DOM（多个视图的根都是
-   div，Lit 原位复用不触发动画），动画只在新节点插入时跑一次；同视图内重渲染
-   原位更新，不会反复播放。keyframes 复用 base.css 的全局 rise（8px 上浮淡入）。 */
+@keyframes oc-nav-forward-out { to { opacity: 0; transform: translateX(-4px); } }
+@keyframes oc-nav-forward-in { from { opacity: 0; transform: translateX(8px); } }
+@keyframes oc-nav-back-out { to { opacity: 0; transform: translateX(4px); } }
+@keyframes oc-nav-back-in { from { opacity: 0; transform: translateX(-8px); } }
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(page-content), ::view-transition-old(settings-content), ::view-transition-old(task-content),
+  ::view-transition-new(page-content), ::view-transition-new(settings-content), ::view-transition-new(task-content) {
+    animation: none !important;
+  }
+}
+
+/* keyed 重建与原生快照共用方向，避免 DOM 与 snapshot 两套动效打架。 */
 .cryoclaw-content > * {
-  animation: rise var(--duration-normal) var(--ease-standard);
+  animation: oc-nav-forward-in var(--duration-normal) var(--ease-standard);
+}
+:root[data-navigation-direction="back"] .cryoclaw-content > * {
+  animation-name: oc-nav-back-in;
 }
 
 .cryoclaw-content > .card.chat {

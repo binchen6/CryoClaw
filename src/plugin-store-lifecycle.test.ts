@@ -31,7 +31,11 @@ vi.mock("./skill-store", async importOriginal => ({
 }));
 
 useTempStateDir("plugin-store-lifecycle-");
-beforeEach(() => { vi.resetModules(); h.handlers.clear(); h.calls.length = 0;h.inventory.mockReset(); h.jsonGet.mockReset(); });
+beforeEach(() => {
+  vi.resetModules();
+  fs.rmSync(path.join(process.env.OPENCLAW_STATE_DIR!, "cache"), { recursive: true, force: true });
+  h.handlers.clear(); h.calls.length = 0;h.inventory.mockReset(); h.jsonGet.mockReset();
+});
 
 const trustedEvent = { senderFrame: { url: pathToFileURL(path.join(process.cwd(), "chat-ui", "dist", "index.html")).href } };
 const output = JSON.stringify({ plugins: [{ id: "sample", name: "Sample", version: "1.2.3", enabled: true }] });
@@ -54,6 +58,27 @@ test("first extension visit loads the list once, shares concurrent visits and re
   expect(await second).toEqual(await first);
   expect(await list(trustedEvent)).toEqual(await first);
   expect(h.calls).toHaveLength(1);
+});
+
+test("successful snapshot survives module reload and a plugin change invalidates it", async () => {
+  await register();
+  const list = h.handlers.get("plugin-store:list")!;
+  const first = list(trustedEvent);
+  h.calls[0].done(null, output, "");
+  const expected = await first;
+  vi.resetModules();
+  await register();
+  const warmList = h.handlers.get("plugin-store:list")!;
+  expect(await warmList(trustedEvent)).toEqual(expected);
+  expect(h.calls).toHaveLength(1);
+  const uninstall = h.handlers.get("plugin-store:uninstall")!;
+  const removed = uninstall(trustedEvent, { id: "sample" });
+  h.calls[1].done(null, "", "");
+  expect((await removed).success).toBe(true);
+  const next = warmList(trustedEvent);
+  h.calls[2].done(null, output, "");
+  expect((await next).success).toBe(true);
+  expect(h.calls).toHaveLength(3);
 });
 
 test("a failed first scan is retryable on the next extension visit", async () => {

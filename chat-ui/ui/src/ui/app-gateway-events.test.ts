@@ -250,6 +250,35 @@ test("app-gateway.ts：预对齐拉历史后做回复检查（R1，此前只拉�
   );
 });
 
+test("app-gateway.ts：watchdog 阈值同 tick 只发一次 silent history", async () => {
+  const s = src("app-gateway.ts");
+  const start = s.indexOf("const STREAM_IDLE_TIMEOUT_MS");
+  const end = s.indexOf("// R41 重连盲区补强", start);
+  assert.ok(start >= 0 && end > start, "无法定位 stalled-stream 实现");
+  const { default: ts } = await import("typescript");
+  const { runInNewContext } = await import("node:vm");
+  const compiled = ts.transpileModule(`${s.slice(start, end)}\nmodule.exports={checkStalledStream};`, {
+    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS },
+  }).outputText;
+  const module = { exports: {} };
+  let historyCalls = 0;
+  const host = {
+    chatRunId: "run-1", chatLastActivityAt: 0, chatStreamStartedAt: 0,
+    chatMessages: [], chatAbortPending: false, sessionKey: "session-1",
+  };
+  runInNewContext(compiled, {
+    module, exports: module.exports,
+    Date: { now: () => 180_001 },
+    shouldStreamPreAlign: () => true,
+    isStreamStalled: ({ now, lastActivityAt, idleMs }: any) => now - lastActivityAt > idleMs,
+    loadChatHistory: async () => { historyCalls++; return {}; },
+    hasAssistantReplyAfter: () => false,
+  });
+  await (module.exports as any).checkStalledStream(host);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(historyCalls, 1, "stall 已成立时由 watchdog 独占探测，pre-align 不得重复拉取");
+});
+
 test("app-gateway.ts：onClose 分支调用 cancelReconnectOrphanProbe（新断连作废旧探测）", () => {
   const s = src("app-gateway.ts");
   const start = s.indexOf("onClose: ({ code, reason }) => {");

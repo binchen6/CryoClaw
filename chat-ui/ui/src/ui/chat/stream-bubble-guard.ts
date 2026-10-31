@@ -5,10 +5,22 @@
 // 对齐落盘），chatStream 气泡仍在渲染——同一段文本双份上屏。
 // 此处按内容判定：历史末条 assistant 消息文本与流式文本归一化后相同 → 跳过流式气泡，
 // 让历史成为唯一渲染源。与 app 层清态互不依赖，双保险。
-import { extractText } from "./message-extract.ts";
+import { extractTextCached } from "./message-extract.ts";
 
 function normalizeForComparison(text: string): string {
   return text.replace(/\s+/g, " ").trim();
+}
+
+const normalizedHistoryTextCache = new WeakMap<object, string>();
+
+function normalizedHistoryText(message: object): string | null {
+  const cached = normalizedHistoryTextCache.get(message);
+  if (cached !== undefined) return cached;
+  const text = extractTextCached(message);
+  if (text == null) return null;
+  const normalized = normalizeForComparison(text);
+  normalizedHistoryTextCache.set(message, normalized);
+  return normalized;
 }
 
 /**
@@ -28,11 +40,11 @@ export function isStreamTextDuplicatedInHistory(
     if (message?.role !== "assistant") {
       continue;
     }
-    const text = extractText(messages[i]);
+    const text = normalizedHistoryText(message);
     if (text == null) {
       continue;
     }
-    return normalizeForComparison(text) === normalizedStream;
+    return text === normalizedStream;
   }
   return false;
 }

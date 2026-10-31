@@ -526,3 +526,5 @@ Things that are easy to get wrong or forget when working on CryoClaw.
 193. **`-webkit-app-region: drag` 会吞掉子元素的鼠标点击，而且 CDP 合成点击查不出来。** 图标轨 `.oc-rail` 整列是 drag 区域，供拖动窗口；里面的按钮必须显式 `-webkit-app-region: no-drag` 才收得到点击。额度圆环 `.chat-quota__trigger[data-placement="rail"]` 漏了这条，真实鼠标按下被当成拖窗，用户报「圆环点不开」，而 `Input.dispatchMouseEvent` 走的是渲染进程命中测试、绕过系统拖拽判定，探针里一切正常。判别：某控件在真实鼠标下失效、在 CDP 点击/合成事件下正常，先查它的 drag 祖先链，再查 `getComputedStyle(el).webkitAppRegion`。回归要断言计算样式或 CSS 声明，不要只断言点击结果。
 
 194. **原生 `popover="auto"` 不要用手写 click 开关。** light dismiss 在 pointerdown 就把浮层关掉，随后 click 处理器再读到 `:popover-open === false` 便 `showPopover()` 重开——表现为「再点一次关不掉」。正确写法是触发器声明 `popovertarget="<panel id>"` + `popovertargetaction="toggle"`，由浏览器统一开关；打开的副作用挂 `beforetoggle`/`toggle`（读 `event.newState`），关闭后的收尾（清查询词、`aria-expanded` 复位、焦点回触发器）也在 `toggle` 里做。见 `chat-ui/ui/src/ui/components/oc-model-picker.ts` 与 `model-quota.ts`。
+
+195. **隔离 Electron 为 hidden 时，双 rAF 会永远等下去。** 功能 UI smoke 若在 `Runtime.evaluate` 超时，先查 `document.visibilityState`，不要删除帧等待或放宽断言。隔离 fixture 可设 `webPreferences.backgroundThrottling:false`，并在 CDP 连接后 `Page.bringToFront`；这解决的是验收环境后台节流，不是生产 renderer 修复。

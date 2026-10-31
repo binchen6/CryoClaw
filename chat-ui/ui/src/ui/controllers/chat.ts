@@ -232,6 +232,13 @@ function noteStaleRetryNewRound(sessionKey: string, roundId: string) {
     return;
   }
   staleRetryRoundKey = compound;
+  // 换轮次必须连挂起的定时器一起作废：旧轮次的 deadline 属于旧轮次的终态，
+  // 让它在新 run 里到期会既多打一次 chat.history，又提前吃掉新轮的档位预算。
+  if (staleRetryTimer !== null) {
+    clearTimeout(staleRetryTimer);
+    staleRetryTimer = null;
+  }
+  staleRetryKey = null;
   staleRetryAttempt = 0;
 }
 
@@ -268,8 +275,15 @@ function scheduleStaleHistoryRetry(state: ChatState, sessionKey: string) {
   }
   staleRetryKey = sessionKey;
   const delay = STALE_RETRY_DELAYS_MS[staleRetryAttempt];
+  // 捕获到期时的轮次：换轮（noteStaleRetryNewRound）已取消定时器，这里再校验一次，
+  // 任何漏取消的旧 deadline 都不得为新轮打 RPC 或消耗新轮预算。
+  const roundKey = staleRetryRoundKey;
   staleRetryTimer = setTimeout(() => {
     staleRetryTimer = null;
+    if (staleRetryRoundKey !== roundKey) {
+      staleRetryKey = null;
+      return;
+    }
     staleRetryAttempt++;
     // 会话已切走/断连：放弃（loadChatHistory 内部也有守卫，这里省一次无效调用）
     if (state.sessionKey !== sessionKey || !state.client || !state.connected) {
@@ -613,7 +627,8 @@ export async function loadChatHistory(
   }
   const requestSessionKey = state.sessionKey;
   const requestClient = state.client;
-  cancelChatHistoryHydration(state);
+  // A slow/failed refresh must not interrupt the first history render. Cancel
+  // its remaining batches only after a fresh snapshot actually replaces it.
   const requestSeq = ++loadChatHistorySeq;
   const generation = opts?.silent ? null : ++loadChatHistoryGeneration;
   // silent：看门狗/重连探测等静默对齐路径不置加载态——视图层只要 chatLoading 为真
@@ -724,6 +739,7 @@ export async function loadChatHistory(
       Boolean(opts?.mergeIfStale) &&
       priorCount > 0 &&
       priorCount >= state.chatMessages.length;
+    cancelChatHistoryHydration(state);
     state.chatMessages = deduplicated;
     if (keepCount) {
       // 新历史比先前可见数长时，新增消息立即可见（无需再挂注水）。
@@ -860,11 +876,33 @@ export async function sendChatMessage(
     (sum, att) => sum + (typeof att.dataUrl === "string" ? att.dataUrl.length : 0),
     0,
   );
-  for (const att of fileAttachments) {
-    const p = att.filePath!;
-    const displayName = att.name || p.split(/[\\/]/).pop() || p;
+  // 有界并发减少读盘等待，同时避免大量附件占满 IPC。结果按原索引保存，后续仍按用户
+  // 选择顺序结算共享帧预算；每个读取启动时立即接住 rejection，避免提前失败无人处理。
+  type FileReadOutcome =
+    | { ok: true; res: Awaited<ReturnType<typeof readFileBase64>> }
+    | { ok: false; error: unknown };
+  const fileReads: Array<{ p: string; displayName: string; outcome: FileReadOutcome }> = [];
+  let nextReadIndex = 0;
+  const readWorker = async () => {
+    while (nextReadIndex < fileAttachments.length) {
+      const index = nextReadIndex++;
+      const att = fileAttachments[index];
+      const p = att.filePath!;
+      const displayName = att.name || p.split(/[\\/]/).pop() || p;
+      const outcome = await readFileBase64(p).then(
+        (res): FileReadOutcome => ({ ok: true, res }),
+        (error): FileReadOutcome => ({ ok: false, error }),
+      );
+      fileReads[index] = { p, displayName, outcome };
+    }
+  };
+  if (fileAttachments.length > 0) {
+    await Promise.all(Array.from({ length: Math.min(4, fileAttachments.length) }, () => readWorker()));
+  }
+  for (const { p, displayName, outcome } of fileReads) {
     try {
-      const res = await readFileBase64(p);
+      if (!outcome.ok) throw outcome.error;
+      const res = outcome.res;
       if ("base64" in res && frameBudgetUsed + res.base64.length <= ATTACHMENT_FRAME_BUDGET_BYTES) {
         frameBudgetUsed += res.base64.length;
         fileApiAttachments.push({

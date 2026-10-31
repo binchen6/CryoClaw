@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import {execFile,ChildProcess} from 'node:child_process';
+import {pluginSnapshotFingerprint,readPluginSnapshotCache,writePluginSnapshotCache} from './plugin-snapshot-cache';
 
 export type ChannelPluginInventory={installed:Set<string>;channels:Map<string,string[]>};
 const children=new Set<ChildProcess>();
@@ -22,6 +23,9 @@ export function parseChannelPluginInventory(value:unknown):ChannelPluginInventor
 /** Use the kernel's selected manifests, including config/workspace/index recovery. */
 export async function readChannelPluginInventory(nodeBin:string,packageDir:string,stateDir:string,config:any,extraEnv:NodeJS.ProcessEnv={},allowErrors=false):Promise<ChannelPluginInventory> {
   if(quitting)throw new Error('Application is quitting');
+  const fingerprint=pluginSnapshotFingerprint({packageDir,stateDir,config,extraEnv,allowErrors});
+  const cached=readPluginSnapshotCache<unknown>({stateDir,kind:'channel-inventory',fingerprint});
+  if(cached)return parseChannelPluginInventory(cached);
   const source=fs.readFileSync(path.join(__dirname,'..','shared','channel-plugin-inventory.cjs'),'utf8');
   const env={...process.env,...extraEnv,OPENCLAW_STATE_DIR:stateDir};
   const value=await new Promise<string>((resolve,reject)=>{
@@ -34,5 +38,8 @@ export async function readChannelPluginInventory(nodeBin:string,packageDir:strin
     child.stdin?.end(JSON.stringify({distDir:path.join(packageDir,'dist'),config,allowErrors}));
   });
   if(quitting)throw new Error('Application is quitting');
-  return parseChannelPluginInventory(JSON.parse(value));
+  const raw=JSON.parse(value);
+  const parsed=parseChannelPluginInventory(raw);
+  try{writePluginSnapshotCache({stateDir,kind:'channel-inventory',fingerprint,value:raw});}catch{}
+  return parsed;
 }

@@ -6,8 +6,8 @@
 ## 基线与历史
 
 - 开始时发布版：2026.1019.0。本次开始时已有未提交改动，逐轮快照保留其原貌。
-- 旧循环 1–27 轮与历史验收已完整移至 [历史归档](archive/optimization-before-2026.1020.0.md)。
-- 约束与发版流程：[CLAUDE.md](../CLAUDE.md)、[设计规范](VISUAL-SYSTEM.md)、[发布流程](releasing.md)。
+- 旧循环 1–27 轮与历史验收已完整移至 [历史归档](optimization-before-2026.1020.0.md)。
+- 约束与发版流程：[CLAUDE.md](../../CLAUDE.md)、[设计规范](../VISUAL-SYSTEM.md)、[发布流程](../releasing.md)。
 - 无独立 lint：Chat UI typecheck 与生产 TypeScript 编译共同把关。
 - 测试/构建使用工作区 TEMP/TMP；普通用户权限执行，避免沙箱 realpath EPERM。
 

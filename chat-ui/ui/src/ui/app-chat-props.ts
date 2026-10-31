@@ -127,7 +127,7 @@ export function buildChatProps(state: AppViewState): ChatProps {
     onDraftChange: (next) => {
       state.chatMessage = next;
       const client=state.client;
-      if(client&&state.connected&&/^\s*[/／]/.test(next))void loadCommands(client).then(()=>{
+      if(client&&state.connected&&/^\s*[/／]/.test(next)&&!getCachedCommands())void loadCommands(client).then(()=>{
         if(state.client===client&&state.connected)state.requestUpdate();
       });
     },

@@ -120,7 +120,7 @@ export const CUSTOM_PROVIDER_PRESETS: Record<string, CustomProviderPreset> = {
 // 完全一致（只省磁盘读，不共享可变引用）。
 let userConfigRawCache: { mtimeMs: number; size: number; raw: string } | null = null;
 
-export function readUserConfig(): any {
+function readUserConfigRaw(): string | undefined {
   const configPath = resolveUserConfigPath();
   let st: fs.Stats;
   try {
@@ -130,7 +130,7 @@ export function readUserConfig(): any {
     // 文件不存在保持返回 {}（首次启动/setup 前是合法状态）；
     // 其他 I/O 错误（Windows 杀软/索引器瞬时锁 EBUSY/EPERM/EACCES）必须抛出——
     // 吞成 {} 会让调用方把改动合并进空对象整文件写回，providers/channels/keys 全部蒸发
-    if (err?.code === "ENOENT") return {};
+    if (err?.code === "ENOENT") return undefined;
     throw new Error(`无法读取 openclaw.json（可能被杀毒软件暂时占用），请重试: ${err?.message ?? err}`);
   }
   if (
@@ -145,9 +145,14 @@ export function readUserConfig(): any {
       throw new Error(`无法读取 openclaw.json（可能被杀毒软件暂时占用），请重试: ${err?.message ?? err}`);
     }
   }
+  return userConfigRawCache.raw;
+}
+
+function parseUserConfigRaw(raw: string | undefined): any {
+  if (raw === undefined) return {};
   let parsed: unknown;
   try {
-    parsed = JSON.parse(userConfigRawCache.raw);
+    parsed = JSON.parse(raw);
   } catch {
     // 内容损坏保持返回 {} 的原语义：由启动期 inspectUserConfigHealth 恢复流程统一处理
     return {};
@@ -156,6 +161,10 @@ export function readUserConfig(): any {
   // 标量——调用方 `config.models ??= {}` 会在 strict mode 抛裸 TypeError，且文案不可读。
   // 口径对齐 cryoclaw-config.readCryoclawConfig（typeof object + !Array.isArray）。
   return isConfigObject(parsed) ? parsed : {};
+}
+
+export function readUserConfig(): any {
+  return parseUserConfigRaw(readUserConfigRaw());
 }
 
 // 读-改-写模式专用：返回当前配置 + 读时刻快照（深拷贝，与 config 无共享引用）。
@@ -168,8 +177,9 @@ export function readUserConfig(): any {
 // "自己的旧读"误判成第三方写入，弹一个莫名其妙的"配置已被其他流程更新"。
 export function readUserConfigForWrite(): { config: any; baseSnapshot: any } {
   userConfigRawCache = null;
-  const config = readUserConfig();
-  return { config, baseSnapshot: JSON.parse(JSON.stringify(config)) };
+  // 两份对象来自同一次新读；不为快照再序列化整份配置或二次访问磁盘。
+  const raw = readUserConfigRaw();
+  return { config: parseUserConfigRaw(raw), baseSnapshot: parseUserConfigRaw(raw) };
 }
 
 // 顶层类型判定：openclaw.json 根节点必须是 JSON 对象（非 null、非数组）。

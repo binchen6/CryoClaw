@@ -53,6 +53,7 @@ test("app-tasks.ts：openTasksView 支持 tab 参数并预拉对应数据", () =
   assert.match(s, /export function openTasksView\(state: AppViewState, tab: TasksViewTab = "runs"\)/, "openTasksView 应带 tab 参数");
   assert.match(s, /loadCronJobs\(state\)/, "缺少 loadCronJobs 调用");
   assert.match(s, /loadRunHistory\(state\)/, "缺少 loadRunHistory 调用");
+  assert.match(s, /loadChannels\(state, false\)/, "任务表单需要时须加载渠道元数据，不在首屏预取");
 });
 
 test("app-gateway.ts：task 事件分支已替换为 cron 事件分支", () => {

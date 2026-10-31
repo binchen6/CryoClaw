@@ -428,3 +428,21 @@ test("late attachment callbacks and thumbnails update their source session witho
   assert.deepEqual(host.chatAttachments.map((item: any) => item.id), ["existing-a", "paste-a", "picker-a"]);
   assert.equal(host.chatAttachments[0].thumbnailUrl, "data:image/png;base64,Yg==");
 });
+
+test("cached slash commands do not schedule another load or render per keystroke", async () => {
+  const { loadCommands, resetCommands } = await import("./controllers/commands.ts");
+  const methods: string[] = [];
+  const host = makeHost(async (method: string) => {
+    methods.push(method);
+    return { commands: [{ name: "help", description: "Help", acceptsArgs: false }] };
+  });
+  resetCommands(host.client);
+  await loadCommands(host.client);
+  methods.length = 0;
+  let updates = 0;
+  host.requestUpdate = () => { updates++; };
+  buildChatProps(host).onDraftChange("/h");
+  for (let i = 0; i < 8; i++) await Promise.resolve();
+  assert.deepEqual(methods, [], "缓存命中时不应再次请求命令目录");
+  assert.equal(updates, 0, "缓存命中时不应再排队一次重渲染");
+});

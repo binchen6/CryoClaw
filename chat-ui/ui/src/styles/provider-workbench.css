@@ -1,0 +1,549 @@
+/* Settings-only provider catalog → connection detail → add flow.
+   Keep the setup wizard and legacy advanced controls on their existing styles. */
+.oc-provider-workbench {
+  container: provider-workbench / inline-size;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacer-24);
+  inline-size: 100%;
+  max-inline-size: 1040px;
+  min-inline-size: 0;
+  margin-inline: auto;
+  color: var(--text);
+  font-family: var(--font-body);
+}
+
+.oc-provider-stage {
+  min-inline-size: 0;
+  animation: oc-provider-stage-forward var(--duration-normal) var(--ease-standard) both;
+}
+
+.oc-provider-stage[data-direction="back"] {
+  animation-name: oc-provider-stage-back;
+}
+
+@keyframes oc-provider-stage-forward {
+  from { opacity: 0; transform: translateX(8px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes oc-provider-stage-back {
+  from { opacity: 0; transform: translateX(-8px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+.oc-provider-workbench :is(.oc-provider-catalog, .oc-provider-detail, .oc-provider-add-page) {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacer-24);
+  min-inline-size: 0;
+}
+
+.oc-provider-workbench :is(.oc-provider-catalog, .oc-provider-detail, .oc-provider-add-page) > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--spacer-12);
+  min-inline-size: 0;
+}
+
+.oc-provider-workbench :is(h2, .oc-provider-detail__title) {
+  margin: 0;
+  color: var(--text-strong);
+  font-family: var(--font-display);
+  font-size: var(--heading-lg);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-title);
+  letter-spacing: var(--tracking-tight);
+  overflow-wrap: anywhere;
+}
+
+.oc-provider-workbench :is(.oc-provider-catalog__hint, .oc-provider-detail__hint, .oc-provider-add-page__hint) {
+  margin: var(--spacer-6) 0 0;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  line-height: var(--leading-body);
+}
+
+.oc-provider-workbench .oc-provider-catalog > :is(.oc-model-overview, .oc-provider-filter) {
+  margin-block-end: 0;
+}
+
+/* A supplier is one destination, not a stack of individual model cards. */
+.oc-provider-workbench .oc-provider-collection {
+  display: grid;
+  gap: var(--spacer-12);
+  min-inline-size: 0;
+}
+
+.oc-provider-workbench .oc-provider-collection > :is(h3, .oc-provider-collection__title) {
+  margin: 0;
+  color: var(--text-strong);
+  font-size: var(--heading-sm);
+  font-weight: var(--weight-medium);
+  line-height: var(--leading-title);
+}
+
+.oc-provider-workbench .oc-provider-tile {
+  display: flex;
+  align-items: center;
+  gap: var(--spacer-16);
+  inline-size: 100%;
+  min-inline-size: 0;
+  min-block-size: calc(var(--spacer-40) + var(--spacer-32));
+  padding: var(--spacer-16) var(--spacer-20);
+  border: 1px solid transparent;
+  border-radius: calc(var(--radius-16) + var(--spacer-2));
+  background: var(--bg-muted);
+  color: var(--text);
+  text-align: start;
+  font: inherit;
+  cursor: pointer;
+  box-sizing: border-box;
+  transition: background-color var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard),
+    box-shadow var(--duration-fast) var(--ease-standard);
+}
+
+.oc-provider-workbench .oc-provider-tile:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: var(--border);
+}
+
+.oc-provider-workbench .oc-provider-tile:active:not(:disabled) {
+  background: var(--accent-subtle);
+  border-color: var(--focus-field-color);
+}
+
+.oc-provider-workbench :is(.oc-provider-tile, .oc-provider-preset):focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring-inset);
+}
+
+.oc-provider-workbench :is(.oc-provider-tile, .oc-provider-preset):disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.oc-provider-workbench .oc-provider-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 var(--spacer-40);
+  inline-size: var(--spacer-40);
+  block-size: var(--spacer-40);
+  border-radius: var(--radius-12);
+  background: var(--accent-subtle);
+  color: var(--accent);
+  font-size: var(--heading-lg);
+  font-weight: var(--weight-semibold);
+  line-height: 1;
+}
+
+.oc-provider-workbench .oc-provider-avatar :is(svg, img) {
+  inline-size: var(--icon-size-24);
+  block-size: var(--icon-size-24);
+  object-fit: contain;
+}
+
+.oc-provider-workbench .oc-provider-initial {
+  font-family: inherit;
+  font-size: var(--heading-md);
+  font-weight: var(--weight-semibold);
+  line-height: 1;
+}
+
+.oc-provider-workbench .oc-provider-preset .oc-provider-initial {
+  font-size: var(--text-sm);
+}
+
+.oc-provider-workbench .oc-provider-tile__body {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--spacer-6) var(--spacer-10);
+  flex: 1;
+  min-inline-size: 0;
+}
+
+.oc-provider-workbench .oc-provider-tile__body strong {
+  color: var(--text-strong);
+  font-size: var(--heading-sm);
+  font-weight: var(--weight-medium);
+  line-height: var(--leading-title);
+  overflow-wrap: anywhere;
+}
+
+.oc-provider-workbench .oc-provider-tile__meta {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--spacer-6);
+  min-inline-size: 0;
+  color: var(--text-secondary);
+  font-family: var(--font-meta);
+  font-size: var(--font-size-meta);
+  overflow-wrap: anywhere;
+}
+
+.oc-provider-workbench .oc-provider-tile__count {
+  flex: none;
+  margin-inline-start: auto;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.oc-provider-workbench .oc-provider-tile > svg,
+.oc-provider-workbench .oc-provider-tile__chevron {
+  flex: none;
+  inline-size: var(--icon-size-16);
+  block-size: var(--icon-size-16);
+  color: var(--text-muted);
+}
+
+/* Secondary controls remain reachable without competing with the main flow. */
+.oc-provider-workbench .oc-provider-secondary {
+  min-inline-size: 0;
+  padding-block-start: var(--spacer-16);
+  border-block-start: var(--hairline);
+}
+
+.oc-provider-workbench .oc-provider-secondary > summary {
+  padding-block: var(--spacer-8);
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  line-height: var(--leading-body);
+  cursor: pointer;
+}
+
+.oc-provider-workbench .oc-provider-secondary > summary:focus-visible {
+  outline: none;
+  border-radius: var(--radius-6);
+  box-shadow: var(--focus-ring-inset);
+}
+
+.oc-provider-workbench .oc-provider-secondary[open] > summary {
+  margin-block-end: var(--spacer-16);
+  color: var(--text-strong);
+}
+
+/* Connections use one page, with the existing settings scroll container. */
+.oc-provider-workbench :is(.oc-provider-detail, .oc-provider-add-page) > .oc-provider-detail__header {
+  justify-content: flex-start;
+  padding-block-end: var(--spacer-16);
+  border-block-end: var(--hairline);
+}
+
+.oc-provider-workbench .oc-provider-back {
+  flex: none;
+  min-inline-size: var(--spacer-40);
+  min-block-size: var(--spacer-40);
+  padding: var(--spacer-8);
+}
+
+.oc-provider-workbench .oc-provider-detail__header > :is(div, h2) {
+  flex: 1;
+  min-inline-size: 0;
+}
+
+.oc-provider-workbench .oc-provider-connection {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--spacer-20) var(--spacer-16);
+  min-inline-size: 0;
+}
+
+.oc-provider-workbench .oc-provider-connection > .oc-provider-connection__full {
+  grid-column: 1 / -1;
+}
+
+.oc-provider-workbench .oc-provider-connection :is(.oc-settings__form-group, .oc-provider-key-editor) {
+  min-inline-size: 0;
+  margin: 0;
+}
+
+.oc-provider-workbench :is(.oc-provider-connection, .oc-provider-model-table, .oc-provider-add-page) :is(.oc-settings__input, .oc-settings__select, .oc-password__input) {
+  min-inline-size: 0;
+  min-block-size: var(--spacer-40);
+  font-size: var(--text-base);
+}
+
+.oc-provider-workbench :is(.oc-provider-connection, .oc-provider-add-page) .oc-settings__select {
+  block-size: var(--spacer-40);
+}
+
+.oc-provider-workbench .oc-provider-model-table {
+  display: grid;
+  gap: var(--spacer-10);
+  min-inline-size: 0;
+}
+
+.oc-provider-workbench .oc-provider-detail__models-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--spacer-8) var(--spacer-16);
+  margin-block-end: var(--spacer-4);
+}
+
+.oc-provider-workbench :is(.oc-provider-model-table__head, .oc-provider-model-table__row) {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, 0.7fr) minmax(0, 1fr) calc(var(--spacer-40) * 3 + var(--spacer-6) * 2);
+  align-items: center;
+  gap: var(--spacer-12);
+  min-inline-size: 0;
+}
+
+.oc-provider-workbench .oc-provider-model-table__head {
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+}
+
+.oc-provider-workbench .oc-provider-model-table__row > * {
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+}
+
+.oc-provider-workbench .oc-provider-model-table__row > strong {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--spacer-6);
+  font-weight: var(--weight-medium);
+}
+
+.oc-provider-workbench .oc-provider-model-table__row > :first-child {
+  font-family: var(--font-meta);
+  font-size: var(--text-sm);
+}
+
+.oc-provider-workbench :is(.oc-provider-model-table__actions, .oc-provider-model-table__row > .btn-row) {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--spacer-6);
+}
+
+.oc-provider-workbench .oc-provider-model-table__row :is(.btn, .icon-btn) {
+  min-inline-size: var(--spacer-40);
+  min-block-size: var(--spacer-40);
+}
+
+.oc-provider-workbench :is(.oc-provider-detail__footer, .oc-provider-add-panel > .btn-row) {
+  position: sticky;
+  inset-block-end: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: var(--spacer-12);
+  padding-block: var(--spacer-16);
+  border-block-start: var(--hairline);
+  background: var(--bg);
+}
+
+.oc-provider-workbench .oc-provider-detail__footer > .btn.danger {
+  margin-inline-end: auto;
+}
+
+.oc-provider-workbench .oc-provider-detail__footer-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: var(--spacer-12);
+  margin-inline-start: auto;
+}
+
+/* The shared settings scroller has 48px bottom padding. Keep the add action
+   bar at its viewport edge instead of revealing fields below the sticky bar. */
+.oc-provider-workbench .oc-provider-add-page .oc-provider-add-panel > .btn-row {
+  inset-block-end: calc(-1 * var(--spacer-48));
+}
+
+/* Only this full-page flow sheds the legacy embedded add-panel border. */
+.oc-provider-workbench .oc-provider-add-page .oc-provider-add-panel {
+  gap: var(--spacer-20);
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.oc-provider-workbench .oc-provider-add-page .oc-provider-add-panel > .oc-mt-12 {
+  margin-block-start: 0;
+}
+
+.oc-provider-workbench .oc-provider-presets {
+  order: -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacer-8);
+  padding-block-end: var(--spacer-20);
+  border-block-end: var(--hairline);
+}
+
+.oc-provider-workbench .oc-provider-preset {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacer-8);
+  max-inline-size: 100%;
+  min-block-size: var(--spacer-40);
+  padding: var(--spacer-8) var(--spacer-12);
+  border: var(--hairline);
+  border-radius: var(--radius-pill);
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  text-align: start;
+  font: inherit;
+  font-size: var(--text-sm);
+  line-height: var(--leading-title);
+  overflow-wrap: anywhere;
+  cursor: pointer;
+  transition: background-color var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard),
+    box-shadow var(--duration-fast) var(--ease-standard);
+}
+
+.oc-provider-workbench .oc-provider-preset:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: var(--border-strong);
+  color: var(--text-strong);
+}
+
+.oc-provider-workbench .oc-provider-preset[aria-pressed="true"] {
+  border-color: var(--focus-field-color);
+  background: var(--accent-subtle);
+  color: var(--accent);
+}
+
+.oc-provider-workbench .oc-provider-preset .oc-provider-avatar {
+  flex-basis: var(--spacer-24);
+  inline-size: var(--spacer-24);
+  block-size: var(--spacer-24);
+  border-radius: var(--radius-6);
+  font-size: var(--text-sm);
+}
+
+.oc-provider-workbench .oc-provider-preset :is(svg, img) {
+  inline-size: var(--icon-size-16);
+  block-size: var(--icon-size-16);
+  flex: none;
+}
+
+.oc-provider-workbench .oc-provider-add-summary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--spacer-10);
+  min-inline-size: 0;
+}
+
+.oc-provider-workbench .oc-provider-add-summary > :is(h3, strong) {
+  margin: 0;
+  color: var(--text-strong);
+  font-size: var(--heading-md);
+  font-weight: var(--weight-medium);
+  overflow-wrap: anywhere;
+}
+
+@container provider-workbench (max-width: 700px) {
+  .oc-provider-workbench .oc-provider-connection {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .oc-provider-workbench .oc-provider-model-table__head {
+    display: none;
+  }
+
+  .oc-provider-workbench .oc-provider-model-table__row {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+    padding-block: var(--spacer-12);
+    border-block-end: var(--hairline);
+  }
+
+  .oc-provider-workbench .oc-provider-model-table__row > :first-child {
+    grid-column: 1 / -1;
+  }
+
+  .oc-provider-workbench .oc-provider-tile {
+    gap: var(--spacer-12);
+    padding-inline: var(--spacer-16);
+  }
+}
+
+@container provider-workbench (max-width: 420px) {
+  .oc-provider-workbench .oc-provider-catalog > header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .oc-provider-workbench :is(.oc-provider-detail, .oc-provider-add-page) > .oc-provider-detail__header {
+    display: grid;
+    grid-template-columns: auto auto minmax(0, 1fr);
+  }
+
+  .oc-provider-workbench .oc-provider-detail__header > .cc-tag {
+    grid-column: 3;
+    justify-self: start;
+  }
+
+  .oc-provider-workbench .oc-provider-tile {
+    flex-wrap: wrap;
+    gap: var(--spacer-8) var(--spacer-12);
+  }
+
+  .oc-provider-workbench .oc-provider-tile__body {
+    flex-basis: calc(100% - var(--spacer-40) - var(--spacer-12));
+  }
+
+  .oc-provider-workbench .oc-provider-tile__count {
+    margin-inline-start: calc(var(--spacer-40) + var(--spacer-12));
+  }
+
+  .oc-provider-workbench .oc-provider-tile > svg,
+  .oc-provider-workbench .oc-provider-tile__chevron {
+    margin-inline-start: auto;
+  }
+
+  .oc-provider-workbench .oc-provider-model-table__row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: var(--spacer-8);
+  }
+
+  .oc-provider-workbench .oc-provider-model-table__row > :nth-child(3) {
+    grid-column: 1;
+  }
+
+  .oc-provider-workbench .oc-provider-model-table__row > :last-child {
+    grid-column: 2;
+    grid-row: 2 / span 2;
+    align-self: start;
+  }
+
+  .oc-provider-workbench .oc-provider-detail__footer {
+    gap: var(--spacer-8);
+  }
+
+  .oc-provider-workbench .oc-provider-detail__footer > .btn.danger {
+    inline-size: 100%;
+    margin-inline-end: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .oc-provider-workbench :is(.oc-provider-tile, .oc-provider-preset) {
+    transition: none;
+  }
+  .oc-provider-stage {
+    animation: none;
+  }
+}

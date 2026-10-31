@@ -255,6 +255,134 @@ test("checkKernelUpdate：updater 输出 error 事件时退出非 0 抛错带 me
   await expect(checkKernelUpdate()).rejects.toThrow("asar 校验失败");
 });
 
+test("checkKernelUpdate：并发检查只启动一个子进程，完成后重新检查", async () => {
+  const child = makeBlockingChild();
+  let spawns = 0;
+  mockState.spawnImpl = () => { spawns++; return spawns === 1 ? child : makeChild(makeStateEvents()); };
+  const { checkKernelUpdate } = await import("./kernel-updater");
+  const checks = Array.from({ length: 8 }, () => checkKernelUpdate());
+  expect(spawns).toBe(1);
+  child.release(makeStateEvents());
+  const states = await Promise.all(checks);
+  expect(states.every((state) => state.latest === "2026.7.2")).toBe(true);
+  await checkKernelUpdate();
+  expect(spawns).toBe(2);
+});
+
+test("checkKernelUpdate：共享检查失败后所有调用报错，下一次可重试", async () => {
+  const child = makeBlockingChild();
+  let spawns = 0;
+  mockState.spawnImpl = () => { spawns++; return spawns === 1 ? child : makeChild(makeStateEvents()); };
+  const { checkKernelUpdate } = await import("./kernel-updater");
+  const checks = [checkKernelUpdate(), checkKernelUpdate()];
+  const settled = Promise.allSettled(checks);
+  child.release([{ type: "error", message: "registry unavailable" }], 1);
+  const results = await settled;
+  expect(results.every((result) => result.status === "rejected" && result.reason.message === "registry unavailable")).toBe(true);
+  expect((await checkKernelUpdate()).latest).toBe("2026.7.2");
+  expect(spawns).toBe(2);
+});
+
+for (const failCheck of [false, true]) {
+  test(`runKernelUpdate：等待已有检查退出再停止 gateway（检查失败=${failCheck}）`, async () => {
+    const child = makeBlockingChild();
+    let spawns = 0;
+    mockState.spawnImpl = () => { spawns++; return spawns === 1 ? child : makeChild(makeProgressEvents()); };
+    const { checkKernelUpdate, initKernelUpdater, runKernelUpdate, getKernelUpdateState } = await import("./kernel-updater");
+    const deps = makeDeps();
+    initKernelUpdater(deps);
+    const check = checkKernelUpdate().catch(() => null);
+    const update = runKernelUpdate("2026.7.2");
+    await Promise.resolve();
+    expect(deps.stopGateway).not.toHaveBeenCalled();
+    expect(spawns).toBe(1);
+    expect((await checkKernelUpdate()).running).toBe(true);
+    expect(spawns).toBe(1);
+    child.release(failCheck ? [{ type: "error", message: "offline" }] : makeStateEvents({ latest: "stale" }), failCheck ? 1 : 0);
+    await check;
+    expect((await update).ok).toBe(true);
+    expect(spawns).toBe(2);
+    expect(deps.stopGateway).toHaveBeenCalledTimes(1);
+    expect(getKernelUpdateState().current).toBe("2026.7.2");
+    expect(getKernelUpdateState().latest).not.toBe("stale");
+  });
+}
+
+test("quit while waiting for a metadata check never stops Gateway or launches an update", async () => {
+  const child = makeBlockingChild();
+  const spawn = vi.fn().mockImplementationOnce(() => child).mockImplementation(() => makeChild(makeProgressEvents()));
+  mockState.spawnImpl = spawn;
+  const { checkKernelUpdate, initKernelUpdater, runKernelUpdate, terminateKernelUpdaterForQuit } = await import("./kernel-updater");
+  const deps = makeDeps();
+  initKernelUpdater(deps);
+  const check = checkKernelUpdate().catch(() => null);
+  const update = runKernelUpdate();
+  terminateKernelUpdaterForQuit();
+  child.release([], 1);
+  await check;
+  // Release an incorrectly launched second child rather than leaving a watchdog.
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  expect(spawn).toHaveBeenCalledTimes(1);
+  expect((await update).ok).toBe(false);
+  expect(deps.stopGateway).not.toHaveBeenCalled();
+  expect(deps.startGateway).not.toHaveBeenCalled();
+});
+
+test("quit during Gateway stop prevents update spawn and recovery restart", async () => {
+  let release!: () => void;
+  const stopped = new Promise<void>((resolve) => { release = resolve; });
+  const spawn = vi.fn(() => makeChild(makeProgressEvents()));
+  mockState.spawnImpl = spawn;
+  const { initKernelUpdater, runKernelUpdate, terminateKernelUpdaterForQuit } = await import("./kernel-updater");
+  const deps = makeDeps({ stopGateway: vi.fn(() => stopped) });
+  initKernelUpdater(deps);
+  const update = runKernelUpdate();
+  terminateKernelUpdaterForQuit();
+  release();
+  expect((await update).ok).toBe(false);
+  expect(spawn).not.toHaveBeenCalled();
+  expect(deps.startGateway).not.toHaveBeenCalled();
+});
+
+test("quit after swap suppresses automatic rollback and restart", async () => {
+  const child = makeBlockingChild();
+  const spawn = vi.fn(() => child);
+  mockState.spawnImpl = spawn;
+  const { initKernelUpdater, runKernelUpdate, terminateKernelUpdaterForQuit } = await import("./kernel-updater");
+  const deps = makeDeps();
+  initKernelUpdater(deps);
+  const update = runKernelUpdate();
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  child.stdout.emit("data", Buffer.from(JSON.stringify({ type: "progress", step: "swap", pct: 85, msg: "swap" }) + "\\n"));
+  terminateKernelUpdaterForQuit();
+  child.release([], 1);
+  expect((await update).ok).toBe(false);
+  expect(spawn).toHaveBeenCalledTimes(1);
+  expect(deps.startGateway).not.toHaveBeenCalled();
+});
+
+test("quit during health check never starts automatic rollback and rejects later tasks", async () => {
+  let release!: (healthy: boolean) => void;
+  const health = new Promise<boolean>((resolve) => { release = resolve; });
+  const spawn = vi.fn(() => makeChild(makeProgressEvents()));
+  mockState.spawnImpl = spawn;
+  const { initKernelUpdater, runKernelUpdate, runKernelRollback, checkKernelUpdate, terminateKernelUpdaterForQuit } = await import("./kernel-updater");
+  const deps = makeDeps({ startGateway: vi.fn(() => health) });
+  initKernelUpdater(deps);
+  const update = runKernelUpdate();
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  expect(deps.startGateway).toHaveBeenCalledTimes(1);
+  terminateKernelUpdaterForQuit();
+  release(false);
+  expect((await update).ok).toBe(false);
+  expect((await runKernelUpdate()).ok).toBe(false);
+  expect((await runKernelRollback()).ok).toBe(false);
+  await checkKernelUpdate();
+  expect(spawn).toHaveBeenCalledTimes(1);
+  expect(deps.stopGateway).toHaveBeenCalledTimes(1);
+});
+
 // ── initKernelUpdater / runKernelUpdate / runKernelRollback ──
 
 test("runKernelUpdate：未初始化 deps 时返回错误", async () => {

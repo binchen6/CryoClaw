@@ -402,6 +402,14 @@ One sentence defines the focus language: **a single accent-tinted edge plus a ve
   window stays draggable; every interactive element must pair with `no-drag` to stay
   keyboard/mouse reachable.
 
+### Directional peer navigation (2026.10.31)
+
+Top-level views, settings tabs, task tabs and the three provider views share one directional language instead of mixing upward entrances, horizontal slides and hard cuts:
+- Forward navigation fades the new page in 8px from the right; backward navigation enters 8px from the left. The old page moves only 4px in the corresponding direction while fading out. Use `--duration-normal` and `--ease-standard` without blocking interaction.
+- `transitionView` derives direction from the view/tab positions before and after navigation. Rapid changes settle on the latest page; business state never waits for an animation.
+- Lit keyed nodes and native view-transition snapshots share the `oc-nav-*` keyframes, preventing two competing motions for one navigation. Animate only opacity/transform; do not add layout reads or persistence work.
+- Reduced motion shows the final state immediately. Direction must never affect keyboard focus, hit testing or data loading.
+
 ### Project motion principles (2026-10-23)
 
 Motion should be precise, natural and beautiful across transitions, interruption, entrance and exit. Normal mode keeps the complete motion language; **never trade fewer animations for fluency**. Use compositing, visibility scheduling and less redundant work instead. Use fewer effects only when that improves reading. **Fluency takes priority over decoration.**

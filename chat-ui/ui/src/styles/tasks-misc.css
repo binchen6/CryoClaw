@@ -37,10 +37,13 @@
 .ts-content > .cm-layout { flex: 1; min-height: 360px; }
 .ts-content > .cm-empty { flex: 1; min-height: 360px; }
 .ts-content > .ts-list, .ts-content > .empty-state, .ts-content > .cm-empty,
-.cm-layout__detail > * { animation: rise var(--duration-normal) var(--ease-standard); }
-::view-transition-old(task-content) { animation: task-content-out var(--duration-fast) var(--ease-standard) both; }
-::view-transition-new(task-content) { animation: rise var(--duration-normal) var(--ease-standard) both; }
-@keyframes task-content-out { to {opacity: 0; transform: translateY(-4px);} }
+.cm-layout__detail > * { animation: oc-nav-forward-in var(--duration-normal) var(--ease-standard); }
+:root[data-navigation-direction="back"] .ts-content > .ts-list,
+:root[data-navigation-direction="back"] .ts-content > .empty-state,
+:root[data-navigation-direction="back"] .ts-content > .cm-empty,
+:root[data-navigation-direction="back"] .cm-layout__detail > * {
+  animation-name: oc-nav-back-in;
+}
 
 /* 顶层双 tab：分段控件（muted 底胶囊轨道 + 浮起激活段） */
 .ts-tabs {

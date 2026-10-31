@@ -1136,6 +1136,96 @@ img.chat-avatar {
     transform var(--duration-fast) var(--ease-out);
 }
 
+/* Read-only tool invocation drawer; independent scrolling keeps the composer
+   reachable even in a long tool-heavy turn. */
+oc-command-jobs { display: block; min-width: 0; width: 100%; max-width: var(--chat-column); margin: 0 auto; }
+.chat-command-jobs { margin: var(--spacer-8) 0; border: var(--hairline); border-radius: var(--radius-8); background: var(--bg-secondary); font-size: var(--text-sm); }
+.chat-command-jobs > summary { display: flex; align-items: center; gap: var(--spacer-8); padding: var(--spacer-10) var(--spacer-12); cursor: pointer; list-style: none; }
+.chat-command-jobs summary::-webkit-details-marker { display: none; }
+.chat-command-jobs summary svg { width: 16px; height: 16px; flex-shrink: 0; }
+.chat-command-jobs > summary > svg:last-child { margin-left: auto; transition: transform 160ms ease; }
+.chat-command-jobs[open] > summary > svg:last-child { transform: rotate(180deg); }
+.chat-command-jobs__count { color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.chat-command-jobs__body { padding: 0 var(--spacer-12) var(--spacer-12); }
+.chat-command-jobs__hint { color: var(--text-muted); line-height: 1.6; margin: var(--spacer-8) 0; }
+.chat-command-jobs__filters { display: flex; flex-wrap: wrap; gap: var(--spacer-6); margin-bottom: var(--spacer-8); }
+.chat-command-jobs__filters button, .chat-command-jobs__more, .chat-command-jobs__copy { min-height: 32px; border: var(--hairline); border-radius: var(--radius-6); background: transparent; color: var(--text-muted); cursor: pointer; padding: var(--spacer-6) var(--spacer-10); font: inherit; }
+.chat-command-jobs__filters button[aria-pressed="true"] { background: var(--bg-hover); color: var(--text); }
+.chat-command-jobs button:focus-visible, .chat-command-jobs summary:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.chat-command-jobs__list { max-height: 360px; overflow: auto; overscroll-behavior: contain; }
+.chat-command-jobs__entry { border-top: var(--hairline); }
+.chat-command-jobs__entry > summary { display: flex; align-items: center; gap: var(--spacer-8); min-width: 0; padding: var(--spacer-8) 0; cursor: pointer; list-style: none; }
+.chat-command-jobs__entry > summary > code { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--text-sm) var(--font-mono); }
+.chat-command-jobs__state { display: inline-flex; color: var(--text-muted); }
+.chat-command-jobs__state--failed { color: var(--danger); }
+.chat-command-jobs__exit { white-space: nowrap; color: var(--text-muted); }
+.chat-command-jobs__entry pre { max-height: 240px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: var(--text-sm)/1.6 var(--font-mono); margin: var(--spacer-8) 0; }
+.chat-command-jobs__copy svg { width: 14px; height: 14px; }
+.chat-command-jobs__more { margin-top: var(--spacer-8); }
+@media (pointer: coarse) { .chat-command-jobs button { min-height: 40px; } }
+@media (prefers-reduced-motion: reduce) { .chat-command-jobs > summary > svg:last-child { transition: none; } }
+
+/* Tool sheets: a quiet working surface, separate command/input from result.
+   Keep source whitespace by default; wrapping is an explicit per-sheet choice. */
+.chat-tool-sheet {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  border: var(--hairline);
+  border-radius: var(--radius-8);
+  background: var(--bg-secondary);
+}
+.chat-tool-sheet__toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--spacer-8);
+  padding: var(--spacer-6) var(--spacer-10);
+  min-width: 0;
+}
+.chat-tool-sheet__name, .chat-tool-sheet__path {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-sm);
+}
+.chat-tool-sheet__name { flex: 1; }
+.chat-tool-sheet__path { flex: 1; color: var(--text-muted); }
+.chat-tool-sheet__wrap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-6);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.chat-tool-sheet__wrap svg { width: 16px; height: 16px; }
+.chat-tool-sheet__wrap:hover, .chat-tool-sheet__wrap[aria-pressed="true"] { background: var(--bg-hover); color: var(--text); }
+.chat-tool-sheet__wrap:focus-visible { box-shadow: var(--focus-ring); outline: none; }
+.chat-tool-sheet__code {
+  margin: 0;
+  padding: var(--spacer-8) var(--spacer-12) var(--spacer-12);
+  max-height: 320px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  line-height: 1.6;
+  white-space: pre;
+  tab-size: 2;
+}
+.chat-tool-sheet__code code { font: inherit; background: transparent; padding: 0; }
+.chat-tool-sheet--wrap .chat-tool-sheet__code { white-space: pre-wrap; overflow-wrap: anywhere; }
+.chat-tool-sheet--diff .hljs-deletion { background: var(--danger-subtle); color: var(--danger); }
+.chat-tool-sheet--diff .hljs-addition { background: color-mix(in srgb, var(--ok) 12%, transparent); color: var(--ok); }
+@media (pointer: coarse) { .chat-tool-sheet__wrap { min-width: 40px; min-height: 40px; } }
+
 /* 网格子项防溢出：min-width 归零让隐式列可收缩到卡宽，溢出留在块内
    （参数块/输出区自行换行或横向滚动），不再把整卡撑出阅读列。 */
 .chat-tool-card > :where(

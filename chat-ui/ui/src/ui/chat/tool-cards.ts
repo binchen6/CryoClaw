@@ -8,7 +8,8 @@ import { extractTextCached } from "./message-extract.ts";
 import { isToolResultMessage } from "./message-normalizer.ts";
 import { toSanitizedMarkdownHtml } from "../markdown.ts";
 import { linkifyPaths } from "./path-linker.ts";
-import { chatTextEnhanceRef } from "./code-block-enhance.ts";
+import { chatTextEnhanceRef, toolCodeEnhanceRef } from "./code-block-enhance.ts";
+import { toolCodeSections, visibleToolCode, type ToolCodeSection } from "./tool-presentation.ts";
 import {
   formatToolOutputForSidebar,
   parseDiffStat,
@@ -399,6 +400,35 @@ function renderToolCardArgsBlock(card: ToolCard, detail: string | undefined) {
   `;
 }
 
+function renderToolCodeSection(section: ToolCodeSection, onOpenSidebar?: (content: string) => void) {
+  const capped = section.text.length > TOOL_OUTPUT_RENDER_CAP;
+  const lineCount = section.text.trim().split("\n").length;
+  return html`<section class="chat-tool-sheet chat-tool-sheet--${section.kind}"
+    @click=${(event: Event) => event.stopPropagation()}>
+    <div class="chat-tool-sheet__toolbar">
+      <span class="chat-tool-sheet__name" title=${section.title}>${section.kind === "diff" ? t("chat.toolRequestedEdit") : section.title || t("chat.toolOutput")}</span>
+      ${section.kind === "diff" && section.title ? html`<span class="chat-tool-sheet__path" title=${section.title}>${section.title}</span>` : nothing}
+      <button type="button" class="chat-tool-sheet__wrap" aria-pressed="false"
+        title=${t("chat.codeWrap")} aria-label=${t("chat.codeWrap")}
+        @click=${(event: Event) => {
+          const button = event.currentTarget as HTMLButtonElement;
+          const sheet = button.closest(".chat-tool-sheet");
+          const wrap = sheet?.classList.toggle("chat-tool-sheet--wrap") ?? false;
+          button.setAttribute("aria-pressed", String(wrap));
+          button.title = wrap ? t("chat.codeUnwrap") : t("chat.codeWrap");
+          button.setAttribute("aria-label", button.title);
+        }}>${icons.list}</button>
+      ${renderToolCardCopyButton(() => section.text)}
+    </div>
+    <pre class="chat-tool-sheet__code"><code ${toolCodeEnhanceRef(visibleToolCode(section.text), section.language)}></code></pre>
+    ${lineCount > 20 || capped ? html`<div class="chat-tool-card__output-meta">
+      <span>${t("chat.toolOutputLines").replace("{n}", String(lineCount))}</span>
+      ${capped && onOpenSidebar ? html`<button class="chat-tool-card__more" type="button"
+        @click=${() => onOpenSidebar(formatToolOutputForSidebar(section.text, { language: section.language }))}>${t("chat.toolOpenFull")}</button>` : nothing}
+    </div>` : nothing}
+  </section>`;
+}
+
 // 长输出卡内渲染（截断 + 查看完整输出入口）；短输出走 inline，空输出不渲染
 function renderToolCardOutputBody(
   card: ToolCard,
@@ -484,6 +514,8 @@ export function renderToolCardSidebar(card: ToolCard, onOpenSidebar?: (content: 
   const language = resolveToolLanguage(card.name, card.args);
   // sessions_spawn accepted 结果 → 消息内子会话引用块（点击跳转，线程级委托）
   const spawnRef = extractSpawnSessionRef(card);
+  const codeSections = toolCodeSections(card, language);
+  const hasReadSheet = codeSections.some(section => section.kind === "read" || section.kind === "output");
 
   const canClick = Boolean(onOpenSidebar) && !isRunning;
   const handleClick = canClick
@@ -609,8 +641,9 @@ export function renderToolCardSidebar(card: ToolCard, onOpenSidebar?: (content: 
                 `
               : nothing
       }
+      ${codeSections.map(section => renderToolCodeSection(section, onOpenSidebar))}
       ${renderToolCardArgsBlock(card, detail)}
-      ${!isRunning ? renderToolCardOutputBody(card, onOpenSidebar, language) : nothing}
+      ${!isRunning && !hasReadSheet ? renderToolCardOutputBody(card, onOpenSidebar, language) : nothing}
     </div>
   `;
 }

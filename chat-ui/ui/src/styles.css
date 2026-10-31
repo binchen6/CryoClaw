@@ -32,4 +32,5 @@
    adoptedStyleSheets 原优先级高于 document 样式表,故放在 import 列表最末,
    最接近原层叠位置(详见两个文件头注释) */
 @import "./styles/settings.css";
+@import "./styles/provider-workbench.css";
 @import "./styles/setup.css";

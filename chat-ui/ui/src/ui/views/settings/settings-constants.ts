@@ -34,6 +34,7 @@ export const SETTINGS_TABS: SettingsTab[] = [
   { id: "mcp-hooks", labelKey: "settings.nav.mcpHooks", group: "models" },
   { id: "overview", labelKey: "settings.nav.overview", group: "system" },
   { id: "appearance", labelKey: "settings.nav.appearance", group: "system" },
+  { id: "shortcuts", labelKey: "settings.nav.shortcuts", group: "system" },
   { id: "advanced", labelKey: "settings.nav.advanced", group: "system" },
   { id: "approvals", labelKey: "settings.nav.approvals", group: "system" },
   { id: "backup", labelKey: "settings.nav.backup", group: "system" },
@@ -45,7 +46,7 @@ const TAB_ICONS:Record<string,TemplateResult>={
   channels:icons.messagePlus,provider:icons.cpu,search:icons.search,memory:icons.brain,
   appearance:icons.palette,voice:icons.mic,advanced:icons.sliders,usage:icons.activity,
   "mcp-hooks":icons.plug,approvals:icons.shieldCheck,backup:icons.archiveRestore,
-  about:icons.info,overview:icons.gauge,
+  about:icons.info,overview:icons.gauge,shortcuts:icons.keyboard,
 };
 
 export function getTabIcon(id: string): TemplateResult | typeof import("lit").nothing {

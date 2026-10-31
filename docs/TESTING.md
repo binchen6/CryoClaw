@@ -1,7 +1,7 @@
 # 测试与验收
 
 `npm test` 始终运行四层全量回归：Vitest、主进程 node:test、Chat UI 全源类型检查与测试、构建和发布脚本。
-默认最多并发两层；低内存设备可执行 `node scripts/run-tests.js --serial`。每层日志和耗时汇总写入 `.cache/test-results/`。
+默认最多并发三层；低内存设备可执行 `node scripts/run-tests.js --serial`，或用 `CRYOCLAW_TEST_CONCURRENCY=1|2` 显式降级。每层日志和耗时汇总写入 `.cache/test-results/`。
 任何一层失败都使整体失败，超时会停止对应进程树。定向入口 `test:unit:vitest`、`test:unit:node`、`test:chat`、`test:typecheck`、`test:scripts` 保留。
 
 Chat UI 测试编译包含全部源代码，合并两次 TypeScript 遍历；单独 `test:typecheck` 仍可只查类型。

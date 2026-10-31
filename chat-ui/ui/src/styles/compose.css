@@ -27,11 +27,10 @@
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  gap: var(--spacer-12);
+  gap: var(--spacer-8);
   margin-top: auto;
   align-items: center;
-  /* R58a：底部留白再收紧（spacer-10→spacer-6），输入卡下沉贴近视口底缘 */
-  padding: var(--spacer-12) var(--spacer-24) var(--spacer-6);
+  padding: var(--spacer-12) var(--spacer-24);
   background: linear-gradient(to bottom, transparent, var(--bg) 35%);
   z-index: 10;
 }
@@ -118,13 +117,14 @@
   flex-direction: column;
   gap: var(--spacer-4);
   border: var(--hairline);
-  border-radius: var(--radius-16);
-  background: var(--bg-elevated);
-  box-shadow: var(--shadow-md);
-  padding: var(--spacer-10) var(--spacer-16) var(--spacer-8);
+  border-radius: var(--radius-20);
+  background: color-mix(in srgb, var(--bg-elevated) 97%, transparent);
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--text) 3%, transparent),
+    0 12px 36px color-mix(in srgb, var(--text) 6%, transparent);
+  padding: 10px 12px 9px;
   overflow: visible;
-  transition: border-color var(--duration-fast) var(--ease-out),
-    box-shadow var(--duration-fast) var(--ease-out);
+  transition: border-color var(--duration-fast) var(--ease-standard),
+    box-shadow var(--duration-normal) var(--ease-standard);
 }
 
 /* 无障碍 label（.field span 由 components.css 定义，这里隐去） */
@@ -137,7 +137,7 @@
    不会出现「参照实现和统一规则各写一份」的漂移。 */
 .chat-compose__field:focus-within {
   border-color: var(--focus-field-color);
-  box-shadow: var(--focus-field), var(--shadow-sm);
+  box-shadow: var(--focus-field), 0 16px 42px color-mix(in srgb, var(--text) 8%, transparent);
 }
 
 .chat-compose .chat-compose__field textarea {
@@ -147,16 +147,17 @@
   outline: none;
   border-radius: 0;
   background: transparent;
-  padding: var(--spacer-6) var(--spacer-4) var(--spacer-2);
+  padding: 7px 6px 5px;
   height: auto;
-  min-height: 40px;
-  max-height: 40vh;
+  min-height: 46px;
+  max-height: min(260px, 38vh);
   resize: none;
   overflow-y: auto;
   white-space: pre-wrap;
   font-family: var(--font-body);
   font-size: var(--text-base);
-  line-height: var(--leading-body);
+  line-height: 1.65;
+  /* Keep long drafts scrollable without a permanent decorative scrollbar. */
   scrollbar-width: none;
 }
 
@@ -646,8 +647,23 @@
   box-shadow: 0 5px 15px color-mix(in srgb, var(--accent) 24%, transparent);
 }
 .chat-compose__send-btn--send.is-ready:hover:not(:disabled) { background: var(--accent-hover); }
+/* Stopping is a secondary action: a quiet surface and an unmistakable red glyph.
+   Do not inherit the send surface or .field span's muted foreground. */
+.chat-compose__send-btn--stop {
+  background: var(--bg-input);
+  color: var(--destructive);
+}
+.chat-compose__send-btn--stop:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
 .chat-compose__send-btn:focus-visible { box-shadow: var(--focus-ring); }
-.chat-compose__stop-icon { width: 10px; height: 10px; border-radius: 2px; background: currentColor; flex: none; }
+.chat-compose__stop-icon {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  background: var(--destructive);
+  flex: none;
+}
 .chat-compose__send-btn--stop[aria-busy="true"] .chat-compose__stop-icon { opacity: .6; }
 
 /* 按下反馈：active 压感缩放（hover 放大之上再收，给点击一个确认感） */
@@ -676,10 +692,6 @@
   }
 }
 
-.chat-compose{gap:var(--spacer-8);padding-bottom:var(--spacer-12)}
-.chat-compose__field{border-radius:20px;padding:10px 12px 9px;background:color-mix(in srgb,var(--bg-elevated) 97%,transparent);box-shadow:0 1px 2px color-mix(in srgb,var(--text) 3%,transparent),0 12px 36px color-mix(in srgb,var(--text) 6%,transparent);transition:border-color var(--duration-fast) var(--ease-standard),box-shadow var(--duration-normal) var(--ease-standard),transform var(--duration-fast) var(--ease-standard)}
- .chat-compose__field:focus-within{border-color:var(--focus-field-color);box-shadow:var(--focus-field),0 16px 42px color-mix(in srgb,var(--text) 8%,transparent)}
-.chat-compose .chat-compose__field textarea{min-height:46px;max-height:min(260px,38vh);padding:7px 6px 5px;font-size:14px;line-height:1.65;scrollbar-width:thin;scrollbar-color:var(--border) transparent}
 .chat-compose .chat-compose__field textarea::placeholder{color:var(--text-muted);opacity:.78}
 .chat-compose__toolbar{padding-top:1px;min-height:36px;flex-wrap:nowrap}.chat-compose__toolbar-left{flex-wrap:nowrap;overflow:visible}.chat-compose__toolbar-right{gap:6px}
 .chat-compose__tool-btn{width:34px;height:34px;border-radius:10px;transition:color var(--duration-fast),background var(--duration-fast),transform var(--duration-fast)}

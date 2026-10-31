@@ -181,6 +181,7 @@ const LANG_LOADERS: Record<string, () => Promise<{ default: unknown }>> = {
   rust: () => import("highlight.js/lib/languages/rust"),
   yaml: () => import("highlight.js/lib/languages/yaml"),
   powershell: () => import("highlight.js/lib/languages/powershell"),
+  diff: () => import("highlight.js/lib/languages/diff"),
 };
 
 let hljsPromise: Promise<HljsModule["default"]> | null = null;
@@ -197,6 +198,7 @@ async function highlightCodeBlock(code: HTMLElement) {
   if (!lang || code.dataset.hljsDone === "1") {
     return;
   }
+  const source = code.textContent ?? "";
   const loader = LANG_LOADERS[lang];
   if (!loader) {
     return;
@@ -207,11 +209,10 @@ async function highlightCodeBlock(code: HTMLElement) {
       const def = await loader();
       hljs.registerLanguage(lang, def.default);
     }
-    if (!code.isConnected || code.dataset.hljsDone === "1") {
+    if (!code.isConnected || code.dataset.hljsDone === "1" || codeLang(code) !== lang || code.textContent !== source) {
       return;
     }
     code.dataset.hljsDone = "1";
-    const source = code.textContent ?? "";
     const result = hljs.highlight(source, { language: lang, ignoreIllegals: true });
     // hljs 输出为自身生成的转义 token 标签；源文本已经过 DOMPurify 净化
     code.innerHTML = result.value;
@@ -219,6 +220,23 @@ async function highlightCodeBlock(code: HTMLElement) {
   } catch {
     // 高亮失败不影响阅读，保留原样
   }
+}
+
+// This ref owns the code element's entire contents. Do not put a Lit ChildPart
+// inside it: asynchronous highlighting replaces children and would detach Lit's
+// text/marker nodes. A new source resets highlighting without stale DOM state.
+const toolCodeSources = new WeakMap<Element, string>();
+export function toolCodeEnhanceRef(source: string, language?: string) {
+  return ref((element?: Element) => {
+    if (!(element instanceof HTMLElement)) return;
+    const key = `${language ?? ""}\u0000${source}`;
+    if (toolCodeSources.get(element) === key) return;
+    toolCodeSources.set(element, key);
+    element.textContent = source;
+    element.className = language ? `language-${language}` : "";
+    delete element.dataset.hljsDone;
+    void highlightCodeBlock(element);
+  });
 }
 
 export const chatTextEnhanceRef = ref((el?: Element) => enhanceChatText(el));

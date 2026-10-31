@@ -159,7 +159,7 @@ npm run build           # both at once
 
 ### Tests
 
-`npm test` runs all four layers with at most two concurrent suites and writes per-layer logs and a JSON summary to `.cache/test-results/`. Chat UI test compilation includes all sources, so it also performs the full type check. Tests are excluded from the production `tsc` build (see `tsconfig.json`; the test compile uses `tsconfig.test.json`). Current verified totals live in docs/OPTIMIZATION-PROGRESS.md and its latest release record; avoid copying historical counts into instructions. Four runners cover the layers below:
+`npm test` runs all four layers with at most three concurrent suites and writes per-layer logs and a JSON summary to `.cache/test-results/`. Chat UI test compilation includes all sources, so it also performs the full type check. Tests are excluded from the production `tsc` build (see `tsconfig.json`; the test compile uses `tsconfig.test.json`). Current verified totals live in docs/OPTIMIZATION-PROGRESS.md and its latest release record; avoid copying historical counts into instructions. Four runners cover the layers below:
 
 | Runner | Script | What it runs |
 |---|---|---|

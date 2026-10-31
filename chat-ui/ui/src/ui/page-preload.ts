@@ -3,6 +3,7 @@ import type {CryoClawViewId} from "./views/registry.ts";
 import {getConfigSnapshot} from "./controllers/config.ts";
 import {loadGatewayModels} from "./controllers/models.ts";
 import {loadCronJobs} from "./controllers/cron.ts";
+import {loadChannels} from "./controllers/channels.ts";
 import {loadRunHistory} from "./controllers/tasks.ts";
 import {loadSkills} from "./controllers/skills.ts";
 import {preloadWorkspaceDirectory} from "./controllers/workspace.ts";
@@ -39,7 +40,7 @@ export function preloadPage(host:AppViewState,view:CryoClawViewId){
   return enqueuePreload(host,view,async()=>{
   const client=host.client!;
   if(view==="settings")await Promise.all([getConfigSnapshot(client),loadGatewayModels(client)]);
-  else if(view==="tasks")await Promise.all([loadCronJobs(host),loadRunHistory(host)]);
+  else if(view==="tasks")await Promise.all([loadCronJobs(host),loadRunHistory(host),loadChannels(host,false)]);
   else if(view==="extensions")await loadSkills(host);
   else if(view==="workspace")await preloadWorkspaceDirectory(host);
 });}

@@ -42,7 +42,8 @@ import {isPluginHostCompatible,selectCompatiblePluginVersion} from "./plugin-upd
 import { CN_CLAWHUB_MIRROR, isNetworkFailure, jsonGet, readSkillStoreRegistry } from "./skill-store";
 import { readBuildConfigClawhubRegistry } from "./build-config";
 import { readCryoclawConfig, writeCryoclawConfig } from "./cryoclaw-config";
-import { readUserConfigForWrite, writeUserConfig } from "./provider-config";
+import { readUserConfig, readUserConfigForWrite, writeUserConfig } from "./provider-config";
+import { invalidatePluginSnapshotCaches, pluginSnapshotFingerprint, readPluginSnapshotCache, writePluginSnapshotCache } from "./plugin-snapshot-cache";
 import { reconcilePluginsAllowWithEnabled, syncPluginAllowOnEnable } from "./plugin-allow-sync";
 import {optionalPluginEnableBlock,disableOptionalPluginChannel,DEFAULT_CHANNEL_PLUGINS,type ChannelPluginMap} from "./plugin-demand-policy";
 import {currentChannelPluginInventory} from './plugin-demand';
@@ -64,6 +65,7 @@ let listRequest:{epoch:number;promise:Promise<InstalledPlugin[]>}|null=null;
 function invalidatePluginListCache() {
   listEpoch++;
   listCache = null;
+  invalidatePluginSnapshotCaches(resolveUserStateDir());
   // 市场浏览缓存同点失效：安装/卸载/更新会改变 installed 集合与推荐排除集
   marketBrowseCache = null;
   marketBrowseRequests.clear();
@@ -700,17 +702,21 @@ async function listInstalledPlugins(): Promise<InstalledPlugin[]> {
 }
 
 async function readInstalledPlugins():Promise<InstalledPlugin[]> {
+  const stateDir=resolveUserStateDir(),packageDir=resolveGatewayPackageDir();
+  const fingerprint=pluginSnapshotFingerprint({packageDir,stateDir,config:readUserConfig(),extraEnv:resolveNodeExtraEnv(),allowErrors:true});
+  const cached=readPluginSnapshotCache<InstalledPlugin[]>({stateDir,kind:'plugin-list',fingerprint});
+  if(cached)return cached;
   const out = await execKernelCli(["plugins", "list", "--json"]);
   const parsed = JSON.parse(out) as { plugins?: unknown };
   if (!Array.isArray(parsed.plugins)) return [];
   let installs:Record<string,any>={};
   const localIds=readCryoclawConfig()?.localPluginIds??[];
-  try{installs=JSON.parse(fs.readFileSync(path.join(resolveUserStateDir(),"openclaw.json"),"utf8"))?.plugins?.installs??{};}catch{}
+  try{installs=JSON.parse(fs.readFileSync(path.join(stateDir,"openclaw.json"),"utf8"))?.plugins?.installs??{};}catch{}
   const plugins = parsed.plugins.map((raw) => {
     const p = raw as Record<string, unknown>;
     let npmName:string|undefined;
     if(typeof p.rootDir==="string"){
-      const relative=path.relative(path.join(resolveUserStateDir(),"npm","projects"),p.rootDir);
+      const relative=path.relative(path.join(stateDir,"npm","projects"),p.rootDir);
       if(relative && !relative.startsWith("..") && !path.isAbsolute(relative))try{
         const name=JSON.parse(fs.readFileSync(path.join(p.rootDir,"package.json"),"utf8"))?.name;
         if(typeof name==="string" && isValidPluginName(name))npmName=name;
@@ -732,6 +738,7 @@ async function readInstalledPlugins():Promise<InstalledPlugin[]> {
       ...(typeof p.status === "string" ? { status: p.status } : {}),
     };
   }).filter((p) => p.id);
+  try{writePluginSnapshotCache({stateDir,kind:'plugin-list',fingerprint,value:plugins});}catch{}
   return plugins;
 }
 

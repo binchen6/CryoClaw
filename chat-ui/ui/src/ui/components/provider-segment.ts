@@ -9,6 +9,7 @@
  */
 import { LitElement, html } from "lit";
 import { customElement, property } from "lit/decorators.js";
+import { providerIcon, resolveProviderIcon } from "./provider-icons.ts";
 
 @customElement("oc-provider-segment")
 export class ProviderSegment extends LitElement {
@@ -35,7 +36,8 @@ export class ProviderSegment extends LitElement {
               ?disabled=${isLocked}
               aria-pressed=${isActive?"true":"false"}
               @click=${() => this.handleClick(p)}>
-              ${this.labels[p] ?? p}
+              <span class="oc-provider-seg__icon" data-provider-icon=${resolveProviderIcon(p)} aria-hidden="true">${providerIcon(p)}</span>
+              <span>${this.labels[p] ?? p}</span>
             </button>
           `;
         })}
@@ -58,6 +60,11 @@ styleSheet.replaceSync(/* css */`
     margin-bottom: var(--spacer-8);
   }
   .oc-provider-seg__pill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--spacer-6);
+    min-width: 0;
     flex: 1;
     height: 28px;
     padding: 0 var(--spacer-12);
@@ -72,6 +79,18 @@ styleSheet.replaceSync(/* css */`
       background var(--duration-fast) var(--ease-out);
     white-space: nowrap;
     font-family: inherit;
+  }
+  .oc-provider-seg__icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 16px;
+    width: 16px;
+    height: 16px;
+  }
+  .oc-provider-seg__icon .cryo-icon {
+    width: 16px;
+    height: 16px;
   }
   .oc-provider-seg__pill:hover:not(:disabled):not(.oc-provider-seg__pill--active) {
     color: var(--text);

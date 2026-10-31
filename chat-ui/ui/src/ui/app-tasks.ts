@@ -10,6 +10,7 @@ import { html } from "lit";
 import { renderTasks, type TasksViewTab } from "./views/tasks.ts";
 import { loadRunHistory } from "./controllers/tasks.ts";
 import { loadCronJobs } from "./controllers/cron.ts";
+import { loadChannels } from "./controllers/channels.ts";
 import { isExpiredOneShot } from "./presenter.ts";
 import { renderCronView } from "./app-cron.ts";
 import { setCryoClawView, registerViewLeaveHook } from "./app-view-switch.ts";
@@ -78,6 +79,7 @@ registerViewLeaveHook("tasks", () => stopTasksAutoRefresh());
 export function openTasksView(state: AppViewState, tab: TasksViewTab = "runs") {
   tasksViewTab = tab;
   setCryoClawView(state, "tasks");
+  void loadChannels(state, false);
   if (tab === "cron") {
     void loadCronJobs(state);
   } else {

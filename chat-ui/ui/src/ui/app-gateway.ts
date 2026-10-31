@@ -17,9 +17,7 @@ import { loadCronJobs } from "./controllers/cron.ts";
 import { clearSessionMeterDirtyIfUsageAdvanced } from "./context-meter.ts";
 import { handleAgentEvent, resetToolStream, clearFallbackNotice, type AgentEventPayload } from "./app-tool-stream.ts";
 import { debugLog, isDebugEnabled } from "./debug.ts";
-import { loadAgents } from "./controllers/agents.ts";
 import { loadAssistantIdentity } from "./controllers/assistant-identity.ts";
-import { loadChannels } from "./controllers/channels.ts";
 import { loadChatHistory, resetChatStreamState } from "./controllers/chat.ts";
 import {
   applyQuestionResolution,
@@ -279,10 +277,18 @@ function checkStalledStream(host: GatewayHost) {
   // 预对齐：有活跃 run 且距最后流式活动超阈值 → 按指数退避静默对齐（每 run
   // 生命周期内首次 45s、之后步进翻倍封顶 5min；换 run 自动重新起算）。
   // run 态已清（终态事件/切会话）→ 重置退避，下一 run 从首次阈值重新起算。
+  const now = Date.now();
   const idleFor = host.chatRunId && host.chatLastActivityAt != null
-    ? Date.now() - host.chatLastActivityAt
+    ? now - host.chatLastActivityAt
     : null;
-  if (host.chatRunId && idleFor != null && idleFor >= RUN_IDLE_ALIGN_MS) {
+  const stalled = isStreamStalled({
+    chatRunId: host.chatRunId,
+    lastActivityAt: host.chatLastActivityAt,
+    now,
+    idleMs: STREAM_IDLE_TIMEOUT_MS,
+  });
+  // stall 已成立时由 watchdog 独占探测，不能与 pre-align 同 tick 重复拉历史。
+  if (host.chatRunId && !stalled && idleFor != null && idleFor >= RUN_IDLE_ALIGN_MS) {
     // mergeIfStale：内核快照滞后（短读）时保留本地，无倒退风险
     if (shouldStreamPreAlign(host.chatRunId, idleFor, RUN_IDLE_ALIGN_MS)) {
       // R1：预对齐拉历史后做回复检查——终态帧在断连/gap 窗口丢失时，run 开始后的
@@ -328,14 +334,7 @@ function checkStalledStream(host: GatewayHost) {
   } else if (!host.chatRunId) {
     resetStreamPreAlign();
   }
-  if (
-    !isStreamStalled({
-      chatRunId: host.chatRunId,
-      lastActivityAt: host.chatLastActivityAt,
-      now: Date.now(),
-      idleMs: STREAM_IDLE_TIMEOUT_MS,
-    })
-  ) {
+  if (!stalled) {
     return;
   }
   // 快照 run 身份：探测 await 期间若本轮 final 到达且队列冲刷出新一轮 run，
@@ -578,10 +577,11 @@ export function connectGateway(host: GatewayHost) {
         return;
       }
       const epoch=++helloEpoch;
+      const admissionSessionKey=host.sessionKey;
       // A WebSocket hello precedes deferred agent admission. Gate the initial
       // read burst so model catalogs, idle preloads and tickers cannot compete
       // with preparation or manufacture operation-failed banners.
-      void client.request("agent.identity.get",{sessionKey:host.sessionKey}).then(()=>{
+      void client.request("agent.identity.get",{sessionKey:admissionSessionKey}).then((identity)=>{
       if(host.client!==client || !client.connected || helloEpoch!==epoch)return;
       // The browser client reconnects its own socket without calling
       // connectGateway again. previousClient alone misses that common path.
@@ -632,12 +632,9 @@ export function connectGateway(host: GatewayHost) {
         // orphan 不存在（断连前无在途 run）时 liveOrphanRunId 检查会让探测直接空转返回。
         scheduleReconnectOrphanProbe(host);
       }
-      void loadAssistantIdentity(host as unknown as OpenClawApp);
+      void loadAssistantIdentity(host as unknown as OpenClawApp,{sessionKey:admissionSessionKey,snapshot:identity});
       // 加载已配置模型列表（用于 per-session 模型选择器）
       void (host as unknown as OpenClawApp).loadConfiguredModels();
-      void loadAgents(host as unknown as OpenClawApp);
-      // 渠道元数据（cron 表单的渠道下拉依赖 channelsSnapshot.channelMeta）
-      void loadChannels(host as unknown as OpenClawApp, false);
       // sessions/tasks 不在此显式拉取：下方 startTicker() 的首帧 runAllHandlers 会执行
       // 同名 tick handler，显式再拉一次会让每次重连各多打两份全量 RPC
       // R61 问答卡片：重连后 question.list 全量对齐（断连窗口内的 resolved 事件已丢）

@@ -11,13 +11,14 @@ import { unsafeSVG } from "lit/directives/unsafe-svg.js";
 // 全部图标为本项目原创绘制，无任何第三方图标库依赖。
 // ============================================================================
 
-function renderIcon(inner: string): TemplateResult {
+export function renderIcon(inner: string): TemplateResult {
   return html`${unsafeSVG(
     `<svg class="cryo-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">${inner}</svg>`,
   )}`;
 }
 
 export const icons = {
+  keyboard: renderIcon('<rect x="2.5" y="5" width="19" height="14" rx="2.5"/><path d="M6 9h.5m3 0h.5m3 0h.5m3 0h.5M6 12h.5m3 0h.5m3 0h.5m3 0h.5M7.5 15.5h9"/>'),
   // ── 导航 / 消息 ──
 
   // 消息引用（双引号）

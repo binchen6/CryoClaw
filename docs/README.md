@@ -5,6 +5,12 @@
 | 文档 | 用途 |
 |---|---|
 | [OPTIMIZATION-PROGRESS.md](OPTIMIZATION-PROGRESS.md) | 当前版本、五轮范围、开发命令与关键路径；历史记录另行归档 |
+| [RELEASE-2026.1031.0-VERIFICATION.md](RELEASE-2026.1031.0-VERIFICATION.md) | 当前版本的性能、插件缓存、UI、测试、安装与发布验收 |
+| [archive/HANDOFF-2026.1031.md](archive/HANDOFF-2026.1031.md) | 本版各阶段交接、问题取舍与最终未完成项归档 |
+| [archive/UI-PERFORMANCE-2026.1031-VERIFICATION.md](archive/UI-PERFORMANCE-2026.1031-VERIFICATION.md) | 参考 UI、消息、看板与构建性能的历史专项证据 |
+| [archive/PROVIDER-WORKBENCH-VERIFICATION.md](archive/PROVIDER-WORKBENCH-VERIFICATION.md) | 模型供应商三层工作台与品牌图标验收 |
+| [archive/TASK2-FRONTEND-PERFORMANCE.md](archive/TASK2-FRONTEND-PERFORMANCE.md) | 看板、历史注水与 Markdown 缓存专项证据 |
+| [archive/TASK4-TOOLS-VERIFICATION.md](archive/TASK4-TOOLS-VERIFICATION.md) | 工具卡、命令记录与 Lit 节点所有权验收 |
 | [REVIEW-2026.1025.0.md](REVIEW-2026.1025.0.md) | 前端布局、控件、路由拆包、长历史与看板手势的审查及实测 |
 | [REVIEW-2026.1022.0.md](REVIEW-2026.1022.0.md) | 10.5 内核、网关启动、独立仪表盘、交付插件与缓存方案的审查及实测 |
 | [REVIEW-2026.1023.1.md](REVIEW-2026.1023.1.md) | 看板示例、共享模型菜单、自然动效、性能及安全审查 |

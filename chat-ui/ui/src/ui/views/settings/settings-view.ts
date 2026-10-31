@@ -17,6 +17,7 @@ import { renderTabMemory, resetMemoryTab } from "./tab-memory.ts";
 import { renderTabVoice, resetVoiceTab } from "./tab-voice.ts";
 import { renderTabAppearance, resetAppearanceTab } from "./tab-appearance.ts";
 import { renderTabAdvanced, resetAdvancedTab } from "./tab-advanced.ts";
+import { renderTabShortcuts, resetShortcutsTab } from "./tab-shortcuts.ts";
 import { renderTabBackup, cleanupBackupTab } from "./tab-backup.ts";
 import { renderTabAbout, cleanupAboutTab } from "./tab-about.ts";
 import { renderTabOverview, resetOverviewTab } from "./tab-overview.ts";
@@ -86,6 +87,8 @@ function cleanupTab(tabId: string) {
     case "about": cleanupAboutTab(); break;
     case "overview": resetOverviewTab(); break;
     case "usage": resetUsageTab(); break;
+    case "shortcuts": resetShortcutsTab(); break;
+    case "provider": resetProviderTab(); break;
     case "approvals": resetApprovalsTab(); break;
   }
 }
@@ -101,6 +104,7 @@ function renderActiveTab(state: AppViewState) {
     case "memory": return renderTabMemory(state);
     case "voice": return renderTabVoice(state);
     case "appearance": return renderTabAppearance(state);
+    case "shortcuts": return renderTabShortcuts(state);
     case "advanced": return renderTabAdvanced(state);
     case "usage": return renderTabUsage(state);
     case "mcp-hooks": return renderTabMcpHooks(state);
@@ -120,6 +124,7 @@ export function invalidateAllSettings() {
   resetMemoryTab();
   resetVoiceTab();
   resetAppearanceTab();
+  resetShortcutsTab();
   resetAdvancedTab();
   resetOverviewTab();
   resetUsageTab();
@@ -143,6 +148,7 @@ export function cleanupSettingsView() {
   resetMemoryTab();
   resetVoiceTab();
   resetAppearanceTab();
+  resetShortcutsTab();
   resetAdvancedTab();
   resetOverviewTab();
   resetUsageTab();

@@ -12,7 +12,7 @@ export type AssistantIdentityState = {
 
 export async function loadAssistantIdentity(
   state: AssistantIdentityState,
-  opts?: { sessionKey?: string },
+  opts?: { sessionKey?: string; snapshot?: unknown },
 ) {
   if (!state.client || !state.connected) {
     return;
@@ -20,7 +20,9 @@ export async function loadAssistantIdentity(
   const requestSessionKey = opts?.sessionKey?.trim() || state.sessionKey.trim();
   const params = requestSessionKey ? { sessionKey: requestSessionKey } : {};
   try {
-    const res = await state.client.request("agent.identity.get", params);
+    const res = opts?.snapshot === undefined
+      ? await state.client.request("agent.identity.get", params)
+      : opts.snapshot;
     if (!res) {
       return;
     }
@@ -29,7 +31,7 @@ export async function loadAssistantIdentity(
     if (state.sessionKey.trim() !== requestSessionKey) {
       return;
     }
-    const normalized = normalizeAssistantIdentity(res);
+    const normalized = normalizeAssistantIdentity(res as Parameters<typeof normalizeAssistantIdentity>[0]);
     state.assistantName = normalized.name;
     state.assistantAvatar = normalized.avatar;
     state.assistantAgentId = normalized.agentId ?? null;
