@@ -439,6 +439,14 @@ export function renderGitPanel(props: GitPanelProps, opts?: { showRepoSelect?: b
           ${renderBranchPanel(props)}`
         : nothing}
 
+      ${groups
+        ? html`<div class="gitp-overview" aria-label=${t("git.title")}>
+            <span class="gitp-overview__item gitp-overview__item--staged">${t("git.staged")}<strong>${groups.staged.length}</strong></span>
+            <span class="gitp-overview__item gitp-overview__item--unstaged">${t("git.unstaged")}<strong>${groups.unstaged.length}</strong></span>
+            <span class="gitp-overview__item gitp-overview__item--untracked">${t("git.untracked")}<strong>${groups.untracked.length}</strong></span>
+          </div>`
+        : nothing}
+
       ${props.loading && !props.status
         ? html`<div class="gitp-loading">${icons.loader} ${t("git.loading")}</div>`
         : props.repoState === "ok" && groups && !hasChanges

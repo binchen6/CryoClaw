@@ -32,6 +32,7 @@ export interface GatewayControlStatus {
 
 export interface GatewayControlDeps {
   themeUi?: (payload:unknown)=>Promise<unknown>;
+  browserUi?: (payload:unknown)=>Promise<unknown>;
   getStatus: () => GatewayControlStatus;
   /** 托管重启：停 gateway → ensureGatewayRunning（失败应抛错） */
   restart: () => Promise<void>;
@@ -228,20 +229,21 @@ export function createGatewayControlRequestHandler(
         sendJson(res, 401, { ok: false, error: "unauthorized" });
         return;
       }
-      if(req.method==="POST" && url==="/ui/theme") {
-        if(!deps.themeUi){sendJson(res,503,{ok:false,error:"UI unavailable"});return;}
+      if(req.method==="POST" && (url==="/ui/theme" || url==="/ui/browser")) {
+        const browser=url==="/ui/browser",handler=browser?deps.browserUi:deps.themeUi,maxBytes=browser?131072:65536;
+        if(!handler){sendJson(res,503,{ok:false,error:"UI unavailable"});return;}
         const chunks:Buffer[]=[];let size=0;
         try {
           const payload=await new Promise<unknown>((resolve,reject)=>{
             const timer=setTimeout(()=>{reject(new Error("body timeout"));req.resume();},5000);
             const fail=(error:Error)=>{clearTimeout(timer);reject(error);};
-            req.on("data",(chunk:Buffer)=>{size+=chunk.length;if(size>65536){fail(new Error("body too large"));return;}chunks.push(chunk);});
+            req.on("data",(chunk:Buffer)=>{size+=chunk.length;if(size>maxBytes){fail(new Error("body too large"));return;}chunks.push(chunk);});
             req.once("error",fail);req.once("aborted",()=>fail(new Error("request aborted")));
             req.once("end",()=>{clearTimeout(timer);try{resolve(JSON.parse(Buffer.concat(chunks).toString("utf8")));}catch{reject(new Error("invalid JSON"));}});
           });
-          if(!payload || typeof payload!=="object" || !["inspect","preview","restore"].includes((payload as any).action)){sendJson(res,400,{ok:false,error:"Invalid theme action"});return;}
-          const result=await deps.themeUi(payload);sendJson(res,200,{ok:true,result});
-        } catch(error){sendJson(res,size>65536?413:400,{ok:false,error:error instanceof Error?error.message:"Theme request failed"});}
+          if(!browser && (!payload || typeof payload!=="object" || !["inspect","preview","restore"].includes((payload as any).action))){sendJson(res,400,{ok:false,error:"Invalid theme action"});return;}
+          const result=await handler(payload);sendJson(res,200,{ok:true,result});
+        } catch(error){sendJson(res,size>maxBytes?413:400,{ok:false,error:error instanceof Error?error.message:"UI request failed"});}
         return;
       }
       if (req.method === "GET" && url === "/gateway/status") {

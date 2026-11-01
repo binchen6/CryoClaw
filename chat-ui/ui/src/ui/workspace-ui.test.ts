@@ -92,7 +92,7 @@ test("app.ts：git 面板响应式状态字段", () => {
 test("终态改动卡片接线（app-chat-props / chat.ts / oc-chat-history / grouped-render / oc-turn-diff-card）", () => {
   const chatProps = src("app-chat-props.ts");
   assert.match(chatProps, /gitAvailable: state\.gitAvailable/, "缺少 gitAvailable prop");
-  assert.match(chatProps, /onOpenGitView: \(\) => openWorkspaceView\(state, "git"\)/, "缺少 onOpenGitView prop");
+  assert.match(chatProps, /onOpenGitView: \(\) => \{[\s\S]*?openDockTab\(state, "changes"\);/, "缺少 onOpenGitView prop");
   // 「撤销」：危险确认后丢弃工作区改动（app 层 handler 走 preload 桥）
   assert.match(chatProps, /confirmAndUndoTurnChanges/, "缺少撤销 handler 接线");
   assert.match(chatProps, /onUndoFileChanges: \(files\) => void confirmAndUndoTurnChanges\(state, workspace\?\.path \?\? "", files\)/, "缺少 onUndoFileChanges prop");
@@ -105,10 +105,10 @@ test("终态改动卡片接线（app-chat-props / chat.ts / oc-chat-history / gr
   assert.match(chat, /\.workspacePath=\$\{props\.workspacePath \?\? ""\}/, "历史组件装配缺少 workspacePath 透传");
   assert.match(chat, /\.runActive=\$\{isBusy\}/, "历史组件装配缺少 runActive 透传（胶囊接力门控）");
   assert.match(chat, /\.onDiscard=\$\{/, "历史组件装配缺少 onDiscard 透传");
-  // 悬浮胶囊：终态后消失（runActive 门控），浮层不再带「在 git 中查看」按钮
-  assert.match(chat, /<oc-turn-files/, "缺少悬浮胶囊装配");
-  assert.match(chat, /\.runActive=\$\{isBusy\}[\s\S]{0,200}<\/oc-turn-files>/, "胶囊装配缺少 runActive 透传");
-  assert.doesNotMatch(chat, /onOpenGit=/, "胶囊浮层 git 按钮已移除，不应再传 onOpenGit");
+  // 旧悬浮胶囊已移除；Dock 负责当前会话改动与工作区联动
+  assert.doesNotMatch(chat, /<oc-turn-files/, "旧变更悬浮窗不应继续装配");
+  assert.match(chat, /<oc-context-dock/, "缺少多标签 Dock 装配");
+  assert.match(chat, /\.changesContent=\$\{props\.dockChangesContent\}/, "Dock 缺少会话级改动内容");
   // 键盘可达（R23）：无 href 的 <a> 须带 tabindex/role，线程 keydown 委托须有对应分支
   // （与 .chat-path-link 同一交互范式；click 用 closest(，keydown 用 closest?.(）
   assert.match(
@@ -191,7 +191,7 @@ test("controllers/git.ts：initGitPanel 不再自解析根/注册白名单（收
 
 test("app-chat-props.ts：文件变更「在 git 中查看」→ 工作区页 git 模式", () => {
   const s = src("app-chat-props.ts");
-  assert.match(s, /onOpenGitView: \(\) => openWorkspaceView\(state, "git"\)/, "应路由到工作区页 git 模式");
+  assert.match(s, /onOpenGitView: \(\) => \{[\s\S]*?openDockTab\(state, "changes"\);/, "应路由到工作区页 git 模式");
 });
 
 test("app-render.ts：workspace 分支渲染新工作区视图", () => {

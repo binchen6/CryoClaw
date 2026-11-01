@@ -28,9 +28,9 @@
 @import "./styles/settings-misc.css";
 @import "./styles/panel.css";
 @import "./styles/plan.css";
-/* settings.css / setup.css 抽取自视图 TS 原 adoptedStyleSheets 注入样式;
-   adoptedStyleSheets 原优先级高于 document 样式表,故放在 import 列表最末,
-   最接近原层叠位置(详见两个文件头注释) */
+/* settings.css / setup.css 抽取自视图 TS 原 adoptedStyleSheets 注入样式，保持靠后；
+   motion.css 最后加载，统一覆盖嵌套滚动与动效契约，业务文件不得再恢复外层双滚动。 */
 @import "./styles/settings.css";
 @import "./styles/provider-workbench.css";
 @import "./styles/setup.css";
+@import "./styles/motion.css";

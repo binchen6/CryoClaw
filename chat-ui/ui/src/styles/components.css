@@ -252,7 +252,7 @@ oc-message-box { display: none; }
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
+:root[data-motion="reduce"] {
   .global-toast {
     animation: none;
     transition: none;

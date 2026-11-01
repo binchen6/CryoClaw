@@ -40,7 +40,12 @@ export type MessageGroup = {
 
 export type ToolCard = {
   kind: "call" | "result";
+  id?: string;
   name: string;
+  title?: string;
+  summary?: string;
+  meta?: string;
+  activityStatus?: string;
   args?: unknown;
   text?: string;
   output?: unknown;

@@ -355,6 +355,7 @@ function flashFileCardError(card: HTMLElement) {
 }
 
 async function openFileCardPath(path: string, card: HTMLElement) {
+  document.dispatchEvent(new CustomEvent("cryoclaw:file-preview", { detail: { path } }));
   // 白名单外扩展名：直接在文件夹中定位（打开必被主进程拒绝；定位无扩展名限制）
   const ext = fileExtOf(path);
   if (!isSafeOpenExt(ext)) {

@@ -1,7 +1,7 @@
 /**
- * 「本轮改动」胶囊的行数统计 —— 渲染层纯函数与 IPC 响应整形（可单测）。
+ * 会话改动卡片与 Dock 的行数统计 —— 渲染层纯函数与 IPC 响应整形（可单测）。
  *
- * 数据流：oc-turn-files 组件在消息/可见数变化时按签名防抖拉取
+ * 数据流：oc-turn-diff-card 在消息/可见数变化时按签名防抖拉取
  * `window.cryoclaw.gitChangeStats(workspacePath, paths)`（主进程 git:change-stats），
  * 本模块负责签名、响应校验与汇总：
  * - stats[].path 与传入路径一一对应（主进程原样回传），按路径建索引；

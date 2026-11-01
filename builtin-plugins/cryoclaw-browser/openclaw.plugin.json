@@ -1,0 +1,12 @@
+{
+  "id": "cryoclaw-browser",
+  "name": "CryoClaw Embedded Browser",
+  "description": "Agent control for the isolated in-app browser with live dock preview.",
+  "enabledByDefault": true,
+  "configSchema": { "type": "object", "additionalProperties": false, "properties": {} },
+  "activation": { "onStartup": true },
+  "contracts": { "tools": ["cryoclaw_browser"] },
+  "toolMetadata": {
+    "cryoclaw_browser": { "profiles": ["minimal", "coding", "messaging", "full"], "replaySafe": false }
+  }
+}

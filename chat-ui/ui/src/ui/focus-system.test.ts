@@ -99,6 +99,6 @@ test("密集列表行用内描边，避免外环溢出到相邻行", () => {
 
 test("减少动态效果下聚焦过渡不空转", () => {
   const base = declarationsOnly(css("base.css"));
-  // 全局 reduced-motion 块把动画收敛到瞬时；--focus-transition 走的是 transition，同样被收敛。
-  assert.match(base, /prefers-reduced-motion/);
+  // 统一 data-motion 块保留轻微聚焦颜色反馈，但不再产生位移动画。
+  assert.match(base, /data-motion="reduce"/);
 });

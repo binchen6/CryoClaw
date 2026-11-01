@@ -155,14 +155,17 @@ test("折叠 tool 消息：初始模板不含 body 内容（懒渲染，展开�
     !serialize(result).includes(marker),
     "折叠状态下 body 内容（tool output）不应出现在模板里",
   );
-  // 折叠容器与 body 占位节点仍在
   assert.ok(
     result.strings.some((s) => s.includes("chat-tools-collapse")),
-    "折叠 details 容器应渲染",
+    "折叠 section 容器应渲染",
   );
   assert.ok(
-    result.strings.some((s) => s.includes("chat-tools-collapse__body")),
-    "body 占位容器应保留",
+    result.strings.some((s) => s.includes("chat-tools-summary")),
+    "折叠摘要按钮应渲染",
+  );
+  assert.ok(
+    !result.strings.some((s) => s.includes("chat-tools-collapse__body")),
+    "默认折叠时不再挂载 body 占位或任何工具结果",
   );
 });
 
@@ -216,8 +219,7 @@ function makePureToolCallMessage(key: string, name: string, path: string) {
 }
 
 function countCollapseBlocks(result: Collected): number {
-  // body 占位是 class="chat-tools-collapse__body"，带右引号的精确匹配只命中外层 details
-  return result.strings.filter((s) => s.includes('class="chat-tools-collapse"')).length;
+  return result.strings.filter((s) => s.includes('class="chat-tools-collapse ')).length;
 }
 
 test("连续纯工具消息合并为单一折叠块（跨消息聚合，×N 生效）", () => {
@@ -503,27 +505,16 @@ test("懒渲染：展开且签名变化时重放 bodyFn（lit render 在 node �
 
 // ── 渲染接线审计：懒 details 展开后须 commit 级重放（防回退到一次性水合）──
 
-test("渲染接线审计：折叠 details 挂 ref 重放 + toggle 水合，无一次性 lazyHydrated 门", () => {
+test("渲染接线审计：工具组由按钮与持久展开状态驱动，结果仅在展开时挂载", () => {
   const fromSource = new URL("./grouped-render.ts", import.meta.url);
   const fromDist = new URL("../../../../../src/ui/chat/grouped-render.ts", import.meta.url);
   const srcUrl = existsSync(fromSource) ? fromSource : fromDist;
   const src = readFileSync(srcUrl, "utf8");
   assert.ok(!src.includes("lazyHydrated"), "一次性水合门 lazyHydrated 应已移除");
-  assert.ok(
-    src.includes("lazyDetailsBodyRef("),
-    "折叠 details 应挂 ref 回调实现 commit 级重放",
-  );
-  assert.ok(
-    src.includes("replayLazyDetailsBody("),
-    "toggle 展开路径应复用 replayLazyDetailsBody 立即水合",
-  );
-  const detailsIdx = src.indexOf('class="chat-tools-collapse"');
-  assert.ok(detailsIdx >= 0, "工具折叠 details 应存在");
-  const detailsTag = src.slice(detailsIdx, detailsIdx + 700);
-  assert.ok(
-    detailsTag.includes("lazyDetailsBodyRef(") && detailsTag.includes("@toggle"),
-    "chat-tools-collapse 应同时挂 ref 重放与 toggle 水合",
-  );
+  assert.ok(src.includes('class="chat-tools-collapse ${view.open ? "is-open" : ""}"'));
+  assert.ok(src.includes("resolveToolGroupView(toolCards, key)"));
+  assert.ok(src.includes("view.expandedId === id"), "仅当前展开的调用渲染结果");
+  assert.ok(!src.includes("groupConsecutiveToolCards"), "同类工具子组合并应彻底移除");
 });
 
 // ── 会话分支：用户消息的回退/分叉入口（内核 2026.9.7 branch tree）──

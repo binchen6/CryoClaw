@@ -14,8 +14,10 @@
  * reduced-motion 下跳过动画直接 finalize（全局 0.01ms 收敛下等待无意义）。
  */
 
+import { MOTION_MS, prefersReducedMotion } from "./motion.ts";
+
 // 与 --duration-normal 对齐：退场曲线用 ease-in-out，时长 normal 档。
-const EXIT_MS = 200;
+const EXIT_MS = MOTION_MS.panel;
 const exits = new WeakMap<Element, { finalize: () => void; timer: ReturnType<typeof setTimeout> }>();
 
 export function runExitAnimation(
@@ -25,7 +27,7 @@ export function runExitAnimation(
   const list = (Array.isArray(els) ? els : [els]).filter(
     (el): el is Element => el != null,
   );
-  const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const reduced = prefersReducedMotion();
   const current = list[0] ? exits.get(list[0]) : undefined;
   if (current) {
     if (list[0].classList.contains("cc-leaving")) {

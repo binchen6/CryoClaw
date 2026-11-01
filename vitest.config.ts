@@ -7,6 +7,7 @@ export default defineConfig({
     include: [
       "src/app-updater-snooze.test.ts",
       "src/theme-preview-bridge.test.ts",
+      "src/embedded-browser.test.ts",
       "src/docker-check.test.ts",
       "src/kimi-config.test.ts",
       "src/kernel-updater.test.ts",

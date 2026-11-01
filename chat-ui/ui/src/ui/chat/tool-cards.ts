@@ -69,7 +69,12 @@ function extractToolCardsUncached(message: unknown): ToolCard[] {
       const exitCode = asInteger(item.exitCode);
       cards.push({
         kind: "call",
+        id: asNonEmptyString(item.id) ?? asNonEmptyString(item.toolCallId),
         name: (item.name as string) ?? "tool",
+        title: asNonEmptyString(item.title),
+        summary: asNonEmptyString(item.summary),
+        meta: asNonEmptyString(item.meta),
+        activityStatus: asNonEmptyString(item.activityStatus),
         args: coerceArgs(item.arguments ?? item.args),
         ...(pending ? { pending: true } : {}),
         ...(diffStat ? { diffStat } : {}),
@@ -130,6 +135,21 @@ function extractToolCardsUncached(message: unknown): ToolCard[] {
       ...(exitCode !== undefined ? { exitCode } : {}),
       ...(diffStat ? { diffStat } : {}),
     });
+  }
+
+  const activity = Array.isArray(m.activity) ? m.activity : [];
+  for (const raw of activity) {
+    if (!raw || typeof raw !== "object") continue;
+    const item = raw as Record<string, unknown>;
+    if (item.kind !== "tool") continue;
+    const callId = asNonEmptyString(item.toolCallId) ?? asNonEmptyString(item.itemId);
+    const card = cards.find((candidate) => candidate.id === callId)
+      ?? (cards.length === 1 ? cards[0] : undefined);
+    if (!card) continue;
+    card.title = asNonEmptyString(item.title) ?? card.title;
+    card.summary = asNonEmptyString(item.summary) ?? card.summary;
+    card.meta = asNonEmptyString(item.meta) ?? card.meta;
+    card.activityStatus = asNonEmptyString(item.status) ?? card.activityStatus;
   }
 
   return cards;
@@ -499,7 +519,16 @@ export function isNestedToolCardControl(target: unknown, cardRoot?: unknown): bo
   return typeof root?.contains === "function" ? root.contains(found) : true;
 }
 
-export function renderToolCardSidebar(card: ToolCard, onOpenSidebar?: (content: string) => void) {
+export type ToolCardViewOptions = {
+  expanded?: boolean;
+  onToggleExpanded?: () => void;
+};
+
+export function renderToolCardSidebar(
+  card: ToolCard,
+  onOpenSidebar?: (content: string) => void,
+  view: ToolCardViewOptions = { expanded: true },
+) {
   const display = resolveToolDisplay({ name: card.name, args: card.args });
   const detail = formatToolDetail(display);
 
@@ -517,19 +546,13 @@ export function renderToolCardSidebar(card: ToolCard, onOpenSidebar?: (content: 
   const codeSections = toolCodeSections(card, language);
   const hasReadSheet = codeSections.some(section => section.kind === "read" || section.kind === "output");
 
-  const canClick = Boolean(onOpenSidebar) && !isRunning;
+  const canClick = Boolean(view.onToggleExpanded) || (Boolean(onOpenSidebar) && !isRunning);
   const handleClick = canClick
     ? (event?: Event) => {
-        // 卡内嵌套控件（参数折叠 summary、输出区代码块复制/链接按钮等）自己处理
-        // 交互，冒泡到整卡不再打开输出 sidebar（CDP 复测 bug：展开输入参数误弹 sidebar）
-        if (event && isNestedToolCardControl(event.target, event.currentTarget)) {
-          return;
-        }
-        // 子会话引用链接走线程级委托跳转会话，不触发整卡 sidebar 打开
-        if (
-          event &&
-          (event.target as HTMLElement | null)?.closest?.(".chat-subsession-link")
-        ) {
+        if (event && isNestedToolCardControl(event.target, event.currentTarget)) return;
+        if (event && (event.target as HTMLElement | null)?.closest?.(".chat-subsession-link")) return;
+        if (view.onToggleExpanded) {
+          view.onToggleExpanded();
           return;
         }
         if (hasRawOutput) {
@@ -568,11 +591,10 @@ export function renderToolCardSidebar(card: ToolCard, onOpenSidebar?: (content: 
   const cardClass = [
     "chat-tool-card",
     canClick ? "chat-tool-card--clickable" : "",
+    view.expanded !== false ? "is-open" : "",
     isRunning ? "chat-tool-card--running" : "",
     isFailed ? "chat-tool-card--failed" : "",
-  ]
-    .filter(Boolean)
-    .join(" ");
+  ].filter(Boolean).join(" ");
 
   return html`
     <div
@@ -580,70 +602,55 @@ export function renderToolCardSidebar(card: ToolCard, onOpenSidebar?: (content: 
       @click=${handleClick}
       role=${canClick ? "button" : nothing}
       tabindex=${canClick ? "0" : nothing}
-      @keydown=${
-        canClick
-          ? (e: KeyboardEvent) => {
-              if (e.key !== "Enter" && e.key !== " ") {
-                return;
-              }
-              // summary/按钮/链接上的 Enter/Space 归控件自己（原生展开/复制/跳转），
-              // 不能变成整卡「打开 sidebar」——键盘复现路径
-              if (isNestedToolCardControl(e.target, e.currentTarget)) {
-                return;
-              }
-              e.preventDefault();
-              handleClick?.(e);
-            }
-          : nothing
-      }
+      aria-expanded=${view.onToggleExpanded ? String(view.expanded !== false) : nothing}
+      @keydown=${canClick
+        ? (e: KeyboardEvent) => {
+            if (e.key !== "Enter" && e.key !== " ") return;
+            if (isNestedToolCardControl(e.target, e.currentTarget)) return;
+            e.preventDefault();
+            handleClick?.(e);
+          }
+        : nothing}
     >
       <div class="chat-tool-card__header">
-        <div class="chat-tool-card__title" title=${display.name}>
+        <div class="chat-tool-card__title" title=${card.summary ?? display.name}>
           <span class="chat-tool-card__icon">${icons[display.icon]}</span>
-          <span class="chat-tool-card__label" title=${display.label}>${display.label}</span>
-          ${display.source
-            ? html`<span class="chat-tool-card__source">${display.source}</span>`
-            : nothing}
+          <span class="chat-tool-card__label" title=${card.title ?? display.label}>${card.title ?? display.label}</span>
+          ${display.source ? html`<span class="chat-tool-card__source">${display.source}</span>` : nothing}
         </div>
         <div class="chat-tool-card__meta">
           ${diffBadge}
           ${exitBadge}
           ${copyButton}
-          ${
-            isRunning
-              ? html`<span class="chat-tool-card__status chat-tool-card__status--running" aria-label=${t("chat.toolRunning")}>
-                  <span class="chat-tool-card__spinner" aria-hidden="true"></span>
-                </span>`
-              : isFailed
-                ? html`<span class="chat-tool-card__status chat-tool-card__status--failed">${icons.x}</span>`
-                : html`<span class="chat-tool-card__status chat-tool-card__status--done">
-                    ${icons.check}<span class="chat-tool-card__status-done-label">${t("chat.toolCompleted")}</span>
-                  </span>`
-          }
+          ${isRunning
+            ? html`<span class="chat-tool-card__status chat-tool-card__status--running" aria-label=${t("chat.toolRunning")}>
+                <span class="chat-tool-card__spinner" aria-hidden="true"></span>
+              </span>`
+            : isFailed
+              ? html`<span class="chat-tool-card__status chat-tool-card__status--failed">${icons.x}</span>`
+              : html`<span class="chat-tool-card__status chat-tool-card__status--done">
+                  ${icons.check}<span class="chat-tool-card__status-done-label">${t("chat.toolCompleted")}</span>
+                </span>`}
         </div>
       </div>
       ${detail ? html`<div class="chat-tool-card__detail" title=${detail}>${detail}</div>` : nothing}
-      ${!isRunning && spawnRef ? renderSpawnSessionRef(spawnRef) : nothing}
-      ${
-        isRunning
-          ? html`
-              <div class="chat-tool-card__status-text muted">${t("chat.toolRunning")}</div>
-            `
-          : isFailed
-            ? html`
-                <div class="chat-tool-card__status-text chat-tool-card__status-text--failed">${
-                  resolveToolCardErrorText(card) ?? t("chat.toolFailed")
-                }</div>
-              `
-            : isEmpty
-              ? html`
-                  <div class="chat-tool-card__status-text muted">${t("chat.toolCompleted")}</div>
-                `
-              : nothing
-      }
-      ${codeSections.map(section => renderToolCodeSection(section, onOpenSidebar))}
-      ${renderToolCardArgsBlock(card, detail)}
-      ${!isRunning && !hasReadSheet ? renderToolCardOutputBody(card, onOpenSidebar, language) : nothing}
+      ${isRunning
+        ? html`<div class="chat-tool-card__status-text muted">${t("chat.toolRunning")}</div>`
+        : isFailed
+          ? html`<div class="chat-tool-card__status-text chat-tool-card__status-text--failed">
+              ${resolveToolCardErrorText(card) ?? t("chat.toolFailed")}
+            </div>`
+          : isEmpty
+            ? html`<div class="chat-tool-card__status-text muted">${t("chat.toolCompleted")}</div>`
+            : nothing}
+      ${view.expanded !== false
+        ? html`
+          ${!isRunning && spawnRef ? renderSpawnSessionRef(spawnRef) : nothing}
+          ${codeSections.map((section) => renderToolCodeSection(section, onOpenSidebar))}
+          ${renderToolCardArgsBlock(card, detail)}
+          ${!isRunning && !hasReadSheet ? renderToolCardOutputBody(card, onOpenSidebar, language) : nothing}
+        `
+        : nothing}
     </div>
   `;
 }

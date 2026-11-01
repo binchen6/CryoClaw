@@ -18,7 +18,8 @@ import { clearSessionMeterDirtyIfUsageAdvanced } from "./context-meter.ts";
 import { handleAgentEvent, resetToolStream, clearFallbackNotice, type AgentEventPayload } from "./app-tool-stream.ts";
 import { debugLog, isDebugEnabled } from "./debug.ts";
 import { loadAssistantIdentity } from "./controllers/assistant-identity.ts";
-import { loadChatHistory, resetChatStreamState } from "./controllers/chat.ts";
+import { loadChatHistory as loadChatHistoryForState, resetChatStreamState } from "./controllers/chat.ts";
+import { projectSubagentPanel } from "./controllers/subagent-panel.ts";
 import {
   applyQuestionResolution,
   normalizeQuestionRecord,
@@ -67,7 +68,9 @@ import { applySessionKeyTransition } from "./session-transition.ts";
 import {
   accumulateBackgroundAgentEvent,
   dispatchBackgroundChatEvent,
+  ensureRunStateSnapshot,
   peekRunStateSnapshot,
+  restoreRunStateSnapshot,
 } from "./run-state-store.ts";
 import { isToleratedHiddenSession } from "./session-jump.ts";
 import {
@@ -119,6 +122,7 @@ type GatewayHost = {
   chatStreamStartedAt: number | null;
   chatLastActivityAt: number | null;
   chatMessages: unknown[];
+  chatQueue: import("./ui-types.ts").ChatQueueItem[];
   dirtyMeterSessions: Set<string>;
   meterTotalsBaseline: Map<string, number>;
   execApprovalQueue: ExecApprovalRequest[];
@@ -128,6 +132,19 @@ type GatewayHost = {
   runHistory: import("./types.ts").CronRunLogEntry[];
   runsStatusFilter: string;
 };
+
+function loadChatHistory(
+  host: GatewayHost,
+  opts?: Parameters<typeof loadChatHistoryForState>[1],
+): ReturnType<typeof loadChatHistoryForState> {
+  const entry = ensureRunStateSnapshot(host.sessionKey, host);
+  const request = loadChatHistoryForState(entry as unknown as OpenClawApp, opts);
+  const project = () => {
+    if (host.sessionKey === entry.sessionKey) restoreRunStateSnapshot(host, entry);
+  };
+  void request.then(project, project).catch(() => {});
+  return request;
+}
 
 type SessionDefaultsSnapshot = {
   defaultAgentId?: string;
@@ -609,6 +626,8 @@ export function connectGateway(host: GatewayHost) {
       resetToolStream(host as unknown as Parameters<typeof resetToolStream>[0]);
       // 断连窗口可能丢失终态帧：中止在途标记若残留会把后续 run 的 Stop 按钮永禁用
       host.chatAbortPending = false;
+      // 持久会话条目不因 socket 更换而销毁；先恢复真实运行状态，再决定是否冲刷队列。
+      restoreRunStateSnapshot(host, ensureRunStateSnapshot(host.sessionKey, host));
       // 重连清态后补一次队列冲刷：断连期间排队的消息不会因终态帧丢失而永久卡住
       // （首次连接时队列为空，flush 内部自查空队列直接返回）
       void flushChatQueueForEvent(host as unknown as Parameters<typeof flushChatQueueForEvent>[0]);
@@ -804,12 +823,12 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
       // 摊平逻辑以快照为宿主运行，不写 host 响应式字段、不占前台单份定时器。
       // 无快照（该会话无可恢复的 run 态）维持既有丢弃语义。
       accumulateBackgroundAgentEvent(agentPayload.sessionKey, agentPayload);
+      projectSubagentPanel(host as unknown as OpenClawApp);
       return;
     }
-    handleAgentEvent(
-      host as unknown as Parameters<typeof handleAgentEvent>[0],
-      evt.payload as AgentEventPayload | undefined,
-    );
+    const entry = ensureRunStateSnapshot(host.sessionKey, host);
+    handleAgentEvent(entry, evt.payload as AgentEventPayload | undefined);
+    restoreRunStateSnapshot(host, entry);
     return;
   }
 
@@ -837,6 +856,7 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
       // run 态（队列保留）并标记历史脏；无快照维持既有丢弃语义。host 响应式字段
       // 与单份定时器（rAF/80ms 节流）完全不受影响。
       dispatchBackgroundChatEvent(payload);
+      projectSubagentPanel(host as unknown as OpenClawApp);
       const isBackgroundTerminal =
         payload.state === "final" || payload.state === "error" || payload.state === "aborted";
       if (!isBackgroundTerminal) {
@@ -856,17 +876,17 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
     // 须在 handleChatEvent 之前判定（final 会清空 chatRunId）：本事件是否属于当前活跃 run。
     // sub-agent 等 cross-run final 只刷新历史/会话列表，绝不能 resetToolStream——
     // 否则进行中主 run 的工具卡片会被瞬间清空，frozenPrefix 清零还会破坏后续 delta 切段。
+    const entry = ensureRunStateSnapshot(host.sessionKey, host);
     const isOwnRunEvent =
-      !payload?.runId || !host.chatRunId || payload.runId === host.chatRunId;
-    const state = handleChatEvent(host as unknown as OpenClawApp, payload);
+      !payload?.runId || !entry.chatRunId || payload.runId === entry.chatRunId;
+    const state = handleChatEvent(entry as unknown as OpenClawApp, payload);
+    if (shouldRefreshSessionsForChatState(state) && isOwnRunEvent) {
+      resetToolStream(entry);
+      clearFallbackNotice(host as unknown as Parameters<typeof clearFallbackNotice>[0]);
+      entry.chatAbortPending = false;
+    }
+    restoreRunStateSnapshot(host, entry);
     if (shouldRefreshSessionsForChatState(state)) {
-      if (isOwnRunEvent) {
-        resetToolStream(host as unknown as Parameters<typeof resetToolStream>[0]);
-        // chat 终态顺手清掉 fallback 提示（其自身也有 5s 自动消失兜底）
-        clearFallbackNotice(host as unknown as Parameters<typeof clearFallbackNotice>[0]);
-        // own-run 终态：中止在途标记清零，Stop 按钮（若新一轮 run 已开始）恢复可用
-        host.chatAbortPending = false;
-      }
       void flushChatQueueForEvent(host as unknown as Parameters<typeof flushChatQueueForEvent>[0]);
       // R5 收敛：终态 sessions 拉取从「700ms + 1500ms 双次轮询」改为单次延迟拉取，
       // 同一 sessionKey 只保留一个挂起 timer（final 与紧随的 sessions.changed /

@@ -561,10 +561,11 @@ test("verifyOutput 应要求基础扩展插件存在", () => {
 });
 
 // P0-11：asar 模式下注入插件 manifest 必须有产物校验。win-arm64 交叉编译下
-// bundleAllPlugins 的注入失败只 log 跳过，9 个注入插件全缺也会绿灯出包。
+// bundleAllPlugins 的注入失败只 log 跳过，全部注入插件缺失也会绿灯出包。
 const INJECTED_PLUGIN_IDS = [
   "cryoclaw-deliverables",
   "cryoclaw-dashboards",
+  "cryoclaw-browser",
   "kimi-search",
   "dingtalk-connector",
   "feishu",
@@ -618,7 +619,7 @@ function loadVerifySandbox() {
   return { sandbox, errors };
 }
 
-test("verifyAsarContents: 9 个注入插件 manifest 齐全 → 通过", async () => {
+test("verifyAsarContents: 全部注入插件 manifest 齐全 → 通过", async () => {
   const { sandbox } = loadVerifySandbox();
   const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "cryoclaw-asar-verify-"));
   try {

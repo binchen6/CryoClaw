@@ -5,7 +5,12 @@ import { parseAgentSessionKey } from "../../../src/sessions/session-key-utils.js
 import { scheduleChatScroll } from "./app-scroll.ts";
 import { setLastActiveSessionKey } from "./app-settings.ts";
 import { resetToolStream } from "./app-tool-stream.ts";
-import { peekRunStateSnapshot, requeueChatMessageForSession } from "./run-state-store.ts";
+import {
+  ensureRunStateSnapshot,
+  peekRunStateSnapshot,
+  requeueChatMessageForSession,
+  restoreRunStateSnapshot,
+} from "./run-state-store.ts";
 import { restoreSessionDraftSnapshot } from "./session-transition.ts";
 import { abortChatRun, isTerminalRunTombstoned, loadChatHistory, resetChatStreamState, sendChatMessage } from "./controllers/chat.ts";
 import { loadSessions, patchSession } from "./controllers/sessions.ts";
@@ -231,9 +236,10 @@ async function sendChatMessageNow(
   const sessionChangedOut = { value: false };
   const ownedRunId = { value: null as string | null };
   const terminalAcknowledgment = { value: null as "final" | "error" | null };
+  const runtime = ensureRunStateSnapshot(requestSessionKey, host);
   const ok = Boolean(
     await sendChatMessage(
-      host as unknown as OpenClawApp,
+      runtime as unknown as OpenClawApp,
       message,
       opts?.attachments,
       (host as any).thinkingLevel,
@@ -250,12 +256,15 @@ async function sendChatMessageNow(
       },
     ),
   );
+  runtime.chatQueue = [...host.chatQueue];
+  if (host.sessionKey === requestSessionKey) restoreRunStateSnapshot(host, runtime);
   if (!ok && ownedRunId.value) {
     const snapshot = peekRunStateSnapshot(requestSessionKey);
     if (snapshot?.chatRunId === ownedRunId.value) {
       resetChatStreamState(snapshot as unknown as Parameters<typeof resetChatStreamState>[0]);
       resetToolStream(snapshot);
       snapshot.chatAbortPending = false;
+      if (host.sessionKey === requestSessionKey) restoreRunStateSnapshot(host, snapshot);
     }
   }
   if (isResetCommand && !ok) {

@@ -3,6 +3,9 @@ import { connectGateway } from "./app-gateway.ts";
 import { scheduleChatScroll } from "./app-scroll.ts";
 import {stopPagePreloads} from "./page-preload.ts";
 import {attachThemeUi,detachThemeUi} from "./theme-live.ts";
+import { attachEmbeddedBrowserAgent, detachEmbeddedBrowserAgent, syncEmbeddedBrowserAgentPolicy } from "./controllers/embedded-browser-agent.ts";
+import { configureShortcuts } from "./keyboard-shortcuts.ts";
+import { configureMotionPreference } from "./utils/motion.ts";
 import {
   applySettingsFromUrl,
   attachThemeListener,
@@ -29,6 +32,10 @@ type LifecycleHost = {
 
 export function handleConnected(host: LifecycleHost) {
   attachThemeUi(host as unknown as import("./app-view-state.ts").AppViewState);
+  attachEmbeddedBrowserAgent(host as unknown as import("./app-view-state.ts").AppViewState);
+  const app = host as unknown as import("./app-view-state.ts").AppViewState;
+  configureShortcuts(app.settings.keyboardShortcuts);
+  configureMotionPreference(app.settings.motionPreference);
   host.basePath = inferBasePath();
   applySettingsFromUrl(host as unknown as Parameters<typeof applySettingsFromUrl>[0]);
   syncTabWithLocation(host as unknown as Parameters<typeof syncTabWithLocation>[0], true);
@@ -51,12 +58,20 @@ export function deferredGatewayConnect(host: LifecycleHost) {
 
 export function handleDisconnected(host: LifecycleHost) {
   detachThemeUi(host as unknown as import("./app-view-state.ts").AppViewState);
+  detachEmbeddedBrowserAgent(host as unknown as import("./app-view-state.ts").AppViewState);
   stopPagePreloads(host as unknown as import("./app-view-state.ts").AppViewState);
   window.removeEventListener("popstate", host.popStateHandler);
   detachThemeListener(host as unknown as Parameters<typeof detachThemeListener>[0]);
 }
 
 export function handleUpdated(host: LifecycleHost, changed: Map<PropertyKey, unknown>) {
+  if (changed.has("settings")) {
+    const app = host as unknown as import("./app-view-state.ts").AppViewState;
+    configureShortcuts(app.settings.keyboardShortcuts);
+    configureMotionPreference(app.settings.motionPreference);
+    syncEmbeddedBrowserAgentPolicy(app);
+    if (!app.settings.embeddedBrowserEnabled && app.dockActiveTab === "browser") app.dockActiveTab = "changes";
+  }
   if (
     host.tab === "chat" &&
     (changed.has("chatMessages") ||

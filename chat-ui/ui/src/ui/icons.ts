@@ -109,6 +109,9 @@ export const icons = {
   panelLeft: renderIcon(
     '<rect x="3" y="4.5" width="18" height="15" rx="2"/><path d="M9.5 4.5v15"/>',
   ),
+  panelRight: renderIcon(
+    '<rect x="3" y="4.5" width="18" height="15" rx="2"/><path d="M14.5 4.5v15"/>',
+  ),
   messagePlus: renderIcon(
     '<path d="M20.5 11.5a8.5 8.5 0 0 1-8.5 8.5c-1.3 0-2.5-.3-3.6-.8L3 20.5l1.5-4.4A8.5 8.5 0 1 1 20.5 11.5z"/>' +
       '<path d="M12 8.5v6"/><path d="M9 11.5h6"/>',

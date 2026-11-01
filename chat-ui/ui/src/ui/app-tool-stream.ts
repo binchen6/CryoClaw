@@ -50,6 +50,10 @@ export type ToolStreamEntry = {
   runId: string;
   sessionKey?: string;
   name: string;
+  title?: string;
+  summary?: string;
+  meta?: string;
+  activityStatus?: string;
   args?: unknown;
   output?: string;
   // A progress update can already contain output. Completion belongs to the
@@ -185,6 +189,10 @@ function buildToolCallMessage(entry: ToolStreamEntry): Record<string, unknown> {
         type: "toolCall",
         id: entry.toolCallId,
         name: entry.name,
+        ...(entry.title ? { title: entry.title } : {}),
+        ...(entry.summary ? { summary: entry.summary } : {}),
+        ...(entry.meta ? { meta: entry.meta } : {}),
+        ...(entry.activityStatus ? { activityStatus: entry.activityStatus } : {}),
         arguments: entry.args ?? {},
         // R52 T4：实时/最终 diff 统计随 call 内容块进渲染层（extractToolCards 读 item.diffStat）
         ...(entry.diffStat ? { diffStat: { ...entry.diffStat } } : {}),
@@ -683,6 +691,41 @@ export function handleAgentEvent(host: ToolStreamHost, payload?: AgentEventPaylo
   if (payload.stream === "item") {
     const data = payload.data ?? {};
     const kind = typeof data.kind === "string" ? data.kind : "";
+    if (kind === "tool") {
+      const sessionKey = typeof payload.sessionKey === "string" ? payload.sessionKey : undefined;
+      if (
+        host.chatRunId &&
+        (!payload.runId || payload.runId === host.chatRunId) &&
+        (!sessionKey || sessionKey === host.sessionKey)
+      ) {
+        const toolCallId = asNonEmptyString(data.toolCallId) ?? asNonEmptyString(data.itemId);
+        if (toolCallId) {
+          if (!host.toolStreamById.has(toolCallId)) {
+            handleAgentEvent(host, {
+              ...payload,
+              stream: "tool",
+              data: {
+                phase: "start",
+                toolCallId,
+                name: asNonEmptyString(data.name) ?? "tool",
+                args: data.args ?? data.input ?? {},
+              },
+            });
+          }
+          const entry = host.toolStreamById.get(toolCallId);
+          if (entry) {
+            entry.title = asNonEmptyString(data.title) ?? entry.title;
+            entry.summary = asNonEmptyString(data.summary) ?? entry.summary;
+            entry.meta = asNonEmptyString(data.meta) ?? entry.meta;
+            entry.activityStatus = asNonEmptyString(data.status) ?? entry.activityStatus;
+            entry.updatedAt = Date.now();
+            entry.callMessage = { ...buildToolCallMessage(entry), timestamp: entry.startedAt };
+            host.chatLastActivityAt = entry.updatedAt;
+            scheduleToolStreamSync(host);
+          }
+        }
+      }
+    }
     if (kind === "preamble" || kind === "answer_candidate") {
       const sessionKey = typeof payload.sessionKey === "string" ? payload.sessionKey : undefined;
       if (

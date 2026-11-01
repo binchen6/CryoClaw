@@ -49,8 +49,12 @@ import type { PlanStreamState } from "./plan-stream.ts";
 import type { ChatQueueItem } from "./ui-types.ts";
 
 export type RunStateSnapshot = {
+  // 宿主身份隔离不同 app 窗口/测试实例；真实重连保持同一宿主，条目不销毁。
+  ownerHost?: object;
   // 事件归属会话：handleChatEvent/handleAgentEvent 内部的 sessionKey 过滤以它为锚
   sessionKey: string;
+  client: ChatState["client"];
+  connected: boolean;
   chatStream: string | null;
   chatPendingStreamText: string | null;
   chatStreamFrozenPrefix: string;
@@ -69,9 +73,12 @@ export type RunStateSnapshot = {
   // 终态轮记录（等长滞后判定用，见 controllers/chat.ts noteRunTerminal）
   chatTerminalRun: { runId: string; startedAt: number } | null;
   chatQueue: ChatQueueItem[];
-  // 后台终态合成的 cryoclawPartial 占位只写在这里（瞬态）：恢复时刻意不写回
-  // host.chatMessages——历史由 loadChatHistory 承载，写回会与历史双份。
+  // 会话消息也归条目持有：切回先投影本地消息，再由带代际的历史请求对账。
   chatMessages: unknown[];
+  chatVisibleMessageCount: number;
+  chatLoading: boolean;
+  chatThinkingLevel: string | null;
+  chatHistoryHydrationFrame: number | null;
   chatStreamFrame: number | null;
   planState: PlanStreamState | null;
   // 工具时间线（字段名即 ToolStreamHost 契约）：快照对象本身即时间线宿主，
@@ -90,6 +97,8 @@ export type RunStateSnapshot = {
 // 超集；全部字段可选以兼容测试替身（缺省按空值处理）。
 export type RunStateCaptureSource = {
   sessionKey?: string;
+  client?: ChatState["client"];
+  connected?: boolean;
   chatStream?: string | null;
   chatPendingStreamText?: string | null;
   chatStreamFrozenPrefix?: string;
@@ -105,6 +114,10 @@ export type RunStateCaptureSource = {
   chatTerminalRun?: { runId: string; startedAt: number } | null;
   chatQueue?: unknown[];
   chatMessages?: unknown[];
+  chatVisibleMessageCount?: number;
+  chatLoading?: boolean;
+  chatThinkingLevel?: string | null;
+  chatHistoryHydrationFrame?: number | null;
   chatStreamFrame?: number | null;
   planState?: unknown | null;
   toolStreamSyncTimer?: number | null;
@@ -149,16 +162,9 @@ export function saveRunStateSnapshot(sessionKey: string, snapshot: RunStateSnaps
   }
 }
 
-/** 非破坏性读取（后台事件分派用；恢复走一次性 take） */
+/** 非破坏性读取：后台事件与前台投影共享同一条目，不再一次性销毁。 */
 export function peekRunStateSnapshot(sessionKey: string): RunStateSnapshot | null {
   return runStateSnapshots.get(sessionKey) ?? null;
-}
-
-/** 一次性读取（恢复后即删除：host 字段接管，快照不得残留成第二写入目标） */
-export function takeRunStateSnapshot(sessionKey: string): RunStateSnapshot | null {
-  const snapshot = runStateSnapshots.get(sessionKey) ?? null;
-  runStateSnapshots.delete(sessionKey);
-  return snapshot;
 }
 
 // 会话被删除时同步清理其快照（app-session-actions.ts deleteSessionFromSidebar 调用，
@@ -186,6 +192,8 @@ export function requeueChatMessageForSession(sessionKey: string, item: ChatQueue
   }
   saveRunStateSnapshot(sessionKey, {
     sessionKey,
+    client: null,
+    connected: false,
     chatStream: null,
     chatPendingStreamText: null,
     chatStreamFrozenPrefix: "",
@@ -201,6 +209,10 @@ export function requeueChatMessageForSession(sessionKey: string, item: ChatQueue
     chatTerminalRun: null,
     chatQueue: [item],
     chatMessages: [],
+    chatVisibleMessageCount: 0,
+    chatLoading: false,
+    chatThinkingLevel: null,
+    chatHistoryHydrationFrame: null,
     chatStreamFrame: null,
     planState: null,
     toolStreamById: new Map<string, ToolStreamEntry>(),
@@ -241,7 +253,10 @@ export function captureRunStateSnapshot(source: RunStateCaptureSource): RunState
     flushToolStreamSync(source as unknown as ToolStreamHost);
   }
   const snapshot: RunStateSnapshot = {
+    ownerHost: source,
     sessionKey: source.sessionKey ?? "",
+    client: source.client ?? null,
+    connected: source.connected ?? false,
     chatStream: source.chatStream ?? null,
     chatPendingStreamText: source.chatPendingStreamText ?? null,
     chatStreamFrozenPrefix: source.chatStreamFrozenPrefix ?? "",
@@ -256,9 +271,11 @@ export function captureRunStateSnapshot(source: RunStateCaptureSource): RunState
     chatAbortPending: source.chatAbortPending ?? false,
     chatTerminalRun: source.chatTerminalRun ?? null,
     chatQueue: Array.isArray(source.chatQueue) ? [...(source.chatQueue as ChatQueueItem[])] : [],
-    // 历史永不进快照（文件头契约；浅拷也会驻留 20 份消息引用 + 附件 base64）。
-    // 空数组只承载后台终态的合成 partial 占位注入形态（注入后随即清空）。
-    chatMessages: [],
+    chatMessages: Array.isArray(source.chatMessages) ? [...source.chatMessages] : [],
+    chatVisibleMessageCount: source.chatVisibleMessageCount ?? 0,
+    chatLoading: source.chatLoading ?? false,
+    chatThinkingLevel: source.chatThinkingLevel ?? null,
+    chatHistoryHydrationFrame: null,
     chatStreamFrame: null, // 帧不跨宿主（上方已 flush）
     planState: (source.planState as PlanStreamState | null | undefined) ?? null,
     // 工具时间线：测试替身无这些字段时退化为空时间线
@@ -309,10 +326,36 @@ export function restoreRunStateSnapshot(
   host.chatAbortPending = snapshot.chatAbortPending;
   host.chatTerminalRun = snapshot.chatTerminalRun;
   host.chatQueue = [...snapshot.chatQueue];
+  host.chatMessages = [...snapshot.chatMessages];
+  host.chatVisibleMessageCount = snapshot.chatVisibleMessageCount;
+  host.chatLoading = snapshot.chatLoading;
+  host.chatThinkingLevel = snapshot.chatThinkingLevel;
+  host.chatHistoryHydrationFrame = null;
   host.planState = snapshot.planState;
-  // chatMessages 刻意不恢复：历史由 loadChatHistory 重拉承载（见文件头第 3 点）。
-  // 快照的四个时间线字段即 ToolStreamTimelineSnapshot 契约，直接整体换回。
   restoreToolStreamTimeline(host as unknown as ToolStreamHost, snapshot);
+}
+
+/**
+ * Resolve the persistent runtime for a session. The first projection captures the
+ * current host; later calls always return the same entry so background events and
+ * late responses retain one owner across arbitrary session/view switches.
+ */
+export function ensureRunStateSnapshot(
+  sessionKey: string,
+  source?: RunStateCaptureSource,
+): RunStateSnapshot {
+  const existing = runStateSnapshots.get(sessionKey);
+  if (existing && (!source || !existing.ownerHost || existing.ownerHost === source)) {
+    if (source) {
+      existing.client = source.client ?? null;
+      existing.connected = source.connected ?? false;
+    }
+    return existing;
+  }
+  const snapshot = captureRunStateSnapshot(source ? { ...source, sessionKey } : { sessionKey });
+  if (source) snapshot.ownerHost = source;
+  saveRunStateSnapshot(sessionKey, snapshot);
+  return snapshot;
 }
 
 // ── 后台事件分派（二期：payload.sessionKey !== host.sessionKey 的事件） ──
@@ -345,11 +388,9 @@ export function dispatchBackgroundChatEvent(payload: ChatEventPayload): void {
   }
   // own-run 终态：run 态已由 handleChatEvent 内 resetChatStreamState 清掉；工具
   // 时间线在此清零（前台 own-run 终态由 app-gateway resetToolStream，后台自理）。
-  // chatQueue/planState 刻意保留——后台终态后切回，排队消息仍要继续自动发出；
-  // 合成 partial 占位随 chatMessages 清空（历史是唯一渲染源）。
+  // chatQueue/planState/messages 保留：切回先投影最近视图，历史对账再替换合成占位。
   resetToolStream(entry as unknown as ToolStreamHost);
   entry.chatAbortPending = false;
-  entry.chatMessages = [];
   markRunStateHistoryDirty(payload.sessionKey);
 }
 

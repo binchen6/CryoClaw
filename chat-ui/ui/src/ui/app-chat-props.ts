@@ -2,7 +2,9 @@
  * 对话页 props 装配：把 AppViewState 映射为 renderChat 所需的 ChatProps。
  * 从 app-render.ts 抽出（阶段 16 架构重构），行为与原内联 props 完全一致。
  */
+import { html } from "lit";
 import type { AppViewState } from "./app-view-state.ts";
+import { fetchSessionChangeStats, selectSessionChanges } from "./session-changes.ts";
 import type { ChatAttachment } from "./ui-types.ts";
 import { removeFailedSendArtifacts } from "./app-chat.ts";
 import { showToast } from "./app-toast.ts";
@@ -18,16 +20,36 @@ import { applyQuestionResolution, buildResolveParams } from "./chat/question-car
 import { getCachedCommands, loadCommands } from "./controllers/commands.ts";
 import { loadSessionBranches } from "./controllers/session-branches.ts";
 import { listEligibleSkills } from "./controllers/skills.ts";
-import { openWorkspaceView } from "./lazy-view.ts";
+import { openDockTab, toggleDock } from "./controllers/dock.ts";
+import "./components/oc-turn-diff-card.ts";
+import "./components/oc-embedded-browser.ts";
+import { renderWorkspaceFilePreview } from "./views/workspace.ts";
+import { initGitPanel } from "./controllers/git.ts";
+import { setWorkspaceRoot, workspaceViewState } from "./controllers/workspace.ts";
 import { confirmAndUndoTurnChanges } from "./app-chat-undo.ts";
 import { handleReconnect } from "./app-session-actions.ts";
 import { dismissPlan } from "./plan-stream.ts";
 import { loadBoard } from "./controllers/board.ts";
 import { dismissProgressCard } from "./controllers/progress-card.ts";
-import { t } from "./i18n.ts";
+import { getLocale, t } from "./i18n.ts";
 import type { ChatProps } from "./views/chat.ts";
 import {sessionFastMode,setSessionFastMode} from './controllers/session-fast-mode.ts';
 import { updateSessionAttachments } from "./session-transition.ts";
+import { closeSubagentPanel, openSubagentPanel } from "./controllers/subagent-panel.ts";
+
+function renderSessionChanges(state: AppViewState) {
+  const files = selectSessionChanges(state);
+  const workspace = state.settings.pinnedWorkspaces.find((item) => item.id === state.settings.sessionWorkspaceMap[state.sessionKey]);
+  if (files.length === 0) return html`<div class="context-dock__empty">${t("git.clean")}</div>`;
+  return html`<div class="session-changes"><oc-turn-diff-card
+    .files=${files}
+    .workspacePath=${workspace?.path ?? ""}
+    .gitAvailable=${state.gitAvailable === true}
+    .statsLoader=${() => fetchSessionChangeStats(state, files)}
+    .locale=${getLocale()}
+    .onDiscard=${() => void confirmAndUndoTurnChanges(state, workspace?.path ?? "", files)}
+  ></oc-turn-diff-card></div>`;
+}
 
 export function buildChatProps(state: AppViewState): ChatProps {
   const sessionKey = state.sessionKey;
@@ -52,6 +74,79 @@ export function buildChatProps(state: AppViewState): ChatProps {
     // 引用技能：走官方 skills.status，过滤 disabled / ineligible 后供加号菜单展示
     onListSkills: () => listEligibleSkills(state),
     onSessionKeyChange: (next) => applySessionKey(state, next),
+    subagentPanel: state.subagentPanelKey
+      ? {
+          key: state.subagentPanelKey,
+          title: state.sessionsResult?.sessions.find((row) => row.key === state.subagentPanelKey)?.label
+            ?? state.sessionsResult?.sessions.find((row) => row.key === state.subagentPanelKey)?.displayName
+            ?? state.subagentPanelKey,
+          status: state.sessionsResult?.sessions.find((row) => row.key === state.subagentPanelKey)?.status ?? "",
+          messages: state.subagentPanelMessages,
+          visibleHistoryCount: state.subagentPanelVisibleMessageCount,
+          toolMessages: state.subagentPanelToolMessages,
+          stream: state.subagentPanelStream,
+          thinkingStream: state.subagentPanelThinkingStream,
+          narrationText: state.subagentPanelNarrationText,
+          streamStartedAt: state.subagentPanelStreamStartedAt,
+          loading: state.subagentPanelLoading,
+          error: state.subagentPanelError,
+        }
+      : null,
+    onOpenSubagentPanel: (key) => {
+      state.sidebarOpen = false;
+      state.sidebarContent = null;
+      state.sidebarError = null;
+      openDockTab(state, "subagent");
+      openSubagentPanel(state, key);
+    },
+    onCloseSubagentPanel: () => closeSubagentPanel(state),
+    dockCollapsed: state.settings.dockCollapsed,
+    dockMaximized: state.dockMaximized,
+    dockActiveTab: state.dockActiveTab,
+    dockChangesContent: renderSessionChanges(state),
+    dockFilesContent: renderWorkspaceFilePreview(state, {
+      onAttachFile: (path, name) => {
+        if (!state.chatAttachments.some((item) => item.filePath === path)) {
+          state.chatAttachments = [...state.chatAttachments, {
+            id: crypto.randomUUID(), filePath: path, name,
+            ...(workspaceViewState.imagePreview ? { thumbnailUrl: workspaceViewState.imagePreview } : {}),
+          }];
+        }
+      },
+      onOpenItemFolder: (path) => {
+        void window.cryoclaw?.workspaceOpenFolder?.(path);
+      },
+      onChooseRoot: () => {
+        void (async () => {
+          try {
+            const selected = await window.cryoclaw?.selectDirectory?.();
+            if (selected && await setWorkspaceRoot(state, selected, true)) {
+              await initGitPanel(state, selected);
+            }
+          } catch (error) {
+            workspaceViewState.error = String(error);
+            state.requestUpdate();
+          }
+        })();
+      },
+    }),
+    dockBrowserEnabled: state.settings.embeddedBrowserEnabled,
+    dockBrowserContent: state.settings.embeddedBrowserEnabled
+      ? html`<oc-embedded-browser
+          .zoom=${state.settings.embeddedBrowserZoom}
+          .downloadPath=${state.settings.embeddedBrowserDownloadPath}
+          .askSavePath=${state.settings.embeddedBrowserAskSavePath}
+          .maxBytes=${state.settings.embeddedBrowserMaxBytes}
+          .userAgent=${state.settings.embeddedBrowserUserAgent}
+          .searchEngine=${state.settings.embeddedBrowserSearchEngine}
+        ></oc-embedded-browser>`
+      : undefined,
+    onSelectDockTab: (tab) => openDockTab(state, tab),
+    onToggleDock: () => toggleDock(state),
+    onToggleMaximized: () => {
+      state.dockMaximized = !state.dockMaximized;
+      if (state.dockMaximized) openDockTab(state, state.dockActiveTab);
+    },
     thinkingLevel: state.chatThinkingLevel,
     showThinking: state.onboarding ? false : state.settings.chatShowThinking,
     loading: state.chatLoading,
@@ -147,7 +242,10 @@ export function buildChatProps(state: AppViewState): ChatProps {
     onShowToast: (message) => showToast(state, message),
     // file-changes 面板「在 git 中查看」→ git 面板视图（P4）
     gitAvailable: state.gitAvailable,
-    onOpenGitView: () => openWorkspaceView(state, "git"),
+    onOpenGitView: () => {
+      openDockTab(state, "changes");
+      void initGitPanel(state, workspaceViewState.root);
+    },
     // 终态改动卡片「撤销」：危险确认后丢弃工作区改动（tracked → discard，未跟踪 → clean）
     onUndoFileChanges: (files) => void confirmAndUndoTurnChanges(state, workspace?.path ?? "", files),
     // 会话分支（rewind/fork/switch，内核 2026.9.7 branch tree）

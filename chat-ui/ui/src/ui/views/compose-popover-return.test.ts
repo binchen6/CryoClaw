@@ -38,7 +38,7 @@ test("目标表单：Esc/取消/提交走同一条关闭路径并回焦加号按
   assert.match(compose, /querySelector<HTMLInputElement>\("\.chat-goal-form__input"\)\?\.focus\(\)/);
 });
 
-test("会话信息面板：Esc 与点外部同一条退场，关闭回焦 contextbar 信息按钮", () => {
+test("会话信息面板：Esc、点外部与关闭按钮共用一条退场", () => {
   const info = source("ui/views/conversation-info.ts");
   assert.match(info, /let opener: HTMLElement \| null = null/);
   assert.match(info, /document\.addEventListener\("keydown", escapeCloser, true\)/);
@@ -46,8 +46,6 @@ test("会话信息面板：Esc 与点外部同一条退场，关闭回焦 contex
   assert.match(info, /document\.removeEventListener\("keydown", escapeCloser, true\)/);
   assert.match(info, /const restore = \(\) => requestAnimationFrame\(\(\) => target\?\.focus\(\)\)/);
   assert.match(info, /export function toggleConversationInfo\(update: \(\) => void, trigger: HTMLElement \| null = null\)/);
-  // 面板内部只保留 X 按钮，不再依赖焦点在面板内才能响应 Esc
   assert.doesNotMatch(info, /@keydown=\$\{\(e: KeyboardEvent\) => \{ if \(e\.key === "Escape"\)/);
-  const render = source("ui/app-render.ts");
-  assert.match(render, /toggleConversationInfo\(\(\) => state\.requestUpdate\(\), event\.currentTarget as HTMLElement\)/);
+  assert.match(info, /@click=\$\{\(\) => toggleConversationInfo\(\(\) => props\.onRequestUpdate\?\.\(\)\)\}/);
 });

@@ -42,6 +42,7 @@ import {
 import { renderApp } from "./app-render.ts";
 import { showToast } from "./app-toast.ts";
 import { runExitAnimation } from "./utils/exit-anim.ts";
+import { MOTION_MS, prefersReducedMotion } from "./utils/motion.ts";
 import {
   handleChatScroll as handleChatScrollInternal,
   resetChatScroll as resetChatScrollInternal,
@@ -76,6 +77,9 @@ import { isWebbridgePinStaleError } from "./webbridge-error.ts";
 import { closeTopDialog, focusOpenDialogIfNeeded, isEscapeKey, trapDialogTab } from "./dialog-a11y.ts";
 import { resolveThinkingCapabilities } from "./chat/thinking-levels.ts";
 import { loadChatHistory as loadChatHistoryInternal } from "./controllers/chat.ts";
+import { closeSubagentPanel } from "./controllers/subagent-panel.ts";
+import { openDockTab, type DockTabId } from "./controllers/dock.ts";
+import { loadWorkspaceFile } from "./controllers/workspace.ts";
 import { getLocale, t, tWithDetail } from "./i18n.ts";
 import { loadSettings, type UiSettings } from "./storage.ts";
 import { type ChatAttachment, type ChatQueueItem, type ConfiguredModel, type CronFormState } from "./ui-types.ts";
@@ -234,6 +238,18 @@ export class OpenClawApp extends LitElement {
     sidebarLeaving: { state: true },
     sidebarContent: { state: true },
     sidebarError: { state: true },
+    subagentPanelKey: { state: true },
+    subagentPanelMessages: { state: true },
+    subagentPanelVisibleMessageCount: { state: true },
+    subagentPanelToolMessages: { state: true },
+    subagentPanelStream: { state: true },
+    subagentPanelThinkingStream: { state: true },
+    subagentPanelNarrationText: { state: true },
+    subagentPanelStreamStartedAt: { state: true },
+    subagentPanelLoading: { state: true },
+    subagentPanelError: { state: true },
+    dockActiveTab: { state: true },
+    dockMaximized: { state: true },
     splitRatio: { state: true },
     execApprovalQueue: { state: true },
     execApprovalBusy: { state: true },
@@ -443,6 +459,18 @@ export class OpenClawApp extends LitElement {
   sidebarLeaving = false;
   sidebarContent: string | null = null;
   sidebarError: string | null = null;
+  subagentPanelKey: string | null = null;
+  subagentPanelMessages: unknown[] = [];
+  subagentPanelVisibleMessageCount = 0;
+  subagentPanelToolMessages: Record<string, unknown>[] = [];
+  subagentPanelStream: string | null = null;
+  subagentPanelThinkingStream: string | null = null;
+  subagentPanelNarrationText: string | null = null;
+  subagentPanelStreamStartedAt: number | null = null;
+  subagentPanelLoading = false;
+  subagentPanelError: string | null = null;
+  dockActiveTab: DockTabId = "changes";
+  dockMaximized = false;
   splitRatio = this.settings.splitRatio;
 
   execApprovalQueue: ExecApprovalRequest[] = [];
@@ -603,6 +631,7 @@ export class OpenClawApp extends LitElement {
   private themeMedia: MediaQueryList | null = null;
   private themeMediaHandler: ((event: MediaQueryListEvent) => void) | null = null;
   private appNavigateCleanup: (() => void) | null = null;
+  private filePreviewCleanup: (() => void) | null = null;
   private gatewayReadyCleanup: (() => void) | null = null;
   private gatewayProgressCleanup: (() => void) | null = null;
   private webbridgeStateCleanup: (() => void) | null = null;
@@ -635,7 +664,19 @@ export class OpenClawApp extends LitElement {
     this.bindAppUpdateState();
     this.bindKernelUpdateProgress();
     this.bindGitDetection();
+    this.bindFilePreview();
     this.fetchReleaseNotes();
+  }
+
+  private bindFilePreview() {
+    const listener = (event: Event) => {
+      const path = (event as CustomEvent<{ path?: unknown }>).detail?.path;
+      if (typeof path !== "string" || !path) return;
+      openDockTab(this, "files");
+      void loadWorkspaceFile(this, path, path.split(/[\\/]/).pop() ?? path);
+    };
+    document.addEventListener("cryoclaw:file-preview", listener);
+    this.filePreviewCleanup = () => document.removeEventListener("cryoclaw:file-preview", listener);
   }
 
   // git CLI 探测（主进程启动时已缓存）：无 git 时 worktree 新建入口降级隐藏，
@@ -815,6 +856,8 @@ export class OpenClawApp extends LitElement {
   disconnectedCallback() {
     this.appNavigateCleanup?.();
     this.appNavigateCleanup = null;
+    this.filePreviewCleanup?.();
+    this.filePreviewCleanup = null;
     this.gatewayReadyCleanup?.();
     this.gatewayReadyCleanup = null;
     this.gatewayProgressCleanup?.();
@@ -1628,6 +1671,8 @@ export class OpenClawApp extends LitElement {
 
   // Sidebar handlers for tool output viewing
   handleOpenSidebar(content: string) {
+    if (this.subagentPanelKey) closeSubagentPanel(this);
+    openDockTab(this, "files");
     if (this.sidebarCloseTimer != null) {
       window.clearTimeout(this.sidebarCloseTimer);
       this.sidebarCloseTimer = null;
@@ -1641,7 +1686,7 @@ export class OpenClawApp extends LitElement {
 
   handleCloseSidebar() {
     if (!this.sidebarOpen || this.sidebarLeaving) return;
-    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const reduced = prefersReducedMotion();
     if (reduced) {
       this.sidebarOpen = false;
       this.sidebarContent = null;
@@ -1656,7 +1701,7 @@ export class OpenClawApp extends LitElement {
       this.sidebarContent = null;
       this.sidebarError = null;
       this.sidebarCloseTimer = null;
-    }, 200);
+    }, MOTION_MS.panel);
   }
 
   handleSplitRatioChange(ratio: number) {

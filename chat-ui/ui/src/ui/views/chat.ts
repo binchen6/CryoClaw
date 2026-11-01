@@ -1,10 +1,9 @@
-import { html, nothing } from "lit";
+import { html, nothing, type TemplateResult } from "lit";
 import { repeat } from "lit/directives/repeat.js";
 import type { SessionsListResult } from "../types.ts";
 import type { ChatAttachment, ChatQueueItem, ConfiguredModel } from "../ui-types.ts";
 import { icons } from "../icons.ts";
 import { getLocale, t } from "../i18n.ts";
-import { renderMarkdownSidebar } from "./markdown-sidebar.ts";
 import type { CommandEntry, ExecApprovalRequest } from "../types.ts";
 import type { SessionGoal } from "../types.ts";
 import "../components/oc-resizable-divider.ts";
@@ -14,10 +13,11 @@ import "../components/oc-chat-stream.ts";
 // 历史消息/工具时间线列表独立组件（R41 Task 11）：草稿敲击/连接态等高频更新不再重求值这棵最重子树，
 // 历史 memo 调用点也随之移入组件（接线见 renderChat 线程内 hero 与 <oc-chat-stream> 之间）
 import "../components/oc-chat-history.ts";
-import "../components/oc-turn-files.ts";
 import "../components/oc-command-jobs.ts";
+import "../components/oc-context-dock.ts";
+import type { DockTabId } from "../controllers/dock.ts";
 import { computeStopButtonVisible } from "./chat-stop-button-gate.ts";
-import { resolveChatShortcut } from "../keyboard-shortcuts.ts";
+import { matchesShortcut, resolveChatShortcut } from "../keyboard-shortcuts.ts";
 import { findOpenDialog } from "../dialog-a11y.ts";
 import { resolveModelSelectKey } from "../controllers/models.ts";
 import { resolveActiveToolName } from "../chat/tool-summary.ts";
@@ -25,6 +25,7 @@ import { appendQuoteToDraft } from "../chat/quote-text.ts";
 import type { SessionBranch } from "../controllers/session-branches.ts";
 import { isFailedSubagentStatus, selectSubagentCards, type SubagentCard } from "../chat/subagent-status.ts";
 import { isStreamTextDuplicatedInHistory } from "../chat/stream-bubble-guard.ts";
+import { formatDurationHuman } from "../../../../src/infra/format-time/format-duration.js";
 import { selectPendingQuestions, type QuestionPrompt } from "../chat/question-cards.ts";
 import type { FileChange } from "../chat/file-changes.ts";
 import { renderQuestionCards } from "./question-card.ts";
@@ -65,6 +66,33 @@ export type ChatProps = {
   workspacePath?: string;
   sessionKey: string;
   onSessionKeyChange: (next: string) => void;
+  subagentPanel?: {
+    key: string;
+    title: string;
+    status: string;
+    messages: unknown[];
+    visibleHistoryCount: number;
+    toolMessages: Record<string, unknown>[];
+    stream: string | null;
+    thinkingStream: string | null;
+    narrationText: string | null;
+    streamStartedAt: number | null;
+    loading: boolean;
+    error: string | null;
+  } | null;
+  onOpenSubagentPanel?: (sessionKey: string) => void;
+  onCloseSubagentPanel?: () => void;
+  dockCollapsed?: boolean;
+  dockMaximized?: boolean;
+  dockActiveTab?: DockTabId;
+  dockBrowserEnabled?: boolean;
+  dockChangesContent?: TemplateResult;
+  dockFilesContent?: TemplateResult;
+  dockTerminalContent?: TemplateResult;
+  dockBrowserContent?: TemplateResult;
+  onSelectDockTab?: (tab: DockTabId) => void;
+  onToggleDock?: () => void;
+  onToggleMaximized?: () => void;
   thinkingLevel: string | null;
   showThinking: boolean;
   loading: boolean;
@@ -234,26 +262,37 @@ function openChatPath(path: string | undefined, props: ChatProps) {
   }
 }
 
-// 对话页全局快捷键（R14）：Ctrl+N 新建对话 / Ctrl+L 聚焦输入框。
-// document 级监听，模块级持有最新 props 引用，避免闭包旧值（同 plusMenuOutsideCloser 思路）。
+// 对话页与 Dock 共用用户快捷键配置；document 级监听只保留最新 props。
 let chatShortcutProps: ChatProps | null = null;
 let chatShortcutHandler: ((ev: KeyboardEvent) => void) | null = null;
+const dockShortcuts = [
+  ["dockChanges", "changes"], ["dockBrowser", "browser"], ["dockTerminal", "terminal"],
+  ["dockFiles", "files"], ["dockSubagent", "subagent"],
+] as const;
 
 function ensureChatShortcuts(props: ChatProps) {
   chatShortcutProps = props;
   if (chatShortcutHandler) return;
   chatShortcutHandler = (ev: KeyboardEvent) => {
-    // 仅对话视图生效：监听是 document 级常驻的，视图切走后仍存活——不设门的话
-    // 设置/任务等页面按 Ctrl+N 会在无关视图上弹「新建对话」确认框。以聊天视图
-    // 独有的输入框容器存在与否判定当前视图。
     if (!document.querySelector(".chat-compose__field")) return;
-    const action = resolveChatShortcut(ev, Boolean(document.querySelector("dialog[open]") || findOpenDialog()));
+    const modalOpen = Boolean(document.querySelector("dialog[open]") || findOpenDialog());
+    const action = resolveChatShortcut(ev, modalOpen);
     if (action === "new-session") {
       ev.preventDefault();
       chatShortcutProps?.onNewSession?.();
-    } else if (action === "focus-composer") {
+      return;
+    }
+    if (action === "focus-composer") {
       ev.preventDefault();
       document.querySelector<HTMLTextAreaElement>(".chat-compose__field textarea")?.focus();
+      return;
+    }
+    for (const [id, tab] of dockShortcuts) {
+      if (!matchesShortcut(ev, id, modalOpen)) continue;
+      if (tab === "browser" && chatShortcutProps?.dockBrowserEnabled !== true) continue;
+      ev.preventDefault();
+      chatShortcutProps?.onSelectDockTab?.(tab);
+      return;
     }
   };
   document.addEventListener("keydown", chatShortcutHandler);
@@ -308,6 +347,8 @@ export function renderChat(props: ChatProps) {
 
   const splitRatio = props.splitRatio ?? 0.6;
   const sidebarOpen = Boolean(props.sidebarOpen && props.onCloseSidebar);
+  const dockExpanded = props.dockCollapsed === false;
+  const dockMaximized = dockExpanded && props.dockMaximized === true;
   // 当前正在执行的工具（有 call 无 result），用于流式状态行的阶段提示（供 <oc-chat-stream>）
   const activeToolName = resolveActiveToolName(
     Array.isArray(props.toolMessages) ? props.toolMessages : [],
@@ -360,7 +401,7 @@ export function renderChat(props: ChatProps) {
         if (subsession) {
           e.preventDefault();
           const key = (subsession as HTMLElement).dataset.sessionKey;
-          if (key) props.onSessionKeyChange(key);
+          if (key) props.onOpenSubagentPanel?.(key);
           return;
         }
         const link = (e.target as HTMLElement | null)?.closest?.(".chat-path-link");
@@ -384,7 +425,7 @@ export function renderChat(props: ChatProps) {
           e.preventDefault();
           e.stopPropagation();
           const key = (subsession as HTMLElement).dataset.sessionKey;
-          if (key) props.onSessionKeyChange(key);
+          if (key) props.onOpenSubagentPanel?.(key);
           return;
         }
         const link = (e.target as HTMLElement).closest(".chat-path-link");
@@ -501,7 +542,7 @@ export function renderChat(props: ChatProps) {
             ></oc-chat-stream>`
           : nothing
       }
-      ${subagentCards.length > 0 ? renderSubagentCards(subagentCards, props.onSessionKeyChange) : nothing}
+      ${subagentCards.length > 0 ? renderSubagentCards(subagentCards, (key) => props.onOpenSubagentPanel?.(key)) : nothing}
       ${
         // R61 问答卡片：pending 问题（当前会话过滤）出卡，位于子代理卡之后、compose 之前
         (() => {
@@ -526,39 +567,41 @@ export function renderChat(props: ChatProps) {
           </div>`
         : nothing}
 
-      <div
-        class="chat-split-container ${sidebarOpen ?"chat-split-container--open" : ""}"
-      >
-        <div
-          class="chat-main"
-          style="flex: ${sidebarOpen ? `0 0 ${splitRatio * 100}%` : "1 1 100%"}"
-        >
+      <div class="chat-split-container ${dockMaximized ? "chat-split-container--maximized" : dockExpanded ? "chat-split-container--open" : "chat-split-container--collapsed"}">
+        <div class="chat-main" style="flex: ${dockExpanded ? `0 0 ${splitRatio * 100}%` : "1 1 100%"}; ${dockMaximized ? "display:none" : ""}">
           ${thread}
         </div>
-
-        ${
-          sidebarOpen
-            ? html`
-              <oc-resizable-divider
-                .splitRatio=${splitRatio}
-                @resize=${(e: CustomEvent) => props.onSplitRatioChange?.(e.detail.splitRatio)}
-              ></oc-resizable-divider>
-              <div class="chat-sidebar ${props.sidebarLeaving ? "chat-sidebar--leaving" : ""}">
-                ${renderMarkdownSidebar({
-                  content: props.sidebarContent ?? null,
-                  error: props.sidebarError ?? null,
-                  onClose: props.onCloseSidebar!,
-                  onViewRawText: () => {
-                    if (!props.sidebarContent || !props.onOpenSidebar) {
-                      return;
-                    }
-                    props.onOpenSidebar(`\`\`\`\n${props.sidebarContent}\n\`\`\``);
-                  },
-                })}
-              </div>
-            `
-            : nothing
-        }
+        ${dockExpanded && !dockMaximized
+          ? html`<oc-resizable-divider
+              .splitRatio=${splitRatio}
+              @resize=${(e: CustomEvent) => props.onSplitRatioChange?.(e.detail.splitRatio)}
+            ></oc-resizable-divider>`
+          : nothing}
+        <oc-context-dock
+          class="chat-sidebar ${dockExpanded ? "" : "chat-sidebar--collapsed"}"
+          .collapsed=${!dockExpanded}
+          .maximized=${dockMaximized}
+          .activeTab=${props.dockActiveTab ?? "changes"}
+          .browserEnabled=${props.dockBrowserEnabled === true}
+          .subagentCards=${subagentCards}
+          .subagentPanel=${props.subagentPanel ?? null}
+          .sidebarOpen=${sidebarOpen}
+          .sidebarContent=${props.sidebarContent ?? null}
+          .sidebarError=${props.sidebarError ?? null}
+          .changesContent=${props.dockChangesContent}
+          .filesContent=${props.dockFilesContent}
+          .terminalContent=${props.dockTerminalContent ?? html`<oc-command-jobs .messages=${props.toolMessages} .sessionKey=${props.sessionKey} .locale=${getLocale()}></oc-command-jobs>`}
+          .browserContent=${props.dockBrowserContent}
+          .assistantName=${props.assistantName}
+          .assistantAvatar=${assistantIdentity.avatar}
+          .onSelectTab=${props.onSelectDockTab}
+          .onToggleCollapsed=${props.onToggleDock}
+          .onToggleMaximized=${props.onToggleMaximized}
+          .onOpenSubagent=${props.onOpenSubagentPanel}
+          .onCloseSubagent=${props.onCloseSubagentPanel}
+          .onOpenSidebar=${props.onOpenSidebar}
+          .onCloseSidebar=${props.onCloseSidebar}
+        ></oc-context-dock>
       </div>
 
       ${renderQueueStrip(props)}
@@ -589,11 +632,6 @@ export function renderChat(props: ChatProps) {
       ${renderGoalBanner(props)}
       ${renderGoalForm(props)}
 
-      <oc-turn-files .messages=${props.messages} .toolMessages=${props.toolMessages}
-        .visibleHistoryCount=${props.visibleHistoryCount} .locale=${getLocale()}
-        .workspacePath=${props.workspacePath ?? ""} .runActive=${isBusy}
-        .gitAvailable=${props.gitAvailable === true}
-        .onOpenFile=${(path: string) => openChatPath(path, props)}></oc-turn-files>
       <oc-command-jobs .messages=${props.toolMessages} .sessionKey=${props.sessionKey} .locale=${getLocale()}></oc-command-jobs>
       ${renderProgressCard(props.progressCard ?? null, {
         sessionKey: props.sessionKey,
@@ -616,15 +654,16 @@ export function renderChat(props: ChatProps) {
 
 // R23：子会话状态卡（主 run 等待子代理期间的进度反馈；终态短暂定格；点击跳转子会话）
 function subagentStatusLabel(card: SubagentCard): string {
-  if (card.active) {
-    return t("chat.subagent.running");
-  }
-  if (isFailedSubagentStatus(card.status)) {
-    if (card.status === "cancelled") return t("chat.subagent.cancelled");
-    if (card.status === "timed_out" || card.status === "timeout") return t("chat.subagent.timeout");
-    return t("chat.subagent.failed");
-  }
-  return t("chat.subagent.done");
+  const base = card.active
+    ? t("chat.subagent.running")
+    : isFailedSubagentStatus(card.status)
+      ? card.status === "cancelled"
+        ? t("chat.subagent.cancelled")
+        : card.status === "timed_out" || card.status === "timeout"
+          ? t("chat.subagent.timeout")
+          : t("chat.subagent.failed")
+      : t("chat.subagent.done");
+  return card.runtimeMs ? `${base} · ${formatDurationHuman(card.runtimeMs)}` : base;
 }
 
 function renderSubagentCards(cards: SubagentCard[], onOpenSession: (key: string) => void) {
@@ -635,7 +674,7 @@ function renderSubagentCards(cards: SubagentCard[], onOpenSession: (key: string)
         (card) => card.id,
         (card) => html`
           <div
-            class="chat-subagent-card ${card.active ?"chat-subagent-card--active"
+            class="chat-subagent-card ${card.active ? "chat-subagent-card--active"
               : isFailedSubagentStatus(card.status)
                 ? "chat-subagent-card--failed"
                 : "chat-subagent-card--done"}"
@@ -649,7 +688,7 @@ function renderSubagentCards(cards: SubagentCard[], onOpenSession: (key: string)
               onOpenSession(card.sessionKey);
             }}
           >
-            <span class="chat-subagent-card__pulse" aria-hidden="true"></span>
+            <span class="chat-subagent-card__pulse" aria-hidden="true">${icons.gitBranch}</span>
             <span class="chat-subagent-card__body">
               <span class="chat-subagent-card__title">${card.title}</span>
               <span class="chat-subagent-card__status">${subagentStatusLabel(card)}</span>
@@ -657,7 +696,7 @@ function renderSubagentCards(cards: SubagentCard[], onOpenSession: (key: string)
                 ? html`<span class="chat-subagent-card__progress">${card.progress}</span>`
                 : nothing}
             </span>
-            <span class="chat-subagent-card__open" aria-hidden="true">${icons.externalLink}</span>
+            <span class="chat-subagent-card__open" aria-hidden="true">${icons.arrowRight}</span>
           </div>
         `,
       )}

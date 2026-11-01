@@ -16,13 +16,13 @@ import {
   clearSessionRunStateSnapshot,
   consumeRunStateHistoryDirty,
   dispatchBackgroundChatEvent,
+  ensureRunStateSnapshot,
   markRunStateHistoryDirty,
   peekRunStateSnapshot,
   requeueChatMessageForSession,
   resetRunStateStoreForTests,
   restoreRunStateSnapshot,
   saveRunStateSnapshot,
-  takeRunStateSnapshot,
   type RunStateSnapshot,
 } from "./run-state-store.ts";
 import type { ChatQueueItem } from "./ui-types.ts";
@@ -82,6 +82,8 @@ function makeSource(overrides: Record<string, unknown> = {}) {
 function makeSnapshot(overrides: Partial<RunStateSnapshot> = {}): RunStateSnapshot {
   return {
     sessionKey: "session-1",
+    client: null,
+    connected: false,
     chatStream: "正文",
     chatPendingStreamText: null,
     chatStreamFrozenPrefix: "",
@@ -97,6 +99,10 @@ function makeSnapshot(overrides: Partial<RunStateSnapshot> = {}): RunStateSnapsh
     chatTerminalRun: null,
     chatQueue: [],
     chatMessages: [],
+    chatVisibleMessageCount: 0,
+    chatLoading: false,
+    chatThinkingLevel: null,
+    chatHistoryHydrationFrame: null,
     chatStreamFrame: null,
     planState: null,
     toolStreamById: new Map(),
@@ -185,15 +191,13 @@ test("capture：稀疏替身（无工具字段）退化为空时间线，不抛�
   assert.deepEqual(snapshot.chatQueue, []);
 });
 
-// ── Map 语义：一次性 take / LRU / 删除清理 / 历史脏 ──
+// ── Map 语义：持久读取 / LRU / 删除清理 / 历史脏 ──
 
-test("save/take：take 一次性（第二次为 null），peek 不删除", () => {
+test("save/peek：重复读取不销毁后台条目", () => {
   const snapshot = makeSnapshot();
-  saveRunStateSnapshot("session-take", snapshot);
-  assert.equal(peekRunStateSnapshot("session-take"), snapshot);
-  assert.equal(takeRunStateSnapshot("session-take"), snapshot);
-  assert.equal(takeRunStateSnapshot("session-take"), null, "take 为一次性语义");
-  assert.equal(peekRunStateSnapshot("session-take"), null);
+  saveRunStateSnapshot("session-peek", snapshot);
+  assert.equal(peekRunStateSnapshot("session-peek"), snapshot);
+  assert.equal(peekRunStateSnapshot("session-peek"), snapshot);
 });
 
 test("LRU 上限 20：最旧条目被逐出，重新 save 刷新迭代序", () => {
@@ -249,7 +253,7 @@ test("requeueChatMessageForSession：有条目插回队首，无条目建最小�
   const item: ChatQueueItem = { id: "q9", message: "错投防护" };
   // 无条目：补一个仅含队列的最小条目（切回走既有恢复路径，队列继续自动冲刷）
   requeueChatMessageForSession("session-requeue-a", item);
-  const created = takeRunStateSnapshot("session-requeue-a");
+  const created = peekRunStateSnapshot("session-requeue-a");
   assert.ok(created, "无条目时应建最小快照条目");
   assert.deepEqual(created!.chatQueue, [item]);
   assert.equal(created!.chatRunId, null);
@@ -416,4 +420,20 @@ test("无条目的后台 agent 事件：静默丢弃", () => {
     agentPayload({ sessionKey: "session-none-agent", data: { text: "x" } }),
   );
   assert.equal(peekRunStateSnapshot("session-none-agent"), null);
+});
+
+test("ensure：同宿主保留持久条目，不同宿主隔离同 key 状态", () => {
+  resetRunStateStoreForTests();
+  const hostA = makeSource({ sessionKey: "shared", chatRunId: "run-a", chatStream: "A" });
+  const first = ensureRunStateSnapshot("shared", hostA);
+  first.chatStream = "A updated";
+  assert.equal(ensureRunStateSnapshot("shared", hostA), first);
+  assert.equal(ensureRunStateSnapshot("shared", hostA).chatStream, "A updated");
+
+  const hostB = makeSource({ sessionKey: "shared", chatRunId: null, chatStream: null });
+  const second = ensureRunStateSnapshot("shared", hostB);
+  assert.notEqual(second, first);
+  assert.equal(second.chatRunId, null);
+  assert.equal(second.chatStream, null);
+  resetRunStateStoreForTests();
 });

@@ -633,3 +633,26 @@ test("captureToolStreamTimeline/restoreToolStreamTimeline：往返无损，快�
     "时间线 Map 应为拷贝而非同一引用",
   );
 });
+
+test("item/tool：模型 title/summary/meta/status 归并到同一工具调用并进入渲染消息", () => {
+  const host = makeHost();
+  handleAgentEvent(host, lifecycleEvent({
+    kind: "tool",
+    toolCallId: "activity-1",
+    name: "exec",
+    title: "验证项目构建",
+    summary: "运行测试并检查失败原因",
+    meta: "npm test",
+    status: "running",
+    args: { command: "npm test" },
+  }, { stream: "item" }));
+
+  const entry = host.toolStreamById.get("activity-1");
+  assert.equal(entry?.title, "验证项目构建");
+  assert.equal(entry?.summary, "运行测试并检查失败原因");
+  assert.equal(entry?.meta, "npm test");
+  assert.equal(entry?.activityStatus, "running");
+  const content = entry?.callMessage.content as Array<Record<string, unknown>>;
+  assert.equal(content[0].title, "验证项目构建");
+  assert.equal(content[0].activityStatus, "running");
+});

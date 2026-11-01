@@ -174,7 +174,7 @@
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
+:root[data-motion="reduce"] {
   .chat-new-messages {
     animation: none;
   }

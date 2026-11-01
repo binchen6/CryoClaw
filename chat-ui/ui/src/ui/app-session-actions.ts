@@ -26,6 +26,8 @@ import {
   seedSessionDraftSnapshot,
 } from "./session-transition.ts";
 import { clearSessionRunStateSnapshot } from "./run-state-store.ts";
+import { closeSubagentPanel } from "./controllers/subagent-panel.ts";
+import { collectSessionLineageKeys, findActiveLineageSessions } from "./session-lineage.ts";
 import { clearSessionScrollPosition } from "./app-scroll.ts";
 import {
   clearToleratedHiddenSession,
@@ -66,6 +68,7 @@ export function applySessionKey(state: AppViewState, next: string, syncUrl = fal
     syncUrl,
   );
   if (changed) {
+    if (state.subagentPanelKey) closeSubagentPanel(state);
     // 显式切换的会话可能不在可见列表（已归档/被过滤），记录容忍防 tick reconcile 弹回
     tolerateHiddenSession(next);
     // 清空分支缓存，避免上一会话的分支列表在新会话被误展示/误操作
@@ -153,7 +156,7 @@ export function resolveSessionOptions(
   // （归档开关切换瞬间列表可能还是旧数据，避免闪现错误集合）
   const showArchived = state.sessionsIncludeArchived === true;
   const archivedFiltered = options.filter((o) =>
-    showArchived ? o.archived === true : o.archived !== true,
+    (showArchived ? o.archived === true : o.archived !== true) && !o.spawnedBy,
   );
 
   // 搜索过滤（客户端，匹配显示名或 key，不区分大小写）
@@ -198,8 +201,16 @@ export async function patchSessionFromSidebar(
   key: string,
   patch: { label?: string | null; pinned?: boolean; unread?: boolean; archived?: boolean },
 ) {
-  const ok = await patchSession(state, key, patch);
-  if (!ok) showToast(state, t("sidebar.patchFailed"));
+  const keys = patch.archived === undefined
+    ? [key]
+    : collectSessionLineageKeys(state.sessionsResult?.sessions ?? [], key);
+  for (const sessionKey of keys) {
+    const ok = await patchSession(state, sessionKey, patch);
+    if (!ok) {
+      showToast(state, t("sidebar.patchFailed"));
+      return;
+    }
+  }
 }
 
 // 正在删除的 session key —— 侧边栏 per-row spinner 状态
@@ -212,75 +223,70 @@ export function isDeletingSession(key: string): boolean {
 // 侧边栏删除回调：同步走完 reset + delete，期间该行按钮显示 loading。
 // 2026.9.7：内核移除 tasks.*，R58 活跃任务删除守卫无数据源可用，退化为不阻塞
 // （守卫原本防止删除连坐进行中任务的 transcript；内核已无此任务面）。
-export async function deleteSessionFromSidebar(state: AppViewState, key: string) {
-  if (!state.client || !state.connected) return;
-  if (deletingSessionKeys.has(key)) return;
-
-  const confirmed = await showConfirm(state, t("sidebar.deleteSession"), { danger: true });
+export async function deleteSessionFromSidebar(state: AppViewState, rootKey: string) {
+  if (!state.client || !state.connected || deletingSessionKeys.has(rootKey)) return;
+  const sessions = state.sessionsResult?.sessions ?? [];
+  const keys = collectSessionLineageKeys(sessions, rootKey);
+  if (findActiveLineageSessions(sessions, rootKey).length > 0) {
+    showToast(state, t("sidebar.deleteBlockedByTask"));
+    return;
+  }
+  const message = keys.length > 1
+    ? t("sidebar.deleteSessionWithChildren").replace("{count}", String(keys.length - 1))
+    : t("sidebar.deleteSession");
+  const confirmed = await showConfirm(state, message, { danger: true });
   if (!confirmed) return;
 
-  deletingSessionKeys.add(key);
+  deletingSessionKeys.add(rootKey);
   state.requestUpdate();
-
   try {
-    // 1) reset：触发 session-memory hook 归档对话摘要；gateway 不认识时忽略。
-    try {
-      await state.client.request("sessions.reset", { key, reason: "new" });
-    } catch {
-      // 本地独有会话（新建未发消息）gateway 不可见，跳过
-    }
-
-    // 2) delete：移除 sessions.json 条目并归档 transcript。
-    try {
-      await state.client.request("sessions.delete", { key, deleteTranscript: true });
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      if (!/session not found|unknown session/i.test(msg)) {
-        showToast(state, `${t("sidebar.deleteSessionFailed")}: ${msg}`);
-        return;
+    for (const key of keys) {
+      try {
+        await state.client.request("sessions.reset", { key, reason: "new" });
+      } catch {
+        // 本地独有会话（新建未发消息）gateway 不可见，跳过
       }
-      // not-found 视作等效成功，继续刷新
-    }
-
-    // 2.5) worktree 会话：附带删除其持有的 worktree（有改动时内核自动快照，可恢复）。
-    // 内核 sessions.delete 已对无损 worktree 做过 removeIfLossless，这里兜底有损场景；
-    // 已被内核删掉的会让 worktrees.remove 报错，吞掉即可。
-    const worktreeMap = buildWorktreeSessionMap(state.worktrees ?? []);
-    let ownedWorktree = worktreeMap.get(key);
-    if (!ownedWorktree) {
-      // map miss 兜底：内核 ownerId 记的是 canonical key（规范大小写/空白），
-      // 侧边栏 key 可能与之有大小写差异（如渠道会话），按 canonical 形式再查一次
-      const canonical = key.trim().toLowerCase();
-      for (const [ownerKey, w] of worktreeMap) {
-        if (ownerKey.trim().toLowerCase() === canonical) {
-          ownedWorktree = w;
-          break;
+      try {
+        await state.client.request("sessions.delete", { key, deleteTranscript: true });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (!/session not found|unknown session/i.test(msg)) {
+          showToast(state, `${t("sidebar.deleteSessionFailed")}: ${msg}`);
+          return;
         }
       }
-    }
-    if (ownedWorktree) {
-      try {
-        await state.client.request("worktrees.remove", { id: ownedWorktree.id });
-      } catch {
-        // 内核已清理 / worktree 已不存在：忽略
-      }
-      void loadWorktrees(state);
-    }
 
-    // 3) 成功：全量刷新侧边栏；reconcileVisibleSession 会在活跃会话被删时切到下一个可见会话。
-    removePendingSessionLabel(key);
-    // 被删的若是显式跳转容忍的会话，清除容忍让 reconcile 正常切走
-    clearToleratedHiddenSession(key);
+      const worktreeMap = buildWorktreeSessionMap(state.worktrees ?? []);
+      let ownedWorktree = worktreeMap.get(key);
+      if (!ownedWorktree) {
+        const canonical = key.trim().toLowerCase();
+        for (const [ownerKey, worktree] of worktreeMap) {
+          if (ownerKey.trim().toLowerCase() === canonical) {
+            ownedWorktree = worktree;
+            break;
+          }
+        }
+      }
+      if (ownedWorktree) {
+        try {
+          await state.client.request("worktrees.remove", { id: ownedWorktree.id });
+        } catch {
+          // 内核已清理 / worktree 已不存在：忽略
+        }
+        void loadWorktrees(state);
+      }
+
+      if (state.subagentPanelKey === key) closeSubagentPanel(state);
+      removePendingSessionLabel(key);
+      clearToleratedHiddenSession(key);
+      clearSessionDraftSnapshot(key);
+      clearSessionRunStateSnapshot(key);
+      clearSessionScrollPosition(key);
+    }
     await loadSessions(state);
     reconcileVisibleSession(state);
-    // 草稿/run 态/滚动位置清理必须在 reconcile 之后：删的是活跃会话时，
-    // applySessionKeyTransition 会先按「切走」语义把被删 key 的三项状态重新存进
-    // 快照（resurrect），清理放在其后才能真正清掉，防同名 key 复用时复活旧状态
-    clearSessionDraftSnapshot(key);
-    clearSessionRunStateSnapshot(key);
-    clearSessionScrollPosition(key);
   } finally {
-    deletingSessionKeys.delete(key);
+    deletingSessionKeys.delete(rootKey);
     state.requestUpdate();
   }
 }

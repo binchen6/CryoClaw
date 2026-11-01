@@ -25,6 +25,7 @@ import { renderTabProvider, resetProviderTab } from "./tab-provider.ts";
 import { renderTabUsage, resetUsageTab } from "./tab-usage.ts";
 import { renderTabApprovals, resetApprovalsTab } from "./tab-approvals.ts";
 import { renderTabMcpHooks, resetMcpHooksTab } from "./tab-mcp-hooks.ts";
+import { renderTabBrowser } from "./tab-browser.ts";
 import { resetPluginsView } from "./tab-plugins.ts";
 
 /* ── module-level state ── */
@@ -104,6 +105,7 @@ function renderActiveTab(state: AppViewState) {
     case "memory": return renderTabMemory(state);
     case "voice": return renderTabVoice(state);
     case "appearance": return renderTabAppearance(state);
+    case "browser": return renderTabBrowser(state);
     case "shortcuts": return renderTabShortcuts(state);
     case "advanced": return renderTabAdvanced(state);
     case "usage": return renderTabUsage(state);

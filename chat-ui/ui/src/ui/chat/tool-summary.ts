@@ -16,6 +16,8 @@ export type ToolSummary = {
   detail?: string;
   /** 是否为单一工具（渲染层据此隐藏计数、改显详情） */
   isSingle: boolean;
+  /** 当前/最近工具提供的模型意图，优先于工具名单展示 */
+  latestTitle?: string;
   /** 组内是否有失败（任一 result 带 isError），渲染层据此给摘要行加红色标记 */
   hasError: boolean;
   /** R83 聚合状态：任一执行中 → running；否则任一失败 → failed；全部完成 → completed */
@@ -28,6 +30,8 @@ export function summarizeToolCards(toolCards: readonly ToolCard[]): ToolSummary 
   const totalTools = Math.max(calls.length, results.length) || toolCards.length;
   const names = [...new Set(toolCards.map((c) => c.name))];
   const hasError = toolCards.some((c) => c.error !== undefined);
+  const latest = [...toolCards].reverse().find((card) => card.title?.trim() || card.summary?.trim());
+  const latestTitle = latest?.title?.trim() || latest?.summary?.trim() || undefined;
   const status: ToolSummary["status"] = toolCards.some((c) => c.pending === true)
     ? "running"
     : hasError
@@ -46,6 +50,7 @@ export function summarizeToolCards(toolCards: readonly ToolCard[]): ToolSummary 
       label: totalTools > 1 ? `${baseLabel} ×${totalTools}` : baseLabel,
       detail: formatToolDetail(display),
       isSingle: true,
+      latestTitle,
       hasError,
       status,
     };
@@ -60,27 +65,7 @@ export function summarizeToolCards(toolCards: readonly ToolCard[]): ToolSummary 
     displayNames.length <= 3
       ? displayNames.join(", ")
       : `${displayNames.slice(0, 2).join(", ")} +${displayNames.length - 2} more`;
-  return { totalTools, label, isSingle: false, hasError, status };
-}
-
-/** 连续同名工具卡的时间序子分组（折叠区收纳用）。 */
-export type ToolCardRun = { name: string; cards: ToolCard[] };
-
-/**
- * 把工具卡按「连续同名」并段：保持时间序（不按名全局聚合——工具交错时
- * 时序即因果，不能重排）。渲染层对 ≥3 张的同名片段收成子折叠。
- */
-export function groupConsecutiveToolCards(cards: readonly ToolCard[]): ToolCardRun[] {
-  const runs: ToolCardRun[] = [];
-  for (const card of cards) {
-    const last = runs[runs.length - 1];
-    if (last && last.name === card.name) {
-      last.cards.push(card);
-    } else {
-      runs.push({ name: card.name, cards: [card] });
-    }
-  }
-  return runs;
+  return { totalTools, label, isSingle: false, latestTitle, hasError, status };
 }
 
 /**

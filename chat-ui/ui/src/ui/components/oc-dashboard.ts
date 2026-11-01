@@ -15,6 +15,7 @@ import {dashboardTransform} from '../dashboard-motion.ts';
 import {isViewTransitionActive} from '../utils/view-transition.ts';
 import {dashboardElementTarget,dashboardNodeSelector,type DashboardSelection} from '../dashboard-selection.ts';
 import {placePopover} from '../utils/popover-placement.ts';
+import {prefersReducedMotion} from '../utils/motion.ts';
 import './oc-dashboard-library.ts';
 
 type Gesture={kind:'drag'|'resize';id:string;pointerId:number;x:number;y:number;dx:number;dy:number;w:number;h:number;target:string;before:DashboardCard[]};
@@ -102,7 +103,7 @@ export class OcDashboard extends LitElement{
     this.cancelBoardTransition();this.cancelLayoutMotion();this.morphEpoch++;for(const animation of this.morphAnimations)animation.cancel();this.morphAnimations=[];this.morphing=false;this.cancel();this.expanded='';
     const epoch=++this.selectEpoch,apply=()=>{if(epoch!==this.selectEpoch)return;this.selected=id;try{localStorage.setItem('cryoclaw.dashboard.selected',id);}catch{}};
     const startViewTransition=(document as Document & {startViewTransition?: (update:()=>Promise<void>)=>ViewTransition}).startViewTransition;
-    if(!matchMedia('(prefers-reduced-motion: reduce)').matches&&!isViewTransitionActive()&&startViewTransition){
+    if(!prefersReducedMotion()&&!isViewTransitionActive()&&startViewTransition){
       try{const transition=startViewTransition.call(document,async()=>{apply();await this.updateComplete;});this.boardTransition=transition;
         void transition.ready.catch(()=>{});void transition.updateCallbackDone.catch(()=>{});
         void transition.finished.catch(()=>{}).finally(()=>{if(this.boardTransition===transition)this.boardTransition=null;});
@@ -110,7 +111,7 @@ export class OcDashboard extends LitElement{
       }catch{/* Fall back to the direct canvas transition when snapshots are unavailable. */}
     }
     apply();
-    void this.updateComplete.then(()=>{if(this.selected!==id||matchMedia('(prefers-reduced-motion: reduce)').matches)return;const viewport=this.querySelector<HTMLElement>('.dashboard-canvas-viewport');if(!viewport)return;const css=getComputedStyle(this),raw=css.getPropertyValue('--duration-normal').trim(),animation=viewport.animate([{opacity:.35,transform:'translateY(6px)'},{opacity:1,transform:'none'}],{duration:Math.max(120,(parseFloat(raw)||.2)*(raw.endsWith('ms')?1:1000)),easing:css.getPropertyValue('--ease-standard').trim()||'cubic-bezier(.2,.8,.2,1)'});this.boardTransition=animation;void animation.finished.catch(()=>{}).finally(()=>{if(this.boardTransition===animation)this.boardTransition=null;});});
+    void this.updateComplete.then(()=>{if(this.selected!==id||prefersReducedMotion())return;const viewport=this.querySelector<HTMLElement>('.dashboard-canvas-viewport');if(!viewport)return;const css=getComputedStyle(this),raw=css.getPropertyValue('--duration-normal').trim(),animation=viewport.animate([{opacity:.35,transform:'translateY(6px)'},{opacity:1,transform:'none'}],{duration:Math.max(120,(parseFloat(raw)||.2)*(raw.endsWith('ms')?1:1000)),easing:css.getPropertyValue('--ease-standard').trim()||'cubic-bezier(.2,.8,.2,1)'});this.boardTransition=animation;void animation.finished.catch(()=>{}).finally(()=>{if(this.boardTransition===animation)this.boardTransition=null;});});
   }
   private tabKey(event:KeyboardEvent,id:string){
     if(event.key==='ContextMenu'||event.key==='F10'&&event.shiftKey){event.preventDefault();const rect=(event.currentTarget as HTMLElement).getBoundingClientRect();this.openTabMenu(id,rect.left,rect.bottom);return;}
@@ -158,7 +159,7 @@ export class OcDashboard extends LitElement{
   private captureCardRects(){return new Map([...this.querySelectorAll<HTMLElement>('.dashboard-card')].map(element=>[element.dataset.cardId!,element.getBoundingClientRect()] as const));}
   private cancelLayoutMotion(){this.layoutEpoch++;for(const animation of this.layoutAnimations)animation.cancel();this.layoutAnimations=[];}
   private commitReorder(cards:DashboardCard[],before=this.captureCardRects()){
-    this.cancelLayoutMotion();const epoch=this.layoutEpoch;this.replaceCards(cards);if(matchMedia('(prefers-reduced-motion: reduce)').matches)return;
+    this.cancelLayoutMotion();const epoch=this.layoutEpoch;this.replaceCards(cards);if(prefersReducedMotion())return;
     void this.updateComplete.then(()=>{if(epoch!==this.layoutEpoch||this.retired)return;const css=getComputedStyle(this),raw=css.getPropertyValue('--duration-normal').trim(),options={duration:Math.max(140,(parseFloat(raw)||.2)*(raw.endsWith('ms')?1:1000)),easing:css.getPropertyValue('--ease-standard').trim()||'cubic-bezier(.2,.8,.2,1)'},animations:Animation[]=[];
       for(const [id,rect]of before){const element=[...this.querySelectorAll<HTMLElement>('.dashboard-card')].find(card=>card.dataset.cardId===id);if(!element)continue;const from=dashboardTransform(rect,element.getBoundingClientRect(),this.canvasScale);if(!from)continue;animations.push(element.animate([{transform:from,transformOrigin:'0 0'},{transform:'none',transformOrigin:'0 0'}],options));}
       this.layoutAnimations=animations;void Promise.all(animations.map(animation=>animation.finished.catch(()=>{}))).finally(()=>{if(epoch===this.layoutEpoch)this.layoutAnimations=[];});
@@ -206,7 +207,7 @@ export class OcDashboard extends LitElement{
     if(next)for(const card of this.querySelectorAll<HTMLElement>('.dashboard-card[popover]'))if(card.dataset.cardId!==next){if(card.matches(':popover-open'))card.hidePopover();card.removeAttribute('popover');}
     if(!next&&before){
       const card=find(),origin=this.morphOrigin?.id===id?this.morphOrigin:null,destination=origin?.rect??card?.parentElement?.getBoundingClientRect();
-      this.morphingCard=id;this.morphing=!matchMedia('(prefers-reduced-motion: reduce)').matches;
+      this.morphingCard=id;this.morphing=!prefersReducedMotion();
       try{
         if(this.morphing&&card&&destination&&typeof card.animate==='function'){
           const css=getComputedStyle(this),raw=css.getPropertyValue('--duration-normal').trim();
@@ -220,7 +221,7 @@ export class OcDashboard extends LitElement{
       finally{if(epoch===this.morphEpoch){this.closeExpandedLayer();this.expanded='';this.morphing=false;this.morphingCard='';await this.updateComplete;for(const animation of this.morphAnimations)animation.cancel();this.morphAnimations=[];if(origin){const scroll=this.querySelector<HTMLElement>('.dashboard-workspace__scroll');if(scroll)scroll.scrollTo({top:origin.scrollTop,behavior:'instant'});}this.morphOrigin=null;this.previousFocus?.focus({preventScroll:true});}}
       return;
     }
-    this.expanded=next;this.morphingCard=id;this.morphing=!matchMedia('(prefers-reduced-motion: reduce)').matches;
+    this.expanded=next;this.morphingCard=id;this.morphing=!prefersReducedMotion();
     await this.updateComplete;if(epoch!==this.morphEpoch||this.retired)return;
     try{
       const card=find();
@@ -282,7 +283,7 @@ export class OcDashboard extends LitElement{
     this.composerOpen=open;this.composerLeaving=!open;await this.updateComplete;
     if(epoch!==this.composerEpoch||this.retired)return;
     const target=this.querySelector<HTMLElement>('.dashboard-compose');
-    try{if(target&&!matchMedia('(prefers-reduced-motion: reduce)').matches){
+    try{if(target&&!prefersReducedMotion()){
       this.composerAnimation=target.animate([from,{opacity:open?'1':'0',transform:open?'translate(-50%,0)':'translate(-50%,10px)'}],{duration:180,easing:'cubic-bezier(.2,.8,.2,1)',fill:'both'});
       await this.composerAnimation.finished;
     }}catch{/* A reverse action continues from the visible position. */}

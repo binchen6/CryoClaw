@@ -77,9 +77,7 @@ export class ManagedImage extends LitElement {
       0%, 100% { opacity: 0.35; }
       50% { opacity: 1; }
     }
-    @media (prefers-reduced-motion: reduce) {
-      .placeholder__dot { animation: none; }
-    }
+    :root[data-motion="reduce"] .placeholder__dot { animation: none; }
   `;
 
   connectedCallback() {

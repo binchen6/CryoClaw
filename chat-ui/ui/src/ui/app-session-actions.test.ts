@@ -42,3 +42,8 @@ for (const [name, fn] of reconcileEntries) {
     assert.match(src, /isToleratedHiddenSession\(/, `${name} 的 reconcile 缺少隐藏会话豁免`);
   });
 }
+
+test("resolveSessionOptions：正常、搜索与归档列表统一排除派生子会话", () => {
+  const src = readFileSync(new URL("../../../../src/ui/app-session-actions.ts", import.meta.url), "utf8");
+  assert.match(src, /showArchived \? o\.archived === true : o\.archived !== true\) && !o\.spawnedBy/);
+});
