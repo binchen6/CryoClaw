@@ -46,7 +46,7 @@ oc-session-panel.oc-panel--leaving {
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
+:root[data-motion="reduce"] {
   oc-session-panel {
     animation: none;
   }

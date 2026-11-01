@@ -1,4 +1,5 @@
 import type { ThemeMode } from "./theme.ts";
+import { prefersReducedMotion } from "./utils/motion.ts";
 
 export type ThemeTransitionContext = {
   element?: HTMLElement | null;
@@ -30,12 +31,7 @@ const clamp01 = (value: number) => {
   return value;
 };
 
-const hasReducedMotionPreference = () => {
-  if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
-    return false;
-  }
-  return window.matchMedia("(prefers-reduced-motion: reduce)").matches ?? false;
-};
+const hasReducedMotionPreference = () => prefersReducedMotion();
 
 const cleanupThemeTransition = (root: HTMLElement) => {
   root.classList.remove("theme-transition");

@@ -11,60 +11,31 @@ import type { GatewaySessionRow } from "../types.ts";
 
 export type SubagentCard = {
   id: string;
-  /** 子会话 key（点击卡片跳转打开） */
   sessionKey: string;
   title: string;
   status: string;
   active: boolean;
   progress: string | null;
+  runtimeMs?: number;
 };
 
-// 终态定格窗口：完成后短暂保留卡片展示结果，避免一闪而过。
-// 收敛时机依赖下一次 sessions.list 刷新驱动的重渲染。
-const TERMINAL_GRACE_MS = 15_000;
-
-function toMillis(value: unknown): number | null {
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return value;
-  }
-  if (typeof value === "string") {
-    const parsed = Date.parse(value);
-    return Number.isFinite(parsed) ? parsed : null;
-  }
-  return null;
-}
-
 function isActiveSubagentRow(row: GatewaySessionRow): boolean {
-  if (row.hasActiveSubagentRun === true) {
-    return true;
-  }
+  if (row.hasActiveSubagentRun === true) return true;
   return row.status === "queued" || row.status === "running";
 }
 
 export function selectSubagentCards(
   sessions: GatewaySessionRow[] | null | undefined,
   sessionKey: string,
-  now: number = Date.now(),
-  terminalGraceMs: number = TERMINAL_GRACE_MS,
+  _now?: number,
+  _terminalGraceMs?: number,
 ): SubagentCard[] {
-  if (!Array.isArray(sessions) || sessions.length === 0 || !sessionKey) {
-    return [];
-  }
+  if (!Array.isArray(sessions) || sessions.length === 0 || !sessionKey) return [];
   const cards: SubagentCard[] = [];
   for (const row of sessions) {
-    // 关联判定：行归属父会话为当前会话（spawnedBy 与 controlOwnerSessionKey 同源，
-    // 内核同一赋值；宽容取任一）
     const parent = row.spawnedBy ?? row.controlOwnerSessionKey;
-    if (!parent || parent !== sessionKey) {
-      continue;
-    }
+    if (!parent || parent !== sessionKey) continue;
     const active = isActiveSubagentRow(row);
-    if (!active) {
-      const ended = toMillis(row.endedAt) ?? toMillis(row.updatedAt);
-      if (terminalGraceMs !== Infinity && (ended === null || now - ended > terminalGraceMs)) {
-        continue;
-      }
-    }
     const title =
       (typeof row.label === "string" && row.label.trim()) ||
       (typeof row.displayName === "string" && row.displayName.trim()) ||
@@ -76,14 +47,12 @@ export function selectSubagentCards(
       title,
       status: row.status ?? (active ? "running" : "done"),
       active,
-      progress:
-        typeof row.lastMessagePreview === "string" && row.lastMessagePreview.trim()
-          ? row.lastMessagePreview
-          : null,
+      progress: typeof row.lastMessagePreview === "string" && row.lastMessagePreview.trim()
+        ? row.lastMessagePreview
+        : null,
+      runtimeMs: typeof row.runtimeMs === "number" ? row.runtimeMs : undefined,
     });
   }
-  // 活跃优先，其余按最近更新排序（sessions 行本身按 updatedAt 倒序，稳定保留）
-  cards.sort((a, b) => Number(b.active) - Number(a.active));
   return cards;
 }
 

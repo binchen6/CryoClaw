@@ -11,21 +11,30 @@
    ========================================================================== */
 
 /* Reference-style keyboard list: one scrolling page, no nested scrollbar chrome. */
-.oc-shortcuts { width: 100%; max-width: 800px; }
-.oc-shortcuts__header { margin-bottom: var(--spacer-20); }
+.oc-shortcuts { width: 100%; max-width: 880px; }
+.oc-shortcuts__header { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--spacer-16); margin-bottom: var(--spacer-20); }
 .oc-shortcuts__header h2 { margin: 0 0 var(--spacer-8); font-size: var(--heading-md); font-weight: var(--weight-semibold); }
+.oc-shortcuts__header .btn { flex-shrink: 0; }
 .oc-shortcuts__search { display: flex; align-items: center; gap: var(--spacer-8); margin-bottom: var(--spacer-16); }
 .oc-shortcuts__search > svg { flex: none; color: var(--text-muted); }
 .oc-shortcuts__search input { width: 100%; }
 .oc-shortcuts__list { border: var(--hairline); border-radius: var(--radius-12); overflow: hidden; background: var(--bg-secondary); }
-.oc-shortcuts__row { display: flex; align-items: center; justify-content: space-between; gap: var(--spacer-16); padding: var(--spacer-16); }
+.oc-shortcuts__row { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center; gap: var(--spacer-12) var(--spacer-16); padding: var(--spacer-12) var(--spacer-16); }
 .oc-shortcuts__row + .oc-shortcuts__row { border-top: var(--hairline); }
+.oc-shortcuts__row.is-editing { background: var(--accent-subtle); }
 .oc-shortcuts__copy { min-width: 0; }
 .oc-shortcuts__copy strong { font-size: var(--text-base); font-weight: var(--weight-medium); }
 .oc-shortcuts__copy p { margin: var(--spacer-4) 0 0; color: var(--text-secondary); font-size: var(--text-sm); line-height: 1.5; }
+.oc-shortcuts__binding { display: inline-flex; align-items: center; justify-content: flex-end; gap: var(--spacer-4); }
 .oc-shortcuts__keys { display: inline-flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--spacer-4); flex-shrink: 0; }
+.oc-shortcuts__unassigned { color: var(--text-muted); font-size: var(--text-sm); }
 .oc-shortcuts kbd { padding: var(--spacer-4) var(--spacer-8); border: var(--hairline); border-radius: var(--radius-6); background: var(--bg-elevated); color: var(--text-secondary); font: inherit; font-size: var(--text-sm); box-shadow: var(--shadow-xs); }
-@container settings-pane (max-width: 420px) { .oc-shortcuts__row { align-items: flex-start; flex-direction: column; gap: var(--spacer-8); } }
+.oc-shortcuts__recorder { min-width: 190px; min-height: 32px; padding: var(--spacer-4) var(--spacer-10); border: 1px dashed var(--accent); border-radius: var(--radius-8); background: var(--bg-elevated); color: var(--accent); cursor: text; font: inherit; font-size: var(--text-sm); }
+.oc-shortcuts__capture-hint { grid-column: 1 / -1; margin: 0; color: var(--text-muted); font-size: var(--text-xs); }
+.oc-shortcuts__capture-hint.is-error { color: var(--danger); }
+.oc-shortcuts__fixed-title { margin: var(--spacer-24) 0 var(--spacer-8); font-size: var(--heading-sm); }
+.oc-shortcuts__list--fixed { margin-top: var(--spacer-12); }
+@container settings-pane (max-width: 520px) { .oc-shortcuts__header { flex-direction: column; } .oc-shortcuts__row { grid-template-columns: 1fr; } .oc-shortcuts__binding { justify-content: flex-start; flex-wrap: wrap; } .oc-shortcuts__recorder { min-width: min(100%,220px); } }
 
 /* ============================================
    骨架：左导航 + 内容列
@@ -925,7 +934,7 @@
   overflow: hidden;
   transition: overflow 0s;
 }
-@media (prefers-reduced-motion: reduce) {
+:root[data-motion="reduce"] {
   .oc-provider-group__body,
   .oc-provider-group__body-inner {
     transition: none;
@@ -1026,7 +1035,7 @@
 .oc-provider-list-item__action-btn:disabled { opacity: 0; cursor: default; pointer-events: none; }
 .oc-provider-list-item__action-btn[aria-busy=true]:disabled { opacity: 1; }
 .oc-provider-list-item__action-btn[aria-busy=true] svg { animation: spin .8s linear infinite; }
-@media(prefers-reduced-motion:reduce){.oc-provider-list-item__action-btn[aria-busy=true] svg { animation: none; }}
+:root[data-motion="reduce"]{.oc-provider-list-item__action-btn[aria-busy=true] svg { animation: none; }}
 
 /* 模型卡片（可拖拽排序行） */
 .oc-provider-cards {
@@ -2917,7 +2926,7 @@
 .oc-subscription-models[open]::details-content,
 .oc-subscription-account__signin[open]::details-content,
 .oc-openai-proxy-details[open]::details-content { height: auto; opacity: 1; }
-@media (prefers-reduced-motion: reduce) {
+:root[data-motion="reduce"] {
   .oc-model-roles::details-content,
   .oc-subscription-account::details-content,
   .oc-subscription-models::details-content,
@@ -3009,12 +3018,12 @@ oc-range-control { display: block; min-width: 0; }
 .theme-editor__help p { padding-top: var(--spacer-8); margin: 0; }
 .theme-editor__help::details-content { height: 0; overflow: clip; transition: height var(--duration-normal) var(--ease-standard),content-visibility var(--duration-normal) allow-discrete; }
 .theme-editor__help[open]::details-content { height: auto; }
-@media(prefers-reduced-motion:reduce) { .theme-editor__help::details-content { transition: none; } }
+:root[data-motion="reduce"] { .theme-editor__help::details-content { transition: none; } }
 .theme-editor.cc-leaving { pointer-events: none; animation: theme-editor-exit var(--duration-normal) var(--ease-standard) forwards; }
 .theme-preview-banner.cc-leaving { pointer-events: none; animation: theme-banner-exit var(--duration-normal) var(--ease-standard) forwards; }
 @keyframes theme-editor-exit { to { opacity: 0; transform: translateY(12px); } }
 @keyframes theme-banner-exit { to { opacity: 0; transform: translate(-50%,-8px); } }
-@media(prefers-reduced-motion:reduce) { .theme-editor.cc-leaving,.theme-preview-banner.cc-leaving { animation: none; } }
+:root[data-motion="reduce"] { .theme-editor.cc-leaving,.theme-preview-banner.cc-leaving { animation: none; } }
 
 /* One theme module: paired previews, mode control and progressive customization. */
 .oc-theme-modes { display: flex; flex-wrap: wrap; gap: var(--spacer-4); padding: var(--spacer-4); background: var(--bg-secondary); border-radius: var(--radius-10); }
@@ -3099,7 +3108,7 @@ oc-range-control { display: block; min-width: 0; }
   .oc-theme-agent::details-content, .skills-group::details-content { content-visibility: hidden; height: 0; opacity: 0; overflow: clip; transition: height var(--duration-normal) var(--ease-standard), opacity var(--duration-fast) var(--ease-standard), content-visibility var(--duration-normal) allow-discrete; }
   .oc-theme-agent[open]::details-content, .skills-group[open]::details-content { content-visibility: visible; height: auto; opacity: 1; }
 }
-@media(prefers-reduced-motion:reduce) { .oc-theme-card, .oc-theme-agent::details-content, .skills-group::details-content { transition: none; } }
+:root[data-motion="reduce"] { .oc-theme-card, .oc-theme-agent::details-content, .skills-group::details-content { transition: none; } }
 .oc-theme-agent__body > label { display: grid; gap: var(--spacer-8); font-size: var(--text-sm); }
 .oc-theme-agent__body > .setting-row { display: flex; padding: 0; border: 0; }
 .oc-theme-agent__request { width: 100%; min-height: 104px; resize: vertical; line-height: 1.6; }
@@ -3227,4 +3236,4 @@ oc-range-control { display: block; min-width: 0; }
 .oc-theme-agent__error { margin:0; padding:var(--spacer-12); border:1px solid var(--destructive); border-radius:var(--radius-8); color:var(--destructive); font-size:var(--text-sm); line-height:1.6; overflow-wrap:anywhere; }
 @container(max-width:680px) { .oc-theme-agent__workspace { grid-template-columns:minmax(0,1fr); gap:var(--spacer-16); } .oc-theme-agent__intro { flex-wrap:wrap; } .oc-theme-agent__body { padding-inline:var(--spacer-12); } .oc-theme-agent__steps { grid-template-columns:repeat(3,minmax(0,1fr)); } }
 @container(max-width:380px) { .oc-theme-agent__presets { grid-template-columns:minmax(0,1fr); } .oc-theme-direction { grid-template-columns:auto minmax(0,1fr); align-items:center; } .oc-theme-agent__steps { grid-template-columns:minmax(0,1fr); } .oc-theme-agent__actions .btn { width:100%; } }
-@media(prefers-reduced-motion:reduce) { .oc-theme-direction { transition:none; } }
+:root[data-motion="reduce"] { .oc-theme-direction { transition:none; } }

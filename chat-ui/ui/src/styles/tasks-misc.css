@@ -204,7 +204,7 @@
   animation: shimmer var(--duration-loop) linear infinite;
 }
 
-@media (prefers-reduced-motion: reduce) {
+:root[data-motion="reduce"] {
   .ts-stats__skeleton-chip::after {
     animation: none;
   }
@@ -417,7 +417,7 @@
   animation: ts-dot-pulse var(--duration-loop) var(--ease-in-out) infinite;
 }
 
-@media (prefers-reduced-motion: reduce) {
+:root[data-motion="reduce"] {
   .ts-dot--running {
     animation: none;
   }
@@ -789,6 +789,22 @@
   fill: none;
   vertical-align: -2px;
 }
+
+.gitp-overview {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--spacer-6) var(--spacer-16);
+  padding: var(--spacer-6) 0 var(--spacer-12);
+  border-bottom: var(--hairline);
+  font-family: var(--font-meta);
+  font-size: var(--font-size-meta);
+  color: var(--text-muted);
+}
+.gitp-overview__item { display: inline-flex; align-items: center; gap: var(--spacer-4); }
+.gitp-overview__item strong { color: var(--text); font-weight: var(--weight-semibold); }
+.gitp-overview__item--staged strong { color: var(--ok); }
+.gitp-overview__item--unstaged strong { color: var(--warn); }
 
 /* 三分组：大写小字组标题 + 计数 + 右侧整组操作 */
 .gitp-group {

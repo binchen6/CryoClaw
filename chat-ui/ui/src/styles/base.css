@@ -56,20 +56,20 @@ html.theme-transition::view-transition-new(theme) {
   animation: theme-circle-transition var(--duration-slow) var(--ease-out) forwards
 }
 
-@media(prefers-reduced-motion:reduce) {
+:root[data-motion="reduce"] {
 
-  html.theme-transition::view-transition-old(theme),
-  html.theme-transition::view-transition-new(theme) {
+  &:is(html.theme-transition)::view-transition-old(theme),
+  &:is(html.theme-transition)::view-transition-new(theme) {
     animation: none !important
   }
 
-  /* 全局减弱动效：入场/脉冲/旋转动画与过渡统一收敛到瞬时 */
+  /* 保留轻微颜色/透明度反馈；位移、缩放、循环动画和布局过渡直接呈现终态。 */
   *,
   *::before,
   *::after {
-    animation-duration: .01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: .01ms !important
+    animation: none !important;
+    transition-duration: .08s !important;
+    transition-property: opacity, background-color, border-color, color, box-shadow !important
   }
 
   /* 按压回缩在瞬时收敛下会变成瞬跳——reduced-motion 下整体移除按压位移 */

@@ -448,8 +448,8 @@ test("app-gateway.ts：own-run 终态清零 chatAbortPending（中止在途标�
   const s = chatBranch(src("app-gateway.ts"));
   assert.match(
     s,
-    /if \(isOwnRunEvent\) \{[\s\S]*?host\.chatAbortPending = false;/,
-    "own-run 终态应清零 chatAbortPending，让新一轮 run 的 Stop 按钮恢复可用",
+    /if \(shouldRefreshSessionsForChatState\(state\) && isOwnRunEvent\) \{[\s\S]*?entry\.chatAbortPending = false;[\s\S]*?restoreRunStateSnapshot\(host, entry\);/,
+    "own-run 终态应清运行条目并同步前台投影，让新一轮 run 的 Stop 按钮恢复可用",
   );
 });
 
@@ -473,7 +473,7 @@ test("app-gateway.ts：后台会话 agent 事件分派 accumulateBackgroundAgent
   const branch = s.slice(start, end);
   assert.match(
     branch,
-    /agentPayload\.sessionKey !== host\.sessionKey[\s\S]*?accumulateBackgroundAgentEvent\(agentPayload\.sessionKey, agentPayload\);\s*\n\s*return;/,
+    /agentPayload\.sessionKey !== host\.sessionKey[\s\S]*?accumulateBackgroundAgentEvent\(agentPayload\.sessionKey, agentPayload\);[\s\S]*?projectSubagentPanel\(host as unknown as OpenClawApp\);\s*\n\s*return;/,
     "后台会话 agent 事件应分派 accumulateBackgroundAgentEvent 后 return",
   );
 });
@@ -496,16 +496,17 @@ test("run-state-store.ts：后台 own-run 终态清条目时间线并标历史�
   );
 });
 
-test("session-transition.ts：切走 save / 切回 restore run 态快照的接线", () => {
+test("session-transition.ts：切走保存投影，切回读取持久条目而不 take 删除", () => {
   const s = src("session-transition.ts");
   assert.match(
     s,
-    /host\.chatRunId \|\| \(host\.chatQueue\?\.length \?\? 0\) > 0\) \{\s*\n\s*saveRunStateSnapshot\(host\.sessionKey, captureRunStateSnapshot\(host\)\);/,
-    "切走前 run 在跑或队列非空时应保存 run 态快照",
+    /saveRunStateSnapshot\(host\.sessionKey, captureRunStateSnapshot\(host\)\);/,
+    "切走前应保存当前运行投影",
   );
   assert.match(
     s,
-    /const runSnapshot = takeRunStateSnapshot\(trimmed\);[\s\S]*?if \(runSnapshot\) \{\s*\n\s*restoreRunStateSnapshot\(host, runSnapshot\);[\s\S]*?\} else \{/,
-    "切回命中快照应 restoreRunStateSnapshot，未命中走 else 重置路径",
+    /const runSnapshot = peekRunStateSnapshot\(trimmed\);[\s\S]*?if \(runSnapshot\) \{\s*\n\s*restoreRunStateSnapshot\(host, runSnapshot\);[\s\S]*?\} else \{/,
+    "切回应投影持久条目，未命中才走 else 重置路径",
   );
+  assert.doesNotMatch(s, /takeRunStateSnapshot\(trimmed\)/, "持久条目不得被一次性取出删除");
 });

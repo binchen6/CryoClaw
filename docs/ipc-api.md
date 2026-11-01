@@ -306,6 +306,7 @@
 | `setWorkspaceRoot(root)` | `workspace:set-root` | invoke |
 | `workspaceGetContext()` | `workspace:get-context` | invoke（只读默认/当前根路径，sender 校验，不返回配置或凭据） |
 | `openWorkspaceFolder(filePath)` | `workspace:open-folder` | invoke |
+| `workspaceOpenWith(params)` | `workspace:open-with` | invoke（固定目标白名单：VS Code / 文件管理器 / 终端 / Git Bash） |
 | `listWorkspaceDir(dirPath)` | `workspace:list-dir` | invoke |
 | `readWorkspaceFile(filePath)` | `workspace:read-file` | invoke |
 | `workspaceWriteFile(params)` | `workspace:write-file` | invoke（`{path, content, baseHash}`：版本 hash 校验 + 原子替换） |
@@ -315,6 +316,23 @@
 > 全部通道 `assertTrustedIpcSender` 校验；路径必须落在 workspace 根内
 > （`workspace-ipc.ts` 的根内包含校验 + realpath 复核防 symlink 逃逸）。
 > `workspace:set-root` 写 `agents.defaults.workspace` 时用正斜杠（见 gotcha #84）。
+
+## 隔离内置浏览器
+
+| 方法 | IPC 通道 | 方向 |
+|---|---|---|
+| `embeddedBrowserShow(params)` | `embedded-browser:show` | invoke；首次打开 Dock 标签才创建 `WebContentsView` |
+| `embeddedBrowserHide()` | `embedded-browser:hide` | invoke；隐藏原生视图并静音，不销毁页面 |
+| `embeddedBrowserBounds(bounds)` | `embedded-browser:bounds` | invoke；同步 Dock 可视区域 |
+| `embeddedBrowserNavigate(url)` | `embedded-browser:navigate` | invoke；仅 HTTP(S) / `about:blank` |
+| `embeddedBrowserAction(action)` | `embedded-browser:action` | invoke；`back` / `forward` / `reload` |
+| `embeddedBrowserPreferences(params)` | `embedded-browser:preferences` | invoke；缩放、UA 与下载策略 |
+| `embeddedBrowserEvaluate(script)` | `embedded-browser:evaluate` | invoke；可见页面的受限 JavaScript，无 Node 能力 |
+| `embeddedBrowserAgentPolicy(policy)` | `embedded-browser:agent-policy` | invoke；同步 Agent 开关与三方案优先级 |
+| `onEmbeddedBrowserAgentOpen(cb)` | `embedded-browser:agent-open` | 主进程请求打开对话页浏览器 Dock（返回 unsubscribe） |
+| `onEmbeddedBrowserState(cb)` | `embedded-browser:state-changed` | 推送 URL、标题、加载和导航状态（返回 unsubscribe） |
+
+Agent 经内置 `cryoclaw-browser` 插件调用本地控制服务 `POST /ui/browser`，使用 `gatewayControl.token` 鉴权。主进程只在用户同时启用内置浏览器和 Agent 权限后执行操作，并自动展开 Dock 提供实时预览。WebBridge 与内核外部浏览器继续使用各自原链路，不共享 profile；内置视图使用独立 partition、sandbox、禁用 Node，且不会在应用启动时创建。
 
 ## Git 面板（P4，文件级 v1）
 

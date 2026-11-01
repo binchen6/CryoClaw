@@ -1592,6 +1592,7 @@ const REQUIRED_OPENCLAW_BUNDLED_EXTENSIONS = [
 const REQUIRED_OPENCLAW_INJECTED_EXTENSIONS = [
   path.join("cryoclaw-dashboards", "openclaw.plugin.json"),
   path.join("cryoclaw-deliverables", "openclaw.plugin.json"),
+  path.join("cryoclaw-browser", "openclaw.plugin.json"),
   path.join("kimi-search", "openclaw.plugin.json"),
   path.join("dingtalk-connector", "openclaw.plugin.json"),
   path.join("feishu", "openclaw.plugin.json"),
@@ -2303,7 +2304,7 @@ function isWindowsArm64CrossCompile(opts) {
 // 注入所有 bundled 插件 + mirror 所有 channel plugin
 async function bundleAllPlugins(targetPaths, opts) {
   const { gatewayDir, channelMirrorDir, targetId } = targetPaths;
-  for(const id of ['cryoclaw-deliverables','cryoclaw-dashboards']){
+  for(const id of ['cryoclaw-deliverables','cryoclaw-dashboards','cryoclaw-browser']){
     const localTarget=path.join(gatewayDir,'node_modules','openclaw','dist','extensions',id);
     rmDir(localTarget);fs.cpSync(path.join(ROOT,'builtin-plugins',id),localTarget,{recursive:true});
   }

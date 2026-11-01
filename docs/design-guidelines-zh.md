@@ -65,7 +65,7 @@ token 分两层：**基础层 `shared/design-tokens.css`**（全局唯一事实�
   `--leading-relaxed/1.75`（助手正文）。
 - **字重**：`--weight-regular/medium/semibold/bold`（400/500/600/700）。
 - **动效**：`--ease-out/--ease-in-out/--ease-standard/--ease-spring`，
-  时长阶梯 `--duration-instant/fast/normal/slow/slower`（0.08/0.12/0.2/0.35/0.5s；
+  时长阶梯 `--duration-instant/fast/normal/slow/slower`（0.08/0.14/0.24/0.36/0.54s；
   instant=微反馈瞬时切换 / fast=hover·press / normal=面板开合·入场 /
   slow=卡片入场 / slower=大面积过渡），循环指示器（pulse/spin/shimmer 等
   无限循环动画）统一走 `--duration-loop`（1.2s）；stagger 入场延迟步长
@@ -361,10 +361,11 @@ hairline + radius-12 + `--shadow-lg`，`--text-sm` medium，z-index 10001，
 - **focus-ring 统一**：全局 `:focus-visible { box-shadow: var(--focus-ring) }`
   （base.css），控件各自重复声明同 token；不要写自定义 outline 样式，
   不要移除 focus 样式而不给替代。
-- **`prefers-reduced-motion`**：base.css 已全局把动画/过渡收敛到瞬时
-  （0.01ms + 单次迭代），主题切换 view-transition 同步关闭；组件级
-  （骨架屏扫光、loading 转环、调宽手柄指示条）另有各自的红运动停动画块，
-  新动画需在同类块中登记。
+- **三档动效偏好**：外观设置提供「跟随系统 / 完整动效 / 减少动态」。`utils/motion.ts`
+  统一监听系统 `prefers-reduced-motion` 并写入根节点 `data-motion`，完整动效可覆盖
+  系统减少设置；CSS 与 JS 不再各自读取媒体查询。减少动态保留 80ms 颜色/透明度反馈，
+  去除位移、缩放、循环动画、布局过渡与平滑滚动；组件降级样式统一挂
+  `:root[data-motion="reduce"]`。
 - 动效时长约定：hover/press 用 `--duration-fast`，面板开合/入场用
   `--duration-normal`，统一走 `--ease-standard`（规范推荐值，存量
   `--ease-out` 不再新增）；pulse/spin/shimmer 等无限循环动画一律
@@ -392,6 +393,13 @@ hairline + radius-12 + `--shadow-lg`，`--text-sm` medium，z-index 10001，
 - 入场说明来源，退出保留去向；不让多个循环同时抢阅读。常驻背景应弱、慢，离屏和窗口隐藏时停止工作。
 - 减少动态效果时直接呈现稳定终态，内容、键盘焦点和操作仍完整；动画不得成为功能的前置条件。
 - 验收包括中途反向、连续点击、缩放、低帧率、隐藏后恢复、键盘与减少动态效果；不能只检查首次播放。
+
+### 滚动与统一动效契约（2026.11.1）
+
+- `shared/design-tokens.css` 是时长与缓动唯一事实来源；`ui/utils/motion.ts` 的 `MOTION_MS` 只映射同一组毫秒值，JS 不得再散落 120/200ms 等私有退场常量。微反馈 140ms、面板 240ms、入场 360ms、大场景 540ms；弹簧曲线降低过冲，不追求“傻快”。
+- `styles/motion.css` 最后加载，统一主滚动容器和嵌套边界。每个独立面板只保留一个主纵向滚动区；工作区左侧固定导航头、文件树滚动，文件预览仅内容区滚动，Dock 不再增加外层滚动。
+- 主滚动区使用 `overscroll-behavior-y: contain` 与稳定滚动条槽；代码、diff、工具输出等内滚区使用 `overscroll-behavior: contain`，避免滚轮/触控板在层级间串联。横向滚动只留在确实需要它的代码、标签或表格内。
+- 流式对话沿用 pinned/free 两态：用户近底时跟流，主动上翻后保留阅读位置，不用全局 smooth scroll 抢回滚动条。`prefers-reduced-motion` 直接呈现终态，不等待退场计时。
 
 ### 同级页面方向过渡（2026.10.31）
 

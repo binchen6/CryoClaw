@@ -219,6 +219,27 @@ contextBridge.exposeInMainWorld("cryoclaw", {
   workspaceGetContext: () => ipcRenderer.invoke("workspace:get-context"),
   workspaceOpenFolder: (filePath: string) =>
     ipcRenderer.invoke("workspace:open-folder", filePath),
+  workspaceOpenWith: (params: { path: string; target: "vscode" | "explorer" | "terminal" | "git-bash" }) =>
+    ipcRenderer.invoke("workspace:open-with", params),
+  embeddedBrowserShow: (params: unknown) => ipcRenderer.invoke("embedded-browser:show", params),
+  embeddedBrowserHide: () => ipcRenderer.invoke("embedded-browser:hide"),
+  embeddedBrowserBounds: (bounds: unknown) => ipcRenderer.invoke("embedded-browser:bounds", bounds),
+  embeddedBrowserNavigate: (url: string) => ipcRenderer.invoke("embedded-browser:navigate", url),
+  embeddedBrowserAction: (action: "back" | "forward" | "reload") => ipcRenderer.invoke("embedded-browser:action", action),
+  embeddedBrowserPreferences: (params: unknown) => ipcRenderer.invoke("embedded-browser:preferences", params),
+  embeddedBrowserEvaluate: (script: string) => ipcRenderer.invoke("embedded-browser:evaluate", script),
+  embeddedBrowserAgentPolicy: (policy: { enabled: boolean; priority: "builtin" | "webbridge" | "kernel" }) =>
+    ipcRenderer.invoke("embedded-browser:agent-policy", policy),
+  onEmbeddedBrowserAgentOpen: (cb: () => void) => {
+    const handler = () => cb();
+    ipcRenderer.on("embedded-browser:agent-open", handler);
+    return () => { ipcRenderer.removeListener("embedded-browser:agent-open", handler); };
+  },
+  onEmbeddedBrowserState: (cb: (state: unknown) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, state: unknown) => cb(state);
+    ipcRenderer.on("embedded-browser:state-changed", handler);
+    return () => { ipcRenderer.removeListener("embedded-browser:state-changed", handler); };
+  },
     workspaceListDir: (dirPath: string,options?:{showHidden?:boolean}) =>
       ipcRenderer.invoke("workspace:list-dir", dirPath,options),
   workspaceReadFile: (filePath: string) =>

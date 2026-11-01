@@ -28,7 +28,7 @@ test("context ring：CSS 用描边圆环表达进度，不引入位移或遮挡"
   assert.ok(!block.includes("calc(-1"));
   assert.match(css, /\.chat-compose__ctx-ring-fill/);
   assert.match(css, /\.chat-compose__ctx-ring\[data-tone="warn"\]/);
-  assert.match(css, /prefers-reduced-motion/);
+  assert.match(css, /data-motion="reduce"/);
 });
 
 test("quota ring：额度圆环常驻图标轨，位于打开网页端按钮上方", () => {

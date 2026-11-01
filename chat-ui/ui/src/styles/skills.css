@@ -305,7 +305,7 @@
   margin-top: var(--spacer-10);
 }
 
-@media (prefers-reduced-motion: reduce) {
+:root[data-motion="reduce"] {
   .skills-skeleton__avatar::after,
   .skills-skeleton__line::after {
     animation: none;
@@ -544,7 +544,7 @@
   font-weight: var(--weight-semibold);
 }
 
-@media (prefers-reduced-motion: reduce) {
+:root[data-motion="reduce"] {
   .ext-tab,
   .skills-tab-btn,
   .skill-store__card {
@@ -697,7 +697,7 @@
   flex-wrap: wrap;
 }
 
-@media (prefers-reduced-motion: reduce) {
+:root[data-motion="reduce"] {
   .cc-dialog {
     animation: none;
   }
@@ -1241,7 +1241,7 @@
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
+:root[data-motion="reduce"] {
   .ext-market__card,
   .skill-store__recommend-card,
   .ext-market__chip,

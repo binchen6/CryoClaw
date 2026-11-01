@@ -1,0 +1,57 @@
+/* Unified motion and scroll contract. Loaded last so nested panes cannot reintroduce
+   competing outer scrollers. Timing values live in shared/design-tokens.css. */
+:root {
+  --motion-feedback: var(--duration-fast);
+  --motion-panel: var(--duration-normal);
+  --motion-enter: var(--duration-slow);
+  --motion-scene: var(--duration-slower);
+}
+
+:where(
+  .chat-thread,
+  .subagent-panel__thread,
+  .oc-panel__list,
+  .oc-settings-nav,
+  .oc-settings-content,
+  .skills-scroll,
+  .ts-layout,
+  .dashboard-workspace__scroll,
+  .session-changes,
+  .context-dock__subagents,
+  .context-dock__body .gitp-layout,
+  .wk-nav__tree,
+  .wk-preview__content
+) {
+  overscroll-behavior-y: contain;
+  scrollbar-gutter: stable;
+}
+
+:where(
+  .chat-tool-output,
+  .chat-json-content,
+  .chat-thinking-live__text,
+  .chat-command-jobs__list,
+  .chat-progress-card__body,
+  .chat-plus__skill-list,
+  .chat-exec-approval,
+  .gitp-diff__body,
+  .oc-settings-release-notes,
+  .theme-editor
+) {
+  overscroll-behavior: contain;
+}
+
+.wk-nav { overflow-y: hidden; }
+.context-dock__body .wk-main--embedded { overflow: hidden; }
+.context-dock,
+.chat-main {
+  transition-property: flex, opacity, transform;
+  transition-duration: var(--motion-panel);
+  transition-timing-function: var(--ease-standard);
+}
+
+:root[data-motion="reduce"] {
+  :where(.chat-thread, .subagent-panel__thread, .oc-settings-content, .skills-scroll, .ts-layout, .dashboard-workspace__scroll, .session-changes, .wk-nav__tree, .wk-preview__content) {
+    scroll-behavior: auto !important;
+  }
+}

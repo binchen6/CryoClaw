@@ -10,6 +10,7 @@ import {readUserConfig} from "./provider-config";
 import {readCryoclawConfig,writeCryoclawConfig} from "./cryoclaw-config";
 import {readWorkspaceText,saveWorkspaceText,findWorkspaceFiles,readWorkspaceDraft,writeWorkspaceDraft} from "./workspace-files";
 import * as os from "node:os";
+import { spawn } from "node:child_process";
 
 // workspace 根路径由渲染进程首次调用 workspace:set-root 设定
 let workspaceRoot: string | null = null;
@@ -161,6 +162,47 @@ export function registerWorkspaceIpc(): void {
       return { success: true };
     } catch (err: any) {
       log.error(`workspace:open-folder failed: ${err?.message}`);
+      return { success: false, message: err?.message ?? String(err) };
+    }
+  });
+
+  ipcMain.handle("workspace:open-with", async (event, params: { path?: unknown; target?: unknown }) => {
+    if (!assertTrustedIpcSender(event, "workspace:open-with")) throw new Error("IPC sender not trusted");
+    const check = await guardRealPath(typeof params?.path === "string" ? params.path : "");
+    if (!check.ok) return check.error;
+    const target = check.target;
+    const directory = fs.statSync(target).isDirectory() ? target : path.dirname(target);
+    const launch = (command: string, args: string[], cwd = directory) => {
+      const child = spawn(command, args, { cwd, detached: true, stdio: "ignore", shell: process.platform === "win32" });
+      child.unref();
+    };
+    try {
+      switch (params?.target) {
+        case "vscode":
+          if (process.platform === "darwin") launch("open", ["-a", "Visual Studio Code", target]);
+          else launch("code", [target]);
+          break;
+        case "explorer":
+          shell.showItemInFolder(target);
+          break;
+        case "terminal":
+          if (process.platform === "win32") launch("cmd.exe", ["/c", "start", "", "cmd.exe", "/k", `cd /d "${directory}"`]);
+          else if (process.platform === "darwin") launch("open", ["-a", "Terminal", directory]);
+          else launch("x-terminal-emulator", []);
+          break;
+        case "git-bash": {
+          const executable = process.env.GIT_BASH_PATH || "C:\\Program Files\\Git\\bin\\bash.exe";
+          if (process.platform === "win32") launch(executable, ["--login", "-i"]);
+          else if (process.platform === "darwin") launch("open", ["-a", "Terminal", directory]);
+          else launch("x-terminal-emulator", []);
+          break;
+        }
+        default:
+          return { success: false, message: "Unsupported open target" };
+      }
+      return { success: true };
+    } catch (err: any) {
+      log.error(`workspace:open-with failed: ${err?.message}`);
       return { success: false, message: err?.message ?? String(err) };
     }
   });

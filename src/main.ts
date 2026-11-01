@@ -44,6 +44,7 @@ import { registerSkillStoreIpc } from "./skill-store";
 import { registerPluginStoreIpc, killTrackedKernelCliChildren, preventKernelCliStartsForQuit } from "./plugin-store";
 import { registerWorkspaceIpc,authorizeWorkspaceRoot,resetWorkspaceAccessForImport } from "./workspace-ipc";
 import { registerGitIpc } from "./git-ipc";
+import { controlEmbeddedBrowser, registerEmbeddedBrowserIpc } from "./embedded-browser";
 import { detectGitCached } from "./git-detector";
 import { resolveGatewayPort, resolveGatewayLogPath, resolveUserStateDir, resolveUserConfigPath, resolveGatewayRoot } from "./constants";
 import { resolveGatewayAuthToken } from "./gateway-auth";
@@ -1290,6 +1291,7 @@ registerSkillStoreIpc();
 registerPluginStoreIpc();
 registerWorkspaceIpc();
 registerGitIpc();
+registerEmbeddedBrowserIpc();
 // 启动即探测 git 并缓存（worktree 入口降级依据），渲染层经 git:detect 取结果
 void detectGitCached();
 
@@ -1493,6 +1495,11 @@ app.whenReady().then(async () => {
       const target=BrowserWindow.getAllWindows().find(window=>!window.isDestroyed() && isTrustedChatUiUrl(window.webContents.getURL(),chatUiEntryUrlPrefix()));
       if(!target)throw new Error("Open the CryoClaw window to preview a theme");
       return requestThemeUi(target.webContents,payload);
+    },
+    browserUi:async payload=>{
+      const target=BrowserWindow.getAllWindows().find(window=>!window.isDestroyed() && isTrustedChatUiUrl(window.webContents.getURL(),chatUiEntryUrlPrefix()));
+      if(!target)throw new Error("Open the CryoClaw window to use the embedded browser");
+      return controlEmbeddedBrowser(target,(payload ?? {}) as Record<string,unknown>,()=>target.webContents.send("embedded-browser:agent-open"));
     },
     getStatus: () => {
       const startedAt = gateway.getStartedAt();

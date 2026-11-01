@@ -1,6 +1,5 @@
-// 守护回归（源码审计，同 oc-turn-files-behavior.test.ts / oc-chat-history.test.ts 模式）：
-// 终态「本轮改动」卡片（oc-turn-diff-card）是胶囊的终态接力——结构、降级、
-// 折叠、事件委托复用等不变量钉在这里。组件依赖 lit + customElements，
+// 守护回归（源码审计）：终态改动卡片与 Dock 共用 oc-turn-diff-card，
+// 结构、降级、折叠、事件委托复用等不变量钉在这里。组件依赖 lit + customElements，
 // node 下直接导入意义不大，故读源断言。
 import test from "node:test";
 import assert from "node:assert/strict";

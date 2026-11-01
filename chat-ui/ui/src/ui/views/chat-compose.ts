@@ -30,6 +30,8 @@ import {
 import "../components/oc-model-picker.ts";
 import type { ChatProps } from "./chat.ts";
 import {hydrateAttachmentThumbnails} from "../chat/attachment-thumbnails.ts";
+import {ariaShortcut, formatShortcut, getShortcutBinding, matchesShortcut} from "../keyboard-shortcuts.ts";
+import {prefersReducedMotion} from "../utils/motion.ts";
 
 // renderChat 已派生好的 compose 上下文（模型选择器/占位文案/忙碌态在装配层算好传入）
 export type ComposeRenderContext = {
@@ -78,11 +80,11 @@ let plusMenuEscape: ((ev: KeyboardEvent) => void) | null = null;
 
 // popover 退场两段式：--open → --closing（播 chat-popover-out），
 // --duration-fast(120ms) 后摘净。重开时清定时器 + 摘 --closing 防串场。
-const POPOVER_EXIT_MS = 120;
+const POPOVER_EXIT_MS = 140;
 const popoverExitTimers = new WeakMap<Element, number>();
 
 function animatePopoverOut(el: Element, openClass: string, closingClass: string) {
-  const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const reduced = prefersReducedMotion();
   if (reduced || el.classList.contains(closingClass)) {
     el.classList.remove(openClass, closingClass);
     return;
@@ -163,7 +165,7 @@ function closePlusMenu(props: { onRequestUpdate?: () => void }, options: { resto
     const menu=document.querySelector<HTMLElement>('.chat-plus__menu');
     let exitTimer:number|undefined,finished=false;
     const finish=()=>{if(finished||epoch!==plusMenuEpoch)return;finished=true;if(exitTimer!==undefined)clearTimeout(exitTimer);plusMenuLeaving=false;plusMenuAnimation=null;props.onRequestUpdate?.();};
-    if(!menu||matchMedia('(prefers-reduced-motion: reduce)').matches){finish();return;}
+    if(!menu||prefersReducedMotion()){finish();return;}
     plusMenuAnimation=menu.animate([{opacity:1,transform:'translateY(0) scale(1)'},{opacity:0,transform:'translateY(6px) scale(.98)'}],{duration:POPOVER_EXIT_MS,easing:'ease-in',fill:'forwards'});
     plusMenuAnimation.finished.then(finish).catch(finish);
     // Background windows may suspend WAAPI completion; cleanup still needs a bound.
@@ -267,23 +269,46 @@ function renderContextRing(
   const label = contextMeterText("chat.contextMeterAria", values);
   const title = contextMeterText("chat.contextMeterHint", values);
   const tone = stats.ratio >= 0.9 ? "danger" : stats.ratio >= 0.7 ? "warn" : "ok";
+  const showDetails = (event: Event) => {
+    const wrap = (event.currentTarget as HTMLElement).closest(".chat-compose__ctx-wrap");
+    const panel = wrap?.querySelector<HTMLElement>(".chat-compose__ctx-details");
+    if (panel && !panel.matches(":popover-open")) panel.showPopover();
+  };
+  const scheduleHide = (event: Event) => {
+    const wrap = (event.currentTarget as HTMLElement).closest(".chat-compose__ctx-wrap");
+    const panel = wrap?.querySelector<HTMLElement>(".chat-compose__ctx-details");
+    window.setTimeout(() => {
+      if (panel?.matches(":popover-open") && !wrap?.matches(":hover")) panel.hidePopover();
+    }, 180);
+  };
   return html`
-    <span
-      class="chat-compose__ctx-ring"
-      data-tone=${tone}
-      data-tooltip=${title}
-      data-tooltip-wide="true"
-      role="progressbar"
-      aria-label=${label}
-      aria-valuemin="0"
-      aria-valuemax="100"
-      aria-valuenow=${String(stats.percent)}
-    >
-      <svg viewBox="0 0 24 24" aria-hidden="true">
-        <circle class="chat-compose__ctx-ring-track" cx="12" cy="12" r="10" pathLength="100"></circle>
-        <circle class="chat-compose__ctx-ring-fill" cx="12" cy="12" r="10" pathLength="100" stroke-dasharray=${`${stats.widthPct} 100`}></circle>
-        <text class="chat-compose__ctx-ring-center" x="12" y="12" text-anchor="middle" dominant-baseline="central">${stats.percent}</text>
-      </svg>
+    <span class="chat-compose__ctx-wrap">
+      <button
+        class="chat-compose__ctx-ring"
+        type="button"
+        data-tone=${tone}
+        role="progressbar"
+        aria-label=${label}
+        aria-valuemin="0"
+        aria-valuemax="100"
+        aria-valuenow=${String(stats.percent)}
+        popovertarget="chat-context-meter-details"
+        @pointerenter=${showDetails}
+        @pointerleave=${scheduleHide}
+        @focusin=${showDetails}
+        @focusout=${scheduleHide}
+      >
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <circle class="chat-compose__ctx-ring-track" cx="12" cy="12" r="10" pathLength="100"></circle>
+          <circle class="chat-compose__ctx-ring-fill" cx="12" cy="12" r="10" pathLength="100" stroke-dasharray=${`${stats.widthPct} 100`}></circle>
+          <text class="chat-compose__ctx-ring-center" x="12" y="12" text-anchor="middle" dominant-baseline="central">${stats.percent}</text>
+        </svg>
+      </button>
+      <span class="chat-compose__ctx-details" id="chat-context-meter-details" popover="auto" role="dialog" aria-label=${label}
+        @pointerleave=${scheduleHide}>
+        <strong>${title}</strong>
+        <span>${values.used} / ${values.max} tokens</span>
+      </span>
     </span>
   `;
 }
@@ -831,7 +856,7 @@ export function renderCompose(props: ChatProps, ctx: ComposeRenderContext) {
               commandIndex = 0;
             }
             if (commandSuggestions.length > 0) {
-              if (!e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey && e.key === "Tab") {
+              if (matchesShortcut(e,"complete")) {
                 e.preventDefault();
                 const pick = commandSuggestions[commandIndex];
                 if (pick) {
@@ -859,10 +884,20 @@ export function renderCompose(props: ChatProps, ctx: ComposeRenderContext) {
                 return;
               }
             }
-            // Enter stays a native line break, including while completing commands.
-            if(e.key!=="Enter" || !(e.ctrlKey||e.metaKey) || e.shiftKey || e.altKey || e.repeat)return;
-            e.preventDefault();
-            if(canSend)props.onSend();
+            if(matchesShortcut(e,"send")){
+              e.preventDefault();
+              if(canSend)props.onSend();
+              return;
+            }
+            if(matchesShortcut(e,"newline")){
+              if(e.key==="Enter")return;
+              e.preventDefault();
+              const target=e.currentTarget as HTMLTextAreaElement;
+              target.setRangeText("\n",target.selectionStart,target.selectionEnd,"end");
+              props.onDraftChange(target.value);
+              return;
+            }
+            if(!getShortcutBinding("newline") && e.key==="Enter")e.preventDefault();
           }}
           @input=${(e: Event) => {
             const target = e.target as HTMLTextAreaElement;
@@ -966,9 +1001,9 @@ export function renderCompose(props: ChatProps, ctx: ComposeRenderContext) {
               type="button"
               ?disabled=${!canSend}
               @click=${()=>{if(canSend)props.onSend();}}
-              aria-keyshortcuts="Control+Enter Meta+Enter"
+              aria-keyshortcuts=${ariaShortcut(getShortcutBinding("send"))}
               aria-label=${!props.connected ? t("chat.sendQueued") : ctx.isBusy ? t("chat.sendEnqueue") : t("chat.send")}
-              data-tooltip=${`${!props.connected ? t("chat.sendQueued") : ctx.isBusy ? t("chat.sendEnqueue") : t("chat.send")} · ${t("chat.sendShortcut")}`}
+              data-tooltip=${`${!props.connected ? t("chat.sendQueued") : ctx.isBusy ? t("chat.sendEnqueue") : t("chat.send")}${getShortcutBinding("send") ? ` · ${formatShortcut(getShortcutBinding("send")).join(" ")}` : ""}`}
             >${icons.arrowUp}</button>
           </div>
         </div>

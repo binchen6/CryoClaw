@@ -31,8 +31,8 @@ import {
 import type { ChatAttachment } from "../ui-types.ts";
 import { chatTextEnhanceRef } from "./code-block-enhance.ts";
 import { extractToolCards, renderToolCardSidebar } from "./tool-cards.ts";
-import { summarizeToolCards, groupConsecutiveToolCards } from "./tool-summary.ts";
-import { formatToolDetail, resolveToolDisplay } from "../tool-display.ts";
+import { summarizeToolCards } from "./tool-summary.ts";
+import { resolveToolDisplay } from "../tool-display.ts";
 import { t, getLocale } from "../i18n.ts";
 import "../components/managed-image.ts";
 import "../components/oc-turn-diff-card.ts";
@@ -326,12 +326,9 @@ type MessageGroupRenderOpts = {
   onForkFromMessage?: (entryId: string) => void;
 };
 
-// 纯工具消息（无正文/图片/附件/思考/错误卡，只有工具卡）——连续段可跨消息合并收纳。
-// 此前合并收纳只在单条消息的 cards 数组内并段，而内核每次工具调用是独立消息
-// （1 卡/消息），groupConsecutiveToolCards 永远看不到连续同名段——合并从不生效。
-// 这里在组渲染层把连续纯工具消息的卡聚合后交给同一个 renderCollapsedToolCards，
-// 「连读 5 个文件 → Read ×5 子折叠」才真正落地。带思考块的消息排除：思考在
-// showReasoning 下独立渲染，聚合会让其丢失。
+// 纯工具消息（无正文/图片/附件/思考/错误卡，只有工具卡）可按时间序共享一个
+// 轻量汇总行；每次调用仍独立成行，不再按名称二次分组。带思考或正文的消息
+// 会结束当前工具段，保留因果顺序。
 function isPureToolMessage(message: unknown): boolean {
   const m = message as Record<string, unknown>;
   if (m.cryoclawError === true || m.cryoclawPartial === true) {
@@ -567,110 +564,89 @@ function renderMessageMediaAttachments(atts: MessageMediaAttachment[]) {
   `;
 }
 
-// 将多个 tool card 折叠到 <details> 元素中
-// 单一工具：「⚡ Read · src/main.ts」直接显示动作+目标；多工具：「⚡ N tools · 名单」
-// 摘要行右端是聚合状态（R83）：执行中 spinner / 失败 ✗ / 全部完成 ✓ 已完成
+type ToolGroupView = { open: boolean; expandedId?: string; manual: boolean };
+const toolGroupViews = new Map<string, ToolGroupView>();
+
+function toolCardKey(card: ToolCard, index: number): string {
+  return card.id ?? `${card.name}:${index}`;
+}
+
+function toolGroupKey(cards: ToolCard[]): string {
+  return cards.map((card, index) => toolCardKey(card, index)).join("|");
+}
+
+function resolveToolGroupView(cards: ToolCard[], key: string): ToolGroupView {
+  const latestId = cards.length ? toolCardKey(cards[cards.length - 1], cards.length - 1) : undefined;
+  const view = toolGroupViews.get(key) ?? { open: false, expandedId: latestId, manual: false };
+  if (!view.manual) view.expandedId = latestId;
+  toolGroupViews.delete(key);
+  toolGroupViews.set(key, view);
+  if (toolGroupViews.size > 100) toolGroupViews.delete(toolGroupViews.keys().next().value!);
+  return view;
+}
+
+function requestChatRender() {
+  const app = document.querySelector("openclaw-app") as (HTMLElement & { requestUpdate(): void }) | null;
+  app?.requestUpdate();
+}
+
 function renderCollapsedToolCards(
   toolCards: ToolCard[],
   onOpenSidebar?: (content: string) => void,
 ) {
-  const { totalTools, label: summaryLabel, detail, isSingle, hasError, status } =
+  const { totalTools, label: summaryLabel, detail, latestTitle, hasError, status } =
     summarizeToolCards(toolCards);
-
-  // 同类合并收纳：混合组内 ≥2 张连续同名卡收成子折叠（如混合序列里连读 5 个文件
-  // →「Read file ×5 · a.ts, b.ts +3」一行）；整组同名（isSingle）时外层折叠行
-  // 本身就是该组，不再嵌套。子折叠同样懒渲染（嵌套 details 的 body 交由
-  // 外层展开时的 replay 链填充，子组内容始终即时渲染——张数少、文本短）。
-  const runs = groupConsecutiveToolCards(toolCards);
-  const bodyFn = () =>
-    isSingle
-      ? html`${toolCards.map((card) => renderToolCardSidebar(card, onOpenSidebar))}`
-      : html`${runs.map((run) => {
-          if (run.cards.length < 2) {
-            return run.cards.map((card) => renderToolCardSidebar(card, onOpenSidebar));
-          }
-          const display = resolveToolDisplay({ name: run.name, args: run.cards[0]?.args });
-          const runLabel = display.source ? `${display.label} · ${display.source}` : display.label;
-          const details = run.cards
-            .map((card) =>
-              formatToolDetail(resolveToolDisplay({ name: card.name, args: card.args })),
-            )
-            .filter((d): d is string => Boolean(d));
-          const detailPreview =
-            details.length > 0
-              ? details.length <= 2
-                ? details.join(", ")
-                : `${details.slice(0, 2).join(", ")} +${details.length - 2}`
-              : null;
-          const runFailed = run.cards.some((card) => card.error !== undefined);
-          const runRunning = run.cards.some((card) => card.pending === true);
-          return html`
-            <details class="chat-tool-subgroup">
-              <summary class="chat-tool-subgroup__summary">
-                <span class="chat-tool-subgroup__icon">${icons[display.icon]}</span>
-                <span class="chat-tool-subgroup__label">${runLabel} ×${run.cards.length}</span>
-                ${detailPreview
-                  ? html`<span class="chat-tool-subgroup__detail">${detailPreview}</span>`
-                  : nothing}
-                ${runRunning
-                  ? html`<span class="chat-tool-card__spinner" aria-hidden="true"></span>`
-                  : runFailed
-                    ? html`<span class="chat-tool-subgroup__error">${icons.x}</span>`
-                    : html`<span class="chat-tool-subgroup__done">${icons.check}</span>`}
-              </summary>
-              <div class="chat-tool-subgroup__body">
-                ${run.cards.map((card) => renderToolCardSidebar(card, onOpenSidebar))}
-              </div>
-            </details>
-          `;
-        })}`;
-  const bodySig = toolCardsSignature(toolCards, status, hasError);
-  const bodySelector = ":scope > .chat-tools-collapse__body";
+  const key = toolGroupKey(toolCards);
+  const view = resolveToolGroupView(toolCards, key);
+  const latestId = toolCards.length ? toolCardKey(toolCards[toolCards.length - 1], toolCards.length - 1) : undefined;
 
   return html`
-    <details
-      class="chat-tools-collapse"
-      ${lazyDetailsBodyRef(bodySelector, bodySig, bodyFn)}
-      @toggle=${(event: Event) =>
-        replayLazyDetailsBody(
-          event.currentTarget as HTMLDetailsElement | null,
-          bodySelector,
-          bodySig,
-          bodyFn,
-        )}
-    >
-      <summary class="chat-tools-summary ${hasError ?"chat-tools-summary--failed" : ""}">
-        ${
-          hasError
-            ? html`<span class="chat-tools-summary__error" aria-hidden="true">${icons.x}</span>`
-            : nothing
-        }
+    <section class="chat-tools-collapse ${view.open ? "is-open" : ""}">
+      <button
+        class="chat-tools-summary ${hasError ? "chat-tools-summary--failed" : ""}"
+        type="button"
+        aria-expanded=${String(view.open)}
+        @click=${() => {
+          view.open = !view.open;
+          if (view.open && !view.expandedId) view.expandedId = latestId;
+          requestChatRender();
+        }}
+      >
+        ${hasError ? html`<span class="chat-tools-summary__error" aria-hidden="true">${icons.x}</span>` : nothing}
         <span class="chat-tools-summary__icon">${icons.zap}</span>
-        ${isSingle
-          ? html`
-              <span class="chat-tools-summary__names">${summaryLabel}</span>
-              ${detail
-                ? html`<span class="chat-tools-summary__detail">${detail}</span>`
-                : nothing}
-            `
-          : html`
-              <span class="chat-tools-summary__count">${t("chat.toolsCount").replace("{n}", String(totalTools))}</span>
-              <span class="chat-tools-summary__names">${summaryLabel}</span>
-            `}
-        ${
-          status === "running"
-            ? html`<span class="chat-tools-summary__status chat-tools-summary__status--running" role="status">
-                <span class="chat-tool-card__spinner" aria-hidden="true"></span>
-              </span>`
-            : status === "failed"
-              ? html`<span class="chat-tools-summary__status chat-tools-summary__status--failed">${icons.x}</span>`
-              : html`<span class="chat-tools-summary__status chat-tools-summary__status--done">
-                  ${icons.check}<span>${t("chat.toolCompleted")}</span>
-                </span>`
-        }
-      </summary>
-      <div class="chat-tools-collapse__body"></div>
-    </details>
+        <span class="chat-tools-summary__count">${t("chat.toolsCount").replace("{n}", String(totalTools))}</span>
+        ${latestTitle
+          ? html`<span class="chat-tools-summary__title">${latestTitle}</span><span class="chat-tools-summary__names">${summaryLabel}</span>`
+          : html`<span class="chat-tools-summary__names">${summaryLabel}</span>${detail
+              ? html`<span class="chat-tools-summary__detail">${detail}</span>`
+              : nothing}`}
+        ${status === "running"
+          ? html`<span class="chat-tools-summary__status chat-tools-summary__status--running" role="status">
+              <span class="chat-tool-card__spinner" aria-hidden="true"></span>
+            </span>`
+          : status === "failed"
+            ? html`<span class="chat-tools-summary__status chat-tools-summary__status--failed">${icons.x}</span>`
+            : html`<span class="chat-tools-summary__status chat-tools-summary__status--done">
+                ${icons.check}<span>${t("chat.toolCompleted")}</span>
+              </span>`}
+      </button>
+      ${view.open
+        ? html`<div class="chat-tools-collapse__body">
+            ${toolCards.map((card, index) => {
+              const id = toolCardKey(card, index);
+              return renderToolCardSidebar(card, onOpenSidebar, {
+                expanded: view.expandedId === id,
+                onToggleExpanded: () => {
+                  const opening = view.expandedId !== id;
+                  view.expandedId = opening ? id : undefined;
+                  view.manual = true;
+                  requestChatRender();
+                },
+              });
+            })}
+          </div>`
+        : nothing}
+    </section>
   `;
 }
 
@@ -704,20 +680,6 @@ export function replayLazyDetailsBody(
 function lazyDetailsBodyRef(bodySelector: string, sig: string, bodyFn: () => unknown) {
   return ref((el?: Element) => replayLazyDetailsBody(el as HTMLDetailsElement | null, bodySelector, sig, bodyFn));
 }
-
-// 折叠工具卡 body 内容的廉价签名：工具数/状态/各卡输出长度/待定与失败标记。
-// 流式期间输出增长或状态翻转都会体现为签名变化，触发重放。
-function toolCardsSignature(toolCards: ToolCard[], status: string, hasError: boolean): string {
-  return [
-    status,
-    hasError ? "1" : "0",
-    ...toolCards.map(
-      (card) =>
-        `${card.name}:${card.text?.length ?? -1}:${card.pending ? 1 : 0}:${card.error !== undefined ? 1 : 0}:${card.errorSummary?.length ?? 0}:${card.diffStat ? `${card.diffStat.added}/${card.diffStat.removed}` : "-"}`,
-    ),
-  ].join("|");
-}
-
 
 // 思考过程默认折叠（summary 一行），点击展开完整推理内容
 function renderThinkingCollapsed(reasoningMarkdown: string) {

@@ -23,8 +23,7 @@
 .chat-tool-msg-collapse,
 .chat-tools-collapse,
 .chat-tool-card__args,
-.chat-json-collapse,
-.chat-tool-subgroup {
+.chat-json-collapse {
   /* 与 .chat-thinking-collapse 相同：允许 height 在 0 与 auto 关键字间插值，
      否则下方 ::details-content 的过渡对工具折叠不生效（仍是瞬开瞬合） */
   interpolate-size: allow-keywords;
@@ -34,8 +33,7 @@
 .chat-tool-msg-collapse::details-content,
 .chat-tools-collapse::details-content,
 .chat-tool-card__args::details-content,
-.chat-json-collapse::details-content,
-.chat-tool-subgroup::details-content {
+.chat-json-collapse::details-content::details-content {
   height: 0;
   overflow: clip;
   transition: height var(--duration-normal) var(--ease-standard);
@@ -45,8 +43,7 @@
 .chat-tool-msg-collapse[open]::details-content,
 .chat-tools-collapse[open]::details-content,
 .chat-tool-card__args[open]::details-content,
-.chat-json-collapse[open]::details-content,
-.chat-tool-subgroup[open]::details-content {
+.chat-json-collapse[open]::details-content[open]::details-content {
   height: auto;
 }
 
@@ -139,7 +136,7 @@
   white-space: pre-wrap;
   word-break: break-word;
 }
-@media (prefers-reduced-motion: reduce) {
+:root[data-motion="reduce"] {
   /* 折叠高度过渡与思考块入场渐显一并退化（瞬开瞬合、直接出现） */
   .chat-thinking-collapse,
   .chat-tool-msg-collapse,
@@ -502,7 +499,7 @@ oc-board-panel { display: block; min-width: 0; }
 .chat-plus__skill-picker{border-radius:16px}.chat-plus__skill-search{height:36px;border-radius:9px}.chat-plus__skill-item{padding:9px;border-radius:9px}.chat-plus__skill-item[aria-selected=true]{background:var(--accent-subtle)}
 .chat-cmd-suggest{border-radius:16px;background:color-mix(in srgb,var(--bg-elevated) 96%,transparent);backdrop-filter:blur(22px);box-shadow:0 18px 55px color-mix(in srgb,var(--text) 17%,transparent)}
 .chat-cmd-suggest__item{min-height:44px;transition:background var(--duration-fast),transform var(--duration-fast)}.chat-cmd-suggest__item--active{background:var(--accent-subtle)}
-@media(prefers-reduced-motion:reduce){.chat-plus__item,.chat-cmd-suggest__item{transition:none}}
+:root[data-motion="reduce"]{.chat-plus__item,.chat-cmd-suggest__item{transition:none}}
 
 /* ── 目标横幅 ── */
 .chat-goal {

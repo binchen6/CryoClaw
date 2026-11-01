@@ -1,3 +1,5 @@
+import { MOTION_MS, prefersReducedMotion } from "./utils/motion.ts";
+
 /** Distance (px) from the bottom within which we consider the user "near bottom". */
 const NEAR_BOTTOM_THRESHOLD = 450;
 
@@ -92,7 +94,7 @@ export function scheduleChatScroll(host: ScrollHost, force = false, smooth = fal
         smooth &&
         (typeof window === "undefined" ||
           typeof window.matchMedia !== "function" ||
-          !window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+          !prefersReducedMotion());
       const scrollTop = target.scrollHeight;
       if (Math.abs(distanceFromBottom)>1 && typeof target.scrollTo === "function") {
         target.scrollTo({ top: scrollTop, behavior: smoothEnabled ? "smooth" : "instant" });
@@ -147,14 +149,14 @@ function cancelNewMessagesExit(host: ScrollHost) {
   host.chatNewMessagesLeaving = false;
 }
 
-// pill 是滚动真值的投影，不能为它延迟状态——但可以让 DOM 多留 120ms 播完
-// 退出帧（leaving 期间 pointer-events:none，点击不落在过期状态上）。
+// pill 是滚动真值的投影；DOM 仅多留一个微反馈周期播完退出帧，
+// leaving 期间 pointer-events:none，点击不落在过期状态上。
 function clearNewMessagesBelow(host: ScrollHost) {
   if (!host.chatNewMessagesBelow || host.chatNewMessagesLeaving) return;
   const reduced =
     typeof window !== "undefined" &&
     typeof window.matchMedia === "function" &&
-    window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    prefersReducedMotion();
   if (reduced) {
     host.chatNewMessagesBelow = false;
     return;
@@ -164,7 +166,7 @@ function clearNewMessagesBelow(host: ScrollHost) {
     newMessagesExitTimer = null;
     host.chatNewMessagesLeaving = false;
     host.chatNewMessagesBelow = false;
-  }, 120);
+  }, MOTION_MS.feedback);
 }
 
 export function handleChatScroll(host: ScrollHost, event: Event) {

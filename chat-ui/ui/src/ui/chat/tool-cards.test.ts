@@ -641,21 +641,21 @@ test("chat.css：detail 行超长省略，参数 summary 箭头与文字对齐",
 
 test("chat.css：折叠组/消息级输出 body 同样防溢出，摘要省略规则完整", () => {
   const css = styleSource("chat.css");
-  for (const selector of [".chat-tools-collapse__body", ".chat-tool-msg-body", ".chat-tool-subgroup__body"]) {
+  for (const selector of [".chat-tools-collapse__body", ".chat-tool-msg-body"]) {
     const block = cssRule(css, selector);
     assert.ok(block, `缺 ${selector} 规则`);
     assert.match(block, /min-width:\s*0/, `${selector} 应 min-width:0`);
     assert.match(block, /max-width:\s*100%/, `${selector} 应 max-width:100%`);
   }
-  const collapseContainers = cssBlockAfter(css, ".chat-tools-collapse,\n.chat-tool-subgroup,");
+  const collapseContainers = cssBlockAfter(css, ".chat-tools-collapse,\n.chat-tool-msg-collapse");
   assert.ok(collapseContainers, "缺折叠容器防溢出规则");
   assert.match(collapseContainers, /min-width:\s*0/);
   assert.match(collapseContainers, /max-width:\s*100%/);
 
   for (const selector of [
     ".chat-tools-summary__names",
+    ".chat-tools-summary__title",
     ".chat-tools-summary__detail",
-    ".chat-tool-subgroup__detail",
     ".chat-tool-msg-summary__names",
     ".chat-tool-msg-summary__preview",
     ".chat-subsession-link > span",

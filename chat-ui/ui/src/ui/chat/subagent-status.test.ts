@@ -52,7 +52,7 @@ test("subagent：controlOwnerSessionKey 兜底关联（spawnedBy 缺省）", () 
   assert.equal(cards.length, 1);
 });
 
-test("subagent：终态子会话定格窗口内显示、过期隐藏", () => {
+test("subagent：终态子会话持久保留供回看，并保留输入顺序", () => {
   const fresh = makeRow({
     hasActiveSubagentRun: undefined,
     status: "done",
@@ -65,25 +65,19 @@ test("subagent：终态子会话定格窗口内显示、过期隐藏", () => {
     endedAt: NOW - 60_000,
   });
   const cards = selectSubagentCards([fresh, stale], SESSION, NOW);
-  assert.equal(cards.length, 1, "仅定格窗口内的终态子会话显示");
-  assert.equal(cards[0].id, "agent:main:sub:1");
+  assert.equal(cards.length, 2, "完成后的卡片仍可从父会话打开");
+  assert.deepEqual(cards.map((card) => card.id), ["agent:main:sub:1", "agent:main:sub:2"]);
   assert.equal(cards[0].active, false);
 });
 
-test("subagent：终态无时间戳时不显示（防僵尸卡）", () => {
+test("subagent：终态无时间戳也保留，运行时长可展示", () => {
   const cards = selectSubagentCards(
-    [
-      makeRow({
-        hasActiveSubagentRun: undefined,
-        status: "done",
-        endedAt: undefined,
-        updatedAt: undefined,
-      }),
-    ],
+    [makeRow({ hasActiveSubagentRun: undefined, status: "done", endedAt: undefined, updatedAt: undefined, runtimeMs: 4200 })],
     SESSION,
     NOW,
   );
-  assert.equal(cards.length, 0);
+  assert.equal(cards.length, 1);
+  assert.equal(cards[0].runtimeMs, 4200);
 });
 
 test("subagent：空列表 / 空会话键安全返回空", () => {
@@ -93,7 +87,6 @@ test("subagent：空列表 / 空会话键安全返回空", () => {
 });
 
 test("subagent：hasActiveSubagentRun 优先于 status 判定活跃", () => {
-  // status 非 queued/running 但内核标记仍有活跃后代 run → 活跃
   const cards = selectSubagentCards(
     [makeRow({ status: "done", hasActiveSubagentRun: true })],
     SESSION,
@@ -103,7 +96,7 @@ test("subagent：hasActiveSubagentRun 优先于 status 判定活跃", () => {
   assert.equal(cards[0].active, true);
 });
 
-test("subagent：活跃卡排在终态卡之前", () => {
+test("subagent：活跃状态更新不改变卡片顺序", () => {
   const done = makeRow({
     key: "agent:main:sub:done",
     hasActiveSubagentRun: undefined,
@@ -112,9 +105,7 @@ test("subagent：活跃卡排在终态卡之前", () => {
   });
   const running = makeRow({ key: "agent:main:sub:run", status: "running" });
   const cards = selectSubagentCards([done, running], SESSION, NOW);
-  assert.equal(cards.length, 2);
-  assert.equal(cards[0].sessionKey, "agent:main:sub:run");
-  assert.equal(cards[1].sessionKey, "agent:main:sub:done");
+  assert.deepEqual(cards.map((card) => card.sessionKey), ["agent:main:sub:done", "agent:main:sub:run"]);
 });
 
 test("subagent：失败类状态判定（含 2026.10.3 killed/timeout/interrupted）", () => {

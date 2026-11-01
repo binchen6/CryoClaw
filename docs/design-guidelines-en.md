@@ -75,7 +75,7 @@ were fully retuned.
   `--leading-relaxed/1.75` (assistant body text).
 - **Font weight**: `--weight-regular/medium/semibold/bold` (400/500/600/700).
 - **Motion**: `--ease-out/--ease-in-out/--ease-standard/--ease-spring`, duration scale
-  `--duration-instant/fast/normal/slow/slower` (0.08/0.12/0.2/0.35/0.5s; instant = micro-
+  `--duration-instant/fast/normal/slow/slower` (0.08/0.14/0.24/0.36/0.54s; instant = micro-
   feedback swaps, fast = hover/press, normal = panels/entrances, slow = card entrances,
   slower = large transitions); loop indicators (pulse/spin/shimmer infinite loops) all use
   `--duration-loop` (1.2s); stagger entrance delays use `--delay-step` (50ms,
@@ -390,10 +390,11 @@ One sentence defines the focus language: **a single accent-tinted edge plus a ve
 - **Unified focus ring**: global `:focus-visible { box-shadow: var(--focus-ring) }`
   (base.css); individual controls redeclare the same token. Do not write custom outline
   styles, and never remove focus styles without a replacement.
-- **`prefers-reduced-motion`**: base.css globally collapses animations/transitions to
-  instant (0.01ms + single iteration) and disables the theme-switch view-transition;
-  component level (skeleton shine, loading spinners, resize-handle indicator) has its
-  own reduced-motion blocks — register new animations in the same pattern.
+- **Three motion preferences**: Appearance offers Follow system / Full motion / Reduced motion.
+  `utils/motion.ts` owns the OS media-query listener and writes root `data-motion`; Full motion
+  can override OS reduction. CSS and JS no longer read the query independently. Reduced motion
+  keeps subtle 80ms color/opacity feedback while removing movement, scaling, loops, layout
+  transitions and smooth scrolling. Component reductions use `:root[data-motion="reduce"]`.
 - Motion-duration conventions: hover/press use `--duration-fast`, panel open/close and
   entrances use `--duration-normal`, all on `--ease-standard` (the recommended value;
   stop adding new `--ease-out` uses); infinite loops (pulse/spin/shimmer) always use
@@ -401,6 +402,13 @@ One sentence defines the focus language: **a single accent-tinted edge plus a ve
 - Drag-region discipline: large shell surfaces are `-webkit-app-region: drag` so the
   window stays draggable; every interactive element must pair with `no-drag` to stay
   keyboard/mouse reachable.
+
+### Unified scrolling and motion contract (2026-11-01)
+
+- `shared/design-tokens.css` owns timing and easing. `ui/utils/motion.ts` only mirrors those values as `MOTION_MS`; do not add private 120/200ms exit constants. Use 140ms for feedback, 240ms for panels, 360ms for entrances and 540ms for large scenes. Spring overshoot stays restrained rather than feeling rushed.
+- `styles/motion.css` loads last and owns primary/nested scrolling. Each independent pane has one main vertical scroller: the workspace keeps its navigation header fixed, scrolls the file tree, and scrolls only preview content; the Dock adds no competing outer scroller.
+- Primary scrollers use `overscroll-behavior-y: contain` and a stable scrollbar gutter. Code, diff and tool-output scrollers use `overscroll-behavior: contain`, preventing wheel/trackpad chaining across layers. Horizontal scrolling remains limited to code, tabs and tables that need it.
+- Chat keeps pinned/free states: follow output near the bottom, preserve the reading position after the user scrolls up, and never reclaim the scrollbar with global smooth scrolling. Reduced motion presents the final state without exit delays.
 
 ### Directional peer navigation (2026.10.31)
 

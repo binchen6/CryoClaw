@@ -58,6 +58,19 @@ function request(
   });
 }
 
+test("browser API requires authentication and forwards Agent commands to the live UI",async()=>{
+  const calls:unknown[]=[];
+  const server=await startTestServer({getStatus:()=>({running:true,pid:1,port:18789,uptimeMs:1}),restart:async()=>{},browserUi:async payload=>{calls.push(payload);return {visible:true,url:"https://example.com"};}});
+  try {
+    assert.equal((await request(server.port,{method:"POST",path:"/ui/browser",body:{action:"status"}})).statusCode,401);
+    assert.equal(calls.length,0);
+    const result=await request(server.port,{method:"POST",path:"/ui/browser",token:TEST_TOKEN,body:{action:"navigate",url:"https://example.com"}});
+    assert.equal(result.statusCode,200);assert.deepEqual(result.body,{ok:true,result:{visible:true,url:"https://example.com"}});
+    assert.deepEqual(calls,[{action:"navigate",url:"https://example.com"}]);
+    assert.equal((await request(server.port,{method:"POST",path:"/ui/browser",token:TEST_TOKEN,body:{action:"evaluate",script:"x".repeat(131072)}})).statusCode,413);
+  } finally {await server.close();}
+});
+
 test("theme API requires authentication and bounds both action and request size",async()=>{
   let calls=0;
   const server=await startTestServer({getStatus:()=>({running:true,pid:1,port:18789,uptimeMs:1}),restart:async()=>{},themeUi:async payload=>{calls++;return {preview:(payload as any).action==="preview"};}});

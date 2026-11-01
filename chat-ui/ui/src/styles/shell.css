@@ -64,7 +64,7 @@
 @keyframes oc-nav-back-out { to { opacity: 0; transform: translateX(4px); } }
 @keyframes oc-nav-back-in { from { opacity: 0; transform: translateX(-8px); } }
 
-@media (prefers-reduced-motion: reduce) {
+:root[data-motion="reduce"] {
   ::view-transition-old(page-content), ::view-transition-old(settings-content), ::view-transition-old(task-content),
   ::view-transition-new(page-content), ::view-transition-new(settings-content), ::view-transition-new(task-content) {
     animation: none !important;
@@ -240,6 +240,32 @@
   gap: var(--spacer-2);
   margin-left: auto;
   padding-left: var(--spacer-8);
+}
+
+.cc-contextbar__worktree,
+.cc-contextbar__changes {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacer-4);
+  max-width: 220px;
+  min-height: 26px;
+  padding: var(--spacer-2) var(--spacer-6);
+  border: 0;
+  border-radius: var(--radius-6);
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--font-meta);
+  font-size: var(--font-size-meta);
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+.cc-contextbar__worktree:hover,
+.cc-contextbar__changes:hover { background: var(--bg-hover); color: var(--text); }
+.cc-contextbar__worktree span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cc-contextbar__change-added { color: var(--ok); }
+.cc-contextbar__change-deleted { color: var(--danger); }
+@media (max-width: 1000px) {
+  .cc-contextbar__worktree { display: none; }
 }
 
 /* 会话导出按钮：与信息按钮组成右侧操作组。 */
@@ -704,7 +730,7 @@ oc-rail {
   mask-image: none;
 }
 
-@media (prefers-reduced-motion: reduce) {
+:root[data-motion="reduce"] {
   .cryoclaw-panel-resize::after {
     transition: none;
   }

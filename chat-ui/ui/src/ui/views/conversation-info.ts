@@ -4,6 +4,7 @@ import { icons } from "../icons.ts";
 import { extractMessageMediaAttachments } from "../chat/media-attachments.ts";
 import { selectSubagentCards } from "../chat/subagent-status.ts";
 import type { ChatProps } from "./chat.ts";
+import { prefersReducedMotion } from "../utils/motion.ts";
 
 let open = false;
 let leaving = false;
@@ -53,7 +54,7 @@ export function toggleConversationInfo(update: () => void, trigger: HTMLElement 
   const target = opener?.isConnected ? opener : null;
   opener = null;
   const restore = () => requestAnimationFrame(() => target?.focus());
-  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) { open = false; update(); restore(); return; }
+  if (prefersReducedMotion()) { open = false; update(); restore(); return; }
   leaving = true; update();
   exitTimer = setTimeout(() => { open = false; leaving = false; exitTimer = undefined; update(); restore(); }, 160);
 }

@@ -13,11 +13,23 @@ export type UiSettings = {
   lastActiveSessionKey: string;
   cryoclawView: CryoClawViewId;
   theme: ThemeMode;
+  motionPreference: "system" | "full" | "reduce";
   appearance?:AppearanceProfile;
   chatFocusMode: boolean;
   chatShowThinking: boolean;
   chatProgressCardCollapsed: boolean; // Progress Card 折叠态（compose 上方浮卡，跨会话共用偏好）
   splitRatio: number; // Sidebar split ratio (0.4 to 0.7, default 0.6)
+  dockCollapsed: boolean; // 右侧上下文 Dock 默认折叠；主动联动时展开
+  embeddedBrowserEnabled: boolean;
+  embeddedBrowserAgentEnabled: boolean;
+  embeddedBrowserSearchEngine: "google" | "bing" | "baidu";
+  embeddedBrowserPriority: "builtin" | "webbridge" | "kernel";
+  embeddedBrowserZoom: number;
+  embeddedBrowserDownloadPath: string;
+  embeddedBrowserAskSavePath: boolean;
+  embeddedBrowserMaxBytes: number;
+  embeddedBrowserUserAgent: string;
+  keyboardShortcuts: Record<string, string>;
   navCollapsed: boolean; // Collapsible sidebar state
   navGroupsCollapsed: Record<string, boolean>; // Which nav groups are collapsed
   sidebarWidth: number; // 侧边栏宽度，拖拽调宽持久化（220-420）；0 = 未自定义哨兵（走 --sidebar-width 与媒体查询）
@@ -129,11 +141,23 @@ export function parseUiSettings(raw: string | null, locationLike: LocationLike):
     lastActiveSessionKey: "main",
     cryoclawView: injectedView ?? "chat",
     theme: "light",
+    motionPreference: "system",
     appearance:normalizeAppearance(undefined),
     chatFocusMode: false,
     chatShowThinking: true,
     chatProgressCardCollapsed: false,
     splitRatio: 0.6,
+    dockCollapsed: true,
+    embeddedBrowserEnabled: false,
+    embeddedBrowserAgentEnabled: false,
+    embeddedBrowserSearchEngine: "google",
+    embeddedBrowserPriority: "builtin",
+    embeddedBrowserZoom: 1,
+    embeddedBrowserDownloadPath: "",
+    embeddedBrowserAskSavePath: true,
+    embeddedBrowserMaxBytes: 1024 * 1024 * 1024,
+    embeddedBrowserUserAgent: "",
+    keyboardShortcuts: {},
     navCollapsed: false,
     navGroupsCollapsed: {},
     sidebarWidth: 0, // 0 哨兵 = 未自定义：不写内联宽度，走 --sidebar-width（含窄窗媒体查询收窄）
@@ -169,6 +193,9 @@ export function parseUiSettings(raw: string | null, locationLike: LocationLike):
         parsed.theme === "light" || parsed.theme === "dark" || parsed.theme === "system"
           ? parsed.theme
           : defaults.theme,
+      motionPreference: parsed.motionPreference === "full" || parsed.motionPreference === "reduce"
+        ? parsed.motionPreference
+        : defaults.motionPreference,
       chatFocusMode:
         typeof parsed.chatFocusMode === "boolean" ? parsed.chatFocusMode : defaults.chatFocusMode,
       chatShowThinking:
@@ -185,6 +212,27 @@ export function parseUiSettings(raw: string | null, locationLike: LocationLike):
         parsed.splitRatio <= 0.7
           ? parsed.splitRatio
           : defaults.splitRatio,
+      dockCollapsed: typeof parsed.dockCollapsed === "boolean" ? parsed.dockCollapsed : defaults.dockCollapsed,
+      embeddedBrowserEnabled: typeof parsed.embeddedBrowserEnabled === "boolean" ? parsed.embeddedBrowserEnabled : defaults.embeddedBrowserEnabled,
+      embeddedBrowserAgentEnabled: typeof parsed.embeddedBrowserAgentEnabled === "boolean" ? parsed.embeddedBrowserAgentEnabled : defaults.embeddedBrowserAgentEnabled,
+      embeddedBrowserSearchEngine: ["google", "bing", "baidu"].includes(String(parsed.embeddedBrowserSearchEngine))
+        ? parsed.embeddedBrowserSearchEngine as UiSettings["embeddedBrowserSearchEngine"]
+        : defaults.embeddedBrowserSearchEngine,
+      embeddedBrowserPriority: parsed.embeddedBrowserPriority === "webbridge" || parsed.embeddedBrowserPriority === "kernel"
+        ? parsed.embeddedBrowserPriority
+        : defaults.embeddedBrowserPriority,
+      embeddedBrowserZoom: typeof parsed.embeddedBrowserZoom === "number" && Number.isFinite(parsed.embeddedBrowserZoom)
+        ? Math.min(2, Math.max(0.5, parsed.embeddedBrowserZoom))
+        : defaults.embeddedBrowserZoom,
+      embeddedBrowserDownloadPath: typeof parsed.embeddedBrowserDownloadPath === "string" ? parsed.embeddedBrowserDownloadPath : defaults.embeddedBrowserDownloadPath,
+      embeddedBrowserAskSavePath: typeof parsed.embeddedBrowserAskSavePath === "boolean" ? parsed.embeddedBrowserAskSavePath : defaults.embeddedBrowserAskSavePath,
+      embeddedBrowserMaxBytes: typeof parsed.embeddedBrowserMaxBytes === "number" && Number.isFinite(parsed.embeddedBrowserMaxBytes)
+        ? Math.max(1, Math.floor(parsed.embeddedBrowserMaxBytes))
+        : defaults.embeddedBrowserMaxBytes,
+      embeddedBrowserUserAgent: typeof parsed.embeddedBrowserUserAgent === "string" ? parsed.embeddedBrowserUserAgent : defaults.embeddedBrowserUserAgent,
+      keyboardShortcuts: typeof parsed.keyboardShortcuts === "object" && parsed.keyboardShortcuts !== null && !Array.isArray(parsed.keyboardShortcuts)
+        ? Object.fromEntries(Object.entries(parsed.keyboardShortcuts).filter(([id, value]) => id && typeof value === "string" && value.length <= 80))
+        : defaults.keyboardShortcuts,
       navCollapsed:
         typeof parsed.navCollapsed === "boolean" ? parsed.navCollapsed : defaults.navCollapsed,
       navGroupsCollapsed:

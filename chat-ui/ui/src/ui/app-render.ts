@@ -11,6 +11,7 @@
 import { html, nothing } from "lit";
 import { keyed } from "lit/directives/keyed.js";
 import { transitionView } from "./utils/view-transition.ts";
+import { MOTION_MS, prefersReducedMotion } from "./utils/motion.ts";
 import { preloadPage } from "./page-preload.ts";
 import {renderThemeUi} from "./theme-live.ts";
 import type { AppViewState } from "./app-view-state.ts";
@@ -50,7 +51,9 @@ import { quotaProvider } from "./controllers/model-quota.ts";
 import "./components/oc-rail.ts";
 import "./components/oc-session-panel.ts";
 import { renderChat } from "./views/chat.ts";
-import { conversationInfoOpen, toggleConversationInfo } from "./views/conversation-info.ts";
+import "./components/oc-session-change-summary.ts";
+import { selectSessionChanges, fetchSessionChangeStats } from "./session-changes.ts";
+import { openDockTab, toggleDock } from "./controllers/dock.ts";
 import { renderGatewayUrlConfirmation } from "./views/gateway-url-confirmation.ts";
 import { renderReleaseNotesModal } from "./views/release-notes-modal.ts";
 import { renderUpdateAvailableDialog } from "./views/update-available-dialog.ts";
@@ -100,6 +103,17 @@ declare global {
       workspaceGetContext?: () => Promise<{success:boolean;data?:{defaultRoot:string;activeRoot:string|null}}>;
       selectDirectory?: () => Promise<string|null>;
       workspaceOpenFolder?: (filePath: string) => Promise<any>;
+      workspaceOpenWith?: (params: { path: string; target: "vscode" | "explorer" | "terminal" | "git-bash" }) => Promise<any>;
+      embeddedBrowserShow?: (params: unknown) => Promise<any>;
+      embeddedBrowserHide?: () => Promise<any>;
+      embeddedBrowserBounds?: (bounds: unknown) => Promise<any>;
+      embeddedBrowserNavigate?: (url: string) => Promise<any>;
+      embeddedBrowserAction?: (action: "back" | "forward" | "reload") => Promise<any>;
+      embeddedBrowserPreferences?: (params: unknown) => Promise<any>;
+      embeddedBrowserEvaluate?: (script: string) => Promise<any>;
+      embeddedBrowserAgentPolicy?: (policy: { enabled: boolean; priority: "builtin" | "webbridge" | "kernel" }) => Promise<any>;
+      onEmbeddedBrowserAgentOpen?: (cb: () => void) => (() => void) | void;
+      onEmbeddedBrowserState?: (cb: (state: unknown) => void) => (() => void) | void;
       workspaceListDir?: (dirPath: string,options?:{showHidden?:boolean}) => Promise<any>;
       workspaceReadFile?: (filePath: string) => Promise<any>;
       workspaceWriteFile?:(params:{path:string;content:string;baseHash:string})=>Promise<any>;
@@ -109,6 +123,7 @@ declare global {
       // git 面板（P4）：status/diff 返回主进程解析后的结构化数据
       gitStatus?: (cwd: string) => Promise<any>;
       gitDiff?: (cwd: string, opts?: { cached?: boolean; path?: string }) => Promise<any>;
+      gitChangeStats?: (cwd: string, paths: string[]) => Promise<any>;
       gitStage?: (cwd: string, paths: string[]) => Promise<any>;
       gitUnstage?: (cwd: string, paths: string[]) => Promise<any>;
       gitCommit?: (cwd: string, message: string) => Promise<any>;
@@ -137,7 +152,7 @@ function toggleSessionPanel(state: AppViewState) {
     state.applySettings({ ...state.settings, navCollapsed: false });
     return;
   }
-  const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const reduced = prefersReducedMotion();
   if (!panel || reduced) {
     state.applySettings({ ...state.settings, navCollapsed: true });
     return;
@@ -146,7 +161,7 @@ function toggleSessionPanel(state: AppViewState) {
   panelExitTimer = window.setTimeout(() => {
     panelExitTimer = null;
     state.applySettings({ ...state.settings, navCollapsed: true });
-  }, 200);
+  }, MOTION_MS.panel);
 }
 
 // 打开内嵌设置页时可携带目标 tab 提示，减少用户二次定位成本。
@@ -300,6 +315,11 @@ function renderContextBar(
   const workspaceName = isChat
     ? state.settings.pinnedWorkspaces.find((item) => item.id === state.settings.sessionWorkspaceMap[state.sessionKey])?.name ?? null
     : null;
+  const worktreeName = isChat
+    ? state.gitRepoOptions.find((repo) => repo.path === state.gitRepoPath)?.branch ?? workspaceName ?? "main"
+    : null;
+  const sessionChanges = isChat ? selectSessionChanges(state) : [];
+  const openChanges = () => openDockTab(state, "changes");
   return html`
     <div class="cc-contextbar">
       ${isChat
@@ -324,22 +344,21 @@ function renderContextBar(
       </div>
       ${isChat
         ? html`<div class="cc-contextbar__actions">
+            <button class="cc-contextbar__worktree" type="button" title=${worktreeName}
+              @click=${openChanges}>${icons.gitBranch}<span>${worktreeName}</span></button>
+            <oc-session-change-summary
+              .files=${sessionChanges}
+              .statsLoader=${() => fetchSessionChangeStats(state, sessionChanges)}
+              .onOpenChanges=${openChanges}
+            ></oc-session-change-summary>
             <button
-              class="cc-contextbar__toggle cc-contextbar__export"
+              class="cc-contextbar__toggle"
               type="button"
-              ?disabled=${!state.sessionKey || (state.chatMessages?.length ?? 0) === 0}
-              @click=${() => {
-                void exportCurrentTranscript(state, currentSessionLabel);
-              }}
-              data-tooltip=${t("chat.exportTranscript")}
+              data-tooltip=${state.settings.dockCollapsed ? t("dock.expand") : t("dock.collapse")}
               data-tooltip-pos="bottom"
-              aria-label=${t("chat.exportTranscript")}
-            >
-              ${icons.download}
-            </button>
-            <button class="cc-contextbar__toggle" type="button" aria-controls="conversation-info"
-              aria-expanded=${conversationInfoOpen()} aria-label=${t("chat.conversationInfo") === "chat.conversationInfo" ? "会话信息 / Conversation information" : t("chat.conversationInfo")}
-              @click=${(event: Event) => toggleConversationInfo(() => state.requestUpdate(), event.currentTarget as HTMLElement)}>${icons.info}</button>
+              aria-label=${state.settings.dockCollapsed ? t("dock.expand") : t("dock.collapse")}
+              @click=${() => toggleDock(state)}
+            >${icons.panelRight}</button>
           </div>`
         : nothing}
     </div>

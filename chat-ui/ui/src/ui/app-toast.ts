@@ -10,6 +10,7 @@
  */
 
 import type { AppViewState } from "./app-view-state.ts";
+import { MOTION_MS, prefersReducedMotion } from "./utils/motion.ts";
 
 export type ToastAction = {
   label: string;
@@ -19,8 +20,8 @@ export type ToastKind="info"|"success"|"warning"|"error";
 let toastKind:ToastKind="info";
 export function getToastKind():ToastKind{return toastKind;}
 
-// 退场时长 = components.css global-toast-out 的 var(--duration-normal)（0.2s）
-const TOAST_EXIT_MS = 200;
+// 退场时长 = components.css global-toast-out 的 var(--duration-normal)。
+const TOAST_EXIT_MS = MOTION_MS.panel;
 
 let toastMessage: string | null = null;
 let toastAction: ToastAction | null = null;
@@ -51,6 +52,13 @@ function clearRemoveTimer() {
 function dismissWithExit(state?: AppViewState) {
   if (toastLeaving) return;
   toastLeaving = true;
+  if (prefersReducedMotion()) {
+    toastLeaving = false;
+    toastMessage = null;
+    toastAction = null;
+    state?.requestUpdate();
+    return;
+  }
   state?.requestUpdate();
   toastRemoveTimer = setTimeout(() => {
     toastRemoveTimer = null;

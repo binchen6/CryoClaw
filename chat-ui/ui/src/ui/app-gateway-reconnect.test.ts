@@ -63,7 +63,8 @@ test("automatic reconnect on the original client restores its running chat from 
       sessionKey: "auto-reconnect", runId: "live-run", state: "delta", deltaText: "after reconnect",
     } });
     assert.equal(host.chatRunId, "live-run", "the original client's second hello must preserve orphan ownership");
-    assert.equal(host.chatPendingStreamText, "after reconnect");
+    assert.equal(host.chatStream, "after reconnect", "the foreground projection commits the latest runtime text");
+    assert.equal(host.chatPendingStreamText, null, "pending text belongs only to the runtime entry");
   } finally {
     clearReconnectOrphanRun(undefined, "auto-reconnect");
     mock.restoreAll();

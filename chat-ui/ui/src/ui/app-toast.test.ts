@@ -26,12 +26,12 @@ test("re-showing the same toast resets its auto-dismiss timer",(t)=>{
     // 距首次出现已 14s：旧 8s 时限早已到达，若计时被重置则仍在展示
     t.mock.timers.tick(7000);
     assert.equal(getToastMessage(),'Save failed');assert.equal(isToastLeaving(),false);
-    // 距重复出现满 8s：开始退场；再经过 200ms 退场延迟后移除
+    // 距重复出现满 8s：开始退场；再经过 240ms 退场延迟后移除
     t.mock.timers.tick(1000);
     assert.equal(isToastLeaving(),true);assert.equal(getToastMessage(),'Save failed');
-    t.mock.timers.tick(200);
+    t.mock.timers.tick(240);
     assert.equal(getToastMessage(),null);assert.equal(isToastLeaving(),false);
   }finally{
-    hideToast(state);t.mock.timers.tick(200);
+    hideToast(state);t.mock.timers.tick(240);
   }
 });

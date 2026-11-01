@@ -40,10 +40,9 @@ function statsBridge(): TurnStatsBridge | undefined {
 /**
  * 终态「本轮改动」卡片（组底部，对齐 Kimi CLI 样式）：头部「已编辑 N 个文件
  * +x −y」+「撤销」「查看变更」按钮，文件列表默认前 3 行（每行 basename +
- * 该文件 +/−，完整路径放 title）。执行期间不渲染——由 <oc-turn-files> 悬浮
- * 胶囊接力；run 终态后胶囊消失、卡片接管。
+ * 该文件 +/−，完整路径放 title）。同一张卡片也复用于右侧 Dock 的会话改动页。
  *
- * 无 shadow DOM（同 oc-turn-files）：路径点击/「查看变更」复用 .chat-thread
+ * 无 shadow DOM：路径点击/「查看变更」复用 .chat-thread
  * 上的既有事件委托（.chat-path-link / .chat-git-view-link 的 click+keydown
  * 分支），卡片本体只负责「撤销」回调（须携带 files，走属性传入）。
  */
@@ -53,11 +52,13 @@ export class OcTurnDiffCard extends LitElement {
     files: { attribute: false }, workspacePath: { attribute: false },
     gitAvailable: { attribute: false }, locale: { attribute: false },
     onDiscard: { attribute: false },
+    statsLoader: { attribute: false },
     // 行数统计到达后递增：内部 lookup 不是响应式字段，靠它触发一次重渲染
     statsRevision: { attribute: false },
   };
   files: FileChange[] = []; workspacePath = ""; gitAvailable = false; locale = "";
   onDiscard?: (files: FileChange[]) => void | Promise<void>;
+  statsLoader?: (paths: string[]) => Promise<TurnStatsLookup>;
   statsRevision = 0;
 
   private statsLookup: TurnStatsLookup = EMPTY_LOOKUP;
@@ -80,7 +81,7 @@ export class OcTurnDiffCard extends LitElement {
 
   // 触发拉取的条件：本组改动列表或工作区/git 可用性变化
   protected willUpdate(changed: Map<PropertyKey, unknown>) {
-    const triggers = ["files", "workspacePath", "gitAvailable"];
+    const triggers = ["files", "workspacePath", "gitAvailable", "statsLoader"];
     if (!triggers.some(key => changed.has(key))) return;
     this.refreshStats();
   }
@@ -95,7 +96,7 @@ export class OcTurnDiffCard extends LitElement {
   /** 签名变化时重置结果并在 250ms 安静后拉取；共享缓存命中直接复用 */
   private refreshStats(): void {
     const paths = this.files.map(file => file.path);
-    const enabled = this.gitAvailable && Boolean(this.workspacePath) && paths.length > 0;
+    const enabled = this.gitAvailable && (Boolean(this.workspacePath) || Boolean(this.statsLoader)) && paths.length > 0;
     const signature = enabled ? turnStatsSignature(this.workspacePath, paths) : "";
     if (signature === this.statsSignature) return;
     this.statsSignature = signature;
@@ -118,11 +119,9 @@ export class OcTurnDiffCard extends LitElement {
   }
 
   private async loadStats(signature: string, paths: string[], seq: number): Promise<void> {
-    const lookup = await fetchTurnFileStats(
-      statsBridge()?.gitChangeStats,
-      this.workspacePath,
-      paths,
-    );
+    const lookup = this.statsLoader
+      ? await this.statsLoader(paths)
+      : await fetchTurnFileStats(statsBridge()?.gitChangeStats, this.workspacePath, paths);
     // 过期响应丢弃：签名/序号已变（组件销毁、更新的请求）时不得覆盖
     if (seq !== this.statsSeq || signature !== this.statsSignature) return;
     rememberStats(signature, lookup);
