@@ -2,7 +2,7 @@
 // git:detect 探测 + git:status/diff/stage/unstage/commit 五个操作通道。
 // 安全面：
 // - 全部 assertTrustedIpcSender；
-// - execFile 数组传参（无 shell 注入面）+ 超时 + windowsHide；
+// - runGit 统一 --literal-pathspecs + execFile 数组传参 + 超时 + windowsHide；
 // - cwd 必须 ∈ workspace 白名单根（resolveAllowedDir：path 校验 + realpath 复核防 symlink）；
 // - 文件路径入参只接受仓库相对路径（sanitizeGitRelPaths 拒绝绝对路径与 .. 逃逸）。
 // 错误协议（渲染层据此降级）：
@@ -13,10 +13,11 @@
 // - 其余 git 失败 → { success:false, error:"git-error", message: stderr 截断 }
 import { ipcMain } from "electron";
 import * as fs from "fs";
+import * as path from "path";
 import { assertTrustedIpcSender } from "./ipc-sender-guard";
 import { detectGitCached } from "./git-detector";
 import { resolveAllowedDir } from "./workspace-ipc";
-import { runGit, type GitRunResult } from "./git-run";
+import { runGit as runRawGit, type GitRunResult } from "./git-run";
 import {
   isNotARepoError,
   normalizeCommitMessage,
@@ -38,6 +39,30 @@ const GIT_MAX_BUFFER = 8 * 1024 * 1024;
 const STDERR_PREVIEW = 4_000;
 // push/pull 禁止交互式凭据提示（会挂死 execFile）；缺凭据时 git 直接报错到 stderr
 const GIT_NO_PROMPT_ENV = { GIT_TERMINAL_PROMPT: "0" } as Record<string, string>;
+
+// Porcelain -z emits repository-root paths even when cwd is an authorized subdir.
+// Keep that wire format, but translate file operations back into the granted cwd.
+async function runGit(cwd: string, args: string[], timeout: number, maxBuffer: number,
+  runner?: Parameters<typeof runRawGit>[4], env?: Record<string, string>): Promise<GitRunResult> {
+  let scoped = [...args];
+  const delimiter = scoped.indexOf("--");
+  if (delimiter >= 0) {
+    const root = await runRawGit(cwd, ["rev-parse", "--show-toplevel"], timeout, maxBuffer, runner, env);
+    if (root.code !== 0) return root;
+    const repoRoot = root.stdout.trim();
+    const paths = scoped.slice(delimiter + 1).map(file => {
+      const relative = path.relative(cwd, path.resolve(repoRoot, file));
+      if (path.isAbsolute(relative) || relative === ".." || relative.startsWith(`..${path.sep}`)) {
+        throw Object.assign(new Error("Path outside authorized workspace"), { code: "EACCES" });
+      }
+      return relative || ".";
+    });
+    scoped = [...scoped.slice(0, delimiter + 1), ...paths];
+  } else if (scoped[0] === "status" || scoped[0] === "diff") {
+    scoped.push("--", ".");
+  }
+  return runRawGit(cwd, scoped, timeout, maxBuffer, runner, env);
+}
 
 type Guarded =
   | { ok: true; dir: string }
@@ -92,6 +117,7 @@ function gitCatchResp(channel: string, err: unknown): { success: false; error: s
   if ((err as NodeJS.ErrnoException | null)?.code === "ENOENT") {
     return { success: false, error: "no-git", message: String(err instanceof Error ? err.message : err) };
   }
+  if ((err as NodeJS.ErrnoException | null)?.code === "EACCES") return { success: false, error: "denied" };
   return { success: false, error: "git-error", message: String(err instanceof Error ? err.message : err) };
 }
 

@@ -4,3 +4,5 @@
 *.ts text eol=lf
 *.js text eol=lf
 *.md text eol=lf
+# Exact upstream bundle contract; Windows checkout must preserve the LF bytes.
+scripts/fixtures/tencent-qqbot-2.0.4-lifecycle.cjs text eol=lf

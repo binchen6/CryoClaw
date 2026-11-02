@@ -521,7 +521,7 @@ export function isNestedToolCardControl(target: unknown, cardRoot?: unknown): bo
 
 export type ToolCardViewOptions = {
   expanded?: boolean;
-  onToggleExpanded?: () => void;
+  onToggleExpanded?: (event?: Event) => void;
 };
 
 export function renderToolCardSidebar(
@@ -552,7 +552,7 @@ export function renderToolCardSidebar(
         if (event && isNestedToolCardControl(event.target, event.currentTarget)) return;
         if (event && (event.target as HTMLElement | null)?.closest?.(".chat-subsession-link")) return;
         if (view.onToggleExpanded) {
-          view.onToggleExpanded();
+          view.onToggleExpanded(event);
           return;
         }
         if (hasRawOutput) {

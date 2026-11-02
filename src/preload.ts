@@ -64,6 +64,12 @@ contextBridge.exposeInMainWorld("cryoclaw", {
   // R4：渠道 openclaw.json 读写走内核 config.get/config.patch；主进程只保留运行态查询
   settingsGetChannelRuntimeState: () =>
     ipcRenderer.invoke("settings:get-channel-runtime-state"),
+  settingsQqbotLoginStart: () =>
+    ipcRenderer.invoke("settings:qqbot-login-start"),
+  settingsQqbotLoginWait: (params: { attemptId: string }) =>
+    ipcRenderer.invoke("settings:qqbot-login-wait", params),
+  settingsQqbotLoginCancel: (params: { attemptId: string }) =>
+    ipcRenderer.invoke("settings:qqbot-login-cancel", params),
   // 启用微信渠道前守卫：把 mirror reconcile 到 external plugin 目录
   settingsEnsureWeixinPlugin: () =>
     ipcRenderer.invoke("settings:ensure-weixin-plugin"),
@@ -222,6 +228,7 @@ contextBridge.exposeInMainWorld("cryoclaw", {
   workspaceOpenWith: (params: { path: string; target: "vscode" | "explorer" | "terminal" | "git-bash" }) =>
     ipcRenderer.invoke("workspace:open-with", params),
   embeddedBrowserShow: (params: unknown) => ipcRenderer.invoke("embedded-browser:show", params),
+  embeddedBrowserUtility: (params: { action: string; [key: string]: unknown }) => ipcRenderer.invoke("embedded-browser:utility", params),
   embeddedBrowserHide: () => ipcRenderer.invoke("embedded-browser:hide"),
   embeddedBrowserBounds: (bounds: unknown) => ipcRenderer.invoke("embedded-browser:bounds", bounds),
   embeddedBrowserNavigate: (url: string) => ipcRenderer.invoke("embedded-browser:navigate", url),

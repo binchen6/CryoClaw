@@ -6,6 +6,7 @@ import { isFailedSubagentStatus } from "../chat/subagent-status.ts";
 import { icons } from "../icons.ts";
 import { t } from "../i18n.ts";
 import { formatShortcut, getShortcutBinding } from "../keyboard-shortcuts.ts";
+import { placePopover } from "../utils/popover-placement.ts";
 import { renderMarkdownSidebar } from "../views/markdown-sidebar.ts";
 import "./oc-subagent-panel.ts";
 
@@ -26,10 +27,10 @@ type SubagentPanelData = {
 
 const TAB_META: Array<{ id: DockTabId; label: string; icon: keyof typeof icons }> = [
   { id: "changes", label: "dock.changes", icon: "diff" },
-  { id: "files", label: "dock.files", icon: "fileText" },
-  { id: "terminal", label: "dock.terminal", icon: "terminal" },
-  { id: "subagent", label: "dock.subagent", icon: "gitBranch" },
   { id: "browser", label: "dock.browser", icon: "globe" },
+  { id: "terminal", label: "dock.terminal", icon: "terminal" },
+  { id: "files", label: "dock.files", icon: "fileText" },
+  { id: "subagent", label: "dock.subagent", icon: "gitBranch" },
 ];
 
 @customElement("oc-context-dock")
@@ -38,6 +39,8 @@ export class OcContextDock extends LitElement {
     collapsed: { attribute: false },
     maximized: { attribute: false },
     activeTab: { attribute: false },
+    launcherOpen: { attribute: false },
+    openedTabs: { attribute: false },
     browserEnabled: { attribute: false },
     subagentCards: { attribute: false },
     subagentPanel: { attribute: false },
@@ -51,6 +54,7 @@ export class OcContextDock extends LitElement {
     assistantName: { attribute: false },
     assistantAvatar: { attribute: false },
     onSelectTab: { attribute: false },
+    onCloseTab: { attribute: false },
     onToggleCollapsed: { attribute: false },
     onToggleMaximized: { attribute: false },
     onOpenSubagent: { attribute: false },
@@ -62,6 +66,8 @@ export class OcContextDock extends LitElement {
   collapsed = true;
   maximized = false;
   activeTab: DockTabId = "changes";
+  launcherOpen = true;
+  openedTabs: DockTabId[] = [];
   browserEnabled = false;
   subagentCards: SubagentCard[] = [];
   subagentPanel: SubagentPanelData | null = null;
@@ -75,6 +81,7 @@ export class OcContextDock extends LitElement {
   assistantName = "";
   assistantAvatar: string | null = null;
   onSelectTab?: (tab: DockTabId) => void;
+  onCloseTab?: (tab: DockTabId) => void;
   onToggleCollapsed?: () => void;
   onToggleMaximized?: () => void;
   private newTabMenuId = `dock-new-tab-${Math.random().toString(36).slice(2, 9)}`;
@@ -91,16 +98,43 @@ export class OcContextDock extends LitElement {
     return TAB_META.filter((tab) => tab.id !== "browser" || this.browserEnabled);
   }
 
-  private renderTabButton(tab: (typeof TAB_META)[number], collapsed: boolean) {
-    return html`<button
-      class="context-dock__tab ${this.activeTab === tab.id ? "is-active" : ""}"
+  private renderTabButton(tab: (typeof TAB_META)[number]) {
+    return html`<div class="context-dock__chip ${!this.launcherOpen && this.activeTab === tab.id ? "is-active" : ""}"><button
+      class="context-dock__tab"
       type="button"
       role="tab"
-      aria-selected=${String(this.activeTab === tab.id)}
+      aria-selected=${String(!this.launcherOpen && this.activeTab === tab.id)}
       title=${t(tab.label)}
       aria-label=${t(tab.label)}
       @click=${() => this.onSelectTab?.(tab.id)}
-    >${icons[tab.icon]}${collapsed ? nothing : html`<span>${t(tab.label)}</span>`}</button>`;
+    >${icons[tab.icon]}<span>${t(tab.label)}</span></button><button class="context-dock__tab-close" type="button" data-dock-close=${tab.id}
+      aria-label=${`${t("workspace.browser.closeTab")}: ${t(tab.label)}`} title=${t("workspace.browser.closeTab")}
+      @click=${() => this.onCloseTab?.(tab.id)}>${icons.x}</button></div>`;
+  }
+
+  private renderEntry(tab: (typeof TAB_META)[number]) {
+    const shortcutId = ({ changes: "dockChanges", browser: "dockBrowser", terminal: "dockTerminal", files: "dockFiles", subagent: "dockSubagent" } as const)[tab.id];
+    const keys = formatShortcut(getShortcutBinding(shortcutId));
+    return html`<button type="button" data-dock-open=${tab.id} @click=${(event: Event) => {
+      (event.currentTarget as HTMLElement).closest<HTMLElement>(":popover-open")?.hidePopover();
+      this.onSelectTab?.(tab.id);
+    }}>
+      <span>${icons[tab.icon]}${t(tab.label)}</span>${keys.length ? html`<span class="context-dock__shortcut">${keys.map(key => html`<kbd>${key}</kbd>`)}</span>` : nothing}
+    </button>`;
+  }
+
+  private async toggleNewTabMenu(event: Event) {
+    const open = (event as Event & { newState: string }).newState === "open";
+    const browser = this.querySelector("oc-embedded-browser") as (HTMLElement & { setChromeOverlay(open: boolean): Promise<boolean> }) | null;
+    await browser?.setChromeOverlay(open);
+    if (!open || !this.isConnected) return;
+    await this.updateComplete;
+    const menu = this.querySelector<HTMLElement>(".context-dock__new-tab-menu");
+    const trigger = this.querySelector<HTMLElement>(`[popovertarget="${this.newTabMenuId}"]`);
+    if (!menu?.matches(":popover-open") || !trigger) return;
+    const anchor = trigger.getBoundingClientRect();
+    const position = placePopover({ anchor, panel: menu.getBoundingClientRect(), viewport: { width: innerWidth, height: innerHeight }, candidates: [{ side: "bottom", align: "end" }, { side: "top", align: "end" }], avoid: [anchor] });
+    Object.assign(menu.style, { inset: "auto", left: `${position.left}px`, top: `${position.top}px` });
   }
 
   private renderSubagentList() {
@@ -164,18 +198,14 @@ export class OcContextDock extends LitElement {
   }
 
   render() {
+    if (this.collapsed) return nothing;
     const tabs = this.tabs();
-    if (this.collapsed) {
-      return html`<aside class="context-dock context-dock--collapsed" aria-label=${t("dock.title")}>
-        <button class="context-dock__collapse" type="button" title=${t("dock.expand")} aria-label=${t("dock.expand")}
-          @click=${() => this.onToggleCollapsed?.()}>${icons.plus}</button>
-        <div class="context-dock__collapsed-tabs">${tabs.map((tab) => this.renderTabButton(tab, true))}</div>
-      </aside>`;
-    }
+    const openedIds = this.openedTabs.length ? this.openedTabs : this.launcherOpen ? [] : [this.activeTab];
+    const openedTabs = openedIds.map(id => tabs.find(tab => tab.id === id)).filter((tab): tab is (typeof TAB_META)[number] => Boolean(tab));
     return html`<section class="context-dock context-dock--expanded" aria-label=${t("dock.title")}>
       <header class="context-dock__header">
         <nav class="context-dock__tabs" role="tablist" aria-label=${t("dock.title")}>
-          ${tabs.map((tab) => this.renderTabButton(tab, false))}
+          ${openedTabs.map((tab) => this.renderTabButton(tab))}
         </nav>
         <div class="context-dock__actions">
           <button class="icon-btn icon-btn--sm" type="button" title=${t("dock.newTab")} aria-label=${t("dock.newTab")}
@@ -186,17 +216,13 @@ export class OcContextDock extends LitElement {
           <button class="icon-btn icon-btn--sm" type="button" title=${t("dock.collapse")} aria-label=${t("dock.collapse")}
             @click=${() => this.onToggleCollapsed?.()}>${icons.panelRight}</button>
         </div>
-        <div class="context-dock__new-tab-menu" id=${this.newTabMenuId} popover="auto">
-          ${tabs.map((tab) => {
-            const shortcutId = ({ changes: "dockChanges", browser: "dockBrowser", terminal: "dockTerminal", files: "dockFiles", subagent: "dockSubagent" } as const)[tab.id];
-            const shortcut = formatShortcut(getShortcutBinding(shortcutId)).join(" ");
-            return html`<button type="button" @click=${() => this.onSelectTab?.(tab.id)}>
-              <span>${icons[tab.icon]}${t(tab.label)}</span><kbd>${shortcut || t("shortcuts.unassigned")}</kbd>
-            </button>`;
-          })}
+        <div class="context-dock__new-tab-menu" id=${this.newTabMenuId} popover="auto" @beforetoggle=${(event: Event) => void this.toggleNewTabMenu(event)}>
+          ${tabs.map((tab) => this.renderEntry(tab))}
         </div>
       </header>
-      <div class="context-dock__body" role="tabpanel">${this.renderBody()}</div>
+      <div class="context-dock__body" role=${this.launcherOpen ? "region" : "tabpanel"}>${this.launcherOpen
+        ? html`<nav class="context-dock__launcher" aria-label=${t("dock.newTab")}>${tabs.map(tab => this.renderEntry(tab))}</nav>`
+        : this.renderBody()}</div>
     </section>`;
   }
 }

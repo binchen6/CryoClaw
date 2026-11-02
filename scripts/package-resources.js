@@ -25,6 +25,7 @@ const {
 } = require("./lib/bundle-plugin-entry");
 const kernelDistPatch = require("./lib/kernel-dist-patch");
 const { extractZipArchive, extractTarGzArchive } = require("./lib/extract-archive");
+const { applyManagedQQBotPolicy } = require("./lib/managed-qqbot");
 // Windows + Node 24 的 fs.rmSync 偶发静默失败，统一走带 fallback 的 rmRecursive。
 const rmRecursive = require("./lib/rm-rec")(fs);
 const { pruneMistralSources, pruneCompiledSdkSources } = require("./lib/kernel-prune")(fs);
@@ -1184,7 +1185,6 @@ function installDependencies(opts, gatewayDir) {
     assertNativeDepsMatchTarget(nmDir, opts.platform, opts.arch);
     pruneNonTargetNativePlatformPackages(nmDir, opts.platform, opts.arch);
     patchWindowsOpenclawArtifacts(gatewayDir, opts.platform);
-    patchKimiThinkingProfile(gatewayDir);
     injectBuiltinSkills(gatewayDir);
     return;
   }
@@ -1261,7 +1261,6 @@ function installDependencies(opts, gatewayDir) {
   assertNativeDepsMatchTarget(nmDir, opts.platform, opts.arch);
   pruneNonTargetNativePlatformPackages(nmDir, opts.platform, opts.arch);
   patchWindowsOpenclawArtifacts(gatewayDir, opts.platform);
-  patchKimiThinkingProfile(gatewayDir);
   injectBuiltinSkills(gatewayDir);
   fs.writeFileSync(stampPath, targetStamp);
   log("node_modules 裁剪完成");
@@ -1321,30 +1320,6 @@ function patchAsarBoundaryCheck(gatewayDir) {
     kernelDistPatch.assertAsarBoundaryCoverage(gatewayDir);
   } catch (err) {
     die(err.message);
-  }
-}
-
-// kimi 插件思考档位补丁：k3 系模型尊重模型条目的 compat.supportedReasoningEfforts，
-// 修复 "Thinking level "high" is not supported ... Use one of: off, on." 误报。
-// 上游结构变化时静默跳过（返回 0），不阻断打包。
-function patchKimiThinkingProfile(gatewayDir) {
-  try {
-    const patched = kernelDistPatch.patchKimiThinkingProfile(gatewayDir);
-    if (patched > 0) {
-      log("已补丁 kimi 插件思考档位（k3 系按 supportedReasoningEfforts 全档位）");
-      return;
-    }
-    // 返回 0 有两种含义：已补丁（幂等跳过）或 marker 未命中（上游结构变化）。
-    // 读目标文件区分——后者必须大声告警，否则会静默发出只有 off/on 两档的包。
-    // kimi-provider ≥2026.8.x 包形态下补丁落在 provider-policy-api.js（index.js 是 wrapper）。
-    const kimiDist = path.join(gatewayDir, "node_modules", "openclaw", "dist", "extensions", "kimi", "dist");
-    const candidates = [path.join(kimiDist, "provider-policy-api.js"), path.join(kimiDist, "index.js")];
-    const existing = candidates.filter((f) => fs.existsSync(f));
-    if (existing.length > 0 && !existing.some((f) => fs.readFileSync(f, "utf-8").includes("cryoclaw-thinking-profile"))) {
-      log("⚠⚠ kimi 思考档位补丁未命中（上游结构变化？），k3 系模型将退化为 off/on 两档！");
-    }
-  } catch (err) {
-    log(`⚠ kimi 思考档位补丁失败（跳过）: ${err.message}`);
   }
 }
 
@@ -1445,12 +1420,8 @@ const CHANNEL_MIRROR_PLUGINS = [
 // 内核原生支持该形态）原样 vendor 到 dist/extensions/，恢复 2026.4.x 时代的内置形态。
 const OFFICIAL_VENDOR_PLUGINS = [
   { id: "feishu", packageName: "@openclaw/feishu", envKey: "CRYOCLAW_FEISHU_PACKAGE_SOURCE", pkgJsonKey: "feishuPlugin" },
-  // qqbot 强制走 esbuild 重 bundle：其 ESM chunk 静态 `import WebSocket from "ws"`
-  // 解析到 ws@8.21.0 exports.import → wrapper.mjs → 深引用 CJS lib 文件，在内核
-  // 2026.8.2 插件加载链（jiti 2.7.0）下互操作失败（"./lib/permessage-deflate.js
-  // does not provide an export named 'default'"），channel 反复崩溃。重 bundle 后
-  // ws 被静态内联，运行时不再 import "ws"。
-  { id: "qqbot", packageName: "@openclaw/qqbot", envKey: "CRYOCLAW_QQBOT_PACKAGE_SOURCE", pkgJsonKey: "qqbotPlugin", forceRebundle: true },
+  // Tencent ships compiled CJS and declares its runtime dependencies separately.
+  { id: "openclaw-qqbot", packageName: "@tencent-connect/openclaw-qqbot", envKey: "CRYOCLAW_QQBOT_PACKAGE_SOURCE", pkgJsonKey: "qqbotPlugin", installRuntimeDependencies: true },
   { id: "moonshot", packageName: "@openclaw/moonshot-provider", envKey: "CRYOCLAW_MOONSHOT_PROVIDER_PACKAGE_SOURCE", pkgJsonKey: "moonshotProviderPlugin" },
   { id: "kimi", packageName: "@openclaw/kimi-provider", envKey: "CRYOCLAW_KIMI_PROVIDER_PACKAGE_SOURCE", pkgJsonKey: "kimiProviderPlugin" },
   { id: "zai", packageName: "@openclaw/zai-provider", envKey: "CRYOCLAW_ZAI_PROVIDER_PACKAGE_SOURCE", pkgJsonKey: "zaiProviderPlugin" },
@@ -1504,7 +1475,7 @@ const OPENCLAW_EXTENSION_ALLOWLIST = new Set([
   "kimi-search",
   "dingtalk-connector",
   "feishu",
-  "qqbot",
+  "openclaw-qqbot",
   "moonshot",
   "kimi",
   "zai",
@@ -1596,7 +1567,7 @@ const REQUIRED_OPENCLAW_INJECTED_EXTENSIONS = [
   path.join("kimi-search", "openclaw.plugin.json"),
   path.join("dingtalk-connector", "openclaw.plugin.json"),
   path.join("feishu", "openclaw.plugin.json"),
-  path.join("qqbot", "openclaw.plugin.json"),
+  path.join("openclaw-qqbot", "openclaw.plugin.json"),
   path.join("moonshot", "openclaw.plugin.json"),
   path.join("kimi", "openclaw.plugin.json"),
   path.join("zai", "openclaw.plugin.json"),
@@ -2183,8 +2154,39 @@ function vendorOfficialPlugin(plugin, gatewayDir, targetId, opts) {
       die(`${spec} 缺少 package.json 或 openclaw.plugin.json，不符合官方插件包形态`);
     }
 
+    if (plugin.installRuntimeDependencies) {
+      // Never auto-install the OpenClaw peer: the product supplies its pinned physical host.
+      execNpmSync(["install", "--omit=dev", "--legacy-peer-deps", "--ignore-scripts", "--no-audit", "--no-fund"], {
+        cwd: pkgDir, env: buildNpmEnv(targetId),
+      });
+    }
     rmDir(pluginDir);
     copyDirSync(pkgDir, pluginDir);
+    if (plugin.id === "openclaw-qqbot") {
+      // Managed/pinned versions never query registries in the background.
+      // The build contract leaves explicit bot-version queries untouched.
+      applyManagedQQBotPolicy(pluginDir);
+      // The physical host already resolves the SDK. Upstream's global SDK
+      // discovery could link a different installed OpenClaw into this package.
+      const preload = path.join(pluginDir, "preload.cjs");
+      const original = fs.readFileSync(preload, "utf8");
+      const adapted = original.replace('ensurePluginSdkSymlink(__dirname, "[preload]");', 'require.resolve("openclaw/plugin-sdk/core");');
+      if (adapted === original) throw new Error("Tencent QQ preload contract changed; review managed SDK resolution");
+      fs.writeFileSync(preload, adapted, "utf8");
+      // Connector 1.2.0 publishes CommonJS .js files under type:module but
+      // omits dist/cjs/package.json from its npm files list.
+      const connector = path.join(pluginDir, "node_modules", "@tencent-connect", "qqbot-connector");
+      if (JSON.parse(fs.readFileSync(path.join(connector, "package.json"), "utf8")).version !== "1.2.0") throw new Error("Review Tencent connector packaging before changing its pin");
+      ensureDir(path.join(connector, "dist", "cjs"));
+      fs.writeFileSync(path.join(connector, "dist", "cjs", "package.json"), '{"type":"commonjs"}\n', "utf8");
+      fs.writeFileSync(path.join(pluginDir, "skills", "qqbot-upgrade", "SKILL.md"), [
+        "---", "name: qqbot-upgrade", "description: QQ Bot plugin upgrade guidance for the managed CryoClaw runtime.", "---", "",
+        "# QQ Bot upgrades", "", "This QQ Bot plugin is managed and pinned by CryoClaw.",
+        "Use CryoClaw Settings > About to install an app update. The app owns the bundled gateway and plugin versions.",
+        "Do not run plugin upgrade scripts or install a second QQ Bot plugin into the managed runtime.", "",
+      ].join("\n"), "utf8");
+      rmDir(path.join(extRoot, "qqbot"));
+    }
 
     // 官方 tgz 自带 node_modules 原样进场（feishu 的 node-sdk 仅 types/index.d.ts
     // 就 15.5MB）——此前无裁剪直接进 asar，这里补与其它插件流一致的裁剪（R6）。
@@ -2363,6 +2365,7 @@ async function bundleAllPlugins(targetPaths, opts) {
       try {
         vendorOfficialPlugin(plugin, gatewayDir, targetId, opts);
       } catch (err) {
+        if (err?.code === "CRYOCLAW_QQBOT_MANAGED_CONTRACT") throw err;
         log(`⚠ Windows arm64 交叉编译下官方插件 ${plugin.id} vendor 失败，跳过: ${err.message || String(err)}`);
       }
     } else {
@@ -2875,35 +2878,6 @@ function verifyAsarContents(asarPath, { winArm64Cross = false } = {}) {
     die(`gateway.asar 缺少注入插件 manifest:\n${missingExts.map((f) => `  - ${f}`).join("\n")}`);
   }
   log(`gateway.asar 关键文件校验通过 (${files.size} 个文件)`);
-
-  // kimi 思考档位补丁必须落在 asar 内——vendorOfficialPlugin 会覆盖
-  // dist/extensions/kimi/，历史上曾把 installDependencies 阶段的补丁冲掉。
-  // 此处做打包后内容校验，未命中大声告警（不 die：上游若已原生修复则不阻断）。
-  // kimi-provider ≥2026.8.x：补丁在 provider-policy-api.js；≤2026.7.x：在 index.js。
-  const kimiExtKeys = [
-    "node_modules/openclaw/dist/extensions/kimi/dist/provider-policy-api.js",
-    "node_modules/openclaw/dist/extensions/kimi/dist/index.js",
-  ];
-  try {
-    let markerFound = false;
-    let anyPresent = false;
-    for (const key of kimiExtKeys) {
-      if (!files.has("/" + key)) continue;
-      anyPresent = true;
-      for (const variant of [key, key.replace(/\//g, "\\")]) {
-        try {
-          if (asar.extractFile(asarPath, variant).toString("utf-8").includes("cryoclaw-thinking-profile")) {
-            markerFound = true;
-          }
-          break;
-        } catch { /* 尝试下一种路径形态 */ }
-      }
-      if (markerFound) break;
-    }
-    if (anyPresent && !markerFound) {
-      log("⚠⚠ gateway.asar 内 kimi 插件缺少思考档位补丁标记，k3 系模型将退化为 off/on 两档！");
-    }
-  } catch { /* 校验失败不阻断打包 */ }
 
   // R56 产物断言：openclaw ≥2026.9.2 的边界校验函数住在 @openclaw/fs-safe 包，
   // root-file.js 不带 asar 快速通道 => 渠道插件公开构件身份校验恒失败。
@@ -3597,11 +3571,6 @@ async function main() {
   // Step 2.5: 注入 bundled 插件（kimi-search + dingtalk-connector）
   log("Step 2.5: 注入 bundled 插件");
   await bundleAllPlugins(targetPaths, opts);
-  // vendorOfficialPlugin（OFFICIAL_VENDOR_PLUGINS 含 kimi）会 rmDir+copy 整个覆盖
-  // dist/extensions/kimi/，把 installDependencies 阶段打的思考档位补丁冲掉（2026.820.0
-  // 发版冒烟实测回归）——vendor 之后必须重打。补丁幂等，已打则跳过。
-  patchKimiThinkingProfile(targetPaths.gatewayDir);
-
   // Product adaptations apply to both physical and legacy ASAR distributions.
   if (opts.asar) kernelDistPatch.patchDesktopKernel(targetPaths.gatewayDir);
   else kernelDistPatch.patchPhysicalDesktopKernel(targetPaths.gatewayDir);

@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {execFile,ChildProcess} from 'node:child_process';
 import {pluginSnapshotFingerprint,readPluginSnapshotCache,writePluginSnapshotCache} from './plugin-snapshot-cache';
+import {gatewayCompileCacheDirectory} from './gateway-compile-cache';
 
 export type ChannelPluginInventory={installed:Set<string>;channels:Map<string,string[]>};
 const children=new Set<ChildProcess>();
@@ -20,6 +21,12 @@ export function parseChannelPluginInventory(value:unknown):ChannelPluginInventor
   }
   return {installed,channels};
 }
+export function channelPluginInventoryEnv(packageDir:string,stateDir:string,extraEnv:NodeJS.ProcessEnv={},environment:NodeJS.ProcessEnv=process.env):NodeJS.ProcessEnv {
+  // Inventory still reruns native discovery on cache expiry. Only compiled core
+  // code is shared with the gateway; Node retains its content checks and opt-out.
+  return {...environment,...extraEnv,OPENCLAW_STATE_DIR:stateDir,
+    NODE_COMPILE_CACHE:gatewayCompileCacheDirectory(packageDir,path.join(stateDir,'cache','v8-compile'))};
+}
 /** Use the kernel's selected manifests, including config/workspace/index recovery. */
 export async function readChannelPluginInventory(nodeBin:string,packageDir:string,stateDir:string,config:any,extraEnv:NodeJS.ProcessEnv={},allowErrors=false):Promise<ChannelPluginInventory> {
   if(quitting)throw new Error('Application is quitting');
@@ -27,7 +34,7 @@ export async function readChannelPluginInventory(nodeBin:string,packageDir:strin
   const cached=readPluginSnapshotCache<unknown>({stateDir,kind:'channel-inventory',fingerprint});
   if(cached)return parseChannelPluginInventory(cached);
   const source=fs.readFileSync(path.join(__dirname,'..','shared','channel-plugin-inventory.cjs'),'utf8');
-  const env={...process.env,...extraEnv,OPENCLAW_STATE_DIR:stateDir};
+  const env=channelPluginInventoryEnv(packageDir,stateDir,extraEnv);
   const value=await new Promise<string>((resolve,reject)=>{
     const child=execFile(nodeBin,['--no-warnings','-e',source,'--','cryoclaw-channel-inventory'],{cwd:packageDir,env,windowsHide:true,timeout:30000,maxBuffer:8*1024*1024},(error,stdout,stderr)=>{
       children.delete(child);

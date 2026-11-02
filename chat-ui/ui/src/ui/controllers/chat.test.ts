@@ -1707,6 +1707,77 @@ async function testConcurrentLoadsLatestGenerationWins() {
   assert.equal(state.chatLoading, false, "旧代加载的 finally 不得再动加载态");
 }
 
+async function testConcurrentHistoryHostsRemainIndependent() {
+  const { client, resolvers } = makeDeferredHistoryClient();
+  const parent = makeState({ client, sessionKey: "parent" });
+  const child = makeState({ client, sessionKey: "child" });
+  const parentLoad = loadChatHistory(parent);
+  const childLoad = loadChatHistory(child);
+  resolvers[0]!({ messages: [{ role: "user", content: "parent history" }] });
+  await parentLoad;
+  assert.equal(parent.chatMessages.length, 1, "child loads must not invalidate parent history");
+  assert.equal(parent.chatLoading, false, "each host owns its loading bit");
+  assert.equal(child.chatLoading, true);
+  resolvers[1]!({ messages: [{ role: "user", content: "child history" }] });
+  await childLoad;
+  assert.equal(child.chatMessages.length, 1);
+  assert.equal(child.chatLoading, false);
+
+  const probe = loadChatHistory(parent, { silent: true });
+  const refresh = loadChatHistory(child);
+  resolvers[3]!({ messages: [] });
+  await refresh;
+  resolvers[2]!({ messages: [{ role: "user", content: "fresh parent" }] });
+  assert.ok(await probe, "a child refresh must not invalidate a parent silent probe");
+  assert.equal(parent.chatMessages.length, 1);
+}
+
+async function testStaleRetriesStayWithTheirHistoryHost() {
+  cancelStaleHistoryRetryForTests();
+  mock.timers.enable({ apis: ["setTimeout"] });
+  const local = [{ role: "user", content: "question" }, { role: "assistant", content: "local answer" }];
+  let parentCalls = 0;
+  let childCalls = 0;
+  let parentFresh = false;
+  const parent = makeState({ sessionKey: "retry-parent", chatMessages: [...local],
+    client: { request: async () => { parentCalls += 1; return { messages: parentFresh ? local : [local[0]] }; } } });
+  const child = makeState({ sessionKey: "retry-child", chatMessages: [...local],
+    client: { request: async () => { childCalls += 1; return { messages: [local[0]] }; } } });
+  const other = makeState({ sessionKey: "retry-other", chatRunId: null, client: { request: async () => ({ messages: [] }) } });
+  try {
+    await loadChatHistory(parent, { mergeIfStale: true });
+    await loadChatHistory(child, { mergeIfStale: true });
+    await loadChatHistory(other);
+    mock.timers.tick(600);
+    for (let i = 0; i < 8; i += 1) await Promise.resolve();
+    assert.equal(parentCalls, 2, "a child request must not replace the parent's retry timer");
+    assert.equal(childCalls, 2, "another host's fresh history must not cancel the child's retry");
+    parentFresh = true;
+    await loadChatHistory(parent, { mergeIfStale: true });
+    await sendChatMessage(other, "new round elsewhere");
+    mock.timers.tick(1500);
+    for (let i = 0; i < 8; i += 1) await Promise.resolve();
+    assert.equal(parentCalls, 3, "fresh parent history should cancel only its own retry");
+    assert.equal(childCalls, 3, "another host's new round must not reset the child's backoff");
+  } finally { cancelStaleHistoryRetryForTests(); mock.timers.reset(); }
+}
+
+async function testLogicalHistoryLoadingClearsAfterOneProjectionChangesSession() {
+  const { client, resolvers } = makeDeferredHistoryClient();
+  const entry = makeState({ client, sessionKey: "loading-session-a" });
+  const root = makeState({ client, sessionKey: "loading-session-a" });
+  const oldEntry = loadChatHistory(entry);
+  const oldRoot = loadChatHistory(root);
+  root.sessionKey = "loading-session-b";
+  const currentRoot = loadChatHistory(root);
+  resolvers[0]!({ messages: [] }); await oldEntry;
+  resolvers[1]!({ messages: [] }); await oldRoot;
+  assert.equal(entry.chatLoading, false, "the retained old-session projection must release its latest loading bit");
+  assert.equal(root.chatLoading, true, "old-session completion must preserve the new session's loading bit");
+  resolvers[2]!({ messages: [] }); await currentRoot;
+  assert.equal(root.chatLoading, false);
+}
+
 // R5：chatStreamMismatchCount 随用户发起的新 run 清零（此前只有终态清零，
 // 上一 run 累计的计数会继承进新 run，过早触发强制 resync）。
 async function testNewRunResetsMismatchCount() {
@@ -2269,6 +2340,9 @@ async function main() {
   await testOrphanStatusFrameDoesNotClearSnapshot();
   await testAbortedPreservesVisiblePartialText();
   await testConcurrentLoadsLatestGenerationWins();
+  await testConcurrentHistoryHostsRemainIndependent();
+  await testStaleRetriesStayWithTheirHistoryHost();
+  await testLogicalHistoryLoadingClearsAfterOneProjectionChangesSession();
   await testNewRunResetsMismatchCount();
   testStripInFlightStreamDuplicatesPure();
   testStripInFlightStreamDuplicatesWithoutDeclaration();

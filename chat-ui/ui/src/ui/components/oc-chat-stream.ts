@@ -68,8 +68,17 @@ export class OcChatStream extends LitElement {
     "subagentWaiting",
   ] as const;
 
+  private toolDisclosureUpdate = false;
+
+  refreshToolDisclosures(): void {
+    this.toolDisclosureUpdate = true;
+    this.requestUpdate();
+  }
+
   shouldUpdate(changed: Map<PropertyKey, unknown>): boolean {
-    return OcChatStream.VISUAL_PROPS.some((name) => changed.has(name));
+    const disclosure = this.toolDisclosureUpdate;
+    this.toolDisclosureUpdate = false;
+    return disclosure || OcChatStream.VISUAL_PROPS.some((name) => changed.has(name));
   }
 
   // R90：实时思考区展开时正文自动滚底——每帧新思考文本到达后把 scrollTop 钉在

@@ -7,6 +7,7 @@ import { backupCurrentUserConfig } from "./config-backup";
 import { writeFileAtomicSync } from "./atomic-write";
 import { probeImageSupport, type ImageProbeAuth, type ImageProbeOutcome } from "./provider-image-probe";
 import { verifyWecom } from "./wecom-config";
+import { resolveV1Endpoint, providerBaseUrl } from "./provider-api-url";
 
 // ── Provider 配置预设（与 kimiclaw ProviderSetupView.swift 对齐） ──
 
@@ -373,33 +374,14 @@ function httpsJsonVerify(
   label: string,
   judge: (json: any, data: string) => string | null,
 ): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const req = https.request(
-      {
-        hostname,
-        path: reqPath,
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        timeout: 15000,
-      },
-      (res) => {
-        let data = "";
-        res.on("data", (d) => (data += d));
-        res.on("end", () => {
-          try {
-            const err = judge(JSON.parse(data), data);
-            if (err) reject(new Error(err));
-            else resolve();
-          } catch {
-            reject(new Error(`${label}响应解析失败: ${data.slice(0, 200)}`));
-          }
-        });
-      }
-    );
-    req.on("error", (e) => reject(new Error(`网络错误: ${e.message}`)));
-    req.on("timeout", () => { req.destroy(); reject(new Error("请求超时")); });
-    req.write(body);
-    req.end();
+  return requestJsonText(https, {
+    hostname, path: reqPath, method: "POST", headers: { "content-type": "application/json" },
+  }, body).then(({ body: data }) => {
+    let json: unknown;
+    try { json = JSON.parse(data); }
+    catch { throw new Error(`${label}响应解析失败: ${data.slice(0, 200)}`); }
+    const error = judge(json, data);
+    if (error) throw new Error(error);
   });
 }
 
@@ -449,11 +431,12 @@ export function verifyDingtalk(clientId: string, clientSecret: string): Promise<
 // Custom provider 验证（根据 API 类型发真实 chat 请求，而非 /models）
 export async function verifyCustom(apiKey: string, baseURL?: string, apiType?: string, modelID?: string): Promise<void> {
   if (!baseURL) throw new Error("Custom provider 需要 Base URL");
+  providerBaseUrl(baseURL);
   if (!modelID) throw new Error("Custom provider 需要 Model ID");
   const base = baseURL.replace(/\/$/, "");
 
   if (apiType === "anthropic-messages") {
-    await jsonRequest(`${base}/v1/messages`, {
+    await jsonRequest(resolveV1Endpoint(baseURL, "messages"), {
       method: "POST",
       headers: {
         "User-Agent": UA_ANTHROPIC,
@@ -469,7 +452,7 @@ export async function verifyCustom(apiKey: string, baseURL?: string, apiType?: s
     });
   } else if (apiType === "openai-responses") {
     // OpenAI Responses API（/v1/responses）
-    await jsonRequest(`${base}/v1/responses`, {
+    await jsonRequest(resolveV1Endpoint(baseURL, "responses"), {
       method: "POST",
       headers: {
         "User-Agent": UA_OPENAI,
@@ -717,60 +700,82 @@ export function jsonRequestBody<T = unknown>(
 // 超时，缓慢滴流不会触发）。上限对齐 skill-store 的 JSON_GET_MAX_BYTES。
 const RAW_JSON_MAX_BYTES = 8 * 1024 * 1024;
 
-function rawJsonRequest(
+function requestJsonText(
+  mod: typeof http | typeof https,
+  options: http.RequestOptions,
+  body?: string,
+): Promise<{ body: string; status: number }> {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    let req: http.ClientRequest | undefined;
+    let response: http.IncomingMessage | undefined;
+    const finish = (error?: Error, result?: { body: string; status: number }) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(deadline);
+      if (error) reject(error); else resolve(result!);
+    };
+    const stop = (error: Error) => {
+      finish(error);
+      req?.destroy();
+      response?.destroy();
+    };
+    // Socket timeout only measures inactivity; a slow drip needs this deadline.
+    const deadline = setTimeout(() => stop(new Error("请求超时")), 15_000);
+    try {
+      req = mod.request({ ...options, timeout: 15_000 }, res => {
+        response = res;
+        let bytes = 0;
+        const chunks: Buffer[] = [];
+        res.on("error", error => stop(new Error(`网络错误: ${error.message}`)));
+        res.on("aborted", () => stop(new Error("网络错误: 响应中断")));
+        res.on("close", () => { if (!settled) stop(new Error("网络错误: 响应未完成")); });
+        res.on("data", (data: Buffer | string) => {
+          if (settled) return;
+          const chunk = Buffer.isBuffer(data) ? data : Buffer.from(data);
+          bytes += chunk.length;
+          if (bytes > RAW_JSON_MAX_BYTES) {
+            stop(new Error(`响应超过 ${Math.floor(RAW_JSON_MAX_BYTES / 1024 / 1024)}MB 上限，已中断`));
+            return;
+          }
+          chunks.push(chunk);
+        });
+        res.on("end", () => finish(undefined, { body: Buffer.concat(chunks).toString("utf8"), status: res.statusCode ?? 0 }));
+      });
+      req.on("error", error => stop(new Error(`网络错误: ${error.message}`)));
+      req.on("timeout", () => stop(new Error("请求超时")));
+      if (body) req.write(body);
+      req.end();
+    } catch (error) {
+      stop(error instanceof Error ? error : new Error(String(error)));
+    }
+  });
+}
+
+async function rawJsonRequest(
   url: string,
   opts: { method?: string; headers?: Record<string, string>; body?: string }
 ): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const mod = url.startsWith("https") ? https : http;
-    const urlObj = new URL(url);
-
-    const req = mod.request(
-      {
-        hostname: urlObj.hostname,
-        port: urlObj.port,
-        path: urlObj.pathname + urlObj.search,
-        method: opts.method || "GET",
-        headers: opts.headers,
-        timeout: 15000,
-      },
-      (res) => {
-        let body = "";
-        let bytes = 0;
-        res.on("data", (d) => {
-          bytes += d.length;
-          if (bytes > RAW_JSON_MAX_BYTES) {
-            req.destroy();
-            reject(new Error(`响应超过 ${Math.floor(RAW_JSON_MAX_BYTES / 1024 / 1024)}MB 上限，已中断`));
-            return;
-          }
-          body += d;
-        });
-        res.on("end", () => {
-          const code = res.statusCode ?? 0;
-          if (code >= 200 && code < 300) {
-            resolve(body);
-          } else if (code === 401 || code === 403) {
-            const err: Error & { status?: number } = new Error(`API Key 无效 (${code})`);
-            err.status = code;
-            reject(err);
-          } else {
-            // 真实错误文本（已 JSON 解码），上限 1000 字以兼容罕见的极长 message。
-            const text = extractProviderErrorMessage(body);
-            const trimmed = text.length > 1000 ? `${text.slice(0, 1000)}…` : text;
-            const err: Error & { status?: number } = new Error(`请求失败 (${code}): ${trimmed}`);
-            err.status = code;
-            reject(err);
-          }
-        });
-      }
-    );
-    req.on("error", (e) => reject(new Error(`网络错误: ${e.message}`)));
-    req.on("timeout", () => {
-      req.destroy();
-      reject(new Error("请求超时"));
-    });
-    if (opts.body) req.write(opts.body);
-    req.end();
+  const mod = url.startsWith("https") ? https : http;
+  const urlObj = new URL(url);
+  return requestJsonText(mod, {
+    hostname: urlObj.hostname,
+    port: urlObj.port,
+    path: urlObj.pathname + urlObj.search,
+    method: opts.method || "GET",
+    headers: opts.headers,
+  }, opts.body).then(({ body, status: code }) => {
+    if (code >= 200 && code < 300) return body;
+    if (code === 401 || code === 403) {
+      const err: Error & { status?: number } = new Error(`API Key 无效 (${code})`);
+      err.status = code;
+      throw err;
+    }
+    // 真实错误文本（已 JSON 解码），上限 1000 字以兼容罕见的极长 message。
+    const text = extractProviderErrorMessage(body);
+    const trimmed = text.length > 1000 ? `${text.slice(0, 1000)}…` : text;
+    const err: Error & { status?: number } = new Error(`请求失败 (${code}): ${trimmed}`);
+    err.status = code;
+    throw err;
   });
 }

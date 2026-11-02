@@ -437,3 +437,21 @@ test("ensure：同宿主保留持久条目，不同宿主隔离同 key 状态", 
   assert.equal(second.chatStream, null);
   resetRunStateStoreForTests();
 });
+
+test("ensure reads reactive prototype accessors without spreading away Lit state", () => {
+  resetRunStateStoreForTests();
+  const values = makeSource({ sessionKey: "reactive", chatRunId: "reactive-run", chatStream: "visible reply" });
+  const prototype = Object.create(null);
+  for (const key of Object.keys(values)) {
+    Object.defineProperty(prototype, key, { configurable: true, get: () => (values as any)[key], set: value => { (values as any)[key] = value; } });
+  }
+  const host = Object.create(prototype);
+  // Like the app, its internal timeline Map is an own field; public messages are reactive accessors.
+  Object.defineProperty(host, "toolStreamById", { value: values.toolStreamById, enumerable: true, writable: true });
+  const snapshot = ensureRunStateSnapshot("reactive", host);
+  assert.equal(snapshot.chatRunId, "reactive-run");
+  assert.equal(snapshot.chatStream, "visible reply");
+  assert.deepEqual(snapshot.chatToolMessages, values.chatToolMessages);
+  assert.equal(snapshot.ownerHost, host);
+  resetRunStateStoreForTests();
+});

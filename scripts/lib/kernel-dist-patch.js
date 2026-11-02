@@ -496,102 +496,6 @@ function assertPeerLinkPatchCoverage(gatewayDir) {
   }
 }
 
-// ─── kimi 插件思考档位补丁 ───
-//
-// bundled kimi 插件（dist/extensions/kimi/dist/index.js）的 resolveThinkingProfile
-// 钩子无视上下文，对 kimi/kimi-code/kimi-coding 一律返回二值档位 [off, on]，
-// 导致 k3 系模型（配置里带 compat.supportedReasoningEfforts 与 thinkingLevelMap）
-// 无法选择 low/medium/high/xhigh/max，sessions.patch/chat.send 校验直接报
-// "Thinking level "high" is not supported ... Use one of: off, on."。
-//
-// 补丁策略：钩子改为读取内核传入的 context.compat.supportedReasoningEfforts
-// （resolveThinkingPolicyContext 已从模型目录条目透传该字段）——有则按声明档位
-// 返回完整列表（off 恒在首位，默认 high），无则保持原二值行为不变。
-// 请求层的档位→线上 effort 映射仍由模型条目的 thinkingLevelMap 透传，不受影响。
-//
-// 幂等：已注入 /* cryoclaw-thinking-profile */ 标记则跳过；marker 不匹配返回 0
-// （上游结构变化时静默跳过，不阻断打包/升级）。
-//
-// 两种包形态（vendored @openclaw/kimi-provider 的版本决定命中哪种）：
-//   2026.7.x 包：dist/extensions/kimi/dist/index.js 内联
-//     resolveThinkingProfile: () => ({ levels: [off, on], ... }) 钩子。
-//   2026.8.x 包：index.js 变为 ESM wrapper，钩子移到
-//     dist/extensions/kimi/dist/provider-policy-api.js 的
-//     function resolveThinkingProfile({ modelId })，上游已原生支持 K3 全档位
-//     但硬编码 model ID 白名单（k3/k3-256k/k3[1m]）——白名单外、靠
-//     compat.supportedReasoningEfforts 声明能力的模型仍需本补丁。
-//     内核调用钩子时会透传 compat（thinking-*.js 的 providerContext）。
-function patchKimiThinkingProfile(gatewayDir) {
-  const kimiDistDir = path.join(
-    gatewayDir,
-    "node_modules",
-    "openclaw",
-    "dist",
-    "extensions",
-    "kimi",
-    "dist"
-  );
-
-  // 形态一（≥2026.8.x 包）：provider-policy-api.js 的命名函数
-  const policyFile = path.join(kimiDistDir, "provider-policy-api.js");
-  if (fs.existsSync(policyFile)) {
-    const source = fs.readFileSync(policyFile, "utf-8");
-    if (source.includes("/* cryoclaw-thinking-profile */")) return 0;
-    const marker = "function resolveThinkingProfile({ modelId }) {";
-    if (source.includes(marker)) {
-      const replacement = [
-        "function resolveThinkingProfile(context) {",
-        "\t/* cryoclaw-thinking-profile */",
-        '\tconst modelId = typeof context?.modelId === "string" ? context.modelId : "";',
-        "\tconst efforts = Array.isArray(context?.compat?.supportedReasoningEfforts)",
-        '\t\t? context.compat.supportedReasoningEfforts.filter((e) => typeof e === "string" && e.trim() && e !== "off")',
-        "\t\t: [];",
-        "\tif (efforts.length > 0) return {",
-        '\t\tlevels: [{ id: "off", label: "off" }, ...efforts.map((id) => ({ id, label: id }))],',
-        '\t\tdefaultLevel: efforts.includes("high") ? "high" : efforts[efforts.length - 1]',
-        "\t};",
-      ].join("\n");
-      fs.writeFileSync(policyFile, source.replace(marker, replacement), "utf-8");
-      return 1;
-    }
-    // 新包形态但 marker 未命中：不再尝试旧形态（index.js 只是 wrapper）
-    return 0;
-  }
-
-  // 形态二（≤2026.7.x 包）：index.js 内联钩子
-  const target = path.join(kimiDistDir, "index.js");
-  if (!fs.existsSync(target)) return 0;
-
-  const source = fs.readFileSync(target, "utf-8");
-  if (source.includes("/* cryoclaw-thinking-profile */")) return 0;
-
-  const marker =
-    /resolveThinkingProfile:\s*\(\)\s*=>\s*\(\{\s*levels:\s*\[\{\s*id:\s*"off",\s*label:\s*"off"\s*\},\s*\{\s*id:\s*"low",\s*label:\s*"on"\s*\}\],\s*defaultLevel:\s*"off"\s*\}\)/;
-  if (!marker.test(source)) return 0;
-
-  const replacement = [
-    'resolveThinkingProfile: (context) => {',
-    '\t\t\t/* cryoclaw-thinking-profile */',
-    '\t\t\tconst efforts = Array.isArray(context?.compat?.supportedReasoningEfforts)',
-    '\t\t\t\t? context.compat.supportedReasoningEfforts.filter((e) => typeof e === "string" && e.trim() && e !== "off")',
-    '\t\t\t\t: [];',
-    '\t\t\tif (efforts.length > 0) {',
-    '\t\t\t\treturn {',
-    '\t\t\t\t\tlevels: [{ id: "off", label: "off" }, ...efforts.map((id) => ({ id, label: id }))],',
-    '\t\t\t\t\tdefaultLevel: efforts.includes("high") ? "high" : efforts[efforts.length - 1]',
-    '\t\t\t\t};',
-    '\t\t\t}',
-    '\t\t\treturn {',
-    '\t\t\t\tlevels: [{ id: "off", label: "off" }, { id: "low", label: "on" }],',
-    '\t\t\t\tdefaultLevel: "off"',
-    '\t\t\t};',
-    '\t\t\t}',
-  ].join("\n");
-
-  fs.writeFileSync(target, source.replace(marker, replacement), "utf-8");
-  return 1;
-}
-
 // ─── fs-safe pinned-open asar 身份观测映射补丁（openclaw ≥2026.9.2）───
 //
 // 背景：2026.9.2 起内核用 vendored @openclaw/fs-safe 校验插件公开构件
@@ -1314,7 +1218,6 @@ module.exports = {
   patchAsarBoundaryCheck,
   hasAsarBoundaryPatchMarker,
   assertAsarBoundaryCoverage,
-  patchKimiThinkingProfile,
   patchFsSafeAsarUnpacked,
   patchFsSafeAsarWalk,
   patchPluginArtifactAsarIdentity,

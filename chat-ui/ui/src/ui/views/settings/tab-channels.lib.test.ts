@@ -163,8 +163,8 @@ function testQqbotSaveEnable() {
   assert.deepEqual(channel.allowFrom, ["*"], "未配置默认允许所有发送者");
   assert.equal("clientSecretFile" in channel, false, "明文密钥时清理 file 旧配置");
   assert.deepEqual(channel.sandbox, { mode: "all" }, "高级字段保留");
-  assert.equal((draft.plugins as any).entries.qqbot.enabled, true);
-  assert.deepEqual((draft.plugins as any).allow, ["kimi-search", "qqbot"], "plugins.allow 补 id");
+  assert.equal((draft.plugins as any).entries["openclaw-qqbot"].enabled, true);
+  assert.deepEqual((draft.plugins as any).allow, ["kimi-search", "openclaw-qqbot"], "plugins.allow 补 id");
 }
 
 function testQqbotSaveKeepsExistingAllowFrom() {
@@ -180,7 +180,7 @@ function testQqbotSaveDisableKeepsCredentials() {
   assert.equal(channel.enabled, false);
   assert.equal(channel.appId, "app1", "禁用保留凭据");
   assert.equal(channel.clientSecret, "sec");
-  assert.equal((draft.plugins as any).entries.qqbot.enabled, false);
+  assert.equal((draft.plugins as any).entries["openclaw-qqbot"].enabled, false);
 }
 
 /* ── 钉钉 ── */
@@ -470,12 +470,12 @@ function testMergePatchIntegration() {
   assert.equal(channels["dingtalk-connector"].sessionTimeout, null);
   assert.equal((patch.gateway as any).auth.mode, "token", "gateway 补齐进 patch");
   assert.equal((patch.gateway as any).auth.token, undefined, "token 未变不进 patch");
-  assert.equal((patch.plugins as any).entries.qqbot.enabled, true);
+  assert.equal((patch.plugins as any).entries["openclaw-qqbot"].enabled, true);
   assert.equal((patch.plugins as any).entries["dingtalk-connector"].enabled, true);
   assert.equal((patch.plugins as any).entries["wecom-openclaw-plugin"].enabled, true);
   assert.deepEqual(
     (patch.plugins as any).allow,
-    ["kimi-search", "dingtalk-connector", "wecom-openclaw-plugin", "qqbot"],
+    ["kimi-search", "dingtalk-connector", "wecom-openclaw-plugin", "openclaw-qqbot"],
     "数组追加以完整数组进 patch（字符串数组追加无需 replacePaths）",
   );
   assert.deepEqual(

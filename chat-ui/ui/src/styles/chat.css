@@ -13,15 +13,14 @@
    ========================================================================== */
 
 
-/* 壳层装配：.card 基底外观在聊天页全部卸掉（padding 保留——消息流/compose
-   的水平节奏依赖它；背景/边框/阴影/入场动画由壳层与本文件接管）。
+/* 壳层装配：.card 基底外观在聊天页全部卸掉。对话列自身保留消息流/compose
+   的水平节奏，Dock 可以延伸到内容区四边；背景/边框/阴影/入场动画由壳层接管。
    特异性 0,3,0，无需 !important 即可压过 components.css 的 .card/.card:hover */
 .cryoclaw-content > .card.chat {
   background: transparent;
   box-shadow: none;
   animation: none;
-  /* R58a：底部留白收紧（20→8）——输入卡贴近视口底缘，阅读区多让一行 */
-  padding-bottom: var(--spacer-8);
+  padding: 0;
 }
 
 .chat {
@@ -2113,15 +2112,21 @@ oc-command-jobs { display: block; min-width: 0; width: 100%; max-width: var(--ch
 /* ── 分屏容器（工具输出 markdown 侧栏） ── */
 .chat-split-container {
   display: flex;
+  align-items: stretch;
   gap: 0;
   flex: 1;
+  min-width: 0;
   min-height: 0;
   height: 100%;
+  overflow: hidden;
 }
 
 .chat-main {
+  position: relative;
+  padding: var(--spacer-20) var(--spacer-20) var(--spacer-8);
   /* min(400px, 54%)：800px 最小窗口下与 chat-sidebar 下限 + 分隔条合计 ≤ 100%，避免横向溢出 */
   min-width: min(400px, 54%);
+  min-height: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -2139,12 +2144,6 @@ oc-command-jobs { display: block; min-width: 0; width: 100%; max-width: var(--ch
   animation: slide-in var(--duration-normal) var(--ease-standard);
 }
 
-.chat-sidebar--collapsed {
-  flex: 0 0 var(--spacer-40);
-  min-width: var(--spacer-40);
-  animation: none;
-}
-
 .context-dock {
   display: flex;
   flex-direction: column;
@@ -2153,8 +2152,6 @@ oc-command-jobs { display: block; min-width: 0; width: 100%; max-width: var(--ch
   min-height: 0;
   background: var(--bg);
 }
-.context-dock--collapsed { align-items: stretch; }
-.context-dock__collapse,
 .context-dock__tab {
   display: inline-flex;
   align-items: center;
@@ -2167,31 +2164,18 @@ oc-command-jobs { display: block; min-width: 0; width: 100%; max-width: var(--ch
   cursor: pointer;
   transition: color var(--duration-fast) var(--ease-standard), background var(--duration-fast) var(--ease-standard);
 }
-.context-dock__collapse {
-  align-self: center;
-  width: var(--spacer-32);
-  height: var(--spacer-32);
-  margin-top: var(--spacer-8);
-}
-.context-dock__collapse:hover,
 .context-dock__tab:hover { color: var(--text); background: var(--bg-hover); }
-.context-dock__collapsed-tabs {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--spacer-4);
-  padding: var(--spacer-12) var(--spacer-4);
-}
-.context-dock__collapsed-tabs .context-dock__tab {
-  width: var(--spacer-32);
-  height: var(--spacer-32);
-}
-.context-dock__tab.is-active { color: var(--accent); background: var(--accent-subtle); }
+.context-dock__chip { display: inline-flex; align-items: center; flex-shrink: 0; border-radius: var(--radius-8); background: var(--bg-muted); color: var(--text-secondary); }
+.context-dock__chip.is-active { background: var(--bg-hover); color: var(--text); }
+.context-dock__chip.is-active .context-dock__tab { color: var(--text); }
+.context-dock__tab-close { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 22px; height: 24px; margin-right: var(--spacer-4); border: 0; border-radius: var(--radius-6); background: transparent; color: var(--text-muted); cursor: pointer; }
+.context-dock__tab-close:hover { color: var(--text); background: var(--bg-hover); }
+.context-dock__tab-close svg { width: 12px; height: 12px; }
 .context-dock__header {
   display: flex;
   align-items: center;
   flex-shrink: 0;
-  min-height: 44px;
+  min-height: 40px;
   border-bottom: var(--hairline);
 }
 .context-dock__tabs {
@@ -2206,8 +2190,8 @@ oc-command-jobs { display: block; min-width: 0; width: 100%; max-width: var(--ch
 }
 .context-dock__tabs .context-dock__tab {
   gap: var(--spacer-4);
-  min-height: 30px;
-  padding: var(--spacer-4) var(--spacer-8);
+  min-height: 28px;
+  padding: var(--spacer-4) var(--spacer-6) var(--spacer-4) var(--spacer-8);
   white-space: nowrap;
   font-size: var(--text-xs);
 }
@@ -2241,6 +2225,14 @@ oc-command-jobs { display: block; min-width: 0; width: 100%; max-width: var(--ch
 .context-dock__new-tab-menu button:hover { background: var(--bg-hover); }
 .context-dock__new-tab-menu button > span { display: inline-flex; align-items: center; gap: var(--spacer-8); }
 .context-dock__new-tab-menu kbd { color: var(--text-muted); font-family: var(--font-meta); font-size: var(--font-size-meta); }
+
+.context-dock__launcher { display: flex; flex-direction: column; justify-content: center; gap: var(--spacer-4); width: min(100%, 320px); margin: 0 auto; padding: var(--spacer-24); }
+.context-dock__launcher button { display: flex; align-items: center; justify-content: space-between; gap: var(--spacer-16); min-height: 36px; padding: var(--spacer-6) var(--spacer-8); border: 0; border-radius: var(--radius-8); background: transparent; color: var(--text-secondary); text-align: left; font: inherit; cursor: pointer; transition: color var(--duration-fast) var(--ease-standard), background var(--duration-fast) var(--ease-standard); }
+.context-dock__launcher button:hover { background: var(--bg-hover); color: var(--text); }
+.context-dock__launcher button > span:first-child { display: inline-flex; align-items: center; gap: var(--spacer-10); white-space: nowrap; }
+.context-dock__launcher svg { width: var(--icon-size-16); height: var(--icon-size-16); }
+.context-dock__shortcut { display: inline-flex; align-items: center; gap: var(--spacer-3); }
+.context-dock__shortcut kbd { padding: var(--spacer-2) var(--spacer-4); border: var(--hairline); border-radius: var(--radius-4); background: var(--bg-muted); color: var(--text-muted); font: var(--font-size-meta) var(--font-meta); line-height: 1.2; }
 .chat-split-container--maximized .chat-sidebar { min-width: 0; }
 .context-dock__body { flex: 1; min-height: 0; overflow: hidden; }
 .context-dock__body > * { height: 100%; min-height: 0; }
@@ -3575,3 +3567,21 @@ oc-model-quota { display: inline-flex; align-items: center; }
 .chat-turn-diff-card__more:hover { text-decoration:underline; }
 .session-changes { height:100%; min-height:0; overflow-y:auto; padding:var(--spacer-8); }
 .session-changes .chat-turn-diff-card { margin:0; box-shadow:none; }
+.session-changes .chat-turn-diff-card--dock { border: 0; border-radius: 0; padding: 0; background: transparent; }
+.context-dock__changes-toolbar { display: flex; align-items: center; min-height: 36px; gap: var(--spacer-8); padding: 0 var(--spacer-4) var(--spacer-6); border-bottom: var(--hairline); color: var(--text-secondary); font-size: var(--text-xs); }
+.context-dock__changes-branch { display: inline-flex; align-items: center; gap: var(--spacer-6); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.context-dock__changes-branch svg { width: 14px; height: 14px; flex-shrink: 0; }
+.context-dock__changes-count { color: var(--text-muted); font-family: var(--font-meta); }
+.context-dock__changes-views { display: inline-flex; margin-left: auto; }
+.context-dock__changes-views [aria-pressed="true"] { background: var(--bg-muted); color: var(--text); }
+.chat-turn-diff-card--dock .chat-turn-diff-card__head { flex-wrap: wrap; padding: var(--spacer-8) var(--spacer-4); gap: var(--spacer-6); }
+.chat-turn-diff-card--dock .chat-turn-diff-card__actions { margin-left: 0; }
+.chat-turn-diff-card--dock .chat-turn-diff-card__row { min-height: 34px; padding: var(--spacer-4); border-bottom: 0; border-radius: var(--radius-6); }
+.chat-turn-diff-card--dock .chat-turn-diff-card__row:hover { background: var(--bg-hover); }
+.context-dock__change-status { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 18px; height: 18px; border-radius: var(--radius-4); color: var(--text-secondary); background: var(--bg-muted); font: var(--text-xs) var(--font-meta); }
+.context-dock__change-status[data-kind="added"] { color: var(--success); }
+.context-dock__change-status[data-kind="deleted"] { color: var(--danger); }
+.context-dock__change-directory { min-width: 0; }
+.context-dock__change-directory summary { display: flex; align-items: center; gap: var(--spacer-6); min-height: 30px; padding: var(--spacer-4); border-radius: var(--radius-6); color: var(--text-secondary); font-size: var(--text-xs); cursor: pointer; }
+.context-dock__change-directory summary svg { width: 14px; height: 14px; }
+.context-dock__change-directory > div { padding-left: var(--spacer-12); border-left: var(--hairline); margin-left: var(--spacer-8); }

@@ -172,29 +172,52 @@ export function registerWorkspaceIpc(): void {
     if (!check.ok) return check.error;
     const target = check.target;
     const directory = fs.statSync(target).isDirectory() ? target : path.dirname(target);
-    const launch = (command: string, args: string[], cwd = directory) => {
-      const child = spawn(command, args, { cwd, detached: true, stdio: "ignore", shell: process.platform === "win32" });
-      child.unref();
-    };
+    const launch = (command: string, args: string[], interactive = false) => new Promise<void>((resolve, reject) => {
+      // User paths stay argv/cwd data; cmd shell quoting cannot make arbitrary
+      // workspace names safe. Terminal actions explicitly request a visible UI.
+      const child = spawn(command, args, { cwd: directory, detached: true, stdio: "ignore", shell: false, windowsHide: !interactive });
+      child.on("error", reject);
+      child.once("spawn", () => { child.unref(); resolve(); });
+    });
     try {
       switch (params?.target) {
         case "vscode":
-          if (process.platform === "darwin") launch("open", ["-a", "Visual Studio Code", target]);
-          else launch("code", [target]);
+          if (process.platform === "darwin") await launch("open", ["-a", "Visual Studio Code", target]);
+          else if (process.platform === "win32") {
+            // code.cmd needs a command shell; use its real executable instead.
+            const candidates = [
+              process.env.LOCALAPPDATA && path.join(process.env.LOCALAPPDATA, "Programs", "Microsoft VS Code", "Code.exe"),
+              path.join(process.env.ProgramFiles || "C:\\Program Files", "Microsoft VS Code", "Code.exe"),
+              ...((process.env.PATH || process.env.Path || "").split(path.delimiter).filter(entry => path.isAbsolute(entry))
+                .flatMap(entry => [path.join(entry, "Code.exe"),
+                  ...(path.basename(entry).toLowerCase() === "bin" && fs.existsSync(path.join(entry, "code.cmd"))
+                    ? [path.resolve(entry, "..", "Code.exe")] : [])])),
+            ].filter((value): value is string => Boolean(value));
+            const executable = candidates.find(candidate => fs.existsSync(candidate) && fs.statSync(candidate).isFile());
+            if (!executable) throw new Error("Visual Studio Code executable not found");
+            await launch(executable, [target]);
+          } else await launch("code", [target]);
           break;
         case "explorer":
           shell.showItemInFolder(target);
           break;
         case "terminal":
-          if (process.platform === "win32") launch("cmd.exe", ["/c", "start", "", "cmd.exe", "/k", `cd /d "${directory}"`]);
-          else if (process.platform === "darwin") launch("open", ["-a", "Terminal", directory]);
-          else launch("x-terminal-emulator", []);
+          if (process.platform === "win32") {
+            const command = path.join(process.env.SystemRoot || "C:\\Windows", "System32", "cmd.exe");
+            // START allocates a console; the selected directory remains cwd data.
+            await launch(command, ["/d", "/c", "start", '""', command, "/d", "/k"], true);
+          }
+          else if (process.platform === "darwin") await launch("open", ["-a", "Terminal", directory], true);
+          else await launch("x-terminal-emulator", [], true);
           break;
         case "git-bash": {
-          const executable = process.env.GIT_BASH_PATH || "C:\\Program Files\\Git\\bin\\bash.exe";
-          if (process.platform === "win32") launch(executable, ["--login", "-i"]);
-          else if (process.platform === "darwin") launch("open", ["-a", "Terminal", directory]);
-          else launch("x-terminal-emulator", []);
+          const executable = process.env.GIT_BASH_PATH || "C:\\Program Files\\Git\\git-bash.exe";
+          if (process.platform === "win32") {
+            if (!path.isAbsolute(executable) || path.basename(executable).toLowerCase() !== "git-bash.exe") throw new Error("Git Bash GUI launcher not found");
+            await launch(executable, ["--cd=" + directory], true);
+          }
+          else if (process.platform === "darwin") await launch("open", ["-a", "Terminal", directory], true);
+          else await launch("x-terminal-emulator", [], true);
           break;
         }
         default:

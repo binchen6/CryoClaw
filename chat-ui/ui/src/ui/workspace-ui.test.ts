@@ -95,7 +95,7 @@ test("终态改动卡片接线（app-chat-props / chat.ts / oc-chat-history / gr
   assert.match(chatProps, /onOpenGitView: \(\) => \{[\s\S]*?openDockTab\(state, "changes"\);/, "缺少 onOpenGitView prop");
   // 「撤销」：危险确认后丢弃工作区改动（app 层 handler 走 preload 桥）
   assert.match(chatProps, /confirmAndUndoTurnChanges/, "缺少撤销 handler 接线");
-  assert.match(chatProps, /onUndoFileChanges: \(files\) => void confirmAndUndoTurnChanges\(state, workspace\?\.path \?\? "", files\)/, "缺少 onUndoFileChanges prop");
+  assert.match(chatProps, /onUndoFileChanges: \(files\) => confirmAndUndoTurnChanges\(state, workspace\?\.path \?\? "", files\)/, "撤销 prop 必须返回确认及写入的 Promise");
 
   const chat = src("views/chat.ts");
   assert.match(chat, /closest\("\.chat-git-view-link"\)/, "线程点击委托缺少 git 链接分支");

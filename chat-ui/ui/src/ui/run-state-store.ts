@@ -352,7 +352,10 @@ export function ensureRunStateSnapshot(
     }
     return existing;
   }
-  const snapshot = captureRunStateSnapshot(source ? { ...source, sessionKey } : { sessionKey });
+  // Lit stores public state in prototype accessors. Spreading the host drops
+  // those values while retaining private timeline fields, producing a broken snapshot.
+  const snapshot = captureRunStateSnapshot(source ?? { sessionKey });
+  snapshot.sessionKey = sessionKey;
   if (source) snapshot.ownerHost = source;
   saveRunStateSnapshot(sessionKey, snapshot);
   return snapshot;

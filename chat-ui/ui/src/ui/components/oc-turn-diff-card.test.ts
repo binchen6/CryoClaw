@@ -4,6 +4,129 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { mock } from "node:test";
+const globals = globalThis as Record<string, unknown>;
+globals.customElements ??= { define() {}, get() { return undefined; } };
+globals.window ??= { document: { nodeType: 9, currentScript: null, createElement: () => ({}) }, Element: class {} };
+const { OcTurnDiffCard } = await import("./oc-turn-diff-card.ts");
+const { nothing } = await import("lit");
+
+async function settleStats() { for (let i = 0; i < 8; i += 1) await Promise.resolve(); }
+function card(workspace: string): any {
+  const component = new OcTurnDiffCard();
+  component.requestUpdate = () => {};
+  component.workspacePath = workspace;
+  component.gitAvailable = true;
+  component.files = [{ path: "a.ts", kind: "modified" }];
+  return component;
+}
+function refreshCard(component: any) { component.willUpdate(new Map([["files", undefined]])); }
+
+test("same paths refresh after the short cache lifetime, including a remounted card", async () => {
+  mock.timers.enable({ apis: ["setTimeout", "Date"] });
+  const component = card("ttl-fixture");
+  let calls = 0;
+  component.statsLoader = async () => ({ byPath: { "a.ts": { path: "a.ts", additions: ++calls === 1 ? 1 : 10, deletions: 0 } }, complete: true });
+  let remounted: any;
+  try {
+    refreshCard(component); mock.timers.tick(250); await settleStats();
+    assert.equal(component.statsLookup.byPath["a.ts"].additions, 1);
+    mock.timers.tick(1500);
+    refreshCard(component); mock.timers.tick(250); await settleStats();
+    assert.equal(component.statsLookup.byPath["a.ts"].additions, 10);
+    mock.timers.tick(1500);
+    remounted = card("ttl-fixture");
+    remounted.statsLoader = component.statsLoader;
+    refreshCard(remounted); mock.timers.tick(250); await settleStats();
+    assert.equal(calls, 3, "remount must not reuse an expired module cache entry");
+  } finally { component.disconnectedCallback(); remounted?.disconnectedCallback(); mock.timers.reset(); }
+});
+
+test("failed stats retry and undo invalidates same-path stats immediately", async () => {
+  mock.timers.enable({ apis: ["setTimeout", "Date"] });
+  const component = card("retry-fixture");
+  let calls = 0;
+  component.statsLoader = async () => {
+    calls += 1;
+    if (calls === 1) return { byPath: {}, complete: false };
+    return { byPath: { "a.ts": { path: "a.ts", additions: calls === 2 ? 10 : 0, deletions: 0 } }, complete: true };
+  };
+  component.onDiscard = async () => {};
+  try {
+    refreshCard(component); mock.timers.tick(250); await settleStats();
+    assert.equal(component.statsLookup.complete, false);
+    mock.timers.tick(1500);
+    refreshCard(component); mock.timers.tick(250); await settleStats();
+    assert.equal(component.statsLookup.byPath["a.ts"].additions, 10);
+    await component.onUndoClick();
+    mock.timers.tick(250); await settleStats();
+    assert.equal(component.statsLookup.byPath["a.ts"].additions, 0);
+  } finally { component.disconnectedCallback(); mock.timers.reset(); }
+});
+
+test("same-path edit inside the cache window revalidates when that window expires", async () => {
+  mock.timers.enable({ apis: ["setTimeout", "Date"] });
+  const component = card("within-ttl-fixture");
+  let additions = 1;
+  component.statsLoader = async () => ({ byPath: { "a.ts": { path: "a.ts", additions, deletions: 0 } }, complete: true });
+  try {
+    refreshCard(component); mock.timers.tick(250); await settleStats();
+    assert.equal(component.statsLookup.byPath["a.ts"].additions, 1);
+    additions = 10;
+    component.files = [{ path: "a.ts", kind: "modified" }];
+    refreshCard(component);
+    mock.timers.tick(1000);
+    mock.timers.tick(250);
+    await settleStats();
+    assert.equal(component.statsLookup.byPath["a.ts"].additions, 10);
+  } finally { component.disconnectedCallback(); mock.timers.reset(); }
+});
+
+test("same-path edits during a pending stats request queue one follow-up without another render", async () => {
+  mock.timers.enable({ apis: ["setTimeout", "Date"] });
+  const component = card("edit-inflight-fixture");
+  let calls = 0;
+  let resolveOld!: (lookup: unknown) => void;
+  component.statsLoader = () => {
+    calls += 1;
+    return calls === 1 ? new Promise(resolve => { resolveOld = resolve; }) :
+      Promise.resolve({ byPath: { "a.ts": { path: "a.ts", additions: 10, deletions: 0 } }, complete: true });
+  };
+  try {
+    refreshCard(component); mock.timers.tick(250);
+    for (let i = 0; i < 60; i += 1) {
+      component.files = [{ path: "a.ts", kind: "modified" }];
+      refreshCard(component);
+    }
+    assert.equal(calls, 1);
+    resolveOld({ byPath: { "a.ts": { path: "a.ts", additions: 1, deletions: 0 } }, complete: true });
+    await settleStats();
+    mock.timers.tick(15000); await settleStats();
+    assert.equal(calls, 2, "updates during the active request must coalesce into one trailing request");
+    assert.equal(component.statsLookup.byPath["a.ts"].additions, 10);
+  } finally { component.disconnectedCallback(); mock.timers.reset(); }
+});
+
+test("a stale request cannot block revalidation after switching to cached workspace stats", async () => {
+  mock.timers.enable({ apis: ["setTimeout", "Date"] });
+  const seed = card("cached-target-fixture");
+  const component = card("pending-source-fixture");
+  let resolveOld!: (lookup: unknown) => void;
+  try {
+    seed.statsLoader = async () => ({ byPath: { "a.ts": { path: "a.ts", additions: 1, deletions: 0 } }, complete: true });
+    refreshCard(seed); mock.timers.tick(250); await settleStats();
+    component.statsLoader = () => new Promise(resolve => { resolveOld = resolve; });
+    refreshCard(component); mock.timers.tick(250);
+    component.workspacePath = "cached-target-fixture";
+    component.statsLoader = async () => ({ byPath: { "a.ts": { path: "a.ts", additions: 10, deletions: 0 } }, complete: true });
+    refreshCard(component);
+    mock.timers.tick(1000); mock.timers.tick(250); await settleStats();
+    assert.equal(component.statsLookup.byPath["a.ts"].additions, 10);
+    resolveOld({ byPath: { "a.ts": { path: "a.ts", additions: 99, deletions: 0 } }, complete: true });
+    await settleStats();
+    assert.equal(component.statsLookup.byPath["a.ts"].additions, 10, "old workspace stats must not replace current stats");
+  } finally { seed.disconnectedCallback(); component.disconnectedCallback(); mock.timers.reset(); }
+});
 
 const src = readFileSync(
   new URL("../../../../../src/ui/components/oc-turn-diff-card.ts", import.meta.url),
@@ -15,8 +138,11 @@ test("diff-card：无 shadow DOM + 注册为 oc-turn-diff-card", () => {
   assert.match(src, /customElement\("oc-turn-diff-card"\)/, "必须以 oc-turn-diff-card 标签名注册");
 });
 
-test("diff-card：files 为空渲染 nothing；行数统计防抖 + 签名缓存 + 过期丢弃", () => {
-  assert.match(src, /if \(!files\.length\) return nothing;/, "空文件列表不应渲染卡片");
+test("diff-card：历史空文件列表不渲染卡片；Dock 保留工具栏；统计防抖缓存与过期丢弃", () => {
+  const empty = new OcTurnDiffCard();
+  assert.equal(empty.render(), nothing, "历史空文件列表不应渲染卡片");
+  empty.dockMode = true;
+  assert.notEqual(empty.render(), nothing, "Dock 空列表保留真实分支及视图工具栏");
   assert.match(src, /STATS_DEBOUNCE_MS = 250/, "统计拉取应 250ms 防抖");
   assert.match(src, /turnStatsSignature\(this\.workspacePath, paths\)/, "应按签名缓存");
   assert.match(src, /seq !== this\.statsSeq \|\| signature !== this\.statsSignature/, "过期响应应丢弃");

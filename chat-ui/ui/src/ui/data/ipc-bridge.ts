@@ -8,6 +8,7 @@
 // ---------------------------------------------------------------------------
 // Type declarations
 // ---------------------------------------------------------------------------
+import type { QqbotLoginResult } from "../views/settings/qqbot-login.ts";
 
 export interface DetectionResult {
   portInUse: boolean;
@@ -363,6 +364,9 @@ interface CryoClawBridgeExtended {
       settingsGetProviderUsage?: (params: Record<string, unknown>) => Promise<any>;
       // Settings: Channels — 运行态 + pairing（R4 后 openclaw.json 读写走 config.patch）
       settingsGetChannelRuntimeState?: () => Promise<any>;
+      settingsQqbotLoginStart?: () => Promise<any>;
+      settingsQqbotLoginWait?: (params: { attemptId: string }) => Promise<any>;
+      settingsQqbotLoginCancel?: (params: { attemptId: string }) => Promise<any>;
       settingsListFeishuPairing?: () => Promise<any>;
       settingsListFeishuApproved?: () => Promise<any>;
       settingsApproveFeishuPairing?: (params: Record<string, unknown>) => Promise<any>;
@@ -693,6 +697,18 @@ export async function settingsEnsureWeixinPlugin(): Promise<{ ok: boolean; messa
 
 export async function settingsWeixinLoginStart(): Promise<WeixinQrResult> {
   return unwrapData<WeixinQrResult>(await oc().settingsWeixinLoginStart());
+}
+
+export async function settingsQqbotLoginStart(): Promise<QqbotLoginResult> {
+  return unwrapData<QqbotLoginResult>(await oc().settingsQqbotLoginStart());
+}
+
+export async function settingsQqbotLoginWait(params: { attemptId: string }): Promise<QqbotLoginResult> {
+  return unwrapData<QqbotLoginResult>(await oc().settingsQqbotLoginWait(params));
+}
+
+export async function settingsQqbotLoginCancel(params: { attemptId: string }): Promise<void> {
+  unwrapVoid(await oc().settingsQqbotLoginCancel(params));
 }
 
 export async function settingsWeixinLoginWait(params: { qrcode: string }): Promise<WeixinLoginWaitResult> {

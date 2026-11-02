@@ -4,11 +4,13 @@ import { FakeScheduler } from "../test-utils/fake-scheduler.ts";
 
 // 最小可控定时器，手动推进回调。
 class FakeTimers extends FakeScheduler<() => void> {
+  readonly delays: number[] = [];
   constructor() {
     super((fn) => fn());
   }
 
-  setTimeout(fn: () => void): number {
+  setTimeout(fn: () => void, delay = 0): number {
+    this.delays.push(delay);
     return this.schedule(fn);
   }
 
@@ -85,7 +87,7 @@ function createStorage() {
 function installBrowserGlobals(timers: FakeTimers) {
   const storage = createStorage();
   const windowLike = {
-    setTimeout: (fn: () => void, _delay?: number) => timers.setTimeout(fn),
+    setTimeout: (fn: () => void, delay?: number) => timers.setTimeout(fn, delay),
     clearTimeout: (id: number) => timers.clearTimeout(id),
     localStorage: storage,
   };
@@ -363,6 +365,7 @@ async function testLastSeqResetsOnNewSocketConnection() {
 }
 
 async function main() {
+  await testStartupRetryProtocol();
   await testStartupReadsRecoverAndCancel();
   await testReconnectNowCancelsScheduledReconnect();
   await testRequestMustWaitForHelloHandshake();
@@ -371,6 +374,59 @@ async function main() {
   await testDuplicateOrRewindSeqFramesAreDroppedWithoutGap();
   await testLastSeqResetsOnNewSocketConnection();
   console.log("gateway reconnect tests passed");
+}
+
+async function testStartupRetryProtocol() {
+  const startup = { code: "UNAVAILABLE", message: "gateway starting; retry shortly",
+    retryable: true, retryAfterMs: 250, details: { reason: "startup-sidecars" } };
+  const error = new GatewayRequestError(startup);
+  assert.equal(Reflect.get(error, "retryable"), true, "preserve the server's retry admission decision");
+  assert.equal(Reflect.get(error, "retryAfterMs"), 250, "preserve the server's requested retry delay");
+  FakeWebSocket.instances = [];
+  const timers = new FakeTimers(); installBrowserGlobals(timers);
+  const client = new GatewayBrowserClient({ url: "ws://127.0.0.1:18789" });
+  client.start();
+  // Network failures retain exponential backoff; startup admission is a
+  // separate server signal and must not inherit that accumulated delay.
+  FakeWebSocket.instances[0]!.close(1006, "offline");
+  assert.equal(timers.delays.at(-1), 800);
+  timers.runNext();
+  FakeWebSocket.instances[1]!.close(1006, "offline");
+  assert.equal(timers.delays.at(-1), 1360);
+  timers.runNext();
+  const socket = FakeWebSocket.instances[2]!;
+  socket.open(); timers.runNext(); await flushMicrotasks();
+  const connect = JSON.parse(socket.sent.at(-1)!);
+  socket.message(JSON.stringify({ type: "res", id: connect.id, ok: false, error: startup }));
+  await flushMicrotasks(); await flushMicrotasks();
+  assert.equal(timers.delays.at(-1), 250, "startup rejection uses retryAfterMs instead of accumulated transport backoff");
+  timers.runNext();
+  FakeWebSocket.instances[3]!.close(1013, "gateway starting");
+  assert.equal(timers.delays.at(-1), 500, "a startup close without a response has a bounded default");
+  timers.runNext();
+  const ready = FakeWebSocket.instances[4]!;
+  ready.open(); timers.runNext(); await flushMicrotasks(); completeHello(ready); await flushMicrotasks();
+  const history = client.request("chat.history");
+  const request = JSON.parse(ready.sent.at(-1)!);
+  const admission = { ...startup, details: { code: "agent-database-inspection-pending" } };
+  ready.message(JSON.stringify({ type: "res", id: request.id, ok: false, error: admission }));
+  await flushMicrotasks();
+  assert.equal(timers.delays.at(-1), 250, "read retries use the database admission delay");
+  timers.runNext(); await flushMicrotasks();
+  ready.message(JSON.stringify({ type: "res", id: JSON.parse(ready.sent.at(-1)!).id, ok: true, payload: { messages: [] } }));
+  assert.deepEqual(await history, { messages: [] });
+  assert.equal(isAgentStartupReadError("chat.history", new GatewayRequestError({ ...admission, retryable: false })), false);
+  const preparing = client.request("agent.identity.get");
+  for (let attempt = 0; attempt < 24; attempt++) {
+    const before = ready.sent.length;
+    ready.message(JSON.stringify({ type: "res", id: JSON.parse(ready.sent.at(-1)!).id, ok: false, error: admission }));
+    await flushMicrotasks(); timers.runNext(); await flushMicrotasks();
+    assert.equal(ready.sent.length, before + 1,
+      "a short server retry interval must retain the elapsed-time budget instead of exhausting 22 attempts");
+  }
+  ready.message(JSON.stringify({ type: "res", id: JSON.parse(ready.sent.at(-1)!).id, ok: true, payload: { name: "Assistant" } }));
+  assert.deepEqual(await preparing, { name: "Assistant" });
+  client.stop();
 }
 
 async function testStartupReadsRecoverAndCancel() {

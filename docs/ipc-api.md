@@ -140,6 +140,16 @@
 > `settings:get-memory-config` / `settings:save-memory-config` / `settings:add-feishu-group-allow-from`
 > 已退役；pairing 配对与已批准名单管理仍走主进程（配对 store 属主进程职责）。
 
+## Settings — Channels (QQ Bot)
+
+| 方法 | IPC 通道 | 方向 |
+|---|---|---|
+| `settingsQqbotLoginStart()` | `settings:qqbot-login-start` | invoke |
+| `settingsQqbotLoginWait({ attemptId })` | `settings:qqbot-login-wait` | invoke |
+| `settingsQqbotLoginCancel({ attemptId })` | `settings:qqbot-login-cancel` | invoke |
+
+扫码使用腾讯官方 connector，由主进程本地生成二维码。返回值为 `{success,data?,message?}`；`data` 包含随机 `attemptId`、状态、二维码和提示，连接成功后可包含账号标识摘要。AppSecret 与扫描用户 OpenID 不返回界面。尝试绑定请求窗口，其他窗口不能查询或取消；取消、窗口销毁与超时阻止迟到结果写入。成功从最新配置合并账号并请求一次网关重启。插件 ID 为 `openclaw-qqbot`，渠道配置仍为 `channels.qqbot`。
+
 ## Settings — Channels (Feishu)
 
 | 方法 | IPC 通道 | 方向 |
@@ -322,6 +332,7 @@
 | 方法 | IPC 通道 | 方向 |
 |---|---|---|
 | `embeddedBrowserShow(params)` | `embedded-browser:show` | invoke；首次打开 Dock 标签才创建 `WebContentsView` |
+| `embeddedBrowserUtility(params)` | `embedded-browser:utility` | invoke；标签页、查找、打印、设备预览、截图、标注、历史/下载和清理；`viewId` 将 overlay/标注绑定来源标签 |
 | `embeddedBrowserHide()` | `embedded-browser:hide` | invoke；隐藏原生视图并静音，不销毁页面 |
 | `embeddedBrowserBounds(bounds)` | `embedded-browser:bounds` | invoke；同步 Dock 可视区域 |
 | `embeddedBrowserNavigate(url)` | `embedded-browser:navigate` | invoke；仅 HTTP(S) / `about:blank` |

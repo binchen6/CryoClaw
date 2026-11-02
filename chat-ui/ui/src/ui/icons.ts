@@ -18,6 +18,10 @@ export function renderIcon(inner: string): TemplateResult {
 }
 
 export const icons = {
+  minus: renderIcon('<path d="M5 12h14"/>'),
+  trash2: renderIcon('<path d="M4 6h16M9 6V3h6v3M6 6l1 15h10l1-15M10 10v7m4-7v7"/>'),
+  crosshair: renderIcon('<path d="M8 3H4v4m12-4h4v4M4 17v4h4m12-4v4h-4M12 8v8m-4-4h8"/>'),
+  mousePointer: renderIcon('<path d="m5 3 14 9-7 1-3 7z"/>'),
   keyboard: renderIcon('<rect x="2.5" y="5" width="19" height="14" rx="2.5"/><path d="M6 9h.5m3 0h.5m3 0h.5m3 0h.5M6 12h.5m3 0h.5m3 0h.5m3 0h.5M7.5 15.5h9"/>'),
   // ── 导航 / 消息 ──
 

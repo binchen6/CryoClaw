@@ -32,7 +32,7 @@ export interface GatewayControlStatus {
 
 export interface GatewayControlDeps {
   themeUi?: (payload:unknown)=>Promise<unknown>;
-  browserUi?: (payload:unknown)=>Promise<unknown>;
+  browserUi?: (payload:unknown, signal?: AbortSignal)=>Promise<unknown>;
   getStatus: () => GatewayControlStatus;
   /** 托管重启：停 gateway → ensureGatewayRunning（失败应抛错） */
   restart: () => Promise<void>;
@@ -242,7 +242,13 @@ export function createGatewayControlRequestHandler(
             req.once("end",()=>{clearTimeout(timer);try{resolve(JSON.parse(Buffer.concat(chunks).toString("utf8")));}catch{reject(new Error("invalid JSON"));}});
           });
           if(!browser && (!payload || typeof payload!=="object" || !["inspect","preview","restore"].includes((payload as any).action))){sendJson(res,400,{ok:false,error:"Invalid theme action"});return;}
-          const result=await handler(payload);sendJson(res,200,{ok:true,result});
+          const controller = new AbortController();
+          const abort = () => { if (!res.writableEnded) controller.abort(new Error("Browser request canceled")); };
+          res.once("close", abort);
+          try {
+            const result = browser ? await deps.browserUi!(payload, controller.signal) : await handler(payload);
+            if (!res.destroyed) sendJson(res,200,{ok:true,result});
+          } finally { res.removeListener("close", abort); }
         } catch(error){sendJson(res,size>maxBytes?413:400,{ok:false,error:error instanceof Error?error.message:"UI request failed"});}
         return;
       }

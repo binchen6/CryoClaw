@@ -1153,8 +1153,38 @@ ipcMain.handle("file:read-base64", async (event, filePath: string) => {
     log.warn(`[security] file:read-base64 拒绝: ${verdict.error} ${String(filePath).slice(0, 100)}`);
     return Promise.reject(new Error(verdict.error));
   }
-  const buf = await fs.promises.readFile(filePath);
-  // TOCTOU 兜底：stat 与 readFile 之间文件可能被替换/增大，读后复核大小
+  // Check the canonical destination too: workspace aliases may point at secrets.
+  const target = await fs.promises.realpath(filePath);
+  const targetStat = await fs.promises.stat(target, { bigint: true });
+  const realVerdict = evaluateFileReadTarget(target, { isFile: targetStat.isFile(), size: Number(targetStat.size) });
+  if (!realVerdict.ok) {
+    if (realVerdict.error === "too-large") return { error: "too-large", size: realVerdict.size };
+    throw new Error(realVerdict.error);
+  }
+  const handle = await fs.promises.open(target, "r");
+  let buf: Buffer;
+  try {
+    const verifyOpened = async () => {
+      const canonical = await fs.promises.realpath(filePath);
+      const current = await fs.promises.stat(canonical, { bigint: true });
+      const opened = await handle.stat({ bigint: true });
+      if (canonical !== target || !opened.isFile() || targetStat.dev !== opened.dev || targetStat.ino !== opened.ino ||
+          current.dev !== opened.dev || current.ino !== opened.ino) throw new Error("File changed while opening attachment");
+      const check = evaluateFileReadTarget(canonical, { isFile: opened.isFile(), size: Number(opened.size) });
+      if (!check.ok && check.error !== "too-large") throw new Error(check.error);
+    };
+    await verifyOpened();
+    // The file may grow after stat. Never allocate or read beyond the cap + 1.
+    const bounded = Buffer.alloc(FILE_READ_MAX_BYTES + 1);
+    let count = 0;
+    while (count < bounded.length) {
+      const { bytesRead } = await handle.read(bounded, count, Math.min(64 * 1024, bounded.length - count), count);
+      if (!bytesRead) break;
+      count += bytesRead;
+    }
+    buf = bounded.subarray(0, count);
+    await verifyOpened();
+  } finally { await handle.close(); }
   if (buf.length > FILE_READ_MAX_BYTES) {
     return { error: "too-large", size: buf.length };
   }
@@ -1496,10 +1526,10 @@ app.whenReady().then(async () => {
       if(!target)throw new Error("Open the CryoClaw window to preview a theme");
       return requestThemeUi(target.webContents,payload);
     },
-    browserUi:async payload=>{
+    browserUi:async (payload, signal)=>{
       const target=BrowserWindow.getAllWindows().find(window=>!window.isDestroyed() && isTrustedChatUiUrl(window.webContents.getURL(),chatUiEntryUrlPrefix()));
       if(!target)throw new Error("Open the CryoClaw window to use the embedded browser");
-      return controlEmbeddedBrowser(target,(payload ?? {}) as Record<string,unknown>,()=>target.webContents.send("embedded-browser:agent-open"));
+      return controlEmbeddedBrowser(target,(payload ?? {}) as Record<string,unknown>,()=>target.webContents.send("embedded-browser:agent-open"), signal);
     },
     getStatus: () => {
       const startedAt = gateway.getStartedAt();

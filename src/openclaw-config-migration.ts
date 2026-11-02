@@ -14,6 +14,7 @@ import { resolveGatewayPackageDir, resolveUserStateDir, resolveExtensionsMirrorD
 import { readUserConfig, writeUserConfig } from "./provider-config";
 import { readCryoclawConfig, writeCryoclawConfig } from "./cryoclaw-config";
 import { scanNpmProjectPlugins } from "./plugin-install-roots";
+import { migrateQqbotPluginId, QQBOT_PLUGIN_ID } from "./qqbot-config";
 import * as log from "./logger";
 
 // 规则列表，后续按需追加。
@@ -439,12 +440,14 @@ export function migrateOpenclawConfigForKernelUpgrade(): void {
     const migratedExecMode = migrateExecModeApproveAll(config);
     const migratedPlanTool = migratePlanTool(config, atLeast2026_8);
     const migratedMemorySearch = migrateMemorySearchLocation(config, atLeast2026_8);
-    const migratedQQBot = atLeast2026_8 ? migrateQQBotAllowFromWildcard(config) : false;
+    const tencentQqbot = fs.existsSync(path.join(resolveGatewayPackageDir(), "dist", "extensions", QQBOT_PLUGIN_ID));
+    const migratedQQBotId = tencentQqbot ? migrateQqbotPluginId(config) : false;
+    const migratedQQBot = atLeast2026_8 && !tencentQqbot ? migrateQQBotAllowFromWildcard(config) : false;
     const pluginEntries = atLeast2026_8
       ? migrateUnavailablePluginEntries(config)
       : { stashed: [], removedSlots: [], repaired: [], downgraded: [] };
     const pluginEntryChanged = pluginEntries.stashed.length > 0 || pluginEntries.removedSlots.length > 0 || pluginEntries.repaired.length > 0 || pluginEntries.downgraded.length > 0;
-    if (removed.length === 0 && !migratedAliases && !migratedExecMode && !migratedPlanTool && !migratedMemorySearch && !migratedQQBot && !pluginEntryChanged) return;
+    if (removed.length === 0 && !migratedAliases && !migratedExecMode && !migratedPlanTool && !migratedMemorySearch && !migratedQQBot && !migratedQQBotId && !pluginEntryChanged) return;
     // 不传 baseSnapshot：本迁移在启动期/换装后连续执行，读-改-写都在同一同步段内；
     // 且刻意摘除条目/字段（stash、deprecated 清理）只体现在待写对象上，读时刻快照
     // 不受影响，写前比对不会因此误伤（口径见 WriteUserConfigOptions）。
@@ -456,6 +459,7 @@ export function migrateOpenclawConfigForKernelUpgrade(): void {
     if (migratedPlanTool) parts.push(atLeast2026_8 ? "planTool 开关已落位 tools.updatePlan" : "planTool 开关已落位 tools.experimental.planTool");
     if (migratedMemorySearch) parts.push(atLeast2026_8 ? "memorySearch 已迁移到根级 memory.search" : "memory.search 已回迁至 agents.defaults.memorySearch");
     if (migratedQQBot) parts.push("channels.qqbot.allowFrom 通配符 * 已按 2026.8 契约清除");
+    if (migratedQQBotId) parts.push("QQ Bot 插件标识已迁移到 openclaw-qqbot");
     if (pluginEntries.repaired.length > 0) parts.push(`恢复曾被误禁用的已安装插件条目: ${pluginEntries.repaired.join(", ")}`);
     if (pluginEntries.stashed.length > 0) parts.push(`不可用（未安装或无可运行载荷）的插件条目已摘除（config 已暂存，重装后自动恢复）: ${pluginEntries.stashed.join(", ")}`);
     if (pluginEntries.removedSlots.length > 0) parts.push(`引用不可用插件的 slots 已摘除: ${pluginEntries.removedSlots.join(", ")}`);

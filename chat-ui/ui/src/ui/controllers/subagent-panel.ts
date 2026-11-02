@@ -23,12 +23,15 @@ export type SubagentPanelHost = {
   requestUpdate(): void;
 };
 
-export function projectSubagentPanel(host: SubagentPanelHost): void {
+const panelLoads = new WeakMap<SubagentPanelHost, { key: string; entry: object }>();
+
+export function projectSubagentPanel(host: SubagentPanelHost, eventSessionKey?: string): void {
   const key = host.subagentPanelKey;
-  if (!key) return;
+  if (!key || (eventSessionKey !== undefined && eventSessionKey !== key)) return;
   const entry = peekRunStateSnapshot(key);
   if (!entry) return;
-  host.subagentPanelMessages = [...entry.chatMessages];
+  // 历史以不可变数组写入；流式文本投影不能使历史 memo 每 token 失效。
+  host.subagentPanelMessages = entry.chatMessages;
   host.subagentPanelVisibleMessageCount = entry.chatVisibleMessageCount;
   host.subagentPanelToolMessages = entry.chatToolMessages;
   host.subagentPanelStream = entry.chatPendingStreamText ?? entry.chatStream;
@@ -43,11 +46,24 @@ export async function loadSubagentPanelHistory(host: SubagentPanelHost): Promise
   const key = host.subagentPanelKey;
   if (!key || !host.client || !host.connected) return;
   const entry = ensureRunStateSnapshot(key);
+  let token = panelLoads.get(host);
+  // 观察者属于已打开的面板，而非某次请求。失败的同面板刷新不能
+  // 作废此前成功历史仍在推进的 hydration。
+  if (!token || token.key !== key || token.entry !== entry) {
+    token = { key, entry };
+    panelLoads.set(host, token);
+  }
   Object.assign(entry, { client: host.client, connected: host.connected });
+  const projectCurrent = () => {
+    if (panelLoads.get(host) === token && host.subagentPanelKey === key &&
+      peekRunStateSnapshot(key) === entry) projectSubagentPanel(host);
+  };
   try {
-    await loadChatHistory(entry as never);
+    const loading = loadChatHistory(entry as never, { onHistoryHydrated: projectCurrent });
+    projectCurrent();
+    await loading;
   } finally {
-    if (host.subagentPanelKey === key) projectSubagentPanel(host);
+    projectCurrent();
   }
 }
 
@@ -68,6 +84,7 @@ export function openSubagentPanel(host: SubagentPanelHost, sessionKey: string): 
 
 export function closeSubagentPanel(host: SubagentPanelHost): void {
   const key = host.subagentPanelKey;
+  panelLoads.delete(host);
   host.subagentPanelKey = null;
   host.subagentPanelMessages = [];
   host.subagentPanelVisibleMessageCount = 0;

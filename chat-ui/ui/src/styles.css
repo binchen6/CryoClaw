@@ -21,6 +21,7 @@
 @import "./styles/compose.css";
 @import "./styles/model-picker.css";
 @import "./styles/workspace.css";
+@import "./styles/dock-files.css";
 @import "./styles/cron.css";
 @import "./styles/chat-misc.css";
 @import "./styles/dashboard.css";

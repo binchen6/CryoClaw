@@ -69,11 +69,15 @@ const REQUEST_TIMEOUT_MS = 30_000;
 export class GatewayRequestError extends Error {
   readonly code: string;
   readonly details: unknown;
+  readonly retryable?: boolean;
+  readonly retryAfterMs?: number;
   constructor(error: NonNullable<GatewayResponseFrame["error"]>) {
     super(error.message);
     this.name = "GatewayRequestError";
     this.code = error.code;
     this.details = error.details;
+    this.retryable = error.retryable;
+    this.retryAfterMs = error.retryAfterMs;
   }
 }
 
@@ -87,7 +91,7 @@ const STARTUP_READS = new Set([
 
 export function isAgentStartupReadError(method: string, error: unknown): boolean {
   return STARTUP_READS.has(method) && error instanceof GatewayRequestError &&
-    error.code === "UNAVAILABLE" &&
+    error.code === "UNAVAILABLE" && error.retryable !== false &&
     ((error.details as {code?:unknown}|undefined)?.code === "agent-database-inspection-pending" ||
       /has not completed startup inspection and preparation|agent database.*(?:not ready|prepar)/i.test(error.message));
 }
@@ -104,6 +108,7 @@ export class GatewayBrowserClient {
   private helloReceived = false;
   private socketGeneration = 0;
   private backoffMs = 800;
+  private startupRetryDelayMs: number | undefined;
   private retryWaiters = new Map<number, () => void>();
 
   constructor(private opts: GatewayBrowserClientOptions) {}
@@ -192,12 +197,14 @@ export class GatewayBrowserClient {
         return;
       }
       const reason = String(ev.reason ?? "");
+      const startupDelay = this.startupRetryDelayMs ??
+        (ev.code === 1013 && reason === "gateway starting" ? 500 : undefined);
       this.ws = null;
       this.resetHandshakeState();
       console.warn(`[gateway] websocket closed code=${ev.code} reason=${reason}`);
       this.flushPending(new Error(`gateway closed (${ev.code}): ${reason}`));
       this.opts.onClose?.({ code: ev.code, reason });
-      this.scheduleReconnect();
+      this.scheduleReconnect(startupDelay);
     });
     ws.addEventListener("error", (ev) => {
       if (!this.isActiveSocket(ws, generation)) {
@@ -209,12 +216,12 @@ export class GatewayBrowserClient {
     });
   }
 
-  private scheduleReconnect() {
+  private scheduleReconnect(startupDelay?: number) {
     if (this.closed) {
       return;
     }
-    const delay = this.backoffMs;
-    this.backoffMs = Math.min(this.backoffMs * 1.7, 15_000);
+    const delay = startupDelay ?? this.backoffMs;
+    if (startupDelay === undefined) this.backoffMs = Math.min(this.backoffMs * 1.7, 15_000);
     this.clearReconnectTimer();
     console.warn(`[gateway] scheduling reconnect in ${delay}ms`);
     this.reconnectTimer = window.setTimeout(() => {
@@ -379,7 +386,15 @@ export class GatewayBrowserClient {
         const expectedStartupReject =
           err instanceof Error && /gateway starting|retry shortly|try again/i.test(err.message);
         (expectedStartupReject ? console.warn : console.error)("[gateway] connect request failed", err);
-        if (canFallbackToShared && deviceIdentity) {
+        // Startup admission already supplies its retry policy. An old network
+        // outage's exponential backoff must not delay this healthy local server.
+        const startupReject = err instanceof GatewayRequestError && err.code === "UNAVAILABLE" &&
+          err.retryable === true && (err.details as { reason?: unknown } | undefined)?.reason === "startup-sidecars";
+        if (startupReject) {
+          const requested = err.retryAfterMs;
+          this.startupRetryDelayMs = Math.min(2000, Math.max(100,
+            typeof requested === "number" && Number.isFinite(requested) ? Math.floor(requested) : 500));
+        } else if (canFallbackToShared && deviceIdentity) {
           clearDeviceAuthToken({ deviceId: deviceIdentity.deviceId, role });
         }
         ws.close(CONNECT_FAILED_CLOSE_CODE, "connect failed");
@@ -496,8 +511,12 @@ export class GatewayBrowserClient {
         const pending=isAgentStartupReadError(method,error);
         const preparingTimeout=startupPending && STARTUP_READS.has(method) && error instanceof Error && error.message===`gateway request timeout: ${method}`;
         if(pending)startupPending=true;
-        const delay = Math.min(3000, 500 * 2 ** attempt);
-        if (!(pending || preparingTimeout) || attempt >= 22 ||
+        const requested = pending && error instanceof GatewayRequestError ? error.retryAfterMs : undefined;
+        const delay = typeof requested === "number" && Number.isFinite(requested) && requested >= 0
+          ? Math.max(100, Math.floor(requested)) : Math.min(3000, 500 * 2 ** attempt);
+        // The elapsed-time deadline covers short server-directed intervals too;
+        // an attempt cap would exhaust a 250ms preparation retry in seconds.
+        if (!(pending || preparingTimeout) ||
           Date.now() + delay >= deadline || !this.isActiveSocket(ws, generation) || !this.connected) throw error;
         await new Promise<void>((resolve) => {
           const timer = window.setTimeout(() => { this.retryWaiters.delete(timer); resolve(); }, delay);
@@ -559,6 +578,7 @@ export class GatewayBrowserClient {
   }
 
   private resetHandshakeState() {
+    this.startupRetryDelayMs = undefined;
     this.connectSent = false;
     this.connectNonce = null;
     this.helloReceived = false;

@@ -148,6 +148,9 @@ async function taskChecks(cdp,capture){
   await cdp.evaluate(`(()=>{const a=document.querySelector('openclaw-app');window.__releaseSmoke={a,client:a.client,jobs:a.cronJobs,form:a.cronForm,error:a.cronError,busy:a.cronBusy,loading:a.cronLoading,runs:a.cronRuns,runsJobId:a.cronRunsJobId,settings:a.settings,pending:{}};const s=window.__releaseSmoke;s.jobsFixture=['qa-a','qa-b'].map(id=>({id,name:'任务与长路径 '+id,enabled:false,schedule:{kind:'every',everyMs:90000},payload:{kind:'agentTurn',message:'review '+('long-path/'.repeat(20)),timeoutSeconds:123},delivery:{mode:'none'}}));a.client=new Proxy(s.client,{get:(target,key)=>key==='request'?((m,p)=>m==='cron.list'?Promise.resolve({jobs:s.jobsFixture}):m==='cron.runs'?(p.scope==='all'?Promise.resolve({entries:[]}):new Promise(r=>s.pending[p.id]=r)):m==='cron.status'?Promise.resolve({enabled:true}):target.request(m,p)):typeof target[key]==='function'?target[key].bind(target):target[key]});a.cronJobs=s.jobsFixture;a.cronLoading=false;a.cronBusy=false;a.cronError=null;a.cronRuns=[];a.cronRunsJobId=null;a.requestUpdate();})()`);
   await settle(cdp);
   try{
+    // The real 30s cron ticker otherwise clears this synthetic validation error.
+    // Hold its existing chat-read guard only for the fixture; restore it below.
+    await cdp.evaluate(`(()=>{const s=window.__releaseSmoke;s.chatLoading=s.a.chatLoading;s.a.chatLoading=true;s.a.requestUpdate();})()`);
     await click(cdp,`document.querySelector('.oc-rail__nav [data-view="tasks"]')`);
     await click(cdp,`document.querySelectorAll('.ts-tabs [role=tab]')[1]`);
     await click(cdp,`document.querySelectorAll('.cm-list__item')[0]`);
@@ -160,27 +163,28 @@ async function taskChecks(cdp,capture){
     for(const width of [800,1440]){
       await cdp.evaluate(`(()=>{const a=window.__releaseSmoke.a;a.cronBusy=true;a.cronError='Validation failed: '+('long-path/'.repeat(12));a.requestUpdate();})()`);
       await setViewport(cdp,width);await settle(cdp,true);
-      const checks=await cdp.evaluate(`(()=>{const error=document.querySelector('.cm-detail__error'),detail=document.querySelector('.cm-detail');return {disabled:document.querySelector('fieldset.cron-form')?.disabled===true,errorAboveForm:!!error&&!!detail&&error.getBoundingClientRect().bottom<=detail.getBoundingClientRect().top+1};})()`);
+      const checks=await cdp.evaluate(`(()=>{const error=document.querySelector('.cm-detail__error'),detail=document.querySelector('.cm-detail');return {fixtureIsolated:window.__releaseSmoke.a.chatLoading===true,injectedErrorPreserved:!!error?.textContent.includes('Validation failed: '+('long-path/'.repeat(12))),disabled:document.querySelector('fieldset.cron-form')?.disabled===true,errorAboveForm:!!error&&!!detail&&error.getBoundingClientRect().bottom<=detail.getBoundingClientRect().top+1};})()`);
       await capture(`behavior-cron-form-${width}`,true,{...checks,roundTrip});
     }
   }finally{
-    await cdp.evaluate(`(()=>{const s=window.__releaseSmoke;if(!s)return;Object.assign(s.a,{client:s.client,cronJobs:s.jobs,cronForm:s.form,cronError:s.error,cronBusy:s.busy,cronLoading:s.loading,cronRuns:s.runs,cronRunsJobId:s.runsJobId,settings:s.settings});s.a.requestUpdate();delete window.__releaseSmoke;})()`);
+    await cdp.evaluate(`(()=>{const s=window.__releaseSmoke;if(!s)return;Object.assign(s.a,{client:s.client,chatLoading:s.chatLoading,cronJobs:s.jobs,cronForm:s.form,cronError:s.error,cronBusy:s.busy,cronLoading:s.loading,cronRuns:s.runs,cronRunsJobId:s.runsJobId,settings:s.settings});s.a.requestUpdate();delete window.__releaseSmoke;})()`);
   }
 }
 
 
 async function toolCardsChecks(cdp,capture){
   await click(cdp,`document.querySelectorAll('.oc-rail__nav .oc-rail__item')[0]`);
-  await cdp.evaluate(`(()=>{const a=document.querySelector('openclaw-app');window.__toolCardsSmoke={a,messages:a.chatMessages,tools:a.chatToolMessages};a.chatMessages=[{role:'assistant',content:[{type:'toolCall',id:'qa-tool',name:'read',arguments:{path:'qa.txt'}}],timestamp:1},{role:'tool_result',tool_call_id:'qa-tool',content:[{type:'text',text:'fixture contents'}],timestamp:2},{role:'toolResult',content:[{type:'toolCall',name:'exec',arguments:{command:'pwd'},text:''}],timestamp:3}];a.chatToolMessages=[];a.requestUpdate();})()`);
+  await cdp.evaluate(`(()=>{const a=document.querySelector('openclaw-app');window.__toolCardsSmoke={a,messages:a.chatMessages,tools:a.chatToolMessages,visible:a.chatVisibleMessageCount,loading:a.chatLoading};a.chatMessages=[{role:'assistant',content:[{type:'toolCall',id:'qa-tool',name:'read',arguments:{path:'qa.txt'}}],timestamp:1},{role:'tool_result',tool_call_id:'qa-tool',content:[{type:'text',text:'fixture contents'}],timestamp:2},{role:'toolResult',content:[{type:'toolCall',name:'exec',arguments:{command:'pwd'},text:''}],timestamp:3}];a.chatToolMessages=[];a.chatVisibleMessageCount=3;a.chatLoading=false;a.requestUpdate();})()`);
   try{
     await settle(cdp);
-    await cdp.evaluate(`document.querySelectorAll('.chat-tools-collapse').forEach(el=>el.open=true)`);await settle(cdp);
-    const checks=await cdp.evaluate(`(()=>{const cards=[...document.querySelectorAll('.chat-tool-card')];return {oneCardPerInvocation:cards.length===2,noSyntheticTool:cards.every(el=>el.querySelector('.chat-tool-card__label')?.textContent.trim()!=='Tool'),resultPreserved:cards.some(el=>el.textContent.includes('fixture contents'))};})()`);
+    await cdp.evaluate(`document.querySelectorAll('oc-chat-history .chat-tools-summary[aria-expanded="false"]').forEach(el=>el.click())`);await settle(cdp);
+    await cdp.evaluate(`(()=>{const card=[...document.querySelectorAll('oc-chat-history .chat-tool-card')].find(el=>el.textContent.includes('qa.txt'));if(card?.getAttribute('aria-expanded')==='false')card.querySelector('.chat-tool-card__header').click();})()`);await settle(cdp);
+    const checks=await cdp.evaluate(`(()=>{const cards=[...document.querySelectorAll('oc-chat-history .chat-tool-card')];return {oneCardPerInvocation:cards.length===2,noSyntheticTool:cards.every(el=>el.querySelector('.chat-tool-card__label')?.textContent.trim()!=='Tool'),resultPreserved:cards.some(el=>el.textContent.includes('fixture contents')),oneExpanded:cards.filter(el=>el.getAttribute('aria-expanded')==='true').length===1};})()`);
     await capture('behavior-tool-cards',true,checks);
   }finally{
-    await cdp.evaluate(`(()=>{const s=window.__toolCardsSmoke;if(!s)return;s.a.chatMessages=s.messages;s.a.chatToolMessages=s.tools;s.a.requestUpdate();delete window.__toolCardsSmoke;})()`);
+    await cdp.evaluate(`(()=>{const s=window.__toolCardsSmoke;if(!s)return;s.a.chatMessages=s.messages;s.a.chatToolMessages=s.tools;s.a.chatVisibleMessageCount=s.visible;s.a.chatLoading=s.loading;s.a.requestUpdate();delete window.__toolCardsSmoke;})()`);
   }
 }
 
 if(require.main===module)main().then(code=>{process.exitCode=code;}).catch(error=>{console.error(error);process.exitCode=1;});
-module.exports={main,settle,click,waitForData};
+module.exports={main,settle,click,waitForData,toolCardsChecks};

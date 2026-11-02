@@ -7,6 +7,79 @@ const css = readFileSync(new URL("../../../../src/styles/compose.css", import.me
 const rail = readFileSync(new URL("../../../../src/ui/components/oc-rail.ts", import.meta.url), "utf8");
 const shell = readFileSync(new URL("../../../../src/styles/shell.css", import.meta.url), "utf8");
 
+const globals = globalThis as Record<string, unknown>;
+globals.customElements ??= { define() {}, get() { return undefined; } };
+globals.CSSStyleSheet ??= class { replaceSync() {} };
+globals.document = { nodeType: 9, currentScript: null, adoptedStyleSheets: [], createElement: () => ({}), createTreeWalker: () => ({}), querySelector: () => null, querySelectorAll: () => [], addEventListener() {}, removeEventListener() {} };
+globals.window = { document: globals.document, Element: class {}, addEventListener() {}, removeEventListener() {}, matchMedia: () => ({ matches: true }) };
+const { renderCompose } = await import("./views/chat-compose.ts");
+
+function ringTemplate(percent = 3, dirty = false): any {
+  const props: any = { draft: "", sessionKey: "context-ring", connected: true, queue: [], configuredModels: [], dirtyMeterSessions: dirty ? new Set(["context-ring"]) : undefined, onDraftChange() {}, onSend() {} };
+  const result = renderCompose(props, { activeSession: { key: "context-ring", totalTokens: percent * 1000, contextTokens: 100000 } as any,
+    composePlaceholder: "Write", modelSelectValue: null, isBusy: false, showStop: false });
+  const find = (node: any): any => {
+    if (Array.isArray(node)) { for (const item of node) { const match = find(item); if (match) return match; } }
+    else if (node?.strings && Array.isArray(node.values)) {
+      if (node.strings.some((part: string) => part.includes('class="chat-compose__ctx-ring"'))) return node;
+      for (const item of node.values) { const match = find(item); if (match) return match; }
+    }
+    return null;
+  };
+  return find(result);
+}
+
+function text(node: any): string {
+  if (Array.isArray(node)) return node.map(text).join("");
+  if (node?.strings && Array.isArray(node.values)) return node.strings.reduce((out: string, part: string, index: number) => out + part + text(node.values[index]), "");
+  return typeof node === "string" || typeof node === "number" ? String(node) : "";
+}
+
+test("context ring is a quiet numeral-free indicator while real progress and accessible usage remain", () => {
+  const rendered = text(ringTemplate());
+  const button = rendered.match(/<button[\s\S]*?<\/button>/)?.[0] ?? "";
+  assert.doesNotMatch(button, /<text\b|ctx-ring-center/, "the 3% value must not remain painted at the center");
+  assert.match(button, /aria-valuenow=3\b/);
+  assert.match(button, /aria-valuetext=/);
+  assert.match(button, /stroke-dasharray=3\.0 100/);
+  assert.match(button, /popovertarget="chat-context-meter-details"/);
+  assert.match(rendered, /3,000 \/ 100,000 tokens/);
+  assert.match(rendered, /3%|3％/);
+  const block = css.match(/\.chat-compose__ctx-ring \{[\s\S]*?\}/)?.[0] ?? "";
+  assert.match(block, /width:\s*(?:26|27|28)px/);
+  assert.match(block, /height:\s*(?:26|27|28)px/);
+  assert.match(block, /border:\s*0\s*;/);
+  assert.match(block, /background:\s*transparent\s*;/);
+  assert.match(css, /stroke-width:\s*1\.5(?:px)?\s*;/);
+  assert.doesNotMatch(css, /\.chat-compose__ctx-ring-center\b/);
+});
+
+test("context ring retains real warning/danger tones and hides missing or model-dirty usage", () => {
+  assert.match(text(ringTemplate(78)), /data-tone=warn/);
+  assert.match(text(ringTemplate(95)), /data-tone=danger/);
+  assert.equal(ringTemplate(0), null);
+  assert.equal(ringTemplate(3, true), null);
+});
+
+test("context usage details stay visible for keyboard focus after the pointer leaves", () => {
+  const ring = ringTemplate();
+  const eventHandler = (name: string) => ring.values[ring.strings.findIndex((part: string) => part.trimEnd().endsWith(`${name}=`))] as (event: Event) => void;
+  let focused = true, open = false, shows = 0;
+  const queued: Array<() => void> = [];
+  const panel = { matches: (selector: string) => selector.includes(":popover-open") ? open : false, showPopover() { open = true; shows++; }, hidePopover() { open = false; } };
+  const wrap = { querySelector: () => panel, matches: (selector: string) => selector.includes(":focus-within") && focused };
+  const event = { currentTarget: { closest: () => wrap } } as unknown as Event;
+  (globalThis as any).window.setTimeout = (callback: () => void) => { queued.push(callback); return 1; };
+  eventHandler("@focusin")(event);
+  eventHandler("@pointerenter")(event);
+  assert.equal(shows, 1);
+  eventHandler("@pointerleave")(event); queued.shift()!();
+  assert.equal(open, true, "focus keeps the actual usage details available without hover");
+  focused = false;
+  eventHandler("@focusout")(event); queued.shift()!();
+  assert.equal(open, false);
+});
+
 test("context ring：会话记忆占用改为工具条小圆环，不再占用输入卡顶部", () => {
   const field = compose.indexOf('class="field chat-compose__field"');
   const textarea = compose.indexOf("<textarea", field);

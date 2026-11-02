@@ -278,7 +278,7 @@ function renderContextRing(
     const wrap = (event.currentTarget as HTMLElement).closest(".chat-compose__ctx-wrap");
     const panel = wrap?.querySelector<HTMLElement>(".chat-compose__ctx-details");
     window.setTimeout(() => {
-      if (panel?.matches(":popover-open") && !wrap?.matches(":hover")) panel.hidePopover();
+      if (panel?.matches(":popover-open") && !wrap?.matches(":hover, :focus-within") && !panel.matches(":hover, :focus-within")) panel.hidePopover();
     }, 180);
   };
   return html`
@@ -292,6 +292,9 @@ function renderContextRing(
         aria-valuemin="0"
         aria-valuemax="100"
         aria-valuenow=${String(stats.percent)}
+        aria-valuetext=${title}
+        aria-controls="chat-context-meter-details"
+        aria-haspopup="dialog"
         popovertarget="chat-context-meter-details"
         @pointerenter=${showDetails}
         @pointerleave=${scheduleHide}
@@ -301,7 +304,6 @@ function renderContextRing(
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <circle class="chat-compose__ctx-ring-track" cx="12" cy="12" r="10" pathLength="100"></circle>
           <circle class="chat-compose__ctx-ring-fill" cx="12" cy="12" r="10" pathLength="100" stroke-dasharray=${`${stats.widthPct} 100`}></circle>
-          <text class="chat-compose__ctx-ring-center" x="12" y="12" text-anchor="middle" dominant-baseline="central">${stats.percent}</text>
         </svg>
       </button>
       <span class="chat-compose__ctx-details" id="chat-context-meter-details" popover="auto" role="dialog" aria-label=${label}

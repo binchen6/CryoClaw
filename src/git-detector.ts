@@ -2,6 +2,7 @@
 // 模式与 install-detector.ts 一致：execFile + 超时 + windowsHide；结果缓存一次
 // （git 安装状态在 app 生命周期内视为不变，不重复探测）
 import { execFile } from "child_process";
+import { resolveGitExecutable } from "./git-executable";
 import * as log from "./logger";
 
 const EXEC_TIMEOUT_MS = 5_000;
@@ -20,7 +21,7 @@ export type GitRunner = () => Promise<string>;
 function defaultRunner(): Promise<string> {
   return new Promise((resolve, reject) => {
     execFile(
-      "git",
+      resolveGitExecutable(),
       ["--version"],
       { timeout: EXEC_TIMEOUT_MS, windowsHide: true },
       (err, stdout) => {

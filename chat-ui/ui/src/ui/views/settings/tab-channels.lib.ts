@@ -234,31 +234,80 @@ export function applyFeishuSave(draft: Record<string, unknown>, params: FeishuSa
 
 /* ── QQ Bot ── */
 
-export const QQBOT_PLUGIN_ID = "qqbot";
+export const QQBOT_PLUGIN_ID = "openclaw-qqbot";
+export const QQBOT_CHANNEL_ID = "qqbot";
+export type QqbotDmPolicy = DmPolicy | "disabled";
 
 export interface QqbotView {
   enabled: boolean;
+  accountId: string;
+  accountEnabled: boolean;
+  accounts: Array<{ accountId: string; appId: string; name: string; enabled: boolean }>;
+  name: string;
   appId: string;
   clientSecret: string;
+  hasCredentials: boolean;
   markdownSupport: boolean;
+  streaming: boolean;
+  defaultRequireMention: boolean;
+  urlDirectUpload: boolean;
+  dmPolicy: QqbotDmPolicy;
+  allowFrom: string[];
+  groupPolicy: GroupPolicy;
+  groupAllowFrom: string[];
+  transport: "websocket" | "webhook";
+  webhookPath: string;
 }
 
-export function extractQqbotView(config: Record<string, unknown> | null | undefined): QqbotView {
-  const channel = isRecord(config?.channels) && isRecord(config.channels[QQBOT_PLUGIN_ID])
-    ? (config.channels[QQBOT_PLUGIN_ID] as Record<string, unknown>) : {};
+export function extractQqbotView(config: Record<string, unknown> | null | undefined, accountId = "default"): QqbotView {
+  const channel = isRecord(config?.channels) && isRecord(config.channels[QQBOT_CHANNEL_ID])
+    ? config.channels[QQBOT_CHANNEL_ID] as Record<string, unknown> : {};
+  const accounts = isRecord(channel.accounts) ? channel.accounts : {};
+  const account = accountId === "default" ? channel : isRecord(accounts[accountId]) ? accounts[accountId] : {};
+  const text = (value: unknown) => typeof value === "string" ? value : "";
+  const ids = [...(channel.appId || Object.keys(accounts).length === 0 ? ["default"] : []), ...Object.keys(accounts).filter(id => id !== "default")];
   return {
     enabled: optionalChannelEnabled(channel),
-    appId: typeof channel.appId === "string" ? channel.appId : "",
-    clientSecret: typeof channel.clientSecret === "string" ? channel.clientSecret : "",
-    markdownSupport: channel.markdownSupport === true,
+    accountId,
+    accountEnabled: account.enabled !== false,
+    accounts: ids.map(id => {
+      const entry = id === "default" ? channel : isRecord(accounts[id]) ? accounts[id] : {};
+      return { accountId: id, appId: text(entry.appId), name: text(entry.name), enabled: entry.enabled !== false };
+    }),
+    name: text(account.name),
+    appId: text(account.appId),
+    clientSecret: text(account.clientSecret),
+    hasCredentials: Boolean(account.clientSecret || account.clientSecretFile),
+    markdownSupport: account.markdownSupport !== false,
+    streaming: account.streaming === true || (isRecord(account.streaming) && account.streaming.mode === "partial"),
+    defaultRequireMention: account.defaultRequireMention !== false,
+    urlDirectUpload: account.urlDirectUpload !== false,
+    dmPolicy: account.dmPolicy === "disabled" ? "disabled" : normalizeDmPolicy(account.dmPolicy, "open"),
+    allowFrom: normalizeAllowFromEntries(account.allowFrom),
+    groupPolicy: normalizeGroupPolicy(account.groupPolicy, "open"),
+    groupAllowFrom: normalizeAllowFromEntries(account.groupAllowFrom),
+    transport: account.transport === "webhook" ? "webhook" : "websocket",
+    webhookPath: isRecord(account.webhook) ? text(account.webhook.path) : "",
   };
 }
 
 export interface QqbotSaveParams {
   enabled: boolean;
+  accountId?: string;
+  accountEnabled?: boolean;
+  name?: string;
   appId?: string;
   clientSecret?: string;
   markdownSupport?: boolean;
+  streaming?: boolean;
+  defaultRequireMention?: boolean;
+  urlDirectUpload?: boolean;
+  dmPolicy?: QqbotDmPolicy;
+  allowFrom?: string[];
+  groupPolicy?: GroupPolicy;
+  groupAllowFrom?: string[];
+  transport?: "websocket" | "webhook";
+  webhookPath?: string;
 }
 
 /** 移植自主进程 saveQqbotConfig：保留高级字段，仅覆盖设置页可管理的核心字段 */
@@ -267,31 +316,42 @@ export function applyQqbotSave(draft: Record<string, unknown>, params: QqbotSave
   const entries = ensureRecord(plugins, "entries");
   const channels = ensureRecord(draft, "channels");
 
-  const existingEntry = isRecord(entries[QQBOT_PLUGIN_ID]) ? (entries[QQBOT_PLUGIN_ID] as Record<string, unknown>) : {};
-  const existingChannel = isRecord(channels[QQBOT_PLUGIN_ID]) ? (channels[QQBOT_PLUGIN_ID] as Record<string, unknown>) : {};
-
-  entries[QQBOT_PLUGIN_ID] = { ...existingEntry, enabled: params.enabled === true };
-
-  if (params.enabled !== true) {
-    channels[QQBOT_PLUGIN_ID] = { ...existingChannel, enabled: false };
-    return;
+  const legacyEntry = isRecord(entries[QQBOT_CHANNEL_ID]) ? entries[QQBOT_CHANNEL_ID] : {};
+  const existingEntry = isRecord(entries[QQBOT_PLUGIN_ID]) ? entries[QQBOT_PLUGIN_ID] : {};
+  entries[QQBOT_PLUGIN_ID] = { ...legacyEntry, ...existingEntry, enabled: params.enabled };
+  delete entries[QQBOT_CHANNEL_ID];
+  if (Array.isArray(plugins.allow)) plugins.allow = dedupeEntries(plugins.allow.map(id => id === QQBOT_CHANNEL_ID ? QQBOT_PLUGIN_ID : id) as string[]);
+  if (Array.isArray(plugins.deny)) plugins.deny = dedupeEntries(plugins.deny.map(id => id === QQBOT_CHANNEL_ID ? QQBOT_PLUGIN_ID : id) as string[]);
+  if (isRecord(plugins.installs) && Object.hasOwn(plugins.installs, QQBOT_CHANNEL_ID)) {
+    if (!Object.hasOwn(plugins.installs, QQBOT_PLUGIN_ID)) plugins.installs[QQBOT_PLUGIN_ID] = plugins.installs[QQBOT_CHANNEL_ID];
+    delete plugins.installs[QQBOT_CHANNEL_ID];
   }
-
+  const channel = ensureRecord(channels, QQBOT_CHANNEL_ID);
+  channel.enabled = params.enabled;
+  // The bundled runtime must only upgrade through CryoClaw's managed updater.
+  channel.upgradeMode = "doc";
+  if (!params.enabled) return;
   syncPluginAllowOnEnable(draft, QQBOT_PLUGIN_ID);
-
-  const allowFrom = normalizeAllowFromEntries(existingChannel.allowFrom);
-  const next: Record<string, unknown> = {
-    ...existingChannel,
-    enabled: true,
-    appId: String(params.appId ?? "").trim(),
-    clientSecret: String(params.clientSecret ?? "").trim(),
-    markdownSupport: params.markdownSupport === true,
-    // 未配置时默认允许所有发送者触发命令
-    allowFrom: allowFrom.length > 0 ? allowFrom : [WILDCARD_ALLOW_ENTRY],
-  };
-  // 设置页直接写入明文密钥时，清理 file-based 旧配置，避免来源冲突
-  delete next.clientSecretFile;
-  channels[QQBOT_PLUGIN_ID] = next;
+  const accountId = params.accountId ?? "default";
+  const account = accountId === "default" ? channel : ensureRecord(ensureRecord(channel, "accounts"), accountId);
+  if (accountId !== "default" && params.accountEnabled !== undefined) account.enabled = params.accountEnabled;
+  for (const key of ["name", "appId"] as const) if (params[key] !== undefined) account[key] = params[key]!.trim();
+  // Blank / redacted form values mean keep the existing credential source.
+  if (params.clientSecret?.trim() && params.clientSecret !== "__OPENCLAW_REDACTED__") {
+    account.clientSecret = params.clientSecret.trim();
+    delete account.clientSecretFile;
+  }
+  for (const key of ["markdownSupport", "defaultRequireMention", "urlDirectUpload", "groupPolicy", "transport"] as const) {
+    if (params[key] !== undefined) account[key] = params[key];
+  }
+  if (params.streaming !== undefined) account.streaming = { mode: params.streaming ? "partial" : "off" };
+  if (params.dmPolicy !== undefined) account.dmPolicy = params.dmPolicy;
+  if (params.allowFrom !== undefined) account.allowFrom = normalizeAllowFromEntries(params.allowFrom).filter(id => params.dmPolicy === "open" || id !== "*");
+  if (params.dmPolicy === "open") account.allowFrom = dedupeEntries([...normalizeAllowFromEntries(account.allowFrom), "*"]);
+  else if (params.dmPolicy === undefined && account.allowFrom === undefined) account.allowFrom = ["*"];
+  if (params.groupAllowFrom !== undefined) account.groupAllowFrom = normalizeAllowFromEntries(params.groupAllowFrom);
+  if (params.webhookPath !== undefined) ensureRecord(account, "webhook").path = params.webhookPath.trim();
+  account.upgradeMode = "doc";
 }
 
 /* ── 钉钉 ── */

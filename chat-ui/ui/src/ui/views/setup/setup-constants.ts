@@ -205,7 +205,7 @@ export function isValidHttpBaseUrl(baseURL: string): boolean {
   if (typeof baseURL !== "string" || baseURL.length === 0 || baseURL.length > 2048) return false;
   try {
     const u = new URL(baseURL);
-    return u.protocol === "http:" || u.protocol === "https:";
+    return (u.protocol === "http:" || u.protocol === "https:") && !/\/(?:responses|messages|chat\/completions)\/*$/i.test(u.pathname);
   } catch {
     return false;
   }

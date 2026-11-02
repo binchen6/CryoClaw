@@ -2,6 +2,7 @@
 // execFile 数组传参（无 shell 注入面）+ 超时 + windowsHide + maxBuffer 截断检测；
 // 非零退出也统一 resolve 为结构化结果，由调用方按 code/stderr/truncated 分类。
 import { execFile } from "child_process";
+import { resolveGitExecutable } from "./git-executable";
 
 export type GitRunResult = { code: number; stdout: string; stderr: string; truncated: boolean };
 
@@ -15,7 +16,7 @@ const realRunner =
   (cwd: string, timeoutMs: number, maxBuffer: number, env?: Record<string, string>): GitRunner =>
   (args, callback) => {
     execFile(
-      "git",
+      resolveGitExecutable(),
       args,
       {
         cwd,
@@ -38,7 +39,8 @@ export function runGit(
 ): Promise<GitRunResult> {
   const run = runner ?? realRunner(cwd, timeoutMs, maxBuffer, env);
   return new Promise((resolve, reject) => {
-    run(args, (err, stdout, stderr) => {
+    // Every path supplied by the UI is a filename, never Git pathspec syntax.
+    run(["--literal-pathspecs", ...args], (err, stdout, stderr) => {
       if (err && err.killed) {
         reject(new Error(`git ${args[0]} timed out (${timeoutMs}ms)`));
         return;

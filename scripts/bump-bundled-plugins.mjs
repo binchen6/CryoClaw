@@ -33,7 +33,7 @@ const NPM_PINS = [
   ["weixin", "@tencent-weixin/openclaw-weixin"],
   ["wecom", "@wecom/wecom-openclaw-plugin"],
   ["feishuPlugin", "@openclaw/feishu"],
-  ["qqbotPlugin", "@openclaw/qqbot"],
+  ["qqbotPlugin", "@tencent-connect/openclaw-qqbot"],
   ["moonshotProviderPlugin", "@openclaw/moonshot-provider"],
   ["kimiProviderPlugin", "@openclaw/kimi-provider"],
   ["zaiProviderPlugin", "@openclaw/zai-provider"],

@@ -57,18 +57,25 @@ async function main(argv = process.argv) {
       client.stop();
       window.__qaGatewayEvent = client.opts.onEvent;
       app.tab = 'chat'; app.connected = true; app.chatLoading = false;
-      app.chatSending = false; app.chatRunId = 'qa-isolated-run';
+      app.chatSending = false; app.chatRunId = null;
       app.chatMessages = [{role:'user',content:[{type:'text',text:'请检查工作区的改动。'}]},
         {role:'assistant',content:[{type:'text',text:'正在检查工作区，并整理当前进度。\\n\\n这是一条隔离测试消息，不会调用模型或修改真实会话。'}]}];
       app.chatAbortPending = false; app.lastError = null;
       window.__qaRequests = [];
       client.request = (method) => {
         window.__qaRequests.push(method);
+        if (method === 'chat.send') return Promise.resolve({runId:'qa-isolated-run',status:'started'});
         if (method === 'chat.abort') return new Promise(resolve => { window.__qaResolveAbort = resolve; });
         // Unrelated services deliberately stay pending: malformed catch-all {} replies
         // can corrupt typed state (e.g. sessions.list requires a sessions array).
         return new Promise(() => {});
       };
+      // Seed the real per-session runtime through Send, rather than mutating only
+      // the visible projection while its runtime still describes an idle chat.
+      app.chatMessage = '这是隔离停止验证，不会调用真实模型。';
+      await app.handleSendChat();
+      app.sessionsResult = {sessions:[{key:app.sessionKey,totalTokens:3000,contextTokens:100000}]};
+      app.dirtyMeterSessions = new Set();
       app.requestUpdate(); await app.updateComplete; return true;
     })()`);
     await until("!!document.querySelector('.chat-compose__send-btn--stop')", 'Stop rendered');
@@ -97,7 +104,13 @@ async function main(argv = process.argv) {
             buttonWidth:b.getBoundingClientRect().width, iconWidth:glyph.getBoundingClientRect().width,
             toolbarFits:toolbar.left>=0 && toolbar.right<=innerWidth+1,
             horizontalOverflow:document.documentElement.scrollWidth>innerWidth,
-            textareaScrollbar:getComputedStyle(document.querySelector('.chat-compose textarea')).scrollbarWidth};
+            textareaScrollbar:getComputedStyle(document.querySelector('.chat-compose textarea')).scrollbarWidth,
+            ring:(()=>{const ring=document.querySelector('.chat-compose__ctx-ring'),svg=ring.querySelector('svg');return {
+              width:ring.getBoundingClientRect().width,height:ring.getBoundingClientRect().height,
+              svgWidth:svg.getBoundingClientRect().width,stroke:getComputedStyle(svg.querySelector('circle')).strokeWidth,
+              numeral:ring.innerText.trim(),svgText:!!svg.querySelector('text'),value:ring.getAttribute('aria-valuenow'),
+              dash:svg.querySelector('.chat-compose__ctx-ring-fill').getAttribute('stroke-dasharray'),
+              border:getComputedStyle(ring).borderTopWidth,background:getComputedStyle(ring).backgroundColor};})()};
         })()`);
         report.scenarios.push({ width, theme, ...facts });
         const image = await cdp.send('Page.captureScreenshot', { format: 'png' });
@@ -108,8 +121,22 @@ async function main(argv = process.argv) {
         assert.equal(facts.buttonWidth, 34); assert.equal(facts.iconWidth, 10);
         assert.ok(facts.toolbarFits); assert.equal(facts.horizontalOverflow, false);
         assert.equal(facts.textareaScrollbar, 'none');
+        assert.deepEqual(facts.ring,{width:28,height:28,svgWidth:20,stroke:'1.5px',numeral:'',svgText:false,
+          value:'3',dash:'3.0 100',border:'0px',background:'rgba(0, 0, 0, 0)'});
       }
     }
+    await cdp.evaluate("document.querySelector('.chat-compose__ctx-ring').focus();true");
+    await until("!!document.querySelector('.chat-compose__ctx-details:popover-open')",'Keyboard focus opens real usage details');
+    await cdp.send('Input.dispatchMouseEvent',{type:'mouseMoved',x:10,y:10});
+    await cdp.evaluate("document.querySelector('.chat-compose__ctx-ring').dispatchEvent(new PointerEvent('pointerleave'));true");
+    await new Promise(resolve=>setTimeout(resolve,220));
+    assert.equal(await cdp.evaluate("!!document.querySelector('.chat-compose__ctx-details:popover-open') && document.querySelector('.chat-compose__ctx-details').textContent.includes('3,000 / 100,000')"),true);
+    await cdp.evaluate("document.querySelector('.chat-compose__ctx-ring').click();true");
+    await until("!document.querySelector('.chat-compose__ctx-details:popover-open')",'Same usage trigger closes details');
+    await cdp.evaluate("document.querySelector('.chat-compose__ctx-ring').click();true");
+    await until("!!document.querySelector('.chat-compose__ctx-details:popover-open')",'Usage details reopen by click');
+    await cdp.evaluate("document.querySelector('.chat-compose__ctx-ring').blur();document.querySelector('.chat-compose__ctx-details').hidePopover();true");
+    report.contextRing={numeralFree:true,realUsage:true,lightDarkAndNarrow:true,keyboardFocus:true,triggerToggle:true};
     // Exercise the actual abort handler without a provider: one click, pending state,
     // duplicate-input guard, then ACK and terminal event settle the run separately.
     await cdp.evaluate(`(() => {
@@ -159,14 +186,15 @@ async function main(argv = process.argv) {
       app.settingsTabHint = 'shortcuts';
       app.settings = {...app.settings, cryoclawView:'settings'}; app.requestUpdate(); return true;
     })()`);
-    await until("document.querySelectorAll('.oc-shortcuts__row').length === 7", 'Shortcut catalog loaded');
+    const configurableShortcutRows = '.oc-shortcuts__list:not(.oc-shortcuts__list--fixed) .oc-shortcuts__row';
+    await until(`document.querySelectorAll(${JSON.stringify(configurableShortcutRows)}).length === 12`, 'Complete configurable shortcut catalog loaded');
     report.shortcutSearch = [];
-    for (const [query, expected] of [['保存', 1], ['no-matching-shortcut', 0], ['', 7]]) {
+    for (const [query, expected] of [['保存', 1], ['no-matching-shortcut', 0], ['', 12]]) {
       await cdp.evaluate(`(() => {
         const field = document.querySelector('.oc-shortcuts input');
         field.value = ${JSON.stringify(query)}; field.dispatchEvent(new Event('input', {bubbles:true})); return true;
       })()`);
-      await until(`document.querySelectorAll('.oc-shortcuts__row').length === ${expected}`, 'Shortcut search');
+      await until(`document.querySelectorAll(${JSON.stringify(configurableShortcutRows)}).length === ${expected}`, 'Shortcut search');
       report.shortcutSearch.push({query, matches:expected});
     }
     await setViewport(cdp, 1440, {height:1000}); await setTheme(cdp, 'light');
@@ -200,17 +228,21 @@ async function main(argv = process.argv) {
       await until(`document.querySelectorAll('.chat-command-jobs__entry').length === ${expected}`, 'Command history filter');
       report.commandFilters.push({index,matches:expected});
     }
-    // Open real lazy tool disclosures before testing the read/edit/command sheets.
+    // The timeline keeps one card expanded. Exercise each real disclosure in turn.
     await cdp.evaluate(`(() => {
-      document.querySelectorAll('oc-chat-history details').forEach(details => {details.open=true;}); return true;
+      document.querySelectorAll('oc-chat-history .chat-tools-summary[aria-expanded="false"]').forEach(button => button.click()); return true;
     })()`);
-    await until("document.querySelectorAll('.chat-tool-sheet').length >= 4", 'Structured tool sheets');
-    report.toolSheets = await cdp.evaluate(`(() => {
-      const button = document.querySelector('.chat-tool-sheet__wrap'); button.click();
-      return {count:document.querySelectorAll('.chat-tool-sheet').length,
-        read:!!document.querySelector('.chat-tool-sheet--read'),diff:!!document.querySelector('.chat-tool-sheet--diff'),
-        command:!!document.querySelector('.chat-tool-sheet--command'),wrap:button.getAttribute('aria-pressed')};
-    })()`);
+    await until("document.querySelectorAll('oc-chat-history .chat-tool-card').length === 4", 'Four actual timeline cards');
+    report.toolSheets = {};
+    for (const [index, kind] of [[0,'command'],[2,'read'],[3,'diff']]) {
+      await cdp.evaluate(`(()=>{const card=document.querySelectorAll('oc-chat-history .chat-tool-card')[${index}];if(card.getAttribute('aria-expanded')==='false')card.querySelector('.chat-tool-card__header').click();return true})()`);
+      await until(`!!document.querySelector('.chat-tool-sheet--${kind}')`, `Structured ${kind} sheet`);
+      assert.equal(await cdp.evaluate("document.querySelectorAll('oc-chat-history .chat-tool-card[aria-expanded=true]').length"),1);
+      report.toolSheets[kind]=true;
+    }
+    await cdp.evaluate("document.querySelectorAll('oc-chat-history .chat-tool-card')[2].querySelector('.chat-tool-card__header').click();true");
+    await until("!!document.querySelector('.chat-tool-sheet--read')", 'Read sheet reopened');
+    report.toolSheets.wrap=await cdp.evaluate("(()=>{const button=document.querySelector('.chat-tool-sheet__wrap');button.click();return button.getAttribute('aria-pressed')})()");
     assert.ok(report.toolSheets.read && report.toolSheets.diff && report.toolSheets.command);
     assert.equal(report.toolSheets.wrap, 'true');
     await cdp.evaluate("document.querySelector('.chat-thread').scrollTop=document.querySelector('.chat-thread').scrollHeight");
@@ -241,6 +273,52 @@ async function main(argv = process.argv) {
     assert.equal(report.readSheetVisible, true);
     const readImage = await cdp.send('Page.captureScreenshot', {format:'png'});
     fs.writeFileSync(path.join(out, 'tools-read-edit.png'), Buffer.from(readImage.data, 'base64'));
+    await cdp.evaluate("(()=>{const app=document.querySelector('openclaw-app');app.applySettings({...app.settings,cryoclawView:'chat',dockCollapsed:true,embeddedBrowserEnabled:true});return true})()");
+    await until("!document.querySelector('oc-context-dock') && !!document.querySelector('.cc-contextbar__actions .cc-contextbar__toggle')",'Collapsed Dock leaves only upper-right entry');
+    assert.equal(await cdp.evaluate("(()=>{const main=document.querySelector('.chat-main').getBoundingClientRect(),split=document.querySelector('.chat-split-container').getBoundingClientRect();return Math.abs(main.right-split.right)<2 && !document.querySelector('.chat-sidebar--collapsed')})()"),true);
+    await cdp.evaluate("document.querySelector('.cc-contextbar__actions .cc-contextbar__toggle').click();true");
+    await until("document.querySelectorAll('.context-dock__launcher [data-dock-open]').length===5",'Centered Dock launcher contains real feature entries');
+    assert.equal(await cdp.evaluate("document.querySelectorAll('.context-dock__chip').length"),0);
+    await cdp.evaluate("(async()=>{await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));await Promise.all(document.getAnimations().filter(a=>Number.isFinite(a.effect?.getComputedTiming().endTime)).map(a=>a.finished.catch(()=>{})));return true})()");
+    report.dockLayout=await cdp.evaluate("(()=>{const dock=document.querySelector('.chat-sidebar').getBoundingClientRect(),chat=document.querySelector('.chat').getBoundingClientRect(),compose=document.querySelector('.chat-compose').getBoundingClientRect(),main=document.querySelector('.chat-main').getBoundingClientRect();return {composeAvoidsDock:compose.right<=dock.left+1,mainAvoidsDock:main.right<=dock.left+1,dockFullHeight:Math.abs(dock.bottom-chat.bottom)<3,documentOverflow:document.documentElement.scrollWidth>innerWidth}})()");
+    assert.deepEqual(report.dockLayout,{composeAvoidsDock:true,mainAvoidsDock:true,dockFullHeight:true,documentOverflow:false});
+    fs.writeFileSync(path.join(out,'dock-launcher.png'),Buffer.from((await cdp.send('Page.captureScreenshot',{format:'png'})).data,'base64'));
+    const drag=await cdp.evaluate("(()=>{const divider=document.querySelector('oc-resizable-divider'),r=divider.getBoundingClientRect(),app=document.querySelector('openclaw-app');return {x:r.left+r.width/2,y:r.top+Math.min(120,r.height/2),ratio:app.splitRatio,width:document.querySelector('.chat-sidebar').getBoundingClientRect().width}})()");
+    await cdp.send('Input.dispatchMouseEvent',{type:'mouseMoved',x:drag.x,y:drag.y});
+    await cdp.send('Input.dispatchMouseEvent',{type:'mousePressed',x:drag.x,y:drag.y,button:'left',buttons:1,clickCount:1});
+    await cdp.send('Input.dispatchMouseEvent',{type:'mouseMoved',x:drag.x-80,y:drag.y,button:'left',buttons:1});
+    await cdp.send('Input.dispatchMouseEvent',{type:'mouseReleased',x:drag.x-80,y:drag.y,button:'left',buttons:0,clickCount:1});
+    await until(`document.querySelector('.chat-sidebar').getBoundingClientRect().width>${drag.width}+35`,'Dragging the actual divider widens the Dock');
+    assert.equal(await cdp.evaluate("(()=>{const app=document.querySelector('openclaw-app');return app.settings.splitRatio===app.splitRatio && !document.querySelector('oc-resizable-divider').classList.contains('dragging')})()"),true);
+    await cdp.evaluate(`document.querySelector('openclaw-app').handleSplitRatioChange(${drag.ratio});true`);
+    await setViewport(cdp,800,{height:1000});
+    await cdp.evaluate("new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))");
+    const narrowDock=await cdp.evaluate("(()=>{const compose=document.querySelector('.chat-compose').getBoundingClientRect(),dock=document.querySelector('.chat-sidebar').getBoundingClientRect();return {avoids:compose.right<=dock.left+1,overflow:document.documentElement.scrollWidth>innerWidth}})()");
+    assert.deepEqual(narrowDock,{avoids:true,overflow:false});
+    fs.writeFileSync(path.join(out,'dock-launcher-800.png'),Buffer.from((await cdp.send('Page.captureScreenshot',{format:'png'})).data,'base64'));
+    await setViewport(cdp,1440,{height:1000});
+    await cdp.evaluate("document.querySelector('.context-dock__launcher [data-dock-open=changes]').click();true");
+    await until("document.querySelectorAll('.context-dock__chip').length===1 && !!document.querySelector('[data-change-view=tree]')",'Changes opens a real closeable chip and view switch');
+    await cdp.evaluate("document.querySelector('[data-change-view=tree]').click();true");
+    await until("!!document.querySelector('.context-dock__change-directory')",'Changes tree groups actual tool edits');
+    fs.writeFileSync(path.join(out,'dock-changes-tree.png'),Buffer.from((await cdp.send('Page.captureScreenshot',{format:'png'})).data,'base64'));
+    await cdp.evaluate("document.querySelectorAll('.context-dock__actions button')[1].click();true");
+    await until("document.querySelector('.chat-main')?.style.display==='none' && !document.querySelector('.chat-compose').checkVisibility()",'Maximize hides the complete left column');
+    await cdp.evaluate("document.querySelectorAll('.context-dock__actions button')[1].click();true");
+    await until("document.querySelector('.chat-compose')?.checkVisibility() && document.querySelector('.chat-main')?.style.display!=='none'",'Restore returns composer and conversation');
+    await cdp.evaluate("document.querySelector('.context-dock__actions [popovertarget]').click();true");
+    await until("!!document.querySelector('.context-dock__new-tab-menu:popover-open')",'Outer plus opens feature menu');
+    await cdp.evaluate("document.querySelector('.context-dock__new-tab-menu [data-dock-open=terminal]').click();true");
+    await until("document.querySelectorAll('.context-dock__chip').length===2 && !!document.querySelector('.context-dock__body oc-command-jobs')",'Terminal tab shows real command history');
+    await cdp.evaluate("document.querySelector('[data-dock-close=terminal]').click();true");
+    await until("document.querySelectorAll('.context-dock__chip').length===1",'Closing active chip selects a survivor');
+    await cdp.evaluate("document.querySelector('[data-dock-close=changes]').click();true");
+    await until("!!document.querySelector('.context-dock__launcher') && document.querySelectorAll('.context-dock__chip').length===0",'Closing last chip returns to launcher');
+    await cdp.evaluate("document.querySelector('.cc-contextbar__actions .cc-contextbar__toggle').click();true");
+    await until("!document.querySelector('oc-context-dock')",'Same upper-right entry collapses Dock');
+    assert.equal(await cdp.evaluate("(()=>{document.activeElement?.blur();const e=new KeyboardEvent('keydown',{key:'G',ctrlKey:true,shiftKey:true,bubbles:true,cancelable:true});document.dispatchEvent(e);return e.defaultPrevented})()"),true);
+    await until("!!document.querySelector('[data-dock-close=changes]') && !document.querySelector('.context-dock__launcher')",'Actual configured shortcut opens content directly');
+    report.dock={collapsedRailRemoved:true,conversationWidthReclaimed:true,launcher:true,chipClose:true,changesTree:true,commandHistory:true,shortcut:true,dragResizeAndPreference:true};
     report.rendererExceptions = cdp.exceptions;
     assert.equal(cdp.exceptions.length, 0);
     report.ok = true;

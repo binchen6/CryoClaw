@@ -78,6 +78,9 @@ declare global {
       openWebUI?: () => void;
       openExternal?: (url: string) => unknown;
       getGatewayPort?: () => Promise<number>;
+      settingsQqbotLoginStart?: () => Promise<any>;
+      settingsQqbotLoginWait?: (params: { attemptId: string }) => Promise<any>;
+      settingsQqbotLoginCancel?: (params: { attemptId: string }) => Promise<any>;
       skillStoreList?: (params?: Record<string, unknown>) => Promise<any>;
       skillStoreSearch?: (params?: Record<string, unknown>) => Promise<any>;
       skillStoreInstall?: (params?: Record<string, unknown>) => Promise<any>;
@@ -105,6 +108,7 @@ declare global {
       workspaceOpenFolder?: (filePath: string) => Promise<any>;
       workspaceOpenWith?: (params: { path: string; target: "vscode" | "explorer" | "terminal" | "git-bash" }) => Promise<any>;
       embeddedBrowserShow?: (params: unknown) => Promise<any>;
+      embeddedBrowserUtility?: (params: { action: string; [key: string]: unknown }) => Promise<any>;
       embeddedBrowserHide?: () => Promise<any>;
       embeddedBrowserBounds?: (bounds: unknown) => Promise<any>;
       embeddedBrowserNavigate?: (url: string) => Promise<any>;
@@ -349,6 +353,12 @@ function renderContextBar(
             <oc-session-change-summary
               .files=${sessionChanges}
               .statsLoader=${() => fetchSessionChangeStats(state, sessionChanges)}
+              .statsContext=${JSON.stringify([state.sessionKey, state.gitRepoPath, state.gitAvailable,
+                state.settings.sessionWorkspaceMap[state.sessionKey], state.settings.pinnedWorkspaces,
+                state.gitRepoOptions.map(repo => repo.path)])}
+              .changeRevision=${state.chatToolMessages}
+              .historyRevision=${state.chatMessages}
+              .runId=${state.chatRunId}
               .onOpenChanges=${openChanges}
             ></oc-session-change-summary>
             <button

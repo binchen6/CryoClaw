@@ -63,6 +63,7 @@ function switchPlatform(newPlatform: string) {
   const prev = s.activePlatform;
   if (prev === newPlatform) return;
   if (prev === "weixin") cleanupWeixinTab();
+  if (prev === "qqbot") resetQqbotTab();
   s.activePlatform = newPlatform;
 }
 

@@ -739,6 +739,13 @@
   text-align: center;
 }
 
+[data-page-id="settings:channels:qqbot"] .btn-row {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: var(--spacer-8);
+}
+
 /* ============================================
    备份与恢复 tab
    ============================================ */

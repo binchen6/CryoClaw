@@ -585,7 +585,10 @@ function resolveToolGroupView(cards: ToolCard[], key: string): ToolGroupView {
   return view;
 }
 
-function requestChatRender() {
+function requestChatRender(event?: Event) {
+  const target = event?.currentTarget as HTMLElement | null;
+  const owner = target?.closest?.("oc-chat-history, oc-chat-stream") as (HTMLElement & { refreshToolDisclosures?(): void }) | null;
+  if (owner?.refreshToolDisclosures) { owner.refreshToolDisclosures(); return; }
   const app = document.querySelector("openclaw-app") as (HTMLElement & { requestUpdate(): void }) | null;
   app?.requestUpdate();
 }
@@ -606,10 +609,10 @@ function renderCollapsedToolCards(
         class="chat-tools-summary ${hasError ? "chat-tools-summary--failed" : ""}"
         type="button"
         aria-expanded=${String(view.open)}
-        @click=${() => {
+        @click=${(event: Event) => {
           view.open = !view.open;
           if (view.open && !view.expandedId) view.expandedId = latestId;
-          requestChatRender();
+          requestChatRender(event);
         }}
       >
         ${hasError ? html`<span class="chat-tools-summary__error" aria-hidden="true">${icons.x}</span>` : nothing}
@@ -636,11 +639,11 @@ function renderCollapsedToolCards(
               const id = toolCardKey(card, index);
               return renderToolCardSidebar(card, onOpenSidebar, {
                 expanded: view.expandedId === id,
-                onToggleExpanded: () => {
+                onToggleExpanded: (event?: Event) => {
                   const opening = view.expandedId !== id;
                   view.expandedId = opening ? id : undefined;
                   view.manual = true;
-                  requestChatRender();
+                  requestChatRender(event);
                 },
               });
             })}

@@ -1,3 +1,5 @@
+import { resolveV1Endpoint } from "./provider-api-url";
+
 export type JsonRequest = (
   url: string,
   opts: { method?: string; headers?: Record<string, string>; body?: string },
@@ -36,11 +38,6 @@ const UA_OPENAI = "OpenAI/JS 6.10.0";
 const TINY_PNG_B64 =
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAAAAAA6fptVAAAACklEQVR42mNg" +
   "AAAAAgAB5Sfe/AAAAABJRU5ErkJggg==";
-
-function resolveAnthropicMessagesUrl(baseURL: string): string {
-  const base = baseURL.replace(/\/+$/, "");
-  return base.endsWith("/v1") ? `${base}/messages` : `${base}/v1/messages`;
-}
 
 function readErrorMessage(err: unknown): string {
   if (err instanceof Error && err.message.trim()) return err.message.trim();
@@ -108,7 +105,7 @@ export async function probeImageSupport(params: ImageProbeParams): Promise<Image
       };
       if (auth === "x-api-key" && apiKey) headers["x-api-key"] = apiKey;
 
-      await request(resolveAnthropicMessagesUrl(baseURL), {
+      await request(resolveV1Endpoint(baseURL, "messages"), {
         method: "POST",
         headers: { ...extraHeaders, ...headers },
         body: JSON.stringify({
@@ -157,7 +154,7 @@ export async function probeImageSupport(params: ImageProbeParams): Promise<Image
       };
       if (auth === "bearer" && apiKey) headers.Authorization = `Bearer ${apiKey}`;
 
-      await request(`${baseURL.replace(/\/+$/, "")}/v1/responses`, {
+      await request(resolveV1Endpoint(baseURL, "responses"), {
         method: "POST",
         headers: { ...extraHeaders, ...headers },
         body: JSON.stringify({

@@ -855,3 +855,42 @@ test("迁移抛错时记 log.error（不再静默吞错）", async () => {
   expect(() => migrateOpenclawConfigForKernelUpgrade()).not.toThrow();
   expect(logger.error).toHaveBeenCalledWith(expect.stringContaining("迁移失败"));
 });
+
+test("Tencent QQ migration preserves policies and disabled plugin settings before unavailable-plugin cleanup", async () => {
+  writeKernelVersion("2026.10.9");
+  fs.mkdirSync(path.join(mockState.gatewayPkgDir, "dist", "extensions", "openclaw-qqbot"), { recursive: true });
+  mockState.currentConfig = {
+    plugins: { allow: ["other", "qqbot"], deny: ["qqbot"], entries: { qqbot: { enabled: false, config: { preserved: true } } }, installs: { qqbot: { source: "npm", spec: "@openclaw/qqbot@2026.7.1", custom: 1 } } },
+    channels: { qqbot: { enabled: false, dmPolicy: "open", allowFrom: ["*"], accounts: { team: { appId: "123", appSecret: "keep-secret", unknown: { keep: true } } } } },
+  };
+  const channels = structuredClone(mockState.currentConfig.channels);
+  const { migrateOpenclawConfigForKernelUpgrade } = await import("./openclaw-config-migration");
+  migrateOpenclawConfigForKernelUpgrade();
+  expect(mockState.currentConfig.channels).toMatchObject(channels);
+  expect(mockState.currentConfig.channels.qqbot.upgradeMode).toBe("doc");
+  expect(mockState.currentConfig.channels.qqbot.accounts.team.upgradeMode).toBe("doc");
+  expect(mockState.currentConfig.plugins.entries["openclaw-qqbot"]).toEqual({ enabled: false, config: { preserved: true } });
+  expect(mockState.currentConfig.plugins.entries.qqbot).toBeUndefined();
+  expect(mockState.currentConfig.plugins.allow).toEqual(["other", "openclaw-qqbot"]);
+  expect(mockState.currentConfig.plugins.deny).toEqual(["openclaw-qqbot"]);
+  expect(mockState.currentConfig.plugins.installs["openclaw-qqbot"].custom).toBe(1);
+  expect(mockState.currentConfig.plugins.installs.qqbot).toBeUndefined();
+});
+
+test("Tencent QQ migration keeps enabled accounts, deduplicates allowlists and never logs channel secrets", async () => {
+  writeKernelVersion("2026.10.9");
+  fs.mkdirSync(path.join(mockState.gatewayPkgDir, "dist", "extensions", "openclaw-qqbot"), { recursive: true });
+  mockState.currentConfig = {
+    tools: { updatePlan: true },
+    plugins: { allow: ["qqbot", "other", "openclaw-qqbot"], entries: { qqbot: { enabled: true, custom: "keep" } } },
+    channels: { qqbot: { enabled: true, appId: "12", clientSecret: "private-migration-secret", dmPolicy: "allowlist", allowFrom: ["SCANNER"], accounts: { secondary: { appId: "34", clientSecret: "second-private-secret", enabled: false, groupPolicy: "disabled" } } } },
+  };
+  const { migrateOpenclawConfigForKernelUpgrade } = await import("./openclaw-config-migration");
+  migrateOpenclawConfigForKernelUpgrade();
+  expect(mockState.currentConfig.plugins.entries["openclaw-qqbot"]).toEqual({ enabled: true, custom: "keep" });
+  expect(mockState.currentConfig.plugins.allow).toEqual(["openclaw-qqbot", "other"]);
+  expect(mockState.currentConfig.channels.qqbot).toMatchObject({ enabled: true, clientSecret: "private-migration-secret", dmPolicy: "allowlist", allowFrom: ["SCANNER"], accounts: { secondary: { enabled: false, clientSecret: "second-private-secret", groupPolicy: "disabled" } } });
+  const logger = await import("./logger");
+  expect(JSON.stringify(vi.mocked(logger.info).mock.calls)).not.toContain("private-migration-secret");
+  const count = mockState.writeCount; migrateOpenclawConfigForKernelUpgrade(); expect(mockState.writeCount).toBe(count);
+});

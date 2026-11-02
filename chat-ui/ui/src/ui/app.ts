@@ -249,6 +249,8 @@ export class OpenClawApp extends LitElement {
     subagentPanelLoading: { state: true },
     subagentPanelError: { state: true },
     dockActiveTab: { state: true },
+    dockOpenedTabs: { state: true },
+    dockLauncherOpen: { state: true },
     dockMaximized: { state: true },
     splitRatio: { state: true },
     execApprovalQueue: { state: true },
@@ -470,6 +472,8 @@ export class OpenClawApp extends LitElement {
   subagentPanelLoading = false;
   subagentPanelError: string | null = null;
   dockActiveTab: DockTabId = "changes";
+  dockOpenedTabs: DockTabId[] = [];
+  dockLauncherOpen = true;
   dockMaximized = false;
   splitRatio = this.settings.splitRatio;
 

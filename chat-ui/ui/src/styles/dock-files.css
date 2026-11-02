@@ -1,0 +1,136 @@
+/* Files dock keeps preview and navigation separate without changing workspace-page state. */
+oc-dock-files,
+.dock-files {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  color: var(--text);
+}
+
+.dock-files__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacer-8);
+  padding: var(--spacer-8) var(--spacer-12);
+  border-bottom: var(--hairline);
+  background: var(--bg);
+}
+
+.dock-files__workspace,
+.dock-files__actions,
+.dock-files__search-row,
+.dock-files__search {
+  display: flex;
+  align-items: center;
+  gap: var(--spacer-6);
+  min-width: 0;
+}
+
+.dock-files__workspace {
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.dock-files__workspace > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dock-files__workspace > svg,
+.dock-files__file-icon > svg,
+.dock-files__search > svg {
+  width: var(--icon-size-14);
+  height: var(--icon-size-14);
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.dock-files__actions { flex-shrink: 0; }
+.dock-files__actions [aria-pressed="true"] { color: var(--text-strong); background: var(--bg-hover); }
+
+.dock-files__body {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.dock-files__preview {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.dock-files__preview > .wk-main { width: 100%; min-width: 0; }
+.dock-files__preview .wk-browser-toolbar { min-width: 0; }
+.dock-files__preview .wk-file-toolbar { flex-wrap: wrap; gap: var(--spacer-6); }
+.dock-files__preview .wk-file-toolbar__actions { flex-wrap: wrap; }
+.dock-files__preview .wk-file-search { flex: 1 1 100%; min-width: 0; }
+.dock-files__preview .empty-state { padding: var(--spacer-24) var(--spacer-16); }
+.dock-files__preview .empty-state__icon { color: var(--text-faint); }
+.dock-files__preview .empty-state__title { font-size: var(--heading-sm); }
+.dock-files__preview .empty-state__desc { max-width: 28ch; font-size: var(--text-sm); }
+.dock-files__preview .wk-file-status { gap: var(--spacer-8); flex-wrap: wrap; }
+
+.dock-files__tree {
+  display: flex;
+  flex: 0 0 38%;
+  flex-direction: column;
+  min-width: 0;
+  max-width: 280px;
+  min-height: 0;
+  overflow: hidden;
+  border-left: var(--hairline);
+  background: var(--bg-secondary);
+}
+
+.dock-files__search-row { padding: var(--spacer-8) var(--spacer-6); border-bottom: var(--hairline); }
+.dock-files__search { flex: 1; padding: var(--spacer-4) var(--spacer-6); border: var(--hairline); border-radius: var(--radius-8); background: var(--bg-input); }
+.dock-files__search:focus-within { border-color: var(--focus-field-color); box-shadow: var(--focus-field); }
+.dock-files__search input {
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  outline: none;
+  color: var(--text);
+  background: transparent;
+  font: inherit;
+  font-size: var(--text-xs);
+}
+.dock-files__search input::placeholder { color: var(--text-muted); }
+.dock-files__nodes { flex: 1; min-height: 0; overflow: auto; padding: var(--spacer-4); }
+.dock-files__item { outline: none; }
+.dock-files__row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacer-4);
+  min-height: calc(var(--spacer-24) + var(--spacer-4));
+  padding: var(--spacer-4) var(--spacer-6);
+  padding-left: calc(var(--spacer-4) + min(var(--dock-tree-depth), 5) * var(--spacer-8));
+  border-radius: var(--radius-6);
+  cursor: pointer;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+.dock-files__row:hover { background: var(--bg-hover); }
+.dock-files__item.is-selected > .dock-files__row { background: var(--accent-subtle); color: var(--accent); }
+.dock-files__item:focus-visible > .dock-files__row { outline: 2px solid var(--focus-field-color); outline-offset: -2px; }
+.dock-files__item[aria-disabled="true"] > .dock-files__row { opacity: .5; cursor: default; }
+.dock-files__chevron,
+.dock-files__file-icon { display: flex; align-items: center; flex-shrink: 0; width: var(--icon-size-14); }
+.dock-files__chevron > svg { width: var(--icon-size-12); height: var(--icon-size-12); color: var(--text-muted); }
+.dock-files__name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dock-files__name small { display: block; overflow: hidden; text-overflow: ellipsis; font-family: var(--font-meta); font-size: var(--text-2xs); color: var(--text-muted); }
+.dock-files__hint { padding: var(--spacer-8); color: var(--text-muted); font-size: var(--text-xs); line-height: var(--leading-body); overflow-wrap: anywhere; }
+.dock-files__hint .btn { margin-top: var(--spacer-6); }

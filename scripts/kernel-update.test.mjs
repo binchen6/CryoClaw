@@ -779,3 +779,30 @@ test("L9：旧格式纯 PID 锁（PID 已退出）→ 兼容清理后继续", ()
     fs.rmSync(backup, { recursive: true, force: true });
   }
 });
+
+test("kernel carryover keeps independently pinned Tencent QQ and removes legacy channel vendor", t => {
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),"kernel-tencent-qq-"));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+ const oldPkg=path.join(root,"old"),next=path.join(root,"new");
+ for(const [base,id,name,version] of [[oldPkg,"openclaw-qqbot","@tencent-connect/openclaw-qqbot","2.0.4"],[oldPkg,"qqbot","@openclaw/qqbot","2026.7.1"],[next,"qqbot","@openclaw/qqbot","2026.10.9"]]){
+  const dir=path.join(base,"dist/extensions",id);fs.mkdirSync(dir,{recursive:true});fs.writeFileSync(path.join(dir,"package.json"),JSON.stringify({name,version}));
+ }
+ carryOverInjected(oldPkg,next);
+ assert.equal(fs.existsSync(path.join(next,"dist/extensions/qqbot")),false);
+ assert.equal(JSON.parse(fs.readFileSync(path.join(next,"dist/extensions/openclaw-qqbot/package.json"),"utf8")).version,"2.0.4");
+ assert.equal(fs.existsSync(path.join(oldPkg,"dist/extensions/qqbot/package.json")),true,"rollback source must stay intact");
+});
+
+test("kernel updates retain the managed Tencent plugin pin even if a new host ships the same plugin ID", t => {
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),"kernel-tencent-pin-"));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+ const oldPkg=path.join(root,"old"),next=path.join(root,"new");
+ for(const [base,version] of [[oldPkg,"2.0.4"],[next,"3.0.0"]]){
+  const dir=path.join(base,"dist/extensions/openclaw-qqbot");fs.mkdirSync(dir,{recursive:true});fs.writeFileSync(path.join(dir,"package.json"),JSON.stringify({name:"@tencent-connect/openclaw-qqbot",version}));
+  fs.mkdirSync(path.join(dir,"dist"));
+  fs.writeFileSync(path.join(dir,"dist/index.cjs"),base===oldPkg?"// managed: no automatic update checks\nmodule.exports = { botVersion: () => getUpdateInfo() };\n":"// host same-ID package must not replace the managed pin\n");
+ }
+ const sourceBundle=fs.readFileSync(path.join(oldPkg,"dist/extensions/openclaw-qqbot/dist/index.cjs"));
+ carryOverInjected(oldPkg,next);
+ assert.equal(JSON.parse(fs.readFileSync(path.join(next,"dist/extensions/openclaw-qqbot/package.json"),"utf8")).version,"2.0.4");
+ assert.deepEqual(fs.readFileSync(path.join(next,"dist/extensions/openclaw-qqbot/dist/index.cjs")),sourceBundle,"kernel update must carry the managed update policy and manual commands byte-for-byte");
+ assert.deepEqual(fs.readFileSync(path.join(oldPkg,"dist/extensions/openclaw-qqbot/dist/index.cjs")),sourceBundle,"rollback source stays unchanged");
+});

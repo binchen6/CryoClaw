@@ -4,6 +4,12 @@ import * as assert from "node:assert/strict";
 import { test } from "node:test";
 import { buildModelsUrl, parseModelsResponse } from "./provider-live";
 
+test("Responses models preserve base query and reject request endpoint input", () => {
+  assert.equal(buildModelsUrl({ baseUrl: "https://fixture.invalid/v1?api-version=preview", api: "openai-responses", apiKey: "key" }),
+    "https://fixture.invalid/v1/models?api-version=preview");
+  assert.throws(() => buildModelsUrl({ baseUrl: "https://fixture.invalid/v1/responses", api: "openai-responses", apiKey: "key" }), /Base URL|endpoint/i);
+});
+
 test("buildModelsUrl：openai 兼容形态直接拼 /models", () => {
   assert.equal(
     buildModelsUrl({ baseUrl: "https://api.openai.com/v1", api: "openai-completions", apiKey: "sk" }),

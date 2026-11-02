@@ -528,3 +528,33 @@ Things that are easy to get wrong or forget when working on CryoClaw.
 194. **原生 `popover="auto"` 不要用手写 click 开关。** light dismiss 在 pointerdown 就把浮层关掉，随后 click 处理器再读到 `:popover-open === false` 便 `showPopover()` 重开——表现为「再点一次关不掉」。正确写法是触发器声明 `popovertarget="<panel id>"` + `popovertargetaction="toggle"`，由浏览器统一开关；打开的副作用挂 `beforetoggle`/`toggle`（读 `event.newState`），关闭后的收尾（清查询词、`aria-expanded` 复位、焦点回触发器）也在 `toggle` 里做。见 `chat-ui/ui/src/ui/components/oc-model-picker.ts` 与 `model-quota.ts`。
 
 195. **隔离 Electron 为 hidden 时，双 rAF 会永远等下去。** 功能 UI smoke 若在 `Runtime.evaluate` 超时，先查 `document.visibilityState`，不要删除帧等待或放宽断言。隔离 fixture 可设 `webPreferences.backgroundThrottling:false`，并在 CDP 连接后 `Page.bringToFront`；这解决的是验收环境后台节流，不是生产 renderer 修复。
+
+196. **Git 的 `--` 不会关闭文件名通配。** `file[1].txt` 作为普通 pathspec 还会命中 `file1.txt`；即使路径来自 `git status`，也不能直接按默认 pathspec 执行。主进程 runner 统一加全局 `--literal-pathspecs`，路径守卫仍保留。仅索引状态 R 的重命名取消暂存同时传新旧路径；C 的复制仅传目标，保留源文件独立暂存的改动。子目录 cwd 的 porcelain -z 仍输出根相对路径，IPC 执行前须转换到授权 cwd，状态与全量 diff 限定 `-- .`。
+
+197. **Windows 打开工作区不能交给 shell 拼接。** 含空格、`&` 的用户路径必须留在 argv/cwd 中。`cmd` 使用系统绝对路径、固定 START 参数分配交互控制台；Git Bash 使用 `git-bash.exe` GUI launcher，裸 bash 加 detached/ignore 不会生成可输入窗口。VS Code 只搜索常规安装目录、PATH 内 Code.exe 或带 bin/code.cmd 的匹配布局。Git 探测与执行复用已缓存的绝对 PATH 程序，避免 cwd 中的同名程序被执行。监听 `spawn/error` 后再返回 IPC 结果；后台 helper 保持隐藏。
+
+198. **HTTP socket timeout 不能限制完整响应时长。** 缓慢滴流能一直续命，响应中途断开又不保证触发请求自身的 error。Provider 与渠道验证共用完整请求 deadline、响应体上限及 response `error/aborted/close` 处理；结束与失败只结算一次。
+
+199. **附件 denylist 必须双向检查 realpath。** 合法附件名可经 junction 指向凭据；状态根、credentials 或主目录受保护子目录本身也可能是 junction。分别 canonicalize 每个受保护文件与目录，保留词法比较。打开前后复核 canonical 目标及 bigint dev/ino，并把 fd 实际读取限制在 16 MiB 加一字节，防止换文件与读取中增长。正常附件 MIME/大小返回协议保持一致。
+
+200. **Responses 验证必须使用 SDK 的实际 Base URL 语义。** SDK 在配置原路径后追加 `/responses`，服务根对应 `/responses`，`/v1` 对应 `/v1/responses`。通过 URL.pathname 追加，保留查询参数；完整请求 endpoint 在设置、引导及主进程验证时明确拒绝，避免验证通过后写入运行时会再追加一次的地址。模型列表使用同一 base 派生 `/models`。
+
+201. **Lit 宿主不能用对象展开复制响应式状态。** 公共字段可能是原型访问器，`{ ...host }` 会丢消息和运行态、却保留自有工具 Map，随后时间线复制会遇到 undefined。直接读取宿主访问器来 capture，再只修改新快照的目标 sessionKey；回归应使用真实原型访问器形态，不能只用普通对象。
+
+202. **子组件的内部展开状态必须突破其自身 shouldUpdate 门控。** 工具组点击只调用 app.requestUpdate 时，历史/流式组件的视觉 props 未变，会跳过渲染。点击事件定位所属组件，发起一次专用展开刷新；普通回调身份变化仍不得重渲染整段历史。
+
+203. **WebContentsView 标注与遮挡必须绑定来源标签。** 网页原生视图会盖过主页面 DOM 浮层；先捕获占位，再隐藏原生视图。异步截图、清理和恢复携带来源 viewId 与请求代次，切会话、切页和关闭 Dock 取消拾取。不要按执行清理时的活动标签猜测来源，也不要让已关闭菜单的迟到截图重新写入预览。
+
+204. **QQ Bot 的插件 ID 与渠道键不再相同。** 腾讯官方包为 `@tencent-connect/openclaw-qqbot`，插件 ID 为 `openclaw-qqbot`，渠道仍为 `channels.qqbot`。只迁移 plugins 的引用，保留账号与访问策略；打包和内核更新均删除旧 vendor，不能让两个插件争用同一渠道。托管 preload 使用当前物理 OpenClaw SDK，不运行上游全局安装发现与软链创建；升级技能和账号 upgradeMode 均指向应用管理。
+
+205. **QQ connector 1.2.0 的 CJS 发布边界缺失。** npm 包将 CommonJS `.js` 放在 `type:module` 包下，却没发布 `dist/cjs/package.json`。vendor 精确核对版本后补 `type:commonjs`，并实际加载官方 connector 与插件 registry；仅看 manifest 或 TypeScript 通过查不出 `exports is not defined`。官方回调给的是 HTTPS 连接 URL，本地编码成 SVG 后界面须接受对应 data URL；不能把 URL 当作二维码图片，也不能传给外部制码服务。
+
+206. **浏览器首次打开也会与 Agent 导航竞争。** 空白页尚未提交时 getURL 仍为空，不能据此重复初始化；loadURL 前同步递增每标签的导航代次，show 仅初始化第零代。旧加载的 ERR_ABORTED 不得 stop 新页面或覆盖其错误。真实 Electron 复测捕获空快照，两条并发回归先红后绿，不能靠增加页面等待时间掩盖。
+
+207. **QQ 的 doc 升级模式不会阻止启动查版本。** 腾讯 2.0.4 在 gateway ready 的 initFeatures 中无条件预热 npm 版本查询。托管打包仅移除这一个调用，保留手动 bot-version/getUpdateInfo、审批和配置；按包身份、版本、完整函数与 bundle SHA256 校验，重复转换需能还原原始 hash。交叉打包的可选 vendor 降级分支也必须重新抛出合同失败，不能携带未适配的插件继续发布。内核 updater 原样保留已管理 Tencent pin，无需新增运行时修改。
+
+208. **历史去重不能只删除前台请求。** 唯一请求若只绑定 run entry，宿主看不到后续渐进注水和读取错误。无 RPC 注册宿主到同 client/session 的弱引用投影集合，加载、错误和每批可见数统一传播；wrapper 的最终 restore 还须校验客户端、会话及共享请求代次，防旧 then 克隆数组中断新注水。用 61 条历史的 20→60→61、首次失败和旧连接迟到回归，而非只有一条消息的冒烟。
+
+209. **安装版合成表单测试须隔离真实轮询。** 定时任务夹具代理 cron 请求并注入 busy/error 时，全局 30 秒 cron ticker 仍会成功读取列表并清空 error，导致宽窄布局断言偶发失败。仅在该夹具中保存并设置 chatLoading，使用现有 cron 读取守卫隔离背景轮询，finally 恢复。connected 保持真实，fieldset 禁用仍由 cronBusy 决定；保留错误位置、错误原文、禁用与编辑往返断言，不能用删除断言或加长等待掩盖竞争。
+
+210. **真实工具验收须兼容 code-mode 包装。** OpenClaw 可将插件调用保存为 exec/wait，callee 也可来自 catalog 返回的局部函数，输出还会包裹不可信内容提示。只查直接名字或解析整段 JSON 会把已完成的 snapshot/type/click 判为失败。验收保留同调用 ID、同工具名的模型调用/结果配对，要求终态回复中的页面随机码、初始 IPC 导航之后的主进程 Agent 事件和真实 DOM 输入/点击变化。配对记录本身不证明每个动作成功；受控单 QA 应用/模型中，原生事件与 DOM 是独立执行证据。用户提示、catalog 搜索或模型代码字符串均不能单独证明通过。exec 是网关包装器，测试仍禁止操作系统命令和其他浏览器。

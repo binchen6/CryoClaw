@@ -20,12 +20,13 @@ import { applyQuestionResolution, buildResolveParams } from "./chat/question-car
 import { getCachedCommands, loadCommands } from "./controllers/commands.ts";
 import { loadSessionBranches } from "./controllers/session-branches.ts";
 import { listEligibleSkills } from "./controllers/skills.ts";
-import { openDockTab, toggleDock } from "./controllers/dock.ts";
+import { closeDockTab, openDockTab, toggleDock } from "./controllers/dock.ts";
 import "./components/oc-turn-diff-card.ts";
 import "./components/oc-embedded-browser.ts";
-import { renderWorkspaceFilePreview } from "./views/workspace.ts";
+import { renderDockFiles } from "./views/dock-files.ts";
 import { initGitPanel } from "./controllers/git.ts";
 import { setWorkspaceRoot, workspaceViewState } from "./controllers/workspace.ts";
+import { openDockFile } from "./controllers/dock-file.ts";
 import { confirmAndUndoTurnChanges } from "./app-chat-undo.ts";
 import { handleReconnect } from "./app-session-actions.ts";
 import { dismissPlan } from "./plan-stream.ts";
@@ -36,18 +37,21 @@ import type { ChatProps } from "./views/chat.ts";
 import {sessionFastMode,setSessionFastMode} from './controllers/session-fast-mode.ts';
 import { updateSessionAttachments } from "./session-transition.ts";
 import { closeSubagentPanel, openSubagentPanel } from "./controllers/subagent-panel.ts";
+import { setCryoClawView } from "./app-view-switch.ts";
 
 function renderSessionChanges(state: AppViewState) {
   const files = selectSessionChanges(state);
   const workspace = state.settings.pinnedWorkspaces.find((item) => item.id === state.settings.sessionWorkspaceMap[state.sessionKey]);
-  if (files.length === 0) return html`<div class="context-dock__empty">${t("git.clean")}</div>`;
   return html`<div class="session-changes"><oc-turn-diff-card
+    .dockMode=${true}
+    .branch=${(state.gitRepoOptions ?? []).find(repo => repo.path === (workspace?.path ?? state.gitRepoPath))?.branch ?? ""}
     .files=${files}
     .workspacePath=${workspace?.path ?? ""}
     .gitAvailable=${state.gitAvailable === true}
     .statsLoader=${() => fetchSessionChangeStats(state, files)}
     .locale=${getLocale()}
-    .onDiscard=${() => void confirmAndUndoTurnChanges(state, workspace?.path ?? "", files)}
+    .onDiscard=${() => confirmAndUndoTurnChanges(state, workspace?.path ?? "", files)}
+    .onOpenFile=${(path: string) => openDockFile(state, path, workspace?.path)}
   ></oc-turn-diff-card></div>`;
 }
 
@@ -103,8 +107,10 @@ export function buildChatProps(state: AppViewState): ChatProps {
     dockCollapsed: state.settings.dockCollapsed,
     dockMaximized: state.dockMaximized,
     dockActiveTab: state.dockActiveTab,
+    dockOpenedTabs: state.dockOpenedTabs,
+    dockLauncherOpen: state.dockLauncherOpen,
     dockChangesContent: renderSessionChanges(state),
-    dockFilesContent: renderWorkspaceFilePreview(state, {
+    dockFilesContent: renderDockFiles(state, {
       onAttachFile: (path, name) => {
         if (!state.chatAttachments.some((item) => item.filePath === path)) {
           state.chatAttachments = [...state.chatAttachments, {
@@ -132,7 +138,18 @@ export function buildChatProps(state: AppViewState): ChatProps {
     }),
     dockBrowserEnabled: state.settings.embeddedBrowserEnabled,
     dockBrowserContent: state.settings.embeddedBrowserEnabled
-      ? html`<oc-embedded-browser
+        ? html`<oc-embedded-browser
+          .compactInDock=${true}
+          .contextKey=${state.sessionKey}
+          .agentEnabled=${state.settings.embeddedBrowserAgentEnabled}
+          .onAgentToggle=${() => state.applySettings({ ...state.settings, embeddedBrowserAgentEnabled: !state.settings.embeddedBrowserAgentEnabled })}
+          .onZoom=${(zoom: number) => state.applySettings({ ...state.settings, embeddedBrowserZoom: zoom })}
+          .onSettings=${() => { state.settingsTabHint = "browser"; setCryoClawView(state, "settings"); }}
+          .onReference=${(reference: { url: string; title: string; text: string; screenshot?: string }) => {
+            state.chatMessage = `${state.chatMessage || ""}${state.chatMessage ? "\n\n" : ""}[${reference.title || reference.url}](${reference.url})\n> ${reference.text.replace(/\n/g, "\n> ")}`;
+            if (reference.screenshot) state.chatAttachments = [...state.chatAttachments, { id: crypto.randomUUID(), type: "image/png", name: "webpage-annotation.png", dataUrl: reference.screenshot }];
+            state.requestUpdate();
+          }}
           .zoom=${state.settings.embeddedBrowserZoom}
           .downloadPath=${state.settings.embeddedBrowserDownloadPath}
           .askSavePath=${state.settings.embeddedBrowserAskSavePath}
@@ -142,6 +159,7 @@ export function buildChatProps(state: AppViewState): ChatProps {
         ></oc-embedded-browser>`
       : undefined,
     onSelectDockTab: (tab) => openDockTab(state, tab),
+    onCloseDockTab: (tab) => closeDockTab(state, tab),
     onToggleDock: () => toggleDock(state),
     onToggleMaximized: () => {
       state.dockMaximized = !state.dockMaximized;
@@ -247,7 +265,7 @@ export function buildChatProps(state: AppViewState): ChatProps {
       void initGitPanel(state, workspaceViewState.root);
     },
     // 终态改动卡片「撤销」：危险确认后丢弃工作区改动（tracked → discard，未跟踪 → clean）
-    onUndoFileChanges: (files) => void confirmAndUndoTurnChanges(state, workspace?.path ?? "", files),
+    onUndoFileChanges: (files) => confirmAndUndoTurnChanges(state, workspace?.path ?? "", files),
     // 会话分支（rewind/fork/switch，内核 2026.9.7 branch tree）
     sessionBranches: state.sessionBranches,
     sessionBranchesKey: state.sessionBranchesKey ?? null,

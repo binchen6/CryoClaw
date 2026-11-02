@@ -21,6 +21,7 @@ import {
 import { readKimiApiKey } from "./kimi-config";
 import { startAuthProxy, getProxyPort } from "./kimi-auth-proxy";
 import {resolveUsageAdapter,parseExtendedProviderUsage,type ExtendedProviderUsage} from "./provider-usage-adapters";
+import { providerBaseUrl } from "./provider-api-url";
 
 export interface LiveModel {
   id: string;
@@ -111,6 +112,11 @@ async function resolveEndpoint(params: FetchModelsParams): Promise<ResolvedEndpo
 
 // models URL 构造（导出供单测：三种 api 形态的拼接规则是本模块的核心约定）
 export function buildModelsUrl(endpoint: ResolvedEndpoint): string {
+  if (endpoint.api === "openai-responses") {
+    const url = providerBaseUrl(endpoint.baseUrl);
+    url.pathname = `${url.pathname.replace(/\/$/, "")}/models`;
+    return url.toString();
+  }
   const base = endpoint.baseUrl.replace(/\/+$/, "");
   if (endpoint.api === "google-generative-ai") {
     return `${base}/models?pageSize=1000&key=${encodeURIComponent(endpoint.apiKey)}`;

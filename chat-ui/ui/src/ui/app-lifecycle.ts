@@ -5,6 +5,7 @@ import {stopPagePreloads} from "./page-preload.ts";
 import {attachThemeUi,detachThemeUi} from "./theme-live.ts";
 import { attachEmbeddedBrowserAgent, detachEmbeddedBrowserAgent, syncEmbeddedBrowserAgentPolicy } from "./controllers/embedded-browser-agent.ts";
 import { configureShortcuts } from "./keyboard-shortcuts.ts";
+import { closeDockTab } from "./controllers/dock.ts";
 import { configureMotionPreference } from "./utils/motion.ts";
 import {
   applySettingsFromUrl,
@@ -70,7 +71,7 @@ export function handleUpdated(host: LifecycleHost, changed: Map<PropertyKey, unk
     configureShortcuts(app.settings.keyboardShortcuts);
     configureMotionPreference(app.settings.motionPreference);
     syncEmbeddedBrowserAgentPolicy(app);
-    if (!app.settings.embeddedBrowserEnabled && app.dockActiveTab === "browser") app.dockActiveTab = "changes";
+    if (!app.settings.embeddedBrowserEnabled && (app.dockActiveTab === "browser" || (app.dockOpenedTabs ?? []).includes("browser"))) closeDockTab(app, "browser");
   }
   if (
     host.tab === "chat" &&

@@ -15,6 +15,8 @@ import {
 const STATS_DEBOUNCE_MS = 250;
 /** 按签名缓存最近多少组结果（模块级共享：同会话多组卡片/重挂载直接命中，不打重复 git） */
 const STATS_CACHE_LIMIT = 16;
+// 同路径可在后续回合再次编辑；路径签名仅在短窗口内复用，失败不入共享缓存。
+const STATS_CACHE_TTL_MS = 1000;
 /** 文件列表折叠态默认显示行数，超出收进「再显示 N 个文件」 */
 const COLLAPSED_FILE_ROWS = 3;
 const EMPTY_LOOKUP: TurnStatsLookup = { byPath: {}, complete: false };
@@ -22,7 +24,7 @@ const EMPTY_LOOKUP: TurnStatsLookup = { byPath: {}, complete: false };
 // 模块级共享缓存（key = workspacePath + 路径列表签名）：终态卡片按组渲染，
 // 同一会话可能同时存在多张；历史 hydration 重建时卡片重挂载，实例级缓存会
 // 全部 miss，共享缓存让重挂载直接复用上次结果。
-const statsCache = new Map<string, TurnStatsLookup>();
+const statsCache = new Map<string, { lookup: TurnStatsLookup; expiresAt: number }>();
 
 type TurnStatsBridge = {
   gitChangeStats?: (cwd: string, paths: string[]) => Promise<{
@@ -55,27 +57,36 @@ export class OcTurnDiffCard extends LitElement {
     statsLoader: { attribute: false },
     // 行数统计到达后递增：内部 lookup 不是响应式字段，靠它触发一次重渲染
     statsRevision: { attribute: false },
+    dockMode: { attribute: false }, branch: { attribute: false }, viewMode: { state: true }, onOpenFile: { attribute: false },
   };
   files: FileChange[] = []; workspacePath = ""; gitAvailable = false; locale = "";
   onDiscard?: (files: FileChange[]) => void | Promise<void>;
   statsLoader?: (paths: string[]) => Promise<TurnStatsLookup>;
   statsRevision = 0;
+  dockMode = false;
+  branch = "";
+  viewMode: "list" | "tree" = "list";
+  onOpenFile?: (path: string) => void;
 
   private statsLookup: TurnStatsLookup = EMPTY_LOOKUP;
   private statsSignature = "";
   private statsSeq = 0;
   private statsTimer: ReturnType<typeof setTimeout> | undefined;
+  private statsInFlight: number | null = null;
+  private statsRefreshPending = false;
+  private statsRetryAfter = 0;
   private expanded = false;
   private undoing = false;
 
   createRenderRoot() { return this; }
   // 回调每帧新闭包（buildChatProps），放行会让无关更新重渲染整棵历史子树
-  shouldUpdate(changed: Map<PropertyKey, unknown>) { return [...changed.keys()].some(key => key !== "onDiscard"); }
+  shouldUpdate(changed: Map<PropertyKey, unknown>) { return [...changed.keys()].some(key => key !== "onDiscard" && key !== "onOpenFile"); }
 
   disconnectedCallback() {
     this.cancelStatsTimer();
     // 组件销毁后在途响应不再落位（seq 前进即让旧响应过期）
     this.statsSeq += 1;
+    this.statsRefreshPending = false;
     super.disconnectedCallback();
   }
 
@@ -95,10 +106,19 @@ export class OcTurnDiffCard extends LitElement {
 
   /** 签名变化时重置结果并在 250ms 安静后拉取；共享缓存命中直接复用 */
   private refreshStats(): void {
+    if (this.undoing) return;
     const paths = this.files.map(file => file.path);
     const enabled = this.gitAvailable && (Boolean(this.workspacePath) || Boolean(this.statsLoader)) && paths.length > 0;
     const signature = enabled ? turnStatsSignature(this.workspacePath, paths) : "";
-    if (signature === this.statsSignature) return;
+    const cached = statsCache.get(signature);
+    const freshCache = cached && cached.expiresAt > Date.now() ? cached.lookup : undefined;
+    if (signature === this.statsSignature && this.statsInFlight === this.statsSeq) {
+      this.statsRefreshPending = true;
+      return;
+    }
+    if (signature === this.statsSignature &&
+      (this.statsTimer !== undefined || Date.now() < this.statsRetryAfter)) return;
+    if (signature !== this.statsSignature) this.statsRefreshPending = false;
     this.statsSignature = signature;
     const seq = ++this.statsSeq;
     this.cancelStatsTimer();
@@ -106,9 +126,15 @@ export class OcTurnDiffCard extends LitElement {
       this.statsLookup = EMPTY_LOOKUP;
       return;
     }
-    const cached = statsCache.get(signature);
-    if (cached) {
-      this.statsLookup = cached;
+    this.statsRetryAfter = 0;
+    if (freshCache) {
+      this.statsLookup = freshCache;
+      // 缓存窗口内的新 props 仍可能代表同路径重写。到期后补查一次，
+      // 不能依赖之后还会有 token/父组件更新来触发过期检测。
+      this.statsTimer = setTimeout(() => {
+        this.statsTimer = undefined;
+        this.refreshStats();
+      }, cached!.expiresAt - Date.now());
       return;
     }
     this.statsLookup = EMPTY_LOOKUP;
@@ -119,14 +145,27 @@ export class OcTurnDiffCard extends LitElement {
   }
 
   private async loadStats(signature: string, paths: string[], seq: number): Promise<void> {
-    const lookup = this.statsLoader
-      ? await this.statsLoader(paths)
-      : await fetchTurnFileStats(statsBridge()?.gitChangeStats, this.workspacePath, paths);
+    this.statsInFlight = seq;
+    let lookup: TurnStatsLookup;
+    try {
+      lookup = this.statsLoader
+        ? await this.statsLoader(paths)
+        : await fetchTurnFileStats(statsBridge()?.gitChangeStats, this.workspacePath, paths);
+    } catch { lookup = EMPTY_LOOKUP; }
+    finally { if (this.statsInFlight === seq) this.statsInFlight = null; }
     // 过期响应丢弃：签名/序号已变（组件销毁、更新的请求）时不得覆盖
     if (seq !== this.statsSeq || signature !== this.statsSignature) return;
-    rememberStats(signature, lookup);
+    if (lookup.complete) rememberStats(signature, lookup);
+    else this.statsRetryAfter = Date.now() + STATS_CACHE_TTL_MS;
     this.statsLookup = lookup;
     this.statsRevision += 1;
+    if (this.statsRefreshPending) {
+      this.statsRefreshPending = false;
+      statsCache.delete(signature);
+      this.statsSignature = "";
+      this.statsRetryAfter = 0;
+      this.refreshStats();
+    }
   }
 
   /** 行内该文件 +/− 行数；二进制与无统计时不显示 */
@@ -144,18 +183,52 @@ export class OcTurnDiffCard extends LitElement {
   private async onUndoClick(): Promise<void> {
     if (this.undoing || !this.onDiscard) return;
     this.undoing = true;
+    // 确认弹窗本身也会触发 root render。用户确认和 Git 写入都结算前，
+    // 不让新 props/TTL 或旧在途结果提前安排一次“撤销后”查询。
+    this.cancelStatsTimer();
+    this.statsSeq += 1;
+    this.statsRefreshPending = false;
     this.requestUpdate();
     try {
       await this.onDiscard(this.files);
     } finally {
+      statsCache.delete(this.statsSignature);
+      this.statsSignature = "";
+      this.statsRetryAfter = 0;
       this.undoing = false;
+      this.refreshStats();
       this.requestUpdate();
     }
   }
 
+  private renderFileRow(file: FileChange, tree = false) {
+    return html`<div class="chat-turn-diff-card__row">
+      ${this.dockMode ? html`<span class="context-dock__change-status" data-kind=${file.kind} title=${t(`chat.fileChange.${file.kind}`)}>${file.kind === "added" ? "A" : file.kind === "deleted" ? "D" : "M"}</span>` : nothing}
+      <a class="chat-path-link chat-turn-diff-card__path" data-path=${file.path} title=${file.path} tabindex="0" role="button"
+        @click=${(event: Event) => { if (this.onOpenFile) { event.preventDefault(); event.stopPropagation(); this.onOpenFile(file.path); } }}
+        @keydown=${(event: KeyboardEvent) => { if (this.onOpenFile && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); event.stopPropagation(); this.onOpenFile(file.path); } }}
+      >${this.dockMode && !tree ? file.path : fileChangeBaseName(file.path)}</a>${this.renderRowStat(file)}</div>`;
+  }
+
+  private renderFileTree(files: FileChange[]): TemplateResult {
+    type Node = { name: string; children: Map<string, Node>; file?: FileChange };
+    const root: Node = { name: "", children: new Map() };
+    for (const file of files) {
+      let node = root;
+      for (const name of file.path.replace(/\\/g, "/").split("/").filter(Boolean)) {
+        if (!node.children.has(name)) node.children.set(name, { name, children: new Map() });
+        node = node.children.get(name)!;
+      }
+      node.file = file;
+    }
+    const renderNode = (node: Node): TemplateResult => node.file ? this.renderFileRow(node.file, true)
+      : html`<details class="context-dock__change-directory" open><summary>${icons.folder}<span>${node.name}</span></summary><div>${[...node.children.values()].sort((a, b) => Number(Boolean(a.file)) - Number(Boolean(b.file)) || a.name.localeCompare(b.name)).map(renderNode)}</div></details>`;
+    return html`${[...root.children.values()].map(renderNode)}`;
+  }
+
   render() {
     const files = this.files;
-    if (!files.length) return nothing;
+    if (!files.length && !this.dockMode) return nothing;
     const summary = summarizeTurnStats(files, this.statsLookup);
     // 优先显示行数；无 git / 统计失败 / 结果不完整时退回新增/删除文件数，
     // 并用 title 说明降级原因，避免把「文件数」误读成「行数」。
@@ -169,9 +242,13 @@ export class OcTurnDiffCard extends LitElement {
     const headerTitle = lineStats
       ? `${addedTitle} · ${deletedTitle}`
       : `${t("chat.fileChange.linesUnavailable")} · ${addedTitle} · ${deletedTitle}`;
-    const visibleFiles = this.expanded ? files : files.slice(0, COLLAPSED_FILE_ROWS);
+    const visibleFiles = this.dockMode || this.expanded ? files : files.slice(0, COLLAPSED_FILE_ROWS);
     const hiddenCount = files.length - visibleFiles.length;
-    return html`<div class="chat-turn-diff-card">
+    return html`<div class="chat-turn-diff-card ${this.dockMode ? "chat-turn-diff-card--dock" : ""}">
+      ${this.dockMode ? html`<header class="context-dock__changes-toolbar">
+        ${this.branch ? html`<span class="context-dock__changes-branch">${icons.gitBranch}${this.branch}</span>` : nothing}<span class="context-dock__changes-count">${files.length}</span>
+        <div class="context-dock__changes-views">${(["list", "tree"] as const).map(mode => html`<button class="icon-btn icon-btn--sm" type="button" data-change-view=${mode} aria-label=${t(`dock.${mode}View`)} title=${t(`dock.${mode}View`)} aria-pressed=${String(this.viewMode === mode)} @click=${() => { this.viewMode = mode; }}>${mode === "list" ? icons.list : icons.folder}</button>`)}</div>
+      </header>` : nothing}
       <div class="chat-turn-diff-card__head">
         <span class="chat-turn-diff-card__icon" aria-hidden="true">${icons.diff}</span>
         <span class="chat-turn-diff-card__title" title=${headerTitle}>${t("chat.editedFiles").replace("{n}", String(files.length))}</span>
@@ -179,7 +256,7 @@ export class OcTurnDiffCard extends LitElement {
           <span class="chat-turn-files__stat chat-turn-files__stat--added" title=${addedTitle}>+${additions}</span>
           <span class="chat-turn-files__stat chat-turn-files__stat--deleted" title=${deletedTitle}>−${deletions}</span>
         </span>
-        ${this.gitAvailable
+        ${this.gitAvailable && files.length > 0
           ? html`<span class="chat-turn-diff-card__actions">
               <button
                 type="button"
@@ -192,16 +269,8 @@ export class OcTurnDiffCard extends LitElement {
           : nothing}
       </div>
       <div class="chat-turn-diff-card__list">
-        ${visibleFiles.map(file => html`<div class="chat-turn-diff-card__row">
-          <a
-            class="chat-path-link chat-turn-diff-card__path"
-            data-path=${file.path}
-            title=${file.path}
-            tabindex="0"
-            role="button"
-          >${fileChangeBaseName(file.path)}</a>
-          ${this.renderRowStat(file)}
-        </div>`)}
+        ${this.dockMode && !files.length ? html`<div class="context-dock__empty">${t("git.clean")}</div>` : nothing}
+        ${this.dockMode && this.viewMode === "tree" ? this.renderFileTree(visibleFiles) : visibleFiles.map(file => this.renderFileRow(file))}
       </div>
       ${hiddenCount > 0
         ? html`<button
@@ -219,7 +288,7 @@ export class OcTurnDiffCard extends LitElement {
 
 function rememberStats(signature: string, lookup: TurnStatsLookup): void {
   statsCache.delete(signature);
-  statsCache.set(signature, lookup);
+  statsCache.set(signature, { lookup, expiresAt: Date.now() + STATS_CACHE_TTL_MS });
   while (statsCache.size > STATS_CACHE_LIMIT) {
     const oldest = statsCache.keys().next();
     if (oldest.done) break;

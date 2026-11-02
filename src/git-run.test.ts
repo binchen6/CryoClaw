@@ -1,8 +1,37 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { runGit, type GitRunner } from "./git-run.ts";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 
 const MB = 1024 * 1024;
+
+test("runGit treats bracket names literally for stage, restore and clean", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "git-literal-"));
+  const git = async (...args: string[]) => {
+    const result = await runGit(dir, args, 5000, MB);
+    assert.equal(result.code, 0, result.stderr);
+    return result.stdout;
+  };
+  try {
+    await git("init");
+    await git("config", "core.autocrlf", "false");
+    for (const name of ["file[1].txt", "file1.txt"]) fs.writeFileSync(path.join(dir, name), "original\n");
+    await git("add", "--", "file[1].txt");
+    assert.equal((await git("ls-files", "-z")), "file[1].txt\0");
+    await git("add", "--", "file1.txt");
+    await git("-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-m", "fixture");
+    for (const name of ["file[1].txt", "file1.txt"]) fs.writeFileSync(path.join(dir, name), "changed\n");
+    await git("restore", "--worktree", "--", "file[1].txt");
+    assert.equal(fs.readFileSync(path.join(dir, "file[1].txt"), "utf8"), "original\n");
+    assert.equal(fs.readFileSync(path.join(dir, "file1.txt"), "utf8"), "changed\n");
+    for (const name of ["new[1].txt", "new1.txt"]) fs.writeFileSync(path.join(dir, name), "untracked");
+    await git("clean", "-f", "--", "new[1].txt");
+    assert.equal(fs.existsSync(path.join(dir, "new[1].txt")), false);
+    assert.equal(fs.existsSync(path.join(dir, "new1.txt")), true);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
 
 test("runGit：正常退出透传退出码与输出", async () => {
   const runner: GitRunner = (_args, cb) => cb(null, "out", "");

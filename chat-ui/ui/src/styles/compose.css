@@ -42,7 +42,7 @@
   max-width: var(--chat-column);
 }
 
-/* ── Context Ring：工具条右侧的小圆环，与额度圆环同一位置、同一尺寸 ── */
+/* ── Context Ring：数字留在用量详情中，工具条只保留轻描边进度 ── */
 .chat-compose__ctx-wrap { position: relative; display: inline-flex; flex: none; }
 .chat-compose__ctx-details {
   position: fixed;
@@ -68,32 +68,39 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 28px;
   flex: none;
-  border-radius: var(--radius-full);
+  appearance: none;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: transparent;
   color: var(--text-muted);
-  cursor: default;
+  cursor: pointer;
   transition: background var(--duration-fast) var(--ease-standard),
     color var(--duration-fast) var(--ease-standard);
 }
 
 .chat-compose__ctx-ring:hover,
-.chat-compose__ctx-ring:focus-within {
+.chat-compose__ctx-ring:focus-visible {
   background: var(--bg-hover);
   color: var(--text);
 }
 
+.chat-compose__ctx-ring:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+
 .chat-compose__ctx-ring svg {
-  width: 22px;
-  height: 22px;
+  width: 20px;
+  height: 20px;
   overflow: visible;
 }
 
 .chat-compose__ctx-ring-track,
 .chat-compose__ctx-ring-fill {
   fill: none;
-  stroke-width: 2.2;
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
 }
 
 .chat-compose__ctx-ring-track {
@@ -115,13 +122,6 @@
 
 .chat-compose__ctx-ring[data-tone="danger"] .chat-compose__ctx-ring-fill {
   stroke: var(--destructive);
-}
-
-.chat-compose__ctx-ring-center {
-  fill: currentColor;
-  font-family: var(--font-mono);
-  font-size: 9.5px;
-  font-variant-numeric: tabular-nums;
 }
 
 :root[data-motion="reduce"] {

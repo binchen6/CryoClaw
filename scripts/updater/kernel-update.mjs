@@ -355,6 +355,15 @@ export function carryOverInjected(oldPkgDir, newPkgDir) {
     xfs.mkdirSync(newSub, { recursive: true });
     for (const entry of xfs.readdirSync(oldSub, { withFileTypes: true })) {
       const dest = path.join(newSub, entry.name);
+      if (sub === path.join("dist", "extensions") && entry.name === "openclaw-qqbot") {
+        const source = path.join(oldSub, entry.name);
+        const pkg = JSON.parse(xfs.readFileSync(path.join(source, "package.json"), "utf8"));
+        if (pkg.name !== "@tencent-connect/openclaw-qqbot") throw new Error("Managed QQ plugin identity mismatch");
+        xfs.rmSync(dest, { recursive: true, force: true });
+        xfs.cpSync(source, dest, { recursive: true });
+        carried.push(`${sub}/${entry.name}`);
+        continue;
+      }
       if (xfs.existsSync(dest)) {
         // 上游自带该目录，用新版；但补齐旧树里新包缺失的注入物文件（新旧双名）
         if (entry.isDirectory()) {
@@ -371,6 +380,12 @@ export function carryOverInjected(oldPkgDir, newPkgDir) {
       xfs.cpSync(path.join(oldSub, entry.name), dest, { recursive: true });
       carried.push(`${sub}/${entry.name}`);
     }
+  }
+  // Tencent owns channel qqbot in current releases. A newly installed host may
+  // reintroduce the legacy vendor; keep the independently pinned Tencent copy.
+  const tencent = path.join(newPkgDir, "dist", "extensions", "openclaw-qqbot", "package.json");
+  if (xfs.existsSync(tencent) && JSON.parse(xfs.readFileSync(tencent, "utf8")).name === "@tencent-connect/openclaw-qqbot") {
+    xfs.rmSync(path.join(newPkgDir, "dist", "extensions", "qqbot"), { recursive: true, force: true });
   }
   return carried;
 }
@@ -779,11 +794,6 @@ async function cmdUpdate(tag) {
     kdp.patchPluginNativeAsarHost(stagingGateway);
     progress("patch", 46, `fs-safe asar→unpacked 补丁: ${fsSafePatched > 0 ? "已注入" : "未命中（跳过）"}`);
     }
-    // kimi 思考档位补丁为行为增强（非 asar 必需），未命中仅告警不中止
-    if (kdp.patchKimiThinkingProfile(stagingGateway) === 0) {
-      progress("patch", 46, "kimi 思考档位补丁未命中（上游已修复或结构变化），跳过");
-    }
-
     progress("smoke", 58, `冒烟测试 openclaw --version`);
     if (NATIVE_RUNTIME && xfs.existsSync(path.join(newPkgDir, "node-sqlite.mjs"))) {
       // --version is intentionally exempt from upstream runtime admission.

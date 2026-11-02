@@ -9,7 +9,6 @@ import type { AgentsListResult, SessionsListResult } from "./types.ts";
 import { flushChatQueueForEvent, flushPendingSessionLabel, refreshChatAvatar } from "./app-chat.ts";
 import {
   applySettings,
-  refreshActiveTab,
   setLastActiveSessionKey,
 } from "./app-settings.ts";
 import { registerTickHandler, unregisterTickHandler, startTicker, initTickerVisibilityHook, stopTicker } from "./client-ticker.ts";
@@ -18,7 +17,7 @@ import { clearSessionMeterDirtyIfUsageAdvanced } from "./context-meter.ts";
 import { handleAgentEvent, resetToolStream, clearFallbackNotice, type AgentEventPayload } from "./app-tool-stream.ts";
 import { debugLog, isDebugEnabled } from "./debug.ts";
 import { loadAssistantIdentity } from "./controllers/assistant-identity.ts";
-import { loadChatHistory as loadChatHistoryForState, resetChatStreamState } from "./controllers/chat.ts";
+import { loadChatHistory as loadChatHistoryForState, registerChatHistoryProjection, resetChatStreamState } from "./controllers/chat.ts";
 import { projectSubagentPanel } from "./controllers/subagent-panel.ts";
 import {
   applyQuestionResolution,
@@ -137,11 +136,20 @@ function loadChatHistory(
   host: GatewayHost,
   opts?: Parameters<typeof loadChatHistoryForState>[1],
 ): ReturnType<typeof loadChatHistoryForState> {
+  const requestClient = host.client;
+  const requestSessionKey = host.sessionKey;
+  const readGeneration = registerChatHistoryProjection(host as unknown as OpenClawApp);
   const entry = ensureRunStateSnapshot(host.sessionKey, host);
   const request = loadChatHistoryForState(entry as unknown as OpenClawApp, opts);
+  const requestGeneration = readGeneration();
   const project = () => {
-    if (host.sessionKey === entry.sessionKey) restoreRunStateSnapshot(host, entry);
+    if (host.client === requestClient && host.sessionKey === requestSessionKey &&
+      entry.client === requestClient && readGeneration() === requestGeneration) {
+      restoreRunStateSnapshot(host, entry);
+    }
   };
+  // Loading is part of first-use readiness, so expose it before the RPC settles.
+  project();
   void request.then(project, project).catch(() => {});
   return request;
 }
@@ -650,7 +658,11 @@ export function connectGateway(host: GatewayHost) {
         // R41：重连读可能连续命中滞后快照（退避窗口耗尽）→ 排有限次静默探测兜底。
         // orphan 不存在（断连前无在途 run）时 liveOrphanRunId 检查会让探测直接空转返回。
         scheduleReconnectOrphanProbe(host);
+      } else if (host.tab === "chat") {
+        // Visible history goes first; the immediate ticker owns sessions.list.
+        void loadChatHistory(host as unknown as OpenClawApp);
       }
+      if (host.tab === "chat") void refreshChatAvatar(host as unknown as OpenClawApp);
       void loadAssistantIdentity(host as unknown as OpenClawApp,{sessionKey:admissionSessionKey,snapshot:identity});
       // 加载已配置模型列表（用于 per-session 模型选择器）
       void (host as unknown as OpenClawApp).loadConfiguredModels();
@@ -671,7 +683,6 @@ export function connectGateway(host: GatewayHost) {
       // 加载执行权限模式（聊天页三态）
       void (host as unknown as OpenClawApp).loadExecMode();
       // Skill prefetch is owned by schedulePagePreloads after visible chat reads.
-      void refreshActiveTab(host as unknown as Parameters<typeof refreshActiveTab>[0]);
       // 注册定时轮询并启动客户端定时器（"cron" 是 tick handler 标识，非视图 id，勿当死接线删）
       registerTickHandler("cron", () => {
         const app=host as unknown as OpenClawApp;
@@ -823,7 +834,8 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
       // 摊平逻辑以快照为宿主运行，不写 host 响应式字段、不占前台单份定时器。
       // 无快照（该会话无可恢复的 run 态）维持既有丢弃语义。
       accumulateBackgroundAgentEvent(agentPayload.sessionKey, agentPayload);
-      projectSubagentPanel(host as unknown as OpenClawApp);
+      if ((host as unknown as OpenClawApp).subagentPanelKey === agentPayload.sessionKey)
+        projectSubagentPanel(host as unknown as OpenClawApp);
       return;
     }
     const entry = ensureRunStateSnapshot(host.sessionKey, host);
@@ -856,7 +868,8 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
       // run 态（队列保留）并标记历史脏；无快照维持既有丢弃语义。host 响应式字段
       // 与单份定时器（rAF/80ms 节流）完全不受影响。
       dispatchBackgroundChatEvent(payload);
-      projectSubagentPanel(host as unknown as OpenClawApp);
+      if ((host as unknown as OpenClawApp).subagentPanelKey === payload.sessionKey)
+        projectSubagentPanel(host as unknown as OpenClawApp);
       const isBackgroundTerminal =
         payload.state === "final" || payload.state === "error" || payload.state === "aborted";
       if (!isBackgroundTerminal) {

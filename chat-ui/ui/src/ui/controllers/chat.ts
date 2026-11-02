@@ -118,18 +118,20 @@ function cancelChatHistoryHydration(state: ChatState) {
 
 // 大历史记录先露出 20 条，再以 40 条一批补齐：保留首屏响应，
 // 同时把 200 条历史的 18 次重复整树求值降为 5 次。
-function scheduleChatHistoryHydration(state: ChatState, sessionKey: string, total: number) {
+function scheduleChatHistoryHydration(state: ChatState, sessionKey: string, total: number, onHydrated?: () => void) {
   cancelChatHistoryHydration(state);
   if (total <= state.chatVisibleMessageCount) {
     return;
   }
+  const messages = state.chatMessages;
   const hydrate = () => {
     state.chatHistoryHydrationFrame = null;
-    if (state.sessionKey !== sessionKey) {
+    if (state.sessionKey !== sessionKey || state.chatMessages !== messages) {
       return;
     }
     const next = Math.min(total, state.chatVisibleMessageCount + CHAT_HISTORY_RENDER_BATCH);
     state.chatVisibleMessageCount = next;
+    onHydrated?.();
     if (next < total) {
       state.chatHistoryHydrationFrame = setTimeout(hydrate, 32) as unknown as number;
     }
@@ -213,86 +215,156 @@ export function resetChatStreamState(state: ChatState) {
 // 「问了没答」且要等下轮 final/手动刷新才恢复。保留时按 600/1500/3000/6000ms
 // 退避补拉（R62 及时性调优：首档 600ms 更快收敛，尾档 6000ms 覆盖内核慢持久化
 // 窗口——旧档 2.4s 耗尽后长尾场景无人收敛），替换成功或会话切换即停止。
-// 同一时刻只保留一个挂起重试。
+// 每个宿主同一时刻只保留一个挂起重试；主会话与子面板互不消耗预算。
 // 补拉刻意非 silent（R41 终审记录）：滞后意味着用户可见数据不全，给用户加载反馈合理；
 // 静默探测（看门狗/重连 orphan）命中滞后时也会派生本链的非 silent 补拉，属有界预期行为。
 const STALE_RETRY_DELAYS_MS = [600, 1500, 3000, 6000];
-let staleRetryTimer: ReturnType<typeof setTimeout> | null = null;
-let staleRetryKey: string | null = null;
-let staleRetryAttempt = 0;
+type HistoryRequestState = {
+  generation: number;
+  seq: number;
+  lastNonSilentSeq: number;
+  states: Array<WeakRef<ChatState>>;
+};
+// root host 与 run entry 是同一前台历史的两个投影。连接 + 会话才是
+// 请求的逻辑目标；对象本身作为 key 会让两条生产调用链各自赢一次。
+const historyRequests = new WeakMap<object, Map<string, HistoryRequestState>>();
+
+function historyRequestState(state: ChatState, sessionKey = state.sessionKey): HistoryRequestState {
+  const owner = state.client ?? state;
+  let sessions = historyRequests.get(owner);
+  if (!sessions) { sessions = new Map(); historyRequests.set(owner, sessions); }
+  let requests = sessions.get(sessionKey);
+  if (!requests) {
+    requests = { generation: 0, seq: 0, lastNonSilentSeq: 0, states: [] };
+    sessions.set(sessionKey, requests);
+  }
+  requests.states = requests.states.filter(ref => {
+    const member = ref.deref();
+    return member && member.sessionKey === sessionKey && member.client === state.client;
+  });
+  if (!requests.states.some(ref => ref.deref() === state)) requests.states.push(new WeakRef(state));
+  return requests;
+}
+
+// Register another projection of the same history without issuing another RPC.
+// Its client/session membership is rechecked for loading, errors and every batch.
+// The getter lets an async wrapper honor direct-host reads' shared generation.
+export function registerChatHistoryProjection(state: ChatState): () => number {
+  const requests = historyRequestState(state);
+  return () => requests.generation;
+}
+
+function historyRequestMembers(requests: HistoryRequestState, client: ChatState["client"], sessionKey: string): ChatState[] {
+  return requests.states.map(ref => ref.deref()).filter((member): member is ChatState =>
+    Boolean(member && member.client === client && member.sessionKey === sessionKey));
+}
+
+function projectHistoryToMembers(state: ChatState, members: ChatState[]) {
+  for (const member of members) {
+    if (member === state) continue;
+    member.chatMessages = state.chatMessages;
+    member.chatVisibleMessageCount = state.chatVisibleMessageCount;
+    member.chatThinkingLevel = state.chatThinkingLevel;
+  }
+}
+
+type StaleHistoryRetryState = {
+  timer: ReturnType<typeof setTimeout> | null;
+  key: string | null;
+  attempt: number;
+  roundKey: string | null;
+};
+let staleHistoryRetries = new WeakMap<HistoryRequestState, StaleHistoryRetryState>();
+// 仅保留挂起句柄，测试全局清理无需强引用已销毁宿主。
+const pendingStaleRetryTimers = new Set<ReturnType<typeof setTimeout>>();
+
+function staleHistoryRetryState(state: ChatState): StaleHistoryRetryState {
+  const target = historyRequestState(state);
+  let retry = staleHistoryRetries.get(target);
+  if (!retry) {
+    retry = { timer: null, key: null, attempt: 0, roundKey: null };
+    staleHistoryRetries.set(target, retry);
+  }
+  return retry;
+}
+
+function clearStaleRetryTimer(retry: StaleHistoryRetryState) {
+  if (retry.timer === null) return;
+  clearTimeout(retry.timer);
+  pendingStaleRetryTimers.delete(retry.timer);
+  retry.timer = null;
+}
 // Bug2-2：补拉预算按「会话 + 终态轮次」复位。此前预算只按 sessionKey 复位——
 // 同一会话内上一轮终态把 4 档预算耗尽后，本轮终态再撞滞后快照就直接静默放弃
 // （「问了没答」永不再补拉）。新 own-run 终态/新 run 发起时换 roundKey 并重置
 // 已耗档位，让新一轮重新获得满额预算。
-let staleRetryRoundKey: string | null = null;
-
-function noteStaleRetryNewRound(sessionKey: string, roundId: string) {
-  const compound = `${sessionKey}${roundId}`;
-  if (staleRetryRoundKey === compound) {
+function noteStaleRetryNewRound(state: ChatState, sessionKey: string, roundId: string) {
+  const retry = staleHistoryRetryState(state);
+  const compound = JSON.stringify([sessionKey, roundId]);
+  if (retry.roundKey === compound) {
     return;
   }
-  staleRetryRoundKey = compound;
+  retry.roundKey = compound;
   // 换轮次必须连挂起的定时器一起作废：旧轮次的 deadline 属于旧轮次的终态，
   // 让它在新 run 里到期会既多打一次 chat.history，又提前吃掉新轮的档位预算。
-  if (staleRetryTimer !== null) {
-    clearTimeout(staleRetryTimer);
-    staleRetryTimer = null;
-  }
-  staleRetryKey = null;
-  staleRetryAttempt = 0;
+  clearStaleRetryTimer(retry);
+  retry.key = null;
+  retry.attempt = 0;
 }
 
-function cancelStaleHistoryRetry() {
-  if (staleRetryTimer !== null) {
-    clearTimeout(staleRetryTimer);
-    staleRetryTimer = null;
-  }
-  staleRetryKey = null;
-  staleRetryAttempt = 0;
+function cancelStaleHistoryRetry(state: ChatState) {
+  const retry = staleHistoryRetries.get(historyRequestState(state));
+  if (!retry) return;
+  clearStaleRetryTimer(retry);
+  retry.key = null;
+  retry.attempt = 0;
 }
 
 // 测试专用：取消挂起的滞后补拉，避免测试进程被退避定时器拖延退出
 export function cancelStaleHistoryRetryForTests() {
-  cancelStaleHistoryRetry();
+  for (const timer of pendingStaleRetryTimers) clearTimeout(timer);
+  pendingStaleRetryTimers.clear();
+  staleHistoryRetries = new WeakMap();
 }
 
 function scheduleStaleHistoryRetry(state: ChatState, sessionKey: string) {
-  if (staleRetryKey !== null && staleRetryKey !== sessionKey) {
+  const retry = staleHistoryRetryState(state);
+  if (retry.key !== null && retry.key !== sessionKey) {
     // 目标会话切换：预算随之复位——旧会话消耗的档位不应由新会话继承，
     // 否则长期滞后的会话会吃光全局预算，其余会话「问了没答」永不再补拉。
     // 无挂起定时器（旧会话预算已耗尽）同样要复位，否则耗尽态会永久传染。
-    if (staleRetryTimer !== null) {
-      clearTimeout(staleRetryTimer);
-      staleRetryTimer = null;
-    }
-    staleRetryAttempt = 0;
+    clearStaleRetryTimer(retry);
+    retry.attempt = 0;
   }
-  if (staleRetryAttempt >= STALE_RETRY_DELAYS_MS.length) {
+  if (retry.attempt >= STALE_RETRY_DELAYS_MS.length) {
     return;
   }
-  if (staleRetryTimer !== null) {
+  if (retry.timer !== null) {
     return; // 已有同会话的挂起重试，合并（同会话内预算不叠加消耗）
   }
-  staleRetryKey = sessionKey;
-  const delay = STALE_RETRY_DELAYS_MS[staleRetryAttempt];
+  retry.key = sessionKey;
+  const delay = STALE_RETRY_DELAYS_MS[retry.attempt];
   // 捕获到期时的轮次：换轮（noteStaleRetryNewRound）已取消定时器，这里再校验一次，
   // 任何漏取消的旧 deadline 都不得为新轮打 RPC 或消耗新轮预算。
-  const roundKey = staleRetryRoundKey;
-  staleRetryTimer = setTimeout(() => {
-    staleRetryTimer = null;
-    if (staleRetryRoundKey !== roundKey) {
-      staleRetryKey = null;
+  const roundKey = retry.roundKey;
+  const timer = setTimeout(() => {
+    pendingStaleRetryTimers.delete(timer);
+    retry.timer = null;
+    if (retry.roundKey !== roundKey) {
+      retry.key = null;
       return;
     }
-    staleRetryAttempt++;
+    retry.attempt++;
     // 会话已切走/断连：放弃（loadChatHistory 内部也有守卫，这里省一次无效调用）
     if (state.sessionKey !== sessionKey || !state.client || !state.connected) {
-      staleRetryKey = null;
-      staleRetryAttempt = 0;
+      retry.key = null;
+      retry.attempt = 0;
       return;
     }
     void loadChatHistory(state, { mergeIfStale: true });
   }, delay);
+  retry.timer = timer;
+  pendingStaleRetryTimers.add(timer);
 }
 
 // R59：内核 chat.history / chat.startup 响应附带在途 run 快照（同 handler，字段取证见
@@ -319,15 +391,12 @@ export type ChatHistoryLoadResult = {
 // 先前加载完成时不得清 chatLoading（最新一代仍在飞，先完成者的 finally 提前清位
 // 会让加载指示中途消失），也不得写回消息快照（防旧响应后至覆盖新响应的
 // last-write-wins 倒置）。silent 探测不置加载态、不拥有视图快照，不参与代际。
-let loadChatHistoryGeneration = 0;
 
-// Bug2-3：全部历史加载（silent 与否）的全局发起序号 + 最近一次非 silent 加载的
+// Bug2-3：同宿主全部历史加载（silent 与否）的发起序号 + 最近一次非 silent 加载的
 // 发起序号。silent 探测（预对齐/看门狗/orphan/补拉）拿到响应前，终态刷新等非
 // silent 加载可能已发起并完成写回——迟到的 silent 响应再落地会把旧快照盖回去，
 // 甚至经 adoptInFlightRunFromHistory 把已终态 run 收养成僵尸流。silent 完成时
-// 若已有更新的非 silent 加载发起过（lastNonSilentLoadSeq > 本次序号），丢弃写回。
-let loadChatHistorySeq = 0;
-let lastNonSilentLoadSeq = 0;
+// 若本宿主已有更新的非 silent 加载发起过（lastNonSilentSeq > 本次序号），丢弃写回。
 
 // 终态 tombstone（Bug2-3）：已收过终态帧的 runId 黑名单。内核 chat.history 由
 // 无 TTL 的会话快照缓存提供，可返回任意时刻的滞后响应——迟到的历史拉取仍可能
@@ -378,7 +447,7 @@ function noteRunTerminal(state: ChatState, runId: string | null, startedAt: numb
   }
   state.chatTerminalRun = { runId, startedAt: startedAt ?? Date.now() };
   recordTerminalRunTombstone(runId);
-  noteStaleRetryNewRound(state.sessionKey, runId);
+  noteStaleRetryNewRound(state, state.sessionKey, runId);
 }
 
 // 列表是否已含某终态 run 的回复：优先 runId 精确匹配（内核终态条目带 runId 时
@@ -620,7 +689,7 @@ function adoptInFlightRunFromHistory(
 
 export async function loadChatHistory(
   state: ChatState,
-  opts?: { mergeIfStale?: boolean; silent?: boolean; expectedRunId?: string | null },
+  opts?: { mergeIfStale?: boolean; silent?: boolean; expectedRunId?: string | null; onHistoryHydrated?: () => void },
 ): Promise<ChatHistoryLoadResult> {
   if (!state.client || !state.connected) {
     return null;
@@ -629,16 +698,17 @@ export async function loadChatHistory(
   const requestClient = state.client;
   // A slow/failed refresh must not interrupt the first history render. Cancel
   // its remaining batches only after a fresh snapshot actually replaces it.
-  const requestSeq = ++loadChatHistorySeq;
-  const generation = opts?.silent ? null : ++loadChatHistoryGeneration;
+  const requests = historyRequestState(state, requestSessionKey);
+  const requestSeq = ++requests.seq;
+  const generation = opts?.silent ? null : ++requests.generation;
   // silent：看门狗/重连探测等静默对齐路径不置加载态——视图层只要 chatLoading 为真
   // 就在消息线程顶部渲染「加载中」，探测每 30s 一次会闪屏；且置位后若被并发的常规加载
   // 交错，还会把常规加载的加载态提前清掉。
   if (!opts?.silent) {
-    state.chatLoading = true;
-    lastNonSilentLoadSeq = requestSeq;
+    for (const member of historyRequestMembers(requests, requestClient, requestSessionKey)) member.chatLoading = true;
+    requests.lastNonSilentSeq = requestSeq;
   }
-  state.lastError = null;
+  for (const member of historyRequestMembers(requests, requestClient, requestSessionKey)) member.lastError = null;
   try {
     const res = await requestClient.request<{
       messages?: Array<unknown>;
@@ -656,14 +726,14 @@ export async function loadChatHistory(
       return null;
     }
     // 被更新的非 silent 加载取代：旧响应不得写回（防旧快照覆盖新快照）。
-    if (generation !== null && generation !== loadChatHistoryGeneration) {
+    if (generation !== null && generation !== requests.generation) {
       return null;
     }
     // Bug2-3：探测期间已有更新的非 silent 加载发起过——本 silent 响应是迟到读，
     // 丢弃写回（含 inFlightRun 收养），防把非 silent 刚写回的真实历史盖回旧快照、
     // 或把已终态 run 收养成僵尸流。取舍：inFlightRun 权威信号一并丢弃，探测调用方
     // （预对齐/看门狗/orphan）按「未知」处理，其 run 身份复查与会话守卫已圈住风险。
-    if (opts?.silent && lastNonSilentLoadSeq > requestSeq) {
+    if (opts?.silent && requests.lastNonSilentSeq > requestSeq) {
       return null;
     }
     // 权威在途声明尽早取出：下方 mergeIfStale 滞后保留分支会提前 return，
@@ -711,7 +781,7 @@ export async function loadChatHistory(
       return result;
     }
     // 替换成功：滞后已收敛，停掉补拉退避
-    cancelStaleHistoryRetry();
+    cancelStaleHistoryRetry(state);
     // Bug1-A：run 在途且内核显式声明时，fresh 列表尾部与流式全量同文/同前缀的
     // assistant 条目是 progressive persist 中途产物（非终态回复），替换前剔除，
     // 否则与流式气泡同屏双份（会话切换收养在途 run 的路径同此受益）。
@@ -739,7 +809,7 @@ export async function loadChatHistory(
       Boolean(opts?.mergeIfStale) &&
       priorCount > 0 &&
       priorCount >= state.chatMessages.length;
-    cancelChatHistoryHydration(state);
+    for (const member of historyRequestMembers(requests, requestClient, requestSessionKey)) cancelChatHistoryHydration(member);
     state.chatMessages = deduplicated;
     if (keepCount) {
       // 新历史比先前可见数长时，新增消息立即可见（无需再挂注水）。
@@ -749,31 +819,34 @@ export async function loadChatHistory(
         deduplicated.length,
         INITIAL_CHAT_HISTORY_RENDER_COUNT,
       );
-      scheduleChatHistoryHydration(state, requestSessionKey, deduplicated.length);
+      scheduleChatHistoryHydration(state, requestSessionKey, deduplicated.length, () => {
+        projectHistoryToMembers(state, historyRequestMembers(requests, requestClient, requestSessionKey));
+        opts?.onHistoryHydrated?.();
+      });
     }
     state.chatThinkingLevel = res.thinkingLevel ?? null;
+    projectHistoryToMembers(state, historyRequestMembers(requests, requestClient, requestSessionKey));
     return result;
   } catch (err) {
     if (
       state.sessionKey !== requestSessionKey ||
       state.client !== requestClient ||
       (opts?.expectedRunId !== undefined && state.chatRunId !== opts.expectedRunId) ||
-      (generation !== null && generation !== loadChatHistoryGeneration) ||
-      (opts?.silent && lastNonSilentLoadSeq > requestSeq)
+      (generation !== null && generation !== requests.generation) ||
+      (opts?.silent && requests.lastNonSilentSeq > requestSeq)
     ) {
       return null;
     }
-    state.lastError = String(err);
+    for (const member of historyRequestMembers(requests, requestClient, requestSessionKey)) member.lastError = String(err);
     return null;
   } finally {
     // silent 路径从未置位，不得在此回写 false：否则会清掉并发常规加载刚置起的加载态。
     // 代际守卫同理：被更新的加载取代时，清位留给最新一代的 finally。
     if (
-      state.sessionKey === requestSessionKey &&
       !opts?.silent &&
-      (generation === null || generation === loadChatHistoryGeneration)
+      (generation === null || generation === requests.generation)
     ) {
-      state.chatLoading = false;
+      for (const member of historyRequestMembers(requests, requestClient, requestSessionKey)) member.chatLoading = false;
     }
   }
 }
@@ -992,7 +1065,7 @@ export async function sendChatMessage(
     state.chatAbortPending = false;
     // 新一轮 run：上一终态轮的等长滞后判定记录与补拉预算失效（预算按新 run 重新起算）
     state.chatTerminalRun = null;
-    noteStaleRetryNewRound(requestSessionKey, runId);
+    noteStaleRetryNewRound(state, requestSessionKey, runId);
   }
 
   // 图片 + 文件都走 base64 apiAttachments（文件编码失败/超限的已降级进文本前缀，不在此列）
@@ -1091,7 +1164,7 @@ export async function sendChatMessage(
           ownerState.chatTerminalRun = null;
           if (ownerState === state) {
             clearReconnectOrphanRun();
-            noteStaleRetryNewRound(requestSessionKey, acceptedRunId);
+            noteStaleRetryNewRound(state, requestSessionKey, acceptedRunId);
           }
         }
         ownerState.chatRunId = acceptedRunId;

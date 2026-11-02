@@ -18,6 +18,7 @@ import { registerVerifyIpc } from "./settings/verify";
 import { registerModelsIpc } from "./settings/models";
 import { registerChannelsIpc } from "./settings/channels";
 import { registerWeixinIpc } from "./settings/weixin";
+import { registerQqbotIpc } from "./settings/qqbot";
 import { registerPairingIpc } from "./settings/pairing";
 import { registerWebbridgeIpc } from "./settings/webbridge";
 import { registerAdvancedIpc } from "./settings/advanced";
@@ -35,6 +36,7 @@ export function registerSettingsIpc(opts: SettingsIpcOptions): void {
   registerModelsIpc();
   registerChannelsIpc();
   registerWeixinIpc(opts);
+  registerQqbotIpc(opts);
   registerPairingIpc(opts);
   registerWebbridgeIpc(opts);
   registerAdvancedIpc(opts);

@@ -18,6 +18,7 @@
 
 import * as os from "os";
 import * as path from "path";
+import * as fs from "fs";
 import { resolveUserStateDir } from "./constants";
 
 // 16MB 原始文件上限（编码后 ~21.9MB，低于 WS 25MB 单帧上限）
@@ -139,6 +140,24 @@ export function isCredentialPathDenied(
   homeDir: string,
 ): boolean {
   const target = normalizeDeniedPath(filePath);
+  const canonical = (input: string): string | undefined => {
+    try { return normalizeDeniedPath(fs.realpathSync(input)); }
+    catch (error) {
+      if (["ENOENT", "ENOTDIR"].includes((error as NodeJS.ErrnoException).code || "")) return undefined;
+      throw error;
+    }
+  };
+  // Each protected child may independently be a junction or symlink.
+  const protectedDirs = [path.join(stateDir, "credentials"), ...[".ssh", ".aws", ".gnupg"].map(dir => path.join(homeDir, dir))];
+  for (const dir of protectedDirs) {
+    const real = canonical(dir);
+    if (real && isSamePathOrInside(target, real)) return true;
+  }
+  for (const file of ["openclaw.json", "cryoclaw.config.json"]) {
+    if (target === canonical(path.join(stateDir, file))) return true;
+  }
+  const realState = canonical(stateDir);
+  if (realState && isSamePathOrInside(target, realState) && target.endsWith(".log")) return true;
   const state = normalizeDeniedPath(stateDir);
   if (isSamePathOrInside(target, normalizeDeniedPath(path.join(stateDir, "credentials")))) {
     return true;
@@ -167,7 +186,7 @@ export function evaluateFileReadTarget(
     if (isCredentialPathDenied(filePath, resolveUserStateDir(), os.homedir())) {
       return { ok: false, error: "denied" };
     }
-  } catch { /* denylist 判定失败按放行处理 */ }
+  } catch { return { ok: false, error: "denied" }; }
   if (!stat) {
     return { ok: false, error: "not-found" };
   }

@@ -1,7 +1,14 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { PROVIDERS, STATIC_MODEL_FALLBACKS, staticModelsFor, CUSTOM_MODEL_SENTINEL, KIMI_PRICING_URL } from "./setup-constants.ts";
+import { PROVIDERS, STATIC_MODEL_FALLBACKS, staticModelsFor, CUSTOM_MODEL_SENTINEL, KIMI_PRICING_URL, isValidHttpBaseUrl } from "./setup-constants.ts";
+
+test("custom Base URL rejects request endpoints before setup or settings save", () => {
+  for (const endpoint of ["responses", "messages", "chat/completions"]) {
+    assert.equal(isValidHttpBaseUrl(`https://fixture.invalid/v1/${endpoint}/?api-version=preview`), false);
+  }
+  assert.equal(isValidHttpBaseUrl("https://fixture.invalid/v1?api-version=preview"), true);
+});
 
 // R67 P0 回归锁：全新安装时 gateway 未启动、动态目录为空，任何 provider 都必须有
 // 非空候选清单，否则模型控件整体消失、用户无法完成安装。

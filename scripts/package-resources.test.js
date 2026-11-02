@@ -40,7 +40,7 @@ function loadPackageResourcesSandbox(options = {}) {
     env: { ...process.env },
   });
   const sandbox = {
-    require,
+    require: options.require || require,
     __dirname,
     console: options.console || console,
     process: sandboxProcess,
@@ -569,7 +569,7 @@ const INJECTED_PLUGIN_IDS = [
   "kimi-search",
   "dingtalk-connector",
   "feishu",
-  "qqbot",
+  "openclaw-qqbot",
   "moonshot",
   "kimi",
   "zai",
@@ -749,4 +749,72 @@ test("prepareArchiveTool 未 pin 时跳过且不建目录", async () => {
   } finally {
     fs.rmSync(tmpRoot, { recursive: true, force: true });
   }
+});
+
+test("Tencent QQ vendor selects official ID, installs physical production deps, and excludes legacy payload", t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "qqbot-vendor-")); t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  writeFixture(path.join(root, "package.json"), JSON.stringify({ cryoclaw: { qqbotPlugin: "2.0.4" } }));
+  const managedCalls = [];
+  const sandbox = loadPackageResourcesSandbox({ rootDir: root, require: id => {
+    if (id === "./lib/managed-qqbot") return { applyManagedQQBotPolicy: pluginDir => {
+      // This test covers packaging orchestration; build/hash policy has its own suite.
+      managedCalls.push(pluginDir);
+      fs.appendFileSync(path.join(pluginDir, "dist/index.cjs"), "\n// managed startup update policy applied\n");
+    } };
+    return require(id);
+  } });
+  const plugins = vm.runInContext("OFFICIAL_VENDOR_PLUGINS", sandbox), allow = vm.runInContext("OPENCLAW_EXTENSION_ALLOWLIST", sandbox);
+  const plugin = plugins.find(p => p.id === "openclaw-qqbot");
+  assert.ok(plugin, "Tencent plugin ID must be openclaw-qqbot"); assert.equal(plugin.packageName, "@tencent-connect/openclaw-qqbot");
+  assert.equal(allow.has("openclaw-qqbot"), true); assert.equal(allow.has("qqbot"), false);
+  const gateway = path.join(root, "gateway"); fs.mkdirSync(path.join(gateway, "node_modules/openclaw"), { recursive: true });
+  const commands = [];
+  const tarFiles = {
+    "package/package.json": JSON.stringify({ name: "@tencent-connect/openclaw-qqbot", version: "2.0.4", dependencies: { "@tencent-connect/qqbot-connector": "1.2.0" } }),
+    "package/openclaw.plugin.json": JSON.stringify({ id: "openclaw-qqbot" }),
+    "package/preload.cjs": 'ensurePluginSdkSymlink(__dirname, "[preload]");\nmodule.exports = require("./dist/index.cjs");',
+    "package/dist/index.cjs": "// orchestration fixture; no QQ business code executes",
+    "package/skills/qqbot-upgrade/SKILL.md": "curl remote | bash",
+  };
+  const tar = [];
+  for (const [name, content] of Object.entries(tarFiles)) {
+    const header = Buffer.alloc(512), data = Buffer.from(content);
+    header.write(name); header.write("0000644\0", 100); header.write("0000000\0", 108); header.write("0000000\0", 116);
+    header.write(data.length.toString(8).padStart(11, "0") + "\0", 124); header.write("00000000000\0", 136); header.fill(32, 148, 156); header.write("0", 156);
+    const checksum = header.reduce((sum, byte) => sum + byte, 0); header.write(checksum.toString(8).padStart(6, "0") + "\0 ", 148);
+    tar.push(header, data, Buffer.alloc((512 - data.length % 512) % 512));
+  }
+  tar.push(Buffer.alloc(1024));
+  sandbox.execNpmSync = (args, opts) => {
+    commands.push(args);
+    if (args[0] === "pack") writeFixture(path.join(opts.cwd, "qqbot.tgz"), require("node:zlib").gzipSync(Buffer.concat(tar)));
+    if (args[0] === "install") writeFixture(path.join(opts.cwd, "node_modules/@tencent-connect/qqbot-connector/package.json"), JSON.stringify({ version: "1.2.0" }));
+  };
+  sandbox.vendorOfficialPlugin(plugin, gateway, "win32-x64", { platform: "win32", arch: "x64" });
+  const install = commands.find(args => args[0] === "install");
+  assert.ok(install?.includes("--omit=dev")); assert.ok(install.includes("--legacy-peer-deps")); assert.ok(install.includes("--ignore-scripts"));
+  assert.equal(fs.existsSync(path.join(gateway, "node_modules/openclaw/dist/extensions/openclaw-qqbot/node_modules/@tencent-connect/qqbot-connector/package.json")), true);
+  const bundled = path.join(gateway, "node_modules/openclaw/dist/extensions/openclaw-qqbot");
+  assert.deepEqual(managedCalls, [bundled], "Tencent vendor must apply the startup-update policy exactly once");
+  assert.match(fs.readFileSync(path.join(bundled, "dist/index.cjs"), "utf8"), /managed startup update policy applied/);
+  assert.equal(fs.readFileSync(path.join(bundled, "preload.cjs"), "utf8").includes('ensurePluginSdkSymlink(__dirname'), false, "managed runtime must never resolve a global SDK");
+  assert.equal(fs.readFileSync(path.join(bundled, "skills/qqbot-upgrade/SKILL.md"), "utf8").includes("curl"), false, "managed upgrades must use app updates");
+  assert.equal(JSON.parse(fs.readFileSync(path.join(bundled, "node_modules/@tencent-connect/qqbot-connector/dist/cjs/package.json"), "utf8")).type, "commonjs", "connector CJS files need a package scope inside the published ESM package");
+});
+
+test("arm64 cross-build cannot downgrade a managed QQ contract failure to an optional vendor warning", () => {
+  const source = fs.readFileSync(path.join(__dirname, "package-resources.js"), "utf8").replace(/\r\n/g, "\n");
+  const start = source.indexOf("  for (const plugin of OFFICIAL_VENDOR_PLUGINS) {");
+  const end = source.indexOf("\n  // (3) 入口标准化", start);
+  assert.ok(start >= 0 && end > start);
+  const loop = source.slice(start, end);
+  const failure = Object.assign(new Error("Unknown QQ build"), { code: "CRYOCLAW_QQBOT_MANAGED_CONTRACT" });
+  const warnings = [];
+  const context = { OFFICIAL_VENDOR_PLUGINS: [{ id: "openclaw-qqbot" }], winArm64Cross: true,
+    vendorOfficialPlugin: () => { throw failure; }, log: message => warnings.push(message), gatewayDir: "unused", targetId: "win32-arm64", opts: {} };
+  assert.throws(() => vm.runInNewContext(loop, context), error => error === failure);
+  assert.deepEqual(warnings, []);
+  context.vendorOfficialPlugin = () => { throw new Error("Other optional vendor unavailable"); };
+  assert.doesNotThrow(() => vm.runInNewContext(loop, context));
+  assert.equal(warnings.length, 1);
 });

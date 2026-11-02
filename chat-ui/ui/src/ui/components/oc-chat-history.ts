@@ -94,8 +94,17 @@ export class OcChatHistory extends LitElement {
     "locale",
   ] as const;
 
+  private toolDisclosureUpdate = false;
+
+  refreshToolDisclosures(): void {
+    this.toolDisclosureUpdate = true;
+    this.requestUpdate();
+  }
+
   shouldUpdate(changed: Map<PropertyKey, unknown>): boolean {
-    return OcChatHistory.VISUAL_PROPS.some((name) => changed.has(name));
+    const disclosure = this.toolDisclosureUpdate;
+    this.toolDisclosureUpdate = false;
+    return disclosure || OcChatHistory.VISUAL_PROPS.some((name) => changed.has(name));
   }
 
   render() {

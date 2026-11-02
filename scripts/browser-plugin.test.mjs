@@ -9,8 +9,11 @@ test("embedded browser plugin is discoverable without starting a browser", async
   const manifest = JSON.parse(await fs.readFile(new URL("../builtin-plugins/cryoclaw-browser/openclaw.plugin.json", import.meta.url), "utf8"));
   assert.deepEqual(manifest.contracts.tools, ["cryoclaw_browser"]);
   assert.equal(manifest.activation.onStartup, true);
-  let factory;
-  plugin.register({ registerTool(value) { factory = value; } });
+  let factory, registration;
+  plugin.register({ registerTool(value, options) { factory = value; registration = options; } });
+  // Optional tools are omitted by the gateway unless separately allowlisted.
+  // Access to this tool is controlled by the desktop's explicit browser policy.
+  assert.notEqual(registration?.optional, true);
   assert.equal(factory.contextVersion, 2);
   assert.equal(factory.create({ sandboxed: true }), null);
   assert.equal(factory.create({ messageChannel: "telegram" }), null);

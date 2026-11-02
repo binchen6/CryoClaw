@@ -78,6 +78,10 @@ function statusLetterClass(letter: string): string {
   }
 }
 
+function entryPaths(entry: GitStatusEntry): string[] {
+  return [...new Set(entry.index === "R" && entry.origPath ? [entry.path, entry.origPath] : [entry.path])];
+}
+
 function renderDiff(props: GitPanelProps) {
   if (props.diffLoading) {
     return html`<div class="gitp-diff__placeholder">${icons.loader} ${t("git.diffLoading")}</div>`;
@@ -189,7 +193,7 @@ function renderFileRow(
           ?disabled=${busy}
           @click=${(e: Event) => {
             e.stopPropagation();
-            if (group === "staged") props.onUnstage([entry.path]);
+            if (group === "staged") props.onUnstage(entryPaths(entry));
             else props.onStage([entry.path]);
           }}
         >
@@ -210,7 +214,7 @@ function renderGroup(
   if (entries.length === 0) return nothing;
   const titleKey =
     group === "staged" ? "git.staged" : group === "unstaged" ? "git.unstaged" : "git.untracked";
-  const allPaths = entries.map((e) => e.path);
+  const allPaths = [...new Set(entries.flatMap(e => group === "staged" ? entryPaths(e) : [e.path]))];
   const anyBusy = allPaths.some((p) => props.busyPaths.has(p));
   return html`
     <section class="gitp-group">

@@ -85,12 +85,15 @@ export type ChatProps = {
   dockCollapsed?: boolean;
   dockMaximized?: boolean;
   dockActiveTab?: DockTabId;
+  dockOpenedTabs?: DockTabId[];
+  dockLauncherOpen?: boolean;
   dockBrowserEnabled?: boolean;
   dockChangesContent?: TemplateResult;
   dockFilesContent?: TemplateResult;
   dockTerminalContent?: TemplateResult;
   dockBrowserContent?: TemplateResult;
   onSelectDockTab?: (tab: DockTabId) => void;
+  onCloseDockTab?: (tab: DockTabId) => void;
   onToggleDock?: () => void;
   onToggleMaximized?: () => void;
   thinkingLevel: string | null;
@@ -205,7 +208,7 @@ export type ChatProps = {
   gitAvailable?: boolean | null;
   onOpenGitView?: () => void;
   // 终态改动卡片「撤销」：危险确认后丢弃这些文件的工作区改动（app 层实现）
-  onUndoFileChanges?: (files: FileChange[]) => void;
+  onUndoFileChanges?: (files: FileChange[]) => void | Promise<void>;
   // Scroll control
   showNewMessages?: boolean;
   newMessagesLeaving?: boolean;
@@ -504,7 +507,7 @@ export function renderChat(props: ChatProps) {
           .onResendError=${props.onResendError}
           .onRewindToMessage=${props.onRewindToMessage}
           .onForkFromMessage=${props.onForkFromMessage}
-          .onDiscard=${(files: FileChange[]) => void props.onUndoFileChanges?.(files)}
+          .onDiscard=${(files: FileChange[]) => props.onUndoFileChanges?.(files)}
         ></oc-chat-history>`
       }
       ${
@@ -555,21 +558,64 @@ export function renderChat(props: ChatProps) {
     </div>
   `;
 
-  // 底部堆叠顺序（自上而下）：本轮改动胶囊 → 任务进度卡 → 输入框。
-  // 进度卡是最贴近输入框的浮卡（用户截图要求），胶囊在其上方；两者都是消息流之后的文档流兄弟。
+  // Dock 与完整对话列并排；输入框、进度与提示一起收窄，不再跨到右侧面板下方。
   return html`
     <section class="card chat">
-      ${renderGatewayCallout(props)}
-      ${props.connected && props.error
-        ? html`<div class="callout danger chat-error-callout">
-            <span class="chat-error-callout__icon" aria-hidden="true">${icons.warning}</span>
-            <span title=${props.error}>${t("chat.error.generic")}</span>
-          </div>`
-        : nothing}
-
       <div class="chat-split-container ${dockMaximized ? "chat-split-container--maximized" : dockExpanded ? "chat-split-container--open" : "chat-split-container--collapsed"}">
-        <div class="chat-main" style="flex: ${dockExpanded ? `0 0 ${splitRatio * 100}%` : "1 1 100%"}; ${dockMaximized ? "display:none" : ""}">
+        <div class="chat-main" style="flex: ${dockExpanded ? `0 1 ${splitRatio * 100}%` : "1 1 100%"}; ${dockMaximized ? "display:none" : ""}">
+          ${renderGatewayCallout(props)}
+          ${props.connected && props.error
+            ? html`<div class="callout danger chat-error-callout">
+                <span class="chat-error-callout__icon" aria-hidden="true">${icons.warning}</span>
+                <span title=${props.error}>${t("chat.error.generic")}</span>
+              </div>`
+            : nothing}
+
           ${thread}
+          ${renderQueueStrip(props)}
+
+          ${renderCompactionIndicator(props.compactionStatus)}
+          ${renderFallbackNotice(props.fallbackNotice)}
+
+          ${renderConversationInfo(props)}
+
+          ${renderBoardPanel(props)}
+
+          ${
+            props.showNewMessages
+              ? html`
+                <button
+                  class="btn chat-new-messages ${props.newMessagesLeaving ? "chat-new-messages--leaving" : ""}"
+                  type="button"
+                  aria-label=${t("chat.scrollToBottom")}
+                  @click=${props.onScrollToBottom}
+                >
+                  ${icons.arrowDown}
+                </button>
+              `
+              : nothing
+          }
+
+          ${renderExecStrip(props)}
+          ${renderGoalBanner(props)}
+          ${renderGoalForm(props)}
+
+          <oc-command-jobs .messages=${props.toolMessages} .sessionKey=${props.sessionKey} .locale=${getLocale()}></oc-command-jobs>
+          ${renderProgressCard(props.progressCard ?? null, {
+            sessionKey: props.sessionKey,
+            collapsed: props.progressCardCollapsed ?? false,
+            runActive: props.runActive ?? false,
+            dismissing: props.progressCard?.dismissing,
+            onToggleCollapse: props.onToggleProgressCardCollapse,
+            onDismiss: props.onDismissProgressCard,
+          })}
+          ${renderCompose(props, {
+            activeSession,
+            composePlaceholder,
+            modelSelectValue,
+            isBusy,
+            showStop,
+          })}
         </div>
         ${dockExpanded && !dockMaximized
           ? html`<oc-resizable-divider
@@ -577,11 +623,13 @@ export function renderChat(props: ChatProps) {
               @resize=${(e: CustomEvent) => props.onSplitRatioChange?.(e.detail.splitRatio)}
             ></oc-resizable-divider>`
           : nothing}
-        <oc-context-dock
-          class="chat-sidebar ${dockExpanded ? "" : "chat-sidebar--collapsed"}"
-          .collapsed=${!dockExpanded}
+        ${dockExpanded ? html`<oc-context-dock
+          class="chat-sidebar"
+          .collapsed=${false}
           .maximized=${dockMaximized}
           .activeTab=${props.dockActiveTab ?? "changes"}
+          .openedTabs=${props.dockOpenedTabs ?? []}
+          .launcherOpen=${props.dockLauncherOpen !== false}
           .browserEnabled=${props.dockBrowserEnabled === true}
           .subagentCards=${subagentCards}
           .subagentPanel=${props.subagentPanel ?? null}
@@ -595,59 +643,15 @@ export function renderChat(props: ChatProps) {
           .assistantName=${props.assistantName}
           .assistantAvatar=${assistantIdentity.avatar}
           .onSelectTab=${props.onSelectDockTab}
+          .onCloseTab=${props.onCloseDockTab}
           .onToggleCollapsed=${props.onToggleDock}
           .onToggleMaximized=${props.onToggleMaximized}
           .onOpenSubagent=${props.onOpenSubagentPanel}
           .onCloseSubagent=${props.onCloseSubagentPanel}
           .onOpenSidebar=${props.onOpenSidebar}
           .onCloseSidebar=${props.onCloseSidebar}
-        ></oc-context-dock>
+        ></oc-context-dock>` : nothing}
       </div>
-
-      ${renderQueueStrip(props)}
-
-      ${renderCompactionIndicator(props.compactionStatus)}
-      ${renderFallbackNotice(props.fallbackNotice)}
-
-      ${renderConversationInfo(props)}
-
-      ${renderBoardPanel(props)}
-
-      ${
-        props.showNewMessages
-          ? html`
-            <button
-              class="btn chat-new-messages ${props.newMessagesLeaving ? "chat-new-messages--leaving" : ""}"
-              type="button"
-              aria-label=${t("chat.scrollToBottom")}
-              @click=${props.onScrollToBottom}
-            >
-              ${icons.arrowDown}
-            </button>
-          `
-          : nothing
-      }
-
-      ${renderExecStrip(props)}
-      ${renderGoalBanner(props)}
-      ${renderGoalForm(props)}
-
-      <oc-command-jobs .messages=${props.toolMessages} .sessionKey=${props.sessionKey} .locale=${getLocale()}></oc-command-jobs>
-      ${renderProgressCard(props.progressCard ?? null, {
-        sessionKey: props.sessionKey,
-        collapsed: props.progressCardCollapsed ?? false,
-        runActive: props.runActive ?? false,
-        dismissing: props.progressCard?.dismissing,
-        onToggleCollapse: props.onToggleProgressCardCollapse,
-        onDismiss: props.onDismissProgressCard,
-      })}
-      ${renderCompose(props, {
-        activeSession,
-        composePlaceholder,
-        modelSelectValue,
-        isBusy,
-        showStop,
-      })}
     </section>
   `;
 }
