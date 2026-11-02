@@ -40,6 +40,8 @@
 
 最终来源已重新打包并精确静默安装，安装模式 `rename`、无 fallback，单次安装 117.61 秒。构建与安装位 app.asar SHA-256 均为 `7c5784a48a723022cd1f8ad7b86cc9e01ce4c9faa26a4ff26e0e6371be11cd9f`。Node 24.22.1/OpenClaw 2026.10.9、QQ 2.0.4、托管 bundle SHA、connector CJS 边界、旧 QQ vendor 缺失、七个 Kimi JS 文件无旧补丁和浏览器工具注册均通过。
 
+仓库远程更新频道已同步 `stable=2026.10.9`、`minRuntimeNode=24.22.1`、`updatedAt=2026-11-02`，`minSupported=2026.7.0` 保留。该元数据从仓库 main 读取，不进入安装包；包内更新器兜底早已由 package.json 注入 10.9，因此本次元数据修正不改变下列安装产物。清单解析、旧 Node 拒绝门槛和既有更新器回归已复核。
+
 - 安装版完整 UI：96 场景、11 张截图、renderer 异常为零，耗时 220.3 秒。报告：`out/ui-release/2026.1101.0-final/report.json`。保留启动连接阶段的 WebSocket 诊断，不宣称 console 错误条数为零。
 - 安装版 QQ：实际官方 connector 生成本地 SVG，取消后配置哈希不变，renderer 异常为零。报告：`out/installed-qqbot-qa/report.json`。手机未扫码，不计为真实账号授权或 QQ 消息投递。
 - 安装版真实 Agent：读取页面独有随机码，完成输入和点击，确认真实 DOM 变化及接管撤权；同调用 ID 的 code-mode 执行结果、终态 nonce、三个主进程 Agent 事件共同验证。报告：`out/installed-browser-qa/2026.1101.0-final/report.json`。真实模型独立会话的 nonce 回声亦进入持久历史；专用 QA 会话均已删除。
