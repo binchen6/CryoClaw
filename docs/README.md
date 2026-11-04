@@ -8,8 +8,8 @@
 | [REVIEW-2026.1104.0.md](REVIEW-2026.1104.0.md) | 10.10启动/退出所有权、技能按需发现、回退数据准入与工具卡片焦点审查 |
 | [KERNEL-2026.10.10.md](KERNEL-2026.10.10.md) | 官方来源、七处旧补丁退役、数据库和原生缓存合同 |
 | [STARTUP-2026-11-04-INVESTIGATION.md](STARTUP-2026-11-04-INVESTIGATION.md) | 安装版等待诊断、撤回的实验与一次启动后刷新策略 |
-| [REVIEW-2026.1103.0.md](REVIEW-2026.1103.0.md) | 本轮全项目人工审查、三项新增修复及依赖公告边界 |
-| [RELEASE-2026.1103.0-VERIFICATION.md](RELEASE-2026.1103.0-VERIFICATION.md) | 2026.1103.0 最终安装、性能、UI、更新、公开资产及 push 验收 |
+| [REVIEW-2026.1103.0.md](REVIEW-2026.1103.0.md) | 历史未发布候选的人工审查、三项新增修复及依赖公告边界 |
+| [RELEASE-2026.1103.0-VERIFICATION.md](RELEASE-2026.1103.0-VERIFICATION.md) | 历史未发布候选1103的安装、性能与当时未完成项 |
 | [STARTUP-2026-11-03.md](STARTUP-2026-11-03.md) | 本轮最终安装来源的启动优化、严格同配置对照、资源指标和兼容边界 |
 | [INTERACTION-2026-11-03.md](INTERACTION-2026-11-03.md) | 全项目菜单/折叠审查、工作空间/Dock 统一规范、QQ 配置修复与验收 |
 | [OPTIMIZATION-PROGRESS.md](OPTIMIZATION-PROGRESS.md) | 当前版本、五轮范围、开发命令与关键路径；历史记录另行归档 |

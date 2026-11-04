@@ -1,6 +1,6 @@
-# 2026.1104.0 发布验收（本地完成，发布中）
+# 2026.1104.0 发布验收（已公开）
 
-用户已恢复任务并授权继续 debug、优化、发版和push。1103为未发布历史候选。main已快进合入e2be0f0的独立WebBridge镜像与钉定更新，SHA256匹配；该提交未改动本次安装包输入。本轮尚未提交、创建tag或公开发布，不将草稿/本地包视为完成。
+用户已恢复任务并授权继续 debug、优化、发版和push。1103为未发布历史候选。main已快进合入e2be0f0的独立WebBridge镜像与钉定更新，SHA256匹配；该提交未改动本次安装包输入。最终源码提交为`b483b4ee8a541ddd07b298bbd894f73514d151ff`，标签`v2026.1104.0`指向该提交；公开资产、latest和旧版本更新发现均已验证，main交付本版源码及本验收记录。
 
 ## 固定来源
 
@@ -63,6 +63,12 @@
 | 同名.exe.blockmap | 335391 | `0600a0bebeb28ad645928ba61778c843140eaf26f4fe279fe558a8932f450979` |
 | latest.yml | 371 | `4d9b42a012147d6a4502ff033c0ab85901c5d5d740afaabecfdca48bc095dbbf` |
 
-本次安装器未配置代码签名，构建检查明确提示，未绕过校验。剩余发布门禁为草稿服务端资产核对、公开latest/更新发现及远端main；通过后补充状态。
+本次安装器未配置代码签名，构建检查明确提示，未绕过校验。
+
+## 公开发布与交付
+
+- [CryoClaw 2026.1104.0](https://github.com/binchen6/CryoClaw/releases/tag/v2026.1104.0)已公开，draft=false，latest指向本版。先通过草稿三件套检查，再转正；正式资产断言`.cache/release-1104-public-assets.log`全部通过，三个服务端SHA256、大小与本地同批产物完全一致。
+- electron-updater6.8.9的真实版本选择路径：1101→1104，GitHub和正式generic清单均updateAvailable=true、autoDownload=false。日志`.cache/release-1104-update-discovery-{api,manifest}.log`。未把草稿发现、静态源码字符串或本地manifest代替公开更新发现。
+- 标签源码为b483b4e，文档收尾另成提交；使用普通push交付main，并以远端head与本地HEAD、远端annotated tag解引用与源码SHA进行最后核对，不force-push、不等待CI冒充本地验收。
 
 历史初步候选在命令接口及启动器归属上发现的问题均已记录。受控fs-safe两组已标为diagnostic，不能挪作本版本正式性能证据。
