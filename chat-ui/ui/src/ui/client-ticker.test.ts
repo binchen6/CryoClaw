@@ -39,3 +39,32 @@ test("client ticker：同轮只读 handler 并发完成、错误隔离且轮次�
     for (const name of ["test-slow", "test-fast", "test-error"]) unregisterTickHandler(name);
   }
 });
+
+test("reconnect starts fresh reads while the old round is pending, without unlocking the new round", async () => {
+  const originalWindow = globalThis.window;
+  const originalDocument = globalThis.document;
+  let tick: () => void = () => {};
+  globalThis.window = { setInterval: (callback: () => void) => { tick = callback; return 1; }, clearInterval() {} } as unknown as typeof window;
+  globalThis.document = { hidden: false } as Document;
+  const pending: Array<() => void> = [];
+  registerTickHandler("reconnect-test", () => new Promise<void>(resolve => pending.push(resolve)));
+  try {
+    startTicker();
+    assert.equal(pending.length, 1);
+    stopTicker(); startTicker();
+    assert.equal(pending.length, 2, "old connection cannot defer sessions.list by a full tick interval");
+    pending[0]!();
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+    tick();
+    assert.equal(pending.length, 2, "old completion cannot unlock the current round");
+    pending[1]!();
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+    tick();
+    assert.equal(pending.length, 3);
+    pending[2]!();
+  } finally {
+    stopTicker(); unregisterTickHandler("reconnect-test");
+    globalThis.window = originalWindow;
+    globalThis.document = originalDocument;
+  }
+});

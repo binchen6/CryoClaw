@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { html } from "lit";
+import { DisclosureDirective } from "../../utils/disclosure.ts";
 import type { AppViewState } from "../../app-view-state.ts";
 
 type View = { strings: readonly string[]; values: unknown[] };
@@ -12,6 +13,10 @@ function templates(value: unknown): View[] {
   const view = value as View; return [view, ...view.values.flatMap(templates)];
 }
 function flatten(value: unknown): string {
+  if (value && typeof value === "object" && (value as any)._$litDirective$ === DisclosureDirective) {
+    const [open, body] = (value as any).values;
+    return open ? flatten(body()) : "";
+  }
   return typeof value === "string" ? value : Array.isArray(value) ? value.map(flatten).join(" ")
     : value && typeof value === "object" && "values" in value ? flatten((value as View).values) : "";
 }

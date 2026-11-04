@@ -78,7 +78,7 @@ test('native updater vendors only semver and mode changes remove all old ASAR de
   t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
   const target=path.join(root,'resources/targets/win32-x64'), updater=path.join(target,'updater');
   writeFixture(path.join(root,'package.json'),JSON.stringify({cryoclaw:{openclaw:'2026.10.7',gatewayRuntime:'node'}}));
-  for(const rel of ['scripts/updater/kernel-update.mjs','scripts/updater/gateway-ctl.mjs','scripts/lib/kernel-dist-patch.js','scripts/lib/kernel-channel.js','scripts/lib/rm-rec.js','scripts/lib/kernel-prune.js','scripts/lib/kernel-config-snapshot.js','scripts/lib/kernel-directory-swap.js','scripts/lib/gateway-dependency-policy.js','shared/kernel-runtime-policy.cjs']){
+  for(const rel of ['scripts/updater/kernel-update.mjs','scripts/updater/gateway-ctl.mjs','scripts/lib/kernel-dist-patch.js','scripts/lib/kernel-channel.js','scripts/lib/rm-rec.js','scripts/lib/kernel-prune.js','scripts/lib/compact-typebox-runtime.js','scripts/lib/kernel-config-snapshot.js','scripts/lib/kernel-directory-swap.js','scripts/lib/gateway-dependency-policy.js','shared/kernel-runtime-policy.cjs']){
     writeFixture(path.join(root,rel),fs.readFileSync(path.join(__dirname,'..',rel),'utf8'));
   }
   writeFixture(path.join(root,'node_modules/@electron/asar/package.json'),JSON.stringify({version:'4.1.0'}));

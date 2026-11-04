@@ -171,6 +171,7 @@ export function registerWorkspaceIpc(): void {
     const check = await guardRealPath(typeof params?.path === "string" ? params.path : "");
     if (!check.ok) return check.error;
     const target = check.target;
+    try {
     const directory = fs.statSync(target).isDirectory() ? target : path.dirname(target);
     const launch = (command: string, args: string[], interactive = false) => new Promise<void>((resolve, reject) => {
       // User paths stay argv/cwd data; cmd shell quoting cannot make arbitrary
@@ -179,7 +180,6 @@ export function registerWorkspaceIpc(): void {
       child.on("error", reject);
       child.once("spawn", () => { child.unref(); resolve(); });
     });
-    try {
       switch (params?.target) {
         case "vscode":
           if (process.platform === "darwin") await launch("open", ["-a", "Visual Studio Code", target]);

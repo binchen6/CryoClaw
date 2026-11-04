@@ -5,7 +5,7 @@ const fs = require("node:fs");
 test("private gateway IPC starts native shutdown once; compile-cache persistence waits for exit",()=>{
   const vm=require("node:vm"),source=fs.readFileSync(require("node:path").join(__dirname,"../shared/openai-proxy-bootstrap.cjs"),"utf8");
   let listener,onExit,onDisconnect,handlers=0,flushes=0;const emitted=[];
-  const proc={versions:{electron:"43.8.3"},env:{NODE_COMPILE_CACHE:"/cache"},send(){},on(name,fn){if(name==="message")listener=fn;},once(name,fn){if(name==="exit")onExit=fn;if(name==="disconnect")onDisconnect=fn;},listenerCount(){return handlers;},emit(name){emitted.push(name);}};
+  const proc={versions:{electron:"43.8.3"},env:{NODE_COMPILE_CACHE:"/cache"},send(){},on(name,fn){if(name==="message")listener=fn;},once(name,fn){if(name==="exit")onExit=fn;if(name==="disconnect")onDisconnect=fn;},listenerCount(name){return name==="SIGTERM"?handlers:0;},emit(name){emitted.push(name);}};
   const requireStub=name=>name==="node:module"?{createRequire:()=>require,flushCompileCache:()=>{flushes++;}}:name==="./openai-proxy.cjs"?{normalizeProxyConfig:()=>({mode:"system"}),isOpenAIOrigin:()=>false}:require(name);
   vm.runInNewContext(source,{require:requireStub,process:proc,setTimeout:()=>({unref(){}}),URL,console});
   listener({type:"other"});listener({type:"cryoclaw:shutdown"});assert.equal(emitted.length,0);
@@ -21,10 +21,29 @@ test("loss of the GUI IPC owner enters native shutdown without leaving an orphan
   const vm=require("node:vm"),source=fs.readFileSync(require("node:path").join(__dirname,"../shared/openai-proxy-bootstrap.cjs"),"utf8");
   for(const handlers of [0,1]){
     let disconnect;const events=[];
-    const proc={env:{},send(){},on(){},once(name,fn){if(name==="disconnect")disconnect=fn;},listenerCount(){return handlers;},emit(name){events.push(name);},exit(code){events.push(code);}};
+    const proc={env:{},send(){},on(){},once(name,fn){if(name==="disconnect")disconnect=fn;},listenerCount(name){return name==="SIGTERM"?handlers:0;},emit(name){events.push(name);},exit(code){events.push(code);}};
     const load=require("node:module").createRequire(require("node:path").resolve(__dirname,"../shared/openai-proxy-bootstrap.cjs"));
     vm.runInNewContext(source,{require:load,process:proc,setTimeout:()=>({unref(){}}),URL,console});disconnect();disconnect();assert.deepEqual(events,handlers?["SIGTERM"]:[0]);
   }
+});
+test("accepted shutdown releases IPC liveness after entering native cleanup",()=>{
+  const vm=require("node:vm"),source=fs.readFileSync(require("node:path").join(__dirname,"../shared/openai-proxy-bootstrap.cjs"),"utf8");
+  for(const disconnect of [false,true]){
+    const listeners={},events=[];
+    const proc={env:{},channel:{unref(){events.push('unref');}},send(){},on(name,fn){listeners[name]=fn;},once(name,fn){listeners[name]=fn;},listenerCount(){return 1;},emit(name){events.push(name);}};
+    const load=require("node:module").createRequire(require("node:path").resolve(__dirname,"../shared/openai-proxy-bootstrap.cjs"));
+    vm.runInNewContext(source,{require:load,process:proc,setTimeout:()=>({unref(){}}),URL,console});
+    if(disconnect)listeners.disconnect();else listeners.message({type:"cryoclaw:shutdown"});
+    listeners.message({type:"cryoclaw:shutdown"});assert.deepEqual(events,disconnect?["SIGTERM"]:["SIGTERM","unref"]);
+  }
+});
+test("real IPC child exits naturally only after asynchronous native cleanup",async()=>{
+  const {spawn}=require('node:child_process'),{once}=require('node:events');
+  const child=spawn(process.execPath,['--require',require('node:path').resolve(__dirname,'../shared/openai-proxy-bootstrap.cjs'),'-e',`const keepAlive=setInterval(()=>{},1000);process.on('SIGTERM',()=>{clearInterval(keepAlive);setTimeout(()=>{process.send({type:'cleanup-done'});process.exitCode=0;},60);});process.send({type:'ready'});`],{windowsHide:true,stdio:['ignore','pipe','pipe','ipc']});
+  const messages=[];let stderr='';child.stderr.on('data',data=>stderr+=data);child.stdout.resume();
+  child.on('message',message=>{messages.push(message.type);if(message.type==='ready')child.send({type:'cryoclaw:shutdown'});});
+  const deadline=setTimeout(()=>child.kill(),5000);
+  try{const [code,signal]=await once(child,'exit');assert.equal(code,0,stderr);assert.equal(signal,null);assert.deepEqual(messages,['ready','cleanup-done']);}finally{clearTimeout(deadline);if(child.exitCode===null)child.kill();}
 });
 const path = require("node:path");
 const vm = require("node:vm");

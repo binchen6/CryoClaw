@@ -39,10 +39,11 @@ export class ManagedImage extends LitElement {
       border: var(--hairline);
       cursor: zoom-in;
       background: var(--bg-elevated);
+      transition: max-width var(--duration-normal) var(--ease-standard), max-height var(--duration-normal) var(--ease-standard);
     }
     img.expanded {
       max-width: 100%;
-      max-height: none;
+      max-height: var(--managed-full-height, 10000px);
       cursor: zoom-out;
     }
     .placeholder {
@@ -78,6 +79,8 @@ export class ManagedImage extends LitElement {
       50% { opacity: 1; }
     }
     :root[data-motion="reduce"] .placeholder__dot { animation: none; }
+    :host-context([data-motion="reduce"]) img { transition: none; }
+    @media (prefers-reduced-motion: reduce) { img { transition: none; } }
   `;
 
   connectedCallback() {
@@ -118,6 +121,8 @@ export class ManagedImage extends LitElement {
   // 点击切换展开/收起：blob object URL 无法跨窗口打开（openExternal 不支持 blob:），
   // 且无 setWindowOpenHandler，新窗口行为不可控——就地展开最稳
   private toggleExpand() {
+    const image = this.renderRoot.querySelector("img");
+    if (image?.naturalHeight) this.style.setProperty("--managed-full-height", `${image.naturalHeight}px`);
     this.expanded = !this.expanded;
   }
 

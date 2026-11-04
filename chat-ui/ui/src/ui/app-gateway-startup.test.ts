@@ -18,18 +18,21 @@ test("hello starts one visible history read before auxiliary catalogs, including
   });
   const fetchMock = mock.method(globalThis, "fetch", async () => new Response(null, { status: 404 }));
   const calls: string[] = [];
+  let skillRefreshes = 0;
   let client: any;
   let historyMessages: unknown[] = [{ role: "assistant", content: "saved reply" }];
   let finishHistory: (snapshot: unknown) => void = () => {};
+  let finishSessions: (snapshot: unknown) => void = () => {};
   let admit: (identity: unknown) => void = () => {};
   const startMock = mock.method(GatewayBrowserClient.prototype, "start", function(this: any) {
     client = this;
     Object.defineProperty(this, "connected", { value: true });
-    this.request = async (method: string) => {
+    this.request = async (method: string, params?: { refresh?: boolean }) => {
       calls.push(method);
+      if (method === "skills.status") { assert.equal(params?.refresh, true); skillRefreshes++; return { skills: [] }; }
       if (method === "agent.identity.get") return new Promise(resolve => { admit = resolve; });
       if (method === "chat.history") return new Promise(resolve => { finishHistory = resolve; });
-      if (method === "sessions.list") return { sessions: [{ key }] };
+      if (method === "sessions.list") return new Promise(resolve => { finishSessions = resolve; });
       return {};
     };
   });
@@ -64,11 +67,20 @@ test("hello starts one visible history read before auxiliary catalogs, including
         `one authoritative history read per hello (reconnect=${reconnect})`);
       assert.equal(calls.filter(method => method === "sessions.list").length, 1,
         "the immediate ticker owns the initial session listing");
-      assert.ok(calls.indexOf("chat.history") < calls.indexOf("models-catalog"), "visible history precedes model catalog work");
+      assert.equal(calls.includes("models-catalog"), false, "catalog work waits for actual history completion");
+      assert.equal(calls.includes("worktrees.list"), false);
+      assert.equal(calls.includes("skills.status"), false, "skill refresh cannot compete with first-use reads");
       finishHistory({ messages: historyMessages });
       await settle();
       assert.equal(host.chatLoading, false);
       assert.equal(host.chatMessages.at(-1)?.content, "saved reply");
+      assert.equal(calls.includes("models-catalog"), false, "the session list is also part of first-use work");
+      finishSessions({ sessions: [{ key }] });
+      await settle();
+      assert.ok(calls.indexOf("sessions.list") < calls.indexOf("models-catalog"));
+      assert.equal(calls.includes("skills.status"), false, "defer until the usable UI has had a rendering turn");
+      t.mock.timers.tick(1_000); await settle();
+      assert.equal(skillRefreshes, 1, "one post-ready refresh per app lifetime, including reconnects");
       client.opts.onClose({ code: 1013, reason: "gateway starting" });
       historyMessages = []; // A reconnect's stale short read must retain local history.
     }
@@ -166,6 +178,17 @@ test("failed first history remains a visible startup failure", async t => {
   await settle();
   assert.equal(host.chatLoading, false);
   assert.match(host.lastError ?? "", /history storage unavailable/);
+});
+
+test("disconnect cancels the auxiliary startup burst waiting on history", async t => {
+  const { host, client, histories } = startupFixture(t);
+  await settle();
+  let catalogs = 0;
+  host.loadConfiguredModels = () => { catalogs++; };
+  client.opts.onClose({ code: 1013, reason: "gateway starting" });
+  histories[0]!.resolve({ messages: [] });
+  await settle();
+  assert.equal(catalogs, 0);
 });
 
 test("a newer direct history generation retains its hydration after an old startup request settles", async t => {

@@ -443,6 +443,16 @@ Every overlay (popover, dropdown menu, floating panel, dialog) follows "return w
 - Dashboard expanded cards (`popover="manual"` in `oc-dashboard.ts`) and the global toast are not click-toggled surfaces, so clause 1 does not apply; they still keep a reverse morph / exit frame.
 - Native `<dialog>` surfaces (provider edit drawer, dashboard detail) get Esc/backdrop/initial focus for free; only add the `cc-dialog-out` exit from `skills.css`, never a hand-written toggle.
 
+## Global enforcement (2026.11.03)
+
+Except for documented platform, functional or accessibility requirements, all pages, settings subpages and Dock views share design tokens, field focus and interaction components. Use `--focus-field-color` / `--focus-field`; do not restore the old solid focus ring. Workspace and Dock file previews share Open With. Resize by applying layout directly and persist on release, matching the session panel's thin divider and hit area.
+
+Tool cards follow the same focus rule: pointer clicks do not add a focus ring; keyboard focus uses `:focus-visible` and `--focus-ring`. A local `:focus` selector must not restore a click halo. Shared card hover feedback still applies.
+
+Native automatic popovers use `utils/anchored-overlays.ts` for native invokers, measurement, avoidance, viewport flipping and entry/exit from the same edge. Manual menus use `utils/anchored-menu.ts`, rather than guessed fixed offsets. Prefer native `details::details-content` for reversible disclosure. Lazy controlled content uses `utils/disclosure.ts`, removes its subtree after exit and cancels stale removal on reversal. Do not keep large hidden trees indefinitely to simulate exit. Honor reduced motion and keep pointer resizing free of interpolation delay.
+
+Explain new exceptions in code and this document; existing local styles do not justify bypassing the shared contract. Native OS selects and file pickers retain system behavior. Task-error text truncation is text presentation; canvas selection and drag outlines are editing feedback rather than field focus.
+
 ## 10. Tooltip
 
 - **No CSS `::after` pseudo-element tooltips** (always clipped inside `overflow`

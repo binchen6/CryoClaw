@@ -68,6 +68,11 @@ describe("readSqliteUserVersion", () => {
 });
 
 describe("findAgentDatabasesNeedingMigration", () => {
+  test("10.10 migrates v25/v26, preserving fresh and current/future databases", () => {
+    const dir=makeStateDir();
+    for(const version of [0,25,26,27,28])writeFakeSqlite(path.join(dir,"agents",`v${version}`,"agent"),"openclaw-agent.sqlite",version);
+    expect(findAgentDatabasesNeedingMigration(dir,27).map(file=>path.basename(path.dirname(path.dirname(file)))).sort()).toEqual(["v25","v26"]);
+  });
   test("10.5 启动前迁移旧 v24 数据库，v25 不重复迁移",()=>{
     const dir=makeStateDir();writeFakeSqlite(path.join(dir,"agents","old","agent"),"openclaw-agent.sqlite",24);
     writeFakeSqlite(path.join(dir,"agents","new","agent"),"openclaw-agent.sqlite",25);

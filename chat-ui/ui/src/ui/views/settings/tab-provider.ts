@@ -12,6 +12,7 @@ import {showToast} from "../../app-toast.ts";
  *   config 中只写 proxy-managed 占位符；同时联动启用 kimi-search + memory embedding
  */
 import { html, nothing } from "lit";
+import { anchoredMenu } from "../../utils/anchored-menu.ts";
 import { repeat } from "lit/directives/repeat.js";
 import { keyed } from "lit/directives/keyed.js";
 import { ref } from "lit/directives/ref.js";
@@ -678,12 +679,24 @@ function handleOrgGroupDrop(state: AppViewState) {
 }
 
 function toggleAssignMenu(modelKey: string, state: AppViewState) {
+  if (s.assignMenuFor === modelKey) { closeAssignMenu(state); return; }
+  assignMenuEpoch++;
+  document.querySelector(".oc-provider-assign-menu.cc-leaving")?.classList.remove("cc-leaving");
   s.assignMenuFor = s.assignMenuFor === modelKey ? null : modelKey;
   state.requestUpdate();
 }
 
+let assignMenuEpoch = 0;
+function closeAssignMenu(state: AppViewState) {
+  const epoch = ++assignMenuEpoch;
+  runExitAnimation(document.querySelector(".oc-provider-assign-menu"), () => {
+    if (epoch !== assignMenuEpoch) return;
+    s.assignMenuFor = null; state.requestUpdate();
+  });
+}
+
 function handleAssign(modelKey: string, groupId: string | null, state: AppViewState) {
-  s.assignMenuFor = null;
+  closeAssignMenu(state);
   commitOrg(assignModelToGroup(s.org, modelKey, groupId), state);
 }
 
@@ -1977,7 +1990,7 @@ function renderModelCard(prov: GroupedProvider, entry: ProviderModelEntry, state
           @click=${() => s.editingModelKey === entry.key ? cancelModelEdit(state) : startModelEdit(prov, entry, state)}>
           ${icons.sliders}
         </button>
-        <button class="oc-provider-list-item__action-btn ${assignedGroup ?"is-assigned" : ""}"
+        <button data-assign-trigger aria-haspopup="menu" aria-expanded=${menuOpen} class="oc-provider-list-item__action-btn ${assignedGroup ?"is-assigned" : ""}"
           aria-label=${t("settings.provider.customGroups.assign")} data-tooltip=${t("settings.provider.customGroups.assign")}
           @click=${() => toggleAssignMenu(entry.key, state)}>
           ${assignedGroup
@@ -2001,7 +2014,7 @@ function renderModelCard(prov: GroupedProvider, entry: ProviderModelEntry, state
         </button>
       </div>
       ${menuOpen ? html`
-        <div class="oc-provider-assign-menu" @click=${(e: Event) => e.stopPropagation()}>
+        <div ${anchoredMenu(() => [...document.querySelectorAll<HTMLElement>(".oc-provider-card")].find(card => card.dataset.modelKey === entry.key)?.querySelector<HTMLElement>("[data-assign-trigger]") ?? null, false, () => closeAssignMenu(state))} class="oc-provider-assign-menu" role="menu" @click=${(e: Event) => e.stopPropagation()}>
           <div class="oc-provider-assign-menu__title">${t("settings.provider.customGroups.assign")}</div>
           <button class="oc-provider-assign-menu__item ${!assignedGroup ?"is-active" : ""}"
             @click=${() => handleAssign(entry.key, null, state)}>${t("settings.provider.customGroups.none")}</button>

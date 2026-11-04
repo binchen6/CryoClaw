@@ -107,7 +107,7 @@ async function updateAllSkills(state: AppViewState, slug?: string) {
       showToast(state, t("skillStore.updateFailed"),undefined,"error");
     }
     skillUpdates = null; // 版本表已变；下次由用户手动重查。
-    void loadSkills(state);
+    if (updated > 0) void loadSkills(state, { force: true });
     await refreshInstalledSlugs();
   } catch {
       showToast(state, t("skillStore.updateFailed"),undefined,"error");
@@ -283,6 +283,7 @@ async function installSkillFromStore(state: AppViewState, slug: string) {
     const result = await window.cryoclaw.skillStoreInstall({ slug });
     if (result?.success) {
       skillStoreState.installedSlugs.add(slug);
+      void loadSkills(state, { force: true });
       showToast(state, t("skillStore.installSuccess"),undefined,"success");
     } else {
       showToast(state, t("skillStore.installFailed"),undefined,"error");
@@ -303,6 +304,7 @@ async function uninstallSkillFromStore(state: AppViewState, slug: string) {
     const result = await window.cryoclaw.skillStoreUninstall({ slug });
     if (result?.success) {
       skillStoreState.installedSlugs.delete(slug);
+      void loadSkills(state, { force: true });
       showToast(state, t("skillStore.uninstallSuccess"),undefined,"success");
     } else {
       showToast(state, t("skillStore.uninstallFailed"),undefined,"error");
@@ -323,7 +325,7 @@ async function uninstallLocalSkill(state: AppViewState, slug: string) {
     const result = await window.cryoclaw.skillStoreUninstall({ slug });
     if (result?.success) {
       // 刷新已安装列表和商店已安装标记
-      void loadSkills(state);
+      void loadSkills(state, { force: true });
       await refreshInstalledSlugs();
       showToast(state, t("skillStore.uninstallSuccess"),undefined,"success");
     } else {
@@ -419,6 +421,10 @@ function renderInstalledSkillsView(state: AppViewState) {
             @click=${() => void loadSkills(state,{force:true})}
           >${t("ext.market.retry")}</button>
         </div>`
+      : nothing}
+
+    ${state.skillsLoading && state.skillsLoadSlow
+      ? html`<p class="muted" role="status">${t("skills.slowRefresh")}</p>`
       : nothing}
 
     ${state.skillsLoading && filtered.length === 0
@@ -607,6 +613,7 @@ export function renderSkillsView(state: AppViewState) {
                     class="skill-store__sort-btn"
                     type="button"
                     ?disabled=${state.skillsLoading}
+                    title=${t("skills.refreshHint")}
                     @click=${() => void loadSkills(state,{force:true})}
                   >${state.skillsLoading ? t("skills.refreshing") : t("skills.refresh")}</button>
                 `

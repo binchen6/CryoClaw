@@ -15,8 +15,10 @@ let timerId: number | null = null;
 // 不加守卫会并发跑两轮全量 handler，对 gateway 重复打同一批请求。
 // 同一轮只读 handler 并发完成，轮次之间仍严格不重入。
 let tickerRunning = false;
+let tickerGeneration = 0;
 async function runAllHandlers(): Promise<void> {
   if (tickerRunning) return;
+  const generation = tickerGeneration;
   tickerRunning = true;
   try {
     await Promise.all([...handlers].map(async ([name, fn]) => {
@@ -27,7 +29,7 @@ async function runAllHandlers(): Promise<void> {
       }
     }));
   } finally {
-    tickerRunning = false;
+    if (generation === tickerGeneration) tickerRunning = false;
   }
 }
 
@@ -69,6 +71,10 @@ export function initTickerVisibilityHook(): void {
 
 // 停止定时器
 export function stopTicker(): void {
+  // A request from the old socket can remain pending until its timeout. It must
+  // neither suppress the new connection's first reads nor unlock its active tick.
+  tickerGeneration++;
+  tickerRunning = false;
   if (timerId !== null) {
     window.clearInterval(timerId);
     timerId = null;

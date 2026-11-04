@@ -103,6 +103,36 @@ function writeKernelVersion(version: string): void {
   );
 }
 
+test("2026.10 defaults skill discovery to on demand once, preserving explicit watch preferences", async () => {
+  writeKernelVersion("2026.10.10");
+  const { migrateOpenclawConfigForKernelUpgrade } = await import("./openclaw-config-migration");
+  mockState.currentConfig = { skills: { load: { extraDirs: ["custom"] } } };
+  migrateOpenclawConfigForKernelUpgrade();
+  expect(mockState.currentConfig.skills.load).toEqual({ extraDirs: ["custom"], watch: false });
+  const writes = mockState.writeCount;
+  migrateOpenclawConfigForKernelUpgrade();
+  expect(mockState.writeCount).toBe(writes);
+  for (const watch of [true, false]) {
+    mockState.currentConfig = { skills: { load: { watch } } };
+    migrateOpenclawConfigForKernelUpgrade();
+    expect(mockState.currentConfig.skills.load.watch).toBe(watch);
+  }
+  writeKernelVersion("2026.9.0");
+  mockState.currentConfig = {};
+  migrateOpenclawConfigForKernelUpgrade();
+  expect(mockState.currentConfig.skills).toBeUndefined();
+});
+
+test("skill discovery policy leaves malformed config for native validation", async () => {
+  writeKernelVersion("2026.10.10");
+  const { migrateOpenclawConfigForKernelUpgrade } = await import("./openclaw-config-migration");
+  for (const skills of [null, [], { load: null }, { load: [] }]) {
+    mockState.currentConfig = { skills };
+    migrateOpenclawConfigForKernelUpgrade();
+    expect(mockState.currentConfig.skills).toEqual(skills);
+  }
+});
+
 // ── 版本门控 ──
 
 test("版本未达到门控值（2026.6.x）时不迁移", async () => {
@@ -864,6 +894,7 @@ test("Tencent QQ migration preserves policies and disabled plugin settings befor
     channels: { qqbot: { enabled: false, dmPolicy: "open", allowFrom: ["*"], accounts: { team: { appId: "123", appSecret: "keep-secret", unknown: { keep: true } } } } },
   };
   const channels = structuredClone(mockState.currentConfig.channels);
+  channels.qqbot.allowFrom = ["openclaw:approval-disabled"];
   const { migrateOpenclawConfigForKernelUpgrade } = await import("./openclaw-config-migration");
   migrateOpenclawConfigForKernelUpgrade();
   expect(mockState.currentConfig.channels).toMatchObject(channels);

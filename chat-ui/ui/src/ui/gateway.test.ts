@@ -155,6 +155,32 @@ async function testReconnectNowCancelsScheduledReconnect() {
   );
 }
 
+async function testReadyNotificationPreservesHandshake() {
+  FakeWebSocket.instances = [];
+  const timers = new FakeTimers(); installBrowserGlobals(timers);
+  const client = new GatewayBrowserClient({ url: "ws://127.0.0.1:18789" });
+  client.start();
+  const socket = FakeWebSocket.instances[0]!;
+  client.notifyGatewayReady();
+  assert.equal(FakeWebSocket.instances.length, 1, "connecting socket is retained");
+  socket.open(); timers.runNext(); await flushMicrotasks();
+  const request = socket.sent[0];
+  client.notifyGatewayReady(); client.notifyGatewayReady();
+  assert.equal(socket.readyState, FakeWebSocket.OPEN, "readiness cannot cancel authentication/profile acquisition");
+  assert.deepEqual(socket.sent, [request], "no duplicate connect request");
+  completeHello(socket); await flushMicrotasks();
+  assert.equal(client.connected, true);
+  client.notifyGatewayReady();
+  assert.equal(FakeWebSocket.instances.length, 1);
+  socket.close(1006, "transport failure");
+  client.notifyGatewayReady();
+  assert.equal(FakeWebSocket.instances.length, 2, "waiting backoff is woken immediately");
+  timers.runAll();
+  assert.equal(FakeWebSocket.instances.length, 2, "obsolete backoff cannot create another socket");
+  client.stop(); client.notifyGatewayReady();
+  assert.equal(FakeWebSocket.instances.length, 2, "late readiness cannot revive a stopped client");
+}
+
 async function testRequestMustWaitForHelloHandshake() {
   FakeWebSocket.instances = [];
   const timers = new FakeTimers();
@@ -368,6 +394,7 @@ async function main() {
   await testStartupRetryProtocol();
   await testStartupReadsRecoverAndCancel();
   await testReconnectNowCancelsScheduledReconnect();
+  await testReadyNotificationPreservesHandshake();
   await testRequestMustWaitForHelloHandshake();
   await testRequestTimesOutWhenGatewayNeverResponds();
   await testInvalidUrlDoesNotThrowAndGoesToReconnectPath();

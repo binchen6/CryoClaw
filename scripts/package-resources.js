@@ -1162,9 +1162,13 @@ function installDependencies(opts, gatewayDir) {
   // Patch removal must invalidate cached trees too; otherwise a later build can
   // silently resurrect an adaptation that no longer exists in this source tree.
   const kernelPatchStamp = require("crypto").createHash("sha256")
+    .update(fs.readFileSync(path.join(__dirname, "locks", "gateway-package-lock.json")))
     .update(fs.readFileSync(path.join(__dirname, "lib", "kernel-dist-patch.js")))
+    .update(fs.readFileSync(path.join(__dirname, "lib", "build-typebox-runtime.js")))
+    .update(fs.readFileSync(path.join(__dirname, "lib", "compact-typebox-runtime.js")))
+    .update(fs.readFileSync(path.join(__dirname, "typebox-runtime-smoke.mjs")))
     .digest("hex");
-  const targetStamp = `${opts.platform}-${opts.arch}|${sourceInfo.stampSource}|${clawhubInfo.stampSource}|${dependencyPolicy.stamp}|${kernelPatchStamp}`;
+  const targetStamp = `${opts.platform}-${opts.arch}|${sourceInfo.stampSource}|${clawhubInfo.stampSource}|${dependencyPolicy.stamp}|${kernelPatchStamp}|typebox:${process.env.CRYOCLAW_COMPACT_TYPEBOX === '0' ? 'upstream' : 'compact'}`;
 
   // 增量检测：stamp 匹配 + entry.js 存在 → 跳过安装
   const installedEntry = path.join(gatewayDir, "node_modules", "openclaw", "dist", "entry.js");
@@ -1211,6 +1215,13 @@ function installDependencies(opts, gatewayDir) {
     overrides: dependencyPolicy.overrides,
   };
   fs.writeFileSync(path.join(gatewayDir, "package.json"), JSON.stringify(pkg, null, 2));
+  const factoryLockFile = path.join(__dirname, "locks", "gateway-package-lock.json");
+  const factoryLock = JSON.parse(fs.readFileSync(factoryLockFile, "utf8"));
+  const sameEntries = (a, b) => JSON.stringify(Object.entries(a || {}).sort()) === JSON.stringify(Object.entries(b || {}).sort());
+  const useFactoryLock = sameEntries(pkg.dependencies, factoryLock.packages?.[""]?.dependencies)
+    && sameEntries(pkg.overrides, factoryLock.cryoclawOverrides);
+  if (useFactoryLock) fs.copyFileSync(factoryLockFile, path.join(gatewayDir, "package-lock.json"));
+  else log("自定义内核/依赖来源：按显式覆盖安装，未复用工厂锁文件");
 
   // 使用 Step 1 下载的捆绑 Node 执行 npm install。宿主机版本不一定满足
   // 当前 openclaw 的引擎门槛；构建与实际运行使用同一个受控版本。
@@ -1231,7 +1242,7 @@ function installDependencies(opts, gatewayDir) {
   // opts.platform/arch 已被 parseArgs 白名单校验（darwin|win32 × arm64|x64）。
   // 走 execNpmSync 统一出口（宿主 node 直执捆绑 npm-cli.js + argv 白名单）。
   execNpmSync([
-    "install",
+    useFactoryLock ? "ci" : "install",
     "--omit=dev",
     "--install-links",
     "--legacy-peer-deps",
@@ -3477,6 +3488,7 @@ function vendorKernelUpdater(targetBase) {
     path.join(updaterDir, "kernel-config-snapshot.js")
   );
   fs.copyFileSync(path.join(ROOT, "scripts/lib/kernel-directory-swap.js"), path.join(updaterDir, "kernel-directory-swap.js"));
+  fs.copyFileSync(path.join(ROOT, "scripts/lib/compact-typebox-runtime.js"), path.join(updaterDir, "compact-typebox-runtime.js"));
   fs.copyFileSync(path.join(ROOT, "scripts/lib/gateway-dependency-policy.js"), path.join(updaterDir, "gateway-dependency-policy.js"));
   fs.copyFileSync(path.join(ROOT, "shared", "kernel-runtime-policy.cjs"), path.join(updaterDir, "kernel-runtime-policy.cjs"));
 
@@ -3497,7 +3509,7 @@ function vendorKernelUpdater(targetBase) {
   fs.writeFileSync(updaterManifest,JSON.stringify(updaterPackage,null,2)+'\n');
   const stampPath=path.join(updaterDir,'.cryoclaw-updater-stamp');
   const hash=require('crypto').createHash('sha256').update(mode).update(kernelUpdateSrc).update(JSON.stringify(updaterPackage));
-  for(const name of ['gateway-ctl.mjs','kernel-dist-patch.js','kernel-channel.js','rm-rec.js','kernel-prune.js','kernel-config-snapshot.js','kernel-directory-swap.js','gateway-dependency-policy.js','kernel-runtime-policy.cjs'])hash.update(fs.readFileSync(path.join(updaterDir,name),'utf8'));
+  for(const name of ['gateway-ctl.mjs','kernel-dist-patch.js','kernel-channel.js','rm-rec.js','kernel-prune.js','kernel-config-snapshot.js','kernel-directory-swap.js','gateway-dependency-policy.js','kernel-runtime-policy.cjs','compact-typebox-runtime.js'])hash.update(fs.readFileSync(path.join(updaterDir,name),'utf8'));
   const stamp=hash.digest('hex');
   let cacheValid=fs.existsSync(stampPath)&&fs.readFileSync(stampPath,'utf8').trim()===stamp;
   if(cacheValid){
@@ -3584,6 +3596,9 @@ async function main() {
   // 护栏：所有插件入口必须是 native——必须在 ASAR 打包前跑，因为 ASAR 会删散文件
   log("Step 2.6: 校验插件入口形态");
   assertPluginsNativeEntry(targetPaths);
+  const compactRuntime = await require('./lib/build-typebox-runtime').buildTypeboxRuntime(
+    targetPaths.gatewayDir, path.join(targetPaths.targetBase, 'updater', 'typebox-runtime.json'));
+  log(`TypeBox 运行时布局: ${JSON.stringify(compactRuntime)}`);
   const platformPrune=require('./lib/prune-platform-packages').prunePlatformPackages(targetPaths.gatewayDir,opts.platform,opts.arch);
   log(`已按 npm os/cpu 声明移除 ${platformPrune.packages} 个非目标平台包（保留当前平台和通用包）`);
   const npmPolicy = require('./lib/runtime-npm-policy');

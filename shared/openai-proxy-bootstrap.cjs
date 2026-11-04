@@ -13,17 +13,26 @@ try {
 }
 if (typeof process.send === "function") {
   let stopping = false;
+  const stopSignal = () => process.listenerCount("SIGTERM") > 0 ? "SIGTERM" : null;
   process.on("message", message => {
-    if (stopping || message?.type !== "cryoclaw:shutdown" || process.listenerCount("SIGTERM") === 0) return;
+    if (stopping || message?.type !== "cryoclaw:shutdown") return;
+    const signal = stopSignal();
+    if (!signal) { console.info("[cryoclaw-lifecycle] shutdown pending: native signal handler not installed"); return; }
     stopping = true;
     // Windows kill(SIGTERM) terminates the process without running JS handlers.
     // The private parent IPC channel enters the native graceful shutdown path.
-    process.emit("SIGTERM");
+    console.info(`[cryoclaw-lifecycle] shutdown accepted: ${signal}`);
+    process.emit(signal);
+    // New kernels settle resources and exit naturally. Our message listener
+    // refs Node's parent channel; it must stop keeping an otherwise clean
+    // gateway alive. Unref preserves IPC and every native cleanup handle.
+    process.channel?.unref?.();
   });
   process.once("disconnect", () => {
     if (stopping) return;
     stopping = true;
-    if (process.listenerCount("SIGTERM") > 0) process.emit("SIGTERM");
+    const signal = stopSignal();
+    if (signal) process.emit(signal);
     else process.exit(0);
   });
 }

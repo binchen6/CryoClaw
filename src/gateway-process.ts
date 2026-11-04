@@ -1,5 +1,5 @@
 import { ChildProcess, spawn, execFile } from "child_process";
-import { gatewayCompileCacheDirectory } from "./gateway-compile-cache";
+import { gatewayCompileCacheDirectory, gatewayCompileCacheEnvironment } from "./gateway-compile-cache";
 import { promisify } from "util";
 import { endStreamWithTimeout } from "./logger";
 import * as http from "http";
@@ -403,7 +403,10 @@ export class GatewayProcess {
       ? path.join(resolveResourcesPath(), "openai-proxy-bootstrap.cjs")
       : path.join(app.getAppPath(), "shared", "openai-proxy-bootstrap.cjs");
     const nodeExtraEnv = resolveNodeExtraEnv();
-    const args = [...(nodeExtraEnv.ELECTRON_RUN_AS_NODE === "1" ? ["--no-deprecation"] : []), "--require", proxyBootstrap, entry, "gateway", "run"];
+    const compileCacheEnv = nodeExtraEnv.ELECTRON_RUN_AS_NODE === "1"
+      ? {NODE_COMPILE_CACHE:gatewayCompileCacheDirectory(resolveGatewayPackageDir(),path.join(resolveUserStateDir(),"cache","v8-compile"))}
+      : gatewayCompileCacheEnvironment(resolveGatewayPackageDir(),path.join(resolveUserStateDir(),"cache","v8-compile"));
+    const args = [...(nodeExtraEnv.ELECTRON_RUN_AS_NODE === "1" ? ["--no-deprecation"] : IS_WIN ? ["--stack-size=8192"] : []), "--require", proxyBootstrap, entry, "gateway", "run"];
     diagLog(`spawn: ${nodeBin} ${args.join(" ")} (gen=${gen})`);
     this.emitProgress("spawn");
 
@@ -425,7 +428,7 @@ export class GatewayProcess {
         CRYOCLAW_OPENAI_PROXY_CONFIG: resolveCryoclawConfigPath(),
         CRYOCLAW_OPENAI_GATEWAY_ROOT: resolveGatewayPackageDir(),
         // V8 编译缓存（R20）：加速 gateway 热启动；内核换装后由 updater 清空
-        NODE_COMPILE_CACHE: gatewayCompileCacheDirectory(resolveGatewayPackageDir(), path.join(resolveUserStateDir(), "cache", "v8-compile")),
+        ...compileCacheEnv,
         // 告诉 openclaw 安装根目录，使 extensions 路径解析不依赖 __dirname（asar 内会失败）
         OPENCLAW_INSTALL_ROOT: resolveResourcesPath(),
         OPENCLAW_GATEWAY_TOKEN: this.token,

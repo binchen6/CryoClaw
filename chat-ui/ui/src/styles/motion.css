@@ -50,6 +50,72 @@
   transition-timing-function: var(--ease-standard);
 }
 
+/* Pointer tracking is direct, matching the session panel; only open/close animates. */
+.split-resizing :is(.chat-main, .chat-sidebar, .context-dock) { transition: none; }
+.split-resizing { cursor: col-resize; user-select: none; }
+oc-resizable-divider + .chat-sidebar { border-left: 0; }
+.cc-disclosure { display: grid; grid-template-rows: 1fr; opacity: 1; transition: grid-template-rows var(--motion-panel) var(--ease-standard), opacity var(--motion-feedback) var(--ease-standard); }
+.cc-disclosure > div { min-height: 0; overflow: hidden; }
+.cc-disclosure[data-open="false"] { grid-template-rows: 0fr; opacity: 0; }
+.cc-menu-presence { display: contents; }
+.cc-menu-presence[data-open="false"] > .cc-anchored-menu { animation: cc-anchored-out var(--motion-feedback) var(--ease-standard) forwards; pointer-events: none; }
+@starting-style { .cc-disclosure[data-open="true"] { grid-template-rows: 0fr; opacity: 0; } }
+:root[data-motion="reduce"] .cc-disclosure { transition: none; }
+@media (prefers-reduced-motion: reduce) { .cc-disclosure { transition: none; } }
+
+/* Native disclosure content stays mounted through closing, so both directions
+   use the same summary edge. Browser-native semantics/keyboard remain intact. */
+@supports (interpolate-size: allow-keywords) {
+  :where(details:not(.dashboard-menu))::details-content {
+    interpolate-size: allow-keywords;
+    block-size: 0;
+    opacity: 0;
+    overflow: clip;
+    transition: block-size var(--motion-panel) var(--ease-standard), opacity var(--motion-feedback) var(--ease-standard), content-visibility var(--motion-panel) allow-discrete;
+  }
+  :where(details[open]:not(.dashboard-menu))::details-content { block-size: auto; opacity: 1; }
+}
+
+/* Geometry is measured once from the native invoker, never from the viewport
+   centre. These rules also cover menus inside file/Dock/setting scroll panes. */
+[popover="auto"][data-anchor-side] {
+  box-sizing: border-box;
+  max-width: calc(100vw - 24px);
+  max-height: calc(100vh - 24px);
+  overflow: auto;
+  animation: none;
+  opacity: 0;
+  transform: translateY(-6px);
+  transform-origin: top center;
+  transition: opacity var(--motion-feedback) var(--ease-standard), transform var(--motion-feedback) var(--ease-standard), display var(--motion-feedback) allow-discrete, overlay var(--motion-feedback) allow-discrete;
+}
+[popover="auto"][data-anchor-side="top"] { transform: translateY(6px); transform-origin: bottom center; }
+.dashboard-more-menu { display: flex; flex-direction: column; width: 200px; padding: var(--spacer-6); border: var(--hairline); border-radius: var(--radius-12); background: var(--popover); color: var(--text); box-shadow: var(--shadow-lg); }
+.dashboard-more-menu:not(:popover-open) { display: none; }
+.dashboard-more-menu > button { border: 0; background: transparent; color: inherit; text-align: left; padding: var(--spacer-10) var(--spacer-12); font: inherit; font-size: var(--text-sm); border-radius: var(--radius-8); cursor: pointer; }
+.dashboard-more-menu > button:hover { background: var(--bg-hover); }
+.cc-anchored-menu { max-width: calc(100vw - 24px); max-height: calc(100vh - 24px); overflow: auto; transform-origin: top center; animation: cc-anchored-in var(--motion-feedback) var(--ease-standard); }
+.cc-anchored-menu[data-side="top"] { transform-origin: bottom center; }
+.cc-anchored-menu.cc-leaving { animation: cc-anchored-out var(--motion-feedback) var(--ease-standard) forwards; pointer-events: none; }
+.cc-anchored-menu.chat-compose__branch-popover--closing { animation: cc-anchored-out var(--motion-feedback) var(--ease-standard) forwards; pointer-events: none; }
+.dashboard-tab-menu.cc-leaving { animation: cc-anchored-out var(--motion-feedback) var(--ease-standard) forwards; pointer-events: none; }
+.dashboard-dialog :is(input, textarea, select):focus-visible { outline: none; border-color: var(--focus-field-color); box-shadow: var(--focus-field); }
+@keyframes cc-anchored-in { from { opacity: 0; transform: translateY(var(--menu-offset, -6px)) scale(.98); } to { opacity: 1; transform: none; } }
+@keyframes cc-anchored-out { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateY(var(--menu-offset, -6px)) scale(.98); } }
+:root[data-motion="reduce"] .cc-anchored-menu { animation: none; }
+@media (prefers-reduced-motion: reduce) { .cc-anchored-menu { animation: none; } }
+[popover="auto"][data-anchor-side]:popover-open { opacity: 1; transform: none; }
+@starting-style {
+  [popover="auto"][data-anchor-side]:popover-open { opacity: 0; transform: translateY(-6px); }
+  [popover="auto"][data-anchor-side="top"]:popover-open { transform: translateY(6px); }
+}
+:root[data-motion="reduce"] :is(details)::details-content { transition: none; }
+:root[data-motion="reduce"] [popover="auto"][data-anchor-side] { transition: none; transform: none; }
+@media (prefers-reduced-motion: reduce) {
+  :is(details)::details-content { transition: none; }
+  [popover="auto"][data-anchor-side] { transition: none; transform: none; }
+}
+
 :root[data-motion="reduce"] {
   :where(.chat-thread, .subagent-panel__thread, .oc-settings-content, .skills-scroll, .ts-layout, .dashboard-workspace__scroll, .session-changes, .wk-nav__tree, .wk-preview__content) {
     scroll-behavior: auto !important;

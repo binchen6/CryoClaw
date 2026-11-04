@@ -1,6 +1,7 @@
 import { LitElement, html, nothing, type PropertyValues } from "lit";
 import { customElement } from "lit/decorators.js";
 import { keyed } from "lit/directives/keyed.js";
+import { disclosure } from "../utils/disclosure.ts";
 import { BOARD_WIDGET_SANDBOX, type BoardState, type BoardWidget } from "../controllers/board.ts";
 import { t } from "../i18n.ts";
 
@@ -76,7 +77,7 @@ export class OcBoardPanel extends LitElement {
         <div class="chat-board__actions">${refresh}<button type="button" class="btn btn--sm"
           @click=${() => {this.expanded = true;this.refresh();}}>${t("chat.board.expand")}</button></div>
       </div>
-      ${!this.collapsed && !this.expanded ? html`${this.navigation()}${error}<div class="chat-board__stage">${this.frame(widget)}</div>` : nothing}
+      ${disclosure(!this.collapsed && !this.expanded, () => html`${this.navigation()}${error}<div class="chat-board__stage">${this.frame(widget)}</div>`)}
       <dialog class="chat-board__dialog" aria-label=${t("chat.board.title")}
         @close=${() => {this.expanded = false;}} @cancel=${() => {this.expanded = false;}}>
         ${this.expanded ? html`<div class="chat-board__toolbar"><strong>${t("chat.board.title")}</strong>

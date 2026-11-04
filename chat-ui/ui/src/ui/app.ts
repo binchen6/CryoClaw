@@ -1,4 +1,5 @@
 import { LitElement } from "lit";
+import { installAnchoredOverlays } from "./utils/anchored-overlays.ts";
 import { customElement } from "lit/decorators.js";
 import type { AppViewState } from "./app-view-state.ts";
 import type { ExecApprovalRequest } from "./controllers/exec-approval.ts";
@@ -319,6 +320,7 @@ export class OpenClawApp extends LitElement {
     gitNetworkBusy: { state: true },
     execMode: { state: true },
     skillsLoading: { state: true },
+    skillsLoadSlow: { state: true },
     skillsReport: { state: true },
     skillsError: { state: true },
     skillsFilter: { state: true },
@@ -570,6 +572,7 @@ export class OpenClawApp extends LitElement {
   execMode: "deny" | "allowlist" | "ask" | "auto" | "full" = "ask";
 
   skillsLoading = false;
+  skillsLoadSlow = false;
   skillsReport: SkillStatusReport | null = null;
   skillsError: string | null = null;
   skillsFilter = "";
@@ -656,8 +659,11 @@ export class OpenClawApp extends LitElement {
     return this;
   }
 
+  private disposeAnchoredOverlays?: () => void;
+
   connectedCallback() {
     super.connectedCallback();
+    this.disposeAnchoredOverlays = installAnchoredOverlays(this);
     handleConnected(this as unknown as Parameters<typeof handleConnected>[0]);
     this.bindAppNavigation();
     this.bindGatewayReady();
@@ -858,6 +864,8 @@ export class OpenClawApp extends LitElement {
   }
 
   disconnectedCallback() {
+    this.disposeAnchoredOverlays?.();
+    this.disposeAnchoredOverlays = undefined;
     this.appNavigateCleanup?.();
     this.appNavigateCleanup = null;
     this.filePreviewCleanup?.();
@@ -1147,7 +1155,7 @@ export class OpenClawApp extends LitElement {
           this.applySettings(nextSettings);
           this.connect();
         } else if (!this.connected && this.client) {
-          this.client.reconnectNow();
+          this.client.notifyGatewayReady();
         }
         void this.runWebbridgeRepairTick();
       });

@@ -134,7 +134,14 @@ export class GatewayBrowserClient {
     return this.helloReceived && this.ws?.readyState === WebSocket.OPEN;
   }
 
-  // 手动立即重连（重置 backoff），用于刷新按钮
+  notifyGatewayReady() {
+    // Main-process readiness can race a valid connect/profile acquisition. Only
+    // wake transport backoff; replacing an in-flight socket discards that work.
+    if (this.closed || this.ws && (this.ws.readyState === WebSocket.CONNECTING || this.ws.readyState === WebSocket.OPEN)) return;
+    this.reconnectNow();
+  }
+
+  // 手动重试可以主动替换未完成的握手，并重置退避。
   reconnectNow() {
     if (this.connected) return;
     this.closed = false;

@@ -79,7 +79,7 @@ test("app-gateway.ts：onHello 重连分支调度 scheduleReconnectOrphanProbe",
   // 「断连窗口内结束的 run」，不需要探测；onGap 耗尽软恢复路径不断连也不需要。
   assert.match(
     s,
-    /if \(isReconnect\) \{[\s\S]*?void loadChatHistory\([\s\S]*?scheduleReconnectOrphanProbe\(host\);[\s\S]*?\}/,
+    /if \(isReconnect\) \{[\s\S]*?initialHistory = loadChatHistory\([\s\S]*?scheduleReconnectOrphanProbe\(host\);[\s\S]*?\}/,
     "onHello 的重连分支应在重连读后调用 scheduleReconnectOrphanProbe(host)",
   );
   // 顶部 import 必须引入 liveOrphanRunId（探测回调的存活检查只消费这一个 orphan API）

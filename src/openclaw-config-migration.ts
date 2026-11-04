@@ -436,6 +436,19 @@ export function migrateOpenclawConfigForKernelUpgrade(): void {
       }
     }
     const atLeast2026_8 = versionAtLeast(version, { year: 2026, month: 8 });
+    // Native 2026.10 discovery otherwise rescans every registered source each
+    // minute, even with no edits. Desktop mutations/manual Refresh explicitly
+    // request discovery; preserve an owner's deliberate watch preference.
+    let migratedSkillDiscovery = false;
+    if (versionAtLeast(version, { year: 2026, month: 10 }) &&
+        (config.skills === undefined || config.skills && typeof config.skills === "object" && !Array.isArray(config.skills)) &&
+        (config.skills?.load === undefined || config.skills.load && typeof config.skills.load === "object" && !Array.isArray(config.skills.load)) &&
+        config.skills?.load?.watch === undefined) {
+      config.skills ??= {};
+      config.skills.load ??= {};
+      config.skills.load.watch = false;
+      migratedSkillDiscovery = true;
+    }
     const migratedAliases = migrateDeepseekModelAliases(config);
     const migratedExecMode = migrateExecModeApproveAll(config);
     const migratedPlanTool = migratePlanTool(config, atLeast2026_8);
@@ -447,12 +460,13 @@ export function migrateOpenclawConfigForKernelUpgrade(): void {
       ? migrateUnavailablePluginEntries(config)
       : { stashed: [], removedSlots: [], repaired: [], downgraded: [] };
     const pluginEntryChanged = pluginEntries.stashed.length > 0 || pluginEntries.removedSlots.length > 0 || pluginEntries.repaired.length > 0 || pluginEntries.downgraded.length > 0;
-    if (removed.length === 0 && !migratedAliases && !migratedExecMode && !migratedPlanTool && !migratedMemorySearch && !migratedQQBot && !migratedQQBotId && !pluginEntryChanged) return;
+    if (removed.length === 0 && !migratedAliases && !migratedExecMode && !migratedPlanTool && !migratedMemorySearch && !migratedQQBot && !migratedQQBotId && !pluginEntryChanged && !migratedSkillDiscovery) return;
     // 不传 baseSnapshot：本迁移在启动期/换装后连续执行，读-改-写都在同一同步段内；
     // 且刻意摘除条目/字段（stash、deprecated 清理）只体现在待写对象上，读时刻快照
     // 不受影响，写前比对不会因此误伤（口径见 WriteUserConfigOptions）。
     writeUserConfig(config);
     const parts: string[] = [];
+    if (migratedSkillDiscovery) parts.push("技能发现改为按需刷新，停用默认每分钟全量重扫；显式 watch 配置优先");
     if (removed.length > 0) parts.push(`移除: ${removed.join(", ")}`);
     if (migratedAliases) parts.push("deepseek 旧模型别名已迁移到 v4 系列");
     if (migratedExecMode) parts.push("tools.exec.mode 非法值 approve-all 已修正为 full");

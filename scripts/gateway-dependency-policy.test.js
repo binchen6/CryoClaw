@@ -56,4 +56,13 @@ test('bundled transport and lock bytes move to the safe 6.x line without changin
   assert.equal(JSON.parse(fs.readFileSync(path.join(dir, 'package-lock.json'), 'utf8')).packages['node_modules/npm/node_modules/undici'].version, '6.29.1');
   assert.doesNotThrow(() => assertGatewayDependencyPolicy(dir));
   assert.equal(repairBundledDependencies(dir).undici, false);
+  // 10.10 deduplicates these dependencies. Re-running an old repair must not
+  // recreate copies that upstream no longer ships.
+  fs.rmSync(path.join(dir, 'node_modules/openclaw/node_modules/undici'), { recursive: true });
+  fs.rmSync(path.join(dir, 'node_modules/openclaw/node_modules/zod'), { recursive: true });
+  const current = repairBundledDependencies(dir);
+  assert.equal(current.openclawUndici, false);
+  assert.equal(current.openclawZod, false);
+  assert.equal(fs.existsSync(path.join(dir, 'node_modules/openclaw/node_modules/undici')), false);
+  assert.doesNotThrow(() => assertGatewayDependencyPolicy(dir));
 });

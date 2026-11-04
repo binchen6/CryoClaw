@@ -37,7 +37,9 @@ test('registered external installs take their canonical precedence without recon
  const result=await loadInventory({distDir,config:{},env:f.env});assert.deepEqual(result.find(p=>p.id==='fixture-bot').channels,['registered']);
 });
 test('unreadable newer state and invalid installed records reject demand reconciliation',{skip:!available},async t=>{
- for(const version of [20,21]){
+ // A deliberately future version remains newer when the kernel advances its
+ // current shared-state schema (10.10 now accepts the old "future" v21).
+ for(const version of [20,999]){
   const f=fixture(t);f.plugin(path.join(f.bundled,'bot'),'fixture-bot',['stock']);installedIndex(f,version===20?{'fixture-bot':{source:'invalid-source'}}:{},version);
   await assert.rejects(loadInventory({distDir,config:{},env:f.env}));
  }

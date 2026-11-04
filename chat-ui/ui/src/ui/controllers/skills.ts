@@ -7,6 +7,7 @@ export type SkillsState = {
   client: GatewayBrowserClient | null;
   connected: boolean;
   skillsLoading: boolean;
+  skillsLoadSlow?: boolean;
   skillsReport: SkillStatusReport | null;
   skillsError: string | null;
   skillsBusyKey: string | null;
@@ -74,9 +75,10 @@ async function runSkillMutation(
   }
 }
 
-// skills 加载超时：QA 捕获过 skills.status 永不返回导致「刷新中」常驻——
-// 15s 未 settle 即判加载失败（走错误态 + 重试），与网关侧 30s 请求超时解耦。
-export const SKILLS_LOAD_TIMEOUT_MS = 15_000;
+// Match the native discovery worker's bounded 120s operation. A 15s UI-only
+// timeout used to abandon live reads and enqueue duplicates during rescans.
+export const SKILLS_LOAD_TIMEOUT_MS = 120_000;
+export const SKILLS_SLOW_HINT_MS = 15_000;
 
 // 导出供单测用小的 ms 直接驱动（loadSkills 内部用 SKILLS_LOAD_TIMEOUT_MS 调用）。
 export function withLoadTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
@@ -95,57 +97,136 @@ export function withLoadTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
   });
 }
 
-const skillStatusCaches = new WeakMap<GatewayBrowserClient, ResourceCache<SkillStatusReport>>();
-function skillStatusCacheFor(client: GatewayBrowserClient) {
-  let cache = skillStatusCaches.get(client);
-  if (!cache) {
-    cache = new ResourceCache<SkillStatusReport>(10_000, 2);
-    skillStatusCaches.set(client, cache);
+type StatusRead = { revision: number; promise: Promise<SkillStatusReport> };
+type SkillStatusState = {
+  cache: ResourceCache<SkillStatusReport>;
+  revision: number;
+  refreshRequested: boolean;
+  refreshSupported?: boolean;
+  pending?: StatusRead;
+};
+const skillStatusCaches = new WeakMap<GatewayBrowserClient, SkillStatusState>();
+function skillStatusStateFor(client: GatewayBrowserClient) {
+  let state = skillStatusCaches.get(client);
+  if (!state) {
+    state = { cache: new ResourceCache<SkillStatusReport>(10_000, 2), revision: 0, refreshRequested: false };
+    skillStatusCaches.set(client, state);
   }
-  return cache;
+  return state;
+}
+function invalidateSkillStatus(client: GatewayBrowserClient) {
+  const state = skillStatusStateFor(client);
+  state.revision++;
+  state.refreshRequested = true;
+  state.cache.clear();
 }
 
-type SkillsLoad = { client: GatewayBrowserClient; promise: Promise<void> | null; refreshPending: boolean };
+async function requestSkillStatus(client: GatewayBrowserClient, state: SkillStatusState, refresh: boolean) {
+  const options = { timeoutMs: SKILLS_LOAD_TIMEOUT_MS };
+  const refreshNative = refresh && state.refreshSupported !== false;
+  try {
+    const report = await client.request<SkillStatusReport>("skills.status", refreshNative ? { refresh: true } : {}, options);
+    if (refreshNative) state.refreshSupported = true;
+    return report;
+  } catch (error) {
+    // Older kernels have a closed params schema without `refresh`. Only retry
+    // that specific pre-admission rejection; permissions/timeouts stay errors.
+    if (refreshNative && error && typeof error === "object" &&
+        "code" in error && error.code === "INVALID_REQUEST" &&
+        error instanceof Error && /refresh/i.test(error.message) && /additional|unexpected|unknown|unrecognized/i.test(error.message)) {
+      state.refreshSupported = false;
+      return client.request<SkillStatusReport>("skills.status", {}, options);
+    }
+    throw error;
+  }
+}
+/** One native read per connection, including consumers with different UI state.
+ * A mutation invalidates its generation; join the older read before observing
+ * fresh state instead of flooding the singleton discovery worker. */
+async function readSkillStatus(client: GatewayBrowserClient): Promise<SkillStatusReport> {
+  const state = skillStatusStateFor(client);
+  for (;;) {
+    const cached = state.cache.peek("status");
+    if (cached) return cached;
+    let read = state.pending;
+    if (!read) {
+      const revision = state.revision;
+      const promise = withLoadTimeout(requestSkillStatus(client, state, state.refreshRequested), SKILLS_LOAD_TIMEOUT_MS);
+      read = { revision, promise };
+      state.pending = read;
+      const owned = read;
+      const release = () => { if (state.pending === owned) state.pending = undefined; };
+      promise.then(release, release);
+    }
+    const report = await read.promise;
+    if (read.revision !== state.revision) continue;
+    if (!report || !Array.isArray(report.skills)) throw new Error("Invalid skill status response");
+    state.refreshRequested = false;
+    state.cache.store("status", report);
+    return report;
+  }
+}
+
+type SkillsLoad = { client: GatewayBrowserClient; promise: Promise<void> | null };
 const skillLoads = new WeakMap<SkillsState, SkillsLoad>();
+
+type StartupRefresh = { attempted: boolean; timer?: ReturnType<typeof setTimeout> };
+const startupRefreshes = new WeakMap<SkillsState, StartupRefresh>();
+
+/** One attempt per app view lifetime, after visible startup reads. Reconnects
+ * can reschedule an unstarted job, but never create a periodic discovery loop. */
+export function queueStartupSkillRefresh(state: SkillsState, isReady: () => boolean) {
+  if (!isReady()) return;
+  let job = startupRefreshes.get(state);
+  if (!job) { job = { attempted: false }; startupRefreshes.set(state, job); }
+  if (job.attempted || job.timer !== undefined) return;
+  const owned = job;
+  job.timer = setTimeout(() => {
+    owned.timer = undefined;
+    if (!isReady()) return;
+    owned.attempted = true;
+    void loadSkills(state, { force: true });
+  }, 1_000);
+}
+
+export function cancelStartupSkillRefresh(state: SkillsState) {
+  const job = startupRefreshes.get(state);
+  if (job?.timer !== undefined) { clearTimeout(job.timer); job.timer = undefined; }
+}
 
 export async function loadSkills(state: SkillsState, options?: LoadSkillsOptions) {
   if (options?.clearMessages && Object.keys(state.skillMessages).length > 0) state.skillMessages = {};
   if (!state.client || !state.connected) return;
-  const client = state.client, cache = skillStatusCacheFor(client);
+  const client = state.client, status = skillStatusStateFor(client);
+  if(options?.force)invalidateSkillStatus(client);
   const active = skillLoads.get(state);
   if (active?.client === client && active.promise) {
-    if (options?.force) active.refreshPending = true;
     return active.promise;
   }
   if (!options?.force) {
-    const cached = cache.peek("status");
+    const cached = status.cache.peek("status");
     if (cached) { state.skillsReport = cached; state.skillsError = null; return; }
   }
-  const load: SkillsLoad = { client, promise: null, refreshPending: false };
+  const load: SkillsLoad = { client, promise: null };
   skillLoads.set(state, load);
   const current = () => skillLoads.get(state) === load && state.client === client && state.connected;
   state.skillsLoading = true;
+  state.skillsLoadSlow = false;
   state.skillsError = null;
+  const slowTimer=setTimeout(()=>{if(current())state.skillsLoadSlow=true;},SKILLS_SLOW_HINT_MS);
   load.promise = (async () => {
-    do {
-      load.refreshPending = false;
       try {
-        const report = await withLoadTimeout(client.request<SkillStatusReport>("skills.status", {}), SKILLS_LOAD_TIMEOUT_MS);
+        const report = await readSkillStatus(client);
         if (!current()) return;
-        // A successful mutation requested this read again. Its earlier snapshot
-        // must not repopulate either the visible list or the shared cache.
-        if (report && !load.refreshPending) {
-          cache.store("status", report);
-          state.skillsReport = report;
-          state.skillsError = null;
-        }
+        state.skillsReport = report;
+        state.skillsError = null;
       } catch (error) {
         console.warn("[skills] skills.status failed:", error);
-        if (current() && !load.refreshPending) state.skillsError = t("skillStore.error");
+        if (current()) state.skillsError = t("skillStore.error");
       }
-    } while (load.refreshPending && current());
   })().finally(() => {
-    if (skillLoads.get(state) === load) { load.promise = null; state.skillsLoading = false; }
+    clearTimeout(slowTimer);
+    if (skillLoads.get(state) === load) { load.promise = null; state.skillsLoading = false; state.skillsLoadSlow=false; }
   });
   return load.promise;
 }
@@ -196,10 +277,7 @@ export async function listEligibleSkills(
   }
   const client=state.client;
   try {
-    const res = await withLoadTimeout(client.request<{ skills?: SkillStatusEntry[] } | undefined>(
-      "skills.status",
-      {},
-    ),SKILLS_LOAD_TIMEOUT_MS);
+    const res = await readSkillStatus(client);
     if(state.client!==client || !state.connected)return [];
     const skills = res?.skills ?? [];
     return skills

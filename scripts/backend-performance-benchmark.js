@@ -97,6 +97,12 @@ function readIdentity(exe,stateDir){
 function psString(value){return "'"+String(value).replace(/'/g,"''")+"'";}
 async function psJson(code){const {stdout}=await exec('powershell.exe',['-NoProfile','-NonInteractive','-Command',code],{windowsHide:true,timeout:15000,maxBuffer:1024*1024});return JSON.parse(stdout.trim()||'null');}
 function listening(port){return new Promise(resolve=>{const socket=net.connect({host:'127.0.0.1',port}),done=value=>{socket.destroy();resolve(value)};socket.once('connect',()=>done(true));socket.once('error',()=>done(false));socket.setTimeout(1000,()=>done(false));});}
+async function assertGatewayListenerOwner(mainPid,nativeNode,port){
+ const owner=await psJson(`$ids=@(Get-NetTCPConnection -State Listen -LocalPort ${port} | Select-Object -ExpandProperty OwningProcess -Unique);if($ids.Count -ne 1){throw 'Ambiguous Gateway listener'};Get-CimInstance Win32_Process -Filter "ProcessId = $($ids[0])" | Select-Object ProcessId,ParentProcessId,ExecutablePath | ConvertTo-Json -Compress`);
+ assert.equal(owner?.ParentProcessId,mainPid,'Gateway listener belongs to a respawned descendant; direct-process resource and shutdown measurements are invalid');
+ assert.equal(String(owner?.ExecutablePath).toLowerCase(),path.resolve(nativeNode).toLowerCase(),'Gateway listener native executable changed');
+ return owner.ProcessId;
+}
 async function preflight(exe,gatewayPort,cdpPort){
  for(const [label,port]of [['gateway',gatewayPort],['CDP',cdpPort]])assert.equal(await listening(port),false,`Existing ${label} listener on ${port}; close the other app normally first`);
  const existing=await psJson(`@(Get-CimInstance Win32_Process -Filter "Name='CryoClaw.exe'" | Where-Object { $_.CommandLine -notmatch '--type=' } | Select-Object -ExpandProperty ProcessId) | ConvertTo-Json -Compress`);
@@ -145,6 +151,7 @@ async function main(argv=process.argv){
    assert.ok(await waitForAppReady(cdp,{timeoutMs:240000}),'Authenticated/session-ready app unavailable');if(!attached){row.usableMs=performance.now()-started;assert.ok((await Promise.all(tasks)).every(Boolean),'Gateway liveness/readiness did not succeed');}
    row.first=await rpcBatch(cdp,1,rpcTimeoutMs);row.firstRpcBatchMs=row.first.elapsedMs;if(!attached)row.capabilitiesReadyMs=performance.now()-started;
    row.steady=await rpcBatch(cdp,steadyRounds,rpcTimeoutMs);row.rendererExceptions=cdp.exceptions;assert.deepEqual(cdp.exceptions,[],'Renderer exception during required work');
+   if(running)row.gatewayListenerOwnerPid=await assertGatewayListenerOwner(running.child.pid,identity.nativeNode,gatewayPort);
    row.ok=true;
   }catch(error){row.error=String(error.stack||error);throw error;}
   finally{
@@ -152,7 +159,10 @@ async function main(argv=process.argv){
    if(running){const at=performance.now();let exitAt=null;running.child.once('exit',()=>{exitAt=performance.now()});await quitLaunchedApp(running,cdp,70000);row.quitMs=performance.now()-at;row.overallMs=performance.now()-started;row.gracefulExit=running.child.exitCode===0&&running.child.signalCode===null&&exitAt!==null&&exitAt-at<70000;if(!row.gracefulExit){row.ok=false;row.error=row.error||'App did not complete a normal quit before the cleanup deadline';}}
    try{if(sampler)row.resources=await sampler.stop();else throw Error('Resource sampler unavailable');}catch(error){row.ok=false;row.resourceError=String(error.message)}
    if(!attached && Number.isFinite(row.readyzMs))try{
-    const log=fs.readFileSync(gatewayLog);row.pluginStartup=parsePluginStartupIntervals(log.subarray(log.length>=logOffset?logOffset:0).toString('utf8'),row.readyzMs,row.launchWallClockMs);
+    const log=fs.readFileSync(gatewayLog),launchLog=log.subarray(log.length>=logOffset?logOffset:0).toString('utf8');
+    row.gatewayGracefulExit=!/WARN: 停止超时|WARN: gateway 进程可能残留/.test(launchLog)&&/child exit: code=0 signal=null/.test(launchLog);
+    if(!row.gatewayGracefulExit){row.ok=false;row.error=row.error||'Gateway did not exit cleanly; app exit code alone is insufficient';}
+    row.pluginStartup=parsePluginStartupIntervals(launchLog,row.readyzMs,row.launchWallClockMs);
     if(row.pluginStartup.complete&&Number.isFinite(row.capabilitiesReadyMs)&&row.pluginStartup.elapsedMs<=row.readyzMs){row.otherGatewayStartupMs=row.readyzMs-row.pluginStartup.elapsedMs;row.otherCapabilitiesStartupMs=row.capabilitiesReadyMs-row.pluginStartup.elapsedMs;}
    }catch(error){row.pluginPhaseError=error.message;}
    ws?.close();row.finishedAt=new Date().toISOString();write();console.log(JSON.stringify({run:row.run,ok:row.ok,readyzMs:row.readyzMs,capabilitiesReadyMs:row.capabilitiesReadyMs,overallMs:row.overallMs,otherCapabilitiesStartupMs:row.otherCapabilitiesStartupMs,gracefulExit:row.gracefulExit,out}));

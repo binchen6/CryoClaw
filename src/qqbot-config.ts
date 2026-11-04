@@ -10,6 +10,17 @@ export function migrateQqbotPluginId(config: any): boolean {
   const channel = config?.channels?.qqbot;
   if (channel && typeof channel === "object") {
     for (const account of [channel, ...Object.values(channel.accounts ?? {})] as any[]) {
+      if (account && typeof account === "object") {
+        const original: unknown[] = Array.isArray(account.allowFrom) ? account.allowFrom : [];
+        const ids = [...new Set(original.map(String).map(id => id.trim()).filter(id => id && id !== "*"))];
+        const next = ids.length ? ids : ["openclaw:approval-disabled"];
+        if (JSON.stringify(next) !== JSON.stringify(account.allowFrom)) {
+          // Preserve legacy wildcard chat access explicitly; never grant native approvals.
+          if (original.includes("*") && (account.dmPolicy === undefined || account.dmPolicy === "allowlist")) account.dmPolicy = "open";
+          account.allowFrom = next;
+          changed = true;
+        }
+      }
       if (account && typeof account === "object" && account.upgradeMode !== "doc") {
         account.upgradeMode = "doc";
         changed = true;

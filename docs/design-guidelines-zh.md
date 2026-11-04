@@ -243,9 +243,9 @@ focus-visible = `--focus-ring`；disabled = opacity 0.5。
 ### 5.2 表单控件
 
 表单控件走各组件私有类 + `components.css` 的 `.field` 体系：
-**32px 高、`--bg-input` 底、hairline 描边、radius-8**；focus = `--border-focus` + `--focus-ring`；
+**32px 高、`--bg-input` 底、hairline 描边、radius-8**；focus = `--focus-field-color` 描边 + `--focus-field` 柔和光晕（见第 9 节）；
 placeholder/disabled 用 `--text-muted`。`.field` = label（`--text-sm` medium muted）+ 控件的 grid 组合。
-对话输入卡是刻意例外：使用 42% accent 混合的 1px 边与 2px `--accent-subtle` 状态光，避免粗重双层蓝框；不得因此移除可辨识的聚焦反馈。
+对话输入卡是同一套字段聚焦语言的参考实现：accent 混合细边与柔和光晕，不是独立例外。
 （R75：零引用的 `cc-input`/`cc-select`/`cc-textarea` 已删除。）
 
 ### 5.3 卡片（`.card`）
@@ -423,6 +423,16 @@ hairline + radius-12 + `--shadow-lg`，`--text-sm` medium，z-index 10001，
 - 会话信息面板（`views/conversation-info.ts`）是 contextbar 的**停靠式**面板，不锚定触发按钮；它已具备 Esc、点外部、X 三条同源关闭路径与回焦。
 - 看板展开卡（`oc-dashboard.ts` 的 `popover="manual"`）与全局 toast 不是点击开合，不受①约束，但仍有反向 morph / 退场帧。
 - 原生 `<dialog>`（provider 编辑抽屉、看板详情）自带 Esc/backdrop/初始焦点，只需按 `skills.css` 的 `cc-dialog-out` 契约补退场，不再自写开关。
+
+## 全局执行要求（2026.11.03）
+
+工具卡片遵循同一聚焦规则：指针点击不显示焦点环，键盘操作使用`--focus-ring`和`:focus-visible`；不得用局部`:focus`重新引入点击光环。悬停阴影仍遵循卡片的共享悬停状态。
+
+除明确登记的平台、功能或可访问性例外外，所有独立页面、设置子页和 Dock 共用设计令牌、聚焦样式和交互组件。输入框使用 `--focus-field-color` / `--focus-field`，不得恢复旧实色焦点环。文件打开方式在工作空间和 Dock 预览中保持一致。调宽期间直接改变布局，释放时才持久化，并复用会话列表的细分割线与命中宽度。
+
+原生自动浮层由 `utils/anchored-overlays.ts` 统一绑定原生 invoker、测量、避让、视口翻转及同边进出；手动菜单使用 `utils/anchored-menu.ts`，禁止靠固定 bottom/left 猜测位置。内容折叠优先使用原生 `details::details-content` 双向过渡；需要懒挂载的受控内容使用 `utils/disclosure.ts`，关闭动画后移除子树，反向操作取消旧移除任务。不得以永久保留大块隐藏内容替代生命周期管理。所有实现支持 reduced-motion；不得给拖拽尺寸增加缓动延迟。
+
+新增例外必须在代码及本文说明实际原因；不得因为旧页面已有局部样式而继续绕过规范。原生操作系统 select、文件选择器保留系统行为；任务错误正文的截断切换属于文本呈现，不作为浮层移位；编辑画布的选择/拖放轮廓属于编辑反馈，不使用输入聚焦样式。
 
 ## 10. Tooltip
 

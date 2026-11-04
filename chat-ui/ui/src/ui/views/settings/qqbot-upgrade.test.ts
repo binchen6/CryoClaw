@@ -2,6 +2,26 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { applyQqbotSave, extractQqbotView, QQBOT_PLUGIN_ID } from "./tab-channels.lib.ts";
 
+test("saving another QQ account preserves legacy wildcard DM policy, while explicit policy changes win",()=>{
+  const draft:any={channels:{qqbot:{dmPolicy:"allowlist",allowFrom:["*"],accounts:{old:{dmPolicy:"allowlist",allowFrom:["*"]}}}}};
+  applyQqbotSave(draft,{enabled:true,accountId:"new",dmPolicy:"allowlist",allowFrom:["USER","*"]});
+  assert.equal(draft.channels.qqbot.dmPolicy,"open");
+  assert.equal(draft.channels.qqbot.accounts.old.dmPolicy,"open");
+  assert.equal(draft.channels.qqbot.accounts.new.dmPolicy,"allowlist");
+  assert.deepEqual(draft.channels.qqbot.accounts.new.allowFrom,["USER"]);
+});
+
+test("QQ open DM never injects forbidden approval wildcard, including inactive accounts", () => {
+  for (const policy of ["open", "pairing", "allowlist", "disabled"] as const) {
+    const draft: any = {channels: {qqbot: {allowFrom: ["OWNER", "*"], accounts: {old: {enabled: false, allowFrom: ["*"]}}}}};
+    applyQqbotSave(draft, {enabled: true, dmPolicy: policy, allowFrom: []});
+    assert.equal(draft.channels.qqbot.dmPolicy, policy);
+    assert.deepEqual(draft.channels.qqbot.allowFrom, ["openclaw:approval-disabled"]);
+    assert.deepEqual(draft.channels.qqbot.accounts.old.allowFrom, ["openclaw:approval-disabled"]);
+    assert.equal(draft.channels.qqbot.accounts.old.enabled, false);
+  }
+});
+
 test("QQ save migrates plugin identity without renaming its channel or dropping advanced fields", () => {
   const draft: any = {
     plugins: { allow: ["qqbot", "other"], deny: ["other-denied", "qqbot", "openclaw-qqbot"], entries: { qqbot: { enabled: true, config: { x: 1 } } }, installs: { qqbot: { source: "npm" } } },

@@ -1291,7 +1291,8 @@ oc-command-jobs { display: block; min-width: 0; width: 100%; max-width: var(--ch
   cursor: pointer;
 }
 
-.chat-tool-card--clickable:focus {
+.chat-tool-card--clickable:focus-visible {
+  outline: none;
   box-shadow: var(--focus-ring);
 }
 

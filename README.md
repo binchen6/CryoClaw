@@ -21,7 +21,7 @@
 
 ## 🇨🇳 中文
 
-> 2026.1101.0：共享内置浏览器、多标签 Dock 与元素标注；Agent 可读取、操作和截图，用户随时接管。升级腾讯官方 QQ Bot，支持扫码接入与多账号设置；删除过时的 Kimi 思考补丁。完成全项目缺陷与优化审查，修复历史竞争、Git 统计和文件访问边界。[验证记录](docs/RELEASE-2026.1101.0-VERIFICATION.md)。
+> 2026.1104.0：升级 OpenClaw 2026.10.10，退役七处上游已接管的补丁；技能在启动可用后刷新一次，取消默认每分钟重扫。统一工作空间/Dock、菜单动效和工具卡片聚焦，修复 QQ 访问策略。最终安装版三轮可用中位约62.5秒；完整数据及退出边界见[发布验收](docs/RELEASE-2026.1104.0-VERIFICATION.md)。
 
 ### ✨ 项目简介
 
@@ -129,7 +129,7 @@ Anthropic (Claude) / OpenAI (GPT / Codex) / Google (Gemini) / Moonshot（Kimi）
 ```
 CryoClaw (Electron 43 + TypeScript 5.9)
   ├── 主进程壳        src/          IPC 白名单 + sender guard；gateway 子进程托管
-  ├── 内核            openclaw 2026.10.9（版本 pin，独立 Node.js 24.22.1 + 实体目录）
+  ├── 内核            openclaw 2026.10.10（版本 pin，独立 Node.js 24.22.1 + 实体目录）
   ├── 聊天界面        chat-ui/      Lit 3 + Vite SPA，file:// 本地加载；图标统一 lucide 风格
   ├── 应用更新器      src/app-updater.ts  electron-updater + GitHub Releases，差分下载、静默换装
   ├── 内核升级器      scripts/updater/  完整目录换装、恢复日志、健康检查与回滚

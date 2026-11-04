@@ -104,8 +104,8 @@ test("workspace.css：800px 不得隐藏「固定工作区」等功能入口，�
 test("workspace.css：不得再用自定义 outline 覆盖统一 focus-ring", () => {
   const s = css("workspace.css");
   assert.ok(
-    !/:focus-visible\s*\{[^}]*outline:/.test(s),
-    "workspace.css 含 :focus-visible 自定义 outline（应统一走 base.css 的 --focus-ring）",
+    !/:focus-visible\s*\{[^}]*outline:(?!\s*none\b)[^;}]+/.test(s),
+    "workspace.css 不应自定义实色 outline；输入聚焦允许用统一 --focus-field 替代",
   );
 });
 

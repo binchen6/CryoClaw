@@ -57,6 +57,7 @@ const rmRecursive = createRequire(import.meta.url)("./rm-rec.js")(xfs);
 
 // 运行时内核裁剪（kernel-prune.js）：npm 安装的新内核树是未裁剪的完整发布包，
 const { pruneGatewayTree } = createRequire(import.meta.url)("./kernel-prune.js")(xfs);
+const { applyTypeboxRuntime } = createRequire(import.meta.url)("./compact-typebox-runtime.js");
 
 // 内核稳定版策展渠道（kernel-channel.js）：openclaw 官方 npm dist-tag latest 会指向
 // 更新目标改为策展 stable：远程 kernel-channel.json → 内置兜底（构建期注入钉版本）。
@@ -110,6 +111,46 @@ function clearCompileCache() {
     const stateDir = process.env.OPENCLAW_STATE_DIR || path.join(home, ".openclaw");
     rmRecursive(path.join(stateDir, "cache", "v8-compile"));
   } catch {}
+}
+
+/** Refuse a physical downgrade before replacing binaries when local SQLite
+ * already uses a newer format. Data restoration is a separate explicit action;
+ * package rollback must never silently replace or rewrite user databases. */
+export function assertPhysicalKernelDataReadable(gatewayDir, stateDir) {
+  const root=path.join(gatewayDir,'node_modules',KERNEL_PACKAGE),dist=path.join(root,'dist');
+  if(!xfs.existsSync(dist))return 0; // Legacy layouts keep native admission.
+  const names=xfs.readdirSync(dist);
+  function upperBound(prefix,label){
+    const versions=new Set();
+    for(const name of names.filter(name=>name.startsWith(prefix)&&/\.m?js$/.test(name))){
+      const source=xfs.readFileSync(path.join(dist,name),'utf8');
+      const pattern=new RegExp('if \\((?:userVersion|version|contentVersion) > (\\d+)\\) throw createNewerSqliteSchemaVersionError\\("'+label+'"','g');
+      for(const match of source.matchAll(pattern))versions.add(Number(match[1]));
+    }
+    if(versions.size>1)throw Error('Conflicting target database read-admission gates');
+    return versions.size?[...versions][0]:null;
+  }
+  const agentMax=upperBound('openclaw-agent-db-schema-read-','OpenClaw agent database');
+  const stateMax=upperBound('openclaw-state-db-schema-version-','OpenClaw state database');
+  const home=(process.platform==='win32'?process.env.USERPROFILE:process.env.HOME)||os.homedir();
+  stateDir=stateDir||process.env.OPENCLAW_STATE_DIR||path.join(home,'.openclaw');
+  let checked=0;
+  function check(file,maximum){
+    if(maximum===null||!xfs.existsSync(file)||xfs.statSync(file).size===0)return;
+    let version;
+    if(xfs.existsSync(file+'-wal')){
+      const {DatabaseSync}=createRequire(import.meta.url)('node:sqlite');let db;
+      try{db=new DatabaseSync(file,{readOnly:true});version=db.prepare('PRAGMA user_version').get().user_version;}finally{db?.close();}
+    }else{
+      const fd=xfs.openSync(file,'r');try{const header=Buffer.alloc(64);if(xfs.readSync(fd,header,0,64,0)!==64||header.subarray(0,16).toString()!=='SQLite format 3\0')throw Error('Cannot establish local SQLite version before kernel replacement');version=header.readUInt32BE(60);}finally{xfs.closeSync(fd);}
+    }
+    checked++;
+    if(version>maximum)throw Error(`本地数据库格式 ${version} 高于目标内核支持的 ${maximum}，本次未替换内核。请保留兼容内核，或先用恢复备份显式恢复数据；仅回退程序文件不能回退数据库。`);
+  }
+  check(path.join(stateDir,'state/openclaw.sqlite'),stateMax);
+  const agents=path.join(stateDir,'agents');
+  if(agentMax!==null&&xfs.existsSync(agents))for(const entry of xfs.readdirSync(agents,{withFileTypes:true}))if(entry.isDirectory()&&!entry.isSymbolicLink())check(path.join(agents,entry.name,'agent/openclaw-agent.sqlite'),agentMax);
+  return checked;
 }
 
 // ── 进度协议 ──
@@ -777,6 +818,10 @@ async function cmdUpdate(tag) {
     );
     const compatiblePlugins = assertVendoredPluginCompatibility(stagingGateway, target);
     progress("carryover", 43, `官方插件兼容检查 ${compatiblePlugins.length} 项通过`);
+    // Reuse a build-time verified layout only for byte-identical dependencies.
+    // Unknown versions retain upstream files; no compiler ships in the updater.
+    const compact = applyTypeboxRuntime(stagingGateway, path.join(SCRIPT_DIR, "typebox-runtime.json"));
+    progress("prune", 44, `TypeBox 运行时布局: ${compact.action}`);
 
     progress("patch", 45, "应用 asar 边界补丁与 windowsHide 补丁");
     const winResult = kdp.patchWindowsOpenclawArtifacts(stagingGateway, process.platform);
@@ -824,6 +869,7 @@ async function cmdUpdate(tag) {
       xfs.writeFileSync(path.join(backupDir,"physical-backup-complete.json"),JSON.stringify({version:current})+"\n",{flush:true});
       try { kcs.snapshotOpenclawConfig(backupDir); } catch(error) { progress("backup",81,`配置快照附存失败: ${error.message}`); }
       progress("swap",88,"整目录换装物理内核");
+      assertPhysicalKernelDataReadable(stagingGateway);
       directorySwap.swapDirectory(stagingGateway,LOOSE_PATH,target, xfs, {moveCandidate:true});
       swapped=true;clearCompileCache();if(NATIVE_RUNTIME)syncNativeRuntimePolicy();
       writeState({lastAction:"update",previous:current,current:target,backupDir,carried});
@@ -974,6 +1020,7 @@ async function cmdRollback() {
   if (NATIVE_RUNTIME) {
     const backup=path.join(backupDir,"gateway"),target=directorySwap.versionOf(backup),current=await readCurrentVersion();
     assertVendoredPluginCompatibility(backup,target);
+    assertPhysicalKernelDataReadable(backup);
     progress("swap",40,`回退物理内核 ${current} → ${target}`);
     directorySwap.swapDirectory(backup,LOOSE_PATH,target);clearCompileCache();if(NATIVE_RUNTIME)syncNativeRuntimePolicy();
     writeState({lastAction:"rollback",previous:current,current:target});

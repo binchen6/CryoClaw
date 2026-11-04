@@ -1,6 +1,7 @@
 import type { OpenClawApp } from "./app.ts";
 import { invalidateMemoryStatus } from "./controllers/memory.ts";
 import {schedulePagePreloads,stopPagePreloads} from "./page-preload.ts";
+import { queueStartupSkillRefresh, cancelStartupSkillRefresh } from "./controllers/skills.ts";
 import type { ExecApprovalRequest } from "./controllers/exec-approval.ts";
 import type { GatewayEventFrame, GatewayHelloOk } from "./gateway.ts";
 import type { Tab } from "./navigation.ts";
@@ -282,6 +283,15 @@ function reconcileSessionSelection(host: GatewayHost) {
 async function loadSessionsAndReconcile(host: GatewayHost) {
   await loadSessions(host as unknown as OpenClawApp);
   reconcileSessionSelection(host);
+  scheduleStartupSkillRefresh(host);
+}
+
+function scheduleStartupSkillRefresh(host: GatewayHost) {
+  const app = host as unknown as OpenClawApp;
+  const client = app.client;
+  queueStartupSkillRefresh(app, () => !!client && app.client === client && app.connected && client.connected &&
+    !app.chatLoading && !app.sessionsLoading && !!app.sessionsResult && !app.sessionsError &&
+    !app.lastError && !app.chatRunId);
 }
 
 // R30 挂起流看门狗：final/aborted 帧在断连/gap 窗口丢失时 chatRunId 永不清，
@@ -624,6 +634,7 @@ export function connectGateway(host: GatewayHost) {
       applySnapshot(host, hello);
       // Reset orphaned chat run state from before disconnect.
       // Any in-flight run's final event was lost during the disconnect window.
+      let initialHistory: Promise<unknown> = Promise.resolve();
       if (isReconnect) {
         // R30：断连前的在途 run 快照为 orphan——内核侧 run 可能仍在跑，
         // 重连后同 runId 的 delta（全量累计文本）会被收养续显（见 handleChatEvent）
@@ -651,7 +662,7 @@ export function connectGateway(host: GatewayHost) {
         // 探测到未消费标记则强制替换（内核已清空 → 得到正确空会话）；标记不在这里
         // 消费，留给到达的终态事件/发送失败回滚（hasPendingSessionReset 只读）。
         const reconnectReplace = hasPendingSessionReset(host.sessionKey);
-        void loadChatHistory(
+        initialHistory = loadChatHistory(
           host as unknown as OpenClawApp,
           reconnectReplace ? undefined : { mergeIfStale: true },
         );
@@ -660,36 +671,29 @@ export function connectGateway(host: GatewayHost) {
         scheduleReconnectOrphanProbe(host);
       } else if (host.tab === "chat") {
         // Visible history goes first; the immediate ticker owns sessions.list.
-        void loadChatHistory(host as unknown as OpenClawApp);
+        initialHistory = loadChatHistory(host as unknown as OpenClawApp);
       }
-      if (host.tab === "chat") void refreshChatAvatar(host as unknown as OpenClawApp);
       void loadAssistantIdentity(host as unknown as OpenClawApp,{sessionKey:admissionSessionKey,snapshot:identity});
-      // 加载已配置模型列表（用于 per-session 模型选择器）
-      void (host as unknown as OpenClawApp).loadConfiguredModels();
-      // sessions/tasks 不在此显式拉取：下方 startTicker() 的首帧 runAllHandlers 会执行
-      // 同名 tick handler，显式再拉一次会让每次重连各多打两份全量 RPC
-      // R61 问答卡片：重连后 question.list 全量对齐（断连窗口内的 resolved 事件已丢）
-      void reconcileQuestionPrompts(host);
-      // Progress Card：重连后重拉当前会话卡片（断连窗口内的 changed 事件已丢失）
-      void loadProgressCard(host as unknown as OpenClawApp);
-      // R89 Board（会话仪表盘）：重连后重拉（board 不可用时静默为空）
-      void loadBoard(host as unknown as BoardHost);
-      // worktree 徽标数据（sessions.list 行不带 worktree 字段，靠 ownerId 反推）
-      void loadWorktrees(host as unknown as OpenClawApp);
       // 预取 / 命令目录（供 compose 补全）。force：内核升级换装后 Gateway 重启会重新
       // hello，这里必须强刷——否则 5 分钟 TTL 内持续返回旧内核的命令目录。
       resetCommands(client);
       if(/^\s*[/／]/.test((host as unknown as OpenClawApp).chatMessage))void loadCommands(client).then(()=>{if(host.client===client && host.connected)(host as unknown as OpenClawApp).requestUpdate();});
       // 加载执行权限模式（聊天页三态）
       void (host as unknown as OpenClawApp).loadExecMode();
-      // Skill prefetch is owned by schedulePagePreloads after visible chat reads.
+      // Skill discovery gets one deferred refresh after actual first-use reads.
       // 注册定时轮询并启动客户端定时器（"cron" 是 tick handler 标识，非视图 id，勿当死接线删）
       registerTickHandler("cron", () => {
         const app=host as unknown as OpenClawApp;
         if(app.chatLoading || app.sessionsLoading || !app.sessionsResult)return;
         return loadCronJobs(host as unknown as Parameters<typeof loadCronJobs>[0]);
       });
-      registerTickHandler("sessions", () => loadSessionsAndReconcile(host));
+      let initialSessions: Promise<void> | undefined;
+      // sessions/tasks 不在此显式拉取：startTicker 的首轮拥有会话请求。
+      registerTickHandler("sessions", () => {
+        const request = loadSessionsAndReconcile(host);
+        initialSessions ??= request;
+        return request;
+      });
       // 2026.9.7：tasks.* 已移除，不再注册 tasks 轮询——运行记录由任务视图内
       // 30s ticker（app-tasks.ts）与 cron 广播事件分支承担刷新
       registerTickHandler("stream-watchdog", () => checkStalledStream(host));
@@ -703,6 +707,20 @@ export function connectGateway(host: GatewayHost) {
         }
       });
       startTicker();
+      // Sending history first does not prioritize it if a burst of lazy handler
+      // imports immediately occupies the gateway. Finish the two visible reads
+      // before loading auxiliary catalogs; failure still leaves recovery tools
+      // available, and an obsolete connection never starts another read burst.
+      void Promise.allSettled([initialHistory, initialSessions]).then(() => {
+        if (host.client !== client || !client.connected || helloEpoch !== epoch) return;
+        scheduleStartupSkillRefresh(host);
+        if (host.tab === "chat") void refreshChatAvatar(host as unknown as OpenClawApp);
+        void (host as unknown as OpenClawApp).loadConfiguredModels();
+        void reconcileQuestionPrompts(host);
+        void loadProgressCard(host as unknown as OpenClawApp);
+        void loadBoard(host as unknown as BoardHost);
+        void loadWorktrees(host as unknown as OpenClawApp);
+      });
       schedulePagePreloads(host as unknown as import("./app-view-state.ts").AppViewState);
       initTickerVisibilityHook();
       }).catch(error=>{
@@ -719,6 +737,7 @@ export function connectGateway(host: GatewayHost) {
       host.connected = false;
       invalidateMemoryStatus(client);
       stopPagePreloads(host as unknown as import("./app-view-state.ts").AppViewState);
+      cancelStartupSkillRefresh(host as unknown as OpenClawApp);
       // R41：新断连作废上轮重连的挂起探测（下一轮 onHello 会重新调度）
       cancelReconnectOrphanProbe();
       // 断开连接时注销 tick handler 并停止客户端定时器（与 onHello 注册对称）
@@ -821,6 +840,15 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
   // 默认 cached === false，整段 if 是常量折叠后的死代码，对生产无开销。
   if (isDebugEnabled("gateway")) {
     debugLog("gateway", `evt:${evt.event}`, evt.payload);
+  }
+
+  if (evt.event === "agent.identity.changed") {
+    const agentId = (evt.payload as { agentId?: unknown } | undefined)?.agentId;
+    const app = host as unknown as OpenClawApp;
+    if (typeof agentId === "string" && agentId === app.assistantAgentId) {
+      void loadAssistantIdentity(app);
+    }
+    return;
   }
 
   if (evt.event === "agent") {

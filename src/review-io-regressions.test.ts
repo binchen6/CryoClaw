@@ -112,10 +112,10 @@ test("provider response failures keep status and API-key error semantics", async
   }
 });
 
-function workspaceHandler(spawn: (...args: any[]) => unknown, env: Record<string, string> = {}, exists: (p: string) => boolean = () => true) {
+function workspaceHandler(spawn: (...args: any[]) => unknown, env: Record<string, string> = {}, exists: (p: string) => boolean = () => true, missing = false) {
   const handlers = new Map<string, any>();
   const dir = path.win32.resolve(".cache", "workspace & test");
-  const filesystem = { realpathSync: (p: string) => p, statSync: () => ({ isDirectory: () => true, isFile: () => true }), existsSync: exists,
+  const filesystem = { realpathSync: (p: string) => p, statSync: () => {if(missing)throw Error("ENOENT file disappeared");return { isDirectory: () => true, isFile: () => true };}, existsSync: exists,
     promises: { ...fs.promises, realpath: async (p: string) => p } };
   const module = isolated("workspace-ipc", {
     path: path.win32,
@@ -128,6 +128,12 @@ function workspaceHandler(spawn: (...args: any[]) => unknown, env: Record<string
   module.registerWorkspaceIpc();
   return { call: (target: string) => handlers.get("workspace:open-with")({}, { path: dir, target }), dir };
 }
+
+test("workspace open returns a structured error when the file disappears after admission",async()=>{
+  const handler=workspaceHandler(()=>{throw Error("must not spawn");},{},()=>true,true);
+  const result=await handler.call("vscode");
+  assert.equal(result.success,false);assert.match(result.message,/ENOENT/);
+});
 
 for (const target of ["git-bash", "terminal", "vscode"]) {
   test(`workspace opens ${target} with literal arguments and cwd`, async () => {

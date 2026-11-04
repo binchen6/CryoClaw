@@ -6,12 +6,36 @@ const path = require("node:path");
 
 const kdp = require("./lib/kernel-dist-patch");
 
+// String transforms can be syntactically valid while importing a removed or
+// re-aliased private export. Once physical resources exist, link the real module
+// with the same standalone runtime used by the installed application.
+const resourceGateway=path.resolve(__dirname,'../resources/targets/win32-x64/gateway');
+const resourceNode=path.resolve(__dirname,'../resources/targets/win32-x64/runtime/node.exe');
+test('physical command module links with the bundled Node runtime',{skip:!fs.existsSync(resourceNode)||!fs.existsSync(path.join(resourceGateway,'node_modules/openclaw/dist'))},()=>{
+  const dist=path.join(resourceGateway,'node_modules/openclaw/dist');
+  const files=fs.readdirSync(dist).filter(name=>/^commands-list-result-.*\.mjs$/.test(name)&&fs.readFileSync(path.join(dist,name),'utf8').includes('async function buildCommandsListResult(params)'));
+  assert.equal(files.length,1,'Expected one command implementation');
+  const url=require('node:url').pathToFileURL(path.join(dist,files[0])).href;
+  const script=`import(${JSON.stringify(url)}).then(m=>{if(!Object.values(m).some(value=>typeof value==='function'))throw Error('Missing command export');}).catch(e=>{console.error(e);process.exitCode=1;});`;
+  require('node:child_process').execFileSync(resourceNode,['--no-warnings','-e',script],{windowsHide:true,timeout:30000,stdio:'pipe'});
+});
+
 for (const script of ["package-resources.js", "updater/kernel-update.mjs"]) {
   test(`${script} preserves upstream Kimi thinking policy`, () => {
     const source = fs.readFileSync(path.join(__dirname, script), "utf8");
     assert.doesNotMatch(source, /patchKimiThinkingProfile|cryoclaw-thinking-profile/);
   });
 }
+
+test('older and unreviewed kernels retain native command loading without private cache imports',t=>{
+  const source='async function buildCommandsListResult(params) { return {commands:[]}; }';
+  const {gatewayDir,distDir}=makeGatewayDist(t,{'commands-list-result-native.mjs':source});
+  for(const version of ['2026.7.0','2026.10.5','2026.10.6','2027.1.0']){
+    fs.writeFileSync(path.join(path.dirname(distDir),'package.json'),JSON.stringify({version}));
+    assert.equal(kdp.patchCommandCatalogCache(gatewayDir),0);
+    assert.equal(fs.readFileSync(path.join(distDir,'commands-list-result-native.mjs'),'utf8'),source);
+  }
+});
 
 test("kernel patch API leaves Kimi thinking policy to the upstream provider", () => {
   assert.equal(Object.hasOwn(kdp, "patchKimiThinkingProfile"), false);
@@ -20,7 +44,7 @@ test("kernel patch API leaves Kimi thinking policy to the upstream provider", ()
 test("command catalog cache shares concurrent builds and invalidates changed generations",async t=>{
   const {gatewayDir,distDir}=makeGatewayDist(t,{
     "commands-list-result-test.mjs":"async function buildCommandsListResult(params) { return {commands:[]}; }",
-    "refresh-state-test.mjs":"","runtime-aaa.mjs":"","runtime-test.mjs":"export { getActivePluginRegistryVersion as d };","agent-scope-config-test.mjs":"","workspace-skill-loader-test.mjs":"",
+    "refresh-state-test.mjs":"","runtime-aaa.mjs":"","runtime-test.mjs":"export { getActivePluginRegistryVersion as d };","gateway-request-scope-test.mjs":"export { getPluginRegistryForContext as i };","agent-scope-config-test.mjs":"","workspace-skill-loader-test.mjs":"",
   });
   assert.equal(kdp.patchCommandCatalogCache(gatewayDir),1);
   const file=path.join(distDir,"commands-list-result-test.mjs"),source=fs.readFileSync(file,"utf8");
@@ -37,6 +61,14 @@ test("command catalog cache shares concurrent builds and invalidates changed gen
   version++;await cache.run(params,build);assert.equal(builds,2);
   version++;await assert.rejects(cache.run(params,async()=>{throw Error("read failed")}),/read failed/);
   await cache.run(params,build);assert.equal(builds,3);
+  const {AsyncLocalStorage}=require('node:async_hooks'),scope=new AsyncLocalStorage();
+  const scoped=factory({configFingerprint:()=>"config",workspaceDir:()=>"workspace",sourceVersion:()=>1,snapshotVersion:()=>1,registryVersion:()=>1,registryContext:()=>{const owner=scope.getStore();if(owner.expired)throw Error("scope expired");return owner;}});
+  const a={commands:["a"]},b={commands:["b"]};let scopedBuilds=0;
+  const read=()=>scoped.run(params,async()=>{scopedBuilds++;await Promise.resolve();return scope.getStore().commands;});
+  const values=await Promise.all([scope.run(a,read),scope.run(b,read)]);
+  assert.deepEqual(values,[["a"],["b"]]);assert.equal(scopedBuilds,2);
+  assert.deepEqual(await scope.run(a,read),["a"]);assert.equal(scopedBuilds,2);
+  a.expired=true;await assert.rejects(scope.run(a,read),/scope expired/);
 });
 
 test("plugin copy batches share directory admissions for one source capture and close on disposal",t=>{
@@ -241,16 +273,32 @@ export {PreparedModelRuntimePublicationSupersededError as n,assertPreparedModelR
   assert.equal(fs.readFileSync(file,'utf8'),source,'unknown class contract must fail before touching an existing marker');
 });
 
-for(const version of ['2026.10.7','2026.10.9'])for(const [name,pattern]of [
+for(const version of ['2026.10.7','2026.10.9','2026.10.10'])for(const [name,pattern]of [
   ['writeKernelCompatibilityMetadata',/exactly one agent schema admission/],
   ['patchWebhookCompletionPrecheck',/Webhook.*coverage/],
-  ['patchCommandCatalogCache',/Command catalog cache did not cover/],
-  ['patchLazyControlUiRetention',/Control UI retention patch must cover/],
+  ['patchCommandCatalogCache',version==='2026.10.10'?/Native command catalog must cover/:/Command catalog cache did not cover/],
+  ['patchLazyControlUiRetention',version==='2026.10.10'?/Reviewed upstream desktop replacement changed/:/Control UI retention patch must cover/],
   ['patchDeliverablesHistoryProjection',/Delivery history projection did not cover/],
 ])test(`${version} required ${name} coverage cannot silently disappear`,t=>{
-  const {gatewayDir,distDir}=makeGatewayDist(t,{'runtime-test.mjs':'export { getActivePluginRegistryVersion as d };'});
+  const {gatewayDir,distDir}=makeGatewayDist(t,{'runtime-test.mjs':'export { getActivePluginRegistryVersion as d };','gateway-request-scope-test.mjs':'export { getPluginRegistryForContext as i };'});
   fs.writeFileSync(path.join(path.dirname(distDir),'package.json'),JSON.stringify({version,openclaw:{schemaVersions:{state:20,agent:25}}}));
   assert.throws(()=>kdp[name](gatewayDir),pattern);
+});
+
+test('native bounded publication rejects a leftover desktop retry rather than nesting retries',t=>{
+  const {gatewayDir,distDir}=makeGatewayDist(t,{});
+  const file=path.join(distDir,'agent-database-startup-native.mjs');
+  const native=['const STARTUP_PUBLICATION_ATTEMPTS = 4;','for (let attempt = 1;; attempt++) try {','await activation.publishAgent(input);','if (!(error instanceof AgentDatabaseStartupSupersededError) || attempt >= STARTUP_PUBLICATION_ATTEMPTS) throw error;','await assertNotDeleted();'].join('\n');
+  fs.writeFileSync(file,native);
+  assert.equal(kdp.patchAgentStartupPublication(gatewayDir),0);
+  fs.appendFileSync(file,'\n/* cryoclaw-startup-publication-retry */');
+  assert.throws(()=>kdp.patchAgentStartupPublication(gatewayDir),/Retired desktop patch remains/);
+});
+
+for(const name of ['patchAgentStartupPublication','patchPluginCopyBatchLifetime','patchPluginSmallSourceRevalidation','patchUsageSessionContextOverlap'])test(`10.10 ${name} refuses missing upstream ownership coverage`,t=>{
+  const {gatewayDir,distDir}=makeGatewayDist(t,{});
+  fs.writeFileSync(path.join(path.dirname(distDir),'package.json'),JSON.stringify({version:'2026.10.10'}));
+  assert.throws(()=>kdp[name](gatewayDir),/Reviewed upstream desktop replacement changed/);
 });
 
 test("kernel schema metadata follows the actual admission gate and rejects an unknown gate",t=>{
@@ -276,6 +324,31 @@ test("10.5 canonical-root optimization follows withPluginSourceFile into source-
   const {gatewayDir,distDir}=makeGatewayDist(t,{"plugin-generation-source-lookup-test.mjs":'function withPluginSourceFile(source, boundary, read) {return admit({rootPath: boundary, rejectHardlinks:false});}'});
   assert.equal(kdp.patchWindowsPluginCanonicalPaths(gatewayDir),1);
   assert.match(fs.readFileSync(path.join(distDir,"plugin-generation-source-lookup-test.mjs"),"utf8"),/rootRealPath: cryoclawPluginCanonicalRoot\(boundary\)/);
+});
+
+test("10.10 canonical-root optimization preserves the operation-owned openFile argument",t=>{
+  const {gatewayDir,distDir}=makeGatewayDist(t,{"plugin-generation-source-lookup-test.mjs":'function withPluginSourceFile(source, boundary, read, openFile = openRootFileSync$1) {return admit({rootPath: boundary, rejectHardlinks:false});}'});
+  assert.equal(kdp.patchWindowsPluginCanonicalPaths(gatewayDir),1);
+  const file=path.join(distDir,'plugin-generation-source-lookup-test.mjs'),source=fs.readFileSync(file,'utf8');
+  assert.ok(source.includes('openFile = openRootFileSync$1'));
+  assert.ok(source.includes('rootRealPath: cryoclawPluginCanonicalRoot(boundary)'));
+  assert.equal(kdp.patchWindowsPluginCanonicalPaths(gatewayDir),1);assert.equal(fs.readFileSync(file,'utf8'),source);
+});
+
+test("10.10 migration metadata requires matching writer minimum and reader maximum",t=>{
+  const {gatewayDir,distDir}=makeGatewayDist(t,{'openclaw-agent-db-schema-read-test.mjs':'if (userVersion > 27) throw createNewerSqliteSchemaVersionError("OpenClaw agent database", pathname, userVersion, 27);\nif (userVersion < 27 && !isNewUnownedDatabase) throw new SqliteSchemaMismatchError("migrate");'});
+  const root=path.dirname(distDir);fs.writeFileSync(path.join(root,'package.json'),JSON.stringify({version:'2026.10.10'}));
+  fs.writeFileSync(path.join(root,'node-compile-cache.mjs'),[
+    'if (isMainThread && process.env.OPENCLAW_PACKAGED_COMPILE_CACHE_RESPAWNED === "gateway")',
+    'delete process.env.NODE_DISABLE_COMPILE_CACHE;', 'delete process.env.OPENCLAW_PACKAGED_COMPILE_CACHE_RESPAWNED;',
+    'if (foregroundGateway && isMainThread) {', 'owner.baseDirectory ??= path.resolve(directory);',
+    'void maintainOpenClawCompileCache(directory);', 'NODE_DISABLE_COMPILE_CACHE: "1",',
+    'OPENCLAW_PACKAGED_COMPILE_CACHE_RESPAWNED: "gateway",',
+  ].join('\n'));
+  assert.equal(kdp.writeKernelCompatibilityMetadata(gatewayDir),1);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(root,'cryoclaw-kernel-compat.json'))).foregroundCompileCache,'workers');
+  const file=path.join(distDir,'openclaw-agent-db-schema-read-test.mjs');fs.writeFileSync(file,fs.readFileSync(file,'utf8').replace('userVersion < 27','userVersion < 26'));
+  assert.throws(()=>kdp.writeKernelCompatibilityMetadata(gatewayDir),/minimum and read maximum diverged/);
 });
 
 test("10.5 split artifact keeps native Windows realpath acceleration without the moved boundary function",t=>{
@@ -917,4 +990,9 @@ test("Windows idle broker exits immediately without weakening live-resource clea
   assert.ok(result.includes('signalGroup("SIGTERM")'));assert.ok(result.includes('setTimeout(finish, 5250)'));
   assert.equal(kdp.patchWindowsIdleBrokerExit(gatewayDir),1);assert.equal(fs.readFileSync(file,"utf8"),result);
   fs.writeFileSync(file,"function unsupportedUpstream() {}\n");assert.equal(kdp.patchWindowsIdleBrokerExit(gatewayDir),0);
+  const native='function shutdown() { resources?.disconnect(); const childStops = [...owned.values()].map(stopChild); await Promise.allSettled(launches); resources?.close(); await drainCurrentBrokerProcessGroup(); }';
+  fs.writeFileSync(file,native);assert.equal(kdp.patchWindowsIdleBrokerExit(gatewayDir),0);
+  assert.equal(fs.readFileSync(file,'utf8'),native);
+  fs.appendFileSync(file,'/* cryoclaw-windows-idle-broker-exit */');
+  assert.throws(()=>kdp.patchWindowsIdleBrokerExit(gatewayDir),/Retired Windows idle broker patch/);
 });

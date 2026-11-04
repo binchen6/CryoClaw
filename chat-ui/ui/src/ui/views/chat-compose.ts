@@ -11,6 +11,8 @@
  * 切会话时由 resetComposeTransient 统一复位（renderChat 的 lastSessionKey 门控调用）。
  */
 import { html, nothing } from "lit";
+import { anchoredMenu } from "../utils/anchored-menu.ts";
+import { disclosure } from "../utils/disclosure.ts";
 import { ref } from "lit/directives/ref.js";
 import { adjustTextareaHeight } from "../utils/textarea-height.ts";
 import { setComposeForToast } from "../toast-clearance.ts";
@@ -166,7 +168,8 @@ function closePlusMenu(props: { onRequestUpdate?: () => void }, options: { resto
     let exitTimer:number|undefined,finished=false;
     const finish=()=>{if(finished||epoch!==plusMenuEpoch)return;finished=true;if(exitTimer!==undefined)clearTimeout(exitTimer);plusMenuLeaving=false;plusMenuAnimation=null;props.onRequestUpdate?.();};
     if(!menu||prefersReducedMotion()){finish();return;}
-    plusMenuAnimation=menu.animate([{opacity:1,transform:'translateY(0) scale(1)'},{opacity:0,transform:'translateY(6px) scale(.98)'}],{duration:POPOVER_EXIT_MS,easing:'ease-in',fill:'forwards'});
+    const offset=menu.dataset.side==='bottom'?-6:6;
+    plusMenuAnimation=menu.animate([{opacity:1,transform:'translateY(0) scale(1)'},{opacity:0,transform:`translateY(${offset}px) scale(.98)`}],{duration:POPOVER_EXIT_MS,easing:'ease-in',fill:'forwards'});
     plusMenuAnimation.finished.then(finish).catch(finish);
     // Background windows may suspend WAAPI completion; cleanup still needs a bound.
     exitTimer=window.setTimeout(finish,POPOVER_EXIT_MS+50);
@@ -428,7 +431,7 @@ function renderBranchPopover(props: ChatProps) {
   const branches = keyMismatch ? [] : (props.sessionBranches ?? []);
   const busySwitch = busy?.startsWith("switch:") ? busy.slice("switch:".length) : null;
   return html`
-    <div class="chat-compose__branch-popover" role="menu" aria-label=${t("chat.branch.title")}>
+    <div ${branchPopoverOpen ? anchoredMenu(() => document.querySelector<HTMLElement>(".chat-compose__branch [aria-haspopup]"), true) : nothing} class="chat-compose__branch-popover" role="menu" aria-label=${t("chat.branch.title")}>
       <div class="chat-compose__branch-title">${t("chat.branch.title")}</div>
       ${loading
         ? html`<div class="chat-compose__branch-status">${t("chat.loading")}</div>`
@@ -532,14 +535,12 @@ function insertSkillReference(props: ChatProps, name: string) {
 }
 
 function renderSkillPicker(props: ChatProps) {
-  if (!skillPickerOpen) {
-    return nothing;
-  }
+  return disclosure(skillPickerOpen, () => {
     const query=skillPickerQuery.trim().toLocaleLowerCase();
   const filtered=skillPickerItems.filter(skill=>`${skill.name} ${skill.description??""}`.toLocaleLowerCase().includes(query));
   skillPickerIndex=Math.max(0,Math.min(skillPickerIndex,filtered.length-1));
   return html`
-    <div class="chat-plus__skill-picker" @click=${(e: Event) => e.stopPropagation()}
+    <div ${anchoredMenu(() => document.querySelector<HTMLElement>("[data-skill-picker-trigger]"), true)} class="chat-plus__skill-picker" @click=${(e: Event) => e.stopPropagation()}
       @keydown=${(event:KeyboardEvent)=>{if(event.key==="Escape"){event.preventDefault();event.stopPropagation();closeSkillPicker(props);}}}>
       <div class="chat-plus__skill-picker-title">${t("chat.plusSkillPickerTitle")}<button type="button" class="icon-btn icon-btn--sm" aria-label=${t("chat.skillPicker.close")} @click=${()=>closeSkillPicker(props)}>${icons.x}</button></div>
       <input class="chat-plus__skill-search" type="search" role="combobox" aria-label=${t("chat.skillPicker.search")} aria-autocomplete="list" aria-expanded="true" aria-controls="chat-skill-options" aria-activedescendant=${filtered.length?`chat-skill-option-${skillPickerIndex}`:nothing} placeholder=${t("chat.skillPicker.searchPlaceholder")} .value=${skillPickerQuery}
@@ -563,6 +564,7 @@ function renderSkillPicker(props: ChatProps) {
       </div>
     </div>
   `;
+  }, true);
 }
 
 // ── 目标横幅（compose 上方；窄屏折叠为胶囊） ──
@@ -704,7 +706,7 @@ function renderPlusMenu(props: ChatProps) {
       </button>
       ${plusMenuOpen||plusMenuLeaving
         ? html`
-            <div class="chat-plus__menu ${plusMenuLeaving?'chat-plus__menu--closing':''}" role="menu" aria-label=${t("chat.plusMenu")} ?inert=${plusMenuLeaving} @click=${(e: Event) => e.stopPropagation()}>
+            <div ${anchoredMenu(() => plusMenuOpener, true)} class="chat-plus__menu ${plusMenuLeaving?'chat-plus__menu--closing':''}" role="menu" aria-label=${t("chat.plusMenu")} ?inert=${plusMenuLeaving} @click=${(e: Event) => e.stopPropagation()}>
               <button class="chat-plus__item" type="button" @click=${() => {
                 closePlusMenu(props);
                 void openFilePicker();
@@ -787,14 +789,8 @@ function insertCommand(props: ChatProps, suggestion: CommandSuggestion) {
 function renderCommandSuggestions(props: ChatProps) {
   // 防御校验：发送后清空草稿 / 切会话 / 引用插入等程序化改 draft 的路径不触发
   // input 事件，过期建议不能继续浮在空输入框上（点了会把旧命令插进新草稿）
-  if (commandDraft !== props.draft) {
-    return nothing;
-  }
-  if (commandSuggestions.length === 0) {
-    return nothing;
-  }
-  return html`
-    <div id="chat-command-options" class="chat-cmd-suggest" role="listbox" aria-label=${getLocale().startsWith("zh")?"命令候选":"Command suggestions"}>
+  return disclosure(commandDraft === props.draft && commandSuggestions.length > 0, () => html`
+    <div ${anchoredMenu(() => [...document.querySelectorAll<HTMLTextAreaElement>(".chat-compose__field textarea")].find(field => field.checkVisibility()) ?? null, true)} id="chat-command-options" class="chat-cmd-suggest" role="listbox" aria-label=${getLocale().startsWith("zh")?"命令候选":"Command suggestions"}>
       ${commandSuggestions.map((cmdEntry, idx) => html`
         <button
           class="chat-cmd-suggest__item ${idx === commandIndex ?"chat-cmd-suggest__item--active" : ""}"
@@ -815,7 +811,7 @@ function renderCommandSuggestions(props: ChatProps) {
         </button>
       `)}
     </div>
-  `;
+  `, true);
 }
 
 // ── compose 主体：输入框 + 工具条（纯模板装配，事件全走 props 回调） ──

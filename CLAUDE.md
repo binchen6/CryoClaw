@@ -16,9 +16,11 @@ Electron Main Process
   └── BrowserWindow          (loads Lit Chat UI via file://, connects to gateway via WebSocket)
 ```
 
-The main process opens the local Lit Chat UI early (via `file://`) while it starts and checks the gateway subprocess. The UI displays connection progress, then connects over WebSocket for chat and HTTP for API calls. A system tray icon keeps the app alive when all windows are closed. OpenClaw 2026.10.9 requires a newer Node patch than Electron embeds: the current product keeps standalone Node and a physical gateway directory. `runtime/cryoclaw-runtime.json` selects this pair; old ASAR helpers are compatibility code, not the current release path. See docs/REVIEW-2026.1023.0.md before changing runtime or patch policy.
+The main process opens the local Lit Chat UI early (via `file://`) while it starts and checks the gateway subprocess. The UI displays connection progress, then connects over WebSocket for chat and HTTP for API calls. A system tray icon keeps the app alive when all windows are closed. OpenClaw 2026.10.10 requires a newer Node patch than Electron embeds: the current product keeps standalone Node and a physical gateway directory. `runtime/cryoclaw-runtime.json` selects this pair; old ASAR helpers are compatibility code, not the current release path. See docs/REVIEW-2026.1023.0.md before changing runtime or patch policy.
 
 ## Tech Stack
+
+**Skill discovery is on demand by default.** For 2026.10+ kernels, default an unset `skills.load.watch` to false while preserving explicit owner preferences. Refresh once after authenticated first-use history/sessions are ready, then after explicit skill mutations or manual Refresh. Do not reintroduce periodic full discovery or reconnect-triggered repeats. Share pending status reads; keep native admission and time budgets. Tool cards follow the global `:focus-visible` / `--focus-ring` rule, including quiet pointer focus.
 
 | Layer | Choice |
 |---|---|
@@ -204,7 +206,7 @@ CI: `.github/workflows/tests.yml` runs the full regression on every push/PR
 - **Kimi OAuth** — Device code flow via `auth.kimi.com`, 60s refresh interval, 300s refresh threshold.
 - **Setup wizard** — Step 0 (conflict detection) → Step 1 (welcome) → Step 2 (provider) → Step 3 (done + CLI + login toggle).
 - **Settings** — 13 tabs: Channels(Feishu/WeCom/DingTalk/QQBot/WeChat/Pairing), Provider(+usage), Search, Memory, Voice, Session usage, MCP&Hooks, Appearance, Advanced, Approvals, Backup, Info, About. (Plugin management is the top-level "extensions" view, not a settings tab.)
-- **Multi-channel integration** — Feishu / WeCom / DingTalk / QQ Bot / WeChat share a common plugin-enable + channel-config schema. New installs default `dmPolicy: "open"` (with `allowFrom: ["*"]`). Users can opt into `dmPolicy: "pairing"` per channel; approved-user list is maintained via an allowFrom sidecar (no background polling).
+- **Multi-channel integration** — Feishu / WeCom / DingTalk / QQ Bot / WeChat share a common plugin-enable + channel-config flow, with plugin-specific schema validation. New installs default `dmPolicy: "open"`; channels that require it use `allowFrom: ["*"]`, while QQ Bot rejects that sentinel and keeps only explicit approved IDs in `allowFrom`. Users can opt into `dmPolicy: "pairing"` per channel; approved-user lists are maintained via an allowFrom sidecar (no background polling). Preserve legacy policy semantics during migration and respect a user's explicit current form choice.
 - **Skill store** — clawhub CLI integration, skills at `~/.openclaw/workspace/skills/`, registry config in `~/.openclaw/skill-store.json`.
 - **Config backup** — Rolling 10 backups + last-known-good snapshot + factory reset.
 - **Multi-model management** — IPC handlers for listing, deleting, setting default, and aliasing models across providers.
@@ -235,6 +237,8 @@ CI: `.github/workflows/tests.yml` runs the full regression on every push/PR
 ```
 
 ## Design Rules
+
+**统一设计规范是默认实现约束。** 除有明确功能、可访问性或平台限制的特殊情况外，所有页面、工作空间和 Dock 必须复用全局设计令牌、组件及交互逻辑：输入框聚焦使用 `--focus-field-color` / `--focus-field`，菜单使用共享 `placePopover()`、声明式 invoker 和同边进出动画，调宽手柄复用会话列表的逻辑与分割线样式。拖拽期间直接更新尺寸，结束时才持久化；尊重 reduced-motion。特殊情况必须在代码和设计文档说明原因，不得用局部旧样式覆盖全局规范。同一功能在独立页面与 Dock 中须保持入口和行为一致。
 
 For comprehensive design guidelines, please refer to:
 

@@ -9,6 +9,7 @@
  * 状态数据见 ../controllers/progress-card.ts；样式见 styles/chat.css 的 .chat-progress-card 块。
  */
 import { html, nothing } from "lit";
+import { disclosure } from "../utils/disclosure.ts";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import {
   canDismissProgressCard,
@@ -110,9 +111,7 @@ export function renderProgressCard(
           : nothing}
       </div>
       ${hasError ? html`<p class="chat-progress-card__error" role="status">${t("progressCard.syncError")}</p>` : nothing}
-      ${props.collapsed
-        ? nothing
-        : html`
+      ${disclosure(!props.collapsed, () => html`
           <div class="chat-progress-card__body">
             ${hasMarkdown
               ? html`<div class="chat-progress-card__markdown chat-text">${unsafeHTML(toSanitizedMarkdownHtml(card.markdown!))}</div>`
@@ -135,7 +134,7 @@ export function renderProgressCard(
               `
               : nothing}
           </div>
-        `}
+        `)}
     </div>
   `;
 }

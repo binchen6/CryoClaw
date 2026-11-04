@@ -1,4 +1,5 @@
 import {html, LitElement, nothing, type PropertyValues, type TemplateResult} from "lit";
+import {disclosure} from "../utils/disclosure.ts";
 import type {AppViewState} from "../app-view-state.ts";
 import {initWorkspace, loadWorkspaceFile, setWorkspaceSearch, workspaceViewState as ws} from "../controllers/workspace.ts";
 import {icons} from "../icons.ts";
@@ -115,7 +116,7 @@ export class DockFiles extends LitElement {
   private keydown(event: KeyboardEvent, item: DockTreeItem): void {
     if (event.isComposing || event.keyCode === 229 || event.target !== event.currentTarget) return;
     const current = event.currentTarget as HTMLElement;
-    const nodes = Array.from(this.querySelectorAll<HTMLElement>('[role="treeitem"]'));
+    const nodes = Array.from(this.querySelectorAll<HTMLElement>('[role="treeitem"]')).filter(node => !node.closest("[inert]"));
     const index = nodes.indexOf(current);
     let focus: HTMLElement | undefined;
     if (event.key === "ArrowDown") focus = nodes[Math.min(index + 1, nodes.length - 1)];
@@ -149,7 +150,7 @@ export class DockFiles extends LitElement {
           <span class="dock-files__file-icon">${item.isDir ? expanded ? icons.folderOpen : icons.folder : icons.fileText}</span>
           <span class="dock-files__name">${item.name}${search && relative && relative !== item.name ? html`<small>${relative}</small>` : nothing}</span>
         </div>
-        ${expanded ? html`<div role="group">${this.renderDirectory(item.path, depth + 1)}</div>` : nothing}
+        ${disclosure(expanded, () => html`<div role="group">${this.renderDirectory(item.path, depth + 1)}</div>`)}
       </div>`;
     });
   }

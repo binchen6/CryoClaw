@@ -311,6 +311,16 @@ export interface QqbotSaveParams {
 }
 
 /** 移植自主进程 saveQqbotConfig：保留高级字段，仅覆盖设置页可管理的核心字段 */
+function normalizeQqbotApprovals(channel: Record<string, unknown>, preserveLegacyDm = true) {
+  for (const entry of [channel, ...Object.values(isRecord(channel.accounts) ? channel.accounts : {})]) {
+    if (!isRecord(entry)) continue;
+    const old = normalizeAllowFromEntries(entry.allowFrom);
+    if (preserveLegacyDm && old.includes("*") && (entry.dmPolicy === undefined || entry.dmPolicy === "allowlist")) entry.dmPolicy = "open";
+    const ids = old.filter(id => id !== "*");
+    entry.allowFrom = ids.length ? ids : ["openclaw:approval-disabled"];
+  }
+}
+
 export function applyQqbotSave(draft: Record<string, unknown>, params: QqbotSaveParams): void {
   const plugins = ensureRecord(draft, "plugins");
   const entries = ensureRecord(plugins, "entries");
@@ -330,6 +340,7 @@ export function applyQqbotSave(draft: Record<string, unknown>, params: QqbotSave
   channel.enabled = params.enabled;
   // The bundled runtime must only upgrade through CryoClaw's managed updater.
   channel.upgradeMode = "doc";
+  normalizeQqbotApprovals(channel);
   if (!params.enabled) return;
   syncPluginAllowOnEnable(draft, QQBOT_PLUGIN_ID);
   const accountId = params.accountId ?? "default";
@@ -346,9 +357,11 @@ export function applyQqbotSave(draft: Record<string, unknown>, params: QqbotSave
   }
   if (params.streaming !== undefined) account.streaming = { mode: params.streaming ? "partial" : "off" };
   if (params.dmPolicy !== undefined) account.dmPolicy = params.dmPolicy;
-  if (params.allowFrom !== undefined) account.allowFrom = normalizeAllowFromEntries(params.allowFrom).filter(id => params.dmPolicy === "open" || id !== "*");
-  if (params.dmPolicy === "open") account.allowFrom = dedupeEntries([...normalizeAllowFromEntries(account.allowFrom), "*"]);
-  else if (params.dmPolicy === undefined && account.allowFrom === undefined) account.allowFrom = ["*"];
+  // Tencent 2.0: DM policy and native approval access are separate. Wildcards
+  // fail the host schema, even when dmPolicy=open. Empty approval access locks.
+  if (params.allowFrom !== undefined) account.allowFrom = normalizeAllowFromEntries(params.allowFrom);
+  normalizeQqbotApprovals(channel, false);
+  if (params.dmPolicy === undefined && account.dmPolicy === undefined && params.allowFrom === undefined) account.dmPolicy = "open";
   if (params.groupAllowFrom !== undefined) account.groupAllowFrom = normalizeAllowFromEntries(params.groupAllowFrom);
   if (params.webhookPath !== undefined) ensureRecord(account, "webhook").path = params.webhookPath.trim();
   account.upgradeMode = "doc";

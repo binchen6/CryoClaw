@@ -76,7 +76,7 @@ export function mergeQqbotCredentials(config: any, credentials: QqbotCredentials
     if (!existing) {
       account.enabled = true;
       account.dmPolicy = "allowlist";
-      account.allowFrom = c.userOpenid ? [c.userOpenid] : [];
+      account.allowFrom = c.userOpenid ? [c.userOpenid] : ["openclaw:approval-disabled"];
       account.streaming = { mode: "off" };
     }
     summaries.push({ accountId, appId: c.appId, ...(typeof account.name === "string" ? { name: account.name } : {}) });

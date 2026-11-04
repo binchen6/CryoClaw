@@ -1,4 +1,5 @@
 import { html, nothing, render } from "lit";
+import { disclosure } from "../utils/disclosure.ts";
 import { ref } from "lit/directives/ref.js";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import type { AssistantIdentity } from "../assistant-identity.ts";
@@ -633,8 +634,7 @@ function renderCollapsedToolCards(
                 ${icons.check}<span>${t("chat.toolCompleted")}</span>
               </span>`}
       </button>
-      ${view.open
-        ? html`<div class="chat-tools-collapse__body">
+      ${disclosure(view.open, () => html`<div class="chat-tools-collapse__body">
             ${toolCards.map((card, index) => {
               const id = toolCardKey(card, index);
               return renderToolCardSidebar(card, onOpenSidebar, {
@@ -647,8 +647,7 @@ function renderCollapsedToolCards(
                 },
               });
             })}
-          </div>`
-        : nothing}
+          </div>`)}
     </section>
   `;
 }

@@ -1,8 +1,8 @@
 // skills 加载超时与错误文案守卫（QA：skills.status 永不返回 → 「刷新中」常驻 +
-// 技能区空白）。loadSkills 15s 超时落友好错误（重试出按钮），裸 English 错误只进 console。
+// 技能区空白）。读取遵循内核有界期限，慢扫描有提示，错误提供重试。
 import test from "node:test";
 import assert from "node:assert/strict";
-import { loadSkills, listEligibleSkills, updateSkillEnabled, withLoadTimeout, SKILLS_LOAD_TIMEOUT_MS } from "./skills.ts";
+import { loadSkills, listEligibleSkills, updateSkillEnabled, withLoadTimeout, queueStartupSkillRefresh, cancelStartupSkillRefresh, SKILLS_LOAD_TIMEOUT_MS, SKILLS_SLOW_HINT_MS } from "./skills.ts";
 
 test("skill references refresh eligibility and do not leak a replaced connection's response",async()=>{
   let resolve!:(value:unknown)=>void;
@@ -24,6 +24,7 @@ function makeState(overrides: Record<string, unknown> = {}) {
     client: null as unknown as { request: (method: string) => Promise<unknown> },
     connected: true,
     skillsLoading: false,
+    skillsLoadSlow: false,
     skillsReport: null,
     skillsError: null as string | null,
     skillsBusyKey: null,
@@ -32,6 +33,29 @@ function makeState(overrides: Record<string, unknown> = {}) {
     ...overrides,
   };
 }
+
+test("startup refresh waits for readiness, cancels stale connections and runs once without background retries", async t => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  let calls = 0, ready = false;
+  const state = makeState({ client: { request: async () => { calls++; return { skills: [] }; } } });
+  queueStartupSkillRefresh(state as never, () => ready);
+  t.mock.timers.tick(2_000); assert.equal(calls, 0);
+  ready = true;
+  queueStartupSkillRefresh(state as never, () => ready);
+  cancelStartupSkillRefresh(state as never);
+  t.mock.timers.tick(2_000); assert.equal(calls, 0);
+  queueStartupSkillRefresh(state as never, () => ready);
+  ready = false; t.mock.timers.tick(2_000); assert.equal(calls, 0);
+  ready = true;
+  queueStartupSkillRefresh(state as never, () => ready);
+  queueStartupSkillRefresh(state as never, () => ready);
+  t.mock.timers.tick(1_000);
+  for (let i = 0; i < 12; i++) await Promise.resolve();
+  assert.equal(calls, 1);
+  cancelStartupSkillRefresh(state as never);
+  queueStartupSkillRefresh(state as never, () => ready);
+  t.mock.timers.tick(180_000); assert.equal(calls, 1);
+});
 
 test("withLoadTimeout：超时拒绝、正常返回不清空结果", async () => {
   // 小 ms 直接驱动，避免 15s 真实等待
@@ -44,8 +68,9 @@ test("withLoadTimeout：超时拒绝、正常返回不清空结果", async () =>
   );
 });
 
-test("withLoadTimeout：超时常量 15s（与 UI 超时预期一致）", () => {
-  assert.equal(SKILLS_LOAD_TIMEOUT_MS, 15_000);
+test("skill read deadline matches the native discovery budget with early slow feedback", () => {
+  assert.equal(SKILLS_LOAD_TIMEOUT_MS, 120_000);
+  assert.equal(SKILLS_SLOW_HINT_MS, 15_000);
 });
 
 test("loadSkills：请求失败时 skillsError 为友好文案（非裸 English 错误）", async () => {
@@ -73,6 +98,81 @@ test("loadSkills reuses a fresh report and force refresh bypasses it", async () 
   assert.equal(calls, 1);
   await loadSkills(state as never, { force: true });
   assert.equal(calls, 2);
+});
+
+test("only explicit skill refresh requests native discovery; older closed schemas fall back once", async () => {
+  const params: unknown[] = [];
+  const client = { request: async (_method: string, value: unknown) => {
+    params.push(value);
+    if ((value as any)?.refresh) throw Object.assign(new Error("invalid skills.status params: unexpected property 'refresh'"), { code: "INVALID_REQUEST" });
+    return { skills: [] };
+  } };
+  const state = makeState({ client });
+  await loadSkills(state as never);
+  await loadSkills(state as never, { force: true });
+  await loadSkills(state as never, { force: true });
+  assert.deepEqual(params, [{}, { refresh: true }, {}, {}]);
+});
+
+test("native discovery permission failures never downgrade to a stale status read", async () => {
+  let calls = 0;
+  const state = makeState({ client: { request: async () => {
+    calls++;
+    throw Object.assign(new Error("refresh forbidden"), { code: "FORBIDDEN" });
+  } } });
+  await loadSkills(state as never, { force: true });
+  assert.equal(calls, 1);
+  assert.ok(state.skillsError);
+});
+
+test("manual refresh and mutations publish newly discovered skills without passive polling", async () => {
+  let installed = false;
+  const requests: unknown[] = [];
+  const state = makeState({ client: { request: async (method: string, params: unknown) => {
+    requests.push({ method, params });
+    if (method === "skills.update") return {};
+    return { skills: installed && (params as any)?.refresh ? [{ skillKey: "new", eligible: true }] : [] };
+  } } });
+  await loadSkills(state as never);
+  installed = true;
+  await updateSkillEnabled(state as never, "new", true);
+  assert.equal((state.skillsReport as any).skills[0].skillKey, "new");
+  assert.deepEqual(requests, [
+    { method: "skills.status", params: {} },
+    { method: "skills.update", params: { skillKey: "new", enabled: true } },
+    { method: "skills.status", params: { refresh: true } },
+  ]);
+});
+
+test("skill page and reference menu share one native in-flight read", async () => {
+  let resolve!: (value: unknown) => void, calls=0;
+  const client={request:()=>{calls++;return new Promise(done=>{resolve=done;});}};
+  const first=makeState({client}),second=makeState({client});
+  const page=loadSkills(first as never),other=loadSkills(second as never),menu=listEligibleSkills(first as never);
+  assert.equal(calls,1);
+  resolve({skills:[{skillKey:"same",name:"Shared"}]});
+  await Promise.all([page,other]);assert.equal((await menu)[0].key,"same");
+  assert.equal(calls,1);assert.equal(first.skillsReport,second.skillsReport);
+});
+
+test("slow discovery preserves the visible list and publishes the eventual fresh result", async t => {
+  t.mock.timers.enable({apis:["setTimeout"]});
+  let resolve!: (value: unknown) => void;
+  const previous={skills:[{skillKey:"previous"}]};
+  const state=makeState({skillsReport:previous,skillsLoadSlow:false,client:{request:()=>new Promise(done=>{resolve=done;})}});
+  const pending=loadSkills(state as never);
+  t.mock.timers.tick(SKILLS_SLOW_HINT_MS);
+  assert.equal(state.skillsLoading,true);assert.equal(state.skillsLoadSlow,true);assert.equal(state.skillsError,null);assert.equal(state.skillsReport,previous);
+  const current={skills:[{skillKey:"current"}]};resolve(current);await pending;
+  assert.equal(state.skillsReport,current);assert.equal(state.skillsLoading,false);assert.equal(state.skillsLoadSlow,false);
+});
+
+test("a genuinely stuck read expires and releases the shared slot for retry",async t=>{
+  t.mock.timers.enable({apis:["setTimeout"]});let calls=0;
+  const state=makeState({client:{request:()=>++calls===1?new Promise(()=>{}):Promise.resolve({skills:[]})}});
+  const pending=loadSkills(state as never);t.mock.timers.tick(SKILLS_LOAD_TIMEOUT_MS);await pending;
+  assert.equal(state.skillsLoading,false);assert.ok(state.skillsError);
+  await loadSkills(state as never);assert.equal(calls,2);assert.equal(state.skillsError,null);
 });
 
 test("a successful skill mutation queues a fresh status behind an older in-flight read", async () => {

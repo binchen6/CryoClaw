@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { DisclosureDirective } from "../utils/disclosure.ts";
 
 import { formatToolDetail, resolveToolDisplay } from "../tool-display.ts";
 
@@ -393,6 +394,11 @@ function collectTemplates(value: unknown, acc: Collected): void {
   }
   if (typeof value === "object") {
     if ("_$litDirective$" in value) {
+      if ((value as any)._$litDirective$ === DisclosureDirective) {
+        const [open, body] = (value as any).values;
+        if (open) collectTemplates(body(), acc);
+        return;
+      }
       const directive = value as { values?: unknown[] };
       if (Array.isArray(directive.values)) {
         collectTemplates(directive.values, acc);

@@ -98,6 +98,9 @@ async function reloadBoundAccounts(state: AppViewState, isCurrent: () => boolean
 
 async function saveQqbot(state: AppViewState): Promise<boolean> {
   if (s.enabled) {
+    if (s.allowFromText.split(/[,\n]/).map(id => id.trim()).some(id => id !== "openclaw:approval-disabled" && /[a-z]/.test(id))) {
+      s.error = t("settings.channels.qqbot.openidFormat"); return false;
+    }
     if (!s.bundled) { s.error = s.bundleMessage || t("settings.channels.qqbot.notBundled"); return false; }
     if (s.accountId === "default" || s.accountEnabled) {
       if (!s.appId.trim()) { s.error = t("settings.channels.qqbot.appIdRequired"); return false; }

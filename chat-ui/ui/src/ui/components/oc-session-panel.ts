@@ -8,6 +8,7 @@ import { groupSidebarSessions } from "../sidebar-grouping.ts";
 import { splitSessionsByWorkspace } from "../workspace-pinning.ts";
 import type { PinnedWorkspace } from "../storage.ts";
 import { runExitAnimation } from "../utils/exit-anim.ts";
+import { placePopover } from "../utils/popover-placement.ts";
 
 // CryoClaw 会话面板组件（2026.9 提案 A 重写，前身 cc-sidebar）。
 // 旧 280px 侧边栏（品牌区+会话列表+底部图标轨）拆分：导航与状态入口迁往
@@ -251,7 +252,23 @@ let sessionMenuOutsideCloser: ((ev: MouseEvent) => void) | null = null;
 let sessionMenuMode: "root" | "workspace" = "root";
 let sessionMenuTrigger:HTMLElement|null=null;
 
+function placeSessionMenu() {
+  const trigger = sessionMenuTrigger;
+  const menu = document.querySelector<HTMLElement>(".oc-panel__session-menu");
+  const wrap = trigger?.closest<HTMLElement>(".oc-panel__session-menu-wrap");
+  if (!trigger || !menu || !wrap || menu.classList.contains("cc-leaving")) return;
+  const anchor = trigger.getBoundingClientRect(), origin = wrap.getBoundingClientRect();
+  const position = placePopover({ anchor, panel: { width: menu.offsetWidth, height: menu.offsetHeight },
+    viewport: { width: innerWidth, height: innerHeight }, avoid: [anchor],
+    candidates: [{ side: "bottom", align: "end" }, { side: "top", align: "end" }] });
+  Object.assign(menu.style, { left: `${position.left - origin.left}px`, top: `${position.top - origin.top}px`, right: "auto", bottom: "auto" });
+  menu.dataset.side = position.side;
+  menu.classList.toggle("oc-panel__session-menu--up", position.side === "top");
+}
+
 function closeSessionMenu(requestUpdate: () => void) {
+  window.removeEventListener("resize", placeSessionMenu);
+  document.removeEventListener("scroll", placeSessionMenu, true);
   const closingKey = sessionMenuKey;
   sessionMenuTrigger=null;
   sessionMenuEpoch++;
@@ -288,6 +305,8 @@ function openSessionMenu(key: string, requestUpdate: () => void, trigger:HTMLEle
     .forEach((el) => el.classList.remove("cc-leaving"));
   if (sessionMenuKey !== key) sessionMenuMode = "root";
   sessionMenuKey = key;
+  window.addEventListener("resize", placeSessionMenu);
+  document.addEventListener("scroll", placeSessionMenu, true);
   // 延迟一帧注册，避免触发本次打开的 click 立刻把菜单关掉。
   requestAnimationFrame(() => {
     if (sessionMenuKey !== key || sessionMenuOutsideCloser) return;
@@ -305,10 +324,7 @@ function openSessionMenu(key: string, requestUpdate: () => void, trigger:HTMLEle
     if (sessionMenuKey !== key) return;
     const menu = document.querySelector(".oc-panel__session-menu");
     if (!menu) return;
-    const rect = menu.getBoundingClientRect();
-    if (rect.bottom > window.innerHeight - 8) {
-      menu.classList.add("oc-panel__session-menu--up");
-    }
+    placeSessionMenu();
     if(keyboard)menu.querySelector<HTMLButtonElement>('button[role="menuitem"]:not(:disabled)')?.focus();
   });
 }

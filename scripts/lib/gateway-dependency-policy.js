@@ -17,6 +17,7 @@ const overrides = Object.freeze({
   'undici@7': '7.30.1',
   'undici@6': '6.29.1',
   'ip-address': '$ip-address',
+  'zod@4.6.5': '4.6.6',
 });
 const stamp = JSON.stringify({ dependencies, overrides });
 
@@ -25,7 +26,10 @@ function repairBundledDependency(gatewayDir, name, expectedVersion, sourcePackag
   const bundled = path.join(root, owner, 'node_modules', name);
   const source = path.join(root, sourcePackage);
   const replacement = JSON.parse(fs.readFileSync(path.join(source, 'package.json'), 'utf8'));
-  const current = fs.existsSync(bundled) ? JSON.parse(fs.readFileSync(path.join(bundled, 'package.json'), 'utf8')) : { name, version: null };
+  // Newer kernels resolve some dependencies directly from the root. Do not
+  // recreate a retired bundled copy; the resolution assertion below covers it.
+  if (!fs.existsSync(bundled)) return false;
+  const current = JSON.parse(fs.readFileSync(path.join(bundled, 'package.json'), 'utf8'));
   if (replacement.name !== name || replacement.version !== expectedVersion) throw new Error('Missing safe bundled dependency replacement: ' + name);
   if (current.name !== name || current.version === expectedVersion) return false;
   if (current.version !== null && (semver.major(current.version) !== semver.major(expectedVersion) || semver.gt(current.version, expectedVersion))) throw new Error('Refusing bundled dependency downgrade: ' + name);
@@ -85,7 +89,10 @@ function assertGatewayDependencyPolicy(gatewayDir) {
     ['openclaw/node_modules/zod', '4.6.6'],
   ]);
   for (const [relative, version] of expected) {
-    const manifest = path.join(gatewayDir, 'node_modules', relative, 'package.json');
+    let manifest = path.join(gatewayDir, 'node_modules', relative, 'package.json');
+    if (!fs.existsSync(manifest) && relative.startsWith('openclaw/node_modules/')) {
+      manifest = path.join(gatewayDir, 'node_modules', relative.slice('openclaw/node_modules/'.length), 'package.json');
+    }
     const actual = JSON.parse(fs.readFileSync(manifest, 'utf8')).version;
     if (actual !== version) throw new Error(`Gateway dependency policy mismatch at ${relative}: ${actual} != ${version}`);
   }

@@ -1,4 +1,5 @@
 import { html, nothing } from "lit";
+import { disclosure } from "../utils/disclosure.ts";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import type { ToolCard } from "../types/chat-types.ts";
 import { icons } from "../icons.ts";
@@ -643,14 +644,12 @@ export function renderToolCardSidebar(
           : isEmpty
             ? html`<div class="chat-tool-card__status-text muted">${t("chat.toolCompleted")}</div>`
             : nothing}
-      ${view.expanded !== false
-        ? html`
+      ${disclosure(view.expanded !== false, () => html`
           ${!isRunning && spawnRef ? renderSpawnSessionRef(spawnRef) : nothing}
           ${codeSections.map((section) => renderToolCodeSection(section, onOpenSidebar))}
           ${renderToolCardArgsBlock(card, detail)}
           ${!isRunning && !hasReadSheet ? renderToolCardOutputBody(card, onOpenSidebar, language) : nothing}
-        `
-        : nothing}
+        `)}
     </div>
   `;
 }

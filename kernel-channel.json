@@ -1,7 +1,7 @@
 {
-  "stable": "2026.10.9",
+  "stable": "2026.10.10",
   "minRuntimeNode": "24.22.1",
   "minSupported": "2026.7.0",
-  "updatedAt": "2026-11-02",
-  "notes": "CryoClaw 策展稳定版，不跟随 npm latest。2026.11.02 对齐已随应用捆绑并验收的 OpenClaw 2026.10.9：官方非预发行 Release、Release Publish / Full Release Validation / ClawHub 发布工作流均已完成且成功；来源与适配见 docs/kernel-recon/2026.10.9-diff.md，本轮精确安装、真实 Agent / 消息及三轮启动验证见 docs/RELEASE-2026.1101.0-VERIFICATION.md。Node 最低要求 24.22.1 与官方 engines 及捆绑运行时一致，minSupported 保持 2026.7.0；旧运行时须先升级应用。远程清单不可用时仍回退应用内置钉定，不使用 npm dist-tag latest。"
+  "updatedAt": "2026-11-04",
+  "notes": "CryoClaw 策展稳定版，不跟随 npm latest。OpenClaw 2026.10.10 使用独立 Node 24.22.1；兼容下限保持 2026.7.0。升级审查见 docs/KERNEL-2026.10.10.md。已由上游接管的补丁退役，其余补丁按源码契约验证；未知 TypeBox 版本保留上游布局。远程清单不可用时回退应用内置钉定。"
 }

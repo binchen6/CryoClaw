@@ -160,7 +160,8 @@ function testQqbotSaveEnable() {
   assert.equal(channel.appId, "app1");
   assert.equal(channel.clientSecret, "sec");
   assert.equal(channel.markdownSupport, true);
-  assert.deepEqual(channel.allowFrom, ["*"], "未配置默认允许所有发送者");
+  assert.deepEqual(channel.allowFrom, ["openclaw:approval-disabled"], "空审批名单使用非匹配哨兵");
+  assert.equal(channel.dmPolicy, "open", "开放私聊由独立策略表示");
   assert.equal("clientSecretFile" in channel, false, "明文密钥时清理 file 旧配置");
   assert.deepEqual(channel.sandbox, { mode: "all" }, "高级字段保留");
   assert.equal((draft.plugins as any).entries["openclaw-qqbot"].enabled, true);

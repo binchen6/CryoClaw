@@ -558,3 +558,21 @@ Things that are easy to get wrong or forget when working on CryoClaw.
 209. **安装版合成表单测试须隔离真实轮询。** 定时任务夹具代理 cron 请求并注入 busy/error 时，全局 30 秒 cron ticker 仍会成功读取列表并清空 error，导致宽窄布局断言偶发失败。仅在该夹具中保存并设置 chatLoading，使用现有 cron 读取守卫隔离背景轮询，finally 恢复。connected 保持真实，fieldset 禁用仍由 cronBusy 决定；保留错误位置、错误原文、禁用与编辑往返断言，不能用删除断言或加长等待掩盖竞争。
 
 210. **真实工具验收须兼容 code-mode 包装。** OpenClaw 可将插件调用保存为 exec/wait，callee 也可来自 catalog 返回的局部函数，输出还会包裹不可信内容提示。只查直接名字或解析整段 JSON 会把已完成的 snapshot/type/click 判为失败。验收保留同调用 ID、同工具名的模型调用/结果配对，要求终态回复中的页面随机码、初始 IPC 导航之后的主进程 Agent 事件和真实 DOM 输入/点击变化。配对记录本身不证明每个动作成功；受控单 QA 应用/模型中，原生事件与 DOM 是独立执行证据。用户提示、catalog 搜索或模型代码字符串均不能单独证明通过。exec 是网关包装器，测试仍禁止操作系统命令和其他浏览器。
+
+211. **重连必须隔离轮询代次。** 只清 interval、不复位进行中轮次，会让旧 socket 的请求阻挡新连接首轮会话读取，直到下个 30 秒 tick。stopTicker 递增代次并释放当前轮次门控；旧 finally 只能结束自己的代次，不能解锁新一轮。回归需让旧请求晚于新一轮开始才完成。
+
+212. **减少插件文件数应在离线构建阶段做，不缓存掉运行时安全检查。** TypeBox 布局优化只接受 1.3.34、固定导出契约和完整源码指纹，所有公开入口使用同一共享 chunk 图。构建先比较 9 个入口的导出、引用共享和校验行为；更新器只复用同源码产物，未知版本保留上游布局。替换只发生于暂存树，rename 失败回滚，中断恢复须核对原树/新树指纹。不要把“文件变少”直接写成启动收益，最终安装版仍需同配置多轮测量。
+
+213. **QQ 私聊开放不能向原生审批名单追加 `*`。** 腾讯 2.0 host schema 要求顶层及各账号 allowFrom 非空、禁止通配符；空审批名单使用 `openclaw:approval-disabled`，私聊开放单独由 dmPolicy=open 表达。保存、启动迁移与扫码新账号须一致，不能只修默认账号。已有显式 ID、禁用状态与凭据必须保留。
+
+214. **就绪通知不能打断正在进行的认证。** WebSocket OPEN 不等于 hello 完成；主进程 ready 与 profile acquisition 可并发，强制替换这个 socket 会丢弃已完成的认证工作。ready 只唤醒传输退避，手动重试保留主动重建语义。测试覆盖 CONNECTING、OPEN/未 hello、退避及已经 stop 的客户端。
+
+215. **工厂安装锁与安全修补后的产物锁不是同一个图。** 发布工厂依赖使用 scripts/locks/gateway-package-lock.json 与 npm ci；捆绑包随后仍按 gateway-dependency-policy 做安全替换。不能把替换后的 inBundle 项直接拿回 npm ci，否则上游 manifest 精确版本校验失败。修改内核/依赖策略时同步维护安装锁；显式自定义来源不匹配该锁时继续独立解析。测速还须审计物理依赖文件，不能仅凭相同 OpenClaw 版本判定构建可比。
+
+216. **共享折叠与菜单须管理双向生命周期。** 原生 details 共用 details-content 过渡；受控懒内容用 disclosure，退场期间 inert，截止后移除。旧移除任务不能关闭新展开，流式重复渲染也不能延长退出截止。原生 popover 由 invoker 开关并使用 anchored-overlays；手动菜单用 anchored-menu。全局 reduced-motion 保留至多 80ms 颜色/透明度反馈，验收应检查无位移而非强求所有 transition-duration 为 0。
+
+217. **QQ 旧通配符迁移和当前表单选择有先后关系。** 旧 allowlist/缺省策略配合 `*` 时，应在去掉审批通配符前显式保留原有开放私聊语义；先规范化旧账号，再应用当前表单，最后只规范化审批名单。否则编辑一个账号会收紧另一个账号，或再次把用户明确选择的 allowlist 覆盖为 open。覆盖根、多账号、pairing/disabled 和幂等场景。
+
+218. **长菜单不能只翻转和夹取坐标。** 上下都放不下时，共享定位器按触发器两侧可用空间限高，保留滚动且不盖住打开者。重新测量先恢复自己施加的旧 max-height，窗口变大后才能恢复高度。真实渲染同时验证居中长菜单的小窗避让和大窗恢复。
+
+219. **文件系统检查后的 stat 仍可能失败。** 校验真实路径不能保证下一步文件仍存在，外部编辑器也可能未安装。将 stat 和启动共同纳入结构化错误契约，界面处理 IPC 拒绝及 success=false；保留路径守卫和独立 argv，不能改成 shell 拼接来掩盖启动失败。

@@ -403,19 +403,38 @@ function writeKernelCompatibilityMetadata(gatewayDir) {
   if(!fs.existsSync(dist)||!fs.existsSync(path.join(root,"package.json")))return 0;
   const pkg=JSON.parse(fs.readFileSync(path.join(root,"package.json"),"utf8"));
   const files=fs.readdirSync(dist).filter(name=>/^openclaw-agent-db-schema-read-.*\.(?:m?js)$/.test(name));
-  if(["2026.10.7","2026.10.9"].includes(pkg.version)&&files.length!==1)throw Error("Pinned kernel must have exactly one agent schema admission module");
+  if(["2026.10.7","2026.10.9","2026.10.10"].includes(pkg.version)&&files.length!==1)throw Error("Pinned kernel must have exactly one agent schema admission module");
   if(!files.length)return 0;
   const versions=new Set();
   for(const file of files){
     const source=fs.readFileSync(path.join(dist,file),"utf8");
     const match=source.match(/if \(userVersion > (\d+)\) throw createNewerSqliteSchemaVersionError\("OpenClaw agent database"/);
     if(!match)throw Error("Agent schema admission changed; review migration requirement");
+    if(pkg.version==="2026.10.10"){
+      const minimum=source.match(/if \(userVersion < (\d+) && !isNewUnownedDatabase\) throw new SqliteSchemaMismatchError/);
+      if(!minimum||minimum[1]!==match[1])throw Error("Agent migration minimum and read maximum diverged; review compatibility metadata");
+    }
     versions.add(Number(match[1]));
   }
   if(versions.size!==1)throw Error("Conflicting agent schema admission requirements");
   const agentDbUserVersion=[...versions][0];
   if(pkg.openclaw?.schemaVersions?.agent!==undefined&&pkg.openclaw.schemaVersions.agent!==agentDbUserVersion)throw Error("Agent schema manifest and admission gate disagree");
-  fs.writeFileSync(path.join(root,"cryoclaw-kernel-compat.json"),JSON.stringify({version:pkg.version,agentDbUserVersion})+"\n");return 1;
+  const compatibility={version:pkg.version,agentDbUserVersion};
+  const cacheFile=path.join(root,'node-compile-cache.mjs');
+  const cache=fs.existsSync(cacheFile)?fs.readFileSync(cacheFile,'utf8'):'';
+  const workersOnly=[
+    'if (isMainThread && process.env.OPENCLAW_PACKAGED_COMPILE_CACHE_RESPAWNED === "gateway")',
+    'delete process.env.NODE_DISABLE_COMPILE_CACHE;',
+    'delete process.env.OPENCLAW_PACKAGED_COMPILE_CACHE_RESPAWNED;',
+    'if (foregroundGateway && isMainThread) {',
+    'owner.baseDirectory ??= path.resolve(directory);',
+    'void maintainOpenClawCompileCache(directory);',
+    'NODE_DISABLE_COMPILE_CACHE: "1",',
+    'OPENCLAW_PACKAGED_COMPILE_CACHE_RESPAWNED: "gateway",',
+  ].every(needle=>cache.includes(needle));
+  if(pkg.version==='2026.10.10'&&!workersOnly)throw Error('Pinned gateway worker compile-cache startup contract changed');
+  if(workersOnly)compatibility.foregroundCompileCache='workers';
+  fs.writeFileSync(path.join(root,"cryoclaw-kernel-compat.json"),JSON.stringify(compatibility)+"\n");return 1;
 }
 
 // 检查 openclaw dist 根与 @openclaw/fs-safe dist 根下是否已存在任一 asar-bypass marker。
@@ -770,7 +789,7 @@ function cryoclawProjectDeliveryReceipt(value,maxChars) {
     fs.writeFileSync(file,source);count++;
   }
   const manifest=path.join(dir,"..","package.json");
-  if(fs.existsSync(manifest) && /^2026\.10\.(?:[5-7]|9)$/.test(JSON.parse(fs.readFileSync(manifest,"utf8")).version) && count<2)
+  if(fs.existsSync(manifest) && /^2026\.10\.(?:[5-7]|9|10)$/.test(JSON.parse(fs.readFileSync(manifest,"utf8")).version) && count<2)
     throw Error("Delivery history projection did not cover both core and canvas modules");
   return count;
 }
@@ -782,12 +801,13 @@ function patchWindowsPluginCanonicalPaths(gatewayDir) {
     if(!/^plugin-generation-(?:artifact|source-lookup)-.*\.mjs$/.test(name))continue;
     const file=path.join(directory,name);let source=fs.readFileSync(file,"utf8");
     if(source.includes("/* cryoclaw-plugin-canonical-path */")){patched++;continue;}
-    const marker="function withPluginSourceFile(source, boundary, read) {";
-    if(source.includes(marker)){
+    const marker=["function withPluginSourceFile(source, boundary, read) {","function withPluginSourceFile(source, boundary, read, openFile = openRootFileSync$1) {"].find(signature=>source.includes(signature));
+    if(marker){
       const at=source.indexOf(marker),end=source.indexOf("rootPath: boundary,",at);
       if(end<0)throw Error("Plugin source admission changed; review canonical-root optimization");
       source=source.slice(0,end)+source.slice(end).replace("rootPath: boundary,","rootPath: boundary, rootRealPath: cryoclawPluginCanonicalRoot(boundary),");
-    }else if(!source.includes("fs.realpathSync("))continue;
+    }else if(source.includes("function withPluginSourceFile("))throw Error("Plugin source admission signature changed; review canonical-root optimization");
+    else if(!source.includes("fs.realpathSync("))continue;
     source=source.replaceAll("fs.realpathSync(","cryoclawPluginRealpath(");
     source+=`
 /* cryoclaw-plugin-canonical-path */
@@ -809,6 +829,7 @@ function cryoclawPluginRealpath(value,...options) {
 // is joining the gateway. Retry only that typed cancellation, under the existing
 // admission authority; never turn a stale publication into a durable DB failure.
 function patchAgentStartupPublication(gatewayDir) {
+  if(hasUpstreamDesktopReplacement(gatewayDir,"startupPublication"))return 0;
   const dir=path.join(gatewayDir,"node_modules","openclaw","dist");
   if(!fs.existsSync(dir))return 0;
   const files=fs.readdirSync(dir);
@@ -864,7 +885,7 @@ function patchWebhookCompletionPrecheck(gatewayDir) {
   const names=fs.readdirSync(directory),targets=names.filter(name=>/^startup-config-preflight-.*\.mjs$/.test(name));
   if(!targets.length){
     const manifest=path.join(directory,"..","package.json");
-    if(fs.existsSync(manifest)&&["2026.10.7","2026.10.9"].includes(JSON.parse(fs.readFileSync(manifest,"utf8")).version))throw Error("Webhook completion precheck coverage missing in pinned kernel");
+    if(fs.existsSync(manifest)&&["2026.10.7","2026.10.9","2026.10.10"].includes(JSON.parse(fs.readFileSync(manifest,"utf8")).version))throw Error("Webhook completion precheck coverage missing in pinned kernel");
     return 0;
   }
   const marker="/* cryoclaw-webhook-completion-precheck */";
@@ -879,9 +900,12 @@ export function cryoclawReadWebhookCompletion(sourceConfig, env) {
 `;
   const implementations=names.filter(name=>/^legacy-webhook-pins-.*\.mjs$/.test(name)).map(name=>({name,source:fs.readFileSync(path.join(directory,name),"utf8")})).filter(file=>file.source.includes("function applyHistoricalWebhookPins("));
   if(implementations.length!==1)throw Error("Webhook completion authority contract changed; review startup precheck");
-  const implementation=implementations[0],authority="const marker = mutation.config.meta?.migrations?.webhookListeners ?? readConfigMachineState(webhookCompletionKey(env), { env });";
+  const implementation=implementations[0],authorities=[
+    "const marker = mutation.config.meta?.migrations?.webhookListeners ?? readConfigMachineState(webhookCompletionKey(env), { env });",
+    "const marker = mutation.config.meta?.migrations?.webhookListeners ?? (state.completion ??= { marker: readConfigMachineState(webhookCompletionKey(env), { env }) }).marker;",
+  ];
   const keyContract=/function webhookCompletionKey\(env\) \{\s*return `webhookListeners:\$\{resolveConfigPath\(env\)\}`;\s*\}/;
-  if(!implementation.source.includes(authority)||!keyContract.test(implementation.source)||!implementation.source.includes("function recordUnwrittenWebhookCompletion(")||!implementation.source.includes("HISTORICAL_WEBHOOK_CHANNELS as t")||!implementation.source.includes("recordUnwrittenWebhookCompletion as r"))throw Error("Webhook completion authority contract changed; review startup precheck");
+  if(!authorities.some(authority=>implementation.source.includes(authority))||!keyContract.test(implementation.source)||!implementation.source.includes("function recordUnwrittenWebhookCompletion(")||!implementation.source.includes("HISTORICAL_WEBHOOK_CHANNELS as t")||!implementation.source.includes("recordUnwrittenWebhookCompletion as r"))throw Error("Webhook completion authority contract changed; review startup precheck");
   if(implementation.source.includes(marker)&&!implementation.source.includes(helper))throw Error("Webhook completion helper contract changed; review startup precheck");
   const original="const webhookCompletion = read.snapshot.sourceConfig.meta?.migrations?.webhookListeners;";
   const replacement=`const webhookCompletion = ${marker} cryoclawReadWebhookCompletion(read.snapshot.sourceConfig, env);`;
@@ -998,6 +1022,17 @@ function patchWindowsIdleBrokerExit(gatewayDir) {
   const file=path.join(gatewayDir,"node_modules","openclaw","dist","process","spawn-broker","worker.js");
   if(!fs.existsSync(file))return 0;
   const source=fs.readFileSync(file,"utf8"),marker="/* cryoclaw-windows-idle-broker-exit */";
+  // 10.10 replaced group polling with operation-owned shutdown. Its native
+  // termination and resource joins supersede the old Windows idle shortcut.
+  if(source.includes("function shutdown() {")){
+    const contract=["resources?.disconnect();","const childStops = [...owned.values()].map(stopChild);","await Promise.allSettled(launches);","resources?.close()","await drainCurrentBrokerProcessGroup();"];
+    if(contract.every(needle=>source.includes(needle))){
+      if(source.includes(marker))throw Error("Retired Windows idle broker patch remains beside native shutdown");
+      return 0;
+    }
+    const manifest=path.join(gatewayDir,"node_modules/openclaw/package.json");
+    if(fs.existsSync(manifest)&&JSON.parse(fs.readFileSync(manifest,"utf8")).version==="2026.10.10")throw Error("Reviewed upstream broker shutdown contract changed");
+  }
   if(source.includes(marker))return 1;
   const needle="if (owned.size === 0 && starting.size === 0 && !resources?.size && hasLiveOwnedProcessGroupMembers() === false) {";
   if(!source.includes(needle))return 0;
@@ -1005,7 +1040,46 @@ function patchWindowsIdleBrokerExit(gatewayDir) {
   fs.writeFileSync(file,source.replace(needle,replacement),"utf8");return 1;
 }
 
+// Retire transforms only after verifying the replacement's ownership/budget
+// contract. Older kernels keep their reviewed implementation; missing pieces in
+// the pinned new kernel are a packaging failure, never a silent zero-coverage pass.
+function hasUpstreamDesktopReplacement(gatewayDir, feature) {
+  const root=path.join(gatewayDir,"node_modules/openclaw"),dist=path.join(root,"dist");
+  if(!fs.existsSync(dist))return false;
+  const contracts={
+    startupPublication:[[/^agent-database-startup-.*\.mjs$/,["const STARTUP_PUBLICATION_ATTEMPTS = 4;","for (let attempt = 1;; attempt++) try {","await activation.publishAgent(input);","if (!(error instanceof AgentDatabaseStartupSupersededError) || attempt >= STARTUP_PUBLICATION_ATTEMPTS) throw error;","await assertNotDeleted();"]]],
+    pluginCopyBatchLifetime:[[/^plugin-generation-artifact-.*\.mjs$/,["function createPluginGenerationFileCapture(","const batch = _usingCtx$2.u(createRootFileCopyBatchSync());","const opened = _usingCtx$2.u(createRootFileOpenBatchSync());","return copy(source, target, batch.copyFile.bind(batch), opened.openFile.bind(opened));"]]],
+    pluginSmallSourceRevalidation:[
+      [/^plugin-generation-source-lookup-.*\.mjs$/,["function withPluginSourceFile(source, boundary, read, openFile = openRootFileSync$1)","function copySmallPluginSourceFile(target, fd, admitted, mode, hashCopiedContent)","async function withPluginGenerationSourceCustody(run)","sourceCustody.run(scope, run)"]],
+      [/^plugin-generation-artifact-.*\.mjs$/,["function createPluginGenerationReceipt(prepared)","if (!file.native && expected && content.contentHash !== expected.contentHash)","sourceFacts?.set(path.relative(directory, target), content);"]],
+    ],
+    usageSessionContextOverlap:[[/^usage-.*\.mjs$/,["read: budget.read,","const pageSources = (overviewOptions ? selectUsageOverviewPage(","await loadUsageSessionContext(pageSources, visibilityFilter);","hydratedSources.add(source)"]]],
+    lazyControlUiRetention:[[/^server-control-ui-root-.*\.mjs$/,["function readControlUiRootAsset(root, fileRel, readBody)","new WorkerTaskPool({","maxPendingTasks: 2048,","new LruCache(MAX_PREPARED_ENTRIES,","owner.generation === generation","files.controller.abort();","await Promise.allSettled(files.pending.values());"]]],
+  };
+  if(!contracts[feature])throw Error("Unknown upstream desktop contract: "+feature);
+  const names=fs.readdirSync(dist);
+  const matched=contracts[feature].every(([pattern,needles])=>names.filter(name=>pattern.test(name)&&needles.every(needle=>fs.readFileSync(path.join(dist,name),"utf8").includes(needle))).length===1);
+  if(matched){
+    const retiredMarkers={
+      startupPublication:["/* cryoclaw-startup-publication-retry */"],
+      pluginCopyBatchLifetime:["/* cryoclaw-plugin-copy-batch */"],
+      pluginSmallSourceRevalidation:["/* cryoclaw-plugin-small-source"],
+      usageSessionContextOverlap:["/* cryoclaw-usage-context-overlap */"],
+      lazyControlUiRetention:["/* cryoclaw-lazy-control-ui"],
+    };
+    for(const [pattern] of contracts[feature])for(const name of names.filter(name=>pattern.test(name))){
+      const source=fs.readFileSync(path.join(dist,name),"utf8");
+      if(retiredMarkers[feature].some(marker=>source.includes(marker)))throw Error("Retired desktop patch remains beside upstream replacement: "+feature);
+    }
+    return true;
+  }
+  const manifest=path.join(root,"package.json");
+  if(fs.existsSync(manifest)&&JSON.parse(fs.readFileSync(manifest,"utf8")).version==="2026.10.10")throw Error("Reviewed upstream desktop replacement changed: "+feature);
+  return false;
+}
+
 function patchPluginCopyBatchLifetime(gatewayDir) {
+  if(hasUpstreamDesktopReplacement(gatewayDir,"pluginCopyBatchLifetime"))return 0;
   const dist=path.join(gatewayDir,"node_modules","openclaw","dist");if(!fs.existsSync(dist))return 0;
   const names=fs.readdirSync(dist),marker="/* cryoclaw-plugin-copy-batch */",lookupName=names.find(name=>/^plugin-generation-source-lookup-.*\.mjs$/.test(name)&&fs.readFileSync(path.join(dist,name),"utf8").includes("function createPluginSourceCapture")),artifactName=names.find(name=>/^plugin-generation-artifact-.*\.mjs$/.test(name)&&fs.readFileSync(path.join(dist,name),"utf8").includes("function createPluginGenerationFileCapture"));
   if(!lookupName||!artifactName)return 0;
@@ -1030,6 +1104,7 @@ function patchPluginCopyBatchLifetime(gatewayDir) {
 }
 
 function patchPluginSmallSourceRevalidation(gatewayDir) {
+  if(hasUpstreamDesktopReplacement(gatewayDir,"pluginSmallSourceRevalidation"))return 0;
   const dist=path.join(gatewayDir,"node_modules","openclaw","dist");if(!fs.existsSync(dist))return 0;
   const marker="/* cryoclaw-plugin-small-source-revalidation */",names=fs.readdirSync(dist).filter(name=>/^plugin-generation-source-lookup-.*\.mjs$/.test(name)&&fs.readFileSync(path.join(dist,name),"utf8").includes("function copySmallPluginSourceFile"));
   if(names.length>1)throw Error("Plugin small source revalidation contract changed: ambiguous modules");if(!names.length)return 0;
@@ -1050,6 +1125,7 @@ function patchPluginSmallSourceRevalidation(gatewayDir) {
 }
 
 function patchUsageSessionContextOverlap(gatewayDir) {
+  if(hasUpstreamDesktopReplacement(gatewayDir,"usageSessionContextOverlap"))return 0;
   const dist=path.join(gatewayDir,"node_modules","openclaw","dist");if(!fs.existsSync(dist))return 0;
   const marker="/* cryoclaw-usage-context-overlap */",names=fs.readdirSync(dist).filter(name=>/^usage-.*\.mjs$/.test(name)&&fs.readFileSync(path.join(dist,name),"utf8").includes("loadUsageSessionSummaries")&&fs.readFileSync(path.join(dist,name),"utf8").includes("loadUsageSessionContext"));
   if(names.length>1)throw Error("Usage context overlap contract changed: ambiguous modules");if(!names.length)return 0;
@@ -1070,20 +1146,58 @@ function patchUsageSessionContextOverlap(gatewayDir) {
 
 function patchCommandCatalogCache(gatewayDir) {
   const dist=path.join(gatewayDir,"node_modules","openclaw","dist");if(!fs.existsSync(dist))return 0;
+  const manifest=path.join(dist,"..","package.json");
+  if(fs.existsSync(manifest)&&JSON.parse(fs.readFileSync(manifest,"utf8")).version==="2026.10.10"){
+    // The new scoped skill/command pipeline no longer exports the old config
+    // fingerprint contract. Retire the cache rather than bind more private
+    // aliases. Clean only our exactly identified trailing transform on reuse.
+    let covered=0;
+    for(const name of fs.readdirSync(dist).filter(name=>/^commands-list-result-.*\.mjs$/.test(name))){
+      const file=path.join(dist,name),original=fs.readFileSync(file,"utf8");let source=original;
+      const marker="\n/* cryoclaw-command-catalog-cache */";
+      if(source.includes(marker)){
+        const at=source.indexOf(marker),tail=source.slice(at);
+        if(!tail.includes('function createCryoclawCommandCache(deps)')||!tail.includes('ttlMs=5000,maxEntries=16')||!tail.includes('async function buildCommandsListResult(params) { return cryoclawCommandCache.run(params,()=>buildCommandsListResultUncached(params)); }'))throw Error("Unknown retired command cache transform");
+        source=source.slice(0,at).replace('async function buildCommandsListResultUncached(params) {','async function buildCommandsListResult(params) {');
+        let imports=0;
+        source=source.replace(/^import \{[^\n]+ as cryoclaw(?:SkillsSourceVersion|PluginRegistryVersion|PluginRegistryContext|AgentWorkspaceDir|ConfigFingerprint)[^\n]+\r?\n/gm,()=>{imports++;return '';});
+        if(imports!==5||source.includes('cryoclawCommandCache'))throw Error("Retired command cache import contract changed");
+      }
+      if(!source.includes('async function buildCommandsListResult(params) {'))continue;
+      if(!['const skillCommands = await prepareSkillCommandsForAgents({','sessionEntry: params.sessionEntry,','sessionKey: params.sessionKey','const gatewayRegistry = getPluginRegistryForContext();','getPluginCommandEntrySpecsFromRegistrations(gatewayRegistry.commands, provider, { config: params.cfg })','return { commands: commands.slice(0, 500) };'].every(needle=>source.includes(needle)))throw Error("Native command catalog contract changed");
+      covered++;if(source!==original)fs.writeFileSync(file,source);
+    }
+    if(covered!==1)throw Error("Native command catalog must cover exactly one pinned module");
+    return 0;
+  }
+  // This optional performance transform binds private exports reviewed for
+  // 10.7/10.9. Older and unreviewed kernels retain their native command loader.
+  if(fs.existsSync(manifest)&&!["2026.10.7","2026.10.9"].includes(JSON.parse(fs.readFileSync(manifest,"utf8")).version))return 0;
   const names=fs.readdirSync(dist),find=(prefix,contract)=>{const name=names.find(candidate=>candidate.startsWith(prefix)&&candidate.endsWith(".mjs")&&(!contract||fs.readFileSync(path.join(dist,candidate),"utf8").includes(contract)));if(!name)throw Error(`Command cache dependency changed: ${prefix}`);return name;};
   const runtimeModule=find("runtime-","getActivePluginRegistryVersion as d"),runtimeImport=`import { d as cryoclawPluginRegistryVersion } from "./${runtimeModule}";`;
+  const scopeModule=find("gateway-request-scope-","getPluginRegistryForContext as i");
   const marker="/* cryoclaw-command-catalog-cache */";let count=0;
   for(const name of names){
     if(!/^commands-list-result-.*\.mjs$/.test(name))continue;
     const file=path.join(dist,name);let source=fs.readFileSync(file,"utf8");
     if(source.includes(marker)){
       const previous=source;source=source.replace(/import \{ d as cryoclawPluginRegistryVersion \} from "\.\/runtime-[^"]+";/,runtimeImport);
+      const scopeImport=`import { i as cryoclawPluginRegistryContext } from "./${scopeModule}";`;
+      source=source.replace(/^import \{ i as cryoclawPluginRegistryContext \} from "\.\/gateway-request-scope-[^"]+";\r?\n/m,"");
+      source=source.replace(runtimeImport,runtimeImport+"\n"+scopeImport);
+      if(!source.includes("const contextKey=")){
+        const keyMarker="  const key=(params)=>JSON.stringify([\n    deps.configFingerprint(params.cfg)";
+        if(!source.includes(keyMarker)||!source.includes("registryVersion:cryoclawPluginRegistryVersion});"))throw Error("Marked command cache context contract changed");
+        source=source.replace(keyMarker,'  const contexts=new WeakMap();let nextContext=0;\n  const contextKey=()=>{const context=deps.registryContext?.();if(context==null)return null;if(typeof context!=="object"&&typeof context!=="function")throw Error("Unexpected plugin registry context");let id=contexts.get(context);if(id===undefined){id=++nextContext;contexts.set(context,id);}return id;};\n  const key=(params)=>JSON.stringify([\n    contextKey(),deps.configFingerprint(params.cfg)')
+          .replace("registryVersion:cryoclawPluginRegistryVersion});","registryVersion:cryoclawPluginRegistryVersion,registryContext:cryoclawPluginRegistryContext});");
+      }
       if(source!==previous)fs.writeFileSync(file,source);count++;continue;
     }
     const needle="async function buildCommandsListResult(params) {";if(!source.includes(needle))continue;
     const imports=[
       `import { a as cryoclawSkillsSourceVersion, i as cryoclawSkillsSnapshotVersion } from "./${find("refresh-state-")}";`,
       runtimeImport,
+      `import { i as cryoclawPluginRegistryContext } from "./${scopeModule}";`,
       `import { d as cryoclawAgentWorkspaceDir } from "./${find("agent-scope-config-")}";`,
       `import { c as cryoclawConfigFingerprint } from "./${find("workspace-skill-loader-")}";`,
     ].join("\n");
@@ -1091,8 +1205,10 @@ function patchCommandCatalogCache(gatewayDir) {
 ${marker}
 function createCryoclawCommandCache(deps) {
   const cache=new Map(),ttlMs=5000,maxEntries=16;
+  const contexts=new WeakMap();let nextContext=0;
+  const contextKey=()=>{const context=deps.registryContext?.();if(context==null)return null;if(typeof context!=="object"&&typeof context!=="function")throw Error("Unexpected plugin registry context");let id=contexts.get(context);if(id===undefined){id=++nextContext;contexts.set(context,id);}return id;};
   const key=(params)=>JSON.stringify([
-    deps.configFingerprint(params.cfg),params.agentId,params.provider?.trim().toLowerCase()||"",params.scope??"both",params.includeArgs!==false,params.sessionKey??null,params.sessionEntry?.skillLibrarySelections??null,
+    contextKey(),deps.configFingerprint(params.cfg),params.agentId,params.provider?.trim().toLowerCase()||"",params.scope??"both",params.includeArgs!==false,params.sessionKey??null,params.sessionEntry?.skillLibrarySelections??null,
     deps.sourceVersion(deps.workspaceDir(params.cfg,params.agentId)),deps.snapshotVersion(deps.workspaceDir(params.cfg,params.agentId)),deps.registryVersion()
   ]);
   const prune=()=>{while(cache.size>maxEntries)cache.delete(cache.keys().next().value);};
@@ -1110,13 +1226,13 @@ function createCryoclawCommandCache(deps) {
     catch(error){if(cache.get(before)?.promise===promise)cache.delete(before);throw error;}
   }};
 }
-const cryoclawCommandCache=createCryoclawCommandCache({configFingerprint:cryoclawConfigFingerprint,workspaceDir:cryoclawAgentWorkspaceDir,sourceVersion:cryoclawSkillsSourceVersion,snapshotVersion:cryoclawSkillsSnapshotVersion,registryVersion:cryoclawPluginRegistryVersion});
+const cryoclawCommandCache=createCryoclawCommandCache({configFingerprint:cryoclawConfigFingerprint,workspaceDir:cryoclawAgentWorkspaceDir,sourceVersion:cryoclawSkillsSourceVersion,snapshotVersion:cryoclawSkillsSnapshotVersion,registryVersion:cryoclawPluginRegistryVersion,registryContext:cryoclawPluginRegistryContext});
 async function buildCommandsListResult(params) { return cryoclawCommandCache.run(params,()=>buildCommandsListResultUncached(params)); }
 `;
     source=imports+"\n"+source.replace(needle,"async function buildCommandsListResultUncached(params) {")+helper;
     fs.writeFileSync(file,source);count++;
   }
-  const manifest=path.join(dist,"..","package.json");if(fs.existsSync(manifest)&&["2026.10.7","2026.10.9"].includes(JSON.parse(fs.readFileSync(manifest,"utf8")).version)&&count<1)throw Error("Command catalog cache did not cover the pinned kernel");
+  if(fs.existsSync(manifest)&&["2026.10.7","2026.10.9"].includes(JSON.parse(fs.readFileSync(manifest,"utf8")).version)&&count<1)throw Error("Command catalog cache did not cover the pinned kernel");
   return count;
 }
 
@@ -1135,6 +1251,7 @@ function patchDesktopKernel(gatewayDir) {
 }
 
 function patchLazyControlUiRetention(gatewayDir) {
+  if(hasUpstreamDesktopReplacement(gatewayDir,"lazyControlUiRetention"))return 0;
   const dist=path.join(gatewayDir,"node_modules","openclaw","dist"),marker="/* cryoclaw-lazy-control-ui-retention */";let count=0;
   const lifecycleNeedle=[
     '\t\tif (state.kind === "bundled") await state.retainedAssets?.prepare({ signal }).catch((error) => {',
@@ -1177,7 +1294,7 @@ function patchLazyControlUiRetention(gatewayDir) {
     if(syntax.status!==0)throw Error("Lazy Control UI retention patch generated invalid ESM: "+syntax.stderr.slice(-600));
     fs.writeFileSync(file,source,"utf8");count++;
   }
-  const manifest=path.join(dist,"..","package.json");if(fs.existsSync(manifest)&&["2026.10.7","2026.10.9"].includes(JSON.parse(fs.readFileSync(manifest,"utf8")).version)&&count!==1)throw Error("Lazy Control UI retention patch must cover exactly one pinned module");
+  const manifest=path.join(dist,"..","package.json");if(fs.existsSync(manifest)&&["2026.10.7","2026.10.9","2026.10.10"].includes(JSON.parse(fs.readFileSync(manifest,"utf8")).version)&&count!==1)throw Error("Lazy Control UI retention patch must cover exactly one pinned module");
   return count;
 }
 

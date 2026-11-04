@@ -573,7 +573,7 @@
   }
 }
 
-.file-open-menu { position: relative; display: inline-flex; margin-left: auto; anchor-name: --file-open-menu; }
+.file-open-menu { position: relative; display: inline-flex; margin-left: auto; }
 .file-open-menu__split { display: inline-flex; align-items: center; border: var(--hairline); border-radius: var(--radius-8); background: var(--bg-elevated); }
 .file-open-menu__default,
 .file-open-menu__toggle {
@@ -591,10 +591,12 @@
 .file-open-menu__default:hover,
 .file-open-menu__toggle:hover { color: var(--accent); background: var(--bg-hover); }
 .file-open-menu__popover {
-  position: absolute;
-  position-anchor: --file-open-menu;
-  top: calc(anchor(bottom) + var(--spacer-4));
-  right: anchor(right);
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  max-width: calc(100vw - 24px);
+  max-height: calc(100vh - 24px);
+  overflow: auto;
   display: flex;
   flex-direction: column;
   min-width: 168px;
@@ -606,7 +608,20 @@
   color: var(--text);
   z-index: 60;
 }
+.file-open-menu__popover { opacity: 0; transform: translateY(-4px); transition: opacity var(--duration-fast) var(--ease-standard), transform var(--duration-fast) var(--ease-standard), display var(--duration-fast) allow-discrete, overlay var(--duration-fast) allow-discrete; }
+.file-open-menu__popover[data-side="top"] { transform: translateY(4px); }
+.file-open-menu__popover:popover-open { opacity: 1; transform: none; }
 .file-open-menu__popover:not(:popover-open) { display: none; }
+@starting-style { .file-open-menu__popover:popover-open { opacity: 0; transform: translateY(-4px); } .file-open-menu__popover[data-side="top"]:popover-open { transform: translateY(4px); } }
+:root[data-motion="reduce"] .file-open-menu__popover { transition: none; transform: none; }
+@media (prefers-reduced-motion: reduce) { .file-open-menu__popover { transition: none; transform: none; } }
+
+.wk-layout :is(input, textarea, select):focus,
+.wk-main :is(input, textarea, select):focus {
+  outline: none;
+  border-color: var(--focus-field-color);
+  box-shadow: var(--focus-field);
+}
 .file-open-menu__popover button {
   display: flex;
   align-items: center;
@@ -641,7 +656,7 @@
   color: var(--text);
   font-size: var(--text-xs);
 }
-.embedded-browser__address:focus-visible { box-shadow: var(--focus-ring); }
+.embedded-browser__address:focus-visible { outline: none; border-color: var(--focus-field-color); box-shadow: var(--focus-field); }
 .embedded-browser__error { padding: var(--spacer-6) var(--spacer-10); color: var(--danger); background: var(--danger-subtle); font-size: var(--text-xs); overflow-wrap: anywhere; }
 .embedded-browser__viewport { position: relative; display: flex; flex: 1; min-height: 0; overflow: auto; background: var(--bg-elevated); }
 .embedded-browser__status { position: absolute; align-self: center; margin-top: var(--spacer-24); color: var(--text-muted); }

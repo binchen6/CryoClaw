@@ -31,6 +31,15 @@ function fixture(t){
 }
 const config=marker=>marker===undefined?{}:{meta:{migrations:{webhookListeners:marker}}};
 
+test('10.10 cached migration authority keeps source precedence and machine completion',async t=>{
+ const f=fixture(t),file=path.join(f.dist,'legacy-webhook-pins-impl.mjs');
+ fs.writeFileSync(file,f.files['legacy-webhook-pins-impl.mjs'].replace('function applyHistoricalWebhookPins(mutation,declaration,context={}) {','function applyHistoricalWebhookPins(state,mutation,declaration,context={}) {').replace('?? readConfigMachineState(webhookCompletionKey(env), { env });','?? (state.completion ??= { marker: readConfigMachineState(webhookCompletionKey(env), { env }) }).marker;'));
+ fs.writeFileSync(path.join(f.dist,'..','package.json'),JSON.stringify({version:'2026.10.10'}));
+ assert.equal(kdp.patchWebhookCompletionPrecheck(f.gatewayDir),1);const {run}=await f.load();
+ const completed=f.environment(true);await run(config(),completed);assert.deepEqual(completed.events,['state-admission','plugin-quarantine']);
+ const explicitlyFalse=f.environment(true);await run(config(false),explicitlyFalse);assert.deepEqual(explicitlyFalse.events,['state-admission','migration','plugin-quarantine']);assert.deepEqual(explicitlyFalse.readKeys,[]);
+});
+
 test('completed machine state avoids importing migration registry and retains both admission boundaries',async t=>{
  const f=fixture(t);assert.equal(kdp.patchWebhookCompletionPrecheck(f.gatewayDir),1);const {run}=await f.load(),env=f.environment(true);await run(config(),env);
  assert.deepEqual(env.events,['state-admission','plugin-quarantine']);assert.deepEqual(env.readKeys,['webhookListeners:C:/qa/openclaw.json']);assert.deepEqual(await f.spy(),{imports:0,migrations:0});

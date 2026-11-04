@@ -26,6 +26,7 @@ for (const name of [
   "kernel-channel.js",
   "rm-rec.js",
   "kernel-prune.js",
+  "compact-typebox-runtime.js",
   "kernel-config-snapshot.js",
   "kernel-directory-swap.js",
   "gateway-dependency-policy.js",
@@ -38,10 +39,29 @@ for (const name of [
 }
 fs.cpSync(path.join(HERE, "..", "node_modules", "semver"), path.join(STAGE, "node_modules", "semver"), { recursive: true });
 
-const { reconcileSwapDebris, planSwapRecovery, evaluateLock, acquireUpdaterLock, selectRollbackBackup, writeSwapJournal, readSwapJournal, stagePhysicalGateway, carryOverInjected, refreshSynchronizedVendorPlugins, assertVendoredPluginCompatibility } = await import(
+const { reconcileSwapDebris, planSwapRecovery, evaluateLock, acquireUpdaterLock, selectRollbackBackup, writeSwapJournal, readSwapJournal, stagePhysicalGateway, carryOverInjected, refreshSynchronizedVendorPlugins, assertVendoredPluginCompatibility, assertPhysicalKernelDataReadable } = await import(
   pathToFileURL(path.join(STAGE, "kernel-update.mjs")).href
 );
 process.once("exit", () => { try { fs.rmSync(STAGE, { recursive: true, force: true }); } catch {} });
+
+test('physical replacement refuses newer local schemas and observes committed WAL state',async t=>{
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),'kernel-schema-rollback-'));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+ const gateway=path.join(root,'gateway'),dist=path.join(gateway,'node_modules/openclaw/dist'),state=path.join(root,'state');fs.mkdirSync(dist,{recursive:true});
+ const writeGate=(agent,shared)=>{fs.writeFileSync(path.join(dist,'openclaw-agent-db-schema-read-fixture.mjs'),`if (userVersion > ${agent}) throw createNewerSqliteSchemaVersionError("OpenClaw agent database", pathname, userVersion, ${agent});`);fs.writeFileSync(path.join(dist,'openclaw-state-db-schema-version-fixture.mjs'),`if (version > ${shared}) throw createNewerSqliteSchemaVersionError("OpenClaw state database", pathname, version, ${shared});`);};
+ const file=path.join(state,'agents/main/agent/openclaw-agent.sqlite');fs.mkdirSync(path.dirname(file),{recursive:true});
+ const {DatabaseSync}=await import('node:sqlite'),db=new DatabaseSync(file);
+ try{
+  db.exec('PRAGMA journal_mode=WAL; PRAGMA user_version=25; PRAGMA wal_checkpoint(TRUNCATE);');writeGate(25,20);
+  assert.equal(assertPhysicalKernelDataReadable(gateway,state),1);
+  db.exec('PRAGMA user_version=27;');assert.equal(fs.readFileSync(file).readUInt32BE(60),25,'fixture must have a stale main-file header');
+  assert.throws(()=>assertPhysicalKernelDataReadable(gateway,state),/27.*25/);
+  writeGate(27,22);assert.equal(assertPhysicalKernelDataReadable(gateway,state),1);
+ }finally{db.close();}
+ const shared=path.join(state,'state/openclaw.sqlite');fs.mkdirSync(path.dirname(shared),{recursive:true});const sharedDb=new DatabaseSync(shared);sharedDb.exec('PRAGMA user_version=22');sharedDb.close();
+ const before=createHash('sha256').update(fs.readFileSync(shared)).digest('hex');writeGate(27,20);
+ assert.throws(()=>assertPhysicalKernelDataReadable(gateway,state),/22.*20/);
+ assert.equal(createHash('sha256').update(fs.readFileSync(shared)).digest('hex'),before,'rejection must not modify local data');
+});
 
 test("vendored official plugins must support the selected kernel before publication", t => {
  const root=fs.mkdtempSync(path.join(os.tmpdir(),"kernel-plugin-compat-"));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));

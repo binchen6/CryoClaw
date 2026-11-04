@@ -15,6 +15,7 @@
  * 运行状态走 gateway RPC；工作区数据走主进程 IPC（data/ipc-bridge.ts memory*）。
  */
 import { html, nothing } from "lit";
+import { disclosure } from "../../utils/disclosure.ts";
 import type { AppViewState } from "../../app-view-state.ts";
 import { loadMemoryStatus, memoryStatusFresh, resetGroundedShortTerm, resetDreamDiary, type MemoryStatus } from "../../controllers/memory.ts";
 import { t, tWithDetail } from "../../i18n.ts";
@@ -718,7 +719,7 @@ function renderOverviewTab(state: AppViewState) {
                           ${score != null ? html`<span class="oc-memory-recall-item__score">${score}%</span>` : nothing}
                           <span class="oc-memory-recall-item__snippet">${snippet.slice(0, 200)}</span>
                         </button>
-                        ${expanded ? html`<pre class="oc-memory-recall-item__body">${snippet}</pre>` : nothing}
+                        ${disclosure(expanded, () => html`<pre class="oc-memory-recall-item__body">${snippet}</pre>`)}
                       </div>
                     `;
                   })}
@@ -826,7 +827,7 @@ function renderMemoriesTab(state: AppViewState) {
   const page = Math.min(s.wsPage, totalPages);
   const pageEntries = all.slice((page - 1) * WS_PAGE_SIZE, page * WS_PAGE_SIZE);
 
-  const createForm = s.wsCreateOpen ? html`
+  const createForm = disclosure(s.wsCreateOpen, () => html`
     <div class="oc-memory-create">
       <input class="oc-settings__input" .value=${s.wsCreateTitle}
         placeholder=${t("settings.memory.memories.createTitlePlaceholder")}
@@ -841,7 +842,7 @@ function renderMemoriesTab(state: AppViewState) {
           @click=${() => { s.wsCreateOpen = false; state.requestUpdate(); }}>${t("settings.cancel")}</button>
       </div>
     </div>
-  ` : nothing;
+  `);
 
   const listBody = s.wsLoading && !s.wsList
     ? html`<div class="oc-settings__field-hint">${t("settings.memory.statusLoading")}</div>`
@@ -868,14 +869,14 @@ function renderMemoriesTab(state: AppViewState) {
                       ? formatRelativeTimestamp(e.mtimeMs, { dateFallback: true })
                       : ""}</span>
                   </button>
-                  ${expanded ? html`
+                  ${disclosure(expanded, () => html`
                     <div class="oc-memory-item__snippet">${e.snippet}</div>
                     ${s.wsExpandedLoading
                       ? html`<div class="oc-settings__field-hint">${t("settings.memory.statusLoading")}</div>`
                       : s.wsExpandedContent
                         ? html`<pre class="oc-memory-item__body">${s.wsExpandedContent.content}</pre>`
                         : html`<div class="oc-settings__field-hint">${t("settings.memory.memories.readFailed")}</div>`}
-                  ` : nothing}
+                  `)}
                 </div>
               `;
             })}
@@ -964,13 +965,13 @@ function renderDreamsTab(state: AppViewState) {
           </span>
         </div>
         <div class="oc-memory-dream__snippet">${e.snippet}</div>
-        ${expanded ? html`
+        ${disclosure(expanded, () => html`
           ${s.dreamExpandedLoading
             ? html`<div class="oc-settings__field-hint">${t("settings.memory.statusLoading")}</div>`
             : s.dreamExpandedBody
               ? html`<pre class="oc-memory-dream__body">${s.dreamExpandedBody.body}</pre>`
               : html`<div class="oc-settings__field-hint">${t("settings.memory.dreams.readFailed")}</div>`}
-        ` : nothing}
+        `)}
       </div>
     `;
   };
