@@ -1,28 +1,28 @@
 {
   "version": 3,
-  "updatedAt": "2026-11-06T19:31:04.578Z",
+  "updatedAt": "2026-11-12T07:24:04.008Z",
   "note": "WebBridge binary sha256 pins. App fetches this file at repair time (jsDelivr then raw.githubusercontent) and caches it locally for 24h. When upstream rebuilds the `latest` artifacts (same byte length, new Go build ID — observed twice on 2026-09-10), update this file instead of shipping a new app release. Values must be 64-hex sha256 of `https://kimi-web-img.moonshot.cn/webbridge/latest/releases/<name>`.",
   "pins": {
     "kimi-webbridge-windows-amd64.exe": [
+      "f94fa5c1447491734ac743d14cddbe591830c50347f5e4e5d287782e0a2e9eb0",
       "b82f77038d33df32abc93ee015d1b7268cdf9e372f2a274d01395402041774ba",
       "74d645dbdd3e9de8fde75848dc3f06957133005a3703fcefe232989fefa479a1",
       "f65abde871876fb38a92b1e1f26bd2cb9ec42c0fae87770d61b6b2ffc82ddb19",
-      "d0547eee078e5ff8e7fee6b71ad80e68177627ae10f2568f403f8d776e4f45c5",
-      "de6ced2c243cebc88c26080ba418eaac78af16880883885d5858d31d336d5f92"
+      "d0547eee078e5ff8e7fee6b71ad80e68177627ae10f2568f403f8d776e4f45c5"
     ],
     "kimi-webbridge-darwin-arm64": [
+      "d02e46feb1d64c980f949df94bbd6db56aae07d99154814ffcb6a3c247d0d018",
       "ff9e2d9089dbc80a3f16ed69e425aeadccaa47553a4d0d7e4c17b3196ee24807",
       "4233ebee20815ef7e78a372ea3b22c80a8c004edc5d940ff06bec5df6d12ddf3",
       "8c295f5e58a6cea2c66b3dd33e5d72eaf887f5e6fbf3799b430f01cba62376c4",
-      "b57ac4885ae5204aa7df4878bd5245f05a641eee59c3d28b8a3857e68b9c670d",
-      "4464909f45b9e6f86bef198a9bbdbfd7a1f64dcd86f04e57cde239881520885b"
+      "b57ac4885ae5204aa7df4878bd5245f05a641eee59c3d28b8a3857e68b9c670d"
     ],
     "kimi-webbridge-darwin-amd64": [
+      "d607bfb1c839be1acc66b4c53139ee28f9042356e42a349b168d6060563766e7",
       "f4bdc05a802c9a94e96639d46ea5e376acbf7c810e9ae6b19947ec6fb1f99c93",
       "f05849d32c868642af4c3dd42680c7dc24e7533bba7d3d73e50cd49937ba645e",
       "2ab20eec10d3e21e6bc5c85fe285da75fb0406cd817a36d5aeab752c10dec0f2",
-      "4c3b65a0087051288d83082ff1dc6af2a5bd926baf94e87db983dc3b3129c349",
-      "e84274a575631838565e2cf2edfa4930f6d1e4a9ec83d2cf720c0a8c67a64df5"
+      "4c3b65a0087051288d83082ff1dc6af2a5bd926baf94e87db983dc3b3129c349"
     ]
   },
   "extension": {
